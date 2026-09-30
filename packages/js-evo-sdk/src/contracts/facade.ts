@@ -178,22 +178,40 @@ export class ContractsFacade {
   }
 
   /**
-   * Approves, as a member of an elected contract's seated moderation team, the deletion of one
+   * Proposes, as a member of an elected contract's seated moderation team, the deletion of one
    * settled document: one last modified longer ago than its type's
    * `moderatorAbilities.deleteWithin` window, which no moderator deletes alone. The type must
-   * say who of the team must approve (`moderatorAbilities.deleteSettled`). Each member sends
-   * the same approval once (41208), for the reason of the first (41207), and the approval that
-   * meets the rule, the leader among them if it says so, deletes the document as
-   * `moderatorDeleteDocument` does. Approvals that fall short lapse a week after the first,
-   * when the document is replaced, or when every approver has left the team. Signed like the other moderations; `options.reason` is
-   * required and names a reason document the team's proposal lists. Resolves with the
-   * approvals the contract keeps of the deletion, `deletedAt` set once they deleted it.
+   * say who of the team must approve (`moderatorAbilities.deleteSettled`). The proposal is the
+   * proposer's own approval, kept under the contract as a team action; the other members
+   * approve it by its `actionId` with `moderatorApproveTeamAction`, and the approval that meets
+   * the rule, the leader among them if it says so, deletes the document as
+   * `moderatorDeleteDocument` does. Signed like the other moderations; `options.reason` is
+   * required and names a reason document the team's proposal lists. Resolves with the action's
+   * `actionId`, what the other members approve, and its `status`: `closed` once the action ran
+   * and deleted the document, by this proposal alone or by a later approval, `active`
+   * otherwise.
    */
   async moderatorDeleteSettledDocument(
     options: wasm.ContractDeleteSettledDocumentOptions,
-  ): Promise<wasm.ContractSettledDeletionResult> {
+  ): Promise<wasm.ContractTeamActionSignatureResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.contractDeleteSettledDocument(options);
+  }
+
+  /**
+   * Approves, as a member of an elected contract's seated moderation team, a team action
+   * another member proposed, by its `actionId`: today the deletion of a settled document,
+   * which `moderatorDeleteSettledDocument` proposes and `teamActions` lists. What the action
+   * does and why are the proposal's. An action that does not exist (41207), one already
+   * approved by the signer (41208), one already closed (41210) or one whose document changed
+   * since the proposal (41211) is refused. Signed like the other moderations. Resolves with
+   * the action's `status`: `closed` once the action ran, by this approval or a later one.
+   */
+  async moderatorApproveTeamAction(
+    options: wasm.ContractApproveTeamActionOptions,
+  ): Promise<wasm.ContractTeamActionSignatureResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractApproveTeamAction(options);
   }
 
   /**
@@ -284,23 +302,38 @@ export class ContractsFacade {
   }
 
   /**
-   * The approvals a contract's seated moderation team gave the deletion of settled documents
-   * within one document type, in document id order: the records of the `documentIds` named,
-   * where a document no approval was given for is left out, or else one page of them all. A
-   * record whose `deletedAt` is set deleted its document. Pass a page's `nextStartAfter` as the
-   * next query's `startAfter`; a page without one (it holds fewer records than the limit) is
-   * the last.
+   * One page of the actions an elected contract's seated moderation team votes on, `active`
+   * (still gathering approvals) or `closed` (their approvals met the rule and they ran), in
+   * action id order. Pass a page's `nextStartAtActionId` as the next query's
+   * `startAtActionId`; a page without one (it holds fewer actions than the limit) is the last.
    */
-  async settledDeletions(query: wasm.ContractSettledDeletionsQuery): Promise<wasm.ContractSettledDeletionsPage> {
+  async teamActions(query: wasm.ContractTeamActionsQuery): Promise<wasm.ContractTeamActionsPage> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getContractSettledDeletions(query);
+    return w.getContractTeamActions(query);
   }
 
-  async settledDeletionsWithProof(
-    query: wasm.ContractSettledDeletionsQuery,
-  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractSettledDeletionsPage>> {
+  async teamActionsWithProof(
+    query: wasm.ContractTeamActionsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractTeamActionsPage>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getContractSettledDeletionsWithProofInfo(query);
+    return w.getContractTeamActionsWithProofInfo(query);
+  }
+
+  /**
+   * Who approved one of the actions an elected contract's seated moderation team votes on,
+   * the proposer among them unless it left the team and its approval was dropped, in identity
+   * id order: none when the contract holds no action of that id with the status asked.
+   */
+  async teamActionSigners(query: wasm.ContractTeamActionSignersQuery): Promise<wasm.ContractTeamActionSigners> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractTeamActionSigners(query);
+  }
+
+  async teamActionSignersWithProof(
+    query: wasm.ContractTeamActionSignersQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractTeamActionSigners>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractTeamActionSignersWithProofInfo(query);
   }
 
   /**

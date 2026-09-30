@@ -1,6 +1,6 @@
 use crate::drive::contract::moderation::types::{
     document_removal_encoded_size, estimated_document_removal_kept_fields_size,
-    CONTRACT_DOCUMENT_RESTORATION_SIZE,
+    ContractTeamActionWrite, CONTRACT_DOCUMENT_RESTORATION_SIZE,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -8,8 +8,7 @@ use crate::state_transition_action::action_convert_to_operations::DriveHighLevel
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
     ContractDocumentRemovalRecordContext, ContractDocumentRestorationContext,
-    ContractSettledDeletionContext, ContractUserModerationTransitionActionV0,
-    ContractWarningContext,
+    ContractTeamActionContext, ContractUserModerationTransitionActionV0, ContractWarningContext,
 };
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use crate::util::batch::DriveOperation::{
@@ -24,7 +23,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractModerationReason, ContractWarning,
+    ContractDocumentRemoval, ContractModerationReason, ContractTeamActionEvent, ContractWarning,
 };
 use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
@@ -57,7 +56,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         document_deletion,
                         document_restoration,
                         document_change,
-                        settled_deletion,
+                        team_action,
                         moderation_action_count,
                         ..
                     },
@@ -179,45 +178,64 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             platform_version,
                         )?;
                     }
-                    ContractUserModerationAction::DeleteSettledDocument {
-                        document_type_name,
-                        document_id,
-                        reason,
-                    } => {
-                        let ContractSettledDeletionContext {
-                            settled_deletion,
-                            replaces_existing,
+                    ContractUserModerationAction::DeleteSettledDocument { .. }
+                    | ContractUserModerationAction::ApproveTeamAction { .. } => {
+                        let ContractTeamActionContext {
+                            action_id,
+                            write,
                             deletion,
                             approver_action_counts,
-                        } =
-                            settled_deletion
-                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "an approval of a settled document's deletion must carry what its \
-                                 validation read",
-                            )))?;
-                        // The approval that meets the rule deletes the document as a
-                        // moderator's deletion does, then the approvals are written, marked with
-                        // the deletion, and every approver is counted.
-                        if let Some(deletion) = deletion {
-                            push_document_deletion_operations(
-                                &mut operations,
-                                contract_id,
-                                moderator_id,
-                                document_type_name.clone(),
-                                document_id,
-                                reason,
-                                deletion,
-                                platform_version,
-                            )?;
+                        } = team_action.ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "a team action's proposal or approval must carry what its validation \
+                             read",
+                        )))?;
+                        // The signature that meets the rule runs the action, deleting the
+                        // document its event names as a moderator's deletion does, for its
+                        // reason, then the approval is written, the action closed, and every
+                        // approver counted. The deletion comes with a closing write and only
+                        // with one.
+                        let closing_action = match &write {
+                            ContractTeamActionWrite::Propose {
+                                action,
+                                closes: true,
+                            }
+                            | ContractTeamActionWrite::Close { action, .. } => Some(action),
+                            ContractTeamActionWrite::Propose { closes: false, .. }
+                            | ContractTeamActionWrite::Approve { .. } => None,
+                        };
+                        match (closing_action, deletion) {
+                            (Some(action), Some(context)) => {
+                                let ContractTeamActionEvent::DeleteSettledDocument {
+                                    document_type_name,
+                                    document_id,
+                                    reason,
+                                    ..
+                                } = &action.event;
+                                push_document_deletion_operations(
+                                    &mut operations,
+                                    contract_id,
+                                    moderator_id,
+                                    document_type_name.clone(),
+                                    *document_id,
+                                    reason.clone(),
+                                    context,
+                                    platform_version,
+                                )?;
+                            }
+                            (None, None) => {}
+                            _ => {
+                                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "a team action's deletion must come with the signature that \
+                                     closes the action, and only with it",
+                                )))
+                            }
                         }
                         operations.push(ContractModerationOperation(
-                            ContractModerationOperationType::AddSettledDeletion {
+                            ContractModerationOperationType::AddTeamActionSignature {
                                 contract_id,
-                                document_type_name,
-                                document_id,
-                                settled_deletion,
-                                replaces_existing,
-                                moderator_id,
+                                action_id,
+                                signer_id: moderator_id,
+                                write,
                             },
                         ));
                         for (identity_id, count) in approver_action_counts {
@@ -459,7 +477,7 @@ mod tests {
             document_deletion: None,
             document_restoration: None,
             document_change: None,
-            settled_deletion: None,
+            team_action: None,
             moderation_action_count: None,
             user_fee_increase: 0,
         })
@@ -615,60 +633,92 @@ mod tests {
     }
 
     #[test]
-    fn should_write_the_approvals_alone_while_they_fall_short() {
+    fn should_write_the_approval_alone_while_the_action_stays_active() {
         let platform_version = PlatformVersion::latest();
         let epoch = Epoch::new(0).expect("epoch");
-        let document_id = Identifier::from([0xDD; 32]);
-        let reason = ContractModerationReason::from_text("doxxing");
-        let settled_deletion = dpp::data_contract::config::moderation::ContractSettledDeletion {
-            proposed_at: 5,
-            document_last_modified_at: 1,
-            document_revision: Some(1),
-            reason: reason.clone(),
-            approvals: vec![Identifier::from([0xAA; 32])],
-            deleted_at: None,
-        };
+        let action_id = Identifier::from([0xDD; 32]);
         let approval = || {
             action(
-                ContractUserModerationAction::DeleteSettledDocument {
-                    document_type_name: "post".to_string(),
-                    document_id,
-                    reason: reason.clone(),
-                },
+                ContractUserModerationAction::ApproveTeamAction { action_id },
                 false,
             )
         };
 
         let mut pending = approval();
         let ContractUserModerationTransitionAction::V0(v0) = &mut pending;
-        v0.settled_deletion = Some(ContractSettledDeletionContext {
-            settled_deletion: settled_deletion.clone(),
-            replaces_existing: true,
+        v0.team_action = Some(ContractTeamActionContext {
+            action_id,
+            write: ContractTeamActionWrite::Approve {
+                dropped_signers: vec![],
+            },
             deletion: None,
             approver_action_counts: vec![],
         });
         let ops = pending
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("operations");
-        // The nonce, then the approvals: no deletion and no count while they fall short.
+        // The nonce, then the approval: no deletion and no count while the action stays active.
         assert_eq!(ops.len(), 2);
         assert!(matches!(
             &ops[1],
-            ContractModerationOperation(ContractModerationOperationType::AddSettledDeletion {
-                document_id: id,
-                settled_deletion: written,
-                replaces_existing: true,
-                moderator_id,
+            ContractModerationOperation(ContractModerationOperationType::AddTeamActionSignature {
+                action_id: id,
+                signer_id,
+                write: ContractTeamActionWrite::Approve { dropped_signers },
                 ..
-            }) if *id == document_id
-                && *written == settled_deletion
-                && *moderator_id == Identifier::from([0xAA; 32])
+            }) if *id == action_id && dropped_signers.is_empty() && *signer_id == Identifier::from([0xAA; 32])
         ));
 
-        // An approval that lost what its validation read can not write the approvals.
+        // An approval that lost what its validation read can not write the approval.
         assert!(approval()
             .into_high_level_drive_operations(&epoch, platform_version)
             .is_err());
+    }
+
+    #[test]
+    fn should_refuse_a_closing_write_without_the_deletion_it_runs() {
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).expect("epoch");
+        let action_id = Identifier::from([0xDD; 32]);
+        let proposed = dpp::data_contract::config::moderation::ContractTeamAction {
+            proposer_id: Identifier::from([0xAA; 32]),
+            proposed_at: 5,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from([0xEE; 32]),
+                document_last_modified_at: 1,
+                document_revision: Some(1),
+                reason: ContractModerationReason::from_text("doxxing"),
+            },
+        };
+        // A write that closes the action runs its deletion: without one, the action would close
+        // and prove as run while the document stays
+        for write in [
+            ContractTeamActionWrite::Propose {
+                action: proposed.clone(),
+                closes: true,
+            },
+            ContractTeamActionWrite::Close {
+                action: proposed.clone(),
+                earlier_signers: vec![],
+                dropped_signers: vec![],
+            },
+        ] {
+            let mut closing = action(
+                ContractUserModerationAction::ApproveTeamAction { action_id },
+                false,
+            );
+            let ContractUserModerationTransitionAction::V0(v0) = &mut closing;
+            v0.team_action = Some(ContractTeamActionContext {
+                action_id,
+                write,
+                deletion: None,
+                approver_action_counts: vec![],
+            });
+            assert!(closing
+                .into_high_level_drive_operations(&epoch, platform_version)
+                .is_err());
+        }
     }
 
     #[test]

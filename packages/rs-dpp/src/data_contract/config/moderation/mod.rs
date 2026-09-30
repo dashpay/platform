@@ -48,7 +48,7 @@ pub use elected::{
     ElectedModerators, InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
 };
 pub use reason::{ContractModerationDocument, ContractModerationReason};
-pub use settled_deletion::{ContractSettledDeletion, SettledDeletionRule};
+pub use settled_deletion::{ContractTeamAction, ContractTeamActionEvent, SettledDeletionRule};
 
 /// The `moderatorAbilities` object of a raw document type schema, `None` when it has none
 /// or it is not an object.

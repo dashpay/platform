@@ -14,8 +14,9 @@ use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierA
 use crate::consensus::state::contract_moderation::{
     ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
     ContractModerationTeamNotSeatedError, DocumentNotSettledError,
-    DocumentTypeNotDeletableOnceSettledError, SettledDeletionAlreadyApprovedError,
-    SettledDeletionNotRestorableError, SettledDeletionReasonMismatchError,
+    ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
+    ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    DocumentTypeNotDeletableOnceSettledError, SettledDeletionNotRestorableError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
@@ -669,7 +670,8 @@ pub enum StateError {
     ReferencedDocumentRemovedError(ReferencedDocumentRemovedError),
 
     // The deletion of a settled document by the approvals of a seated moderation team,
-    // `moderatorAbilities.deleteSettled` (protocol version 14).
+    // `moderatorAbilities.deleteSettled`, and the team actions that carry them (protocol
+    // version 14).
     #[error(transparent)]
     DocumentTypeNotDeletableOnceSettledError(DocumentTypeNotDeletableOnceSettledError),
 
@@ -680,13 +682,19 @@ pub enum StateError {
     DocumentNotSettledError(DocumentNotSettledError),
 
     #[error(transparent)]
-    SettledDeletionReasonMismatchError(SettledDeletionReasonMismatchError),
+    ContractTeamActionDoesNotExistError(ContractTeamActionDoesNotExistError),
 
     #[error(transparent)]
-    SettledDeletionAlreadyApprovedError(SettledDeletionAlreadyApprovedError),
+    ContractTeamActionAlreadySignedError(ContractTeamActionAlreadySignedError),
 
     #[error(transparent)]
     SettledDeletionNotRestorableError(SettledDeletionNotRestorableError),
+
+    #[error(transparent)]
+    ContractTeamActionAlreadyCompletedError(ContractTeamActionAlreadyCompletedError),
+
+    #[error(transparent)]
+    ContractTeamActionDocumentChangedError(ContractTeamActionDocumentChangedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1476,14 +1484,14 @@ mod tests {
             161
         );
         assert_eq!(
-            discriminant_of(StateError::SettledDeletionReasonMismatchError(
-                SettledDeletionReasonMismatchError::new(group_id, identity_id, Default::default(),)
+            discriminant_of(StateError::ContractTeamActionDoesNotExistError(
+                ContractTeamActionDoesNotExistError::new(group_id, identity_id)
             )),
             162
         );
         assert_eq!(
-            discriminant_of(StateError::SettledDeletionAlreadyApprovedError(
-                SettledDeletionAlreadyApprovedError::new(group_id, identity_id, identity_id)
+            discriminant_of(StateError::ContractTeamActionAlreadySignedError(
+                ContractTeamActionAlreadySignedError::new(group_id, identity_id, identity_id)
             )),
             163
         );
@@ -1492,6 +1500,18 @@ mod tests {
                 SettledDeletionNotRestorableError::new(group_id, identity_id, 1_000)
             )),
             164
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionAlreadyCompletedError(
+                ContractTeamActionAlreadyCompletedError::new(group_id, identity_id)
+            )),
+            165
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionDocumentChangedError(
+                ContractTeamActionDocumentChangedError::new(group_id, identity_id, identity_id)
+            )),
+            166
         );
     }
 }

@@ -85,10 +85,8 @@ use crate::version::system_limits::SystemLimits;
 ///   `moderatorAbilities.deleteSettled` requires at most as many approvals as the declared team
 ///   holds, its leader, the 15 members a charter elects (`max_moderation_charter_elected_members`,
 ///   the charters contract's `electedCharter.members` `maxItems`) and the declaration's
-///   `maxAddedModerators`, and the approvals of one deletion hold for a week after the first
-///   (`contract_settled_deletion_approval_window_ms`). Both joined this table in place while
-///   protocol version 14 was unreleased, and were backfilled into the earlier tables, whose
-///   parsers and validations never read them.
+///   `maxAddedModerators`. It joined this table in place while protocol version 14 was
+///   unreleased, and was backfilled into the earlier tables, whose parsers never read it.
 /// * Contested documents (protocol version 14): a contest accepts at most 1,000 contenders
 ///   (`max_contenders_per_contest`, backfilled into the earlier tables, whose validation never
 ///   reads it). The end of a poll within the cap tallies and cleans up every contender in one
@@ -136,7 +134,6 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     contract_document_restore_window_ms: 604_800_000,                // 7 days
     max_contract_moderation_added_moderators: 15,
     max_moderation_charter_elected_members: 15,
-    contract_settled_deletion_approval_window_ms: 604_800_000, // 7 days
     max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,
     max_evonode_reward_claim_epochs: 100,

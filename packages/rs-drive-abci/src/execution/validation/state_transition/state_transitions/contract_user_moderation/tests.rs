@@ -1495,19 +1495,39 @@ async fn should_fix_the_lists_a_contract_keeps_when_it_is_created() {
     );
 }
 
+/// A contract none of whose document types lets a seated team delete its settled documents keeps
+/// no team actions: an approval names none (41207), refused before the moderators are read.
+#[tokio::test]
+async fn should_refuse_an_approval_on_a_contract_without_team_actions() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let approval = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::ApproveTeamAction {
+                action_id: Identifier::new([0x44; 32]),
+            },
+        )
+        .await;
+    assert_paid_with_code(&setup.process(&approval, &transaction), 41207);
+}
+
 #[tokio::test]
 async fn should_not_be_active_before_protocol_version_14() {
     let platform_version = PlatformVersion::get(13).expect("protocol version 13");
     let setup = Setup::new_at(None, platform_version).await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    // An approval of a settled document's deletion among them: the shipped prover and verifier
-    // v0 have its arms, which no transition of an earlier protocol version reaches.
+    // A team action's proposal and approval among them: the shipped prover and verifier v0
+    // have their arms, which no transition of an earlier protocol version reaches.
     for action in [
         ban_action(setup.user.id()),
         ContractUserModerationAction::DeleteSettledDocument {
             document_type_name: POST.to_string(),
             document_id: Identifier::new([0x66; 32]),
             reason: ContractModerationReason::from_text("doxxing"),
+        },
+        ContractUserModerationAction::ApproveTeamAction {
+            action_id: Identifier::new([0x67; 32]),
         },
     ] {
         let moderation = setup.moderate(&setup.owner, action).await;

@@ -15,6 +15,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
     ContractModerationReason, ContractWarning, decode_kept_fields,
 };
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::platform_value::string_encoding::{Encoding, encode};
 use js_sys::{BigInt, Map};
 use std::collections::BTreeMap;
@@ -519,90 +520,52 @@ impl_wasm_type_info!(
     VerifiedContractDocumentRemoval
 );
 
-/// `VerifiedContractSettledDeletion` proof-result wrapper: the approvals the contract keeps of
-/// the deletion of a settled document, as an approval by a member of its seated moderation team
-/// leaves them. They hold the signer among `approvals` and its reason, which every approval of
-/// one deletion repeats. While they fall short of the document type's rule the document stays
-/// and `deletedAt` is undefined; the approval that meets the rule deletes the document and sets
-/// `deletedAt`.
-#[wasm_bindgen(js_name = "VerifiedContractSettledDeletion")]
+/// `VerifiedContractTeamActionSignature` proof-result wrapper: a team action of an elected
+/// contract's seated moderation team, as the proof of one member's proposal or approval of it
+/// shows it. The proof finds the signer's approval under the action, whose id the verifier
+/// rebuilds from the transition: for the proposal of a settled document's deletion, the id
+/// computed from its contract, signer, nonce, document and reason, which the other members
+/// approve; for an approval, the id it carries. `status` is `'active'` while the approvals fall
+/// short of the rule, and `'closed'` once they met it and the action ran, by this approval or a
+/// later one: the document is deleted.
+#[wasm_bindgen(js_name = "VerifiedContractTeamActionSignature")]
 #[derive(Clone)]
-pub struct VerifiedContractSettledDeletionWasm {
+pub struct VerifiedContractTeamActionSignatureWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
     pub contract_id: IdentifierWasm,
-    #[wasm_bindgen(getter_with_clone, js_name = "documentTypeName")]
-    pub document_type_name: String,
-    #[wasm_bindgen(getter_with_clone, js_name = "documentId")]
-    pub document_id: IdentifierWasm,
-    /// The time of the block of the first approval, in milliseconds
-    #[wasm_bindgen(js_name = "proposedAt")]
-    pub proposed_at: u64,
-    /// The document's `$updatedAt` (or `$createdAt`) when the first approval was given, in
-    /// milliseconds: the approvals are of the document as it was then
-    #[wasm_bindgen(js_name = "documentLastModifiedAt")]
-    pub document_last_modified_at: u64,
-    /// The document's `$revision` when the first approval was given, undefined on a type whose
-    /// documents carry none: any change of the document since closes the approvals
-    #[wasm_bindgen(js_name = "documentRevision")]
-    pub document_revision: Option<u64>,
+    /// The team action proposed or approved
+    #[wasm_bindgen(getter_with_clone, js_name = "actionId")]
+    pub action_id: IdentifierWasm,
     #[wasm_bindgen(skip)]
-    pub reason: ContractModerationReason,
-    /// The members of the seated team that approved, in the order they did, each still on the
-    /// team when the last approval was given
-    #[wasm_bindgen(getter_with_clone)]
-    pub approvals: Vec<IdentifierWasm>,
-    /// The time of the block whose approval met the rule and deleted the document, in
-    /// milliseconds, undefined while the approvals fall short
-    #[wasm_bindgen(js_name = "deletedAt")]
-    pub deleted_at: Option<u64>,
+    pub status: GroupActionStatus,
 }
 
-#[wasm_bindgen(js_class = VerifiedContractSettledDeletion)]
-impl VerifiedContractSettledDeletionWasm {
-    /// Why, as the first approval gave it and every later one repeated it
-    #[wasm_bindgen(getter = "reason")]
-    pub fn reason(&self) -> ContractModerationReasonJs {
-        moderation_reason_to_js(&self.reason).into()
+/// A team action's status as JavaScript reads it: `'active'` while its approvals fall short of
+/// its rule, `'closed'` once they met it and it ran.
+pub fn team_action_status_to_str(status: GroupActionStatus) -> &'static str {
+    match status {
+        GroupActionStatus::ActionActive => "active",
+        GroupActionStatus::ActionClosed => "closed",
+    }
+}
+
+#[wasm_bindgen(js_class = VerifiedContractTeamActionSignature)]
+impl VerifiedContractTeamActionSignatureWasm {
+    /// `'active'` while the approvals fall short of the rule, `'closed'` once they met it and
+    /// the action ran
+    #[wasm_bindgen(getter = "status", unchecked_return_type = "'active' | 'closed'")]
+    pub fn status(&self) -> String {
+        team_action_status_to_str(self.status).to_string()
     }
 
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
         Ok(js_obj(&[
             ("contractId", self.contract_id.into()),
+            ("actionId", self.action_id.into()),
             (
-                "documentTypeName",
-                JsValue::from_str(&self.document_type_name),
-            ),
-            ("documentId", self.document_id.into()),
-            (
-                "proposedAt",
-                JsValue::from(js_sys::BigInt::from(self.proposed_at)),
-            ),
-            (
-                "documentLastModifiedAt",
-                JsValue::from(js_sys::BigInt::from(self.document_last_modified_at)),
-            ),
-            (
-                "documentRevision",
-                self.document_revision
-                    .map_or(JsValue::UNDEFINED, |revision| {
-                        JsValue::from(js_sys::BigInt::from(revision))
-                    }),
-            ),
-            ("reason", moderation_reason_to_js(&self.reason)),
-            (
-                "approvals",
-                self.approvals
-                    .iter()
-                    .map(|approver| JsValue::from(*approver))
-                    .collect::<js_sys::Array>()
-                    .into(),
-            ),
-            (
-                "deletedAt",
-                self.deleted_at.map_or(JsValue::UNDEFINED, |deleted_at| {
-                    JsValue::from(js_sys::BigInt::from(deleted_at))
-                }),
+                "status",
+                JsValue::from_str(team_action_status_to_str(self.status)),
             ),
         ]))
     }
@@ -614,47 +577,16 @@ impl VerifiedContractSettledDeletionWasm {
                 "contractId",
                 JsValue::from_str(&self.contract_id.to_base58()),
             ),
+            ("actionId", JsValue::from_str(&self.action_id.to_base58())),
             (
-                "documentTypeName",
-                JsValue::from_str(&self.document_type_name),
-            ),
-            (
-                "documentId",
-                JsValue::from_str(&self.document_id.to_base58()),
-            ),
-            // A block time in milliseconds stays exact as a JavaScript number.
-            ("proposedAt", JsValue::from_f64(self.proposed_at as f64)),
-            (
-                "documentLastModifiedAt",
-                JsValue::from_f64(self.document_last_modified_at as f64),
-            ),
-            (
-                "documentRevision",
-                self.document_revision
-                    .map_or(JsValue::UNDEFINED, |revision| {
-                        JsValue::from_f64(revision as f64)
-                    }),
-            ),
-            ("reason", moderation_reason_to_js(&self.reason)),
-            (
-                "approvals",
-                self.approvals
-                    .iter()
-                    .map(|approver| JsValue::from_str(&approver.to_base58()))
-                    .collect::<js_sys::Array>()
-                    .into(),
-            ),
-            (
-                "deletedAt",
-                self.deleted_at.map_or(JsValue::UNDEFINED, |deleted_at| {
-                    JsValue::from_f64(deleted_at as f64)
-                }),
+                "status",
+                JsValue::from_str(team_action_status_to_str(self.status)),
             ),
         ]))
     }
 }
 
 impl_wasm_type_info!(
-    VerifiedContractSettledDeletionWasm,
-    VerifiedContractSettledDeletion
+    VerifiedContractTeamActionSignatureWasm,
+    VerifiedContractTeamActionSignature
 );

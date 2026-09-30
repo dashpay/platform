@@ -314,7 +314,12 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V0: DriveAbciQueryVersions = DriveAbciQueryV
             max_version: 0,
             default_current_version: 0,
         },
-        contract_settled_deletions: FeatureVersionBounds {
+        contract_team_actions: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_team_action_signers: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

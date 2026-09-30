@@ -28,6 +28,7 @@ use crate::state_transition::contract_user_moderation_transition::v0::ContractUs
 use crate::state_transition::StateTransitionFieldTypes;
 use fields::*;
 
+use crate::data_contract::config::moderation::ContractTeamAction;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -35,6 +36,7 @@ use derive_more::From;
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -91,6 +93,34 @@ impl ContractUserModerationTransition {
                 known_versions: vec![0],
                 received: version,
             }),
+        }
+    }
+}
+
+impl ContractUserModerationTransition {
+    /// The team action this transition proposes or approves, by its id: for the proposal of a
+    /// settled document's deletion, the id computed from its contract, its signer, its nonce,
+    /// the document and the reason
+    /// ([`ContractTeamAction::settled_deletion_action_id`](crate::data_contract::config::moderation::ContractTeamAction::settled_deletion_action_id)),
+    /// and for an approval, the id it carries. `None` for every other action.
+    pub fn team_action_id(&self) -> Option<Identifier> {
+        match self {
+            ContractUserModerationTransition::V0(v0) => match &v0.action {
+                ContractUserModerationAction::DeleteSettledDocument {
+                    document_type_name,
+                    document_id,
+                    reason,
+                } => Some(ContractTeamAction::settled_deletion_action_id(
+                    v0.data_contract_id,
+                    v0.owner_id,
+                    v0.identity_contract_nonce,
+                    document_type_name,
+                    *document_id,
+                    reason,
+                )),
+                ContractUserModerationAction::ApproveTeamAction { action_id } => Some(*action_id),
+                _ => None,
+            },
         }
     }
 }
@@ -179,6 +209,7 @@ mod test {
                 document_id: target,
                 reason: ContractModerationReason::from_text("doxxing"),
             },
+            ContractUserModerationAction::ApproveTeamAction { action_id: target },
         ] {
             let mut t = make();
             t.set_action(action);

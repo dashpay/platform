@@ -348,13 +348,22 @@ impl_transport_request_grpc!(
     get_contract_document_removals
 );
 
-// rpc getContractSettledDeletions(GetContractSettledDeletionsRequest) returns (GetContractSettledDeletionsResponse);
+// rpc getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse);
 impl_transport_request_grpc!(
-    platform_proto::GetContractSettledDeletionsRequest,
-    platform_proto::GetContractSettledDeletionsResponse,
+    platform_proto::GetContractTeamActionsRequest,
+    platform_proto::GetContractTeamActionsResponse,
     PlatformGrpcClient,
     RequestSettings::default(),
-    get_contract_settled_deletions
+    get_contract_team_actions
+);
+
+// rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractTeamActionSignersRequest,
+    platform_proto::GetContractTeamActionSignersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_team_action_signers
 );
 
 // rpc getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse);

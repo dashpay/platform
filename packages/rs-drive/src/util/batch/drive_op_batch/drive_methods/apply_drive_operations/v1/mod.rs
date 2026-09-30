@@ -43,16 +43,16 @@ impl Drive {
     /// own bytes, and those of any index subtree the deletion empties, whoever paid for them
     /// (an earlier author's document may have created it). The bytes still leave the system,
     /// but nobody gets them back, and the credits stay in the storage pools they were
-    /// distributed to. When the batch also rewrites a moderation record
-    /// ([`DriveOperation::rewrites_moderation_record`]: a restored removal record, the
-    /// approvals of a settled deletion), which may shrink and free bytes its payer is owed, the
-    /// document operations are applied as a GroveDB batch of their own, after the rest and in
-    /// the same transaction, and only that batch forfeits: the moderator who paid for a record
-    /// keeps the refund of the bytes a shorter one frees. Otherwise nothing but the document
-    /// operations frees bytes (a fresh record is an insert, the nonce and the counts keep their
-    /// size), and the batch is applied as one, forfeiting whole. An estimate carries no refund
-    /// to begin with and prices the batch as it is applied: one GroveDB batch, or two when a
-    /// forfeiting deletion rewrites a moderation record.
+    /// distributed to. When the batch also frees moderation storage someone is owed
+    /// ([`DriveOperation::refunds_moderation_storage`]: a restored removal record replaced,
+    /// which may shrink, or the approvals and the info of a team action its closing approval
+    /// moves), the document operations are applied as a GroveDB batch of their own, after the
+    /// rest and in the same transaction, and only that batch forfeits: the moderators who paid
+    /// for those keep their refunds. Otherwise nothing but the document operations frees bytes
+    /// (a fresh record or approval is an insert, the nonce and the counts keep their size), and
+    /// the batch is applied as one, forfeiting whole. An estimate carries no refund to begin
+    /// with and prices the batch as it is applied: one GroveDB batch, or two when a forfeiting
+    /// deletion also frees moderation storage.
     ///
     /// Every write of one identity balance, one contract fee pot or one prefunded specialized
     /// balance is also merged into one ([`DriveOperation::merge_balance_writes`]): each
@@ -100,7 +100,7 @@ impl Drive {
         let separates_forfeited_operations = forfeits_storage_refunds
             && operations
                 .iter()
-                .any(DriveOperation::rewrites_moderation_record);
+                .any(DriveOperation::refunds_moderation_storage);
         // With no caller transaction, TTL preparation (direct drainage
         // writes), conversion reads, and the batch apply would each commit
         // on their own, so a conversion error after preparation would leave

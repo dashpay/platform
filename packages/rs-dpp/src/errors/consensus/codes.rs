@@ -508,9 +508,11 @@ impl ErrorWithCode for StateError {
             Self::DocumentTypeNotDeletableOnceSettledError(_) => 41204,
             Self::ContractModerationTeamNotSeatedError(_) => 41205,
             Self::DocumentNotSettledError(_) => 41206,
-            Self::SettledDeletionReasonMismatchError(_) => 41207,
-            Self::SettledDeletionAlreadyApprovedError(_) => 41208,
+            Self::ContractTeamActionDoesNotExistError(_) => 41207,
+            Self::ContractTeamActionAlreadySignedError(_) => 41208,
             Self::SettledDeletionNotRestorableError(_) => 41209,
+            Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
+            Self::ContractTeamActionDocumentChangedError(_) => 41211,
         }
     }
 }

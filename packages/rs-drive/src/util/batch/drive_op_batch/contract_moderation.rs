@@ -1,10 +1,11 @@
+use crate::drive::contract::moderation::types::ContractTeamActionWrite;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractModerationReason, ContractSettledDeletion, ContractWarning,
+    ContractDocumentRemoval, ContractModerationReason, ContractWarning,
 };
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
@@ -15,7 +16,7 @@ use std::collections::HashMap;
 
 /// Operations on a moderated contract's banlist, suspension list, warning list, document
 /// removal records and, for an elected contract, its team's moderation action counts and the
-/// approvals it gives the deletion of settled documents.
+/// actions it votes on.
 #[derive(Clone, Debug)]
 pub enum ContractModerationOperationType {
     /// Puts an identity on the banlist.
@@ -109,32 +110,28 @@ pub enum ContractModerationOperationType {
         /// restored it.
         moderator_id: Identifier,
     },
-    /// Writes the approvals a seated moderation team gave the deletion of a settled document: a
-    /// fresh record, or the replacement of the one the document has, which every approval
-    /// rewrites.
-    AddSettledDeletion {
-        /// The moderated contract.
+    /// Writes a seated moderation team member's proposal or approval of one of the contract's
+    /// team actions, closing the action when it meets its rule: see
+    /// `Drive::add_contract_team_action_signature_operations`.
+    AddTeamActionSignature {
+        /// The contract whose seated team votes on the action.
         contract_id: Identifier,
-        /// The document's type.
-        document_type_name: String,
-        /// The document's id.
-        document_id: Identifier,
-        /// The approvals, their reason and times, and the deletion if they met the rule.
-        settled_deletion: ContractSettledDeletion,
-        /// Whether the document already has a record, which is then replaced.
-        replaces_existing: bool,
-        /// The identity that pays for the record, or for the bytes a replacement adds, and
-        /// receives its refund: the moderator whose approval writes it.
-        moderator_id: Identifier,
+        /// The action.
+        action_id: Identifier,
+        /// The member that proposes or approves, who pays for what it adds.
+        signer_id: Identifier,
+        /// What the signature writes: a proposal, an approval, or the closing approval.
+        write: ContractTeamActionWrite,
     },
     /// Writes nothing: marks the batch it is in as one whose document operations' storage
     /// removals refund nobody (`Drive::apply_drive_operations` generation 1, which applies them
-    /// as a GroveDB batch of their own when the batch also rewrites a moderation record). A
+    /// as a GroveDB batch of their own when the batch also frees moderation storage someone is
+    /// owed). A
     /// moderator's document deletion carries it, so whoever paid for the deleted document, its
     /// owner or an earlier one, gets no storage refund, and nor does whoever created an index
     /// subtree the deletion empties, unless the document's type refunds the owner
-    /// (`moderatorAbilities.deleteRefundsOwner`); the moderation records the deletion rewrites
-    /// refund as ever.
+    /// (`moderatorAbilities.deleteRefundsOwner`); the removal record the deletion replaces and
+    /// the team action approvals it moves refund as ever.
     ForfeitStorageRefunds,
     /// Writes a seated moderation team member's count of moderation actions on an elected
     /// contract since the moderators pot was last settled.
@@ -273,20 +270,16 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 transaction,
                 platform_version,
             ),
-            ContractModerationOperationType::AddSettledDeletion {
+            ContractModerationOperationType::AddTeamActionSignature {
                 contract_id,
-                document_type_name,
-                document_id,
-                settled_deletion,
-                replaces_existing,
-                moderator_id,
-            } => drive.add_contract_settled_deletion_operations(
+                action_id,
+                signer_id,
+                write,
+            } => drive.add_contract_team_action_signature_operations(
                 contract_id,
-                &document_type_name,
-                document_id,
-                &settled_deletion,
-                replaces_existing,
-                moderator_id,
+                action_id,
+                signer_id,
+                &write,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

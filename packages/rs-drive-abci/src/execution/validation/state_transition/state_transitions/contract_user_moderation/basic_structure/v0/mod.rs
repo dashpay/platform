@@ -23,7 +23,7 @@ impl ContractUserModerationStateTransitionStructureValidationV0
 {
     /// An identity can not moderate itself, a suspension ends within the JSON-safe range, the
     /// text of the reason a ban, a suspension, a warning, a document deletion, a field change or
-    /// the approval of a settled document's deletion carries fits `SystemLimits::max_contract_moderation_reason_length` (the reason's code is
+    /// the proposal of a settled document's deletion carries fits `SystemLimits::max_contract_moderation_reason_length` (the reason's code is
     /// not checked), and a field change names at least one field, none of them a system
     /// property. A document deletion or field change names a document, not an identity: whose
     /// it is, and so whether the moderator may act on it, is only known once the state is read.

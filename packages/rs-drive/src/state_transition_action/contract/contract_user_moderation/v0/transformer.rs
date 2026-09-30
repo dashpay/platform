@@ -1,6 +1,6 @@
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
-    ContractDocumentRestorationContext, ContractSettledDeletionContext,
+    ContractDocumentRestorationContext, ContractTeamActionContext,
     ContractUserModerationTransitionActionV0, ContractWarningContext,
 };
 use dpp::data_contract::config::moderation::ContractModerationStatus;
@@ -40,7 +40,7 @@ impl ContractUserModerationTransitionActionV0 {
             document_deletion: None,
             document_restoration: None,
             document_change: None,
-            settled_deletion: None,
+            team_action: None,
             moderation_action_count: None,
             user_fee_increase: *user_fee_increase,
         }
@@ -91,19 +91,19 @@ impl ContractUserModerationTransitionActionV0 {
         action
     }
 
-    /// The action of a borrowed transition that approves the deletion of a settled document,
-    /// carrying what the validation read and decided: the approvals to store, and the deletion
-    /// when they meet the rule
-    pub fn from_borrowed_transition_with_settled_deletion(
+    /// The action of a borrowed transition that proposes the deletion of a settled document or
+    /// approves a team action, carrying what the validation read and decided: the approval to
+    /// store, and the deletion when the approvals meet the rule
+    pub fn from_borrowed_transition_with_team_action(
         value: &ContractUserModerationTransitionV0,
-        settled_deletion: ContractSettledDeletionContext,
+        team_action: ContractTeamActionContext,
     ) -> Self {
         let mut action = Self::from_borrowed_transition_with_status(
             value,
             &ContractModerationStatus::default(),
             0,
         );
-        action.settled_deletion = Some(settled_deletion);
+        action.team_action = Some(team_action);
         action
     }
 }

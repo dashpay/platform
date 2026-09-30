@@ -180,20 +180,14 @@ impl Drive {
                 )?;
             }
 
-            // The approvals of the deletions of settled documents, in the same shape: one tree
-            // per document type that says who must approve them, and their common tree only
-            // when there is one. Only here: such a type needs the elected declaration, fixed at
-            // creation, to give its team `deleteDocuments` on it, so no update can add one.
-            let settled_document_type_names: Vec<&str> = contract
-                .document_types()
-                .values()
-                .filter(|document_type| document_type.moderator_settled_deletion().is_some())
-                .map(|document_type| document_type.name().as_str())
-                .collect();
-            if !settled_document_type_names.is_empty() {
-                self.insert_contract_settled_deletion_trees_operations(
+            // The actions the seated team votes on, the deletions of settled documents among
+            // them: their tree, with the active and the closed actions under it, only when a
+            // document type sets `deleteSettled`. Only here: such a type needs the elected
+            // declaration, fixed at creation, to give its team `deleteDocuments` on it, so no
+            // update can add one.
+            if contract.keeps_team_actions() {
+                self.insert_contract_team_action_trees_operations(
                     contract.id().to_buffer(),
-                    &settled_document_type_names,
                     storage_flags.as_ref(),
                     estimated_costs_only_with_layer_info,
                     transaction,

@@ -42,9 +42,9 @@ export interface ContractModerationDocument {
 
 /**
  * Why a moderator banned, suspended or warned an identity, or deleted a document. Every ban,
- * every suspension, every warning, every document deletion and every approval of a settled
+ * every suspension, every warning, every document deletion and every proposal of a settled
  * document's deletion carries one, and it is stored with the entry, the removal record or the
- * approvals. Nothing checks what a moderator writes, and the documents a reason cites are not
+ * team action. Nothing checks what a moderator writes, and the documents a reason cites are not
  * looked up, except the reason document a seated elected team names, which its proposal must
  * list.
  */
@@ -65,7 +65,7 @@ export interface ContractModerationReason {
     /**
      * The `reason` document of the moderation charters contract the action is taken on, as a
      * base58 string. A seated elected team's ban, suspension, warning, document deletion or
-     * approval of a settled document's deletion must name one its proposal lists; for every
+     * proposal of a settled document's deletion must name one its proposal lists; for every
      * other moderator it is stored as written. A reason read back carries it only when there
      * is one.
      */
@@ -94,15 +94,17 @@ export type ContractUserModerationActionJSON =
   | { $type: "deleteDocument"; documentTypeName: string; documentId: string; reason: ContractModerationReason }
   | { $type: "restoreDocument"; documentTypeName: string; document: string }
   | { $type: "changeDocumentFields"; documentTypeName: string; documentId: string; fields: Record<string, unknown>; reason: ContractModerationReason }
-  | { $type: "deleteSettledDocument"; documentTypeName: string; documentId: string; reason: ContractModerationReason };
+  | { $type: "deleteSettledDocument"; documentTypeName: string; documentId: string; reason: ContractModerationReason }
+  | { $type: "approveTeamAction"; actionId: string };
 
 /**
  * Bans, unbans, suspends, unsuspends, warns or clears the warnings of one identity on a
  * moderated data contract, or deletes one document of a document type that sets
  * `moderatorAbilities.delete`, or restores one such document a moderator deleted, or sets the
  * fields a document type keeps for its moderators (`moderatorAbilities.changeFields`) on one of
- * its documents, or approves, as a member of the contract's seated team, the deletion of a
- * settled document of a type that sets `moderatorAbilities.deleteSettled` (protocol version 14).
+ * its documents, or proposes, as a member of the contract's seated team, the deletion of a
+ * settled document of a type that sets `moderatorAbilities.deleteSettled`, or approves a team
+ * action another member proposed (protocol version 14).
  * Signed by the contract owner or a moderator its config names, with a CRITICAL
  * authentication key, under the signer's contract-scoped nonce.
  */
@@ -114,11 +116,11 @@ export interface ContractUserModerationTransitionOptions {
     /** The signer's nonce for the contract */
     identityContractNonce: bigint;
     /** What is done */
-    action: "ban" | "unban" | "suspend" | "unsuspend" | "warn" | "clearWarnings" | "deleteDocument" | "restoreDocument" | "changeDocumentFields" | "deleteSettledDocument";
+    action: "ban" | "unban" | "suspend" | "unsuspend" | "warn" | "clearWarnings" | "deleteDocument" | "restoreDocument" | "changeDocumentFields" | "deleteSettledDocument" | "approveTeamAction";
     /**
      * The identity the action targets. Needed by every action but a deleteDocument, a
      * restoreDocument, a changeDocumentFields and a deleteSettledDocument, which name a
-     * document instead and refuse it.
+     * document instead and refuse it, and an approveTeamAction, which names a team action.
      */
     identityId?: IdentifierLike;
     /**
@@ -145,14 +147,19 @@ export interface ContractUserModerationTransitionOptions {
      * another action.
      */
     document?: Uint8Array;
+    /**
+     * For an approveTeamAction, which needs it: the team action approved, by the id its
+     * proposal returned (a deleteSettledDocument's `actionId`). Refused beside another action.
+     */
+    actionId?: IdentifierLike;
     /** For a suspend: the block time, in milliseconds, at which the suspension lapses */
     until?: bigint;
     /**
-     * Why. A ban, a suspend, a warn and a deleteSettledDocument each need one: every approval
-     * of a settled document's deletion repeats the first's reason, which names a reason
-     * document the seated team's proposal lists. A deleteDocument and a changeDocumentFields
+     * Why. A ban, a suspend, a warn and a deleteSettledDocument each need one: the proposal of
+     * a settled document's deletion names a reason document the seated team's proposal lists,
+     * and its approvals approve it for that reason. A deleteDocument and a changeDocumentFields
      * may leave it out, which stores no code and an empty text. Refused beside an unban, an
-     * unsuspend, a clearWarnings or a restoreDocument.
+     * unsuspend, a clearWarnings, a restoreDocument or an approveTeamAction.
      */
     reason?: ContractModerationReason;
     userFeeIncrease?: number;
@@ -172,6 +179,7 @@ export interface ContractUserModerationObject {
         documentId?: Uint8Array;
         document?: Uint8Array;
         fields?: Record<string, unknown>;
+        actionId?: Uint8Array;
         until?: bigint;
         reason?: ContractModerationReason;
     };
@@ -365,6 +373,8 @@ pub struct ContractUserModerationActionParts {
     pub document: Option<Vec<u8>>,
     /// The fields a changeDocumentFields sets, a `null` removing one
     pub fields: Option<BTreeMap<String, Value>>,
+    /// The team action an approveTeamAction approves
+    pub action_id: Option<Identifier>,
     /// The end of a suspend
     pub until: Option<u64>,
     /// Why: needed by a ban, a suspend, a warn and a deleteSettledDocument, optional for a
@@ -407,8 +417,9 @@ pub fn fields_from_js(value: &JsValue) -> WasmDppResult<BTreeMap<String, Value>>
 /// `until` for a suspend and `reason` for a ban, a suspend and a warn, a document type
 /// name and a document id for a deleteDocument, with or without a `reason`, a document
 /// type name and the document's bytes for a restoreDocument, a document type name, a
-/// document id and the fields for a changeDocumentFields, with or without a `reason`, and a
-/// document type name, a document id and a `reason` for a deleteSettledDocument.
+/// document id and the fields for a changeDocumentFields, with or without a `reason`, a
+/// document type name, a document id and a `reason` for a deleteSettledDocument, and an action
+/// id for an approveTeamAction.
 pub fn moderation_action_from_parts(
     action: &str,
     parts: ContractUserModerationActionParts,
@@ -419,6 +430,7 @@ pub fn moderation_action_from_parts(
         document_id,
         document,
         fields,
+        action_id,
         until,
         reason,
     } = parts;
@@ -451,16 +463,33 @@ pub fn moderation_action_from_parts(
             "`fields` is only valid for a changeDocumentFields action, not for `{action}`"
         )));
     }
-    // And for the target: a deletion and a restore name a document and every other action an
-    // identity. A target of the other kind is refused rather than dropped, or a caller that
-    // mixed the two up would sign something it did not mean. A deletion names its document by
-    // id, a restore carries it.
+    // Only an approval names a team action.
+    if action_id.is_some() && action != "approveTeamAction" {
+        return Err(WasmDppError::invalid_argument(format!(
+            "`actionId` is only valid for an approveTeamAction action, not for `{action}`"
+        )));
+    }
+    // And for the target: a deletion and a restore name a document, an approval a team action
+    // and every other action an identity. A target of another kind is refused rather than
+    // dropped, or a caller that mixed them up would sign something it did not mean. A deletion
+    // names its document by id, a restore carries it.
     match action {
         "deleteDocument" | "restoreDocument" | "changeDocumentFields" | "deleteSettledDocument" => {
             if identity_id.is_some() {
                 return Err(WasmDppError::invalid_argument(format!(
                     "`identityId` is not valid for a {action} action, which names a document"
                 )));
+            }
+        }
+        "approveTeamAction" => {
+            if identity_id.is_some()
+                || document_type_name.is_some()
+                || document_id.is_some()
+                || document.is_some()
+            {
+                return Err(WasmDppError::invalid_argument(
+                    "`identityId`, `documentTypeName`, `documentId` and `document` are not valid for an approveTeamAction action, which names a team action by `actionId`: what it does is its proposal's",
+                ));
             }
         }
         _ => {
@@ -532,13 +561,16 @@ pub fn moderation_action_from_parts(
         "deleteSettledDocument" => Ok(ContractUserModerationAction::DeleteSettledDocument {
             document_type_name: document_type_name.ok_or_else(|| needs("a `documentTypeName`"))?,
             document_id: document_id.ok_or_else(|| needs("a `documentId`"))?,
-            // Unlike a deletion's, the reason is needed: only a seated team approves, whose
-            // reason names a reason document its proposal lists, and every approval repeats
-            // the first's.
+            // Unlike a deletion's, the reason is needed: only a seated team proposes, whose
+            // reason names a reason document its proposal lists, and the approvals approve the
+            // deletion for it.
             reason: reason.ok_or_else(|| needs("a `reason`"))?,
         }),
+        "approveTeamAction" => Ok(ContractUserModerationAction::ApproveTeamAction {
+            action_id: action_id.ok_or_else(|| needs("an `actionId`"))?,
+        }),
         other => Err(WasmDppError::invalid_argument(format!(
-            "unknown moderation action `{other}`: expected ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument, restoreDocument, changeDocumentFields or deleteSettledDocument"
+            "unknown moderation action `{other}`: expected ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument, restoreDocument, changeDocumentFields, deleteSettledDocument or approveTeamAction"
         ))),
     }
 }
@@ -556,6 +588,7 @@ impl ContractUserModerationWasm {
             try_from_options_optional(&options, "identityId")?;
         let document_id: Option<IdentifierWasm> =
             try_from_options_optional(&options, "documentId")?;
+        let action_id: Option<IdentifierWasm> = try_from_options_optional(&options, "actionId")?;
         let document = {
             let value = js_sys::Reflect::get(&options, &"document".into())
                 .map_err(|_| WasmDppError::invalid_argument("failed to read `document`"))?;
@@ -582,6 +615,7 @@ impl ContractUserModerationWasm {
                 document_id: document_id.map(Into::into),
                 document,
                 fields,
+                action_id: action_id.map(Into::into),
                 until: input.until,
                 reason: input.reason.map(Into::into),
             },
@@ -712,15 +746,16 @@ impl ContractUserModerationWasm {
     }
 
     /// The action's name: ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument,
-    /// restoreDocument, changeDocumentFields or deleteSettledDocument
+    /// restoreDocument, changeDocumentFields, deleteSettledDocument or approveTeamAction
     #[wasm_bindgen(getter = "action")]
     pub fn action(&self) -> String {
         self.0.action().name().to_string()
     }
 
     /// The identity the action targets, undefined for a deleteDocument, a restoreDocument, a
-    /// changeDocumentFields and a deleteSettledDocument: they name a document, and whose it is
-    /// is only known once the document is read
+    /// changeDocumentFields and a deleteSettledDocument, which name a document whose owner is
+    /// only known once the document is read, and for an approveTeamAction, which names a team
+    /// action
     #[wasm_bindgen(getter = "identityId")]
     pub fn identity_id(&self) -> Option<IdentifierWasm> {
         self.0.target_identity_id().map(Into::into)
@@ -748,7 +783,7 @@ impl ContractUserModerationWasm {
 
     /// For a deleteDocument, the document it deletes, for a changeDocumentFields, the
     /// document it changes, and for a deleteSettledDocument, the document whose deletion it
-    /// approves
+    /// proposes
     #[wasm_bindgen(getter = "documentId")]
     pub fn document_id(&self) -> Option<IdentifierWasm> {
         let action = self.0.action();
@@ -792,6 +827,15 @@ impl ContractUserModerationWasm {
             define_own_property(&object, name, value)?;
         }
         Ok(object.into())
+    }
+
+    /// The team action the transition proposes or approves: for a deleteSettledDocument, the
+    /// id of the action it opens, computed from its contract, its owner, its nonce and the
+    /// document, which the other members of the seated team approve; for an approveTeamAction,
+    /// the action it approves. Undefined for every other action.
+    #[wasm_bindgen(getter = "actionId")]
+    pub fn action_id(&self) -> Option<IdentifierWasm> {
+        self.0.team_action_id().map(Into::into)
     }
 
     /// For a suspend, the block time in milliseconds at which the suspension lapses

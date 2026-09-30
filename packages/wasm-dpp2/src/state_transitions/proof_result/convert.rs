@@ -8,7 +8,7 @@ use super::address_funds::{
 };
 use super::data_contract::{
     VerifiedContractDocumentRemovalWasm, VerifiedContractFeeClaimWasm,
-    VerifiedContractModerationListStatusesWasm, VerifiedContractSettledDeletionWasm,
+    VerifiedContractModerationListStatusesWasm, VerifiedContractTeamActionSignatureWasm,
     VerifiedDataContractWasm,
 };
 use super::document::VerifiedDocumentsWasm;
@@ -78,7 +78,7 @@ export type StateTransitionProofResultType =
   | VerifiedContractModerationListStatuses
   | VerifiedContractFeeClaim
   | VerifiedContractDocumentRemoval
-  | VerifiedContractSettledDeletion;
+  | VerifiedContractTeamActionSignature;
 "#;
 
 #[wasm_bindgen]
@@ -423,25 +423,14 @@ pub fn convert_proof_result(
             kept_fields: removal.kept_fields,
         }
         .into(),
-        StateTransitionProofResult::VerifiedContractSettledDeletion(
+        StateTransitionProofResult::VerifiedContractTeamActionSignature(
             contract_id,
-            document_type_name,
-            document_id,
-            settled_deletion,
-        ) => VerifiedContractSettledDeletionWasm {
+            action_id,
+            status,
+        ) => VerifiedContractTeamActionSignatureWasm {
             contract_id: contract_id.into(),
-            document_type_name,
-            document_id: document_id.into(),
-            proposed_at: settled_deletion.proposed_at,
-            document_last_modified_at: settled_deletion.document_last_modified_at,
-            document_revision: settled_deletion.document_revision,
-            reason: settled_deletion.reason,
-            approvals: settled_deletion
-                .approvals
-                .into_iter()
-                .map(IdentifierWasm::from)
-                .collect(),
-            deleted_at: settled_deletion.deleted_at,
+            action_id: action_id.into(),
+            status,
         }
         .into(),
     };

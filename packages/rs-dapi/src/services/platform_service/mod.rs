@@ -441,9 +441,15 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
-        get_contract_settled_deletions,
-        dapi_grpc::platform::v0::GetContractSettledDeletionsRequest,
-        dapi_grpc::platform::v0::GetContractSettledDeletionsResponse
+        get_contract_team_actions,
+        dapi_grpc::platform::v0::GetContractTeamActionsRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionsResponse
+    );
+
+    drive_method!(
+        get_contract_team_action_signers,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersResponse
     );
 
     drive_method!(

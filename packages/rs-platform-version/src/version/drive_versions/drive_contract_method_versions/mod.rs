@@ -47,13 +47,17 @@ pub struct DriveContractModerationMethodVersions {
     /// Deletes moderation action counts: the reset at a settle of the moderators pot
     pub remove_contract_moderation_action_counts: FeatureVersion,
     pub add_estimation_costs_for_contract_moderation_action_counts: FeatureVersion,
-    /// Writes the approvals of a seated moderation team's deletion of a settled document
-    /// (`[64, id, 2, 24, type, document id]`, protocol version 14)
-    pub add_contract_settled_deletion: FeatureVersion,
-    pub fetch_contract_settled_deletions: FeatureVersion,
-    pub prove_contract_settled_deletions: FeatureVersion,
-    pub insert_contract_settled_deletion_trees: FeatureVersion,
-    pub add_estimation_costs_for_contract_settled_deletion: FeatureVersion,
+    /// Writes a seated moderation team member's proposal or approval of a team action, and
+    /// closes the action when it meets its rule (`[64, id, 2, 24]`, protocol version 14)
+    pub add_contract_team_action_signature: FeatureVersion,
+    /// Reads one team action, active or closed
+    pub fetch_contract_team_action: FeatureVersion,
+    pub fetch_contract_team_actions: FeatureVersion,
+    pub fetch_contract_team_action_signers: FeatureVersion,
+    pub prove_contract_team_actions: FeatureVersion,
+    pub prove_contract_team_action_signers: FeatureVersion,
+    pub insert_contract_team_action_trees: FeatureVersion,
+    pub add_estimation_costs_for_contract_team_action: FeatureVersion,
 }
 
 /// Drive methods for the two fee pots a contract's document action fees accumulate in

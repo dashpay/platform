@@ -25,17 +25,24 @@
 //!                                       reason)
 //! ```
 //!
-//! and the approvals a seated moderation team gives the deletion of settled documents, under
-//! key `24` (when the contract has a document type that sets `moderatorAbilities.deleteSettled`):
+//! and the actions an elected contract's seated moderation team votes on, under key `24` (when
+//! the contract has a document type that sets `moderatorAbilities.deleteSettled`), shaped like a
+//! token group's actions:
 //!
 //! ```text
-//!         [24] settled deletions
-//!         └── <document type name>            (a type that sets `moderatorAbilities.deleteSettled`)
-//!             └── <document id> -> Item(proposed at ‖ last modified at ‖ revision ‖ deleted at? ‖ approvals ‖ reason)
+//!         [24] team actions
+//!         ├── M (active)  -> <action id> -> I -> Item(action)
+//!         │                              └─ S -> SumTree(<member id> -> SumItem(1))
+//!         └── X (closed)  -> <action id> -> I, S  (moved here, without flags, when it ran)
 //! ```
 //!
-//! See [`types::encode_settled_deletion`]. Each approval pays for the bytes it adds, and nothing
-//! ever deletes a record: a closed one is replaced by the next approval of the document.
+//! See [`types::encode_contract_team_action`]. A member proposes an action, which is its own
+//! approval, and the others approve it by its id, each approval its own sum item flagged with
+//! the member that paid for it; nothing is ever rewritten. An approval that could meet the
+//! action's rule reads the team and deletes the approvals of members who left, refunding each
+//! to its member. The approval that meets the rule runs the action and moves it, with the
+//! approvals that counted, to the closed actions, refunding each to its member. An action that
+//! never gets there stays active.
 //!
 //! `removed at` is a u64 of block time in milliseconds, big-endian; the tag says whether a
 //! restoration (bit 0) and kept fields (bit 1, `moderatorAbilities.deleteKeepsFields`)
@@ -62,13 +69,11 @@ mod add_contract_ban;
 #[cfg(feature = "server")]
 mod add_contract_document_removal;
 #[cfg(feature = "server")]
-mod add_contract_settled_deletion;
-#[cfg(feature = "server")]
 mod add_contract_suspension;
 #[cfg(feature = "server")]
-mod add_contract_warning;
+mod add_contract_team_action_signature;
 #[cfg(feature = "server")]
-mod document_records;
+mod add_contract_warning;
 #[cfg(feature = "server")]
 mod estimated_costs;
 #[cfg(feature = "server")]
@@ -80,13 +85,17 @@ mod fetch_contract_moderation_entries;
 #[cfg(feature = "server")]
 mod fetch_contract_moderation_status;
 #[cfg(feature = "server")]
-mod fetch_contract_settled_deletions;
+mod fetch_contract_team_action;
+#[cfg(feature = "server")]
+mod fetch_contract_team_action_signers;
+#[cfg(feature = "server")]
+mod fetch_contract_team_actions;
 #[cfg(feature = "server")]
 mod insert_contract_document_removal_trees;
 #[cfg(feature = "server")]
 mod insert_contract_moderation_trees;
 #[cfg(feature = "server")]
-mod insert_contract_settled_deletion_trees;
+mod insert_contract_team_action_trees;
 #[cfg(feature = "server")]
 mod prove_contract_document_removals;
 #[cfg(feature = "server")]
@@ -94,7 +103,9 @@ mod prove_contract_moderation_entries;
 #[cfg(feature = "server")]
 mod prove_contract_moderation_status;
 #[cfg(feature = "server")]
-mod prove_contract_settled_deletions;
+mod prove_contract_team_action_signers;
+#[cfg(feature = "server")]
+mod prove_contract_team_actions;
 mod queries;
 #[cfg(feature = "server")]
 mod remove_contract_ban;
@@ -106,6 +117,8 @@ mod remove_contract_suspension;
 mod remove_contract_warnings;
 #[cfg(feature = "server")]
 mod set_contract_moderation_action_count;
+#[cfg(feature = "server")]
+mod team_actions;
 /// Query and result types shared by the fetch and verify sides.
 pub mod types;
 
@@ -117,7 +130,7 @@ mod action_count_tests;
 mod document_removal_tests;
 #[cfg(test)]
 #[cfg(feature = "server")]
-mod settled_deletion_tests;
+mod team_action_tests;
 #[cfg(test)]
 #[cfg(feature = "server")]
 mod tests;

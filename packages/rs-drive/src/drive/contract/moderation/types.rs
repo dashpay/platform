@@ -1,11 +1,13 @@
+use crate::drive::constants::ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE;
 use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationDocument,
-    ContractModerationList, ContractModerationReason, ContractSettledDeletion, ContractSuspension,
-    ContractWarning,
+    ContractModerationList, ContractModerationReason, ContractSuspension, ContractTeamAction,
+    ContractTeamActionEvent, ContractWarning,
 };
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::property_constraints::SystemProperty;
 use dpp::data_contract::document_type::{property_at_path, DocumentTypeRef};
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
@@ -131,89 +133,6 @@ pub fn estimated_entry_value_size(list: ContractModerationList) -> u32 {
     }
 }
 
-/// A tree of records a moderated contract keeps by document type, then document id, under its
-/// other tree: the removal records of the documents its moderators deleted, and the approvals
-/// its seated team gave the deletion of settled documents. The two are written, read, proved
-/// and estimated the same way, and selected by the same query
-/// ([`ContractDocumentRemovalsQuery`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContractDocumentRecords {
-    /// The records of the documents the contract's moderators deleted (key `16`)
-    Removals,
-    /// The approvals the contract's seated team gave the deletion of settled documents (key
-    /// `24`)
-    SettledDeletions,
-}
-
-impl ContractDocumentRecords {
-    /// What one record is called in messages
-    pub fn record_name(self) -> &'static str {
-        match self {
-            ContractDocumentRecords::Removals => "document removal",
-            ContractDocumentRecords::SettledDeletions => "settled deletion",
-        }
-    }
-}
-
-/// A record kept by document id in one of the trees of [`ContractDocumentRecords`]: how it is
-/// stored, and what a read of it returns.
-pub trait ContractDocumentRecord: Sized {
-    /// The tree the records are kept in
-    const RECORDS: ContractDocumentRecords;
-    /// A record read with the id of its document
-    type Entry;
-    /// Decodes a stored record
-    fn decode(value: &[u8]) -> Result<Self, String>;
-    /// The record read under `document_id`
-    fn into_entry(self, document_id: Identifier) -> Self::Entry;
-}
-
-impl ContractDocumentRecord for ContractDocumentRemoval {
-    const RECORDS: ContractDocumentRecords = ContractDocumentRecords::Removals;
-    type Entry = ContractDocumentRemovalEntry;
-
-    fn decode(value: &[u8]) -> Result<Self, String> {
-        decode_document_removal(value)
-    }
-
-    fn into_entry(self, document_id: Identifier) -> Self::Entry {
-        ContractDocumentRemovalEntry {
-            document_id,
-            removal: self,
-        }
-    }
-}
-
-impl ContractDocumentRecord for ContractSettledDeletion {
-    const RECORDS: ContractDocumentRecords = ContractDocumentRecords::SettledDeletions;
-    type Entry = ContractSettledDeletionEntry;
-
-    fn decode(value: &[u8]) -> Result<Self, String> {
-        decode_settled_deletion(value)
-    }
-
-    fn into_entry(self, document_id: Identifier) -> Self::Entry {
-        ContractSettledDeletionEntry {
-            document_id,
-            settled_deletion: self,
-        }
-    }
-}
-
-/// Decodes one stored record of `T` read or proved under its document id.
-pub fn decode_document_record_element<T: ContractDocumentRecord>(
-    key: &[u8],
-    element: &Element,
-) -> Result<T::Entry, String> {
-    let record_name = T::RECORDS.record_name();
-    let document_id = Identifier::from_bytes(key)
-        .map_err(|_| format!("{record_name} key is not a document id: {:?}", key))?;
-    let Element::Item(value, _) = element else {
-        return Err(format!("{record_name} is not an item"));
-    };
-    Ok(T::decode(value)?.into_entry(document_id))
-}
-
 /// Which removal records of one document type to read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractDocumentRemovalsSelection {
@@ -263,28 +182,15 @@ pub struct ContractDocumentRemovalEntry {
 impl ContractDocumentRemovalEntry {
     /// Decodes one stored record: see [`encode_document_removal`].
     pub fn from_key_element(key: &[u8], element: &Element) -> Result<Self, String> {
-        decode_document_record_element::<ContractDocumentRemoval>(key, element)
-    }
-}
-
-/// A read of the approvals a seated moderation team gave the deletion of settled documents,
-/// within one document type: the documents are selected, and the read bounded, as the removal
-/// records of one type are, so it is the same query.
-pub type ContractSettledDeletionsQuery = ContractDocumentRemovalsQuery;
-
-/// The approvals of the deletion of one settled document.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContractSettledDeletionEntry {
-    /// The document's id.
-    pub document_id: Identifier,
-    /// Who approved, why and when, and whether the document was deleted.
-    pub settled_deletion: ContractSettledDeletion,
-}
-
-impl ContractSettledDeletionEntry {
-    /// Decodes one stored approval record: see [`encode_settled_deletion`].
-    pub fn from_key_element(key: &[u8], element: &Element) -> Result<Self, String> {
-        decode_document_record_element::<ContractSettledDeletion>(key, element)
+        let document_id = Identifier::from_bytes(key)
+            .map_err(|_| format!("document removal key is not a document id: {:?}", key))?;
+        let Element::Item(value, _) = element else {
+            return Err("document removal is not an item".to_string());
+        };
+        Ok(Self {
+            document_id,
+            removal: decode_document_removal(value)?,
+        })
     }
 }
 
@@ -518,120 +424,6 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
     })
 }
 
-/// The stored size of what an approval record starts with: the time of the first approval, the
-/// document's last modification and its revision then, each a u64, and the tag byte that says
-/// whether the deletion time follows.
-pub const CONTRACT_SETTLED_DELETION_FIXED_SIZE: usize = 8 + 8 + 8 + 1;
-
-const NOT_DELETED: u8 = 0;
-const DELETED: u8 = 1;
-
-/// The size an approval record is estimated at when its value is not known: deleted, holding
-/// three approvals and a typical reason. A record being written is priced by its own size.
-pub fn estimated_settled_deletion_value_size() -> u32 {
-    (CONTRACT_SETTLED_DELETION_FIXED_SIZE + 8 + 1 + 3 * 32) as u32
-        + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
-        + CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE
-        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
-}
-
-/// The stored size of an approval record.
-pub fn settled_deletion_encoded_size(settled_deletion: &ContractSettledDeletion) -> usize {
-    CONTRACT_SETTLED_DELETION_FIXED_SIZE
-        + if settled_deletion.deleted_at.is_some() {
-            8
-        } else {
-            0
-        }
-        + 1
-        + 32 * settled_deletion.approvals.len()
-        + reason_encoded_size(&settled_deletion.reason)
-}
-
-/// Encodes the approvals of the deletion of a settled document: the time of the first approval,
-/// the document's last modification and its revision then (`0` for a document that carries
-/// none: revisions start at 1), each as eight big-endian bytes, a tag byte (`0`:
-/// not deleted, `1`: deleted) followed when deleted by the deletion time as eight big-endian
-/// bytes, the count of approvals in one byte and each approver's id, then the reason as in
-/// [`encode_ban`].
-pub fn encode_settled_deletion(settled_deletion: &ContractSettledDeletion) -> Vec<u8> {
-    let mut value = Vec::with_capacity(settled_deletion_encoded_size(settled_deletion));
-    value.extend_from_slice(&settled_deletion.proposed_at.to_be_bytes());
-    value.extend_from_slice(&settled_deletion.document_last_modified_at.to_be_bytes());
-    value.extend_from_slice(
-        &settled_deletion
-            .document_revision
-            .unwrap_or(0)
-            .to_be_bytes(),
-    );
-    match settled_deletion.deleted_at {
-        None => value.push(NOT_DELETED),
-        Some(deleted_at) => {
-            value.push(DELETED);
-            value.extend_from_slice(&deleted_at.to_be_bytes());
-        }
-    }
-    // The approvals fit a byte: each is a member of the seated team, which holds its leader,
-    // at most `SystemLimits::max_moderation_charter_elected_members` elected members and at
-    // most `SystemLimits::max_contract_moderation_added_moderators` added ones, and every
-    // approval drops the members that left it.
-    value.push(settled_deletion.approvals.len().min(u8::MAX as usize) as u8);
-    for approver in settled_deletion.approvals.iter().take(u8::MAX as usize) {
-        value.extend_from_slice(approver.as_slice());
-    }
-    encode_reason_into(&settled_deletion.reason, &mut value);
-    value
-}
-
-/// Decodes the approvals of the deletion of a settled document.
-pub fn decode_settled_deletion(value: &[u8]) -> Result<ContractSettledDeletion, String> {
-    let cut_short = || {
-        format!(
-            "settled deletion holds {} bytes, expected at least {}",
-            value.len(),
-            CONTRACT_SETTLED_DELETION_FIXED_SIZE + 1
-        )
-    };
-    let (proposed_at, rest) = value.split_first_chunk::<8>().ok_or_else(cut_short)?;
-    let (last_modified_at, rest) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
-    let (revision, rest) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
-    let (tag, rest) = rest.split_first().ok_or_else(cut_short)?;
-    let (deleted_at, rest) = match *tag {
-        NOT_DELETED => (None, rest),
-        DELETED => {
-            let (deleted_at, rest) = rest.split_first_chunk::<8>().ok_or_else(|| {
-                "settled deletion is cut short inside its deletion time".to_string()
-            })?;
-            (Some(TimestampMillis::from_be_bytes(*deleted_at)), rest)
-        }
-        tag => return Err(format!("settled deletion has unknown deletion tag {}", tag)),
-    };
-    let (&count, mut rest) = rest.split_first().ok_or_else(cut_short)?;
-    let mut approvals = Vec::with_capacity(usize::from(count));
-    for index in 0..count {
-        let (approver, after) = rest.split_first_chunk::<32>().ok_or_else(|| {
-            format!(
-                "settled deletion is cut short inside approval {}",
-                index + 1
-            )
-        })?;
-        approvals.push(Identifier::from(*approver));
-        rest = after;
-    }
-    // Every approval record is written with its reason's tag
-    if rest.is_empty() {
-        return Err("settled deletion holds no reason".to_string());
-    }
-    Ok(ContractSettledDeletion {
-        proposed_at: TimestampMillis::from_be_bytes(*proposed_at),
-        document_last_modified_at: TimestampMillis::from_be_bytes(*last_modified_at),
-        document_revision: Some(u64::from_be_bytes(*revision)).filter(|revision| *revision != 0),
-        reason: decode_reason(rest)?,
-        approvals,
-        deleted_at,
-    })
-}
-
 /// The tag byte of a reason: bit 0 says a code follows, bit 1 that documents follow, bit 2
 /// that a reason document id follows.
 const REASON_WITHOUT_CODE: u8 = 0;
@@ -756,6 +548,191 @@ pub fn decode_warnings(value: &[u8]) -> Result<Vec<ContractWarning>, String> {
         return Err("warning list entry holds no warning".to_string());
     }
     Ok(warnings)
+}
+
+/// One page of a contract's team actions, active or closed, in action id order: at most
+/// `limit`, from `start_at` (the id, and whether it is included) when set. A page shorter than
+/// the limit is the last one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractTeamActionsQuery {
+    /// Active (still collecting approvals) or closed (ran).
+    pub status: GroupActionStatus,
+    /// Start at this action id, included when the flag is set.
+    pub start_at: Option<(Identifier, bool)>,
+    /// At most this many actions.
+    pub limit: u16,
+}
+
+/// One of a contract's team actions, by its id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractTeamActionEntry {
+    /// The action's id.
+    pub action_id: Identifier,
+    /// Who proposed it, when, and what it does.
+    pub action: ContractTeamAction,
+}
+
+/// What one member's signature writes of a team action: see
+/// `Drive::add_contract_team_action_signature_operations`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractTeamActionWrite {
+    /// A proposal, the proposer's approval: the action written active, or closed when its
+    /// proposer meets the rule alone (`closes`).
+    Propose {
+        /// The action.
+        action: ContractTeamAction,
+        /// Whether the proposal meets the action's rule alone, the action then written straight
+        /// to the closed actions.
+        closes: bool,
+    },
+    /// An approval of an active action that stays active.
+    Approve {
+        /// The approvals of members no longer on the team, which the approval found when it
+        /// read the team and which it deletes: they no longer count, nor prove, and a member
+        /// who comes back after this approves again.
+        dropped_signers: Vec<Identifier>,
+    },
+    /// The approval that meets the rule: the action, with the approvals that counted and its
+    /// info, moves to the closed actions.
+    Close {
+        /// The action as stored, whose info moves: an estimate prices the move by its size.
+        action: ContractTeamAction,
+        /// The approvals given before this one that counted, which move with the action.
+        earlier_signers: Vec<Identifier>,
+        /// The approvals of members no longer on the team, which are deleted.
+        dropped_signers: Vec<Identifier>,
+    },
+}
+
+/// The tag a team action's value starts with: what it does.
+const TEAM_ACTION_DELETE_SETTLED_DOCUMENT: u8 = 0;
+
+/// The stored size of a team action less its document type name and its reason: the tag, the
+/// proposer id, the proposal time, the name's length, the document id, the document's last
+/// modification and its revision.
+pub const CONTRACT_TEAM_ACTION_FIXED_SIZE: usize = 1 + 32 + 8 + 1 + 32 + 8 + 8;
+
+/// The size a team action is estimated at: the fixed part, a typical document type name and a
+/// typical reason, whose tag, code and reason document it always carries (a seated team's reason
+/// names one its proposal lists).
+pub fn estimated_contract_team_action_value_size() -> u32 {
+    CONTRACT_TEAM_ACTION_FIXED_SIZE as u32
+        + u32::from(ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE)
+        + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
+        + CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE
+        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
+}
+
+/// The stored size of a team action.
+pub fn contract_team_action_encoded_size(action: &ContractTeamAction) -> usize {
+    match &action.event {
+        ContractTeamActionEvent::DeleteSettledDocument {
+            document_type_name,
+            reason,
+            ..
+        } => {
+            CONTRACT_TEAM_ACTION_FIXED_SIZE + document_type_name.len() + reason_encoded_size(reason)
+        }
+    }
+}
+
+/// Encodes a team action: the tag (`0`, the deletion of a settled document), the proposer id,
+/// the proposal time as a u64 big-endian, the document type name's length as a byte and the
+/// name, the document id, the document's last modification as a u64 big-endian, its revision as
+/// a u64 big-endian (`0` for a type whose documents carry none: a revision starts at 1), and the
+/// reason, see [`encode_ban`].
+pub fn encode_contract_team_action(action: &ContractTeamAction) -> Vec<u8> {
+    let mut value = Vec::with_capacity(contract_team_action_encoded_size(action));
+    match &action.event {
+        ContractTeamActionEvent::DeleteSettledDocument {
+            document_type_name,
+            document_id,
+            document_last_modified_at,
+            document_revision,
+            reason,
+        } => {
+            value.push(TEAM_ACTION_DELETE_SETTLED_DOCUMENT);
+            value.extend_from_slice(action.proposer_id.as_slice());
+            value.extend_from_slice(&action.proposed_at.to_be_bytes());
+            // A document type name is at most 64 bytes, which a byte holds
+            value.push(document_type_name.len().min(u8::MAX as usize) as u8);
+            value.extend_from_slice(document_type_name.as_bytes());
+            value.extend_from_slice(document_id.as_slice());
+            value.extend_from_slice(&document_last_modified_at.to_be_bytes());
+            value.extend_from_slice(&document_revision.unwrap_or_default().to_be_bytes());
+            encode_reason_into(reason, &mut value);
+        }
+    }
+    value
+}
+
+/// Decodes a team action: see [`encode_contract_team_action`].
+pub fn decode_contract_team_action(value: &[u8]) -> Result<ContractTeamAction, String> {
+    let cut_short = |inside: &str| format!("team action is cut short inside its {}", inside);
+    let (&tag, rest) = value.split_first().ok_or_else(|| cut_short("tag"))?;
+    if tag != TEAM_ACTION_DELETE_SETTLED_DOCUMENT {
+        return Err(format!("team action has unknown tag {}", tag));
+    }
+    let (proposer_id, rest) = rest
+        .split_first_chunk::<32>()
+        .ok_or_else(|| cut_short("proposer id"))?;
+    let (proposed_at, rest) = rest
+        .split_first_chunk::<8>()
+        .ok_or_else(|| cut_short("proposal time"))?;
+    let (&name_length, rest) = rest
+        .split_first()
+        .ok_or_else(|| cut_short("document type name"))?;
+    if rest.len() < usize::from(name_length) {
+        return Err(cut_short("document type name"));
+    }
+    let (name, rest) = rest.split_at(usize::from(name_length));
+    let (document_id, rest) = rest
+        .split_first_chunk::<32>()
+        .ok_or_else(|| cut_short("document id"))?;
+    let (last_modified_at, rest) = rest
+        .split_first_chunk::<8>()
+        .ok_or_else(|| cut_short("document's last modification"))?;
+    let (revision, rest) = rest
+        .split_first_chunk::<8>()
+        .ok_or_else(|| cut_short("document's revision"))?;
+    // A team action always carries a reason, its tag at least: an empty rest is corrupted
+    // state, not an entry written before reasons.
+    if rest.is_empty() {
+        return Err(cut_short("reason"));
+    }
+    let revision = u64::from_be_bytes(*revision);
+    Ok(ContractTeamAction {
+        proposer_id: Identifier::from(*proposer_id),
+        proposed_at: u64::from_be_bytes(*proposed_at),
+        event: ContractTeamActionEvent::DeleteSettledDocument {
+            document_type_name: std::str::from_utf8(name)
+                .map_err(|_| "team action document type name is not UTF-8".to_string())?
+                .to_string(),
+            document_id: Identifier::from(*document_id),
+            document_last_modified_at: u64::from_be_bytes(*last_modified_at),
+            document_revision: (revision != 0).then_some(revision),
+            reason: decode_reason(rest)?,
+        },
+    })
+}
+
+impl ContractTeamActionEntry {
+    /// Decodes one team action as a query returns it: the action's info item (`I`), under the
+    /// path whose last segment is the action id.
+    pub fn from_path_element(path: &[Vec<u8>], element: &Element) -> Result<Self, String> {
+        let key = path
+            .last()
+            .ok_or_else(|| "team action path is empty".to_string())?;
+        let action_id = Identifier::from_bytes(key)
+            .map_err(|_| format!("team action key is not an action id: {:?}", key))?;
+        let Element::Item(value, _) = element else {
+            return Err("team action is not an item".to_string());
+        };
+        Ok(Self {
+            action_id,
+            action: decode_contract_team_action(value)?,
+        })
+    }
 }
 
 fn reason_encoded_size(reason: &ContractModerationReason) -> usize {
@@ -1292,96 +1269,76 @@ mod tests {
     }
 
     #[test]
-    fn should_round_trip_the_approvals_of_a_settled_deletion() {
-        let open = ContractSettledDeletion {
-            proposed_at: 1_700_000_000_123,
-            document_last_modified_at: 1_600_000_000_000,
-            document_revision: Some(4),
-            reason: ContractModerationReason {
-                code: Some(3),
-                text: "doxxing".to_string(),
-                documents: vec![],
-                reason_document_id: None,
+    fn should_round_trip_a_team_action() {
+        let action = ContractTeamAction {
+            proposer_id: Identifier::from([2; 32]),
+            proposed_at: 1_000,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from([5; 32]),
+                document_last_modified_at: 10,
+                document_revision: Some(3),
+                reason: ContractModerationReason {
+                    code: Some(7),
+                    text: "doxxing".to_string(),
+                    documents: vec![],
+                    reason_document_id: None,
+                },
             },
-            approvals: vec![Identifier::from([1; 32]), Identifier::from([2; 32])],
-            deleted_at: None,
         };
-        let value = encode_settled_deletion(&open);
-        assert_eq!(&value[..8], &1_700_000_000_123u64.to_be_bytes());
-        assert_eq!(&value[8..16], &1_600_000_000_000u64.to_be_bytes());
-        assert_eq!(&value[16..24], &4u64.to_be_bytes());
-        assert_eq!(value[24], 0, "not deleted");
-        assert_eq!(value[25], 2, "two approvals");
-        assert_eq!(&value[26..58], &[1; 32]);
-        assert_eq!(&value[58..90], &[2; 32]);
-        assert_eq!(&value[90..], [&[1u8, 0, 3][..], b"doxxing"].concat());
-        assert_eq!(value.len(), settled_deletion_encoded_size(&open));
-        assert_eq!(decode_settled_deletion(&value).expect("decode"), open);
+        let value = encode_contract_team_action(&action);
+        assert_eq!(value.len(), contract_team_action_encoded_size(&action));
+        assert_eq!(decode_contract_team_action(&value).expect("decode"), action);
 
-        // A document that carries no revision: stored as 0, which no revision is.
-        let no_revision = ContractSettledDeletion {
-            document_revision: None,
-            ..open.clone()
+        let no_revision = ContractTeamAction {
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "note".to_string(),
+                document_id: Identifier::from([6; 32]),
+                document_last_modified_at: 11,
+                document_revision: None,
+                reason: ContractModerationReason::from_text("spam"),
+            },
+            ..action.clone()
         };
-        let value = encode_settled_deletion(&no_revision);
-        assert_eq!(&value[16..24], &[0; 8]);
+        let value = encode_contract_team_action(&no_revision);
         assert_eq!(
-            decode_settled_deletion(&value).expect("decode"),
+            decode_contract_team_action(&value).expect("decode"),
             no_revision
         );
 
-        // Deleted: the deletion time follows the tag, before the approvals.
-        let deleted = ContractSettledDeletion {
-            approvals: vec![
-                Identifier::from([1; 32]),
-                Identifier::from([2; 32]),
-                Identifier::from([3; 32]),
-            ],
-            deleted_at: Some(1_700_000_000_999),
-            ..open.clone()
-        };
-        let value = encode_settled_deletion(&deleted);
-        assert_eq!(value[24], 1, "deleted");
-        assert_eq!(&value[25..33], &1_700_000_000_999u64.to_be_bytes());
-        assert_eq!(value[33], 3, "three approvals");
-        assert_eq!(value.len(), settled_deletion_encoded_size(&deleted));
-        assert_eq!(decode_settled_deletion(&value).expect("decode"), deleted);
-        assert!(
-            decode_settled_deletion(&value[..68]).is_err(),
-            "a record cut short inside its approvals is refused"
-        );
-        let mut unknown_tag = value.clone();
-        unknown_tag[24] = 2;
-        assert!(decode_settled_deletion(&unknown_tag).is_err());
-
-        let id = Identifier::from([9; 32]);
+        let path = vec![
+            vec![64],
+            vec![9; 32],
+            vec![2],
+            vec![24],
+            b"M".to_vec(),
+            vec![4; 32],
+        ];
         assert_eq!(
-            ContractSettledDeletionEntry::from_key_element(
-                id.as_slice(),
-                &Element::new_item(encode_settled_deletion(&open))
+            ContractTeamActionEntry::from_path_element(
+                &path,
+                &Element::new_item(encode_contract_team_action(&action))
             )
-            .expect("decode"),
-            ContractSettledDeletionEntry {
-                document_id: id,
-                settled_deletion: open,
+            .expect("entry"),
+            ContractTeamActionEntry {
+                action_id: Identifier::from([4; 32]),
+                action,
             }
         );
     }
 
     #[test]
-    fn should_refuse_a_malformed_settled_deletion() {
-        decode_settled_deletion(&[0; 16]).expect_err("cut short before the revision");
-        decode_settled_deletion(&[0; 24]).expect_err("cut short before the tag");
-        decode_settled_deletion(&[0; 25]).expect_err("cut short before the count");
-        decode_settled_deletion(&[0; 26]).expect_err("no reason");
-        let mut one_approval_missing = vec![0; 25];
-        one_approval_missing.push(1);
-        one_approval_missing.extend_from_slice(&[7; 31]);
-        decode_settled_deletion(&one_approval_missing).expect_err("approval cut short");
-        ContractSettledDeletionEntry::from_key_element(&[1, 2, 3], &Element::new_item(vec![0; 27]))
-            .expect_err("key is not an id");
-        ContractSettledDeletionEntry::from_key_element(&[4; 32], &Element::empty_tree())
-            .expect_err("not an item");
+    fn should_refuse_a_malformed_team_action() {
+        decode_contract_team_action(&[]).expect_err("no tag");
+        decode_contract_team_action(&[1]).expect_err("unknown tag");
+        decode_contract_team_action(&[0; 33]).expect_err("cut short before the proposal time");
+        let mut no_reason = vec![0; 42];
+        no_reason.extend_from_slice(&[0; 48]);
+        decode_contract_team_action(&no_reason).expect_err("no reason");
+        let mut name_cut_short = vec![0; 41];
+        name_cut_short.push(10);
+        name_cut_short.extend_from_slice(b"post");
+        decode_contract_team_action(&name_cut_short).expect_err("name cut short");
     }
 
     #[test]

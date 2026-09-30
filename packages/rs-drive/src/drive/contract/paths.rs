@@ -1,4 +1,3 @@
-use crate::drive::contract::moderation::types::ContractDocumentRecords;
 use crate::drive::RootTree;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::ContractModerationList;
@@ -6,6 +5,7 @@ use dpp::data_contract::document_type::action_fees::ContractFeePot;
 
 use crate::drive::votes::paths::{ACTIVE_POLLS_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY};
 use dpp::data_contract::DataContract;
+use dpp::group::group_action_status::GroupActionStatus;
 
 /// The various GroveDB paths underneath a contract
 pub trait DataContractPaths {
@@ -236,16 +236,26 @@ pub const CONTRACT_DOCUMENT_REMOVALS_KEY: u8 = 16;
 /// alone, or the banlist and one other list beside removal records.
 pub const CONTRACT_MODERATION_ACTION_COUNTS_KEY: u8 = 48;
 
-/// The key under a contract's other tree (`[64, id, 2]`) of the approvals a seated moderation
-/// team gives the deletion of settled documents (protocol version 14): `document type name ->
-/// document id -> Item(proposed at, last modified at, revision, tag, deleted at if any, count,
-/// approvals, reason)`, see `encode_settled_deletion`.
-/// Present when the contract has a document type that sets `moderatorAbilities.deleteSettled`,
-/// with one subtree per such type, created with the type. Written by the team's approvals and
-/// read by them and by clients, never by a document transition, so it sorts below `128`, beside
-/// the removal records at `16`, which every such type keeps a tree under too unless it keeps no
-/// records.
-pub const CONTRACT_SETTLED_DELETIONS_KEY: u8 = 24;
+/// The key under a contract's other tree (`[64, id, 2]`) of the actions its seated moderation
+/// team votes on (protocol version 14), shaped like a token group's actions: `M` (active) and `X`
+/// (closed), each `action id -> { I: Item(the action), S: SumTree(signer id -> SumItem(1)) }`,
+/// see `encode_contract_team_action`. Present when the contract has a document type that sets
+/// `moderatorAbilities.deleteSettled`, whose settled documents the team deletes by such an
+/// action. Written by the team's proposals and approvals and read by them and by clients, never
+/// by a document transition, so it sorts below `128`, beside the removal records at `16`.
+pub const CONTRACT_TEAM_ACTIONS_KEY: u8 = 24;
+
+/// The key, under a contract's team actions tree, of its active actions: a token group's `M`.
+pub const CONTRACT_TEAM_ACTIVE_ACTIONS_KEY: &[u8; 1] = b"M";
+
+/// The key, under a contract's team actions tree, of its closed actions: a token group's `X`.
+pub const CONTRACT_TEAM_CLOSED_ACTIONS_KEY: &[u8; 1] = b"X";
+
+/// The key, under a team action, of the action itself: a token group action's `I`.
+pub const CONTRACT_TEAM_ACTION_INFO_KEY: &[u8; 1] = b"I";
+
+/// The key, under a team action, of its approvals: a token group action's `S`.
+pub const CONTRACT_TEAM_ACTION_SIGNERS_KEY: &[u8; 1] = b"S";
 
 /// `[64, contract id, 2]`: the contract's other tree.
 pub fn contract_other_path(contract_id: &[u8]) -> [&[u8]; 3] {
@@ -377,84 +387,25 @@ pub fn contract_last_fee_claim_key(pot: ContractFeePot) -> &'static [u8; 1] {
     }
 }
 
-/// The key under a contract's other tree of a tree of records it keeps by document type then
-/// document id: `16` for the removal records, `24` for the approvals of settled deletions.
-pub fn contract_document_records_key(records: ContractDocumentRecords) -> &'static [u8; 1] {
-    match records {
-        ContractDocumentRecords::Removals => &[CONTRACT_DOCUMENT_REMOVALS_KEY],
-        ContractDocumentRecords::SettledDeletions => &[CONTRACT_SETTLED_DELETIONS_KEY],
-    }
-}
-
-/// `[64, contract id, 2, 16]` or `[64, contract id, 2, 24]`: the tree of one kind of the
-/// contract's document records, one subtree per document type that keeps them.
-pub fn contract_document_records_path(
-    contract_id: &[u8],
-    records: ContractDocumentRecords,
-) -> [&[u8]; 4] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
-        contract_id,
-        &[CONTRACT_OTHER_KEY],
-        contract_document_records_key(records),
-    ]
-}
-
-/// `[64, contract id, 2, 16]` or `[64, contract id, 2, 24]`: the tree of one kind of the
-/// contract's document records.
-pub fn contract_document_records_path_vec(
-    contract_id: &[u8],
-    records: ContractDocumentRecords,
-) -> Vec<Vec<u8>> {
-    vec![
-        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
-        contract_id.to_vec(),
-        vec![CONTRACT_OTHER_KEY],
-        contract_document_records_key(records).to_vec(),
-    ]
-}
-
-/// `[64, contract id, 2, 16 or 24, document type name]`: one kind of the records of one document
-/// type, keyed by document id.
-pub fn contract_document_type_records_path<'a>(
-    contract_id: &'a [u8],
-    records: ContractDocumentRecords,
-    document_type_name: &'a str,
-) -> [&'a [u8]; 5] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
-        contract_id,
-        &[CONTRACT_OTHER_KEY],
-        contract_document_records_key(records),
-        document_type_name.as_bytes(),
-    ]
-}
-
-/// `[64, contract id, 2, 16 or 24, document type name]`: one kind of the records of one document
-/// type.
-pub fn contract_document_type_records_path_vec(
-    contract_id: &[u8],
-    records: ContractDocumentRecords,
-    document_type_name: &str,
-) -> Vec<Vec<u8>> {
-    vec![
-        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
-        contract_id.to_vec(),
-        vec![CONTRACT_OTHER_KEY],
-        contract_document_records_key(records).to_vec(),
-        document_type_name.as_bytes().to_vec(),
-    ]
-}
-
 /// `[64, contract id, 2, 16]`: the tree of the contract's document removal records, one subtree
 /// per document type moderators may delete documents of.
 pub fn contract_document_removals_path(contract_id: &[u8]) -> [&[u8]; 4] {
-    contract_document_records_path(contract_id, ContractDocumentRecords::Removals)
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_DOCUMENT_REMOVALS_KEY],
+    ]
 }
 
 /// `[64, contract id, 2, 16]`: the tree of the contract's document removal records.
 pub fn contract_document_removals_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
-    contract_document_records_path_vec(contract_id, ContractDocumentRecords::Removals)
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
+        contract_id.to_vec(),
+        vec![CONTRACT_OTHER_KEY],
+        vec![CONTRACT_DOCUMENT_REMOVALS_KEY],
+    ]
 }
 
 /// `[64, contract id, 2, 16, document type name]`: the removal records of one document type,
@@ -463,11 +414,13 @@ pub fn contract_document_type_removals_path<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
 ) -> [&'a [u8]; 5] {
-    contract_document_type_records_path(
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
         contract_id,
-        ContractDocumentRecords::Removals,
-        document_type_name,
-    )
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_DOCUMENT_REMOVALS_KEY],
+        document_type_name.as_bytes(),
+    ]
 }
 
 /// `[64, contract id, 2, 16, document type name]`: the removal records of one document type.
@@ -475,15 +428,122 @@ pub fn contract_document_type_removals_path_vec(
     contract_id: &[u8],
     document_type_name: &str,
 ) -> Vec<Vec<u8>> {
-    contract_document_type_records_path_vec(
-        contract_id,
-        ContractDocumentRecords::Removals,
-        document_type_name,
-    )
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
+        contract_id.to_vec(),
+        vec![CONTRACT_OTHER_KEY],
+        vec![CONTRACT_DOCUMENT_REMOVALS_KEY],
+        document_type_name.as_bytes().to_vec(),
+    ]
 }
 
-/// `[64, contract id, 2, 24]`: the tree of the approvals of the contract's settled-document
-/// deletions, one subtree per document type that sets `moderatorAbilities.deleteSettled`.
-pub fn contract_settled_deletions_path(contract_id: &[u8]) -> [&[u8]; 4] {
-    contract_document_records_path(contract_id, ContractDocumentRecords::SettledDeletions)
+/// The key, under a contract's team actions tree, of its active or its closed actions: those of
+/// a token group's, `M` and `X`.
+pub fn contract_team_action_status_key(status: GroupActionStatus) -> &'static [u8; 1] {
+    match status {
+        GroupActionStatus::ActionActive => CONTRACT_TEAM_ACTIVE_ACTIONS_KEY,
+        GroupActionStatus::ActionClosed => CONTRACT_TEAM_CLOSED_ACTIONS_KEY,
+    }
+}
+
+/// `[64, contract id, 2, 24]`: the tree of the contract's team actions.
+pub fn contract_team_actions_path(contract_id: &[u8]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_TEAM_ACTIONS_KEY],
+    ]
+}
+
+/// `[64, contract id, 2, 24]`: the tree of the contract's team actions.
+pub fn contract_team_actions_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
+        contract_id.to_vec(),
+        vec![CONTRACT_OTHER_KEY],
+        vec![CONTRACT_TEAM_ACTIONS_KEY],
+    ]
+}
+
+/// `[64, contract id, 2, 24, M or X]`: the contract's active or closed team actions, keyed by
+/// action id.
+pub fn contract_team_action_status_path(
+    contract_id: &[u8],
+    status: GroupActionStatus,
+) -> [&[u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_TEAM_ACTIONS_KEY],
+        contract_team_action_status_key(status),
+    ]
+}
+
+/// `[64, contract id, 2, 24, M or X]`: the contract's active or closed team actions.
+pub fn contract_team_action_status_path_vec(
+    contract_id: &[u8],
+    status: GroupActionStatus,
+) -> Vec<Vec<u8>> {
+    let mut path = contract_team_actions_path_vec(contract_id);
+    path.push(contract_team_action_status_key(status).to_vec());
+    path
+}
+
+/// `[64, contract id, 2, 24, M or X, action id]`: one team action, its info (`I`) and its
+/// approvals (`S`).
+pub fn contract_team_action_path<'a>(
+    contract_id: &'a [u8],
+    status: GroupActionStatus,
+    action_id: &'a [u8],
+) -> [&'a [u8]; 6] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_TEAM_ACTIONS_KEY],
+        contract_team_action_status_key(status),
+        action_id,
+    ]
+}
+
+/// `[64, contract id, 2, 24, M or X, action id]`: one team action.
+pub fn contract_team_action_path_vec(
+    contract_id: &[u8],
+    status: GroupActionStatus,
+    action_id: &[u8],
+) -> Vec<Vec<u8>> {
+    let mut path = contract_team_action_status_path_vec(contract_id, status);
+    path.push(action_id.to_vec());
+    path
+}
+
+/// `[64, contract id, 2, 24, M or X, action id, S]`: the approvals of one team action, a sum
+/// tree of `signer id -> SumItem(1)`.
+pub fn contract_team_action_signers_path<'a>(
+    contract_id: &'a [u8],
+    status: GroupActionStatus,
+    action_id: &'a [u8],
+) -> [&'a [u8]; 7] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_TEAM_ACTIONS_KEY],
+        contract_team_action_status_key(status),
+        action_id,
+        CONTRACT_TEAM_ACTION_SIGNERS_KEY,
+    ]
+}
+
+/// `[64, contract id, 2, 24, M or X, action id, S]`: the approvals of one team action.
+pub fn contract_team_action_signers_path_vec(
+    contract_id: &[u8],
+    status: GroupActionStatus,
+    action_id: &[u8],
+) -> Vec<Vec<u8>> {
+    let mut path = contract_team_action_path_vec(contract_id, status, action_id);
+    path.push(CONTRACT_TEAM_ACTION_SIGNERS_KEY.to_vec());
+    path
 }

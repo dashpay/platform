@@ -16,6 +16,7 @@ mod withdrawals;
 
 use crate::util::batch::GroveDbOpBatch;
 
+use crate::drive::contract::moderation::types::ContractTeamActionWrite;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -265,24 +266,29 @@ impl DriveOperation<'_> {
         )
     }
 
-    /// Whether this operation rewrites a moderation record in place, which may leave it
-    /// shorter and free bytes its payer is owed: the replacement of a removal record (a
-    /// restored one, by a fresh deletion) or of the approvals of a settled deletion. A batch
-    /// forfeiting its refunds then keeps its document operations apart
-    /// (`Drive::apply_drive_operations` generation 1).
-    pub fn rewrites_moderation_record(&self) -> bool {
-        matches!(
-            self,
+    /// Whether this operation frees moderation storage its payer is owed a refund of: the
+    /// replacement of a removal record (a restored one, by a fresh deletion), which may leave
+    /// it shorter, the approval that closes a team action, which moves the approvals given
+    /// before it and the action's info to the closed actions, and an approval that deletes the
+    /// approvals of members who left the team. A batch forfeiting its refunds then keeps its
+    /// document operations apart (`Drive::apply_drive_operations` generation 1).
+    pub fn refunds_moderation_storage(&self) -> bool {
+        match self {
             Self::ContractModerationOperation(
                 ContractModerationOperationType::AddDocumentRemoval {
-                    replaced_record_size: Some(_),
+                    replaced_record_size,
                     ..
-                } | ContractModerationOperationType::AddSettledDeletion {
-                    replaces_existing: true,
-                    ..
-                }
-            )
-        )
+                },
+            ) => replaced_record_size.is_some(),
+            Self::ContractModerationOperation(
+                ContractModerationOperationType::AddTeamActionSignature { write, .. },
+            ) => match write {
+                ContractTeamActionWrite::Close { .. } => true,
+                ContractTeamActionWrite::Approve { dropped_signers } => !dropped_signers.is_empty(),
+                ContractTeamActionWrite::Propose { .. } => false,
+            },
+            _ => false,
+        }
     }
 
     /// Convert a member of a batch whose document TTL cleanup is complete.

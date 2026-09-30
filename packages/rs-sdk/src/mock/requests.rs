@@ -30,8 +30,8 @@ use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
     ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
     ContractModerationEntry, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationReason, ContractSettledDeletion,
-    ContractSettledDeletionEntry, ContractSettledDeletions, ContractWarning,
+    ContractModerationListStatuses, ContractModerationReason, ContractTeamAction,
+    ContractTeamActionEntry, ContractTeamActionSigners, ContractTeamActions, ContractWarning,
 };
 use drive_proof_verifier::types::contract_groups::{
     ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
@@ -569,37 +569,46 @@ impl MockResponse for ContractDocumentRemovals {
     }
 }
 
-impl MockResponse for ContractSettledDeletions {
+impl MockResponse for ContractTeamActions {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        // A record has a bincode encoding of its own; the document id is the key it is stored
+        // An action has a bincode encoding of its own; the action id is the key it is stored
         // under.
-        let settled_deletions: Vec<(Identifier, ContractSettledDeletion)> = self
-            .settled_deletions()
+        let actions: Vec<(Identifier, ContractTeamAction)> = self
+            .actions()
             .iter()
-            .map(|entry| (entry.document_id, entry.settled_deletion.clone()))
+            .map(|entry| (entry.action_id, entry.action.clone()))
             .collect();
-        bincode::encode_to_vec(settled_deletions, BINCODE_CONFIG)
-            .expect("encode ContractSettledDeletions")
+        bincode::encode_to_vec(actions, BINCODE_CONFIG).expect("encode ContractTeamActions")
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        let (settled_deletions, _): (Vec<(Identifier, ContractSettledDeletion)>, _) =
-            bincode::decode_from_slice(buf, BINCODE_CONFIG)
-                .expect("decode ContractSettledDeletions");
-        ContractSettledDeletions(
-            settled_deletions
+        let (actions, _): (Vec<(Identifier, ContractTeamAction)>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode ContractTeamActions");
+        ContractTeamActions(
+            actions
                 .into_iter()
-                .map(
-                    |(document_id, settled_deletion)| ContractSettledDeletionEntry {
-                        document_id,
-                        settled_deletion,
-                    },
-                )
+                .map(|(action_id, action)| ContractTeamActionEntry { action_id, action })
                 .collect(),
         )
+    }
+}
+
+impl MockResponse for ContractTeamActionSigners {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self.signers(), BINCODE_CONFIG)
+            .expect("encode ContractTeamActionSigners")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (signers, _): (Vec<Identifier>, _) = bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode ContractTeamActionSigners");
+        ContractTeamActionSigners(signers)
     }
 }
 

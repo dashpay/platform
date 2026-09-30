@@ -10,10 +10,12 @@ const CONTRACT_ID = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
 const TARGET_ID = '2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU';
 const DOCUMENT_ID = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 const DOCUMENT_TYPE_NAME = 'post';
+/** A team action another member of the seated team proposed */
+const ACTION_ID = 'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN';
 
 interface ModerationOptions {
-  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument' | 'restoreDocument' | 'changeDocumentFields' | 'deleteSettledDocument';
-  /** `null` leaves the identity out; left undefined, every action but one naming a document gets `TARGET_ID` */
+  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument' | 'restoreDocument' | 'changeDocumentFields' | 'deleteSettledDocument' | 'approveTeamAction';
+  /** `null` leaves the identity out; left undefined, every action but one naming a document or a team action gets `TARGET_ID` */
   identityId?: string | null;
   /** `null` leaves it out; left undefined, every action naming a document gets `DOCUMENT_TYPE_NAME` */
   documentTypeName?: string | null;
@@ -23,6 +25,8 @@ interface ModerationOptions {
   document?: Uint8Array | null;
   /** `null` leaves them out; left undefined, a changeDocumentFields gets `FIELDS` */
   fields?: Record<string, unknown> | null;
+  /** `null` leaves it out; left undefined, an approveTeamAction gets `ACTION_ID` */
+  actionId?: string | null;
   until?: bigint;
   /** `null` leaves the reason out; left undefined, a ban, a suspend, a warn and a deleteSettledDocument get `REASON` */
   reason?: {
@@ -44,29 +48,30 @@ const FIELDS = { status: 2, resolution: null };
 function createTransition(options: ModerationOptions = {}) {
   const action = options.action ?? 'ban';
   const addsAnEntry = action === 'ban' || action === 'suspend' || action === 'warn';
-  // Every approval of a settled document's deletion repeats the first's reason.
-  const approvesASettledDeletion = action === 'deleteSettledDocument';
+  // The proposal of a settled document's deletion names the reason its approvals approve.
+  const proposesASettledDeletion = action === 'deleteSettledDocument';
   let { reason } = options;
-  if (reason === undefined && (addsAnEntry || approvesASettledDeletion)) {
+  if (reason === undefined && (addsAnEntry || proposesASettledDeletion)) {
     reason = REASON;
   }
-  // A deletion, a restore, a field change and the approval of a settled document's deletion
-  // name a document and every other action an identity.
+  // A deletion, a restore, a field change and the proposal of a settled document's deletion
+  // name a document, an approval a team action, and every other action an identity.
   const deletesADocument = action === 'deleteDocument';
   const restoresADocument = action === 'restoreDocument';
   const changesADocument = action === 'changeDocumentFields';
+  const approvesATeamAction = action === 'approveTeamAction';
   const namesADocument = deletesADocument || restoresADocument || changesADocument
-    || approvesASettledDeletion;
+    || proposesASettledDeletion;
   let {
-    identityId, documentTypeName, documentId, document, fields,
+    identityId, documentTypeName, documentId, document, fields, actionId,
   } = options;
-  if (identityId === undefined && !namesADocument) {
+  if (identityId === undefined && !namesADocument && !approvesATeamAction) {
     identityId = TARGET_ID;
   }
   if (documentTypeName === undefined && namesADocument) {
     documentTypeName = DOCUMENT_TYPE_NAME;
   }
-  if (documentId === undefined && (deletesADocument || changesADocument || approvesASettledDeletion)) {
+  if (documentId === undefined && (deletesADocument || changesADocument || proposesASettledDeletion)) {
     documentId = DOCUMENT_ID;
   }
   if (document === undefined && restoresADocument) {
@@ -74,6 +79,9 @@ function createTransition(options: ModerationOptions = {}) {
   }
   if (fields === undefined && changesADocument) {
     fields = FIELDS;
+  }
+  if (actionId === undefined && approvesATeamAction) {
+    actionId = ACTION_ID;
   }
 
   return new wasm.ContractUserModeration({
@@ -86,6 +94,7 @@ function createTransition(options: ModerationOptions = {}) {
     documentId: documentId ?? undefined,
     document: document ?? undefined,
     fields: fields ?? undefined,
+    actionId: actionId ?? undefined,
     until: options.until,
     reason: reason ?? undefined,
     userFeeIncrease: options.userFeeIncrease,
@@ -235,7 +244,7 @@ describe('ContractUserModeration', () => {
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
 
-    it('should create an approval of the deletion of a settled document, which names a document and no identity', () => {
+    it('should create a proposal of the deletion of a settled document, which names a document and no identity', () => {
       const reason = { code: 2, text: 'doxxing', reasonDocumentId: TARGET_ID };
       const transition = createTransition({ action: 'deleteSettledDocument', reason });
 
@@ -249,18 +258,68 @@ describe('ContractUserModeration', () => {
       expect(transition.reason).to.deep.equal(reason);
     });
 
-    it('should refuse an approval of the deletion of a settled document without its reason, its document type or its document', () => {
-      // Unlike a deletion's, the reason is needed: every approval repeats the first's.
+    it('should give a proposal of the deletion of a settled document the id of the team action it opens', () => {
+      const proposal = createTransition({ action: 'deleteSettledDocument' });
+      const actionId = proposal.actionId?.toString();
+
+      expect(actionId).to.be.a('string');
+      // Computed from the contract, the proposer, its nonce, the document and the reason:
+      // the same proposal read back opens the same action, and the next nonce another.
+      expect(wasm.ContractUserModeration.fromBytes(proposal.toBytes()).actionId?.toString())
+        .to.equal(actionId);
+      expect(createTransition({ action: 'deleteSettledDocument', identityContractNonce: BigInt(8) })
+        .actionId?.toString()).to.not.equal(actionId);
+      // Every other action but an approval names no team action.
+      expect(createTransition({ action: 'deleteDocument' }).actionId).to.equal(undefined);
+      expect(createTransition().actionId).to.equal(undefined);
+    });
+
+    it('should refuse a proposal of the deletion of a settled document without its reason, its document type or its document', () => {
+      // Unlike a deletion's, the reason is needed: the approvals approve the deletion for it.
       expect(() => createTransition({ action: 'deleteSettledDocument', reason: null })).to.throw();
       expect(() => createTransition({ action: 'deleteSettledDocument', documentTypeName: null })).to.throw();
       expect(() => createTransition({ action: 'deleteSettledDocument', documentId: null })).to.throw();
     });
 
-    it('should refuse on an approval of the deletion of a settled document what it does not carry', () => {
+    it('should refuse on a proposal of the deletion of a settled document what it does not carry', () => {
       expect(() => createTransition({ action: 'deleteSettledDocument', identityId: TARGET_ID })).to.throw();
       expect(() => createTransition({ action: 'deleteSettledDocument', until: BigInt(5) })).to.throw();
       expect(() => createTransition({ action: 'deleteSettledDocument', document: DOCUMENT_BYTES })).to.throw();
       expect(() => createTransition({ action: 'deleteSettledDocument', fields: FIELDS })).to.throw();
+      expect(() => createTransition({ action: 'deleteSettledDocument', actionId: ACTION_ID })).to.throw();
+    });
+
+    it('should create an approval of a team action, which names the action and nothing else', () => {
+      const transition = createTransition({ action: 'approveTeamAction' });
+
+      expect(transition.action).to.equal('approveTeamAction');
+      expect(transition.actionId?.toString()).to.equal(ACTION_ID);
+      expect(transition.identityId).to.equal(undefined);
+      expect(transition.documentTypeName).to.equal(undefined);
+      expect(transition.documentId).to.equal(undefined);
+      expect(transition.document).to.equal(undefined);
+      expect(transition.fields).to.equal(undefined);
+      expect(transition.until).to.equal(undefined);
+      // What the action does and why are the proposal's.
+      expect(transition.reason).to.equal(undefined);
+    });
+
+    it('should refuse an approval of a team action without its action id, and an action id beside another action', () => {
+      expect(() => createTransition({ action: 'approveTeamAction', actionId: null })).to.throw();
+      (['ban', 'unban', 'unsuspend', 'warn', 'clearWarnings', 'deleteDocument', 'restoreDocument', 'changeDocumentFields'] as const)
+        .forEach((action) => {
+          expect(() => createTransition({ action, actionId: ACTION_ID })).to.throw();
+        });
+    });
+
+    it('should refuse on an approval of a team action what it does not carry', () => {
+      expect(() => createTransition({ action: 'approveTeamAction', identityId: TARGET_ID })).to.throw();
+      expect(() => createTransition({ action: 'approveTeamAction', documentTypeName: DOCUMENT_TYPE_NAME })).to.throw();
+      expect(() => createTransition({ action: 'approveTeamAction', documentId: DOCUMENT_ID })).to.throw();
+      expect(() => createTransition({ action: 'approveTeamAction', document: DOCUMENT_BYTES })).to.throw();
+      expect(() => createTransition({ action: 'approveTeamAction', fields: FIELDS })).to.throw();
+      expect(() => createTransition({ action: 'approveTeamAction', reason: REASON })).to.throw();
+      expect(() => createTransition({ action: 'approveTeamAction', until: BigInt(5) })).to.throw();
     });
 
     it('should create a warning and its clearing, which name an identity', () => {
@@ -401,6 +460,7 @@ describe('ContractUserModeration', () => {
         createTransition({ action: 'deleteDocument' }),
         createTransition({ action: 'changeDocumentFields', reason: { text: 'handled' } }),
         createTransition({ action: 'deleteSettledDocument', reason: { text: 'doxxing', reasonDocumentId: TARGET_ID } }),
+        createTransition({ action: 'approveTeamAction' }),
       ]) {
         const bytes = transition.toBytes();
         expect(wasm.ContractUserModeration.fromBytes(bytes).toBytes()).to.deep.equal(bytes);
@@ -470,7 +530,7 @@ describe('ContractUserModeration', () => {
       });
     });
 
-    it('should tag an approval of the deletion of a settled document and name its document', () => {
+    it('should tag a proposal of the deletion of a settled document and name its document', () => {
       const reason = { code: 2, text: 'doxxing', reasonDocumentId: TARGET_ID };
       const json = createTransition({ action: 'deleteSettledDocument', reason }).toJSON();
 
@@ -479,6 +539,15 @@ describe('ContractUserModeration', () => {
         documentTypeName: DOCUMENT_TYPE_NAME,
         documentId: DOCUMENT_ID,
         reason,
+      });
+    });
+
+    it('should tag an approval of a team action and name the action alone', () => {
+      const json = createTransition({ action: 'approveTeamAction' }).toJSON();
+
+      expect(json.action).to.deep.equal({
+        $type: 'approveTeamAction',
+        actionId: ACTION_ID,
       });
     });
   });
@@ -510,7 +579,7 @@ describe('ContractUserModeration', () => {
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
 
-    it('should restore an approval of the deletion of a settled document from JSON', () => {
+    it('should restore a proposal of the deletion of a settled document from JSON', () => {
       const transition = createTransition({ action: 'deleteSettledDocument', reason: { text: 'doxxing' } });
 
       const restored = wasm.ContractUserModeration.fromJSON(transition.toJSON());
@@ -520,6 +589,17 @@ describe('ContractUserModeration', () => {
       expect(restored.documentId?.toString()).to.equal(DOCUMENT_ID);
       expect(restored.identityId).to.equal(undefined);
       expect(restored.reason).to.deep.equal({ code: null, text: 'doxxing' });
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+
+    it('should restore an approval of a team action from JSON', () => {
+      const transition = createTransition({ action: 'approveTeamAction' });
+
+      const restored = wasm.ContractUserModeration.fromJSON(transition.toJSON());
+
+      expect(restored.action).to.equal('approveTeamAction');
+      expect(restored.actionId?.toString()).to.equal(ACTION_ID);
+      expect(restored.identityId).to.equal(undefined);
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
   });
@@ -562,7 +642,7 @@ describe('ContractUserModeration', () => {
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
 
-    it('should round trip an approval of the deletion of a settled document through a plain object', () => {
+    it('should round trip a proposal of the deletion of a settled document through a plain object', () => {
       const transition = createTransition({ action: 'deleteSettledDocument', reason: { code: 3, text: 'doxxing' } });
 
       const obj = transition.toObject();
@@ -573,6 +653,20 @@ describe('ContractUserModeration', () => {
       expect(obj.action.reason).to.deep.equal({ code: 3, text: 'doxxing' });
 
       const restored = wasm.ContractUserModeration.fromObject(obj);
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+
+    it('should round trip an approval of a team action through a plain object', () => {
+      const transition = createTransition({ action: 'approveTeamAction' });
+
+      const obj = transition.toObject();
+      expect(obj.action.$type).to.equal('approveTeamAction');
+      expect(obj.action.actionId).to.be.instanceOf(Uint8Array);
+      expect(obj.action.identityId).to.equal(undefined);
+      expect(obj.action.reason).to.equal(undefined);
+
+      const restored = wasm.ContractUserModeration.fromObject(obj);
+      expect(restored.actionId?.toString()).to.equal(ACTION_ID);
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
   });

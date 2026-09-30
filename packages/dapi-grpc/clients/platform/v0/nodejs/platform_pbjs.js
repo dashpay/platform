@@ -846,35 +846,68 @@ $root.org = (function() {
                          */
 
                         /**
-                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContractSettledDeletions}.
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContractTeamActions}.
                          * @memberof org.dash.platform.dapi.v0.Platform
-                         * @typedef getContractSettledDeletionsCallback
+                         * @typedef getContractTeamActionsCallback
                          * @type {function}
                          * @param {Error|null} error Error, if any
-                         * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} [response] GetContractSettledDeletionsResponse
+                         * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse} [response] GetContractTeamActionsResponse
                          */
 
                         /**
-                         * Calls getContractSettledDeletions.
-                         * @function getContractSettledDeletions
+                         * Calls getContractTeamActions.
+                         * @function getContractTeamActions
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest} request GetContractSettledDeletionsRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Platform.getContractSettledDeletionsCallback} callback Node-style callback called with the error, if any, and GetContractSettledDeletionsResponse
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsRequest} request GetContractTeamActionsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getContractTeamActionsCallback} callback Node-style callback called with the error, if any, and GetContractTeamActionsResponse
                          * @returns {undefined}
                          * @variation 1
                          */
-                        Object.defineProperty(Platform.prototype.getContractSettledDeletions = function getContractSettledDeletions(request, callback) {
-                            return this.rpcCall(getContractSettledDeletions, $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest, $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse, request, callback);
-                        }, "name", { value: "getContractSettledDeletions" });
+                        Object.defineProperty(Platform.prototype.getContractTeamActions = function getContractTeamActions(request, callback) {
+                            return this.rpcCall(getContractTeamActions, $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest, $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse, request, callback);
+                        }, "name", { value: "getContractTeamActions" });
 
                         /**
-                         * Calls getContractSettledDeletions.
-                         * @function getContractSettledDeletions
+                         * Calls getContractTeamActions.
+                         * @function getContractTeamActions
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest} request GetContractSettledDeletionsRequest message or plain object
-                         * @returns {Promise<org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse>} Promise
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsRequest} request GetContractTeamActionsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetContractTeamActionsResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContractTeamActionSigners}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getContractTeamActionSignersCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} [response] GetContractTeamActionSignersResponse
+                         */
+
+                        /**
+                         * Calls getContractTeamActionSigners.
+                         * @function getContractTeamActionSigners
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersRequest} request GetContractTeamActionSignersRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getContractTeamActionSignersCallback} callback Node-style callback called with the error, if any, and GetContractTeamActionSignersResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getContractTeamActionSigners = function getContractTeamActionSigners(request, callback) {
+                            return this.rpcCall(getContractTeamActionSigners, $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest, $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse, request, callback);
+                        }, "name", { value: "getContractTeamActionSigners" });
+
+                        /**
+                         * Calls getContractTeamActionSigners.
+                         * @function getContractTeamActionSigners
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersRequest} request GetContractTeamActionSignersRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse>} Promise
                          * @variation 2
                          */
 
@@ -29570,24 +29603,24 @@ $root.org = (function() {
                         return GetContractDocumentRemovalsResponse;
                     })();
 
-                    v0.GetContractSettledDeletionsRequest = (function() {
+                    v0.GetContractTeamActionsRequest = (function() {
 
                         /**
-                         * Properties of a GetContractSettledDeletionsRequest.
+                         * Properties of a GetContractTeamActionsRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetContractSettledDeletionsRequest
-                         * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0|null} [v0] GetContractSettledDeletionsRequest v0
+                         * @interface IGetContractTeamActionsRequest
+                         * @property {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IGetContractTeamActionsRequestV0|null} [v0] GetContractTeamActionsRequest v0
                          */
 
                         /**
-                         * Constructs a new GetContractSettledDeletionsRequest.
+                         * Constructs a new GetContractTeamActionsRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetContractSettledDeletionsRequest.
-                         * @implements IGetContractSettledDeletionsRequest
+                         * @classdesc Represents a GetContractTeamActionsRequest.
+                         * @implements IGetContractTeamActionsRequest
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsRequest=} [properties] Properties to set
                          */
-                        function GetContractSettledDeletionsRequest(properties) {
+                        function GetContractTeamActionsRequest(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -29595,89 +29628,89 @@ $root.org = (function() {
                         }
 
                         /**
-                         * GetContractSettledDeletionsRequest v0.
-                         * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * GetContractTeamActionsRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IGetContractTeamActionsRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @instance
                          */
-                        GetContractSettledDeletionsRequest.prototype.v0 = null;
+                        GetContractTeamActionsRequest.prototype.v0 = null;
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
-                         * GetContractSettledDeletionsRequest version.
+                         * GetContractTeamActionsRequest version.
                          * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @instance
                          */
-                        Object.defineProperty(GetContractSettledDeletionsRequest.prototype, "version", {
+                        Object.defineProperty(GetContractTeamActionsRequest.prototype, "version", {
                             get: $util.oneOfGetter($oneOfFields = ["v0"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
                         /**
-                         * Creates a new GetContractSettledDeletionsRequest instance using the specified properties.
+                         * Creates a new GetContractTeamActionsRequest instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} GetContractSettledDeletionsRequest instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest} GetContractTeamActionsRequest instance
                          */
-                        GetContractSettledDeletionsRequest.create = function create(properties) {
-                            return new GetContractSettledDeletionsRequest(properties);
+                        GetContractTeamActionsRequest.create = function create(properties) {
+                            return new GetContractTeamActionsRequest(properties);
                         };
 
                         /**
-                         * Encodes the specified GetContractSettledDeletionsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.verify|verify} messages.
+                         * Encodes the specified GetContractTeamActionsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsRequest.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest} message GetContractSettledDeletionsRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsRequest} message GetContractTeamActionsRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetContractSettledDeletionsRequest.encode = function encode(message, writer) {
+                        GetContractTeamActionsRequest.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified GetContractSettledDeletionsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.verify|verify} messages.
+                         * Encodes the specified GetContractTeamActionsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsRequest.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest} message GetContractSettledDeletionsRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsRequest} message GetContractTeamActionsRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetContractSettledDeletionsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetContractTeamActionsRequest.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a GetContractSettledDeletionsRequest message from the specified reader or buffer.
+                         * Decodes a GetContractTeamActionsRequest message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} GetContractSettledDeletionsRequest
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest} GetContractTeamActionsRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetContractSettledDeletionsRequest.decode = function decode(reader, length) {
+                        GetContractTeamActionsRequest.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.decode(reader, reader.uint32());
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -29688,37 +29721,37 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a GetContractSettledDeletionsRequest message from the specified reader or buffer, length delimited.
+                         * Decodes a GetContractTeamActionsRequest message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} GetContractSettledDeletionsRequest
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest} GetContractTeamActionsRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetContractSettledDeletionsRequest.decodeDelimited = function decodeDelimited(reader) {
+                        GetContractTeamActionsRequest.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a GetContractSettledDeletionsRequest message.
+                         * Verifies a GetContractTeamActionsRequest message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        GetContractSettledDeletionsRequest.verify = function verify(message) {
+                        GetContractTeamActionsRequest.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             var properties = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
                                 properties.version = 1;
                                 {
-                                    var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.verify(message.v0);
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.verify(message.v0);
                                     if (error)
                                         return "v0." + error;
                                 }
@@ -29727,40 +29760,40 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Creates a GetContractSettledDeletionsRequest message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetContractTeamActionsRequest message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} GetContractSettledDeletionsRequest
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest} GetContractTeamActionsRequest
                          */
-                        GetContractSettledDeletionsRequest.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest)
+                        GetContractTeamActionsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest)
                                 return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest();
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest();
                             if (object.v0 != null) {
                                 if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.fromObject(object.v0);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.fromObject(object.v0);
                             }
                             return message;
                         };
 
                         /**
-                         * Creates a plain object from a GetContractSettledDeletionsRequest message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetContractTeamActionsRequest message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} message GetContractSettledDeletionsRequest
+                         * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest} message GetContractTeamActionsRequest
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        GetContractSettledDeletionsRequest.toObject = function toObject(message, options) {
+                        GetContractTeamActionsRequest.toObject = function toObject(message, options) {
                             if (!options)
                                 options = {};
                             var object = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.toObject(message.v0, options);
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
                             }
@@ -29768,241 +29801,49 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Converts this GetContractSettledDeletionsRequest to JSON.
+                         * Converts this GetContractTeamActionsRequest to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        GetContractSettledDeletionsRequest.prototype.toJSON = function toJSON() {
+                        GetContractTeamActionsRequest.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        GetContractSettledDeletionsRequest.DocumentIds = (function() {
-
-                            /**
-                             * Properties of a DocumentIds.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
-                             * @interface IDocumentIds
-                             * @property {Array.<Uint8Array>|null} [documentIds] DocumentIds documentIds
-                             */
-
-                            /**
-                             * Constructs a new DocumentIds.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
-                             * @classdesc Represents a DocumentIds.
-                             * @implements IDocumentIds
-                             * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds=} [properties] Properties to set
-                             */
-                            function DocumentIds(properties) {
-                                this.documentIds = [];
-                                if (properties)
-                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                        if (properties[keys[i]] != null)
-                                            this[keys[i]] = properties[keys[i]];
-                            }
-
-                            /**
-                             * DocumentIds documentIds.
-                             * @member {Array.<Uint8Array>} documentIds
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @instance
-                             */
-                            DocumentIds.prototype.documentIds = $util.emptyArray;
-
-                            /**
-                             * Creates a new DocumentIds instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} DocumentIds instance
-                             */
-                            DocumentIds.create = function create(properties) {
-                                return new DocumentIds(properties);
-                            };
-
-                            /**
-                             * Encodes the specified DocumentIds message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.verify|verify} messages.
-                             * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds} message DocumentIds message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            DocumentIds.encode = function encode(message, writer) {
-                                if (!writer)
-                                    writer = $Writer.create();
-                                if (message.documentIds != null && message.documentIds.length)
-                                    for (var i = 0; i < message.documentIds.length; ++i)
-                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.documentIds[i]);
-                                return writer;
-                            };
-
-                            /**
-                             * Encodes the specified DocumentIds message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.verify|verify} messages.
-                             * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds} message DocumentIds message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            DocumentIds.encodeDelimited = function encodeDelimited(message, writer) {
-                                return this.encode(message, writer).ldelim();
-                            };
-
-                            /**
-                             * Decodes a DocumentIds message from the specified reader or buffer.
-                             * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} DocumentIds
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            DocumentIds.decode = function decode(reader, length) {
-                                if (!(reader instanceof $Reader))
-                                    reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds();
-                                while (reader.pos < end) {
-                                    var tag = reader.uint32();
-                                    switch (tag >>> 3) {
-                                    case 1:
-                                        if (!(message.documentIds && message.documentIds.length))
-                                            message.documentIds = [];
-                                        message.documentIds.push(reader.bytes());
-                                        break;
-                                    default:
-                                        reader.skipType(tag & 7);
-                                        break;
-                                    }
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Decodes a DocumentIds message from the specified reader or buffer, length delimited.
-                             * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} DocumentIds
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            DocumentIds.decodeDelimited = function decodeDelimited(reader) {
-                                if (!(reader instanceof $Reader))
-                                    reader = new $Reader(reader);
-                                return this.decode(reader, reader.uint32());
-                            };
-
-                            /**
-                             * Verifies a DocumentIds message.
-                             * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @static
-                             * @param {Object.<string,*>} message Plain object to verify
-                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                             */
-                            DocumentIds.verify = function verify(message) {
-                                if (typeof message !== "object" || message === null)
-                                    return "object expected";
-                                if (message.documentIds != null && message.hasOwnProperty("documentIds")) {
-                                    if (!Array.isArray(message.documentIds))
-                                        return "documentIds: array expected";
-                                    for (var i = 0; i < message.documentIds.length; ++i)
-                                        if (!(message.documentIds[i] && typeof message.documentIds[i].length === "number" || $util.isString(message.documentIds[i])))
-                                            return "documentIds: buffer[] expected";
-                                }
-                                return null;
-                            };
-
-                            /**
-                             * Creates a DocumentIds message from a plain object. Also converts values to their respective internal types.
-                             * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @static
-                             * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} DocumentIds
-                             */
-                            DocumentIds.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds)
-                                    return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds();
-                                if (object.documentIds) {
-                                    if (!Array.isArray(object.documentIds))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.documentIds: array expected");
-                                    message.documentIds = [];
-                                    for (var i = 0; i < object.documentIds.length; ++i)
-                                        if (typeof object.documentIds[i] === "string")
-                                            $util.base64.decode(object.documentIds[i], message.documentIds[i] = $util.newBuffer($util.base64.length(object.documentIds[i])), 0);
-                                        else if (object.documentIds[i].length >= 0)
-                                            message.documentIds[i] = object.documentIds[i];
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Creates a plain object from a DocumentIds message. Also converts values to other types if specified.
-                             * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} message DocumentIds
-                             * @param {$protobuf.IConversionOptions} [options] Conversion options
-                             * @returns {Object.<string,*>} Plain object
-                             */
-                            DocumentIds.toObject = function toObject(message, options) {
-                                if (!options)
-                                    options = {};
-                                var object = {};
-                                if (options.arrays || options.defaults)
-                                    object.documentIds = [];
-                                if (message.documentIds && message.documentIds.length) {
-                                    object.documentIds = [];
-                                    for (var j = 0; j < message.documentIds.length; ++j)
-                                        object.documentIds[j] = options.bytes === String ? $util.base64.encode(message.documentIds[j], 0, message.documentIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.documentIds[j]) : message.documentIds[j];
-                                }
-                                return object;
-                            };
-
-                            /**
-                             * Converts this DocumentIds to JSON.
-                             * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
-                             * @instance
-                             * @returns {Object.<string,*>} JSON object
-                             */
-                            DocumentIds.prototype.toJSON = function toJSON() {
-                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                            };
-
-                            return DocumentIds;
+                        /**
+                         * ActionStatus enum.
+                         * @name org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus
+                         * @enum {number}
+                         * @property {number} ACTIVE=0 ACTIVE value
+                         * @property {number} CLOSED=1 CLOSED value
+                         */
+                        GetContractTeamActionsRequest.ActionStatus = (function() {
+                            var valuesById = {}, values = Object.create(valuesById);
+                            values[valuesById[0] = "ACTIVE"] = 0;
+                            values[valuesById[1] = "CLOSED"] = 1;
+                            return values;
                         })();
 
-                        GetContractSettledDeletionsRequest.Page = (function() {
+                        GetContractTeamActionsRequest.StartAtActionId = (function() {
 
                             /**
-                             * Properties of a Page.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
-                             * @interface IPage
-                             * @property {Uint8Array|null} [startAfter] Page startAfter
-                             * @property {number|null} [limit] Page limit
+                             * Properties of a StartAtActionId.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
+                             * @interface IStartAtActionId
+                             * @property {Uint8Array|null} [startActionId] StartAtActionId startActionId
+                             * @property {boolean|null} [startActionIdIncluded] StartAtActionId startActionIdIncluded
                              */
 
                             /**
-                             * Constructs a new Page.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
-                             * @classdesc Represents a Page.
-                             * @implements IPage
+                             * Constructs a new StartAtActionId.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
+                             * @classdesc Represents a StartAtActionId.
+                             * @implements IStartAtActionId
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IStartAtActionId=} [properties] Properties to set
                              */
-                            function Page(properties) {
+                            function StartAtActionId(properties) {
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -30010,88 +29851,88 @@ $root.org = (function() {
                             }
 
                             /**
-                             * Page startAfter.
-                             * @member {Uint8Array} startAfter
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * StartAtActionId startActionId.
+                             * @member {Uint8Array} startActionId
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @instance
                              */
-                            Page.prototype.startAfter = $util.newBuffer([]);
+                            StartAtActionId.prototype.startActionId = $util.newBuffer([]);
 
                             /**
-                             * Page limit.
-                             * @member {number} limit
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * StartAtActionId startActionIdIncluded.
+                             * @member {boolean} startActionIdIncluded
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @instance
                              */
-                            Page.prototype.limit = 0;
+                            StartAtActionId.prototype.startActionIdIncluded = false;
 
                             /**
-                             * Creates a new Page instance using the specified properties.
+                             * Creates a new StartAtActionId instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} Page instance
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IStartAtActionId=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} StartAtActionId instance
                              */
-                            Page.create = function create(properties) {
-                                return new Page(properties);
+                            StartAtActionId.create = function create(properties) {
+                                return new StartAtActionId(properties);
                             };
 
                             /**
-                             * Encodes the specified Page message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.verify|verify} messages.
+                             * Encodes the specified StartAtActionId message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage} message Page message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IStartAtActionId} message StartAtActionId message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            Page.encode = function encode(message, writer) {
+                            StartAtActionId.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
-                                if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.startAfter);
-                                if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
-                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
+                                if (message.startActionId != null && Object.hasOwnProperty.call(message, "startActionId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.startActionId);
+                                if (message.startActionIdIncluded != null && Object.hasOwnProperty.call(message, "startActionIdIncluded"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.startActionIdIncluded);
                                 return writer;
                             };
 
                             /**
-                             * Encodes the specified Page message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.verify|verify} messages.
+                             * Encodes the specified StartAtActionId message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage} message Page message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IStartAtActionId} message StartAtActionId message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            Page.encodeDelimited = function encodeDelimited(message, writer) {
+                            StartAtActionId.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a Page message from the specified reader or buffer.
+                             * Decodes a StartAtActionId message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} Page
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} StartAtActionId
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            Page.decode = function decode(reader, length) {
+                            StartAtActionId.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        message.startAfter = reader.bytes();
+                                        message.startActionId = reader.bytes();
                                         break;
                                     case 2:
-                                        message.limit = reader.uint32();
+                                        message.startActionIdIncluded = reader.bool();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -30102,129 +29943,129 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a Page message from the specified reader or buffer, length delimited.
+                             * Decodes a StartAtActionId message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} Page
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} StartAtActionId
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            Page.decodeDelimited = function decodeDelimited(reader) {
+                            StartAtActionId.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a Page message.
+                             * Verifies a StartAtActionId message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            Page.verify = function verify(message) {
+                            StartAtActionId.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
-                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
-                                    if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
-                                        return "startAfter: buffer expected";
-                                if (message.limit != null && message.hasOwnProperty("limit"))
-                                    if (!$util.isInteger(message.limit))
-                                        return "limit: integer expected";
+                                if (message.startActionId != null && message.hasOwnProperty("startActionId"))
+                                    if (!(message.startActionId && typeof message.startActionId.length === "number" || $util.isString(message.startActionId)))
+                                        return "startActionId: buffer expected";
+                                if (message.startActionIdIncluded != null && message.hasOwnProperty("startActionIdIncluded"))
+                                    if (typeof message.startActionIdIncluded !== "boolean")
+                                        return "startActionIdIncluded: boolean expected";
                                 return null;
                             };
 
                             /**
-                             * Creates a Page message from a plain object. Also converts values to their respective internal types.
+                             * Creates a StartAtActionId message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} Page
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} StartAtActionId
                              */
-                            Page.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page)
+                            StartAtActionId.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page();
-                                if (object.startAfter != null)
-                                    if (typeof object.startAfter === "string")
-                                        $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
-                                    else if (object.startAfter.length >= 0)
-                                        message.startAfter = object.startAfter;
-                                if (object.limit != null)
-                                    message.limit = object.limit >>> 0;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId();
+                                if (object.startActionId != null)
+                                    if (typeof object.startActionId === "string")
+                                        $util.base64.decode(object.startActionId, message.startActionId = $util.newBuffer($util.base64.length(object.startActionId)), 0);
+                                    else if (object.startActionId.length >= 0)
+                                        message.startActionId = object.startActionId;
+                                if (object.startActionIdIncluded != null)
+                                    message.startActionIdIncluded = Boolean(object.startActionIdIncluded);
                                 return message;
                             };
 
                             /**
-                             * Creates a plain object from a Page message. Also converts values to other types if specified.
+                             * Creates a plain object from a StartAtActionId message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} message Page
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} message StartAtActionId
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            Page.toObject = function toObject(message, options) {
+                            StartAtActionId.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
                                 if (options.defaults) {
                                     if (options.bytes === String)
-                                        object.startAfter = "";
+                                        object.startActionId = "";
                                     else {
-                                        object.startAfter = [];
+                                        object.startActionId = [];
                                         if (options.bytes !== Array)
-                                            object.startAfter = $util.newBuffer(object.startAfter);
+                                            object.startActionId = $util.newBuffer(object.startActionId);
                                     }
-                                    object.limit = 0;
+                                    object.startActionIdIncluded = false;
                                 }
-                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
-                                    object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
-                                if (message.limit != null && message.hasOwnProperty("limit"))
-                                    object.limit = message.limit;
+                                if (message.startActionId != null && message.hasOwnProperty("startActionId"))
+                                    object.startActionId = options.bytes === String ? $util.base64.encode(message.startActionId, 0, message.startActionId.length) : options.bytes === Array ? Array.prototype.slice.call(message.startActionId) : message.startActionId;
+                                if (message.startActionIdIncluded != null && message.hasOwnProperty("startActionIdIncluded"))
+                                    object.startActionIdIncluded = message.startActionIdIncluded;
                                 return object;
                             };
 
                             /**
-                             * Converts this Page to JSON.
+                             * Converts this StartAtActionId to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            Page.prototype.toJSON = function toJSON() {
+                            StartAtActionId.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return Page;
+                            return StartAtActionId;
                         })();
 
-                        GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0 = (function() {
+                        GetContractTeamActionsRequest.GetContractTeamActionsRequestV0 = (function() {
 
                             /**
-                             * Properties of a GetContractSettledDeletionsRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
-                             * @interface IGetContractSettledDeletionsRequestV0
-                             * @property {Uint8Array|null} [contractId] GetContractSettledDeletionsRequestV0 contractId
-                             * @property {string|null} [documentTypeName] GetContractSettledDeletionsRequestV0 documentTypeName
-                             * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds|null} [documentIds] GetContractSettledDeletionsRequestV0 documentIds
-                             * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage|null} [page] GetContractSettledDeletionsRequestV0 page
-                             * @property {boolean|null} [prove] GetContractSettledDeletionsRequestV0 prove
+                             * Properties of a GetContractTeamActionsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
+                             * @interface IGetContractTeamActionsRequestV0
+                             * @property {Uint8Array|null} [contractId] GetContractTeamActionsRequestV0 contractId
+                             * @property {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus|null} [status] GetContractTeamActionsRequestV0 status
+                             * @property {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IStartAtActionId|null} [startAtActionId] GetContractTeamActionsRequestV0 startAtActionId
+                             * @property {number|null} [count] GetContractTeamActionsRequestV0 count
+                             * @property {boolean|null} [prove] GetContractTeamActionsRequestV0 prove
                              */
 
                             /**
-                             * Constructs a new GetContractSettledDeletionsRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
-                             * @classdesc Represents a GetContractSettledDeletionsRequestV0.
-                             * @implements IGetContractSettledDeletionsRequestV0
+                             * Constructs a new GetContractTeamActionsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest
+                             * @classdesc Represents a GetContractTeamActionsRequestV0.
+                             * @implements IGetContractTeamActionsRequestV0
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IGetContractTeamActionsRequestV0=} [properties] Properties to set
                              */
-                            function GetContractSettledDeletionsRequestV0(properties) {
+                            function GetContractTeamActionsRequestV0(properties) {
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -30232,124 +30073,110 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetContractSettledDeletionsRequestV0 contractId.
+                             * GetContractTeamActionsRequestV0 contractId.
                              * @member {Uint8Array} contractId
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @instance
                              */
-                            GetContractSettledDeletionsRequestV0.prototype.contractId = $util.newBuffer([]);
+                            GetContractTeamActionsRequestV0.prototype.contractId = $util.newBuffer([]);
 
                             /**
-                             * GetContractSettledDeletionsRequestV0 documentTypeName.
-                             * @member {string} documentTypeName
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * GetContractTeamActionsRequestV0 status.
+                             * @member {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus} status
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @instance
                              */
-                            GetContractSettledDeletionsRequestV0.prototype.documentTypeName = "";
+                            GetContractTeamActionsRequestV0.prototype.status = 0;
 
                             /**
-                             * GetContractSettledDeletionsRequestV0 documentIds.
-                             * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds|null|undefined} documentIds
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * GetContractTeamActionsRequestV0 startAtActionId.
+                             * @member {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IStartAtActionId|null|undefined} startAtActionId
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @instance
                              */
-                            GetContractSettledDeletionsRequestV0.prototype.documentIds = null;
+                            GetContractTeamActionsRequestV0.prototype.startAtActionId = null;
 
                             /**
-                             * GetContractSettledDeletionsRequestV0 page.
-                             * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage|null|undefined} page
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * GetContractTeamActionsRequestV0 count.
+                             * @member {number} count
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @instance
                              */
-                            GetContractSettledDeletionsRequestV0.prototype.page = null;
+                            GetContractTeamActionsRequestV0.prototype.count = 0;
 
                             /**
-                             * GetContractSettledDeletionsRequestV0 prove.
+                             * GetContractTeamActionsRequestV0 prove.
                              * @member {boolean} prove
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @instance
                              */
-                            GetContractSettledDeletionsRequestV0.prototype.prove = false;
-
-                            // OneOf field names bound to virtual getters and setters
-                            var $oneOfFields;
+                            GetContractTeamActionsRequestV0.prototype.prove = false;
 
                             /**
-                             * GetContractSettledDeletionsRequestV0 selection.
-                             * @member {"documentIds"|"page"|undefined} selection
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
-                             * @instance
-                             */
-                            Object.defineProperty(GetContractSettledDeletionsRequestV0.prototype, "selection", {
-                                get: $util.oneOfGetter($oneOfFields = ["documentIds", "page"]),
-                                set: $util.oneOfSetter($oneOfFields)
-                            });
-
-                            /**
-                             * Creates a new GetContractSettledDeletionsRequestV0 instance using the specified properties.
+                             * Creates a new GetContractTeamActionsRequestV0 instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} GetContractSettledDeletionsRequestV0 instance
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IGetContractTeamActionsRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} GetContractTeamActionsRequestV0 instance
                              */
-                            GetContractSettledDeletionsRequestV0.create = function create(properties) {
-                                return new GetContractSettledDeletionsRequestV0(properties);
+                            GetContractTeamActionsRequestV0.create = function create(properties) {
+                                return new GetContractTeamActionsRequestV0(properties);
                             };
 
                             /**
-                             * Encodes the specified GetContractSettledDeletionsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.verify|verify} messages.
+                             * Encodes the specified GetContractTeamActionsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0} message GetContractSettledDeletionsRequestV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IGetContractTeamActionsRequestV0} message GetContractTeamActionsRequestV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetContractSettledDeletionsRequestV0.encode = function encode(message, writer) {
+                            GetContractTeamActionsRequestV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
                                 if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
                                     writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.contractId);
-                                if (message.documentTypeName != null && Object.hasOwnProperty.call(message, "documentTypeName"))
-                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentTypeName);
-                                if (message.documentIds != null && Object.hasOwnProperty.call(message, "documentIds"))
-                                    $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.encode(message.documentIds, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                if (message.page != null && Object.hasOwnProperty.call(message, "page"))
-                                    $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.encode(message.page, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.status != null && Object.hasOwnProperty.call(message, "status"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).int32(message.status);
+                                if (message.startAtActionId != null && Object.hasOwnProperty.call(message, "startAtActionId"))
+                                    $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.encode(message.startAtActionId, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.count);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
                                 return writer;
                             };
 
                             /**
-                             * Encodes the specified GetContractSettledDeletionsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.verify|verify} messages.
+                             * Encodes the specified GetContractTeamActionsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0} message GetContractSettledDeletionsRequestV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.IGetContractTeamActionsRequestV0} message GetContractTeamActionsRequestV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetContractSettledDeletionsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                            GetContractTeamActionsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a GetContractSettledDeletionsRequestV0 message from the specified reader or buffer.
+                             * Decodes a GetContractTeamActionsRequestV0 message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} GetContractSettledDeletionsRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} GetContractTeamActionsRequestV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetContractSettledDeletionsRequestV0.decode = function decode(reader, length) {
+                            GetContractTeamActionsRequestV0.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -30357,13 +30184,13 @@ $root.org = (function() {
                                         message.contractId = reader.bytes();
                                         break;
                                     case 2:
-                                        message.documentTypeName = reader.string();
+                                        message.status = reader.int32();
                                         break;
                                     case 3:
-                                        message.documentIds = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.decode(reader, reader.uint32());
+                                        message.startAtActionId = $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.decode(reader, reader.uint32());
                                         break;
                                     case 4:
-                                        message.page = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.decode(reader, reader.uint32());
+                                        message.count = reader.uint32();
                                         break;
                                     case 5:
                                         message.prove = reader.bool();
@@ -30377,57 +30204,51 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a GetContractSettledDeletionsRequestV0 message from the specified reader or buffer, length delimited.
+                             * Decodes a GetContractTeamActionsRequestV0 message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} GetContractSettledDeletionsRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} GetContractTeamActionsRequestV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetContractSettledDeletionsRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                            GetContractTeamActionsRequestV0.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a GetContractSettledDeletionsRequestV0 message.
+                             * Verifies a GetContractTeamActionsRequestV0 message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            GetContractSettledDeletionsRequestV0.verify = function verify(message) {
+                            GetContractTeamActionsRequestV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
-                                var properties = {};
                                 if (message.contractId != null && message.hasOwnProperty("contractId"))
                                     if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
                                         return "contractId: buffer expected";
-                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
-                                    if (!$util.isString(message.documentTypeName))
-                                        return "documentTypeName: string expected";
-                                if (message.documentIds != null && message.hasOwnProperty("documentIds")) {
-                                    properties.selection = 1;
-                                    {
-                                        var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.verify(message.documentIds);
-                                        if (error)
-                                            return "documentIds." + error;
+                                if (message.status != null && message.hasOwnProperty("status"))
+                                    switch (message.status) {
+                                    default:
+                                        return "status: enum value expected";
+                                    case 0:
+                                    case 1:
+                                        break;
                                     }
+                                if (message.startAtActionId != null && message.hasOwnProperty("startAtActionId")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.verify(message.startAtActionId);
+                                    if (error)
+                                        return "startAtActionId." + error;
                                 }
-                                if (message.page != null && message.hasOwnProperty("page")) {
-                                    if (properties.selection === 1)
-                                        return "selection: multiple values";
-                                    properties.selection = 1;
-                                    {
-                                        var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.verify(message.page);
-                                        if (error)
-                                            return "page." + error;
-                                    }
-                                }
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    if (!$util.isInteger(message.count))
+                                        return "count: integer expected";
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
@@ -30435,49 +30256,54 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a GetContractSettledDeletionsRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * Creates a GetContractTeamActionsRequestV0 message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} GetContractSettledDeletionsRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} GetContractTeamActionsRequestV0
                              */
-                            GetContractSettledDeletionsRequestV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0)
+                            GetContractTeamActionsRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0();
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0();
                                 if (object.contractId != null)
                                     if (typeof object.contractId === "string")
                                         $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
                                     else if (object.contractId.length >= 0)
                                         message.contractId = object.contractId;
-                                if (object.documentTypeName != null)
-                                    message.documentTypeName = String(object.documentTypeName);
-                                if (object.documentIds != null) {
-                                    if (typeof object.documentIds !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.documentIds: object expected");
-                                    message.documentIds = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.fromObject(object.documentIds);
+                                switch (object.status) {
+                                case "ACTIVE":
+                                case 0:
+                                    message.status = 0;
+                                    break;
+                                case "CLOSED":
+                                case 1:
+                                    message.status = 1;
+                                    break;
                                 }
-                                if (object.page != null) {
-                                    if (typeof object.page !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.page: object expected");
-                                    message.page = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.fromObject(object.page);
+                                if (object.startAtActionId != null) {
+                                    if (typeof object.startAtActionId !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.startAtActionId: object expected");
+                                    message.startAtActionId = $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.fromObject(object.startAtActionId);
                                 }
+                                if (object.count != null)
+                                    message.count = object.count >>> 0;
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
                                 return message;
                             };
 
                             /**
-                             * Creates a plain object from a GetContractSettledDeletionsRequestV0 message. Also converts values to other types if specified.
+                             * Creates a plain object from a GetContractTeamActionsRequestV0 message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} message GetContractSettledDeletionsRequestV0
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} message GetContractTeamActionsRequestV0
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            GetContractSettledDeletionsRequestV0.toObject = function toObject(message, options) {
+                            GetContractTeamActionsRequestV0.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
@@ -30489,63 +30315,59 @@ $root.org = (function() {
                                         if (options.bytes !== Array)
                                             object.contractId = $util.newBuffer(object.contractId);
                                     }
-                                    object.documentTypeName = "";
+                                    object.status = options.enums === String ? "ACTIVE" : 0;
+                                    object.startAtActionId = null;
+                                    object.count = 0;
                                     object.prove = false;
                                 }
                                 if (message.contractId != null && message.hasOwnProperty("contractId"))
                                     object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
-                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
-                                    object.documentTypeName = message.documentTypeName;
-                                if (message.documentIds != null && message.hasOwnProperty("documentIds")) {
-                                    object.documentIds = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.toObject(message.documentIds, options);
-                                    if (options.oneofs)
-                                        object.selection = "documentIds";
-                                }
-                                if (message.page != null && message.hasOwnProperty("page")) {
-                                    object.page = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.toObject(message.page, options);
-                                    if (options.oneofs)
-                                        object.selection = "page";
-                                }
+                                if (message.status != null && message.hasOwnProperty("status"))
+                                    object.status = options.enums === String ? $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus[message.status] : message.status;
+                                if (message.startAtActionId != null && message.hasOwnProperty("startAtActionId"))
+                                    object.startAtActionId = $root.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.toObject(message.startAtActionId, options);
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    object.count = message.count;
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
                                 return object;
                             };
 
                             /**
-                             * Converts this GetContractSettledDeletionsRequestV0 to JSON.
+                             * Converts this GetContractTeamActionsRequestV0 to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            GetContractSettledDeletionsRequestV0.prototype.toJSON = function toJSON() {
+                            GetContractTeamActionsRequestV0.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return GetContractSettledDeletionsRequestV0;
+                            return GetContractTeamActionsRequestV0;
                         })();
 
-                        return GetContractSettledDeletionsRequest;
+                        return GetContractTeamActionsRequest;
                     })();
 
-                    v0.GetContractSettledDeletionsResponse = (function() {
+                    v0.GetContractTeamActionsResponse = (function() {
 
                         /**
-                         * Properties of a GetContractSettledDeletionsResponse.
+                         * Properties of a GetContractTeamActionsResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetContractSettledDeletionsResponse
-                         * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0|null} [v0] GetContractSettledDeletionsResponse v0
+                         * @interface IGetContractTeamActionsResponse
+                         * @property {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IGetContractTeamActionsResponseV0|null} [v0] GetContractTeamActionsResponse v0
                          */
 
                         /**
-                         * Constructs a new GetContractSettledDeletionsResponse.
+                         * Constructs a new GetContractTeamActionsResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetContractSettledDeletionsResponse.
-                         * @implements IGetContractSettledDeletionsResponse
+                         * @classdesc Represents a GetContractTeamActionsResponse.
+                         * @implements IGetContractTeamActionsResponse
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsResponse=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsResponse=} [properties] Properties to set
                          */
-                        function GetContractSettledDeletionsResponse(properties) {
+                        function GetContractTeamActionsResponse(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -30553,89 +30375,89 @@ $root.org = (function() {
                         }
 
                         /**
-                         * GetContractSettledDeletionsResponse v0.
-                         * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * GetContractTeamActionsResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IGetContractTeamActionsResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @instance
                          */
-                        GetContractSettledDeletionsResponse.prototype.v0 = null;
+                        GetContractTeamActionsResponse.prototype.v0 = null;
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
-                         * GetContractSettledDeletionsResponse version.
+                         * GetContractTeamActionsResponse version.
                          * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @instance
                          */
-                        Object.defineProperty(GetContractSettledDeletionsResponse.prototype, "version", {
+                        Object.defineProperty(GetContractTeamActionsResponse.prototype, "version", {
                             get: $util.oneOfGetter($oneOfFields = ["v0"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
                         /**
-                         * Creates a new GetContractSettledDeletionsResponse instance using the specified properties.
+                         * Creates a new GetContractTeamActionsResponse instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsResponse=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} GetContractSettledDeletionsResponse instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse} GetContractTeamActionsResponse instance
                          */
-                        GetContractSettledDeletionsResponse.create = function create(properties) {
-                            return new GetContractSettledDeletionsResponse(properties);
+                        GetContractTeamActionsResponse.create = function create(properties) {
+                            return new GetContractTeamActionsResponse(properties);
                         };
 
                         /**
-                         * Encodes the specified GetContractSettledDeletionsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.verify|verify} messages.
+                         * Encodes the specified GetContractTeamActionsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsResponse} message GetContractSettledDeletionsResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsResponse} message GetContractTeamActionsResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetContractSettledDeletionsResponse.encode = function encode(message, writer) {
+                        GetContractTeamActionsResponse.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified GetContractSettledDeletionsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.verify|verify} messages.
+                         * Encodes the specified GetContractTeamActionsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsResponse} message GetContractSettledDeletionsResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionsResponse} message GetContractTeamActionsResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetContractSettledDeletionsResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetContractTeamActionsResponse.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a GetContractSettledDeletionsResponse message from the specified reader or buffer.
+                         * Decodes a GetContractTeamActionsResponse message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} GetContractSettledDeletionsResponse
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse} GetContractTeamActionsResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetContractSettledDeletionsResponse.decode = function decode(reader, length) {
+                        GetContractTeamActionsResponse.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.decode(reader, reader.uint32());
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -30646,37 +30468,37 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a GetContractSettledDeletionsResponse message from the specified reader or buffer, length delimited.
+                         * Decodes a GetContractTeamActionsResponse message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} GetContractSettledDeletionsResponse
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse} GetContractTeamActionsResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetContractSettledDeletionsResponse.decodeDelimited = function decodeDelimited(reader) {
+                        GetContractTeamActionsResponse.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a GetContractSettledDeletionsResponse message.
+                         * Verifies a GetContractTeamActionsResponse message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        GetContractSettledDeletionsResponse.verify = function verify(message) {
+                        GetContractTeamActionsResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             var properties = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
                                 properties.version = 1;
                                 {
-                                    var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.verify(message.v0);
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.verify(message.v0);
                                     if (error)
                                         return "v0." + error;
                                 }
@@ -30685,40 +30507,40 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Creates a GetContractSettledDeletionsResponse message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetContractTeamActionsResponse message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} GetContractSettledDeletionsResponse
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse} GetContractTeamActionsResponse
                          */
-                        GetContractSettledDeletionsResponse.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse)
+                        GetContractTeamActionsResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse)
                                 return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse();
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse();
                             if (object.v0 != null) {
                                 if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.fromObject(object.v0);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.fromObject(object.v0);
                             }
                             return message;
                         };
 
                         /**
-                         * Creates a plain object from a GetContractSettledDeletionsResponse message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetContractTeamActionsResponse message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} message GetContractSettledDeletionsResponse
+                         * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse} message GetContractTeamActionsResponse
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        GetContractSettledDeletionsResponse.toObject = function toObject(message, options) {
+                        GetContractTeamActionsResponse.toObject = function toObject(message, options) {
                             if (!options)
                                 options = {};
                             var object = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.toObject(message.v0, options);
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
                             }
@@ -30726,41 +30548,38 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Converts this GetContractSettledDeletionsResponse to JSON.
+                         * Converts this GetContractTeamActionsResponse to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        GetContractSettledDeletionsResponse.prototype.toJSON = function toJSON() {
+                        GetContractTeamActionsResponse.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        GetContractSettledDeletionsResponse.ContractSettledDeletion = (function() {
+                        GetContractTeamActionsResponse.DeleteSettledDocument = (function() {
 
                             /**
-                             * Properties of a ContractSettledDeletion.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
-                             * @interface IContractSettledDeletion
-                             * @property {Uint8Array|null} [documentId] ContractSettledDeletion documentId
-                             * @property {number|Long|null} [proposedAt] ContractSettledDeletion proposedAt
-                             * @property {number|Long|null} [documentLastModifiedAt] ContractSettledDeletion documentLastModifiedAt
-                             * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [reason] ContractSettledDeletion reason
-                             * @property {Array.<Uint8Array>|null} [approvals] ContractSettledDeletion approvals
-                             * @property {number|Long|null} [deletedAt] ContractSettledDeletion deletedAt
-                             * @property {number|Long|null} [documentRevision] ContractSettledDeletion documentRevision
+                             * Properties of a DeleteSettledDocument.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
+                             * @interface IDeleteSettledDocument
+                             * @property {string|null} [documentTypeName] DeleteSettledDocument documentTypeName
+                             * @property {Uint8Array|null} [documentId] DeleteSettledDocument documentId
+                             * @property {number|Long|null} [documentLastModifiedAt] DeleteSettledDocument documentLastModifiedAt
+                             * @property {number|Long|null} [documentRevision] DeleteSettledDocument documentRevision
+                             * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [reason] DeleteSettledDocument reason
                              */
 
                             /**
-                             * Constructs a new ContractSettledDeletion.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
-                             * @classdesc Represents a ContractSettledDeletion.
-                             * @implements IContractSettledDeletion
+                             * Constructs a new DeleteSettledDocument.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
+                             * @classdesc Represents a DeleteSettledDocument.
+                             * @implements IDeleteSettledDocument
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IDeleteSettledDocument=} [properties] Properties to set
                              */
-                            function ContractSettledDeletion(properties) {
-                                this.approvals = [];
+                            function DeleteSettledDocument(properties) {
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -30768,156 +30587,127 @@ $root.org = (function() {
                             }
 
                             /**
-                             * ContractSettledDeletion documentId.
+                             * DeleteSettledDocument documentTypeName.
+                             * @member {string} documentTypeName
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
+                             * @instance
+                             */
+                            DeleteSettledDocument.prototype.documentTypeName = "";
+
+                            /**
+                             * DeleteSettledDocument documentId.
                              * @member {Uint8Array} documentId
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @instance
                              */
-                            ContractSettledDeletion.prototype.documentId = $util.newBuffer([]);
+                            DeleteSettledDocument.prototype.documentId = $util.newBuffer([]);
 
                             /**
-                             * ContractSettledDeletion proposedAt.
-                             * @member {number|Long} proposedAt
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
-                             * @instance
-                             */
-                            ContractSettledDeletion.prototype.proposedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
-
-                            /**
-                             * ContractSettledDeletion documentLastModifiedAt.
+                             * DeleteSettledDocument documentLastModifiedAt.
                              * @member {number|Long} documentLastModifiedAt
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @instance
                              */
-                            ContractSettledDeletion.prototype.documentLastModifiedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+                            DeleteSettledDocument.prototype.documentLastModifiedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             /**
-                             * ContractSettledDeletion reason.
-                             * @member {org.dash.platform.dapi.v0.IContractModerationReason|null|undefined} reason
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
-                             * @instance
-                             */
-                            ContractSettledDeletion.prototype.reason = null;
-
-                            /**
-                             * ContractSettledDeletion approvals.
-                             * @member {Array.<Uint8Array>} approvals
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
-                             * @instance
-                             */
-                            ContractSettledDeletion.prototype.approvals = $util.emptyArray;
-
-                            /**
-                             * ContractSettledDeletion deletedAt.
-                             * @member {number|Long} deletedAt
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
-                             * @instance
-                             */
-                            ContractSettledDeletion.prototype.deletedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
-
-                            /**
-                             * ContractSettledDeletion documentRevision.
+                             * DeleteSettledDocument documentRevision.
                              * @member {number|Long} documentRevision
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @instance
                              */
-                            ContractSettledDeletion.prototype.documentRevision = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+                            DeleteSettledDocument.prototype.documentRevision = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             /**
-                             * Creates a new ContractSettledDeletion instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} ContractSettledDeletion instance
+                             * DeleteSettledDocument reason.
+                             * @member {org.dash.platform.dapi.v0.IContractModerationReason|null|undefined} reason
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
+                             * @instance
                              */
-                            ContractSettledDeletion.create = function create(properties) {
-                                return new ContractSettledDeletion(properties);
+                            DeleteSettledDocument.prototype.reason = null;
+
+                            /**
+                             * Creates a new DeleteSettledDocument instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IDeleteSettledDocument=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} DeleteSettledDocument instance
+                             */
+                            DeleteSettledDocument.create = function create(properties) {
+                                return new DeleteSettledDocument(properties);
                             };
 
                             /**
-                             * Encodes the specified ContractSettledDeletion message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.verify|verify} messages.
+                             * Encodes the specified DeleteSettledDocument message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion} message ContractSettledDeletion message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IDeleteSettledDocument} message DeleteSettledDocument message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            ContractSettledDeletion.encode = function encode(message, writer) {
+                            DeleteSettledDocument.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
+                                if (message.documentTypeName != null && Object.hasOwnProperty.call(message, "documentTypeName"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).string(message.documentTypeName);
                                 if (message.documentId != null && Object.hasOwnProperty.call(message, "documentId"))
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.documentId);
-                                if (message.proposedAt != null && Object.hasOwnProperty.call(message, "proposedAt"))
-                                    writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.proposedAt);
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.documentId);
                                 if (message.documentLastModifiedAt != null && Object.hasOwnProperty.call(message, "documentLastModifiedAt"))
                                     writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.documentLastModifiedAt);
-                                if (message.reason != null && Object.hasOwnProperty.call(message, "reason"))
-                                    $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.reason, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
-                                if (message.approvals != null && message.approvals.length)
-                                    for (var i = 0; i < message.approvals.length; ++i)
-                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.approvals[i]);
-                                if (message.deletedAt != null && Object.hasOwnProperty.call(message, "deletedAt"))
-                                    writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.deletedAt);
                                 if (message.documentRevision != null && Object.hasOwnProperty.call(message, "documentRevision"))
-                                    writer.uint32(/* id 7, wireType 0 =*/56).uint64(message.documentRevision);
+                                    writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.documentRevision);
+                                if (message.reason != null && Object.hasOwnProperty.call(message, "reason"))
+                                    $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.reason, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
                                 return writer;
                             };
 
                             /**
-                             * Encodes the specified ContractSettledDeletion message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.verify|verify} messages.
+                             * Encodes the specified DeleteSettledDocument message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion} message ContractSettledDeletion message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IDeleteSettledDocument} message DeleteSettledDocument message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            ContractSettledDeletion.encodeDelimited = function encodeDelimited(message, writer) {
+                            DeleteSettledDocument.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a ContractSettledDeletion message from the specified reader or buffer.
+                             * Decodes a DeleteSettledDocument message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} ContractSettledDeletion
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} DeleteSettledDocument
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            ContractSettledDeletion.decode = function decode(reader, length) {
+                            DeleteSettledDocument.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        message.documentId = reader.bytes();
+                                        message.documentTypeName = reader.string();
                                         break;
                                     case 2:
-                                        message.proposedAt = reader.uint64();
+                                        message.documentId = reader.bytes();
                                         break;
                                     case 3:
                                         message.documentLastModifiedAt = reader.uint64();
                                         break;
                                     case 4:
-                                        message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
+                                        message.documentRevision = reader.uint64();
                                         break;
                                     case 5:
-                                        if (!(message.approvals && message.approvals.length))
-                                            message.approvals = [];
-                                        message.approvals.push(reader.bytes());
-                                        break;
-                                    case 6:
-                                        message.deletedAt = reader.uint64();
-                                        break;
-                                    case 7:
-                                        message.documentRevision = reader.uint64();
+                                        message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -30928,88 +30718,71 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a ContractSettledDeletion message from the specified reader or buffer, length delimited.
+                             * Decodes a DeleteSettledDocument message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} ContractSettledDeletion
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} DeleteSettledDocument
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            ContractSettledDeletion.decodeDelimited = function decodeDelimited(reader) {
+                            DeleteSettledDocument.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a ContractSettledDeletion message.
+                             * Verifies a DeleteSettledDocument message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            ContractSettledDeletion.verify = function verify(message) {
+                            DeleteSettledDocument.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    if (!$util.isString(message.documentTypeName))
+                                        return "documentTypeName: string expected";
                                 if (message.documentId != null && message.hasOwnProperty("documentId"))
                                     if (!(message.documentId && typeof message.documentId.length === "number" || $util.isString(message.documentId)))
                                         return "documentId: buffer expected";
-                                if (message.proposedAt != null && message.hasOwnProperty("proposedAt"))
-                                    if (!$util.isInteger(message.proposedAt) && !(message.proposedAt && $util.isInteger(message.proposedAt.low) && $util.isInteger(message.proposedAt.high)))
-                                        return "proposedAt: integer|Long expected";
                                 if (message.documentLastModifiedAt != null && message.hasOwnProperty("documentLastModifiedAt"))
                                     if (!$util.isInteger(message.documentLastModifiedAt) && !(message.documentLastModifiedAt && $util.isInteger(message.documentLastModifiedAt.low) && $util.isInteger(message.documentLastModifiedAt.high)))
                                         return "documentLastModifiedAt: integer|Long expected";
+                                if (message.documentRevision != null && message.hasOwnProperty("documentRevision"))
+                                    if (!$util.isInteger(message.documentRevision) && !(message.documentRevision && $util.isInteger(message.documentRevision.low) && $util.isInteger(message.documentRevision.high)))
+                                        return "documentRevision: integer|Long expected";
                                 if (message.reason != null && message.hasOwnProperty("reason")) {
                                     var error = $root.org.dash.platform.dapi.v0.ContractModerationReason.verify(message.reason);
                                     if (error)
                                         return "reason." + error;
                                 }
-                                if (message.approvals != null && message.hasOwnProperty("approvals")) {
-                                    if (!Array.isArray(message.approvals))
-                                        return "approvals: array expected";
-                                    for (var i = 0; i < message.approvals.length; ++i)
-                                        if (!(message.approvals[i] && typeof message.approvals[i].length === "number" || $util.isString(message.approvals[i])))
-                                            return "approvals: buffer[] expected";
-                                }
-                                if (message.deletedAt != null && message.hasOwnProperty("deletedAt"))
-                                    if (!$util.isInteger(message.deletedAt) && !(message.deletedAt && $util.isInteger(message.deletedAt.low) && $util.isInteger(message.deletedAt.high)))
-                                        return "deletedAt: integer|Long expected";
-                                if (message.documentRevision != null && message.hasOwnProperty("documentRevision"))
-                                    if (!$util.isInteger(message.documentRevision) && !(message.documentRevision && $util.isInteger(message.documentRevision.low) && $util.isInteger(message.documentRevision.high)))
-                                        return "documentRevision: integer|Long expected";
                                 return null;
                             };
 
                             /**
-                             * Creates a ContractSettledDeletion message from a plain object. Also converts values to their respective internal types.
+                             * Creates a DeleteSettledDocument message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} ContractSettledDeletion
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} DeleteSettledDocument
                              */
-                            ContractSettledDeletion.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion)
+                            DeleteSettledDocument.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion();
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument();
+                                if (object.documentTypeName != null)
+                                    message.documentTypeName = String(object.documentTypeName);
                                 if (object.documentId != null)
                                     if (typeof object.documentId === "string")
                                         $util.base64.decode(object.documentId, message.documentId = $util.newBuffer($util.base64.length(object.documentId)), 0);
                                     else if (object.documentId.length >= 0)
                                         message.documentId = object.documentId;
-                                if (object.proposedAt != null)
-                                    if ($util.Long)
-                                        (message.proposedAt = $util.Long.fromValue(object.proposedAt)).unsigned = true;
-                                    else if (typeof object.proposedAt === "string")
-                                        message.proposedAt = parseInt(object.proposedAt, 10);
-                                    else if (typeof object.proposedAt === "number")
-                                        message.proposedAt = object.proposedAt;
-                                    else if (typeof object.proposedAt === "object")
-                                        message.proposedAt = new $util.LongBits(object.proposedAt.low >>> 0, object.proposedAt.high >>> 0).toNumber(true);
                                 if (object.documentLastModifiedAt != null)
                                     if ($util.Long)
                                         (message.documentLastModifiedAt = $util.Long.fromValue(object.documentLastModifiedAt)).unsigned = true;
@@ -31019,30 +30792,6 @@ $root.org = (function() {
                                         message.documentLastModifiedAt = object.documentLastModifiedAt;
                                     else if (typeof object.documentLastModifiedAt === "object")
                                         message.documentLastModifiedAt = new $util.LongBits(object.documentLastModifiedAt.low >>> 0, object.documentLastModifiedAt.high >>> 0).toNumber(true);
-                                if (object.reason != null) {
-                                    if (typeof object.reason !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.reason: object expected");
-                                    message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.reason);
-                                }
-                                if (object.approvals) {
-                                    if (!Array.isArray(object.approvals))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.approvals: array expected");
-                                    message.approvals = [];
-                                    for (var i = 0; i < object.approvals.length; ++i)
-                                        if (typeof object.approvals[i] === "string")
-                                            $util.base64.decode(object.approvals[i], message.approvals[i] = $util.newBuffer($util.base64.length(object.approvals[i])), 0);
-                                        else if (object.approvals[i].length >= 0)
-                                            message.approvals[i] = object.approvals[i];
-                                }
-                                if (object.deletedAt != null)
-                                    if ($util.Long)
-                                        (message.deletedAt = $util.Long.fromValue(object.deletedAt)).unsigned = true;
-                                    else if (typeof object.deletedAt === "string")
-                                        message.deletedAt = parseInt(object.deletedAt, 10);
-                                    else if (typeof object.deletedAt === "number")
-                                        message.deletedAt = object.deletedAt;
-                                    else if (typeof object.deletedAt === "object")
-                                        message.deletedAt = new $util.LongBits(object.deletedAt.low >>> 0, object.deletedAt.high >>> 0).toNumber(true);
                                 if (object.documentRevision != null)
                                     if ($util.Long)
                                         (message.documentRevision = $util.Long.fromValue(object.documentRevision)).unsigned = true;
@@ -31052,25 +30801,29 @@ $root.org = (function() {
                                         message.documentRevision = object.documentRevision;
                                     else if (typeof object.documentRevision === "object")
                                         message.documentRevision = new $util.LongBits(object.documentRevision.low >>> 0, object.documentRevision.high >>> 0).toNumber(true);
+                                if (object.reason != null) {
+                                    if (typeof object.reason !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.reason: object expected");
+                                    message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.reason);
+                                }
                                 return message;
                             };
 
                             /**
-                             * Creates a plain object from a ContractSettledDeletion message. Also converts values to other types if specified.
+                             * Creates a plain object from a DeleteSettledDocument message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} message ContractSettledDeletion
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} message DeleteSettledDocument
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            ContractSettledDeletion.toObject = function toObject(message, options) {
+                            DeleteSettledDocument.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.arrays || options.defaults)
-                                    object.approvals = [];
                                 if (options.defaults) {
+                                    object.documentTypeName = "";
                                     if (options.bytes === String)
                                         object.documentId = "";
                                     else {
@@ -31080,91 +30833,70 @@ $root.org = (function() {
                                     }
                                     if ($util.Long) {
                                         var long = new $util.Long(0, 0, true);
-                                        object.proposedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
-                                    } else
-                                        object.proposedAt = options.longs === String ? "0" : 0;
-                                    if ($util.Long) {
-                                        var long = new $util.Long(0, 0, true);
                                         object.documentLastModifiedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.documentLastModifiedAt = options.longs === String ? "0" : 0;
-                                    object.reason = null;
-                                    if ($util.Long) {
-                                        var long = new $util.Long(0, 0, true);
-                                        object.deletedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
-                                    } else
-                                        object.deletedAt = options.longs === String ? "0" : 0;
                                     if ($util.Long) {
                                         var long = new $util.Long(0, 0, true);
                                         object.documentRevision = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.documentRevision = options.longs === String ? "0" : 0;
+                                    object.reason = null;
                                 }
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    object.documentTypeName = message.documentTypeName;
                                 if (message.documentId != null && message.hasOwnProperty("documentId"))
                                     object.documentId = options.bytes === String ? $util.base64.encode(message.documentId, 0, message.documentId.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentId) : message.documentId;
-                                if (message.proposedAt != null && message.hasOwnProperty("proposedAt"))
-                                    if (typeof message.proposedAt === "number")
-                                        object.proposedAt = options.longs === String ? String(message.proposedAt) : message.proposedAt;
-                                    else
-                                        object.proposedAt = options.longs === String ? $util.Long.prototype.toString.call(message.proposedAt) : options.longs === Number ? new $util.LongBits(message.proposedAt.low >>> 0, message.proposedAt.high >>> 0).toNumber(true) : message.proposedAt;
                                 if (message.documentLastModifiedAt != null && message.hasOwnProperty("documentLastModifiedAt"))
                                     if (typeof message.documentLastModifiedAt === "number")
                                         object.documentLastModifiedAt = options.longs === String ? String(message.documentLastModifiedAt) : message.documentLastModifiedAt;
                                     else
                                         object.documentLastModifiedAt = options.longs === String ? $util.Long.prototype.toString.call(message.documentLastModifiedAt) : options.longs === Number ? new $util.LongBits(message.documentLastModifiedAt.low >>> 0, message.documentLastModifiedAt.high >>> 0).toNumber(true) : message.documentLastModifiedAt;
-                                if (message.reason != null && message.hasOwnProperty("reason"))
-                                    object.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.reason, options);
-                                if (message.approvals && message.approvals.length) {
-                                    object.approvals = [];
-                                    for (var j = 0; j < message.approvals.length; ++j)
-                                        object.approvals[j] = options.bytes === String ? $util.base64.encode(message.approvals[j], 0, message.approvals[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.approvals[j]) : message.approvals[j];
-                                }
-                                if (message.deletedAt != null && message.hasOwnProperty("deletedAt"))
-                                    if (typeof message.deletedAt === "number")
-                                        object.deletedAt = options.longs === String ? String(message.deletedAt) : message.deletedAt;
-                                    else
-                                        object.deletedAt = options.longs === String ? $util.Long.prototype.toString.call(message.deletedAt) : options.longs === Number ? new $util.LongBits(message.deletedAt.low >>> 0, message.deletedAt.high >>> 0).toNumber(true) : message.deletedAt;
                                 if (message.documentRevision != null && message.hasOwnProperty("documentRevision"))
                                     if (typeof message.documentRevision === "number")
                                         object.documentRevision = options.longs === String ? String(message.documentRevision) : message.documentRevision;
                                     else
                                         object.documentRevision = options.longs === String ? $util.Long.prototype.toString.call(message.documentRevision) : options.longs === Number ? new $util.LongBits(message.documentRevision.low >>> 0, message.documentRevision.high >>> 0).toNumber(true) : message.documentRevision;
+                                if (message.reason != null && message.hasOwnProperty("reason"))
+                                    object.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.reason, options);
                                 return object;
                             };
 
                             /**
-                             * Converts this ContractSettledDeletion to JSON.
+                             * Converts this DeleteSettledDocument to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            ContractSettledDeletion.prototype.toJSON = function toJSON() {
+                            DeleteSettledDocument.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return ContractSettledDeletion;
+                            return DeleteSettledDocument;
                         })();
 
-                        GetContractSettledDeletionsResponse.ContractSettledDeletions = (function() {
+                        GetContractTeamActionsResponse.ContractTeamAction = (function() {
 
                             /**
-                             * Properties of a ContractSettledDeletions.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
-                             * @interface IContractSettledDeletions
-                             * @property {Array.<org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion>|null} [settledDeletions] ContractSettledDeletions settledDeletions
+                             * Properties of a ContractTeamAction.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
+                             * @interface IContractTeamAction
+                             * @property {Uint8Array|null} [actionId] ContractTeamAction actionId
+                             * @property {Uint8Array|null} [proposerId] ContractTeamAction proposerId
+                             * @property {number|Long|null} [proposedAt] ContractTeamAction proposedAt
+                             * @property {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IDeleteSettledDocument|null} [deleteSettledDocument] ContractTeamAction deleteSettledDocument
                              */
 
                             /**
-                             * Constructs a new ContractSettledDeletions.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
-                             * @classdesc Represents a ContractSettledDeletions.
-                             * @implements IContractSettledDeletions
+                             * Constructs a new ContractTeamAction.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
+                             * @classdesc Represents a ContractTeamAction.
+                             * @implements IContractTeamAction
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamAction=} [properties] Properties to set
                              */
-                            function ContractSettledDeletions(properties) {
-                                this.settledDeletions = [];
+                            function ContractTeamAction(properties) {
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -31172,78 +30904,128 @@ $root.org = (function() {
                             }
 
                             /**
-                             * ContractSettledDeletions settledDeletions.
-                             * @member {Array.<org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion>} settledDeletions
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * ContractTeamAction actionId.
+                             * @member {Uint8Array} actionId
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @instance
                              */
-                            ContractSettledDeletions.prototype.settledDeletions = $util.emptyArray;
+                            ContractTeamAction.prototype.actionId = $util.newBuffer([]);
 
                             /**
-                             * Creates a new ContractSettledDeletions instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} ContractSettledDeletions instance
+                             * ContractTeamAction proposerId.
+                             * @member {Uint8Array} proposerId
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
+                             * @instance
                              */
-                            ContractSettledDeletions.create = function create(properties) {
-                                return new ContractSettledDeletions(properties);
+                            ContractTeamAction.prototype.proposerId = $util.newBuffer([]);
+
+                            /**
+                             * ContractTeamAction proposedAt.
+                             * @member {number|Long} proposedAt
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
+                             * @instance
+                             */
+                            ContractTeamAction.prototype.proposedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * ContractTeamAction deleteSettledDocument.
+                             * @member {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IDeleteSettledDocument|null|undefined} deleteSettledDocument
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
+                             * @instance
+                             */
+                            ContractTeamAction.prototype.deleteSettledDocument = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * ContractTeamAction event.
+                             * @member {"deleteSettledDocument"|undefined} event
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
+                             * @instance
+                             */
+                            Object.defineProperty(ContractTeamAction.prototype, "event", {
+                                get: $util.oneOfGetter($oneOfFields = ["deleteSettledDocument"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new ContractTeamAction instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamAction=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} ContractTeamAction instance
+                             */
+                            ContractTeamAction.create = function create(properties) {
+                                return new ContractTeamAction(properties);
                             };
 
                             /**
-                             * Encodes the specified ContractSettledDeletions message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.verify|verify} messages.
+                             * Encodes the specified ContractTeamAction message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions} message ContractSettledDeletions message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamAction} message ContractTeamAction message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            ContractSettledDeletions.encode = function encode(message, writer) {
+                            ContractTeamAction.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
-                                if (message.settledDeletions != null && message.settledDeletions.length)
-                                    for (var i = 0; i < message.settledDeletions.length; ++i)
-                                        $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.encode(message.settledDeletions[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.actionId != null && Object.hasOwnProperty.call(message, "actionId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.actionId);
+                                if (message.proposerId != null && Object.hasOwnProperty.call(message, "proposerId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.proposerId);
+                                if (message.proposedAt != null && Object.hasOwnProperty.call(message, "proposedAt"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.proposedAt);
+                                if (message.deleteSettledDocument != null && Object.hasOwnProperty.call(message, "deleteSettledDocument"))
+                                    $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.encode(message.deleteSettledDocument, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 return writer;
                             };
 
                             /**
-                             * Encodes the specified ContractSettledDeletions message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.verify|verify} messages.
+                             * Encodes the specified ContractTeamAction message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions} message ContractSettledDeletions message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamAction} message ContractTeamAction message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            ContractSettledDeletions.encodeDelimited = function encodeDelimited(message, writer) {
+                            ContractTeamAction.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a ContractSettledDeletions message from the specified reader or buffer.
+                             * Decodes a ContractTeamAction message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} ContractSettledDeletions
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} ContractTeamAction
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            ContractSettledDeletions.decode = function decode(reader, length) {
+                            ContractTeamAction.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        if (!(message.settledDeletions && message.settledDeletions.length))
-                                            message.settledDeletions = [];
-                                        message.settledDeletions.push($root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.decode(reader, reader.uint32()));
+                                        message.actionId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.proposerId = reader.bytes();
+                                        break;
+                                    case 3:
+                                        message.proposedAt = reader.uint64();
+                                        break;
+                                    case 4:
+                                        message.deleteSettledDocument = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -31254,126 +31036,176 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a ContractSettledDeletions message from the specified reader or buffer, length delimited.
+                             * Decodes a ContractTeamAction message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} ContractSettledDeletions
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} ContractTeamAction
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            ContractSettledDeletions.decodeDelimited = function decodeDelimited(reader) {
+                            ContractTeamAction.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a ContractSettledDeletions message.
+                             * Verifies a ContractTeamAction message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            ContractSettledDeletions.verify = function verify(message) {
+                            ContractTeamAction.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
-                                if (message.settledDeletions != null && message.hasOwnProperty("settledDeletions")) {
-                                    if (!Array.isArray(message.settledDeletions))
-                                        return "settledDeletions: array expected";
-                                    for (var i = 0; i < message.settledDeletions.length; ++i) {
-                                        var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.verify(message.settledDeletions[i]);
+                                var properties = {};
+                                if (message.actionId != null && message.hasOwnProperty("actionId"))
+                                    if (!(message.actionId && typeof message.actionId.length === "number" || $util.isString(message.actionId)))
+                                        return "actionId: buffer expected";
+                                if (message.proposerId != null && message.hasOwnProperty("proposerId"))
+                                    if (!(message.proposerId && typeof message.proposerId.length === "number" || $util.isString(message.proposerId)))
+                                        return "proposerId: buffer expected";
+                                if (message.proposedAt != null && message.hasOwnProperty("proposedAt"))
+                                    if (!$util.isInteger(message.proposedAt) && !(message.proposedAt && $util.isInteger(message.proposedAt.low) && $util.isInteger(message.proposedAt.high)))
+                                        return "proposedAt: integer|Long expected";
+                                if (message.deleteSettledDocument != null && message.hasOwnProperty("deleteSettledDocument")) {
+                                    properties.event = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.verify(message.deleteSettledDocument);
                                         if (error)
-                                            return "settledDeletions." + error;
+                                            return "deleteSettledDocument." + error;
                                     }
                                 }
                                 return null;
                             };
 
                             /**
-                             * Creates a ContractSettledDeletions message from a plain object. Also converts values to their respective internal types.
+                             * Creates a ContractTeamAction message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} ContractSettledDeletions
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} ContractTeamAction
                              */
-                            ContractSettledDeletions.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions)
+                            ContractTeamAction.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions();
-                                if (object.settledDeletions) {
-                                    if (!Array.isArray(object.settledDeletions))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.settledDeletions: array expected");
-                                    message.settledDeletions = [];
-                                    for (var i = 0; i < object.settledDeletions.length; ++i) {
-                                        if (typeof object.settledDeletions[i] !== "object")
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.settledDeletions: object expected");
-                                        message.settledDeletions[i] = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.fromObject(object.settledDeletions[i]);
-                                    }
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction();
+                                if (object.actionId != null)
+                                    if (typeof object.actionId === "string")
+                                        $util.base64.decode(object.actionId, message.actionId = $util.newBuffer($util.base64.length(object.actionId)), 0);
+                                    else if (object.actionId.length >= 0)
+                                        message.actionId = object.actionId;
+                                if (object.proposerId != null)
+                                    if (typeof object.proposerId === "string")
+                                        $util.base64.decode(object.proposerId, message.proposerId = $util.newBuffer($util.base64.length(object.proposerId)), 0);
+                                    else if (object.proposerId.length >= 0)
+                                        message.proposerId = object.proposerId;
+                                if (object.proposedAt != null)
+                                    if ($util.Long)
+                                        (message.proposedAt = $util.Long.fromValue(object.proposedAt)).unsigned = true;
+                                    else if (typeof object.proposedAt === "string")
+                                        message.proposedAt = parseInt(object.proposedAt, 10);
+                                    else if (typeof object.proposedAt === "number")
+                                        message.proposedAt = object.proposedAt;
+                                    else if (typeof object.proposedAt === "object")
+                                        message.proposedAt = new $util.LongBits(object.proposedAt.low >>> 0, object.proposedAt.high >>> 0).toNumber(true);
+                                if (object.deleteSettledDocument != null) {
+                                    if (typeof object.deleteSettledDocument !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.deleteSettledDocument: object expected");
+                                    message.deleteSettledDocument = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.fromObject(object.deleteSettledDocument);
                                 }
                                 return message;
                             };
 
                             /**
-                             * Creates a plain object from a ContractSettledDeletions message. Also converts values to other types if specified.
+                             * Creates a plain object from a ContractTeamAction message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} message ContractSettledDeletions
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} message ContractTeamAction
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            ContractSettledDeletions.toObject = function toObject(message, options) {
+                            ContractTeamAction.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.arrays || options.defaults)
-                                    object.settledDeletions = [];
-                                if (message.settledDeletions && message.settledDeletions.length) {
-                                    object.settledDeletions = [];
-                                    for (var j = 0; j < message.settledDeletions.length; ++j)
-                                        object.settledDeletions[j] = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.toObject(message.settledDeletions[j], options);
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.actionId = "";
+                                    else {
+                                        object.actionId = [];
+                                        if (options.bytes !== Array)
+                                            object.actionId = $util.newBuffer(object.actionId);
+                                    }
+                                    if (options.bytes === String)
+                                        object.proposerId = "";
+                                    else {
+                                        object.proposerId = [];
+                                        if (options.bytes !== Array)
+                                            object.proposerId = $util.newBuffer(object.proposerId);
+                                    }
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.proposedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.proposedAt = options.longs === String ? "0" : 0;
+                                }
+                                if (message.actionId != null && message.hasOwnProperty("actionId"))
+                                    object.actionId = options.bytes === String ? $util.base64.encode(message.actionId, 0, message.actionId.length) : options.bytes === Array ? Array.prototype.slice.call(message.actionId) : message.actionId;
+                                if (message.proposerId != null && message.hasOwnProperty("proposerId"))
+                                    object.proposerId = options.bytes === String ? $util.base64.encode(message.proposerId, 0, message.proposerId.length) : options.bytes === Array ? Array.prototype.slice.call(message.proposerId) : message.proposerId;
+                                if (message.proposedAt != null && message.hasOwnProperty("proposedAt"))
+                                    if (typeof message.proposedAt === "number")
+                                        object.proposedAt = options.longs === String ? String(message.proposedAt) : message.proposedAt;
+                                    else
+                                        object.proposedAt = options.longs === String ? $util.Long.prototype.toString.call(message.proposedAt) : options.longs === Number ? new $util.LongBits(message.proposedAt.low >>> 0, message.proposedAt.high >>> 0).toNumber(true) : message.proposedAt;
+                                if (message.deleteSettledDocument != null && message.hasOwnProperty("deleteSettledDocument")) {
+                                    object.deleteSettledDocument = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.toObject(message.deleteSettledDocument, options);
+                                    if (options.oneofs)
+                                        object.event = "deleteSettledDocument";
                                 }
                                 return object;
                             };
 
                             /**
-                             * Converts this ContractSettledDeletions to JSON.
+                             * Converts this ContractTeamAction to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            ContractSettledDeletions.prototype.toJSON = function toJSON() {
+                            ContractTeamAction.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return ContractSettledDeletions;
+                            return ContractTeamAction;
                         })();
 
-                        GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0 = (function() {
+                        GetContractTeamActionsResponse.ContractTeamActions = (function() {
 
                             /**
-                             * Properties of a GetContractSettledDeletionsResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
-                             * @interface IGetContractSettledDeletionsResponseV0
-                             * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions|null} [settledDeletions] GetContractSettledDeletionsResponseV0 settledDeletions
-                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContractSettledDeletionsResponseV0 proof
-                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContractSettledDeletionsResponseV0 metadata
+                             * Properties of a ContractTeamActions.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
+                             * @interface IContractTeamActions
+                             * @property {Array.<org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamAction>|null} [actions] ContractTeamActions actions
                              */
 
                             /**
-                             * Constructs a new GetContractSettledDeletionsResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
-                             * @classdesc Represents a GetContractSettledDeletionsResponseV0.
-                             * @implements IGetContractSettledDeletionsResponseV0
+                             * Constructs a new ContractTeamActions.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
+                             * @classdesc Represents a ContractTeamActions.
+                             * @implements IContractTeamActions
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamActions=} [properties] Properties to set
                              */
-                            function GetContractSettledDeletionsResponseV0(properties) {
+                            function ContractTeamActions(properties) {
+                                this.actions = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -31381,69 +31213,278 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetContractSettledDeletionsResponseV0 settledDeletions.
-                             * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions|null|undefined} settledDeletions
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * ContractTeamActions actions.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamAction>} actions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
                              * @instance
                              */
-                            GetContractSettledDeletionsResponseV0.prototype.settledDeletions = null;
+                            ContractTeamActions.prototype.actions = $util.emptyArray;
 
                             /**
-                             * GetContractSettledDeletionsResponseV0 proof.
+                             * Creates a new ContractTeamActions instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamActions=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} ContractTeamActions instance
+                             */
+                            ContractTeamActions.create = function create(properties) {
+                                return new ContractTeamActions(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractTeamActions message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamActions} message ContractTeamActions message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractTeamActions.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.actions != null && message.actions.length)
+                                    for (var i = 0; i < message.actions.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.encode(message.actions[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractTeamActions message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamActions} message ContractTeamActions message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractTeamActions.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractTeamActions message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} ContractTeamActions
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractTeamActions.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.actions && message.actions.length))
+                                            message.actions = [];
+                                        message.actions.push($root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.decode(reader, reader.uint32()));
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractTeamActions message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} ContractTeamActions
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractTeamActions.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractTeamActions message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractTeamActions.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.actions != null && message.hasOwnProperty("actions")) {
+                                    if (!Array.isArray(message.actions))
+                                        return "actions: array expected";
+                                    for (var i = 0; i < message.actions.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.verify(message.actions[i]);
+                                        if (error)
+                                            return "actions." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractTeamActions message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} ContractTeamActions
+                             */
+                            ContractTeamActions.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions();
+                                if (object.actions) {
+                                    if (!Array.isArray(object.actions))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.actions: array expected");
+                                    message.actions = [];
+                                    for (var i = 0; i < object.actions.length; ++i) {
+                                        if (typeof object.actions[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.actions: object expected");
+                                        message.actions[i] = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.fromObject(object.actions[i]);
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractTeamActions message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} message ContractTeamActions
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractTeamActions.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.actions = [];
+                                if (message.actions && message.actions.length) {
+                                    object.actions = [];
+                                    for (var j = 0; j < message.actions.length; ++j)
+                                        object.actions[j] = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.toObject(message.actions[j], options);
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractTeamActions to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractTeamActions.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractTeamActions;
+                        })();
+
+                        GetContractTeamActionsResponse.GetContractTeamActionsResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractTeamActionsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
+                             * @interface IGetContractTeamActionsResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamActions|null} [actions] GetContractTeamActionsResponseV0 actions
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContractTeamActionsResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContractTeamActionsResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetContractTeamActionsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse
+                             * @classdesc Represents a GetContractTeamActionsResponseV0.
+                             * @implements IGetContractTeamActionsResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IGetContractTeamActionsResponseV0=} [properties] Properties to set
+                             */
+                            function GetContractTeamActionsResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractTeamActionsResponseV0 actions.
+                             * @member {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IContractTeamActions|null|undefined} actions
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
+                             * @instance
+                             */
+                            GetContractTeamActionsResponseV0.prototype.actions = null;
+
+                            /**
+                             * GetContractTeamActionsResponseV0 proof.
                              * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @instance
                              */
-                            GetContractSettledDeletionsResponseV0.prototype.proof = null;
+                            GetContractTeamActionsResponseV0.prototype.proof = null;
 
                             /**
-                             * GetContractSettledDeletionsResponseV0 metadata.
+                             * GetContractTeamActionsResponseV0 metadata.
                              * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @instance
                              */
-                            GetContractSettledDeletionsResponseV0.prototype.metadata = null;
+                            GetContractTeamActionsResponseV0.prototype.metadata = null;
 
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
                             /**
-                             * GetContractSettledDeletionsResponseV0 result.
-                             * @member {"settledDeletions"|"proof"|undefined} result
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * GetContractTeamActionsResponseV0 result.
+                             * @member {"actions"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @instance
                              */
-                            Object.defineProperty(GetContractSettledDeletionsResponseV0.prototype, "result", {
-                                get: $util.oneOfGetter($oneOfFields = ["settledDeletions", "proof"]),
+                            Object.defineProperty(GetContractTeamActionsResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["actions", "proof"]),
                                 set: $util.oneOfSetter($oneOfFields)
                             });
 
                             /**
-                             * Creates a new GetContractSettledDeletionsResponseV0 instance using the specified properties.
+                             * Creates a new GetContractTeamActionsResponseV0 instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} GetContractSettledDeletionsResponseV0 instance
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IGetContractTeamActionsResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} GetContractTeamActionsResponseV0 instance
                              */
-                            GetContractSettledDeletionsResponseV0.create = function create(properties) {
-                                return new GetContractSettledDeletionsResponseV0(properties);
+                            GetContractTeamActionsResponseV0.create = function create(properties) {
+                                return new GetContractTeamActionsResponseV0(properties);
                             };
 
                             /**
-                             * Encodes the specified GetContractSettledDeletionsResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.verify|verify} messages.
+                             * Encodes the specified GetContractTeamActionsResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0} message GetContractSettledDeletionsResponseV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IGetContractTeamActionsResponseV0} message GetContractTeamActionsResponseV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetContractSettledDeletionsResponseV0.encode = function encode(message, writer) {
+                            GetContractTeamActionsResponseV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
-                                if (message.settledDeletions != null && Object.hasOwnProperty.call(message, "settledDeletions"))
-                                    $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.encode(message.settledDeletions, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.actions != null && Object.hasOwnProperty.call(message, "actions"))
+                                    $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.encode(message.actions, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                 if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
@@ -31452,38 +31493,38 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified GetContractSettledDeletionsResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.verify|verify} messages.
+                             * Encodes the specified GetContractTeamActionsResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0} message GetContractSettledDeletionsResponseV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IGetContractTeamActionsResponseV0} message GetContractTeamActionsResponseV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetContractSettledDeletionsResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                            GetContractTeamActionsResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a GetContractSettledDeletionsResponseV0 message from the specified reader or buffer.
+                             * Decodes a GetContractTeamActionsResponseV0 message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} GetContractSettledDeletionsResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} GetContractTeamActionsResponseV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetContractSettledDeletionsResponseV0.decode = function decode(reader, length) {
+                            GetContractTeamActionsResponseV0.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        message.settledDeletions = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.decode(reader, reader.uint32());
+                                        message.actions = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.decode(reader, reader.uint32());
                                         break;
                                     case 2:
                                         message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
@@ -31500,39 +31541,39 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a GetContractSettledDeletionsResponseV0 message from the specified reader or buffer, length delimited.
+                             * Decodes a GetContractTeamActionsResponseV0 message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} GetContractSettledDeletionsResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} GetContractTeamActionsResponseV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetContractSettledDeletionsResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                            GetContractTeamActionsResponseV0.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a GetContractSettledDeletionsResponseV0 message.
+                             * Verifies a GetContractTeamActionsResponseV0 message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            GetContractSettledDeletionsResponseV0.verify = function verify(message) {
+                            GetContractTeamActionsResponseV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
                                 var properties = {};
-                                if (message.settledDeletions != null && message.hasOwnProperty("settledDeletions")) {
+                                if (message.actions != null && message.hasOwnProperty("actions")) {
                                     properties.result = 1;
                                     {
-                                        var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.verify(message.settledDeletions);
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.verify(message.actions);
                                         if (error)
-                                            return "settledDeletions." + error;
+                                            return "actions." + error;
                                     }
                                 }
                                 if (message.proof != null && message.hasOwnProperty("proof")) {
@@ -31554,54 +31595,54 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a GetContractSettledDeletionsResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * Creates a GetContractTeamActionsResponseV0 message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} GetContractSettledDeletionsResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} GetContractTeamActionsResponseV0
                              */
-                            GetContractSettledDeletionsResponseV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0)
+                            GetContractTeamActionsResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0();
-                                if (object.settledDeletions != null) {
-                                    if (typeof object.settledDeletions !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.settledDeletions: object expected");
-                                    message.settledDeletions = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.fromObject(object.settledDeletions);
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0();
+                                if (object.actions != null) {
+                                    if (typeof object.actions !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.actions: object expected");
+                                    message.actions = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.fromObject(object.actions);
                                 }
                                 if (object.proof != null) {
                                     if (typeof object.proof !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.proof: object expected");
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.proof: object expected");
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
                                 }
                                 if (object.metadata != null) {
                                     if (typeof object.metadata !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.metadata: object expected");
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.metadata: object expected");
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
                                 }
                                 return message;
                             };
 
                             /**
-                             * Creates a plain object from a GetContractSettledDeletionsResponseV0 message. Also converts values to other types if specified.
+                             * Creates a plain object from a GetContractTeamActionsResponseV0 message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} message GetContractSettledDeletionsResponseV0
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} message GetContractTeamActionsResponseV0
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            GetContractSettledDeletionsResponseV0.toObject = function toObject(message, options) {
+                            GetContractTeamActionsResponseV0.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
                                 if (options.defaults)
                                     object.metadata = null;
-                                if (message.settledDeletions != null && message.hasOwnProperty("settledDeletions")) {
-                                    object.settledDeletions = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.toObject(message.settledDeletions, options);
+                                if (message.actions != null && message.hasOwnProperty("actions")) {
+                                    object.actions = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.toObject(message.actions, options);
                                     if (options.oneofs)
-                                        object.result = "settledDeletions";
+                                        object.result = "actions";
                                 }
                                 if (message.proof != null && message.hasOwnProperty("proof")) {
                                     object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
@@ -31614,20 +31655,1220 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Converts this GetContractSettledDeletionsResponseV0 to JSON.
+                             * Converts this GetContractTeamActionsResponseV0 to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            GetContractSettledDeletionsResponseV0.prototype.toJSON = function toJSON() {
+                            GetContractTeamActionsResponseV0.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return GetContractSettledDeletionsResponseV0;
+                            return GetContractTeamActionsResponseV0;
                         })();
 
-                        return GetContractSettledDeletionsResponse;
+                        return GetContractTeamActionsResponse;
+                    })();
+
+                    v0.GetContractTeamActionSignersRequest = (function() {
+
+                        /**
+                         * Properties of a GetContractTeamActionSignersRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContractTeamActionSignersRequest
+                         * @property {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.IGetContractTeamActionSignersRequestV0|null} [v0] GetContractTeamActionSignersRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetContractTeamActionSignersRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContractTeamActionSignersRequest.
+                         * @implements IGetContractTeamActionSignersRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersRequest=} [properties] Properties to set
+                         */
+                        function GetContractTeamActionSignersRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContractTeamActionSignersRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.IGetContractTeamActionSignersRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @instance
+                         */
+                        GetContractTeamActionSignersRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContractTeamActionSignersRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetContractTeamActionSignersRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContractTeamActionSignersRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} GetContractTeamActionSignersRequest instance
+                         */
+                        GetContractTeamActionSignersRequest.create = function create(properties) {
+                            return new GetContractTeamActionSignersRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContractTeamActionSignersRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersRequest} message GetContractTeamActionSignersRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractTeamActionSignersRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContractTeamActionSignersRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersRequest} message GetContractTeamActionSignersRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractTeamActionSignersRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContractTeamActionSignersRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} GetContractTeamActionSignersRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractTeamActionSignersRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContractTeamActionSignersRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} GetContractTeamActionSignersRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractTeamActionSignersRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContractTeamActionSignersRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContractTeamActionSignersRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContractTeamActionSignersRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} GetContractTeamActionSignersRequest
+                         */
+                        GetContractTeamActionSignersRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContractTeamActionSignersRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} message GetContractTeamActionSignersRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContractTeamActionSignersRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContractTeamActionSignersRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContractTeamActionSignersRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        /**
+                         * ActionStatus enum.
+                         * @name org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus
+                         * @enum {number}
+                         * @property {number} ACTIVE=0 ACTIVE value
+                         * @property {number} CLOSED=1 CLOSED value
+                         */
+                        GetContractTeamActionSignersRequest.ActionStatus = (function() {
+                            var valuesById = {}, values = Object.create(valuesById);
+                            values[valuesById[0] = "ACTIVE"] = 0;
+                            values[valuesById[1] = "CLOSED"] = 1;
+                            return values;
+                        })();
+
+                        GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractTeamActionSignersRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                             * @interface IGetContractTeamActionSignersRequestV0
+                             * @property {Uint8Array|null} [contractId] GetContractTeamActionSignersRequestV0 contractId
+                             * @property {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus|null} [status] GetContractTeamActionSignersRequestV0 status
+                             * @property {Uint8Array|null} [actionId] GetContractTeamActionSignersRequestV0 actionId
+                             * @property {boolean|null} [prove] GetContractTeamActionSignersRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetContractTeamActionSignersRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest
+                             * @classdesc Represents a GetContractTeamActionSignersRequestV0.
+                             * @implements IGetContractTeamActionSignersRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.IGetContractTeamActionSignersRequestV0=} [properties] Properties to set
+                             */
+                            function GetContractTeamActionSignersRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractTeamActionSignersRequestV0 contractId.
+                             * @member {Uint8Array} contractId
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @instance
+                             */
+                            GetContractTeamActionSignersRequestV0.prototype.contractId = $util.newBuffer([]);
+
+                            /**
+                             * GetContractTeamActionSignersRequestV0 status.
+                             * @member {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus} status
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @instance
+                             */
+                            GetContractTeamActionSignersRequestV0.prototype.status = 0;
+
+                            /**
+                             * GetContractTeamActionSignersRequestV0 actionId.
+                             * @member {Uint8Array} actionId
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @instance
+                             */
+                            GetContractTeamActionSignersRequestV0.prototype.actionId = $util.newBuffer([]);
+
+                            /**
+                             * GetContractTeamActionSignersRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @instance
+                             */
+                            GetContractTeamActionSignersRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetContractTeamActionSignersRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.IGetContractTeamActionSignersRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} GetContractTeamActionSignersRequestV0 instance
+                             */
+                            GetContractTeamActionSignersRequestV0.create = function create(properties) {
+                                return new GetContractTeamActionSignersRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContractTeamActionSignersRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.IGetContractTeamActionSignersRequestV0} message GetContractTeamActionSignersRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractTeamActionSignersRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.contractId);
+                                if (message.status != null && Object.hasOwnProperty.call(message, "status"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).int32(message.status);
+                                if (message.actionId != null && Object.hasOwnProperty.call(message, "actionId"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.actionId);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContractTeamActionSignersRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.IGetContractTeamActionSignersRequestV0} message GetContractTeamActionSignersRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractTeamActionSignersRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContractTeamActionSignersRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} GetContractTeamActionSignersRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractTeamActionSignersRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.status = reader.int32();
+                                        break;
+                                    case 3:
+                                        message.actionId = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContractTeamActionSignersRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} GetContractTeamActionSignersRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractTeamActionSignersRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContractTeamActionSignersRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContractTeamActionSignersRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
+                                        return "contractId: buffer expected";
+                                if (message.status != null && message.hasOwnProperty("status"))
+                                    switch (message.status) {
+                                    default:
+                                        return "status: enum value expected";
+                                    case 0:
+                                    case 1:
+                                        break;
+                                    }
+                                if (message.actionId != null && message.hasOwnProperty("actionId"))
+                                    if (!(message.actionId && typeof message.actionId.length === "number" || $util.isString(message.actionId)))
+                                        return "actionId: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContractTeamActionSignersRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} GetContractTeamActionSignersRequestV0
+                             */
+                            GetContractTeamActionSignersRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0();
+                                if (object.contractId != null)
+                                    if (typeof object.contractId === "string")
+                                        $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
+                                    else if (object.contractId.length >= 0)
+                                        message.contractId = object.contractId;
+                                switch (object.status) {
+                                case "ACTIVE":
+                                case 0:
+                                    message.status = 0;
+                                    break;
+                                case "CLOSED":
+                                case 1:
+                                    message.status = 1;
+                                    break;
+                                }
+                                if (object.actionId != null)
+                                    if (typeof object.actionId === "string")
+                                        $util.base64.decode(object.actionId, message.actionId = $util.newBuffer($util.base64.length(object.actionId)), 0);
+                                    else if (object.actionId.length >= 0)
+                                        message.actionId = object.actionId;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContractTeamActionSignersRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} message GetContractTeamActionSignersRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContractTeamActionSignersRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.contractId = "";
+                                    else {
+                                        object.contractId = [];
+                                        if (options.bytes !== Array)
+                                            object.contractId = $util.newBuffer(object.contractId);
+                                    }
+                                    object.status = options.enums === String ? "ACTIVE" : 0;
+                                    if (options.bytes === String)
+                                        object.actionId = "";
+                                    else {
+                                        object.actionId = [];
+                                        if (options.bytes !== Array)
+                                            object.actionId = $util.newBuffer(object.actionId);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
+                                if (message.status != null && message.hasOwnProperty("status"))
+                                    object.status = options.enums === String ? $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus[message.status] : message.status;
+                                if (message.actionId != null && message.hasOwnProperty("actionId"))
+                                    object.actionId = options.bytes === String ? $util.base64.encode(message.actionId, 0, message.actionId.length) : options.bytes === Array ? Array.prototype.slice.call(message.actionId) : message.actionId;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContractTeamActionSignersRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContractTeamActionSignersRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContractTeamActionSignersRequestV0;
+                        })();
+
+                        return GetContractTeamActionSignersRequest;
+                    })();
+
+                    v0.GetContractTeamActionSignersResponse = (function() {
+
+                        /**
+                         * Properties of a GetContractTeamActionSignersResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContractTeamActionSignersResponse
+                         * @property {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IGetContractTeamActionSignersResponseV0|null} [v0] GetContractTeamActionSignersResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetContractTeamActionSignersResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContractTeamActionSignersResponse.
+                         * @implements IGetContractTeamActionSignersResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersResponse=} [properties] Properties to set
+                         */
+                        function GetContractTeamActionSignersResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContractTeamActionSignersResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IGetContractTeamActionSignersResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @instance
+                         */
+                        GetContractTeamActionSignersResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContractTeamActionSignersResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetContractTeamActionSignersResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContractTeamActionSignersResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} GetContractTeamActionSignersResponse instance
+                         */
+                        GetContractTeamActionSignersResponse.create = function create(properties) {
+                            return new GetContractTeamActionSignersResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContractTeamActionSignersResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersResponse} message GetContractTeamActionSignersResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractTeamActionSignersResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContractTeamActionSignersResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractTeamActionSignersResponse} message GetContractTeamActionSignersResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractTeamActionSignersResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContractTeamActionSignersResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} GetContractTeamActionSignersResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractTeamActionSignersResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContractTeamActionSignersResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} GetContractTeamActionSignersResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractTeamActionSignersResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContractTeamActionSignersResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContractTeamActionSignersResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContractTeamActionSignersResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} GetContractTeamActionSignersResponse
+                         */
+                        GetContractTeamActionSignersResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContractTeamActionSignersResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} message GetContractTeamActionSignersResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContractTeamActionSignersResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContractTeamActionSignersResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContractTeamActionSignersResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContractTeamActionSignersResponse.ContractTeamActionSigners = (function() {
+
+                            /**
+                             * Properties of a ContractTeamActionSigners.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                             * @interface IContractTeamActionSigners
+                             * @property {Array.<Uint8Array>|null} [signerIds] ContractTeamActionSigners signerIds
+                             */
+
+                            /**
+                             * Constructs a new ContractTeamActionSigners.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                             * @classdesc Represents a ContractTeamActionSigners.
+                             * @implements IContractTeamActionSigners
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IContractTeamActionSigners=} [properties] Properties to set
+                             */
+                            function ContractTeamActionSigners(properties) {
+                                this.signerIds = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ContractTeamActionSigners signerIds.
+                             * @member {Array.<Uint8Array>} signerIds
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @instance
+                             */
+                            ContractTeamActionSigners.prototype.signerIds = $util.emptyArray;
+
+                            /**
+                             * Creates a new ContractTeamActionSigners instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IContractTeamActionSigners=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} ContractTeamActionSigners instance
+                             */
+                            ContractTeamActionSigners.create = function create(properties) {
+                                return new ContractTeamActionSigners(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractTeamActionSigners message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IContractTeamActionSigners} message ContractTeamActionSigners message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractTeamActionSigners.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.signerIds != null && message.signerIds.length)
+                                    for (var i = 0; i < message.signerIds.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.signerIds[i]);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractTeamActionSigners message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IContractTeamActionSigners} message ContractTeamActionSigners message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractTeamActionSigners.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractTeamActionSigners message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} ContractTeamActionSigners
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractTeamActionSigners.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.signerIds && message.signerIds.length))
+                                            message.signerIds = [];
+                                        message.signerIds.push(reader.bytes());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractTeamActionSigners message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} ContractTeamActionSigners
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractTeamActionSigners.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractTeamActionSigners message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractTeamActionSigners.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.signerIds != null && message.hasOwnProperty("signerIds")) {
+                                    if (!Array.isArray(message.signerIds))
+                                        return "signerIds: array expected";
+                                    for (var i = 0; i < message.signerIds.length; ++i)
+                                        if (!(message.signerIds[i] && typeof message.signerIds[i].length === "number" || $util.isString(message.signerIds[i])))
+                                            return "signerIds: buffer[] expected";
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractTeamActionSigners message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} ContractTeamActionSigners
+                             */
+                            ContractTeamActionSigners.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners();
+                                if (object.signerIds) {
+                                    if (!Array.isArray(object.signerIds))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.signerIds: array expected");
+                                    message.signerIds = [];
+                                    for (var i = 0; i < object.signerIds.length; ++i)
+                                        if (typeof object.signerIds[i] === "string")
+                                            $util.base64.decode(object.signerIds[i], message.signerIds[i] = $util.newBuffer($util.base64.length(object.signerIds[i])), 0);
+                                        else if (object.signerIds[i].length >= 0)
+                                            message.signerIds[i] = object.signerIds[i];
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractTeamActionSigners message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} message ContractTeamActionSigners
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractTeamActionSigners.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.signerIds = [];
+                                if (message.signerIds && message.signerIds.length) {
+                                    object.signerIds = [];
+                                    for (var j = 0; j < message.signerIds.length; ++j)
+                                        object.signerIds[j] = options.bytes === String ? $util.base64.encode(message.signerIds[j], 0, message.signerIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.signerIds[j]) : message.signerIds[j];
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractTeamActionSigners to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractTeamActionSigners.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractTeamActionSigners;
+                        })();
+
+                        GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractTeamActionSignersResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                             * @interface IGetContractTeamActionSignersResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IContractTeamActionSigners|null} [signers] GetContractTeamActionSignersResponseV0 signers
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContractTeamActionSignersResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContractTeamActionSignersResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetContractTeamActionSignersResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse
+                             * @classdesc Represents a GetContractTeamActionSignersResponseV0.
+                             * @implements IGetContractTeamActionSignersResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IGetContractTeamActionSignersResponseV0=} [properties] Properties to set
+                             */
+                            function GetContractTeamActionSignersResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractTeamActionSignersResponseV0 signers.
+                             * @member {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IContractTeamActionSigners|null|undefined} signers
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @instance
+                             */
+                            GetContractTeamActionSignersResponseV0.prototype.signers = null;
+
+                            /**
+                             * GetContractTeamActionSignersResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @instance
+                             */
+                            GetContractTeamActionSignersResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetContractTeamActionSignersResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @instance
+                             */
+                            GetContractTeamActionSignersResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetContractTeamActionSignersResponseV0 result.
+                             * @member {"signers"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetContractTeamActionSignersResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["signers", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetContractTeamActionSignersResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IGetContractTeamActionSignersResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} GetContractTeamActionSignersResponseV0 instance
+                             */
+                            GetContractTeamActionSignersResponseV0.create = function create(properties) {
+                                return new GetContractTeamActionSignersResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContractTeamActionSignersResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IGetContractTeamActionSignersResponseV0} message GetContractTeamActionSignersResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractTeamActionSignersResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.signers != null && Object.hasOwnProperty.call(message, "signers"))
+                                    $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.encode(message.signers, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContractTeamActionSignersResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.IGetContractTeamActionSignersResponseV0} message GetContractTeamActionSignersResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractTeamActionSignersResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContractTeamActionSignersResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} GetContractTeamActionSignersResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractTeamActionSignersResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.signers = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContractTeamActionSignersResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} GetContractTeamActionSignersResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractTeamActionSignersResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContractTeamActionSignersResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContractTeamActionSignersResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.signers != null && message.hasOwnProperty("signers")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.verify(message.signers);
+                                        if (error)
+                                            return "signers." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContractTeamActionSignersResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} GetContractTeamActionSignersResponseV0
+                             */
+                            GetContractTeamActionSignersResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0();
+                                if (object.signers != null) {
+                                    if (typeof object.signers !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.signers: object expected");
+                                    message.signers = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.fromObject(object.signers);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContractTeamActionSignersResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} message GetContractTeamActionSignersResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContractTeamActionSignersResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.signers != null && message.hasOwnProperty("signers")) {
+                                    object.signers = $root.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.toObject(message.signers, options);
+                                    if (options.oneofs)
+                                        object.result = "signers";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContractTeamActionSignersResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContractTeamActionSignersResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContractTeamActionSignersResponseV0;
+                        })();
+
+                        return GetContractTeamActionSignersResponse;
                     })();
 
                     v0.GetContractFeePotsRequest = (function() {

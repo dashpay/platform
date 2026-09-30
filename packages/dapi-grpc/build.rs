@@ -86,11 +86,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 67] = [
+    const VERSIONED_REQUESTS: [&str; 68] = [
         "GetContractModerationStatusRequest",
         "GetContractModerationEntriesRequest",
         "GetContractDocumentRemovalsRequest",
-        "GetContractSettledDeletionsRequest",
+        "GetContractTeamActionsRequest",
+        "GetContractTeamActionSignersRequest",
         "GetContractFeePotsRequest",
         "GetContractGroupInfoRequest",
         "GetContractGroupMembersRequest",
@@ -168,11 +169,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 64] = [
+    const VERSIONED_RESPONSES: [&str; 65] = [
         "GetContractModerationStatusResponse",
         "GetContractModerationEntriesResponse",
         "GetContractDocumentRemovalsResponse",
-        "GetContractSettledDeletionsResponse",
+        "GetContractTeamActionsResponse",
+        "GetContractTeamActionSignersResponse",
         "GetContractFeePotsResponse",
         "GetContractGroupInfoResponse",
         "GetContractGroupMembersResponse",

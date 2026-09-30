@@ -1,6 +1,7 @@
 use crate::data_contract::config::moderation::ContractModerationReason;
 use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
+use crate::prelude::{IdentityNonce, Revision};
+use crate::util::hash::hash_double;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -24,83 +25,156 @@ pub struct SettledDeletionRule {
 }
 
 impl SettledDeletionRule {
+    /// How many approvals meet the rule on a team that holds at most `team_capacity` members,
+    /// the leader counted: its `approvals`, or all the team can hold when it asks for more, so
+    /// that it can be met by the team seated.
+    pub fn approvals_needed(&self, team_capacity: usize) -> usize {
+        usize::from(self.approvals).min(team_capacity)
+    }
+
     /// Whether `approvals`, identities of the seated team led by `leader_id`, each at most once,
-    /// meet the rule. The team holds at most `team_capacity` members, the leader counted: a rule
-    /// asking for more asks for that many, so that it can be met by the team seated.
+    /// meet the rule on a team that holds at most `team_capacity` members
+    /// ([`Self::approvals_needed`]), the leader among them when the rule says so.
     pub fn is_met_by(
         &self,
         approvals: &[Identifier],
         leader_id: Identifier,
         team_capacity: usize,
     ) -> bool {
-        approvals.len() >= usize::from(self.approvals).min(team_capacity)
+        approvals.len() >= self.approvals_needed(team_capacity)
             && (!self.leader || approvals.contains(&leader_id))
     }
 }
 
-/// The approvals a contract keeps of a moderator's deletion of a settled document (protocol
-/// version 14).
+/// A proposal the seated moderation team of an elected contract votes on, kept under the
+/// contract (protocol version 14): the team's counterpart of a token group action.
 ///
-/// A document past its type's `moderatorAbilities.deleteWithin` window is settled: no moderator
-/// deletes it alone. A type whose `moderatorAbilities.deleteSettled` says who must agree lets
-/// the members of an elected contract's seated team delete it together: each sends the same
-/// deletion, for the same reason, and the one whose approval meets the rule deletes the
-/// document. This is what the contract keeps meanwhile, and after: stored under the contract, by
-/// document type then document id, paid for by the moderators that approve, and never deleted.
-///
-/// The approvals hold for the document as it was when the first was given, and for
-/// `SystemLimits::contract_settled_deletion_approval_window_ms` after it: any change of the
-/// document since (a replace, a price update, a transfer or a moderator's change of its
-/// fields, each of which moves its `$revision`), or the lapse, lets the next approval start
-/// afresh in its place, for its own reason. A moderator who has left the team no longer counts: every approval checks the others
-/// again and keeps only those still on it, and starts afresh when none is.
-#[derive(
-    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
-)]
+/// A member proposes, which is its own approval, and the others approve it by its id. Once
+/// the approvals meet what the proposal needs, the action runs and the proposal moves from
+/// the contract's active team actions to its closed ones, with the approvals that counted,
+/// for good: those of members who left the team are dropped. A proposal that never gets there
+/// stays active: nothing lapses, though an approval of a settled document's deletion is
+/// refused once the document has changed since the proposal.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContractSettledDeletion {
-    /// The time of the block of the first approval, in milliseconds.
+pub struct ContractTeamAction {
+    /// The member of the seated team that proposed it, its first approval.
+    pub proposer_id: Identifier,
+    /// The time of the block of the proposal, in milliseconds.
     pub proposed_at: TimestampMillis,
-    /// The document's last modification when the first approval was given: its `$updatedAt`,
-    /// or `$createdAt` on a type that carries no `$updatedAt`. The approvals are of the document
-    /// as it was then.
-    pub document_last_modified_at: TimestampMillis,
-    /// The document's `$revision` when the first approval was given, `None` on a type whose
-    /// documents carry none. Every change of the document moves it, a moderator's change of
-    /// its fields included, which leaves `$updatedAt` alone.
-    pub document_revision: Option<Revision>,
-    /// Why, as the first approval gave it and every later one repeated it.
-    pub reason: ContractModerationReason,
-    /// The members of the seated team that approved, in the order they did, each still on the
-    /// team when the last approval was given.
-    pub approvals: Vec<Identifier>,
-    /// The time of the block whose approval met the rule and deleted the document, in
-    /// milliseconds. `None` while the approvals fall short.
-    pub deleted_at: Option<TimestampMillis>,
+    /// What runs once the approvals meet the rule.
+    pub event: ContractTeamActionEvent,
 }
 
-impl ContractSettledDeletion {
-    /// Whether the document was deleted: the approvals met the rule.
-    pub fn is_deleted(&self) -> bool {
-        self.deleted_at.is_some()
+/// What a [`ContractTeamAction`] does once approved.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted, Serialize, Deserialize)]
+#[serde(tag = "$type", rename_all = "camelCase")]
+pub enum ContractTeamActionEvent {
+    /// Deletes a settled document: one past the window its type gives its moderators
+    /// (`moderatorAbilities.deleteWithin`), which the type's `moderatorAbilities.deleteSettled`
+    /// lets the seated team delete together. The document goes as a moderator's
+    /// `DeleteDocument` deletes it.
+    #[serde(rename_all = "camelCase")]
+    DeleteSettledDocument {
+        /// The document's type.
+        document_type_name: String,
+        /// The document.
+        document_id: Identifier,
+        /// The document's last modification when proposed: its `$updatedAt`, or `$createdAt`
+        /// on a type that carries no `$updatedAt`.
+        document_last_modified_at: TimestampMillis,
+        /// The document's `$revision` when proposed, `None` on a type whose documents carry
+        /// none. Every change of the document moves it, a moderator's change of its fields
+        /// included, which leaves `$updatedAt` alone.
+        document_revision: Option<Revision>,
+        /// Why, as the proposer gave it: stored with the removal record the deletion leaves.
+        reason: ContractModerationReason,
+    },
+}
+
+impl ContractTeamAction {
+    /// The id of the proposal of a settled document's deletion: a double SHA-256 of the
+    /// contract, the proposer, the proposer's nonce for the contract, the document type name,
+    /// the document id and the reason. A proposer's nonce is used once, so no two proposals share
+    /// an id, and the proposer's client knows it before broadcasting. The reason is part of it so
+    /// that the proof of the proposal, which shows the proposer's approval under this id, is the
+    /// proof of this proposal and not of another one signed with the same nonce.
+    pub fn settled_deletion_action_id(
+        contract_id: Identifier,
+        proposer_id: Identifier,
+        identity_contract_nonce: IdentityNonce,
+        document_type_name: &str,
+        document_id: Identifier,
+        reason: &ContractModerationReason,
+    ) -> Identifier {
+        let mut bytes = b"action_contract_settled_deletion".to_vec();
+        bytes.extend_from_slice(contract_id.as_slice());
+        bytes.extend_from_slice(proposer_id.as_slice());
+        bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
+        // A document type name is at most 64 bytes, so its length fits a byte and no two
+        // (name, id) pairs hash alike
+        bytes.push(document_type_name.len().min(u8::MAX as usize) as u8);
+        bytes.extend_from_slice(document_type_name.as_bytes());
+        bytes.extend_from_slice(document_id.as_slice());
+        // The reason, every part of it in a shape no two reasons share: each optional part
+        // behind a presence byte, the documents behind their count and each name behind its
+        // length (both bounded far below a byte by the reason's validation), the text last
+        // behind its length.
+        match reason.code {
+            Some(code) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&code.to_be_bytes());
+            }
+            None => bytes.push(0),
+        }
+        match reason.reason_document_id {
+            Some(reason_document_id) => {
+                bytes.push(1);
+                bytes.extend_from_slice(reason_document_id.as_slice());
+            }
+            None => bytes.push(0),
+        }
+        bytes.push(reason.documents.len().min(u8::MAX as usize) as u8);
+        for document in &reason.documents {
+            bytes.push(document.document_type_name.len().min(u8::MAX as usize) as u8);
+            bytes.extend_from_slice(document.document_type_name.as_bytes());
+            bytes.extend_from_slice(document.document_id.as_slice());
+        }
+        bytes.extend_from_slice(&(reason.text.len() as u64).to_be_bytes());
+        bytes.extend_from_slice(reason.text.as_bytes());
+        hash_double(bytes).into()
     }
 
-    /// Whether a further approval adds to these at `block_time_ms`, for a document last
-    /// modified at `document_last_modified_at` and at `document_revision`, approvals lapsing
-    /// `approval_window_ms` after the first: they have not met the rule yet, are of the
-    /// document as it is, and have not lapsed. Otherwise the next approval starts afresh in
-    /// their place.
-    pub fn is_open_at(
+    /// The document a settled deletion proposal names, as its document type name and its id.
+    pub fn settled_document(&self) -> (&str, Identifier) {
+        match &self.event {
+            ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name,
+                document_id,
+                ..
+            } => (document_type_name.as_str(), *document_id),
+        }
+    }
+
+    /// Whether the document a settled deletion proposal names is still as it was proposed:
+    /// last modified at `document_last_modified_at` and at `document_revision`. An approval
+    /// of a document changed since is refused, since the team would be approving the deletion
+    /// of content it never saw.
+    pub fn names_document_as(
         &self,
-        block_time_ms: TimestampMillis,
         document_last_modified_at: TimestampMillis,
         document_revision: Option<Revision>,
-        approval_window_ms: u64,
     ) -> bool {
-        !self.is_deleted()
-            && self.document_last_modified_at == document_last_modified_at
-            && self.document_revision == document_revision
-            && block_time_ms <= self.proposed_at.saturating_add(approval_window_ms)
+        match &self.event {
+            ContractTeamActionEvent::DeleteSettledDocument {
+                document_last_modified_at: proposed_last_modified_at,
+                document_revision: proposed_revision,
+                ..
+            } => {
+                *proposed_last_modified_at == document_last_modified_at
+                    && *proposed_revision == document_revision
+            }
+        }
     }
 }
 
@@ -153,26 +227,64 @@ mod tests {
     }
 
     #[test]
-    fn should_close_on_deletion_on_a_change_and_after_the_window() {
-        let approvals = ContractSettledDeletion {
+    fn should_refuse_a_document_changed_since_the_proposal() {
+        let proposal = ContractTeamAction {
+            proposer_id: Identifier::from([2; 32]),
             proposed_at: 1_000,
-            document_last_modified_at: 10,
-            document_revision: Some(2),
-            reason: ContractModerationReason::from_text("spam"),
-            approvals: vec![Identifier::from([2; 32])],
-            deleted_at: None,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from([5; 32]),
+                document_last_modified_at: 10,
+                document_revision: Some(2),
+                reason: ContractModerationReason::from_text("spam"),
+            },
         };
-        assert!(approvals.is_open_at(1_500, 10, Some(2), 500));
-        // The window's last millisecond still counts
-        assert!(!approvals.is_open_at(1_501, 10, Some(2), 500));
+        assert!(proposal.names_document_as(10, Some(2)));
         // The document was replaced since
-        assert!(!approvals.is_open_at(1_200, 11, Some(3), 500));
+        assert!(!proposal.names_document_as(11, Some(3)));
         // A moderator changed its fields since: a new revision, the same `$updatedAt`
-        assert!(!approvals.is_open_at(1_200, 10, Some(3), 500));
-        let deleted = ContractSettledDeletion {
-            deleted_at: Some(1_100),
-            ..approvals
-        };
-        assert!(!deleted.is_open_at(1_200, 10, Some(2), 500));
+        assert!(!proposal.names_document_as(10, Some(3)));
+        assert_eq!(
+            proposal.settled_document(),
+            ("post", Identifier::from([5; 32]))
+        );
+    }
+
+    #[test]
+    fn should_give_every_proposal_its_own_id() {
+        let contract = Identifier::from([1; 32]);
+        let proposer = Identifier::from([2; 32]);
+        let document = Identifier::from([5; 32]);
+        let spam = ContractModerationReason::from_text("spam");
+        let id_of =
+            |proposer: Identifier, nonce: u64, name: &str, reason: &ContractModerationReason| {
+                ContractTeamAction::settled_deletion_action_id(
+                    contract, proposer, nonce, name, document, reason,
+                )
+            };
+        let id = id_of(proposer, 7, "post", &spam);
+        assert_eq!(id, id_of(proposer, 7, "post", &spam));
+        assert_ne!(id, id_of(proposer, 8, "post", &spam));
+        assert_ne!(id, id_of(Identifier::from([3; 32]), 7, "post", &spam));
+        assert_ne!(id, id_of(proposer, 7, "posts", &spam));
+        // The same nonce with another reason is another proposal: its proof is not this one's
+        assert_ne!(
+            id,
+            id_of(
+                proposer,
+                7,
+                "post",
+                &ContractModerationReason::from_text("doxxing")
+            )
+        );
+        assert_ne!(
+            id,
+            id_of(
+                proposer,
+                7,
+                "post",
+                &ContractModerationReason::from_text("spam").with_reason_document(document)
+            )
+        );
     }
 }

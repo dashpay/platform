@@ -48,8 +48,10 @@
 @class GetContractModerationEntriesResponse;
 @class GetContractModerationStatusRequest;
 @class GetContractModerationStatusResponse;
-@class GetContractSettledDeletionsRequest;
-@class GetContractSettledDeletionsResponse;
+@class GetContractTeamActionSignersRequest;
+@class GetContractTeamActionSignersResponse;
+@class GetContractTeamActionsRequest;
+@class GetContractTeamActionsResponse;
 @class GetCurrentQuorumsInfoRequest;
 @class GetCurrentQuorumsInfoResponse;
 @class GetDataContractHistoryRequest;
@@ -279,9 +281,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getContractDocumentRemovalsWithMessage:(GetContractDocumentRemovalsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getContractSettledDeletions(GetContractSettledDeletionsRequest) returns (GetContractSettledDeletionsResponse)
+#pragma mark getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse)
 
-- (GRPCUnaryProtoCall *)getContractSettledDeletionsWithMessage:(GetContractSettledDeletionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getContractTeamActionsWithMessage:(GetContractTeamActionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse)
+
+- (GRPCUnaryProtoCall *)getContractTeamActionSignersWithMessage:(GetContractTeamActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
 
@@ -668,11 +674,18 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getContractSettledDeletions(GetContractSettledDeletionsRequest) returns (GetContractSettledDeletionsResponse)
+#pragma mark getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse)
 
-- (void)getContractSettledDeletionsWithRequest:(GetContractSettledDeletionsRequest *)request handler:(void(^)(GetContractSettledDeletionsResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetContractSettledDeletionsWithRequest:(GetContractSettledDeletionsRequest *)request handler:(void(^)(GetContractSettledDeletionsResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse)
+
+- (void)getContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)

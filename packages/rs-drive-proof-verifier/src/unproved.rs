@@ -6,10 +6,11 @@ use crate::types::contract_groups::{
 use crate::types::contract_moderation::{
     entries_from_response, fee_pots_from_response, list_from_request, lists_from_request,
     reason_from_response, removals_from_response, removals_query_from_request,
-    settled_deletions_from_response, settled_deletions_query_from_request, warnings_from_response,
-    ContractBan, ContractDocumentRemovals, ContractFeePots, ContractModerationEntries,
-    ContractModerationList, ContractModerationListStatuses, ContractModerationStatus,
-    ContractSettledDeletions, ContractSuspension,
+    team_action_signers_from_response, team_action_status_from_request, team_actions_from_response,
+    team_actions_query_from_request, warnings_from_response, ContractBan, ContractDocumentRemovals,
+    ContractFeePots, ContractModerationEntries, ContractModerationList,
+    ContractModerationListStatuses, ContractModerationStatus, ContractSuspension,
+    ContractTeamActionSigners, ContractTeamActions,
 };
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
@@ -1063,9 +1064,9 @@ impl FromUnproved<platform::GetContractDocumentRemovalsRequest> for ContractDocu
     }
 }
 
-impl FromUnproved<platform::GetContractSettledDeletionsRequest> for ContractSettledDeletions {
-    type Request = platform::GetContractSettledDeletionsRequest;
-    type Response = platform::GetContractSettledDeletionsResponse;
+impl FromUnproved<platform::GetContractTeamActionsRequest> for ContractTeamActions {
+    type Request = platform::GetContractTeamActionsRequest;
+    type Response = platform::GetContractTeamActionsResponse;
 
     fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -1076,38 +1077,82 @@ impl FromUnproved<platform::GetContractSettledDeletionsRequest> for ContractSett
     where
         Self: Sized,
     {
-        use platform::get_contract_settled_deletions_response::get_contract_settled_deletions_response_v0::Result as V0Result;
+        use platform::get_contract_team_actions_response::get_contract_team_actions_response_v0::Result as V0Result;
 
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
         // The request bounds what the response may hold, so it is read back here too, under
         // the same rules the node applied.
-        let platform::get_contract_settled_deletions_request::Version::V0(request_v0) =
+        let platform::get_contract_team_actions_request::Version::V0(request_v0) =
             request.version.ok_or(Error::EmptyVersion)?;
-        let query = settled_deletions_query_from_request(
-            request_v0.document_type_name,
-            request_v0.selection,
+        let query = team_actions_query_from_request(
+            request_v0.status,
+            request_v0.start_at_action_id,
+            request_v0.count,
             platform_version,
         )?;
 
-        let platform::get_contract_settled_deletions_response::Version::V0(v0) =
+        let platform::get_contract_team_actions_response::Version::V0(v0) =
             response.version.ok_or(Error::EmptyVersion)?;
         let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
 
-        let settled_deletions = match v0.result {
-            Some(V0Result::SettledDeletions(settled_deletions)) => Some(
-                settled_deletions_from_response(settled_deletions.settled_deletions, &query)?,
-            ),
+        let actions = match v0.result {
+            Some(V0Result::Actions(actions)) => {
+                Some(team_actions_from_response(actions.actions, &query)?)
+            }
             Some(V0Result::Proof(_)) => {
                 return Err(Error::ResponseDecodeError {
-                    error: "expected unproved contract settled deletions, got a proof".to_string(),
+                    error: "expected unproved contract team actions, got a proof".to_string(),
                 })
             }
             None => None,
         };
 
-        Ok((settled_deletions, metadata))
+        Ok((actions, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractTeamActionSignersRequest> for ContractTeamActionSigners {
+    type Request = platform::GetContractTeamActionSignersRequest;
+    type Response = platform::GetContractTeamActionSignersResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_team_action_signers_response::get_contract_team_action_signers_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_team_action_signers_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        team_action_status_from_request(request_v0.status)?;
+
+        let platform::get_contract_team_action_signers_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let signers = match v0.result {
+            Some(V0Result::Signers(signers)) => {
+                Some(team_action_signers_from_response(signers.signer_ids)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract team action signers, got a proof"
+                        .to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((signers, metadata))
     }
 }
 
@@ -1570,16 +1615,22 @@ mod contract_moderation_tests {
         ContractModerationStatus as ContractModerationStatusProto,
         GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
     };
-    use dapi_grpc::platform::v0::get_contract_settled_deletions_request::get_contract_settled_deletions_request_v0::Selection as SettledDeletionsSelection;
-    use dapi_grpc::platform::v0::get_contract_settled_deletions_request::{
-        DocumentIds as SettledDeletionsDocumentIds, GetContractSettledDeletionsRequestV0,
-        Page as SettledDeletionsPage, Version as SettledDeletionsRequestVersion,
+    use dapi_grpc::platform::v0::get_contract_team_action_signers_request::{
+        GetContractTeamActionSignersRequestV0, Version as SignersRequestVersion,
     };
-    use dapi_grpc::platform::v0::get_contract_settled_deletions_response::{
-        get_contract_settled_deletions_response_v0::Result as SettledDeletionsResult,
-        ContractSettledDeletion as ContractSettledDeletionProto,
-        ContractSettledDeletions as ContractSettledDeletionsProto,
-        GetContractSettledDeletionsResponseV0, Version as SettledDeletionsResponseVersion,
+    use dapi_grpc::platform::v0::get_contract_team_action_signers_response::{
+        get_contract_team_action_signers_response_v0::Result as SignersResult,
+        ContractTeamActionSigners as ContractTeamActionSignersProto,
+        GetContractTeamActionSignersResponseV0, Version as SignersResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_actions_request::{
+        ActionStatus, GetContractTeamActionsRequestV0, Version as TeamActionsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_actions_response::{
+        contract_team_action, get_contract_team_actions_response_v0::Result as TeamActionsResult,
+        ContractTeamAction as ContractTeamActionProto,
+        ContractTeamActions as ContractTeamActionsProto, DeleteSettledDocument,
+        GetContractTeamActionsResponseV0, Version as TeamActionsResponseVersion,
     };
     use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
     use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
@@ -1906,152 +1957,122 @@ mod contract_moderation_tests {
         assert_eq!(partial.removals().len(), 1);
     }
 
-    fn settled_deletions(
-        selection: Option<SettledDeletionsSelection>,
-        result: Option<SettledDeletionsResult>,
-    ) -> Result<Option<ContractSettledDeletions>, Error> {
-        let request = platform::GetContractSettledDeletionsRequest {
-            version: Some(SettledDeletionsRequestVersion::V0(
-                GetContractSettledDeletionsRequestV0 {
+    fn team_actions(
+        count: Option<u32>,
+        result: Option<TeamActionsResult>,
+    ) -> Result<Option<ContractTeamActions>, Error> {
+        let request = platform::GetContractTeamActionsRequest {
+            version: Some(TeamActionsRequestVersion::V0(
+                GetContractTeamActionsRequestV0 {
                     contract_id: vec![1; 32],
-                    document_type_name: "post".to_string(),
-                    selection,
+                    status: ActionStatus::Active as i32,
+                    start_at_action_id: None,
+                    count,
                     prove: false,
                 },
             )),
         };
-        let response = platform::GetContractSettledDeletionsResponse {
-            version: Some(SettledDeletionsResponseVersion::V0(
-                GetContractSettledDeletionsResponseV0 {
+        let response = platform::GetContractTeamActionsResponse {
+            version: Some(TeamActionsResponseVersion::V0(
+                GetContractTeamActionsResponseV0 {
                     result,
                     metadata: Some(ResponseMetadata::default()),
                 },
             )),
         };
-        ContractSettledDeletions::maybe_from_unproved_with_metadata(
+        ContractTeamActions::maybe_from_unproved_with_metadata(
             request,
             response,
             Network::Testnet,
             PlatformVersion::latest(),
         )
-        .map(|(settled_deletions, _)| settled_deletions)
+        .map(|(actions, _)| actions)
     }
 
-    fn settled_deletion_proto(seed: u8) -> ContractSettledDeletionProto {
-        ContractSettledDeletionProto {
-            document_id: vec![seed; 32],
-            proposed_at: 1_000 + u64::from(seed),
-            document_last_modified_at: 500 + u64::from(seed),
-            reason: Some(ContractModerationReasonProto {
-                code: None,
-                text: "doxxing".to_string(),
-                documents: vec![],
-                reason_document_id: None,
-            }),
-            approvals: vec![vec![0x77; 32], vec![0x78; 32]],
-            deleted_at: None,
-            document_revision: Some(2),
+    fn team_action_proto(seed: u8) -> ContractTeamActionProto {
+        ContractTeamActionProto {
+            action_id: vec![seed; 32],
+            proposer_id: vec![0x77; 32],
+            proposed_at: 1_000,
+            event: Some(contract_team_action::Event::DeleteSettledDocument(
+                DeleteSettledDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: vec![seed + 0x10; 32],
+                    document_last_modified_at: 10,
+                    document_revision: Some(2),
+                    reason: Some(ContractModerationReasonProto {
+                        code: None,
+                        text: "doxxing".to_string(),
+                        documents: vec![],
+                        reason_document_id: None,
+                    }),
+                },
+            )),
         }
     }
 
     #[test]
-    fn should_read_the_settled_deletions_the_request_asked_for() {
-        let page = Some(SettledDeletionsSelection::Page(SettledDeletionsPage {
-            start_after: None,
-            limit: Some(2),
-        }));
-        let read = settled_deletions(
-            page.clone(),
-            Some(SettledDeletionsResult::SettledDeletions(
-                ContractSettledDeletionsProto {
-                    settled_deletions: vec![
-                        settled_deletion_proto(1),
-                        ContractSettledDeletionProto {
-                            deleted_at: Some(2_002),
-                            ..settled_deletion_proto(2)
-                        },
-                    ],
-                },
-            )),
-        )
-        .expect("expected the settled deletions to convert")
-        .expect("expected settled deletions");
-        assert_eq!(read.settled_deletions().len(), 2);
-        assert_eq!(
-            read.settled_deletions()[0].document_id,
-            Identifier::from([1; 32])
-        );
-        assert_eq!(
-            read.settled_deletions()[0].settled_deletion.approvals,
-            vec![Identifier::from([0x77; 32]), Identifier::from([0x78; 32])]
-        );
-        assert_eq!(
-            read.settled_deletions()[0].settled_deletion.reason,
-            ContractModerationReason::from_text("doxxing")
-        );
-        assert_eq!(
-            read.settled_deletions()[0].settled_deletion.deleted_at,
-            None
-        );
-        assert_eq!(
-            read.settled_deletions()[1].settled_deletion.deleted_at,
-            Some(2_002)
-        );
-
-        // A page of more records than the request allowed, and a request that selects nothing.
-        let over_limit = settled_deletions(
-            Some(SettledDeletionsSelection::Page(SettledDeletionsPage {
-                start_after: None,
-                limit: Some(1),
+    fn should_read_the_team_actions_the_request_asked_for() {
+        let read = team_actions(
+            Some(2),
+            Some(TeamActionsResult::Actions(ContractTeamActionsProto {
+                actions: vec![team_action_proto(1), team_action_proto(2)],
             })),
-            Some(SettledDeletionsResult::SettledDeletions(
-                ContractSettledDeletionsProto {
-                    settled_deletions: vec![settled_deletion_proto(1), settled_deletion_proto(2)],
-                },
-            )),
+        )
+        .expect("expected the team actions to convert")
+        .expect("expected team actions");
+        assert_eq!(read.actions().len(), 2);
+        assert_eq!(read.actions()[0].action_id, Identifier::from([1; 32]));
+        assert_eq!(
+            read.actions()[0].action.proposer_id,
+            Identifier::from([0x77; 32])
         );
-        assert!(matches!(over_limit, Err(Error::ResponseDecodeError { .. })));
-        assert!(matches!(
-            settled_deletions(None, None),
-            Err(Error::RequestError { .. })
-        ));
 
-        // The unproved path never reads a proof.
-        let proved = settled_deletions(
-            page,
-            Some(SettledDeletionsResult::Proof(Default::default())),
-        );
-        assert!(matches!(proved, Err(Error::ResponseDecodeError { .. })));
+        // More actions than the page holds, a missing result and a proof are refused or empty
+        team_actions(
+            Some(1),
+            Some(TeamActionsResult::Actions(ContractTeamActionsProto {
+                actions: vec![team_action_proto(1), team_action_proto(2)],
+            })),
+        )
+        .expect_err("expected a page too long to be refused");
+        assert_eq!(team_actions(None, None).expect("expected no error"), None);
+        team_actions(None, Some(TeamActionsResult::Proof(Default::default())))
+            .expect_err("expected a proof to be refused");
     }
 
     #[test]
-    fn should_refuse_a_settled_deletion_of_a_document_the_request_did_not_name() {
-        let by_ids = Some(SettledDeletionsSelection::DocumentIds(
-            SettledDeletionsDocumentIds {
-                document_ids: vec![vec![1; 32], vec![3; 32]],
-            },
-        ));
-        let unasked = settled_deletions(
-            by_ids.clone(),
-            Some(SettledDeletionsResult::SettledDeletions(
-                ContractSettledDeletionsProto {
-                    settled_deletions: vec![settled_deletion_proto(2)],
+    fn should_read_the_signers_of_a_team_action() {
+        let request = platform::GetContractTeamActionSignersRequest {
+            version: Some(SignersRequestVersion::V0(
+                GetContractTeamActionSignersRequestV0 {
+                    contract_id: vec![1; 32],
+                    status: ActionStatus::Closed as i32,
+                    action_id: vec![2; 32],
+                    prove: false,
                 },
             )),
-        );
-        assert!(matches!(unasked, Err(Error::ResponseDecodeError { .. })));
-
-        // An id with no record is simply left out, which is an answer.
-        let partial = settled_deletions(
-            by_ids,
-            Some(SettledDeletionsResult::SettledDeletions(
-                ContractSettledDeletionsProto {
-                    settled_deletions: vec![settled_deletion_proto(1)],
+        };
+        let response = platform::GetContractTeamActionSignersResponse {
+            version: Some(SignersResponseVersion::V0(
+                GetContractTeamActionSignersResponseV0 {
+                    result: Some(SignersResult::Signers(ContractTeamActionSignersProto {
+                        signer_ids: vec![vec![3; 32], vec![4; 32]],
+                    })),
+                    metadata: Some(ResponseMetadata::default()),
                 },
             )),
+        };
+        let (signers, _) = ContractTeamActionSigners::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
         )
-        .expect("expected the settled deletions to convert")
-        .expect("expected settled deletions");
-        assert_eq!(partial.settled_deletions().len(), 1);
+        .expect("expected the signers to convert");
+        assert_eq!(
+            signers.expect("expected signers").signers(),
+            &[Identifier::from([3; 32]), Identifier::from([4; 32])]
+        );
     }
 }

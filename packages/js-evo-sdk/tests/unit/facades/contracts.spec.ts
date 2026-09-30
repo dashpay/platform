@@ -492,22 +492,27 @@ describe('ContractsFacade', () => {
       expect(result).to.equal(response);
     });
 
-    // An approval of the deletion of a settled document names the document, carries the reason
-    // every approval repeats, and resolves to the approvals the contract keeps.
+    // The proposal of a settled document's deletion names the document and the reason, and
+    // resolves to the team action it opened; an approval names that action alone.
     const settledReason = { code: 3, text: 'doxxing', reasonDocumentId: contractId };
-    const settledDeletion = {
+    const actionId = 'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN';
+    const teamAction = {
+      actionId,
+      proposerId: identityId,
       proposedAt: BigInt(1800000000000),
-      documentLastModifiedAt: BigInt(1700000000000),
-      documentRevision: BigInt(2),
-      reason: settledReason,
-      approvals: [identityId],
+      event: {
+        type: 'deleteSettledDocument',
+        documentTypeName,
+        documentId,
+        documentLastModifiedAt: BigInt(1700000000000),
+        documentRevision: BigInt(2),
+        reason: settledReason,
+      },
     };
 
-    it('should forward moderatorDeleteSettledDocument() to contractDeleteSettledDocument() and return the approvals', async function run() {
-      const record = {
-        contractId, documentTypeName, documentId, ...settledDeletion,
-      };
-      const stub = this.sinon.stub(wasmSdk, 'contractDeleteSettledDocument').resolves(record);
+    it('should forward moderatorDeleteSettledDocument() to contractDeleteSettledDocument() and return the team action it opened', async function run() {
+      const signature = { contractId, actionId, status: 'active' };
+      const stub = this.sinon.stub(wasmSdk, 'contractDeleteSettledDocument').resolves(signature);
       const options = {
         identity: Object.create(wasmSDKPackage.Identity.prototype),
         contractId,
@@ -520,66 +525,71 @@ describe('ContractsFacade', () => {
       const result = await client.contracts.moderatorDeleteSettledDocument(options);
 
       expect(stub).to.be.calledOnceWithExactly(options);
-      expect(result).to.equal(record);
-      // Short of the rule: the document stays.
-      expect(result.deletedAt).to.equal(undefined);
+      expect(result).to.equal(signature);
+      // Short of the rule: the document stays, and the others approve the action by its id.
+      expect(result.actionId).to.equal(actionId);
+      expect(result.status).to.equal('active');
     });
 
-    it('should resolve with the deletion time once the approvals meet the rule', async function run() {
-      const record = {
-        contractId,
-        documentTypeName,
-        documentId,
-        ...settledDeletion,
-        approvals: [identityId, contractId],
-        deletedAt: BigInt(1800000001000),
-      };
-      const stub = this.sinon.stub(wasmSdk, 'contractDeleteSettledDocument').resolves(record);
+    it('should forward moderatorApproveTeamAction() to contractApproveTeamAction() and resolve closed once the approvals meet the rule', async function run() {
+      const signature = { contractId, actionId, status: 'closed' };
+      const stub = this.sinon.stub(wasmSdk, 'contractApproveTeamAction').resolves(signature);
       const options = {
         identity: Object.create(wasmSDKPackage.Identity.prototype),
         contractId,
-        documentTypeName,
-        documentId,
-        reason: settledReason,
+        actionId,
         signer,
       };
 
-      const result = await client.contracts.moderatorDeleteSettledDocument(options);
+      const result = await client.contracts.moderatorApproveTeamAction(options);
 
       expect(stub).to.be.calledOnceWithExactly(options);
-      expect(result.approvals).to.deep.equal([identityId, contractId]);
-      expect(result.deletedAt).to.equal(BigInt(1800000001000));
+      expect(result).to.equal(signature);
+      expect(result.status).to.equal('closed');
     });
 
-    it('should fetch the settled deletion approvals of the documents named, which carry no cursor', async function run() {
-      const page = { settledDeletions: [{ documentId, ...settledDeletion }] };
-      const stub = this.sinon.stub(wasmSdk, 'getContractSettledDeletions').resolves(page);
-      const query = { contractId, documentTypeName, documentIds: [documentId] };
+    it('should fetch a page of team actions and its cursor', async function run() {
+      const page = { actions: [teamAction], nextStartAtActionId: actionId };
+      const stub = this.sinon.stub(wasmSdk, 'getContractTeamActions').resolves(page);
+      const query = { contractId, status: 'active' as const, limit: 1 };
 
-      const result = await client.contracts.settledDeletions(query);
+      const result = await client.contracts.teamActions(query);
 
       expect(stub).to.be.calledOnceWithExactly(query);
-      expect(result.settledDeletions).to.deep.equal(page.settledDeletions);
-      expect(result.nextStartAfter).to.equal(undefined);
+      expect(result.actions).to.deep.equal([teamAction]);
+      expect(result.nextStartAtActionId).to.equal(actionId);
     });
 
-    it('should fetch a page of settled deletion approvals and its cursor', async function run() {
-      const page = { settledDeletions: [{ documentId, ...settledDeletion }], nextStartAfter: documentId };
-      const stub = this.sinon.stub(wasmSdk, 'getContractSettledDeletions').resolves(page);
-      const query = { contractId, documentTypeName, limit: 1 };
+    it('should fetch team actions with proof', async function run() {
+      const response = { data: { actions: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractTeamActionsWithProofInfo').resolves(response);
+      const query = {
+        contractId, status: 'closed' as const, startAtActionId: actionId, startAtActionIdIncluded: true,
+      };
 
-      const result = await client.contracts.settledDeletions(query);
+      const result = await client.contracts.teamActionsWithProof(query);
 
       expect(stub).to.be.calledOnceWithExactly(query);
-      expect(result.nextStartAfter).to.equal(documentId);
+      expect(result).to.equal(response);
     });
 
-    it('should fetch settled deletion approvals with proof', async function run() {
-      const response = { data: { settledDeletions: [] }, proof: {}, metadata: {} };
-      const stub = this.sinon.stub(wasmSdk, 'getContractSettledDeletionsWithProofInfo').resolves(response);
-      const query = { contractId, documentTypeName, startAfter: documentId };
+    it('should fetch the signers of a team action', async function run() {
+      const signers = { signerIds: [identityId, contractId] };
+      const stub = this.sinon.stub(wasmSdk, 'getContractTeamActionSigners').resolves(signers);
+      const query = { contractId, status: 'active' as const, actionId };
 
-      const result = await client.contracts.settledDeletionsWithProof(query);
+      const result = await client.contracts.teamActionSigners(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.signerIds).to.deep.equal([identityId, contractId]);
+    });
+
+    it('should fetch the signers of a team action with proof', async function run() {
+      const response = { data: { signerIds: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractTeamActionSignersWithProofInfo').resolves(response);
+      const query = { contractId, status: 'closed' as const, actionId };
+
+      const result = await client.contracts.teamActionSignersWithProof(query);
 
       expect(stub).to.be.calledOnceWithExactly(query);
       expect(result).to.equal(response);

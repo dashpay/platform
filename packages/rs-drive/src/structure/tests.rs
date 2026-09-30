@@ -323,9 +323,10 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::moderation::{
         ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
-        ContractModerators, ContractSettledDeletion, ContractWarning, ElectedModerators,
+        ContractModerators, ContractTeamAction, ContractTeamActionEvent, ContractWarning, ElectedModerators,
         InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
     };
+    use crate::drive::contract::moderation::types::ContractTeamActionWrite;
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
@@ -877,10 +878,10 @@ mod fixtures {
         conformance_of(&drive, "elected_contract", run);
     }
 
-    /// An elected contract whose team deletes settled posts once its leader approves, with the
-    /// approvals of one deletion. Kept apart from the elected contract, whose other tree's shape
-    /// is recorded.
-    fn contract_with_settled_deletions(run: &mut FixtureRun) {
+    /// An elected contract whose team deletes settled posts once its leader approves, with one
+    /// team action still gathering approvals and one that ran. Kept apart from the elected
+    /// contract, whose other tree's shape is recorded.
+    fn contract_with_team_actions(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
@@ -935,23 +936,64 @@ mod fixtures {
             None,
             Some(platform_version),
         );
+        let proposal = |document_id: [u8; 32]| ContractTeamAction {
+            proposer_id: Identifier::from([0x27; 32]),
+            proposed_at: 1_000,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from(document_id),
+                document_last_modified_at: 10,
+                document_revision: Some(1),
+                reason: ContractModerationReason::from_text("doxxing"),
+            },
+        };
+        let signature =
+            |action_id: [u8; 32], signer_id: [u8; 32], write: ContractTeamActionWrite| {
+                DriveOperation::ContractModerationOperation(
+                    ContractModerationOperationType::AddTeamActionSignature {
+                        contract_id: contract.id(),
+                        action_id: Identifier::from(action_id),
+                        signer_id: Identifier::from(signer_id),
+                        write,
+                    },
+                )
+            };
         drive
             .apply_drive_operations(
-                vec![DriveOperation::ContractModerationOperation(
-                    ContractModerationOperationType::AddSettledDeletion {
-                        contract_id: contract.id(),
-                        document_type_name: "post".to_string(),
-                        document_id: Identifier::from([0x26; 32]),
-                        settled_deletion: ContractSettledDeletion {
-                            proposed_at: 1_000,
-                            document_last_modified_at: 10,
-                            document_revision: Some(1),
-                            reason: ContractModerationReason::from_text("doxxing"),
-                            approvals: vec![Identifier::from([0x27; 32])],
-                            deleted_at: None,
+                vec![
+                    // Proposed and approved once more, still short of the rule
+                    signature(
+                        [0x30; 32],
+                        [0x27; 32],
+                        ContractTeamActionWrite::Propose {
+                            action: proposal([0x26; 32]),
+                            closes: false,
                         },
-                        replaces_existing: false,
-                        moderator_id: Identifier::from([0x27; 32]),
+                    ),
+                    // Proposed by a member who meets the rule alone, so it ran at once
+                    signature(
+                        [0x31; 32],
+                        [0x27; 32],
+                        ContractTeamActionWrite::Propose {
+                            action: proposal([0x28; 32]),
+                            closes: true,
+                        },
+                    ),
+                ],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to record the proposals of two team actions");
+        drive
+            .apply_drive_operations(
+                vec![signature(
+                    [0x30; 32],
+                    [0x29; 32],
+                    ContractTeamActionWrite::Approve {
+                        dropped_signers: vec![],
                     },
                 )],
                 true,
@@ -960,8 +1002,8 @@ mod fixtures {
                 platform_version,
                 None,
             )
-            .expect("expected to record the approvals of a settled deletion");
-        conformance_of(&drive, "contract_with_settled_deletions", run);
+            .expect("expected to record an approval of a team action");
+        conformance_of(&drive, "contract_with_team_actions", run);
     }
 
     /// A contract that keeps the banlist and the warning list, with one identity carrying two
@@ -1748,7 +1790,7 @@ mod fixtures {
         warned_contract(&mut run);
         elected_contract(&mut run);
         contract_with_document_removals(&mut run);
-        contract_with_settled_deletions(&mut run);
+        contract_with_team_actions(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
         current_then_paid_epoch(&mut run);

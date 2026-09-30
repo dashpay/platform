@@ -4,7 +4,7 @@ pub mod transformer;
 pub mod v0;
 
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
-    ContractDocumentDeletionContext, ContractSettledDeletionContext,
+    ContractDocumentDeletionContext, ContractTeamActionContext,
     ContractUserModerationTransitionActionV0, ContractWarningContext,
 };
 use derive_more::From;
@@ -72,11 +72,11 @@ impl ContractUserModerationTransitionAction {
         }
     }
 
-    /// What the approval of a settled document's deletion read and decided when the transition
-    /// was validated, `None` for every other action
-    pub fn settled_deletion(&self) -> Option<&ContractSettledDeletionContext> {
+    /// What the proposal of a settled document's deletion or the approval of a team action
+    /// read and decided when the transition was validated, `None` for every other action
+    pub fn team_action(&self) -> Option<&ContractTeamActionContext> {
         match self {
-            ContractUserModerationTransitionAction::V0(action) => action.settled_deletion.as_ref(),
+            ContractUserModerationTransitionAction::V0(action) => action.team_action.as_ref(),
         }
     }
 

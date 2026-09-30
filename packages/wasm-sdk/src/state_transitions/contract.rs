@@ -3,9 +3,7 @@
 //! This module provides WASM bindings for contract operations like create and update.
 
 use crate::error::WasmSdkError;
-use crate::queries::contract_moderation::{
-    set_removal_fields, set_settled_deletion_fields, set_status_fields,
-};
+use crate::queries::contract_moderation::{set_removal_fields, set_status_fields};
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
@@ -13,6 +11,7 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
+use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::Identity;
 use dash_sdk::dpp::identity::IdentityPublicKey;
@@ -32,6 +31,7 @@ use wasm_dpp2::data_contract::{
     ContractUserModerationActionParts, DataContractWasm,
 };
 use wasm_dpp2::identity::{IdentityPublicKeyWasm, IdentityWasm};
+use wasm_dpp2::state_transitions::proof_result::team_action_status_to_str;
 use wasm_dpp2::utils::{try_from_options_optional, try_from_options_with};
 use wasm_dpp2::{IdentifierWasm, IdentitySignerWasm};
 
@@ -398,23 +398,22 @@ export interface ContractDocumentRemovalResult {
 }
 
 /**
- * Options for approving, as a member of an elected contract's seated moderation team, the
+ * Options for proposing, as a member of an elected contract's seated moderation team, the
  * deletion of one settled document (protocol version 14): one last modified longer ago than
  * its type's `moderatorAbilities.deleteWithin` window, within which a moderator deletes it
  * alone. The type must say who of the team must approve (`moderatorAbilities.deleteSettled`,
  * else 41204), a team must be seated (41205), the signer must be on it (41101) with
- * `deleteDocuments` on the type (41201), and the document must be settled (41206). Each member
- * approves once (41208), for the reason of the first (41207), until the approvals meet the
- * type's rule, the leader among them if it says so, and the approval that meets it deletes the
- * document as a moderator's deletion does. An approver who left the team no longer counts.
- * Approvals that fall short lapse a week after the first, when the document is replaced, or
- * when every approver has left the team, and the next approval then starts afresh, for its
- * own reason. Each approval pays for the bytes it adds. As for the other moderations, the
- * signer must hold a CRITICAL authentication key without contract bounds of the moderating
- * identity.
+ * `deleteDocuments` on the type (41201), and the document must be settled (41206). The proposal
+ * is the proposer's own approval, kept under the contract as a team action with the document's
+ * last modification and revision and the reason; the other members approve it by its
+ * `actionId` with `contractApproveTeamAction` until the approvals meet the type's rule, the
+ * leader among them if it says so, and the approval that meets it deletes the document as a
+ * moderator's deletion does. A proposal never lapses, but an approval of a document changed
+ * since the proposal is refused (41211). As for the other moderations, the signer must hold a
+ * CRITICAL authentication key without contract bounds of the moderating identity.
  */
 export interface ContractDeleteSettledDocumentOptions {
-  /** The approving identity: a member of the contract's seated moderation team */
+  /** The proposing identity: a member of the contract's seated moderation team */
   identity: Identity;
   /** The moderated contract */
   contractId: IdentifierLike;
@@ -423,9 +422,9 @@ export interface ContractDeleteSettledDocumentOptions {
   /** The settled document to delete */
   documentId: IdentifierLike;
   /**
-   * Why. Needed: it names a reason document the seated team's proposal lists (41203), and while
-   * the approvals are open it must be the reason of the first. Stored with the approvals, so
-   * anyone reading them reads it.
+   * Why. Needed: it names a reason document the seated team's proposal lists (41203). Stored
+   * with the team action and with the removal record the deletion leaves, so anyone reading
+   * them reads it.
    */
   reason: ContractModerationReason;
   /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
@@ -435,37 +434,46 @@ export interface ContractDeleteSettledDocumentOptions {
 }
 
 /**
- * The approvals the contract keeps of the deletion of a settled document, as the proof of an
- * approval shows them: this approval among them. While they fall short of the type's rule the
- * document stays and `deletedAt` is absent; once they meet it the document is gone. Use
- * `getContractSettledDeletions` to read the approvals later.
+ * Options for approving, as a member of an elected contract's seated moderation team, a team
+ * action another member proposed (protocol version 14): today the deletion of a settled
+ * document, whose proposal (`contractDeleteSettledDocument`) returned the action's id, and
+ * which `getContractTeamActions` lists. What the action does and why are the proposal's. An
+ * action that does not exist (41207), one the signer already approved (41208), one already
+ * closed (41210) or one whose document changed since the proposal (41211) is refused, and so is
+ * a signer not on the seated team (41101) or without the authority the action needs (41201).
+ * The approvals of members who left the team since no longer count. As for the other
+ * moderations, the signer must hold a CRITICAL authentication key without contract bounds of
+ * the moderating identity.
  */
-export interface ContractSettledDeletionResult {
+export interface ContractApproveTeamActionOptions {
+  /** The approving identity: a member of the contract's seated moderation team */
+  identity: Identity;
+  /** The moderated contract */
+  contractId: IdentifierLike;
+  /** The team action to approve, by the id its proposal returned */
+  actionId: IdentifierLike;
+  /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
+  signer: IdentitySigner;
+  /** Optional broadcast settings */
+  settings?: PutSettings;
+}
+
+/**
+ * A team action as the proof of one member's proposal or approval of it shows it. `status` is
+ * `active` while the approvals fall short of the rule, and `closed` once they met it and the
+ * action ran: for the deletion of a settled document, the document is gone. Use
+ * `getContractTeamActions` and `getContractTeamActionSigners` to read the action and its
+ * approvals later.
+ */
+export interface ContractTeamActionSignatureResult {
   contractId: Identifier;
-  documentTypeName: string;
-  documentId: Identifier;
-  /** The time of the block of the first approval, in milliseconds */
-  proposedAt: bigint;
   /**
-   * The document's `$updatedAt` (or `$createdAt`) when the first approval was given, in
-   * milliseconds: the approvals are of the document as it was then
+   * The action proposed or approved. For a proposal, the id the other members approve it by,
+   * computed from the contract, the proposer, its contract nonce, the document and the reason,
+   * so every proposal has its own
    */
-  documentLastModifiedAt: bigint;
-  /**
-   * The document's `$revision` when the first approval was given; absent on a type whose
-   * documents carry none. Any change of the document since, a moderator's change of its
-   * fields included, closes the approvals
-   */
-  documentRevision?: bigint;
-  /** Why, as the first approval gave it and every later one repeated it */
-  reason: ContractModerationReason;
-  /** The members of the seated team that approved, in the order they did */
-  approvals: Identifier[];
-  /**
-   * The time of the block whose approval met the rule and deleted the document, in
-   * milliseconds; absent while the approvals fall short
-   */
-  deletedAt?: bigint;
+  actionId: Identifier;
+  status: ContractTeamActionStatus;
 }
 
 /**
@@ -572,8 +580,11 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "ContractDeleteSettledDocumentOptions")]
     pub type ContractDeleteSettledDocumentOptionsJs;
 
-    #[wasm_bindgen(typescript_type = "ContractSettledDeletionResult")]
-    pub type ContractSettledDeletionResultJs;
+    #[wasm_bindgen(typescript_type = "ContractApproveTeamActionOptions")]
+    pub type ContractApproveTeamActionOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ContractTeamActionSignatureResult")]
+    pub type ContractTeamActionSignatureResultJs;
 }
 
 #[derive(serde::Deserialize)]
@@ -612,6 +623,28 @@ struct ContractChangeDocumentFieldsOptionsInput {
     document_type_name: String,
     #[serde(default)]
     reason: Option<ContractModerationReasonInput>,
+}
+
+/// The result of a team action's proposal or approval: the contract, the action and its status,
+/// as the proof of the signature shows them.
+fn team_action_signature_to_js(
+    contract_id: Identifier,
+    action_id: Identifier,
+    status: GroupActionStatus,
+) -> Result<ContractTeamActionSignatureResultJs, WasmSdkError> {
+    let result = js_sys::Object::new();
+    let set = |key: &str, value: JsValue| {
+        js_sys::Reflect::set(&result, &key.into(), &value).map_err(|_| {
+            WasmSdkError::generic(format!("failed to set `{key}` on the team action result"))
+        })
+    };
+    set("contractId", IdentifierWasm::from(contract_id).into())?;
+    set("actionId", IdentifierWasm::from(action_id).into())?;
+    set(
+        "status",
+        JsValue::from_str(team_action_status_to_str(status)),
+    )?;
+    Ok(JsValue::from(result).into())
 }
 
 impl WasmSdk {
@@ -848,21 +881,21 @@ impl WasmSdk {
         Ok(JsValue::from(result).into())
     }
 
-    /// Approves, as a member of an elected contract's seated moderation team, the deletion of
+    /// Proposes, as a member of an elected contract's seated moderation team, the deletion of
     /// one settled document: one last modified longer ago than its type's
     /// `moderatorAbilities.deleteWithin` window. The type must say who of the team must approve
-    /// (`moderatorAbilities.deleteSettled`). Each member sends the same approval, for the
-    /// reason of the first, and the approval that meets the rule deletes the document as a
-    /// moderator's deletion does. The approvals stay under the contract, which
-    /// `getContractSettledDeletions` reads.
+    /// (`moderatorAbilities.deleteSettled`). The proposal is the proposer's own approval, kept
+    /// under the contract as a team action, which `getContractTeamActions` reads; the other
+    /// members approve it by its `actionId` with `contractApproveTeamAction`, and the approval
+    /// that meets the rule deletes the document as a moderator's deletion does.
     ///
-    /// @param options - The approving identity, the contract, the document type, the document, the `reason` and the signer
-    /// @returns The approvals the contract keeps of the deletion, this one among them, proved: `deletedAt` is set when they deleted the document
+    /// @param options - The proposing identity, the contract, the document type, the document, the `reason` and the signer
+    /// @returns The team action the proposal opened and its status, proved: `actionId` is what the other members approve, and `status` is `closed` once the action ran and deleted the document, by this proposal alone or by a later approval before the proof was taken
     #[wasm_bindgen(js_name = "contractDeleteSettledDocument")]
     pub async fn contract_delete_settled_document(
         &self,
         options: ContractDeleteSettledDocumentOptionsJs,
-    ) -> Result<ContractSettledDeletionResultJs, WasmSdkError> {
+    ) -> Result<ContractTeamActionSignatureResultJs, WasmSdkError> {
         // Extract complex types first (borrows &options)
         let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
         let contract_id: Identifier =
@@ -880,13 +913,14 @@ impl WasmSdk {
             "contract settled document deletion options",
         )?;
 
-        // An approval is proved by the approvals it joined, which the verifier reads by a query
-        // rebuilt from the transition alone: no contract is fetched for it.
-        let settled_deletion = identity
+        // A proposal is proved by the proposer's approval of the action it opened, which the
+        // verifier reads by a query rebuilt from the transition alone: no contract is fetched
+        // for it.
+        let (action_id, status) = identity
             .delete_settled_contract_document(
                 self.inner_sdk(),
                 contract_id,
-                parsed.document_type_name.clone(),
+                parsed.document_type_name,
                 document_id,
                 parsed.reason.into(),
                 None,
@@ -894,26 +928,42 @@ impl WasmSdk {
                 settings,
             )
             .await?;
+        team_action_signature_to_js(contract_id, action_id, status)
+    }
 
-        let result = js_sys::Object::new();
-        let set = |key: &str, value: JsValue| {
-            js_sys::Reflect::set(&result, &key.into(), &value).map_err(|_| {
-                WasmSdkError::generic(format!(
-                    "failed to set `{key}` on the settled deletion result"
-                ))
-            })
-        };
-        set("contractId", IdentifierWasm::from(contract_id).into())?;
-        set(
-            "documentTypeName",
-            JsValue::from_str(&parsed.document_type_name),
-        )?;
-        set("documentId", IdentifierWasm::from(document_id).into())?;
-        // The approvals, with the fields `getContractSettledDeletions` answers with.
-        set_settled_deletion_fields(&result, &settled_deletion, |id| {
-            IdentifierWasm::from(id).into()
-        })?;
-        Ok(JsValue::from(result).into())
+    /// Approves, as a member of an elected contract's seated moderation team, a team action
+    /// another member proposed, by its id: today the deletion of a settled document, which
+    /// `contractDeleteSettledDocument` proposes. What the action does and why are the
+    /// proposal's. The approval that meets the rule runs the action and closes it.
+    ///
+    /// @param options - The approving identity, the contract, the `actionId` and the signer
+    /// @returns The team action and its status, proved: `closed` once the action ran, by this approval or a later one before the proof was taken
+    #[wasm_bindgen(js_name = "contractApproveTeamAction")]
+    pub async fn contract_approve_team_action(
+        &self,
+        options: ContractApproveTeamActionOptionsJs,
+    ) -> Result<ContractTeamActionSignatureResultJs, WasmSdkError> {
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let contract_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "contractId")?.into();
+        let action_id: Identifier = IdentifierWasm::try_from_options(&options, "actionId")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // An approval is proved by the signer's approval of the action, which the verifier
+        // reads by a query rebuilt from the transition alone: no contract is fetched for it.
+        let status = identity
+            .approve_contract_team_action(
+                self.inner_sdk(),
+                contract_id,
+                action_id,
+                None,
+                signer,
+                settings,
+            )
+            .await?;
+        team_action_signature_to_js(contract_id, action_id, status)
     }
 
     /// Restores, as a moderator, one document a moderator deleted: the document as it was,

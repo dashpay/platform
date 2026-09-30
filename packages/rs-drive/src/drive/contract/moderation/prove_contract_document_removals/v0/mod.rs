@@ -1,6 +1,4 @@
-use crate::drive::contract::moderation::types::{
-    ContractDocumentRecords, ContractDocumentRemovalsQuery,
-};
+use crate::drive::contract::moderation::types::ContractDocumentRemovalsQuery;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::identifier::Identifier;
@@ -16,12 +14,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        self.prove_document_records(
-            contract_id,
-            ContractDocumentRecords::Removals,
-            query,
+        Self::check_contract_document_removals_query(query, platform_version)?;
+        let path_query = Self::contract_document_removals_query(contract_id.to_buffer(), query);
+        self.grove_get_proved_path_query(
+            &path_query,
             transaction,
-            platform_version,
+            &mut vec![],
+            &platform_version.drive,
         )
     }
 }

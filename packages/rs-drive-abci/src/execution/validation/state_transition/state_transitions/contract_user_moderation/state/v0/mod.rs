@@ -27,14 +27,15 @@ use dpp::consensus::state::contract_moderation::{
     ContractModerationAbilityNotGrantedError, ContractModerationNotEnabledError,
     ContractModerationTargetNotAllowedError, ContractModerationTargetNotFoundError,
     ContractModerationTeamNotSeatedError, ContractSuspensionNotInFutureError,
+    ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
+    ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
     ContractUserNotSuspendedError, ContractUserNotWarnedError,
     ContractUserWarningLimitReachedError, DocumentFieldNotChangeableByModeratorsError,
     DocumentModerationWindowElapsedError, DocumentNotSettledError,
     DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, DocumentTypeNotDeletableOnceSettledError,
-    IdentityNotContractModeratorError, SettledDeletionAlreadyApprovedError,
-    SettledDeletionNotRestorableError, SettledDeletionReasonMismatchError,
+    IdentityNotContractModeratorError, SettledDeletionNotRestorableError,
 };
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::state_error::StateError;
@@ -43,7 +44,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
     encode_kept_fields, ContractDocumentRemoval, ContractDocumentRestoration,
     ContractModerationConfig, ContractModerationList, ContractModerationReason,
-    ContractModerationStatus, ContractSettledDeletion, ModerationAbility,
+    ContractModerationStatus, ContractTeamAction, ContractTeamActionEvent, ModerationAbility,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -55,6 +56,7 @@ use dpp::data_contract::validate_document::DataContractDocumentValidationMethods
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::platform_value::Value;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
@@ -64,13 +66,14 @@ use dpp::state_transition::contract_user_moderation_transition::{
 use dpp::state_transition::StateTransitionOwned;
 use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::moderation::types::ContractTeamActionWrite;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
     ContractDocumentRemovalRecordContext, ContractDocumentRestorationContext,
-    ContractSettledDeletionContext,
+    ContractTeamActionContext,
 };
 use drive::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
@@ -203,7 +206,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                 document_id,
                 reason,
             } => {
-                return transform_settled_document_deletion_v0(
+                return transform_settled_deletion_proposal_v0(
                     self,
                     platform,
                     block_info,
@@ -211,6 +214,18 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                     document_type_name,
                     *document_id,
                     reason,
+                    execution_context,
+                    tx,
+                    platform_version,
+                );
+            }
+            ContractUserModerationAction::ApproveTeamAction { action_id } => {
+                return transform_team_action_approval_v0(
+                    self,
+                    platform,
+                    block_info,
+                    &contract_fetch_info,
+                    *action_id,
                     execution_context,
                     tx,
                     platform_version,
@@ -543,29 +558,24 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
     ))
 }
 
-/// An approval of the deletion of a settled document: the document type exists and says who
-/// of a seated team must approve the deletion of its settled documents
-/// (`moderatorAbilities.deleteSettled`), a team is seated on the contract, the signer is on it and
-/// the declaration gives the team `deleteDocuments` on the type, the document exists, its owner
-/// is not protected, and it is settled: last modified longer ago than the type's `deleteWithin`
-/// window, within which a moderator deletes it alone. Every refusal is paid for by bumping the
-/// signer's contract nonce.
+/// The proposal of a settled document's deletion: the document type exists and says who of a
+/// seated team must approve the deletion of its settled documents
+/// (`moderatorAbilities.deleteSettled`), a team is seated on the contract, the signer is on it
+/// and the declaration gives the team `deleteDocuments` on the type, the reason is one the team's
+/// proposal lists, the document exists, its owner is not protected, and it is settled: last
+/// modified longer ago than the type's `deleteWithin` window, within which a moderator deletes it
+/// alone. Every refusal is paid for by bumping the signer's contract nonce.
 ///
-/// The approvals the contract keeps of the deletion are then read. While they are open (they
-/// have not met the rule, are of the document as it is, and have not lapsed,
-/// `SystemLimits::contract_settled_deletion_approval_window_ms` after the first), the signer must
-/// not be among them already, every earlier approver is checked to still be on the team, and one
-/// that has left no longer counts; this approval joins those that remain, for their reason.
-/// Otherwise, or when none remains, this approval is the first of a fresh record in their place,
-/// for its own reason, which must name a reason document the team's proposal lists.
-///
-/// When the approvals meet the type's rule, the leader among them if it says so, the document is
-/// deleted as a moderator's `DeleteDocument` deletes it, the record is marked with the deletion,
-/// and every approver's moderation action count goes up by one: a deletion signed by several
-/// counts for each of them. An approval that falls short counts for nobody, so that approving
-/// what never passes earns no share of the moderators pot.
+/// The proposal is kept as a team action, by the id it commits to
+/// ([`ContractUserModerationTransition::team_action_id`]), naming the document as it is now
+/// (its last modification and revision) and the proposer's reason, with the proposer's
+/// approval. When the proposer meets the rule alone (the leader, under a rule of one approval
+/// the leader may give) the document is deleted at once, as a moderator's `DeleteDocument`
+/// deletes it, and the action is kept closed; the proposer's moderation action count goes up by
+/// one. Otherwise the other members approve it by its id (`ApproveTeamAction`), and nobody is
+/// counted yet.
 #[allow(clippy::too_many_arguments)]
-fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
+fn transform_settled_deletion_proposal_v0<C: CoreRPCLike>(
     transition: &ContractUserModerationTransition,
     platform: &PlatformRef<C>,
     block_info: &BlockInfo,
@@ -627,13 +637,6 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
     let Moderators::Seated { elected, charter } = &moderators else {
         return refuse(ContractModerationTeamNotSeatedError::new(contract_id).into());
     };
-    // The most members the seated team can hold (`SeatedModerationCharter::team_bound`): its
-    // leader, the members its charter elected and those the declaration lets the leader add. A
-    // rule asking for more asks for all of them, so that a charter electing fewer members than
-    // the rule allows for can still meet it. A member the leader removed still counts: the
-    // leader can not lower the bar by removing members who would not approve, and gets the
-    // seat back by deleting the removal.
-    let team_capacity = usize::from(charter.team_bound(elected.max_added_moderators));
     // Who deletes which document is judged as for a moderator's deletion, the team's own
     // documents as protected from a settled deletion as from any other.
     if let Some(error) = deletion_authority_refusal(
@@ -641,6 +644,17 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
         contract,
         moderator_id,
         document_type_name,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        return refuse(error);
+    }
+    if let Some(error) = moderators.unlisted_reason(
+        transition.action(),
+        contract_id,
         platform.drive,
         epoch,
         execution_context,
@@ -680,175 +694,49 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
         );
     }
 
-    let (approvals_fee, existing) = platform.drive.fetch_contract_settled_deletion_with_fee(
-        contract_id,
-        document_type_name,
-        document_id,
-        epoch,
-        tx,
-        platform_version,
-    )?;
-    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(approvals_fee));
-    let approval_window_ms = platform_version
-        .system_limits
-        .contract_settled_deletion_approval_window_ms;
-    let replaces_existing = existing.is_some();
-    // The open approvals, less the approvers no longer on the team: a member who left since
-    // approving no longer counts. Approvals nobody on the team still stands behind are no
-    // approvals at all, so a member who left can not hold the reason the others must repeat.
-    let open = match existing {
-        // Of the document as it is: its revision too, which a moderator's change of its fields
-        // moves while leaving `$updatedAt`, and so the settling time, alone.
-        Some(open)
-            if open.is_open_at(
-                block_info.time_ms,
-                last_modified_at,
-                document.revision(),
-                approval_window_ms,
-            ) =>
-        {
-            // The signer is on the team (checked above), so approvals it is among stay open
-            // whoever else left: its second one is refused before any seat is read, for the
-            // reason it gives as a later approval's would be.
-            if open.approvals.contains(&moderator_id) {
-                return refuse(if open.reason != *reason {
-                    SettledDeletionReasonMismatchError::new(contract_id, document_id, open.reason)
-                        .into()
-                } else {
-                    SettledDeletionAlreadyApprovedError::new(contract_id, document_id, moderator_id)
-                        .into()
-                });
-            }
-            if open.reason != *reason {
-                // Another reason is refused while any earlier approver is still on the team,
-                // for the reason it stands behind: the first one seated decides, with no need
-                // to read the others. When none is, the approvals hold nothing and this one
-                // starts afresh below, for its own reason.
-                let mut any_seated = false;
-                for approver in open.approvals.iter().copied() {
-                    if charter.seats(
-                        platform.drive,
-                        approver,
-                        epoch,
-                        execution_context,
-                        tx,
-                        platform_version,
-                    )? {
-                        any_seated = true;
-                        break;
-                    }
-                }
-                if any_seated {
-                    return refuse(
-                        SettledDeletionReasonMismatchError::new(
-                            contract_id,
-                            document_id,
-                            open.reason,
-                        )
-                        .into(),
-                    );
-                }
-                None
-            } else {
-                let still_seated = still_seated_approvers(
-                    &open.approvals,
-                    charter,
-                    elected.max_added_moderators,
-                    platform.drive,
-                    epoch,
-                    execution_context,
-                    tx,
-                    platform_version,
-                )?;
-                (!still_seated.is_empty()).then_some(ContractSettledDeletion {
-                    approvals: still_seated,
-                    ..open
-                })
-            }
-        }
-        _ => None,
+    let action_id = transition.team_action_id().ok_or(Error::Execution(
+        ExecutionError::CorruptedCodeExecution(
+            "the proposal of a settled document's deletion has a team action id",
+        ),
+    ))?;
+    let action = ContractTeamAction {
+        proposer_id: moderator_id,
+        proposed_at: block_info.time_ms,
+        event: ContractTeamActionEvent::DeleteSettledDocument {
+            document_type_name: document_type_name.to_string(),
+            document_id,
+            document_last_modified_at: last_modified_at,
+            document_revision: document.revision(),
+            reason: reason.clone(),
+        },
     };
-    let mut settled_deletion = match open {
-        // A joining approval repeats the reason the first gave (compared above), which was
-        // checked against the team's proposal then: a proposal never changes and, in protocol
-        // version 14, a seat is never replaced, so the proposal is not read again.
-        Some(mut open) => {
-            open.approvals.push(moderator_id);
-            open
-        }
-        // None yet, or closed: of the document as it was before a replace, lapsed, or approved
-        // only by members who left since (approvals that deleted the document close for good:
-        // that deletion is never restored). This approval starts
-        // afresh in its place, for its own reason, which must be one the proposal lists.
-        None => {
-            if let Some(error) = moderators.unlisted_reason(
-                transition.action(),
-                contract_id,
-                platform.drive,
-                epoch,
-                execution_context,
-                tx,
-                platform_version,
-            )? {
-                return refuse(error);
-            }
-            ContractSettledDeletion {
-                proposed_at: block_info.time_ms,
-                document_last_modified_at: last_modified_at,
-                document_revision: document.revision(),
-                reason: reason.clone(),
-                approvals: vec![moderator_id],
-                deleted_at: None,
-            }
-        }
-    };
-
-    let (deletion, approver_action_counts) = if rule.is_met_by(
-        &settled_deletion.approvals,
-        charter.leader_id,
-        team_capacity,
-    ) {
-        settled_deletion.deleted_at = Some(block_info.time_ms);
-        let deletion = document_deletion_context(
+    let team_capacity = usize::from(charter.team_bound(elected.max_added_moderators));
+    let closes = rule.is_met_by(&[moderator_id], charter.leader_id, team_capacity);
+    let (deletion, approver_action_counts) = if closes {
+        let (deletion, counts) = run_settled_deletion(
             platform,
             contract_fetch_info,
             document_type,
             document_type_name,
             &document,
+            &[moderator_id],
             block_info,
             execution_context,
             tx,
             platform_version,
         )?;
-        // Every approver's count, one point read each, billed. A contract stored elected
-        // before the counts existed has nowhere to count, which the first read finds.
-        let mut counts = Vec::with_capacity(settled_deletion.approvals.len());
-        for approver in settled_deletion.approvals.iter().copied() {
-            let Some(count) = next_moderation_action_count(
-                platform.drive,
-                contract_id,
-                approver,
-                epoch,
-                execution_context,
-                tx,
-                platform_version,
-            )?
-            else {
-                break;
-            };
-            counts.push((approver, count));
-        }
         (Some(deletion), counts)
     } else {
         (None, vec![])
     };
+    let write = ContractTeamActionWrite::Propose { action, closes };
 
     Ok(ConsensusValidationResult::new_with_data(
-        ContractUserModerationTransitionAction::from_borrowed_transition_with_settled_deletion(
+        ContractUserModerationTransitionAction::from_borrowed_transition_with_team_action(
             transition,
-            ContractSettledDeletionContext {
-                settled_deletion,
-                replaces_existing,
+            ContractTeamActionContext {
+                action_id,
+                write,
                 deletion,
                 approver_action_counts,
             },
@@ -857,11 +745,315 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
     ))
 }
 
+/// The approval of a team action another member proposed: the contract keeps team actions
+/// (a document type of it sets `moderatorAbilities.deleteSettled`), the action exists and has not
+/// run, a team is seated on it, the signer is on the team with the authority the action
+/// needs (for the deletion of a settled document, `deleteDocuments` on its type) and has not
+/// approved it already, and the document the action names still exists, its owner not
+/// protected, as it was when proposed: an approval of a document changed since would approve
+/// the deletion of content the team never saw. Every refusal is paid for by bumping the
+/// signer's contract nonce.
+///
+/// The approval is added to the action's. When the approvals given could meet the rule, the team
+/// is read: the approvals of members who left since no longer count and are dropped, refunded to
+/// them (one back after that approves again), and when those of members still on the team
+/// (the leader among them, when the rule says so) meet the rule, counting this one, the action
+/// runs: the document is deleted as a moderator's `DeleteDocument` deletes it, for the
+/// proposal's reason, the action closes with the approvals that counted, and every counted
+/// approver's moderation action count goes up by one: a deletion signed by several counts for
+/// each of them. An approval that falls short counts for nobody, so that approving what never
+/// passes earns no share of the moderators pot.
+#[allow(clippy::too_many_arguments)]
+fn transform_team_action_approval_v0<C: CoreRPCLike>(
+    transition: &ContractUserModerationTransition,
+    platform: &PlatformRef<C>,
+    block_info: &BlockInfo,
+    contract_fetch_info: &Arc<DataContractFetchInfo>,
+    action_id: Identifier,
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    let contract = &contract_fetch_info.contract;
+    let contract_id = contract.id();
+    let moderator_id = transition.owner_id();
+    let refuse = |error: ConsensusError| {
+        Ok(ConsensusValidationResult::new_with_data_and_errors(
+            StateTransitionAction::BumpIdentityDataContractNonceAction(
+                BumpIdentityDataContractNonceAction::from_borrowed_contract_user_moderation_transition(
+                    transition,
+                ),
+            ),
+            vec![error],
+        ))
+    };
+
+    // A contract keeps team actions only when a document type sets `deleteSettled`, which needs
+    // an elected declaration: any other has none to approve, and no tree to read them from.
+    let moderation = contract
+        .config()
+        .moderation()
+        .filter(|_| contract.keeps_team_actions());
+    let Some(moderation) = moderation else {
+        return refuse(ContractTeamActionDoesNotExistError::new(contract_id, action_id).into());
+    };
+
+    // The action first: its refusals need nothing of the team. An action exists only once a
+    // seated member proposed it, and in protocol version 14 a seat is never replaced, so a team
+    // is seated whenever one is found.
+    let epoch = &block_info.epoch;
+    let (action_fee, found) = platform.drive.fetch_contract_team_action_with_fee(
+        contract_id,
+        action_id,
+        epoch,
+        tx,
+        platform_version,
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(action_fee));
+    let action = match found {
+        None => {
+            return refuse(ContractTeamActionDoesNotExistError::new(contract_id, action_id).into())
+        }
+        Some((GroupActionStatus::ActionClosed, _)) => {
+            return refuse(
+                ContractTeamActionAlreadyCompletedError::new(contract_id, action_id).into(),
+            )
+        }
+        Some((GroupActionStatus::ActionActive, action)) => action,
+    };
+
+    let moderators = Moderators::read(
+        moderation,
+        contract_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    let Moderators::Seated { elected, charter } = &moderators else {
+        return refuse(ContractModerationTeamNotSeatedError::new(contract_id).into());
+    };
+    let ContractTeamActionEvent::DeleteSettledDocument {
+        document_type_name,
+        document_id,
+        ..
+    } = &action.event;
+    let document_id = *document_id;
+
+    // The type was there when the member proposed, with its rule, and neither is ever taken
+    // away: a contract update keeps every document type and freezes the keyword.
+    let document_type = contract.document_type_optional_for_name(document_type_name);
+    let (Some(document_type), Some(rule), Some(window_seconds)) = (
+        document_type,
+        document_type.and_then(|document_type| document_type.moderator_settled_deletion()),
+        document_type
+            .and_then(|document_type| document_type.documents_can_be_deleted_by_moderators_for()),
+    ) else {
+        return Err(Error::Execution(ExecutionError::CorruptedDriveResponse(
+            format!(
+                "team action {} of contract {} names document type {}, which no longer deletes \
+                 settled documents",
+                action_id, contract_id, document_type_name
+            ),
+        )));
+    };
+    if let Some(error) = deletion_authority_refusal(
+        &moderators,
+        contract,
+        moderator_id,
+        document_type_name,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        return refuse(error);
+    }
+
+    let (signers_fee, signers) = platform.drive.fetch_contract_team_action_signers_with_fee(
+        contract_id,
+        GroupActionStatus::ActionActive,
+        action_id,
+        epoch,
+        tx,
+        platform_version,
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(signers_fee));
+    if signers.contains(&moderator_id) {
+        return refuse(
+            ContractTeamActionAlreadySignedError::new(contract_id, action_id, moderator_id).into(),
+        );
+    }
+
+    let document = match fetch_deletable_document(
+        &moderators,
+        contract,
+        document_type,
+        document_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        Ok(document) => document,
+        Err(error) => return refuse(error),
+    };
+    // Of the document as proposed: its revision too, which a moderator's change of its fields
+    // moves while leaving `$updatedAt`, and so the settling time, alone. The document was
+    // settled then and time only moves on, so it still is.
+    let (last_modified_at, _) = last_modified_and_settled_at(&document, window_seconds);
+    if !action.names_document_as(last_modified_at, document.revision()) {
+        return refuse(
+            ContractTeamActionDocumentChangedError::new(contract_id, action_id, document_id).into(),
+        );
+    }
+
+    // The most members the seated team can hold (`SeatedModerationCharter::team_bound`): its
+    // leader, the members its charter elected and those the declaration lets the leader add. A
+    // rule asking for more asks for all of them, so that a charter electing fewer members than
+    // the rule allows for can still meet it. A member the leader removed still counts: the
+    // leader can not lower the bar by removing members who would not approve, and gets the
+    // seat back by deleting the removal.
+    let team_capacity = usize::from(charter.team_bound(elected.max_added_moderators));
+    // Approvals that can not meet the rule, even if every one still counts, need no team read,
+    // and leave the approvals of members who left where they are until one that reads the team:
+    // too few of them, or none of them, this one included, the leader's when the rule needs it.
+    let could_meet = signers.len() + 1 >= rule.approvals_needed(team_capacity)
+        && (!rule.leader
+            || moderator_id == charter.leader_id
+            || signers.contains(&charter.leader_id));
+    let (write, deletion, approver_action_counts) = if !could_meet {
+        (
+            ContractTeamActionWrite::Approve {
+                dropped_signers: vec![],
+            },
+            None,
+            vec![],
+        )
+    } else {
+        // The approvals of members still on the team count, this one among them; those of
+        // members who left are dropped, so that a member who comes back after this approves
+        // again.
+        let earlier_counted = still_seated_approvers(
+            &signers,
+            charter,
+            elected.max_added_moderators,
+            platform.drive,
+            epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
+        let dropped_signers: Vec<Identifier> = signers
+            .iter()
+            .copied()
+            .filter(|signer| !earlier_counted.contains(signer))
+            .collect();
+        let mut counted = earlier_counted.clone();
+        counted.push(moderator_id);
+        if rule.is_met_by(&counted, charter.leader_id, team_capacity) {
+            let (deletion, counts) = run_settled_deletion(
+                platform,
+                contract_fetch_info,
+                document_type,
+                document_type_name,
+                &document,
+                &counted,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            )?;
+            (
+                ContractTeamActionWrite::Close {
+                    action: action.clone(),
+                    earlier_signers: earlier_counted,
+                    dropped_signers,
+                },
+                Some(deletion),
+                counts,
+            )
+        } else {
+            (
+                ContractTeamActionWrite::Approve { dropped_signers },
+                None,
+                vec![],
+            )
+        }
+    };
+
+    Ok(ConsensusValidationResult::new_with_data(
+        ContractUserModerationTransitionAction::from_borrowed_transition_with_team_action(
+            transition,
+            ContractTeamActionContext {
+                action_id,
+                write,
+                deletion,
+                approver_action_counts,
+            },
+        )
+        .into(),
+    ))
+}
+
+/// What a team action that deletes a settled document runs once the approvals meet its rule:
+/// what the deletion reads, as a moderator's `DeleteDocument` does (the action's event names the
+/// document and the reason Drive deletes it for), and the moderation action count of every
+/// approver in `counted`, one point read each, billed. A
+/// contract stored elected before the counts existed has nowhere to count, which the first read
+/// finds.
+#[allow(clippy::too_many_arguments)]
+fn run_settled_deletion<C: CoreRPCLike>(
+    platform: &PlatformRef<C>,
+    contract_fetch_info: &Arc<DataContractFetchInfo>,
+    document_type: DocumentTypeRef,
+    document_type_name: &str,
+    document: &Document,
+    counted: &[Identifier],
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<(ContractDocumentDeletionContext, Vec<(Identifier, u32)>), Error> {
+    let context = document_deletion_context(
+        platform,
+        contract_fetch_info,
+        document_type,
+        document_type_name,
+        document,
+        block_info,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    let contract_id = contract_fetch_info.contract.id();
+    let mut counts = Vec::with_capacity(counted.len());
+    for approver in counted.iter().copied() {
+        let Some(count) = next_moderation_action_count(
+            platform.drive,
+            contract_id,
+            approver,
+            &block_info.epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )?
+        else {
+            break;
+        };
+        counts.push((approver, count));
+    }
+    Ok((context, counts))
+}
+
 /// When `document` last changed, and when it settles under a moderators' window of
 /// `window_seconds`: its `$updatedAt`, or `$createdAt` on a type that carries no `$updatedAt`,
 /// and that time plus the window. A document that carried neither reads as changed at time
 /// zero, which is settled. A moderator's deletion is refused after the settling time (41116) and
-/// the approval of a settled document's deletion up to it (41206): measured once, the two can
+/// the proposal of a settled document's deletion up to it (41206): measured once, the two can
 /// neither overlap nor leave a gap.
 fn last_modified_and_settled_at(document: &Document, window_seconds: u32) -> (u64, u64) {
     let last_modified_at = document
@@ -874,7 +1066,7 @@ fn last_modified_and_settled_at(document: &Document, window_seconds: u32) -> (u6
 }
 
 /// Whether `moderators` let `moderator_id` delete documents of `document_type_name` on
-/// `contract`, for a moderator's deletion and the approval of a settled one alike: the signer
+/// `contract`, for a moderator's deletion and a team's settled deletion alike: the signer
 /// moderates the contract (41101), and a seated team holds `deleteDocuments` on the type
 /// (41201). The refusal, when there is one, is the caller's to pay.
 #[allow(clippy::too_many_arguments)]
@@ -916,7 +1108,7 @@ fn deletion_authority_refusal(
     Ok(None)
 }
 
-/// The document a moderator's deletion, or the approval of a settled one, names, read and
+/// The document a moderator's deletion, or a team's settled deletion, names, read and
 /// billed; or the refusal: it does not exist (40101), or its owner is protected (41102). What
 /// protects the owner and the moderators from a ban protects their documents: the owner demotes
 /// a moderator by a contract update before deleting what it wrote, and the leader of a seated
@@ -967,7 +1159,7 @@ fn fetch_deletable_document(
     Ok(Ok(document))
 }
 
-/// Which of `approvers`, earlier approvals of a settled document's deletion, are still on the
+/// Which of `approvers`, earlier approvals of a team action, are still on the
 /// seated team, in their order. The leader always is. The others are checked one point read
 /// each ([`SeatedModerationCharter::seats`]) while there are no more of them than the queries a
 /// read of the whole team makes, and past that by reading the team once
@@ -1026,8 +1218,8 @@ fn still_seated_approvers(
 /// What Drive needs to delete `document` as a moderator deletes it: the contract, the document's
 /// owner, the removal record when the type keeps one, and whether the owner is refunded. The
 /// record commits to the document as serialized under its type, and is read first, billed, for
-/// a restored record it replaces. Shared by a moderator's deletion and the approval of a settled
-/// document's deletion that meets its type's rule.
+/// a restored record it replaces. Shared by a moderator's deletion and the team action that
+/// deletes a settled document once its approvals meet the type's rule.
 #[allow(clippy::too_many_arguments)]
 fn document_deletion_context<C: CoreRPCLike>(
     platform: &PlatformRef<C>,
@@ -1711,7 +1903,8 @@ fn list_of(action: &ContractUserModerationAction) -> Option<ContractModerationLi
         ContractUserModerationAction::DeleteDocument { .. }
         | ContractUserModerationAction::RestoreDocument { .. }
         | ContractUserModerationAction::ChangeDocumentFields { .. }
-        | ContractUserModerationAction::DeleteSettledDocument { .. } => None,
+        | ContractUserModerationAction::DeleteSettledDocument { .. }
+        | ContractUserModerationAction::ApproveTeamAction { .. } => None,
     }
 }
 
@@ -1735,7 +1928,8 @@ fn lists_to_read(
         | ContractUserModerationAction::DeleteDocument { .. }
         | ContractUserModerationAction::RestoreDocument { .. }
         | ContractUserModerationAction::ChangeDocumentFields { .. }
-        | ContractUserModerationAction::DeleteSettledDocument { .. } => vec![list],
+        | ContractUserModerationAction::DeleteSettledDocument { .. }
+        | ContractUserModerationAction::ApproveTeamAction { .. } => vec![list],
     }
 }
 
@@ -1786,10 +1980,11 @@ fn refusal_for_status(
         }
         ContractUserModerationAction::ClearWarnings { .. } => (!status.warned())
             .then(|| ContractUserNotWarnedError::new(contract_id, target_id).into()),
-        // A document deletion, restore, field change or settled deletion approval reads no list.
+        // A document deletion, restore, field change or team action reads no list.
         ContractUserModerationAction::DeleteDocument { .. }
         | ContractUserModerationAction::RestoreDocument { .. }
         | ContractUserModerationAction::ChangeDocumentFields { .. }
-        | ContractUserModerationAction::DeleteSettledDocument { .. } => None,
+        | ContractUserModerationAction::DeleteSettledDocument { .. }
+        | ContractUserModerationAction::ApproveTeamAction { .. } => None,
     }
 }

@@ -113,21 +113,28 @@ pub enum ContractUserModerationAction {
         /// Why, checked against a seated team's proposal like every other reason.
         reason: ContractModerationReason,
     },
-    /// Approves the deletion of a settled document: one of a document type that says who must
+    /// Proposes the deletion of a settled document: one of a document type that says who must
     /// approve it (`moderatorAbilities.deleteSettled`), past the window its moderators delete
     /// in alone (`moderatorAbilities.deleteWithin`). Only a member of the contract's seated
-    /// team approves. The approvals are kept under the contract, and the one that meets the
-    /// rule deletes the document as a `DeleteDocument` would: the members each send this same
-    /// action, for the same reason, until as many as the rule asks for have, the leader among
-    /// them when the rule says so.
+    /// team proposes, and the proposal is its approval. It is kept under the contract as a
+    /// team action, by an id the proposer's client computes
+    /// ([`ContractTeamAction::settled_deletion_action_id`](crate::data_contract::config::moderation::ContractTeamAction::settled_deletion_action_id)),
+    /// which the other members approve with [`Self::ApproveTeamAction`]. The approval that
+    /// meets the rule, the leader among the approvals when the rule says so, deletes the
+    /// document as a `DeleteDocument` would; a rule the proposer meets alone deletes it at once.
     DeleteSettledDocument {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
         document_type_name: String,
         #[cfg_attr(feature = "serde-conversion", serde(rename = "documentId"))]
         document_id: Identifier,
-        /// Why: the first approval's, which every later one must repeat, stored with the
-        /// approvals and with the removal record the deletion leaves.
+        /// Why: stored with the proposal and with the removal record the deletion leaves.
         reason: ContractModerationReason,
+    },
+    /// Approves a team action another member of the contract's seated team proposed, by its
+    /// id: what it does and why are the proposal's.
+    ApproveTeamAction {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "actionId"))]
+        action_id: Identifier,
     },
 }
 
@@ -237,7 +244,8 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::DeleteDocument { .. }
             | ContractUserModerationAction::RestoreDocument { .. }
             | ContractUserModerationAction::ChangeDocumentFields { .. }
-            | ContractUserModerationAction::DeleteSettledDocument { .. } => None,
+            | ContractUserModerationAction::DeleteSettledDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => None,
         }
     }
 
@@ -257,7 +265,7 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The settled document whose deletion an approval targets, as its document type name and
+    /// The settled document whose deletion a proposal targets, as its document type name and
     /// its id, with the reason. `None` for every other action.
     pub fn settled_document(&self) -> Option<(&str, Identifier, &ContractModerationReason)> {
         match self {
@@ -266,6 +274,14 @@ impl ContractUserModerationAction {
                 document_id,
                 reason,
             } => Some((document_type_name.as_str(), *document_id, reason)),
+            _ => None,
+        }
+    }
+
+    /// The team action an approval approves, by its id. `None` for every other action.
+    pub fn approved_team_action(&self) -> Option<Identifier> {
+        match self {
+            ContractUserModerationAction::ApproveTeamAction { action_id } => Some(*action_id),
             _ => None,
         }
     }
@@ -338,7 +354,8 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::Unban { .. }
             | ContractUserModerationAction::Unsuspend { .. }
             | ContractUserModerationAction::ClearWarnings { .. }
-            | ContractUserModerationAction::RestoreDocument { .. } => None,
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => None,
         }
     }
 
@@ -355,6 +372,7 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::RestoreDocument { .. } => "restoreDocument",
             ContractUserModerationAction::ChangeDocumentFields { .. } => "changeDocumentFields",
             ContractUserModerationAction::DeleteSettledDocument { .. } => "deleteSettledDocument",
+            ContractUserModerationAction::ApproveTeamAction { .. } => "approveTeamAction",
         }
     }
 }
@@ -381,9 +399,12 @@ impl fmt::Display for ContractUserModerationAction {
             } => {
                 write!(
                     f,
-                    "approve the deletion of settled {} document {}",
+                    "propose the deletion of settled {} document {}",
                     document_type_name, document_id
                 )
+            }
+            ContractUserModerationAction::ApproveTeamAction { action_id } => {
+                write!(f, "approve team action {}", action_id)
             }
             ContractUserModerationAction::RestoreDocument {
                 document_type_name,

@@ -129,10 +129,15 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetContractDocumentRemovalsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetContractDocumentRemovalsResponse.FromString,
                 )
-        self.getContractSettledDeletions = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getContractSettledDeletions',
-                request_serializer=platform__pb2.GetContractSettledDeletionsRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetContractSettledDeletionsResponse.FromString,
+        self.getContractTeamActions = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractTeamActions',
+                request_serializer=platform__pb2.GetContractTeamActionsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractTeamActionsResponse.FromString,
+                )
+        self.getContractTeamActionSigners = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractTeamActionSigners',
+                request_serializer=platform__pb2.GetContractTeamActionSignersRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractTeamActionSignersResponse.FromString,
                 )
         self.getContractFeePots = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getContractFeePots',
@@ -513,7 +518,13 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getContractSettledDeletions(self, request, context):
+    def getContractTeamActions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractTeamActionSigners(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -925,10 +936,15 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetContractDocumentRemovalsRequest.FromString,
                     response_serializer=platform__pb2.GetContractDocumentRemovalsResponse.SerializeToString,
             ),
-            'getContractSettledDeletions': grpc.unary_unary_rpc_method_handler(
-                    servicer.getContractSettledDeletions,
-                    request_deserializer=platform__pb2.GetContractSettledDeletionsRequest.FromString,
-                    response_serializer=platform__pb2.GetContractSettledDeletionsResponse.SerializeToString,
+            'getContractTeamActions': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractTeamActions,
+                    request_deserializer=platform__pb2.GetContractTeamActionsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractTeamActionsResponse.SerializeToString,
+            ),
+            'getContractTeamActionSigners': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractTeamActionSigners,
+                    request_deserializer=platform__pb2.GetContractTeamActionSignersRequest.FromString,
+                    response_serializer=platform__pb2.GetContractTeamActionSignersResponse.SerializeToString,
             ),
             'getContractFeePots': grpc.unary_unary_rpc_method_handler(
                     servicer.getContractFeePots,
@@ -1567,7 +1583,7 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def getContractSettledDeletions(request,
+    def getContractTeamActions(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1577,9 +1593,26 @@ class Platform(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractSettledDeletions',
-            platform__pb2.GetContractSettledDeletionsRequest.SerializeToString,
-            platform__pb2.GetContractSettledDeletionsResponse.FromString,
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractTeamActions',
+            platform__pb2.GetContractTeamActionsRequest.SerializeToString,
+            platform__pb2.GetContractTeamActionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractTeamActionSigners(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractTeamActionSigners',
+            platform__pb2.GetContractTeamActionSignersRequest.SerializeToString,
+            platform__pb2.GetContractTeamActionSignersResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

@@ -192,18 +192,28 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractModerationStatusRe
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.SelectionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.ResultCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.EventCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.VersionCase', null, { proto });
@@ -3129,16 +3139,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest';
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -3150,37 +3160,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.displayName = 'proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page = function(opt_data) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId = function(opt_data) {
   jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.displayName = 'proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page';
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -3192,16 +3181,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0';
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -3213,16 +3202,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse';
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -3234,16 +3223,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.repeatedFields_, null);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.displayName = 'proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion';
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -3255,16 +3244,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.repeatedFields_, null);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.displayName = 'proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions';
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -3276,16 +3265,142 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.repeatedFields_, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0';
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.repeatedFields_, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -35504,21 +35619,21 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.prototype.ha
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.oneofGroups_ = [[1]];
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.oneofGroups_ = [[1]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.VersionCase = {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.VersionCase = {
   VERSION_NOT_SET: 0,
   V0: 1
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.VersionCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.VersionCase}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.oneofGroups_[0]));
 };
 
 
@@ -35536,8 +35651,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.toObject(opt_includeInstance, this);
 };
 
 
@@ -35546,13 +35661,13 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.toO
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.toObject(includeInstance, f)
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -35566,23 +35681,23 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.toObject = fu
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest;
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -35590,8 +35705,8 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.deserializeBi
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.deserializeBinaryFromReader);
       msg.setV0(value);
       break;
     default:
@@ -35607,9 +35722,9 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.deserializeBi
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -35617,202 +35732,30 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.ser
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getV0();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.repeatedFields_ = [1];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    documentIdsList: msg.getDocumentIdsList_asB64()
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds;
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addDocumentIds(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getDocumentIdsList_asU8();
-  if (f.length > 0) {
-    writer.writeRepeatedBytes(
-      1,
-      f
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.serializeBinaryToWriter
     );
   }
 };
 
 
 /**
- * repeated bytes document_ids = 1;
- * @return {!Array<string>}
+ * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.prototype.getDocumentIdsList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 1));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus = {
+  ACTIVE: 0,
+  CLOSED: 1
 };
-
-
-/**
- * repeated bytes document_ids = 1;
- * This is a type-conversion wrapper around `getDocumentIdsList()`
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.prototype.getDocumentIdsList_asB64 = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getDocumentIdsList()));
-};
-
-
-/**
- * repeated bytes document_ids = 1;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getDocumentIdsList()`
- * @return {!Array<!Uint8Array>}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.prototype.getDocumentIdsList_asU8 = function() {
-  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getDocumentIdsList()));
-};
-
-
-/**
- * @param {!(Array<!Uint8Array>|Array<string>)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.prototype.setDocumentIdsList = function(value) {
-  return jspb.Message.setField(this, 1, value || []);
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.prototype.addDocumentIds = function(value, opt_index) {
-  return jspb.Message.addToRepeatedField(this, 1, value, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.prototype.clearDocumentIdsList = function() {
-  return this.setDocumentIdsList([]);
-};
-
 
 
 
@@ -35830,8 +35773,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.toObject(opt_includeInstance, this);
 };
 
 
@@ -35840,14 +35783,14 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototyp
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.toObject = function(includeInstance, msg) {
   var f, obj = {
-    startAfter: msg.getStartAfter_asB64(),
-    limit: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    startActionId: msg.getStartActionId_asB64(),
+    startActionIdIncluded: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
   if (includeInstance) {
@@ -35861,23 +35804,23 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.toObject
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page;
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -35886,11 +35829,11 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.deserial
     switch (field) {
     case 1:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setStartAfter(value);
+      msg.setStartActionId(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setLimit(value);
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setStartActionIdIncluded(value);
       break;
     default:
       reader.skipField();
@@ -35905,9 +35848,9 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.deserial
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -35915,22 +35858,22 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototyp
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 1));
-  if (f != null) {
+  f = message.getStartActionId_asU8();
+  if (f.length > 0) {
     writer.writeBytes(
       1,
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 2));
-  if (f != null) {
-    writer.writeUint32(
+  f = message.getStartActionIdIncluded();
+  if (f) {
+    writer.writeBool(
       2,
       f
     );
@@ -35939,127 +35882,65 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.serializ
 
 
 /**
- * optional bytes start_after = 1;
+ * optional bytes start_action_id = 1;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.getStartAfter = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.prototype.getStartActionId = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
 };
 
 
 /**
- * optional bytes start_after = 1;
- * This is a type-conversion wrapper around `getStartAfter()`
+ * optional bytes start_action_id = 1;
+ * This is a type-conversion wrapper around `getStartActionId()`
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.getStartAfter_asB64 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.prototype.getStartActionId_asB64 = function() {
   return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getStartAfter()));
+      this.getStartActionId()));
 };
 
 
 /**
- * optional bytes start_after = 1;
+ * optional bytes start_action_id = 1;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getStartAfter()`
+ * This is a type-conversion wrapper around `getStartActionId()`
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.getStartAfter_asU8 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.prototype.getStartActionId_asU8 = function() {
   return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getStartAfter()));
+      this.getStartActionId()));
 };
 
 
 /**
  * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.setStartAfter = function(value) {
-  return jspb.Message.setField(this, 1, value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.prototype.setStartActionId = function(value) {
+  return jspb.Message.setProto3BytesField(this, 1, value);
 };
 
 
 /**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.clearStartAfter = function() {
-  return jspb.Message.setField(this, 1, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
+ * optional bool start_action_id_included = 2;
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.hasStartAfter = function() {
-  return jspb.Message.getField(this, 1) != null;
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.prototype.getStartActionIdIncluded = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 2, false));
 };
 
 
 /**
- * optional uint32 limit = 2;
- * @return {number}
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.getLimit = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.prototype.setStartActionIdIncluded = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 2, value);
 };
 
 
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.setLimit = function(value) {
-  return jspb.Message.setField(this, 2, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.clearLimit = function() {
-  return jspb.Message.setField(this, 2, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.prototype.hasLimit = function() {
-  return jspb.Message.getField(this, 2) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.oneofGroups_ = [[3,4]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.SelectionCase = {
-  SELECTION_NOT_SET: 0,
-  DOCUMENT_IDS: 3,
-  PAGE: 4
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.SelectionCase}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.getSelectionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.SelectionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.oneofGroups_[0]));
-};
 
 
 
@@ -36076,8 +35957,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.toObject(opt_includeInstance, this);
 };
 
 
@@ -36086,16 +35967,16 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.toObject = function(includeInstance, msg) {
   var f, obj = {
     contractId: msg.getContractId_asB64(),
-    documentTypeName: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    documentIds: (f = msg.getDocumentIds()) && proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.toObject(includeInstance, f),
-    page: (f = msg.getPage()) && proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.toObject(includeInstance, f),
+    status: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    startAtActionId: (f = msg.getStartAtActionId()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.toObject(includeInstance, f),
+    count: jspb.Message.getFieldWithDefault(msg, 4, 0),
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
   };
 
@@ -36110,23 +35991,23 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -36138,18 +36019,17 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
       msg.setContractId(value);
       break;
     case 2:
-      var value = /** @type {string} */ (reader.readString());
-      msg.setDocumentTypeName(value);
+      var value = /** @type {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus} */ (reader.readEnum());
+      msg.setStatus(value);
       break;
     case 3:
-      var value = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.deserializeBinaryFromReader);
-      msg.setDocumentIds(value);
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.deserializeBinaryFromReader);
+      msg.setStartAtActionId(value);
       break;
     case 4:
-      var value = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.deserializeBinaryFromReader);
-      msg.setPage(value);
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setCount(value);
       break;
     case 5:
       var value = /** @type {boolean} */ (reader.readBool());
@@ -36168,9 +36048,9 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -36178,11 +36058,11 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getContractId_asU8();
   if (f.length > 0) {
@@ -36191,27 +36071,26 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
       f
     );
   }
-  f = message.getDocumentTypeName();
-  if (f.length > 0) {
-    writer.writeString(
+  f = message.getStatus();
+  if (f !== 0.0) {
+    writer.writeEnum(
       2,
       f
     );
   }
-  f = message.getDocumentIds();
+  f = message.getStartAtActionId();
   if (f != null) {
     writer.writeMessage(
       3,
       f,
-      proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId.serializeBinaryToWriter
     );
   }
-  f = message.getPage();
+  f = /** @type {number} */ (jspb.Message.getField(message, 4));
   if (f != null) {
-    writer.writeMessage(
+    writer.writeUint32(
       4,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.serializeBinaryToWriter
+      f
     );
   }
   f = message.getProve();
@@ -36228,7 +36107,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
  * optional bytes contract_id = 1;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.getContractId = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.getContractId = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
 };
 
@@ -36238,7 +36117,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
  * This is a type-conversion wrapper around `getContractId()`
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.getContractId_asB64 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.getContractId_asB64 = function() {
   return /** @type {string} */ (jspb.Message.bytesAsB64(
       this.getContractId()));
 };
@@ -36251,7 +36130,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
  * This is a type-conversion wrapper around `getContractId()`
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.getContractId_asU8 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.getContractId_asU8 = function() {
   return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
       this.getContractId()));
 };
@@ -36259,56 +36138,56 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
 
 /**
  * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.setContractId = function(value) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.setContractId = function(value) {
   return jspb.Message.setProto3BytesField(this, 1, value);
 };
 
 
 /**
- * optional string document_type_name = 2;
- * @return {string}
+ * optional ActionStatus status = 2;
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.getDocumentTypeName = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.getStatus = function() {
+  return /** @type {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
 };
 
 
 /**
- * @param {string} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} returns this
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.ActionStatus} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.setDocumentTypeName = function(value) {
-  return jspb.Message.setProto3StringField(this, 2, value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.setStatus = function(value) {
+  return jspb.Message.setProto3EnumField(this, 2, value);
 };
 
 
 /**
- * optional DocumentIds document_ids = 3;
- * @return {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds}
+ * optional StartAtActionId start_at_action_id = 3;
+ * @return {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.getDocumentIds = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds, 3));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.getStartAtActionId = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId, 3));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.StartAtActionId|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.setDocumentIds = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 3, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.setStartAtActionId = function(value) {
+  return jspb.Message.setWrapperField(this, 3, value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.clearDocumentIds = function() {
-  return this.setDocumentIds(undefined);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.clearStartAtActionId = function() {
+  return this.setStartAtActionId(undefined);
 };
 
 
@@ -36316,36 +36195,35 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.hasDocumentIds = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.hasStartAtActionId = function() {
   return jspb.Message.getField(this, 3) != null;
 };
 
 
 /**
- * optional Page page = 4;
- * @return {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page}
+ * optional uint32 count = 4;
+ * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.getPage = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page, 4));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.getCount = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.setPage = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 4, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.oneofGroups_[0], value);
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.setCount = function(value) {
+  return jspb.Message.setField(this, 4, value);
 };
 
 
 /**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} returns this
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.clearPage = function() {
-  return this.setPage(undefined);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.clearCount = function() {
+  return jspb.Message.setField(this, 4, undefined);
 };
 
 
@@ -36353,7 +36231,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.hasPage = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.hasCount = function() {
   return jspb.Message.getField(this, 4) != null;
 };
 
@@ -36362,44 +36240,44 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSe
  * optional bool prove = 5;
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.getProve = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.getProve = function() {
   return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 5, false));
 };
 
 
 /**
  * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.prototype.setProve = function(value) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.prototype.setProve = function(value) {
   return jspb.Message.setProto3BooleanField(this, 5, value);
 };
 
 
 /**
- * optional GetContractSettledDeletionsRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0}
+ * optional GetContractTeamActionsRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0, 1));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.GetContractTeamActionsRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.clearV0 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.prototype.clearV0 = function() {
   return this.setV0(undefined);
 };
 
@@ -36408,7 +36286,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.cle
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.hasV0 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsRequest.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -36422,21 +36300,21 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.prototype.has
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.oneofGroups_ = [[1]];
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.oneofGroups_ = [[1]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.VersionCase = {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.VersionCase = {
   VERSION_NOT_SET: 0,
   V0: 1
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.VersionCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.VersionCase}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.oneofGroups_[0]));
 };
 
 
@@ -36454,8 +36332,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.toObject(opt_includeInstance, this);
 };
 
 
@@ -36464,13 +36342,13 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.to
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.toObject(includeInstance, f)
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -36484,23 +36362,23 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.toObject = f
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse;
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -36508,8 +36386,8 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.deserializeB
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.deserializeBinaryFromReader);
       msg.setV0(value);
       break;
     default:
@@ -36525,9 +36403,9 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.deserializeB
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -36535,30 +36413,23 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.se
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getV0();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.serializeBinaryToWriter
     );
   }
 };
 
 
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.repeatedFields_ = [5];
 
 
 
@@ -36575,8 +36446,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.toObject(opt_includeInstance, this);
 };
 
 
@@ -36585,19 +36456,17 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.toObject = function(includeInstance, msg) {
   var f, obj = {
+    documentTypeName: jspb.Message.getFieldWithDefault(msg, 1, ""),
     documentId: msg.getDocumentId_asB64(),
-    proposedAt: jspb.Message.getFieldWithDefault(msg, 2, 0),
     documentLastModifiedAt: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    reason: (f = msg.getReason()) && proto.org.dash.platform.dapi.v0.ContractModerationReason.toObject(includeInstance, f),
-    approvalsList: msg.getApprovalsList_asB64(),
-    deletedAt: jspb.Message.getFieldWithDefault(msg, 6, 0),
-    documentRevision: jspb.Message.getFieldWithDefault(msg, 7, 0)
+    documentRevision: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    reason: (f = msg.getReason()) && proto.org.dash.platform.dapi.v0.ContractModerationReason.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -36611,23 +36480,23 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion;
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -36635,33 +36504,25 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setDocumentId(value);
+      var value = /** @type {string} */ (reader.readString());
+      msg.setDocumentTypeName(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
-      msg.setProposedAt(value);
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setDocumentId(value);
       break;
     case 3:
       var value = /** @type {number} */ (reader.readUint64());
       msg.setDocumentLastModifiedAt(value);
       break;
     case 4:
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setDocumentRevision(value);
+      break;
+    case 5:
       var value = new proto.org.dash.platform.dapi.v0.ContractModerationReason;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.ContractModerationReason.deserializeBinaryFromReader);
       msg.setReason(value);
-      break;
-    case 5:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addApprovals(value);
-      break;
-    case 6:
-      var value = /** @type {number} */ (reader.readUint64());
-      msg.setDeletedAt(value);
-      break;
-    case 7:
-      var value = /** @type {number} */ (reader.readUint64());
-      msg.setDocumentRevision(value);
       break;
     default:
       reader.skipField();
@@ -36676,9 +36537,9 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -36686,22 +36547,22 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getDocumentId_asU8();
+  f = message.getDocumentTypeName();
   if (f.length > 0) {
-    writer.writeBytes(
+    writer.writeString(
       1,
       f
     );
   }
-  f = message.getProposedAt();
-  if (f !== 0) {
-    writer.writeUint64(
+  f = message.getDocumentId_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
       2,
       f
     );
@@ -36713,66 +36574,70 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
       f
     );
   }
+  f = /** @type {number} */ (jspb.Message.getField(message, 4));
+  if (f != null) {
+    writer.writeUint64(
+      4,
+      f
+    );
+  }
   f = message.getReason();
   if (f != null) {
     writer.writeMessage(
-      4,
+      5,
       f,
       proto.org.dash.platform.dapi.v0.ContractModerationReason.serializeBinaryToWriter
-    );
-  }
-  f = message.getApprovalsList_asU8();
-  if (f.length > 0) {
-    writer.writeRepeatedBytes(
-      5,
-      f
-    );
-  }
-  f = /** @type {number} */ (jspb.Message.getField(message, 6));
-  if (f != null) {
-    writer.writeUint64(
-      6,
-      f
-    );
-  }
-  f = /** @type {number} */ (jspb.Message.getField(message, 7));
-  if (f != null) {
-    writer.writeUint64(
-      7,
-      f
     );
   }
 };
 
 
 /**
- * optional bytes document_id = 1;
+ * optional string document_type_name = 1;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getDocumentId = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.getDocumentTypeName = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
 };
 
 
 /**
- * optional bytes document_id = 1;
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.setDocumentTypeName = function(value) {
+  return jspb.Message.setProto3StringField(this, 1, value);
+};
+
+
+/**
+ * optional bytes document_id = 2;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.getDocumentId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * optional bytes document_id = 2;
  * This is a type-conversion wrapper around `getDocumentId()`
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getDocumentId_asB64 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.getDocumentId_asB64 = function() {
   return /** @type {string} */ (jspb.Message.bytesAsB64(
       this.getDocumentId()));
 };
 
 
 /**
- * optional bytes document_id = 1;
+ * optional bytes document_id = 2;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
  * This is a type-conversion wrapper around `getDocumentId()`
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getDocumentId_asU8 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.getDocumentId_asU8 = function() {
   return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
       this.getDocumentId()));
 };
@@ -36780,28 +36645,10 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
 
 /**
  * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.setDocumentId = function(value) {
-  return jspb.Message.setProto3BytesField(this, 1, value);
-};
-
-
-/**
- * optional uint64 proposed_at = 2;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getProposedAt = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.setProposedAt = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.setDocumentId = function(value) {
+  return jspb.Message.setProto3BytesField(this, 2, value);
 };
 
 
@@ -36809,44 +36656,80 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
  * optional uint64 document_last_modified_at = 3;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getDocumentLastModifiedAt = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.getDocumentLastModifiedAt = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
 };
 
 
 /**
  * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.setDocumentLastModifiedAt = function(value) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.setDocumentLastModifiedAt = function(value) {
   return jspb.Message.setProto3IntField(this, 3, value);
 };
 
 
 /**
- * optional ContractModerationReason reason = 4;
+ * optional uint64 document_revision = 4;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.getDocumentRevision = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.setDocumentRevision = function(value) {
+  return jspb.Message.setField(this, 4, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.clearDocumentRevision = function() {
+  return jspb.Message.setField(this, 4, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.hasDocumentRevision = function() {
+  return jspb.Message.getField(this, 4) != null;
+};
+
+
+/**
+ * optional ContractModerationReason reason = 5;
  * @return {?proto.org.dash.platform.dapi.v0.ContractModerationReason}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getReason = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.getReason = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.ContractModerationReason} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ContractModerationReason, 4));
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ContractModerationReason, 5));
 };
 
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.ContractModerationReason|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.setReason = function(value) {
-  return jspb.Message.setWrapperField(this, 4, value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.setReason = function(value) {
+  return jspb.Message.setWrapperField(this, 5, value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.clearReason = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.clearReason = function() {
   return this.setReason(undefined);
 };
 
@@ -36855,301 +36738,8 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.hasReason = function() {
-  return jspb.Message.getField(this, 4) != null;
-};
-
-
-/**
- * repeated bytes approvals = 5;
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getApprovalsList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 5));
-};
-
-
-/**
- * repeated bytes approvals = 5;
- * This is a type-conversion wrapper around `getApprovalsList()`
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getApprovalsList_asB64 = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getApprovalsList()));
-};
-
-
-/**
- * repeated bytes approvals = 5;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getApprovalsList()`
- * @return {!Array<!Uint8Array>}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getApprovalsList_asU8 = function() {
-  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getApprovalsList()));
-};
-
-
-/**
- * @param {!(Array<!Uint8Array>|Array<string>)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.setApprovalsList = function(value) {
-  return jspb.Message.setField(this, 5, value || []);
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.addApprovals = function(value, opt_index) {
-  return jspb.Message.addToRepeatedField(this, 5, value, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.clearApprovalsList = function() {
-  return this.setApprovalsList([]);
-};
-
-
-/**
- * optional uint64 deleted_at = 6;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getDeletedAt = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 6, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.setDeletedAt = function(value) {
-  return jspb.Message.setField(this, 6, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.clearDeletedAt = function() {
-  return jspb.Message.setField(this, 6, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.hasDeletedAt = function() {
-  return jspb.Message.getField(this, 6) != null;
-};
-
-
-/**
- * optional uint64 document_revision = 7;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getDocumentRevision = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 7, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.setDocumentRevision = function(value) {
-  return jspb.Message.setField(this, 7, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.clearDocumentRevision = function() {
-  return jspb.Message.setField(this, 7, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.hasDocumentRevision = function() {
-  return jspb.Message.getField(this, 7) != null;
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.repeatedFields_ = [1];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    settledDeletionsList: jspb.Message.toObjectList(msg.getSettledDeletionsList(),
-    proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.toObject, includeInstance)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions;
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.deserializeBinaryFromReader);
-      msg.addSettledDeletions(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getSettledDeletionsList();
-  if (f.length > 0) {
-    writer.writeRepeatedMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.serializeBinaryToWriter
-    );
-  }
-};
-
-
-/**
- * repeated ContractSettledDeletion settled_deletions = 1;
- * @return {!Array<!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion>}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.prototype.getSettledDeletionsList = function() {
-  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion>} */ (
-    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion, 1));
-};
-
-
-/**
- * @param {!Array<!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion>} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.prototype.setSettledDeletionsList = function(value) {
-  return jspb.Message.setRepeatedWrapperField(this, 1, value);
-};
-
-
-/**
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion=} opt_value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion}
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.prototype.addSettledDeletions = function(opt_value, opt_index) {
-  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.prototype.clearSettledDeletionsList = function() {
-  return this.setSettledDeletionsList([]);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.prototype.hasReason = function() {
+  return jspb.Message.getField(this, 5) != null;
 };
 
 
@@ -37162,22 +36752,21 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.oneofGroups_ = [[1,2]];
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.oneofGroups_ = [[4]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.ResultCase = {
-  RESULT_NOT_SET: 0,
-  SETTLED_DELETIONS: 1,
-  PROOF: 2
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.EventCase = {
+  EVENT_NOT_SET: 0,
+  DELETE_SETTLED_DOCUMENT: 4
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.ResultCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.EventCase}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.getResultCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getEventCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.EventCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.oneofGroups_[0]));
 };
 
 
@@ -37195,8 +36784,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.toObject(opt_includeInstance, this);
 };
 
 
@@ -37205,13 +36794,488 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.toObject = function(includeInstance, msg) {
   var f, obj = {
-    settledDeletions: (f = msg.getSettledDeletions()) && proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.toObject(includeInstance, f),
+    actionId: msg.getActionId_asB64(),
+    proposerId: msg.getProposerId_asB64(),
+    proposedAt: jspb.Message.getFieldWithDefault(msg, 3, 0),
+    deleteSettledDocument: (f = msg.getDeleteSettledDocument()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setActionId(value);
+      break;
+    case 2:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setProposerId(value);
+      break;
+    case 3:
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setProposedAt(value);
+      break;
+    case 4:
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.deserializeBinaryFromReader);
+      msg.setDeleteSettledDocument(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getActionId_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      1,
+      f
+    );
+  }
+  f = message.getProposerId_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      2,
+      f
+    );
+  }
+  f = message.getProposedAt();
+  if (f !== 0) {
+    writer.writeUint64(
+      3,
+      f
+    );
+  }
+  f = message.getDeleteSettledDocument();
+  if (f != null) {
+    writer.writeMessage(
+      4,
+      f,
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * optional bytes action_id = 1;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getActionId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
+};
+
+
+/**
+ * optional bytes action_id = 1;
+ * This is a type-conversion wrapper around `getActionId()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getActionId_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getActionId()));
+};
+
+
+/**
+ * optional bytes action_id = 1;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getActionId()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getActionId_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getActionId()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.setActionId = function(value) {
+  return jspb.Message.setProto3BytesField(this, 1, value);
+};
+
+
+/**
+ * optional bytes proposer_id = 2;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getProposerId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * optional bytes proposer_id = 2;
+ * This is a type-conversion wrapper around `getProposerId()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getProposerId_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getProposerId()));
+};
+
+
+/**
+ * optional bytes proposer_id = 2;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getProposerId()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getProposerId_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getProposerId()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.setProposerId = function(value) {
+  return jspb.Message.setProto3BytesField(this, 2, value);
+};
+
+
+/**
+ * optional uint64 proposed_at = 3;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getProposedAt = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.setProposedAt = function(value) {
+  return jspb.Message.setProto3IntField(this, 3, value);
+};
+
+
+/**
+ * optional DeleteSettledDocument delete_settled_document = 4;
+ * @return {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getDeleteSettledDocument = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument, 4));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.setDeleteSettledDocument = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 4, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.clearDeleteSettledDocument = function() {
+  return this.setDeleteSettledDocument(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.hasDeleteSettledDocument = function() {
+  return jspb.Message.getField(this, 4) != null;
+};
+
+
+
+/**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.repeatedFields_ = [1];
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    actionsList: jspb.Message.toObjectList(msg.getActionsList(),
+    proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.toObject, includeInstance)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.deserializeBinaryFromReader);
+      msg.addActions(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getActionsList();
+  if (f.length > 0) {
+    writer.writeRepeatedMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * repeated ContractTeamAction actions = 1;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction>}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.prototype.getActionsList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction, 1));
+};
+
+
+/**
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.prototype.setActionsList = function(value) {
+  return jspb.Message.setRepeatedWrapperField(this, 1, value);
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction=} opt_value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.prototype.addActions = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.prototype.clearActionsList = function() {
+  return this.setActionsList([]);
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.oneofGroups_ = [[1,2]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  ACTIONS: 1,
+  PROOF: 2
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    actions: (f = msg.getActions()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.toObject(includeInstance, f),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -37227,23 +37291,23 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -37251,9 +37315,9 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.deserializeBinaryFromReader);
-      msg.setSettledDeletions(value);
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.deserializeBinaryFromReader);
+      msg.setActions(value);
       break;
     case 2:
       var value = new proto.org.dash.platform.dapi.v0.Proof;
@@ -37278,9 +37342,9 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -37288,18 +37352,18 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getSettledDeletions();
+  f = message.getActions();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions.serializeBinaryToWriter
     );
   }
   f = message.getProof();
@@ -37322,30 +37386,30 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
 
 
 /**
- * optional ContractSettledDeletions settled_deletions = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions}
+ * optional ContractTeamActions actions = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.getSettledDeletions = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions, 1));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.getActions = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActions|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.setSettledDeletions = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.setActions = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.clearSettledDeletions = function() {
-  return this.setSettledDeletions(undefined);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.clearActions = function() {
+  return this.setActions(undefined);
 };
 
 
@@ -37353,7 +37417,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.hasSettledDeletions = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.hasActions = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -37362,7 +37426,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
  * optional Proof proof = 2;
  * @return {?proto.org.dash.platform.dapi.v0.Proof}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.getProof = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.getProof = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
     jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
 };
@@ -37370,18 +37434,18 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.clearProof = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.clearProof = function() {
   return this.setProof(undefined);
 };
 
@@ -37390,7 +37454,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.hasProof = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.hasProof = function() {
   return jspb.Message.getField(this, 2) != null;
 };
 
@@ -37399,7 +37463,7 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
  * optional ResponseMetadata metadata = 3;
  * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.getMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.getMetadata = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
     jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
 };
@@ -37407,18 +37471,18 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.setMetadata = function(value) {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.setMetadata = function(value) {
   return jspb.Message.setWrapperField(this, 3, value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.clearMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.clearMetadata = function() {
   return this.setMetadata(undefined);
 };
 
@@ -37427,35 +37491,35 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractS
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.prototype.hasMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.prototype.hasMetadata = function() {
   return jspb.Message.getField(this, 3) != null;
 };
 
 
 /**
- * optional GetContractSettledDeletionsResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0}
+ * optional GetContractTeamActionsResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0, 1));
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.GetContractTeamActionsResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.clearV0 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.prototype.clearV0 = function() {
   return this.setV0(undefined);
 };
 
@@ -37464,7 +37528,1094 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.cl
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.prototype.hasV0 = function() {
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus = {
+  ACTIVE: 0,
+  CLOSED: 1
+};
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    contractId: msg.getContractId_asB64(),
+    status: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    actionId: msg.getActionId_asB64(),
+    prove: jspb.Message.getBooleanFieldWithDefault(msg, 4, false)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setContractId(value);
+      break;
+    case 2:
+      var value = /** @type {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus} */ (reader.readEnum());
+      msg.setStatus(value);
+      break;
+    case 3:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setActionId(value);
+      break;
+    case 4:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setProve(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getContractId_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      1,
+      f
+    );
+  }
+  f = message.getStatus();
+  if (f !== 0.0) {
+    writer.writeEnum(
+      2,
+      f
+    );
+  }
+  f = message.getActionId_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      3,
+      f
+    );
+  }
+  f = message.getProve();
+  if (f) {
+    writer.writeBool(
+      4,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional bytes contract_id = 1;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.getContractId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
+};
+
+
+/**
+ * optional bytes contract_id = 1;
+ * This is a type-conversion wrapper around `getContractId()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.getContractId_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getContractId()));
+};
+
+
+/**
+ * optional bytes contract_id = 1;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getContractId()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.getContractId_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getContractId()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.setContractId = function(value) {
+  return jspb.Message.setProto3BytesField(this, 1, value);
+};
+
+
+/**
+ * optional ActionStatus status = 2;
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.getStatus = function() {
+  return /** @type {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.ActionStatus} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.setStatus = function(value) {
+  return jspb.Message.setProto3EnumField(this, 2, value);
+};
+
+
+/**
+ * optional bytes action_id = 3;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.getActionId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
+};
+
+
+/**
+ * optional bytes action_id = 3;
+ * This is a type-conversion wrapper around `getActionId()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.getActionId_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getActionId()));
+};
+
+
+/**
+ * optional bytes action_id = 3;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getActionId()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.getActionId_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getActionId()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.setActionId = function(value) {
+  return jspb.Message.setProto3BytesField(this, 3, value);
+};
+
+
+/**
+ * optional bool prove = 4;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.getProve = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 4, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.prototype.setProve = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 4, value);
+};
+
+
+/**
+ * optional GetContractTeamActionSignersRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersRequest.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.repeatedFields_ = [1];
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    signerIdsList: msg.getSignerIdsList_asB64()
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.addSignerIds(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getSignerIdsList_asU8();
+  if (f.length > 0) {
+    writer.writeRepeatedBytes(
+      1,
+      f
+    );
+  }
+};
+
+
+/**
+ * repeated bytes signer_ids = 1;
+ * @return {!Array<string>}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.prototype.getSignerIdsList = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 1));
+};
+
+
+/**
+ * repeated bytes signer_ids = 1;
+ * This is a type-conversion wrapper around `getSignerIdsList()`
+ * @return {!Array<string>}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.prototype.getSignerIdsList_asB64 = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
+      this.getSignerIdsList()));
+};
+
+
+/**
+ * repeated bytes signer_ids = 1;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getSignerIdsList()`
+ * @return {!Array<!Uint8Array>}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.prototype.getSignerIdsList_asU8 = function() {
+  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
+      this.getSignerIdsList()));
+};
+
+
+/**
+ * @param {!(Array<!Uint8Array>|Array<string>)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.prototype.setSignerIdsList = function(value) {
+  return jspb.Message.setField(this, 1, value || []);
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.prototype.addSignerIds = function(value, opt_index) {
+  return jspb.Message.addToRepeatedField(this, 1, value, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.prototype.clearSignerIdsList = function() {
+  return this.setSignerIdsList([]);
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.oneofGroups_ = [[1,2]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  SIGNERS: 1,
+  PROOF: 2
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    signers: (f = msg.getSigners()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.toObject(includeInstance, f),
+    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
+    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.deserializeBinaryFromReader);
+      msg.setSigners(value);
+      break;
+    case 2:
+      var value = new proto.org.dash.platform.dapi.v0.Proof;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
+      msg.setProof(value);
+      break;
+    case 3:
+      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
+      msg.setMetadata(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getSigners();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners.serializeBinaryToWriter
+    );
+  }
+  f = message.getProof();
+  if (f != null) {
+    writer.writeMessage(
+      2,
+      f,
+      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
+    );
+  }
+  f = message.getMetadata();
+  if (f != null) {
+    writer.writeMessage(
+      3,
+      f,
+      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * optional ContractTeamActionSigners signers = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.getSigners = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.ContractTeamActionSigners|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.setSigners = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.clearSigners = function() {
+  return this.setSigners(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.hasSigners = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+/**
+ * optional Proof proof = 2;
+ * @return {?proto.org.dash.platform.dapi.v0.Proof}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.getProof = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.clearProof = function() {
+  return this.setProof(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.hasProof = function() {
+  return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional ResponseMetadata metadata = 3;
+ * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.getMetadata = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.setMetadata = function(value) {
+  return jspb.Message.setWrapperField(this, 3, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.clearMetadata = function() {
+  return this.setMetadata(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.prototype.hasMetadata = function() {
+  return jspb.Message.getField(this, 3) != null;
+};
+
+
+/**
+ * optional GetContractTeamActionSignersResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionSignersResponse.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 

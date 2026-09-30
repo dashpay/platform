@@ -543,24 +543,44 @@
              responseClass:[GetContractDocumentRemovalsResponse class]];
 }
 
-#pragma mark getContractSettledDeletions(GetContractSettledDeletionsRequest) returns (GetContractSettledDeletionsResponse)
+#pragma mark getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse)
 
-- (void)getContractSettledDeletionsWithRequest:(GetContractSettledDeletionsRequest *)request handler:(void(^)(GetContractSettledDeletionsResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetContractSettledDeletionsWithRequest:request handler:handler] start];
+- (void)getContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractTeamActionsWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetContractSettledDeletionsWithRequest:(GetContractSettledDeletionsRequest *)request handler:(void(^)(GetContractSettledDeletionsResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getContractSettledDeletions"
+- (GRPCProtoCall *)RPCTogetContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractTeamActions"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetContractSettledDeletionsResponse class]
+             responseClass:[GetContractTeamActionsResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getContractSettledDeletionsWithMessage:(GetContractSettledDeletionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getContractSettledDeletions"
+- (GRPCUnaryProtoCall *)getContractTeamActionsWithMessage:(GetContractTeamActionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractTeamActions"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[GetContractSettledDeletionsResponse class]];
+             responseClass:[GetContractTeamActionsResponse class]];
+}
+
+#pragma mark getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse)
+
+- (void)getContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractTeamActionSignersWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractTeamActionSigners"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractTeamActionSignersResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractTeamActionSignersWithMessage:(GetContractTeamActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractTeamActionSigners"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractTeamActionSignersResponse class]];
 }
 
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)

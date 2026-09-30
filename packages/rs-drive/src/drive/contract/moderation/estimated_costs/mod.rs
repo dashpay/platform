@@ -1,12 +1,10 @@
 mod v0;
 
-use crate::drive::contract::moderation::types::ContractDocumentRecords;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::version::drive_versions::DriveVersion;
-use dpp::version::FeatureVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
@@ -127,13 +125,12 @@ impl Drive {
         }
     }
 
-    /// Adds the layers the trees of one kind of a contract's document records are created
-    /// through: the moderation layers above them, and the tree of all of them.
+    /// Adds the layers a contract insertion or update touches when it creates the trees of
+    /// the document removal records.
     ///
     /// # Parameters
     ///
-    /// * `contract_id`: The contract whose records trees are created.
-    /// * `records`: The kind of records: removal records, or settled-deletion approvals.
+    /// * `contract_id`: The contract whose removal trees are created.
     /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
     /// * `drive_version`: The drive version.
     ///
@@ -141,40 +138,40 @@ impl Drive {
     ///
     /// * `Ok(())` once the layers are added to the map.
     /// * `Err(Error)` when the method version, or that of a nested estimation, is unknown.
-    pub(crate) fn add_estimation_costs_for_contract_document_record_trees(
+    pub(crate) fn add_estimation_costs_for_contract_document_removal_trees(
         contract_id: [u8; 32],
-        records: ContractDocumentRecords,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match Self::contract_document_record_estimation_version(records, drive_version) {
-            0 => Self::add_estimation_costs_for_contract_document_record_trees_v0(
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_document_removal
+        {
+            0 => Self::add_estimation_costs_for_contract_document_removal_trees_v0(
                 contract_id,
-                records,
                 estimated_costs_only_with_layer_info,
                 drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_estimation_costs_for_contract_document_record_trees".to_string(),
+                method: "add_estimation_costs_for_contract_document_removal_trees".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    /// Adds the layers one record of a contract's document records is written through: the
-    /// removal record of a moderator's deletion, or the approvals of a settled document's
-    /// deletion.
+    /// Adds the layers the record of a moderator's document deletion is written through.
     ///
     /// # Parameters
     ///
-    /// * `contract_id`: The contract the document is of.
-    /// * `records`: The kind of record.
-    /// * `document_type_name`: The document's type, whose records tree holds the record.
-    /// * `estimated_value_size`: The size the records the write walks past are estimated at:
-    ///   a typical removal record, with what its type keeps
-    ///   (`types::estimated_document_removal_value_size`), or a typical approvals record
-    ///   (`types::estimated_settled_deletion_value_size`).
+    /// * `contract_id`: The contract the document belonged to.
+    /// * `document_type_name`: The document's type, whose removal tree holds the record.
+    /// * `estimated_kept_fields_size`: What the type's records are estimated to keep
+    ///   (`moderatorAbilities.deleteKeepsFields`, see
+    ///   `types::estimated_document_removal_kept_fields_size`), which the records the write
+    ///   walks past are estimated to hold; `0` for a type that keeps none.
     /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
     /// * `drive_version`: The drive version.
     ///
@@ -182,44 +179,113 @@ impl Drive {
     ///
     /// * `Ok(())` once the layers are added to the map.
     /// * `Err(Error)` when the method version, or that of a nested estimation, is unknown.
-    pub(crate) fn add_estimation_costs_for_contract_document_record(
+    pub(crate) fn add_estimation_costs_for_contract_document_removal(
         contract_id: [u8; 32],
-        records: ContractDocumentRecords,
         document_type_name: &str,
-        estimated_value_size: u32,
+        estimated_kept_fields_size: u32,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match Self::contract_document_record_estimation_version(records, drive_version) {
-            0 => Self::add_estimation_costs_for_contract_document_record_v0(
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_document_removal
+        {
+            0 => Self::add_estimation_costs_for_contract_document_removal_v0(
                 contract_id,
-                records,
                 document_type_name,
-                estimated_value_size,
+                estimated_kept_fields_size,
                 estimated_costs_only_with_layer_info,
                 drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_estimation_costs_for_contract_document_record".to_string(),
+                method: "add_estimation_costs_for_contract_document_removal".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    /// The version of the estimation of one kind of document records: each kind keeps its own.
-    fn contract_document_record_estimation_version(
-        records: ContractDocumentRecords,
+    /// Adds the layers a contract insertion touches when it creates the trees of the contract's
+    /// team actions: its other tree and the team actions tree above the active and the closed
+    /// actions.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract whose team action trees are created.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version, or that of a nested estimation, is unknown.
+    pub(crate) fn add_estimation_costs_for_contract_team_action_trees(
+        contract_id: [u8; 32],
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
-    ) -> FeatureVersion {
-        let moderation = &drive_version.methods.contract.moderation;
-        match records {
-            ContractDocumentRecords::Removals => {
-                moderation.add_estimation_costs_for_contract_document_removal
-            }
-            ContractDocumentRecords::SettledDeletions => {
-                moderation.add_estimation_costs_for_contract_settled_deletion
-            }
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_team_action
+        {
+            0 => Self::add_estimation_costs_for_contract_team_action_trees_v0(
+                contract_id,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_team_action_trees".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Adds the layers a proposal or an approval of one of a contract's team actions is written
+    /// through: the active actions and the action's own trees, and when it closes the action,
+    /// the closed actions and the action's trees there.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract whose seated team votes on the action.
+    /// * `action_id`: The action.
+    /// * `closes`: Whether the write closes the action, moving it to the closed actions.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version, or that of a nested estimation, is unknown.
+    pub(crate) fn add_estimation_costs_for_contract_team_action(
+        contract_id: [u8; 32],
+        action_id: [u8; 32],
+        closes: bool,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_team_action
+        {
+            0 => Self::add_estimation_costs_for_contract_team_action_v0(
+                contract_id,
+                action_id,
+                closes,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_team_action".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
         }
     }
 }

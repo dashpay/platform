@@ -2,7 +2,7 @@ use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractModerationListStatuses, ContractSettledDeletion,
+    ContractDocumentRemoval, ContractModerationListStatuses,
 };
 use crate::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use crate::data_contract::group::GroupSumPower;
@@ -165,13 +165,15 @@ pub enum StateTransitionProofResult {
     /// and carries the transition's reason. A document id is produced at most once, so the
     /// record is of this document and of no other.
     VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
-    /// Returned by a `ContractUserModeration` that approves the deletion of a settled document:
-    /// the approvals the contract keeps of that deletion (contract id, document type name,
-    /// document id, approvals). The proof shows the record, and the verifier checks that it
-    /// holds the transition's signer among its approvals and the transition's reason. Its
-    /// `deleted_at` says whether the approvals met the document type's rule, the document then
-    /// deleted.
-    VerifiedContractSettledDeletion(Identifier, String, Identifier, ContractSettledDeletion),
+    /// Returned by a `ContractUserModeration` that proposes the deletion of a settled document
+    /// or approves a team action: the contract, the team action and whether it is still active
+    /// or closed. The proof shows the signer's approval among the action's, active or closed,
+    /// the action's id computed from the transition for a proposal. Closed means the approvals
+    /// met the rule and the action ran, by this approval or a later one: the document is
+    /// deleted. An approval stays where it is until its action closes, and then moves with it,
+    /// so the proof holds while the approval stands: one deleted because its member left the
+    /// team no longer proves.
+    VerifiedContractTeamActionSignature(Identifier, Identifier, GroupActionStatus),
 }
 
 /// The guarantee a verified state-transition proof establishes.
