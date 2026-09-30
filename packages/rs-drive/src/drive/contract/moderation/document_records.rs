@@ -2,8 +2,12 @@
 //! the removal records of the documents its moderators deleted (`[64, id, 2, 16]`) and the
 //! approvals its seated team gave the deletion of settled documents (`[64, id, 2, 24]`). Both
 //! are created, written, read and proved by the code here, told apart by
-//! [`ContractDocumentRecords`], or by the record type ([`ContractDocumentRecord`]); the
-//! versioned methods of each call it.
+//! [`ContractDocumentRecords`], or by the record type ([`ContractDocumentRecord`]).
+//!
+//! These are the bodies the `v0` of each kind's versioned methods call, so generation 0 of
+//! both kinds: a later generation of either kind is a new `vN` of that method, in its own
+//! directory, and these stay as they are while any protocol version selects a `v0` that calls
+//! them.
 
 use crate::drive::contract::moderation::types::{
     decode_document_record_element, ContractDocumentRecord, ContractDocumentRecords,
@@ -36,7 +40,7 @@ impl Drive {
     /// an update only names document types the stored contract does not have, whose trees can
     /// not exist.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn insert_contract_document_record_trees_operations_v0(
+    pub(super) fn insert_document_record_trees_operations(
         &self,
         contract_id: [u8; 32],
         records: ContractDocumentRecords,
@@ -86,10 +90,12 @@ impl Drive {
     /// keyed by the document's id, flagged with `payer_id`: the moderator that writes it pays
     /// for it. Nothing ever deletes it. It is replaced in place when `replaces_existing`; two
     /// operations on one key would fail the batch. A replacement may change size, and its
-    /// flags follow GroveDB's flag merge: a longer or a shorter record passes to the moderator
-    /// that replaced it, who pays for the bytes a longer one adds, while the bytes a shorter
-    /// one frees are refunded to the moderator the record named before; an equally long one
-    /// keeps the earlier moderator's flags.
+    /// flags follow GroveDB's flag merge: a longer record passes to the moderator that replaced
+    /// it, who pays for the bytes it adds; a shorter one refunds the bytes it frees to the
+    /// moderator the record named, and passes to the one that replaced it only when written in
+    /// the epoch the record was paid in, or once the record spans epochs, a record paid in one
+    /// epoch keeping its flags, and so its earlier moderator, when shortened in a later one; an
+    /// equally long one keeps the earlier moderator's flags.
     ///
     /// An estimate writes `value` as a fresh insert: GroveDB's average-case replace assumes an
     /// item keeps its size and would price no storage for what a replacement adds, which the
@@ -97,7 +103,7 @@ impl Drive {
     /// then (the whole approvals record, or what a removal record's replacement adds), and the
     /// records the write walks past are estimated at `estimated_value_size`.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_contract_document_record_operations_v0(
+    pub(super) fn add_document_record_operations(
         &self,
         contract_id: Identifier,
         records: ContractDocumentRecords,
@@ -159,7 +165,7 @@ impl Drive {
 
     /// The records of one document type the query selects, in document id order. A contract or
     /// a document type that keeps none reads as none.
-    pub(super) fn fetch_contract_document_records_v0<T: ContractDocumentRecord>(
+    pub(super) fn fetch_document_records<T: ContractDocumentRecord>(
         &self,
         contract_id: Identifier,
         query: &ContractDocumentRemovalsQuery,
@@ -226,7 +232,7 @@ impl Drive {
     /// the read are added to `drive_operations` for billing. Also how Drive reads the owner of
     /// a removed document a derived index property reads through a `moderatedDocument`
     /// reference.
-    pub(crate) fn fetch_contract_document_record_add_to_operations_v0<T: ContractDocumentRecord>(
+    pub(super) fn fetch_document_record_add_to_operations<T: ContractDocumentRecord>(
         &self,
         contract_id: Identifier,
         document_type_name: &str,
@@ -264,7 +270,7 @@ impl Drive {
     }
 
     /// The proof of the records of one document type the query selects.
-    pub(super) fn prove_contract_document_records_v0(
+    pub(super) fn prove_document_records(
         &self,
         contract_id: Identifier,
         records: ContractDocumentRecords,

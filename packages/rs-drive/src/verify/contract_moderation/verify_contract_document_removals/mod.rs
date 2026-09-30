@@ -1,3 +1,5 @@
+mod v0;
+
 use crate::drive::contract::moderation::types::{
     ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
 };
@@ -5,7 +7,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use dpp::data_contract::config::moderation::ContractDocumentRemoval;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 
@@ -47,7 +48,7 @@ impl Drive {
             .contract_moderation
             .verify_contract_document_removals
         {
-            0 => Self::verify_contract_document_records_v0::<ContractDocumentRemoval>(
+            0 => Self::verify_contract_document_removals_v0(
                 proof,
                 contract_id,
                 query,

@@ -62,7 +62,7 @@ impl Drive {
                 .saturating_sub(usize::try_from(replaced_record_size).unwrap_or(usize::MAX));
             value = vec![0; added];
         }
-        self.add_contract_document_record_operations_v0(
+        self.add_document_record_operations(
             contract_id,
             ContractDocumentRecords::Removals,
             document_type_name,

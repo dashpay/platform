@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 /// Who must approve a moderator's deletion of a settled document: one past the window its
 /// document type gives its moderators (`moderatorAbilities.deleteWithin`). The document type's
 /// `moderatorAbilities.deleteSettled` (protocol version 14), on a contract whose moderators are
-/// an elected team: the team's leader, and in all so many members of the seated team, the
-/// leader counted among them.
+/// an elected team: so many members of the seated team, the leader counted among them when
+/// it approves, and the leader among them only when `leader` is set; with `leader` unset, any
+/// members meet it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub struct SettledDeletionRule {
     /// Whether the team's leader must be among the approvals.

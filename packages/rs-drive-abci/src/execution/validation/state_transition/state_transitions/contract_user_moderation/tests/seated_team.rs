@@ -95,6 +95,9 @@ const MEMO: &str = "memo";
 /// A story whose `label` only moderators write, the team holding both the deletion and the
 /// change of fields on it.
 const CHRONICLE: &str = "chronicle";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the leader and more members approve than the team can hold: all of them.
+const EPIC: &str = "epic";
 /// The window the stories and memos give their moderators.
 const SETTLING_WINDOW_SECONDS: u64 = 60;
 const DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE: u32 = 41124;
@@ -146,6 +149,10 @@ fn elected_posts(
                 ),
                 (
                     MEMO.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    EPIC.to_string(),
                     BTreeSet::from([ModerationAbility::DeleteDocuments]),
                 ),
                 (
@@ -399,6 +406,8 @@ impl Team {
                 for (name, rule) in [
                     (STORY, platform_value!({ "leader": true, "approvals": 3 })),
                     (MEMO, platform_value!({ "leader": true })),
+                    // The most a registration admits with MAX_ADDED_MODERATORS additions.
+                    (EPIC, platform_value!({ "leader": true, "approvals": 18 })),
                 ] {
                     add_document_type(
                         c,

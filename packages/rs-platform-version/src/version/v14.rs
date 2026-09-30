@@ -1787,9 +1787,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     deletes the document as `DeleteDocument` does and
 ///     counts toward the action share for every approver. The storage refund
 ///     forfeiture of a moderator's deletion now takes the document operations
-///     alone, applied as a GroveDB batch of their own, so the moderation records
-///     the same batch rewrites shorter (a restored removal record, the
-///     approvals) refund whoever paid for them. The proof is the
+///     alone (the document's bytes and any index subtree the deletion empties,
+///     whoever paid for them), applied as a GroveDB batch of their own when the
+///     batch also rewrites a moderation record, so the records it rewrites
+///     shorter (a restored removal record, the approvals) refund whoever paid
+///     for them. The proof is the
 ///     record (`VerifiedContractSettledDeletion`, appended), read with the new
 ///     `getContractSettledDeletions` query. New errors, appended:
 ///     `DocumentTypeNotDeletableOnceSettledError` (41204),
@@ -1863,7 +1865,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody unless its type sets `deleteRefundsOwner`, but the moderator holding a removal record it replaces; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also rewrites a moderation record, whose freed bytes are refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

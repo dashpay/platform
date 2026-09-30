@@ -1,6 +1,8 @@
 //! The verification of a proof of the records a moderated contract keeps by document type,
 //! then document id: the removal records and the settled-deletion approvals are proved alike,
-//! so both verify here, told apart by the record type ([`ContractDocumentRecord`]).
+//! so both verify here, told apart by the record type ([`ContractDocumentRecord`]). The body
+//! the `v0` of each kind's verify method calls: a later generation of either kind is a new
+//! `vN` in its own directory, and this stays as it is.
 
 use crate::drive::contract::moderation::types::{
     decode_document_record_element, ContractDocumentRecord, ContractDocumentRemovalsQuery,
@@ -16,7 +18,7 @@ use grovedb::GroveDb;
 impl Drive {
     /// The root hash of the proof, and the records of `T` it holds for the query, in document
     /// id order; ids proved absent are left out.
-    pub(super) fn verify_contract_document_records_v0<T: ContractDocumentRecord>(
+    pub(super) fn verify_document_records<T: ContractDocumentRecord>(
         proof: &[u8],
         contract_id: Identifier,
         query: &ContractDocumentRemovalsQuery,

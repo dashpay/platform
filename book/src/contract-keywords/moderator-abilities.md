@@ -18,7 +18,7 @@ The keys:
 | `deleteWithin` | Limits `delete` to so many seconds after a document's last change. | [Deletion](deletion.md#moderatorabilitiesdeletewithin) |
 | `deleteKeepsRecord` | Whether a deletion leaves a removal record, and so can be restored. Default `true`. | [Deletion](deletion.md#moderatorabilitiesdeletekeepsrecord) |
 | `deleteRefundsOwner` | Whether the deleted document's owner is refunded its storage. Default `false`. | [Deletion](deletion.md#moderatorabilitiesdeleterefundsowner) |
-| `deleteSettled` | Past `deleteWithin`, the seated team of an elected contract deletes a document together: its leader, and in all so many members. | [Deletion](deletion.md#moderatorabilitiesdeletesettled) |
+| `deleteSettled` | Past `deleteWithin`, the seated team of an elected contract deletes a document together: so many of its members, the leader among them only when the rule says so (`leader: true`). | [Deletion](deletion.md#moderatorabilitiesdeletesettled) |
 | `deleteKeepsFields` | The fields of a deleted document whose values stay public in its removal record, such as a post's hashtag. | [Deletion](deletion.md#moderatorabilitiesdeletekeepsfields) |
 | `changeFields` | The listed properties are written only by the moderators. | [below](#changefields) |
 

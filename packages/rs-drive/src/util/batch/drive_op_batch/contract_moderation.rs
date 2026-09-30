@@ -129,10 +129,12 @@ pub enum ContractModerationOperationType {
     },
     /// Writes nothing: marks the batch it is in as one whose document operations' storage
     /// removals refund nobody (`Drive::apply_drive_operations` generation 1, which applies them
-    /// as a GroveDB batch of their own). A moderator's document deletion carries it, so whoever
-    /// paid for the deleted document, its owner or an earlier one, gets no storage refund,
-    /// unless the document's type refunds the owner (`moderatorAbilities.deleteRefundsOwner`);
-    /// the moderation records the deletion rewrites refund as ever.
+    /// as a GroveDB batch of their own when the batch also rewrites a moderation record). A
+    /// moderator's document deletion carries it, so whoever paid for the deleted document, its
+    /// owner or an earlier one, gets no storage refund, and nor does whoever created an index
+    /// subtree the deletion empties, unless the document's type refunds the owner
+    /// (`moderatorAbilities.deleteRefundsOwner`); the moderation records the deletion rewrites
+    /// refund as ever.
     ForfeitStorageRefunds,
     /// Writes a seated moderation team member's count of moderation actions on an elected
     /// contract since the moderators pot was last settled.

@@ -34,7 +34,6 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{DirectQueryType, QueryType};
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::moderation::ContractDocumentRemoval;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
@@ -344,15 +343,14 @@ impl Drive {
                 "a referenced document is not an item",
             ))),
             None if derived.kind == DocumentReferenceKind::Moderated => {
-                let removal = self
-                    .fetch_contract_document_record_add_to_operations_v0::<ContractDocumentRemoval>(
-                        contract.id(),
-                        referenced_type_name,
-                        referenced_id,
-                        transaction,
-                        drive_operations,
-                        platform_version,
-                    )?;
+                let removal = self.fetch_contract_document_removal_add_to_operations_v0(
+                    contract.id(),
+                    referenced_type_name,
+                    referenced_id,
+                    transaction,
+                    drive_operations,
+                    platform_version,
+                )?;
                 match removal {
                     Some(removal) if !removal.is_restored() => {
                         Ok(ReferencedValues::RemovedOwner(removal.document_owner_id))

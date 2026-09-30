@@ -16,16 +16,19 @@ pub(crate) const CONTRACT_FLAGS: &str =
      history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state \
      transitions and later upgrades write none.";
 const REMOVAL_FLAGS: &str =
-    "The owner is the moderator whose write last changed the record's size: the one who \
-     deleted the document, who restored it, or who deleted it again once restored. They pay \
-     for the bytes a longer record adds, and the bytes a shorter one frees are refunded to \
-     the moderator it named before. A rewrite of the same size keeps the earlier moderator. \
-     Nothing deletes it.";
+    "The owner is the moderator who deleted the document, restored it, or deleted it again \
+     once restored, as GroveDB's flag merge passes the record on: a longer rewrite passes to \
+     its writer, who pays for the added bytes; a shorter one refunds the bytes it frees to the \
+     moderator the record named, and passes to its writer only within the epoch the record \
+     was paid in (or once the record spans epochs), keeping the earlier moderator otherwise; \
+     a rewrite of the same size keeps the earlier moderator. Nothing deletes it.";
 const SETTLED_DELETION_FLAGS: &str =
-    "The owner is the member of the seated team whose approval last changed the record's \
-     size: they pay for the bytes a longer record adds, and the bytes a shorter one frees are \
-     refunded to the member it named before. A rewrite of the same size keeps the earlier \
-     member. Nothing deletes it.";
+    "The owner is a member of the seated team whose approval wrote the record, as GroveDB's \
+     flag merge passes it on: a longer rewrite passes to its writer, who pays for the added \
+     bytes; a shorter one refunds the bytes it frees to the member the record named, and \
+     passes to its writer only within the epoch the record was paid in (or once the record \
+     spans epochs), keeping the earlier member otherwise; a rewrite of the same size keeps the \
+     earlier member. Nothing deletes it.";
 const MODERATOR_FLAGS: &str =
     "The owner is the moderator who added the entry. They pay for it, and are \
      refunded when it is removed. A suspension replaced with a longer reason \
@@ -149,13 +152,19 @@ pub(crate) fn structure() -> StructureNode {
                             .value(
                                 "the document owner's id, the moderator's id, the block \
                                      time in milliseconds of the removal as a u64 big \
-                                     endian, then the moderator's reason as in a banlist \
-                                     entry",
+                                     endian, the hash of the removed document, a tag byte \
+                                     (bit 0: restored, bit 1: kept fields), the restoring \
+                                     moderator's id and the restoration time when \
+                                     restored, the kept fields when any (their length as a \
+                                     u32 big endian, then the bytes), then the moderator's \
+                                     reason as in a banlist entry",
                             )
                             .describe(
                                 "One removal: whose document it was, who removed it, \
-                                     when and why. Never deleted and never replaced: a \
-                                     document id is produced at most once.",
+                                     when and why, what it was, and who restored it. Never \
+                                     deleted: replaced in place by the restore that marks \
+                                     it and by the deletion of a restored document, which \
+                                     writes a fresh record over it.",
                             ),
                         ),
                     ),

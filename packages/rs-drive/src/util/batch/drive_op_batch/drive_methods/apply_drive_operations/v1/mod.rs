@@ -39,14 +39,20 @@ impl Drive {
     ///
     /// Generation 1 (protocol version 14) is generation 0, and a batch that carries a storage
     /// refund forfeiture ([`DriveOperation::forfeits_storage_refunds`], a moderator's document
-    /// deletion) applies its document operations as a GroveDB batch of their own, after the
-    /// rest, in the same transaction, and refunds nobody for the storage that one removes: the
-    /// bytes still leave the system, but whoever paid for them gets nothing back, and the
-    /// credits stay in the storage pools they were distributed to. The rest of the batch, the
-    /// moderation records the deletion rewrites among them, refunds as ever, so a moderator who
-    /// paid for a record keeps the refund of the bytes a shorter one frees, and only that. An
-    /// estimate carries no refund to begin with, so `check_tx` sees the same fee with or
-    /// without the forfeiture; it prices the two batches as they are applied.
+    /// deletion) refunds nobody for the storage its document operations remove: the document's
+    /// own bytes, and those of any index subtree the deletion empties, whoever paid for them
+    /// (an earlier author's document may have created it). The bytes still leave the system,
+    /// but nobody gets them back, and the credits stay in the storage pools they were
+    /// distributed to. When the batch also rewrites a moderation record
+    /// ([`DriveOperation::rewrites_moderation_record`]: a restored removal record, the
+    /// approvals of a settled deletion), which may shrink and free bytes its payer is owed, the
+    /// document operations are applied as a GroveDB batch of their own, after the rest and in
+    /// the same transaction, and only that batch forfeits: the moderator who paid for a record
+    /// keeps the refund of the bytes a shorter one frees. Otherwise nothing but the document
+    /// operations frees bytes (a fresh record is an insert, the nonce and the counts keep their
+    /// size), and the batch is applied as one, forfeiting whole. An estimate carries no refund
+    /// to begin with and prices the batch as it is applied: one GroveDB batch, or two when a
+    /// forfeiting deletion rewrites a moderation record.
     ///
     /// Every write of one identity balance, one contract fee pot or one prefunded specialized
     /// balance is also merged into one ([`DriveOperation::merge_balance_writes`]): each
@@ -89,6 +95,12 @@ impl Drive {
         let forfeits_storage_refunds = operations
             .iter()
             .any(DriveOperation::forfeits_storage_refunds);
+        // The document operations of a moderator's deletion go in a batch of their own only
+        // when something else in the batch may free bytes someone is owed.
+        let separates_forfeited_operations = forfeits_storage_refunds
+            && operations
+                .iter()
+                .any(DriveOperation::rewrites_moderation_record);
         // With no caller transaction, TTL preparation (direct drainage
         // writes), conversion reads, and the batch apply would each commit
         // on their own, so a conversion error after preparation would leave
@@ -123,7 +135,7 @@ impl Drive {
                 finalize_tasks.extend(tasks);
             }
 
-            let forfeited = forfeits_storage_refunds
+            let forfeited = separates_forfeited_operations
                 && matches!(drive_op, DriveOperation::DocumentOperation(_));
             let mut converted = drive_op.into_low_level_drive_operations_after_ttl_drain(
                 self,
@@ -170,6 +182,9 @@ impl Drive {
             )?;
             forfeit_storage_refunds(&mut forfeited_cost_operations);
             cost_operations.append(&mut forfeited_cost_operations);
+        } else if forfeits_storage_refunds {
+            // One batch, in which only the document operations free bytes: it forfeits whole.
+            forfeit_storage_refunds(&mut cost_operations);
         }
         self.apply_repaid_identity_debt_to_processing_pool(
             repaid_identity_debt,
@@ -204,9 +219,9 @@ impl Drive {
 
 /// Turns every removal attributed to an identity into a removal attributed to nobody: the same
 /// bytes leave the system (`FeeResult::removed_bytes_from_system`), and no refund is computed
-/// for them. Given the costs of the batch of a moderator's deletion's document operations
-/// alone, so whoever paid for the document forfeits, its owner or an earlier one, and nobody
-/// else: the moderation records the deletion rewrites are applied in the other batch.
+/// for them. Given the costs of a batch in which only a moderator's deletion's document
+/// operations free bytes: the document's, whoever paid for it, its owner or an earlier one, and
+/// those of any index subtree the deletion empties, whoever created it.
 fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
     for operation in cost_operations.iter_mut() {
         let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation else {

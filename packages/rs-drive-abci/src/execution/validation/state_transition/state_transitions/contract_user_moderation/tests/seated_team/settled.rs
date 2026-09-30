@@ -706,3 +706,95 @@ async fn should_start_afresh_after_the_author_replaces_a_settled_document() {
     assert_eq!(restarted.proposed_at, settled_again_at);
     assert!(team.is_stored(STORY, story.id(), &transaction));
 }
+
+/// A rule asking for more members than the seated team can hold asks for all it can hold, the
+/// seat of a member the leader removed included: the leader can not lower the bar by removing
+/// members who would not approve, and taking a removal back gives the seat back.
+#[tokio::test]
+async fn should_count_the_seat_of_a_removed_member_toward_a_rule_asking_for_the_whole_team() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let epic = team.written_by(&setup.stranger, EPIC).await;
+    team.award();
+    let [first, second, _] = &team.joiners;
+    team.process_and_commit(&team.addition_of(first).await);
+    team.process_and_commit(&team.addition_of(second).await);
+    let (removal, remove) = team.removed(&team.member).await;
+    team.process_and_commit(&remove);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    // The team can hold four: the leader, the elected member and two additions. With the
+    // elected member removed, all three still seated approve, and fall one short.
+    for approver in [&team.leader, first, second] {
+        let approval = setup
+            .moderate(approver, approve(EPIC, epic.id(), "doxxing"))
+            .await;
+        assert_success(&setup.process_at(&approval, SETTLED_AT, &transaction));
+    }
+    assert!(team.is_stored(EPIC, epic.id(), &transaction));
+
+    // The leader takes the removal back: the member's seat is its own again, and its approval
+    // completes the rule.
+    let reinstating = team
+        .undoing(REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, removal)
+        .await;
+    assert_success(&setup.process_at(&reinstating, SETTLED_AT + 1, &transaction));
+    let last = setup
+        .moderate(&team.member, approve(EPIC, epic.id(), "doxxing"))
+        .await;
+    assert_success(&setup.process_at(&last, SETTLED_AT + 2, &transaction));
+    assert!(!team.is_stored(EPIC, epic.id(), &transaction));
+}
+
+/// Past as many earlier approvers as a read of the whole team takes queries, an approval reads
+/// the team once instead of each approver's seat, with the same outcome: approvers who left are
+/// dropped, and the rest count.
+#[tokio::test]
+async fn should_read_the_team_once_to_drop_the_approvers_who_left() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let epic = team.written_by(&setup.stranger, EPIC).await;
+    team.award();
+    let [first, second, _] = &team.joiners;
+    team.process_and_commit(&team.addition_of(first).await);
+    let (addition, add) = team.added(second).await;
+    team.process_and_commit(&add);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    for approver in [&team.member, first, second] {
+        let approval = setup
+            .moderate(approver, approve(EPIC, epic.id(), "doxxing"))
+            .await;
+        assert_success(&setup.process_at(&approval, SETTLED_AT, &transaction));
+    }
+    // The leader takes the second addition back, then approves: three earlier approvers, more
+    // than the two queries of a team read, so the team is read once and the one who left is
+    // dropped. Three of the four the team can hold fall short.
+    let taking_back = team
+        .undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, addition)
+        .await;
+    assert_success(&setup.process_at(&taking_back, SETTLED_AT + 1, &transaction));
+    let leader_approval = setup
+        .moderate(&team.leader, approve(EPIC, epic.id(), "doxxing"))
+        .await;
+    assert_success(&setup.process_at(&leader_approval, SETTLED_AT + 2, &transaction));
+    let approvals = team
+        .settled_deletion(EPIC, epic.id(), &transaction)
+        .expect("expected the approvals");
+    assert_eq!(
+        approvals.approvals,
+        vec![team.member.id(), first.id(), team.leader.id()]
+    );
+    assert_eq!(approvals.deleted_at, None);
+    assert!(team.is_stored(EPIC, epic.id(), &transaction));
+    setup.commit(transaction);
+
+    // The second member, added again, completes the team: all four approve and the epic goes.
+    team.process_and_commit(&team.addition_of(second).await);
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let last = setup
+        .moderate(second, approve(EPIC, epic.id(), "doxxing"))
+        .await;
+    assert_success(&setup.process_at(&last, SETTLED_AT + 3, &transaction));
+    assert!(!team.is_stored(EPIC, epic.id(), &transaction));
+}

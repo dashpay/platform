@@ -1,6 +1,6 @@
-use crate::drive::contract::moderation::types::{
-    ContractDocumentRecords, ContractDocumentRemovalsQuery,
-};
+mod v0;
+
+use crate::drive::contract::moderation::types::ContractDocumentRemovalsQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -40,9 +40,8 @@ impl Drive {
             .moderation
             .prove_contract_document_removals
         {
-            0 => self.prove_contract_document_records_v0(
+            0 => self.prove_contract_document_removals_v0(
                 contract_id,
-                ContractDocumentRecords::Removals,
                 query,
                 transaction,
                 platform_version,

@@ -118,7 +118,8 @@ pub enum ContractUserModerationAction {
     /// in alone (`moderatorAbilities.deleteWithin`). Only a member of the contract's seated
     /// team approves. The approvals are kept under the contract, and the one that meets the
     /// rule deletes the document as a `DeleteDocument` would: the members each send this same
-    /// action, for the same reason, until the leader and as many as the rule asks for have.
+    /// action, for the same reason, until as many as the rule asks for have, the leader among
+    /// them when the rule says so.
     DeleteSettledDocument {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
         document_type_name: String,

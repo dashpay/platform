@@ -17,8 +17,9 @@
 //! Past a type's `moderatorAbilities.deleteWithin` window a document is settled: no moderator
 //! deletes it alone. A type that says who of an elected contract's seated team must approve
 //! (`moderatorAbilities.deleteSettled`) lets the team's members delete it together, each
-//! sending the same approval, for the same reason, until the leader and as many as the rule
-//! asks for have; the approval that meets the rule deletes the document.
+//! sending the same approval, for the same reason, until as many as the rule asks for have,
+//! the leader among them when the rule says so; the approval that meets the rule deletes the
+//! document.
 //!
 //! ```ignore
 //! let reason = ContractModerationReason::from_text("spam");
@@ -414,10 +415,15 @@ pub trait ModerateContractUser: Waitable {
     /// approvals keep (`reason`): an approval for another reason, or a second one by the same
     /// member, is refused while they are open. An approver who left the team no longer counts.
     /// They close `SystemLimits::contract_settled_deletion_approval_window_ms` after the first,
-    /// when the document is replaced, or when every approver has left the team, and the next
-    /// approval then starts afresh, for its own reason.
+    /// when the document changes (a replace, a transfer, a moderator's change of its fields),
+    /// or when every approver has left the team, and the next approval then starts afresh, for
+    /// its own reason.
     /// Each approval pays for the bytes it adds to the record, and nothing ever deletes it. The
-    /// proof is verified without the contract.
+    /// proof is verified without the contract. It is of the record as the node holds it when
+    /// asked, and must show this approval: a later approval that rewrote the record first (one
+    /// that dropped this approver after it left the team, or started afresh after the document
+    /// changed) fails the proof although this approval executed, as a restore does the proof of
+    /// a deletion.
     #[allow(clippy::too_many_arguments)]
     async fn delete_settled_contract_document<S: Signer<IdentityPublicKey> + Send>(
         &self,

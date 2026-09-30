@@ -213,7 +213,8 @@ pub const CONTRACT_WARNINGS_KEY: u8 = 224;
 
 /// The key under a contract's other tree (`[64, id, 2]`) of the records of the documents the
 /// contract's moderators deleted (protocol version 14): `document type name -> document id ->
-/// Item(document owner id, moderator id, removed at, reason)`. Present when the contract has a
+/// Item(document owner id, moderator id, removed at, document hash, tag, restoration if any,
+/// kept fields if any, reason)`, see `encode_document_removal`. Present when the contract has a
 /// document type that sets `moderatorAbilities.delete`, with one subtree per such type,
 /// created with the type. Written by a moderator's document deletion and read by clients,
 /// never by a document transition, so it sorts below `128`: created together with both lists
@@ -237,7 +238,8 @@ pub const CONTRACT_MODERATION_ACTION_COUNTS_KEY: u8 = 48;
 
 /// The key under a contract's other tree (`[64, id, 2]`) of the approvals a seated moderation
 /// team gives the deletion of settled documents (protocol version 14): `document type name ->
-/// document id -> Item(proposed at, last modified at, deleted at if any, approvals, reason)`.
+/// document id -> Item(proposed at, last modified at, revision, tag, deleted at if any, count,
+/// approvals, reason)`, see `encode_settled_deletion`.
 /// Present when the contract has a document type that sets `moderatorAbilities.deleteSettled`,
 /// with one subtree per such type, created with the type. Written by the team's approvals and
 /// read by them and by clients, never by a document transition, so it sorts below `128`, beside

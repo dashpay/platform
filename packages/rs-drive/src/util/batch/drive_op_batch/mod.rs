@@ -265,6 +265,26 @@ impl DriveOperation<'_> {
         )
     }
 
+    /// Whether this operation rewrites a moderation record in place, which may leave it
+    /// shorter and free bytes its payer is owed: the replacement of a removal record (a
+    /// restored one, by a fresh deletion) or of the approvals of a settled deletion. A batch
+    /// forfeiting its refunds then keeps its document operations apart
+    /// (`Drive::apply_drive_operations` generation 1).
+    pub fn rewrites_moderation_record(&self) -> bool {
+        matches!(
+            self,
+            Self::ContractModerationOperation(
+                ContractModerationOperationType::AddDocumentRemoval {
+                    replaced_record_size: Some(_),
+                    ..
+                } | ContractModerationOperationType::AddSettledDeletion {
+                    replaces_existing: true,
+                    ..
+                }
+            )
+        )
+    }
+
     /// Convert a member of a batch whose document TTL cleanup is complete.
     pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
         self,

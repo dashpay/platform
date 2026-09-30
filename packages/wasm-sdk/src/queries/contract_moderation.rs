@@ -31,7 +31,7 @@ use wasm_dpp2::error::WasmDppError;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::serialization::conversions::kept_fields_to_js;
 use wasm_dpp2::utils::{
-    try_from_options_optional_with, try_from_options_with, try_to_array, try_to_string, try_to_u32,
+    try_from_options_optional_with, try_from_options_with, try_to_array, try_to_string, try_to_u64,
 };
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -363,9 +363,17 @@ impl ContractDocumentRecordsQueryInput {
         .map_err(invalid)?;
         let start_after =
             IdentifierWasm::try_from_optional_options(&query, "startAfter").map_err(invalid)?;
-        let limit =
-            try_from_options_optional_with(&query, "limit", |value| try_to_u32(value, "limit"))
-                .map_err(invalid)?;
+        // A number, a numeric string or a BigInt, as the whole-object decoding took it.
+        let limit = try_from_options_optional_with(&query, "limit", |value| {
+            let limit = try_to_u64(value, "limit")?;
+            u32::try_from(limit).map_err(|_| {
+                WasmDppError::invalid_argument(format!(
+                    "'limit' {limit} exceeds maximum of {}",
+                    u32::MAX
+                ))
+            })
+        })
+        .map_err(invalid)?;
         Ok(Self {
             contract_id,
             document_type_name,

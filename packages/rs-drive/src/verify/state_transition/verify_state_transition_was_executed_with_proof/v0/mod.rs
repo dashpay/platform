@@ -3132,6 +3132,11 @@ fn verify_contract_settled_deletion_execution(
         verify_subset_of_proof,
         platform_version,
     )?;
+    // The record must show this approval, or the proof would not tell an approval that
+    // executed from one that did not. A later approval that rewrote the record before the
+    // proof was taken (dropping this approver after it left the team, or starting afresh after
+    // the document changed) fails it although this one executed, as a later restore fails the
+    // proof of a deletion and a later unban that of a ban.
     match (entries.pop(), entries.is_empty()) {
         (Some(entry), true)
             if entry.document_id == document_id

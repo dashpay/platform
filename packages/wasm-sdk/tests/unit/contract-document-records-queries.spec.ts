@@ -57,6 +57,16 @@ describe('contract document records queries', () => {
     });
   });
 
+  it('should accept a BigInt limit in a document removals query', async () => {
+    const error = await rejectionOf(client.getContractDocumentRemovals({
+      contractId,
+      documentTypeName: 'post',
+      documentIds: [documentId],
+      limit: 50n,
+    } as never));
+    expect(error.message).to.match(pairRefused);
+  });
+
   it('should refuse a document id that is not an identifier, naming the query', async () => {
     const error = await rejectionOf(client.getContractSettledDeletions({
       contractId,
