@@ -118,9 +118,10 @@ pub const TERMINAL: &str = "terminal";
 /// referenced document's `$id`) or a referring value of that property's
 /// `refersTo` `where` (consensus-enforced equal to a referenced-document
 /// property, its `$ownerId` and `$creatorId` included). Only allowed on
-/// indexOnly document types with a same-contract
-/// `permanentDocument` reference; the doc-type-level validation rejects every
-/// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
+/// indexOnly document types with a same-contract `permanentDocument`
+/// reference, or a `moderatedDocument` one whose removal record keeps every
+/// key of the path; the doc-type-level and whole-contract validation reject
+/// every other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
 pub const PREALLOCATED: &str = "preallocated";
 /// Index-level keyword opting the index into **conditional participation**:
 /// a document that omits any property of the index's *skip set* writes no
@@ -764,7 +765,8 @@ pub struct Index {
     )]
     pub terminal: Option<Vec<String>>,
     /// On an indexOnly document type whose index path is fully determined by
-    /// a same-contract `permanentDocument` reference (see [`PREALLOCATED`]):
+    /// a same-contract `permanentDocument` reference, or a `moderatedDocument`
+    /// one whose removal record keeps every key of it (see [`PREALLOCATED`]):
     /// when `true`, inserting a referenced document also creates this index's
     /// dynamic trees for entries referencing it, and deleting the last entry
     /// keeps them (the delete walker skips upward pruning for this index), so
