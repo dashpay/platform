@@ -12,6 +12,7 @@ use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, Transaction};
 
+use super::accounts::DASHPAY_EXTERNAL_LABEL;
 use super::{blob, core_state, wallets};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::LoadCtx;
@@ -24,15 +25,14 @@ pub(super) fn preserve_known_details(
     incoming: &TransactionRecord,
 ) -> Result<TransactionRecord, WalletStorageError> {
     let mut merged = incoming.clone();
-    let Some(previous) =
-        core_state::get_tx_record(tx, wallet_id, &incoming.txid, &LoadCtx::strict())?
-    else {
+    let Some(previous) = prior_record(tx, wallet_id, &incoming.txid)? else {
         return Ok(merged);
     };
     if previous.transaction != incoming.transaction {
-        return Err(WalletStorageError::blob_decode(
-            "same transaction id has different raw transaction bodies",
-        ));
+        return Err(WalletStorageError::TransactionBodyConflict {
+            wallet_id: *wallet_id,
+            txid: incoming.txid,
+        });
     }
     let mut inputs: BTreeMap<_, _> = previous
         .input_details
@@ -61,6 +61,15 @@ pub(super) fn preserve_known_details(
     Ok(merged)
 }
 
+/// Read a stored record strictly: corrupt history is an error, never skipped.
+fn prior_record(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    txid: &Txid,
+) -> Result<Option<TransactionRecord>, WalletStorageError> {
+    core_state::get_tx_record(conn, wallet_id, txid, &LoadCtx::strict())
+}
+
 /// Index raw inputs independently of when their ownership becomes known.
 pub(super) fn index_record(
     tx: &Transaction<'_>,
@@ -68,7 +77,8 @@ pub(super) fn index_record(
     record: &TransactionRecord,
 ) -> Result<(), WalletStorageError> {
     let mut stmt = tx.prepare_cached(
-        "INSERT OR IGNORE INTO core_transaction_inputs (wallet_id, txid, outpoint) VALUES (?1, ?2, ?3)",
+        "INSERT OR IGNORE INTO core_transaction_inputs (wallet_id, txid, outpoint) \
+         VALUES (?1, ?2, ?3)",
     )?;
     for input in &record.transaction.input {
         stmt.execute(params![
@@ -120,8 +130,10 @@ fn network(
         params![wallet_id.as_slice()],
         |r| r.get(0),
     )?;
-    wallets::parse_network(&label)
-        .ok_or_else(|| WalletStorageError::blob_decode("wallets.network is unknown"))
+    wallets::parse_network(&label).ok_or_else(|| WalletStorageError::UnknownWalletNetwork {
+        wallet_id: *wallet_id,
+        label,
+    })
 }
 
 fn owned_output(
@@ -130,7 +142,10 @@ fn owned_output(
     outpoint: &OutPoint,
     network: dashcore::Network,
 ) -> Result<Option<(u64, Address)>, WalletStorageError> {
-    let mut stmt = tx.prepare_cached("SELECT value, length(script), script FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0")?;
+    let mut stmt = tx.prepare_cached(
+        "SELECT value, length(script), script FROM core_utxos \
+         WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+    )?;
     let mut rows = stmt.query(params![
         wallet_id.as_slice(),
         blob::encode_outpoint(outpoint)?
@@ -155,8 +170,12 @@ pub(crate) fn contact_only_script(
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
     Ok(conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) AND NOT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
-        params![wallet_id.as_slice(), script], |r| r.get(0))?)
+        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
+         AND NOT EXISTS(SELECT 1 FROM core_address_pool \
+             WHERE wallet_id = ?1 AND script = ?2 AND account_type != ?3)",
+        params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL],
+        |r| r.get(0),
+    )?)
 }
 
 fn repair_record(
@@ -165,8 +184,7 @@ fn repair_record(
     txid: &Txid,
     network: dashcore::Network,
 ) -> Result<(), WalletStorageError> {
-    let Some(mut record) = core_state::get_tx_record(tx, wallet_id, txid, &LoadCtx::strict())?
-    else {
+    let Some(mut record) = prior_record(tx, wallet_id, txid)? else {
         return Ok(());
     };
     let original = blob::encode(&record)?;
@@ -190,11 +208,21 @@ fn repair_record(
             );
             // Stale mempool rows cannot overrule a later sweep's release.
             if !matches!(record.context, TransactionContext::Mempool) {
+                // Record the spender so the mark stays attributable and
+                // reversible; an existing claim by another spender stands.
+                // TODO(release-repair-spends-after-reorg): release rows whose
+                // `spent_in_txid` spender is reorged out and never re-mined;
+                // needs verification of how upstream downgrades a stored
+                // record's context on reorg.
                 tx.execute(
-                    "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
+                    "UPDATE core_utxos SET spent = 1, \
+                         spent_in_txid = CASE WHEN spent = 1 AND spent_in_txid IS NOT NULL \
+                             THEN spent_in_txid ELSE ?3 END \
+                     WHERE wallet_id = ?1 AND outpoint = ?2",
                     params![
                         wallet_id.as_slice(),
-                        blob::encode_outpoint(&input.previous_output)?
+                        blob::encode_outpoint(&input.previous_output)?,
+                        txid.as_byte_array().as_slice()
                     ],
                 )?;
             }
@@ -248,8 +276,11 @@ fn repair_record(
         .map(|d| i128::from(d.value))
         .sum();
     let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
-    record.net_amount = i64::try_from(received - spent).map_err(|_| {
-        WalletStorageError::blob_decode("wallet transaction net amount exceeds i64")
+    let net = received - spent;
+    record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
+        wallet_id: *wallet_id,
+        txid: *txid,
+        value: net,
     })?;
     let has_ours = outputs
         .values()
@@ -268,19 +299,24 @@ fn repair_record(
                     )
                 })
         });
-    record.direction = if record.transaction_type == TransactionType::CoinJoin {
-        TransactionDirection::CoinJoin
-    } else if inputs.is_empty() {
-        TransactionDirection::Incoming
-    } else if !has_external && (has_ours || record.transaction_type == TransactionType::AssetLock) {
-        TransactionDirection::Internal
-    } else {
-        TransactionDirection::Outgoing
-    };
+    record.direction = repaired_direction(
+        record.transaction_type,
+        !inputs.is_empty(),
+        has_ours,
+        has_external,
+    );
     record.input_details = inputs.into_values().collect();
     record.output_details = outputs.into_values().collect();
     let repaired = blob::encode(&record)?;
     if repaired != original {
+        // Append-only: the first pre-repair blob is kept verbatim and never
+        // replaced, so a wrong repair can always be undone.
+        tx.execute(
+            "INSERT OR IGNORE INTO core_transaction_record_originals (wallet_id, txid, record_blob) \
+             SELECT wallet_id, txid, record_blob FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+        )?;
         tx.execute(
             "UPDATE core_transactions SET record_blob = ?1 WHERE wallet_id = ?2 AND txid = ?3",
             params![
@@ -293,22 +329,192 @@ fn repair_record(
     Ok(())
 }
 
-/// Backfill the input index and correct existing history in the migration transaction.
-pub(crate) fn migrate(tx: &Transaction<'_>) -> Result<(), WalletStorageError> {
-    let mut stmt = tx.prepare_cached("SELECT length(wallet_id), wallet_id, length(txid), txid FROM core_transactions WHERE record_blob IS NOT NULL")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        blob::check_fixed_width(row.get(0)?, 32, "core_transactions.wallet_id")?;
-        let wallet_id: Vec<u8> = row.get(1)?;
-        let wallet_id = super::id32("core_transactions.wallet_id", &wallet_id)?;
-        blob::check_fixed_width(row.get(2)?, 32, "core_transactions.txid")?;
-        let txid: Vec<u8> = row.get(3)?;
-        let txid = Txid::from_slice(&txid)?;
-        if let Some(record) = core_state::get_tx_record(tx, &wallet_id, &txid, &LoadCtx::strict())?
-        {
-            index_record(tx, &wallet_id, &record)?;
-            repair_record(tx, &wallet_id, &txid, network(tx, &wallet_id)?)?;
+/// Direction of a repaired record. The Swift SDK's
+/// `PersistentTransaction.reconciledAccounting` applies the same rule; keep
+/// both in step (each side tests the same case table).
+///
+/// `has_external` counts every output that is neither ours nor an OP_RETURN
+/// burn, so an asset lock is internal only when nothing leaves the wallet.
+fn repaired_direction(
+    transaction_type: TransactionType,
+    spends_ours: bool,
+    has_ours: bool,
+    has_external: bool,
+) -> TransactionDirection {
+    if transaction_type == TransactionType::CoinJoin {
+        TransactionDirection::CoinJoin
+    } else if !spends_ours {
+        TransactionDirection::Incoming
+    } else if !has_external && (has_ours || transaction_type == TransactionType::AssetLock) {
+        TransactionDirection::Internal
+    } else {
+        TransactionDirection::Outgoing
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dashcore::address::Payload;
+    use dashcore::{PubkeyHash, Transaction as CoreTransaction, TxOut};
+    use key_wallet::account::{AccountType, StandardAccountType};
+
+    use super::*;
+
+    const WALLET_ID: WalletId = [0x5Au8; 32];
+
+    fn wallet_db(network: &str) -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        // The schema CHECK rejects unknown labels; a corrupt or newer file may still carry one.
+        conn.pragma_update(None, "ignore_check_constraints", true)
+            .unwrap();
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, 0)",
+            params![&WALLET_ID[..], network],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn record(output_values: &[u64], received: &[u64]) -> TransactionRecord {
+        let script = Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([7; 20])),
+        )
+        .script_pubkey();
+        let body = CoreTransaction {
+            version: 1,
+            lock_time: 0,
+            input: Vec::new(),
+            output: output_values
+                .iter()
+                .map(|&value| TxOut {
+                    value,
+                    script_pubkey: script.clone(),
+                })
+                .collect(),
+            special_transaction_payload: None,
+        };
+        let details = received
+            .iter()
+            .enumerate()
+            .map(|(index, &value)| OutputDetail {
+                index: index as u32,
+                role: OutputRole::Received,
+                address: None,
+                value,
+            })
+            .collect();
+        TransactionRecord::new(
+            body,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            details,
+            0,
+        )
+    }
+
+    fn store(conn: &Connection, record: &TransactionRecord) {
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) \
+             VALUES (?1, ?2, 0, ?3)",
+            params![
+                &WALLET_ID[..],
+                record.txid.as_byte_array().as_slice(),
+                blob::encode(record).unwrap()
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn should_report_a_body_conflict_for_the_same_txid_with_another_body() {
+        let mut conn = wallet_db("testnet");
+        let stored = record(&[1_000], &[]);
+        store(&conn, &stored);
+        let mut incoming = record(&[2_000], &[]);
+        incoming.txid = stored.txid;
+
+        let tx = conn.transaction().unwrap();
+        let err = preserve_known_details(&tx, &WALLET_ID, &incoming).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::TransactionBodyConflict { wallet_id, txid }
+                    if wallet_id == WALLET_ID && txid == stored.txid
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_report_an_unknown_wallet_network_label() {
+        let mut conn = wallet_db("moonnet");
+        let tx = conn.transaction().unwrap();
+
+        let err = network(&tx, &WALLET_ID).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                WalletStorageError::UnknownWalletNetwork { wallet_id, label }
+                    if *wallet_id == WALLET_ID && label == "moonnet"
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_report_a_net_amount_that_does_not_fit_i64() {
+        let mut conn = wallet_db("testnet");
+        let stored = record(&[u64::MAX, u64::MAX], &[u64::MAX, u64::MAX]);
+        store(&conn, &stored);
+        let tx = conn.transaction().unwrap();
+
+        let err =
+            repair_record(&tx, &WALLET_ID, &stored.txid, dashcore::Network::Testnet).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::NetAmountOverflow { wallet_id, txid, value }
+                    if wallet_id == WALLET_ID
+                        && txid == stored.txid
+                        && value == 2 * i128::from(u64::MAX)
+            ),
+            "got {err:?}"
+        );
+    }
+
+    /// Shared with the Swift SDK's `TransactionAccountingTests` direction table.
+    #[test]
+    fn should_classify_repaired_direction_like_the_swift_sdk() {
+        use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
+        use TransactionType::{AssetLock, Standard};
+        // (type, spends ours, has owned output, has external output, expected)
+        let cases = [
+            (Standard, true, true, false, Internal),
+            (Standard, true, true, true, Outgoing),
+            (Standard, true, false, false, Outgoing),
+            (AssetLock, true, false, false, Internal),
+            (AssetLock, true, true, false, Internal),
+            (AssetLock, true, false, true, Outgoing),
+            (Standard, false, true, false, Incoming),
+            (TransactionType::CoinJoin, true, true, false, CoinJoin),
+        ];
+        for (kind, spends_ours, has_ours, has_external, expected) in cases {
+            assert_eq!(
+                repaired_direction(kind, spends_ours, has_ours, has_external),
+                expected,
+                "{kind:?} spends_ours={spends_ours} has_ours={has_ours} has_external={has_external}"
+            );
         }
     }
-    Ok(())
 }

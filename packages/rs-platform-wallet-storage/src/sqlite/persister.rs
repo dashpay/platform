@@ -21,6 +21,7 @@ use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
     apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+    restore_recorded_transactions,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
@@ -1849,9 +1850,13 @@ fn load_one_wallet(
                 ))
             })?;
     }
-    let (wallet, wallet_info) =
-        super::rehydrate::restore_confirmed_transactions(wallet_info, wallet, core_state.records)
-            .map_err(PersistenceError::from)?;
+    let mut wallet = wallet;
+    restore_recorded_transactions(
+        &mut wallet_info,
+        &mut wallet,
+        core_state.records,
+        &core_state.instant_locks_for_non_final_records,
+    );
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
@@ -2418,6 +2423,9 @@ mod tests {
             "tracked_masternodes",     // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
+        // Append-only archive of pre-repair history blobs. Never loaded: it
+        // exists so a wrong history repair can be undone by hand.
+        const RETAINED_FOR_RECOVERY: &[&str] = &["core_transaction_record_originals"];
         // `load()` rehydrates these only with the `shielded` feature on, so
         // the classification follows the build rather than claiming one.
         #[cfg(feature = "shielded")]
@@ -2459,6 +2467,7 @@ mod tests {
                     && !READ_BY_A_DEDICATED_API.contains(&table.as_str())
                     && !LOAD_UNIMPLEMENTED_TABLES.contains(&table.as_str())
                     && !INFRASTRUCTURE.contains(&table.as_str())
+                    && !RETAINED_FOR_RECOVERY.contains(&table.as_str())
                     && !FEATURE_GATED.contains(&table.as_str())
                     && !NOT_REHYDRATED_WITHOUT_FEATURE.contains(&table.as_str())
             })

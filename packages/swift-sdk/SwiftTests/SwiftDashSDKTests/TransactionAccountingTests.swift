@@ -31,13 +31,47 @@ final class TransactionAccountingTests: XCTestCase {
             inputs: [spent], ownedOutputAmounts: [99], allOutputsOwned: true, previousDirection: 0, isAssetLock: false
         )?.direction, 2)
         let lock = PersistentTransaction.reconciledAccounting(
-            inputs: [spent], ownedOutputAmounts: [], allOutputsOwned: false, previousDirection: 2, isAssetLock: true
+            inputs: [spent], ownedOutputAmounts: [], allOutputsOwned: true, previousDirection: 2, isAssetLock: true
         )
         XCTAssertEqual(lock?.netAmount, -100)
         XCTAssertEqual(lock?.direction, 2)
         XCTAssertEqual(PersistentTransaction.reconciledAccounting(
             inputs: [spent], ownedOutputAmounts: [99], allOutputsOwned: false, previousDirection: 3, isAssetLock: false
         )?.direction, 3)
+    }
+
+    /// Same case table as the Rust repair's
+    /// `should_classify_repaired_direction_like_the_swift_sdk`.
+    func testShouldClassifyDirectionLikeTheRustRepair() {
+        let spent = input(100)
+        // (spends ours, owned output amounts, all outputs owned, asset lock, previous direction, expected)
+        let (incoming, outgoing, internalTransfer, coinJoin) = (
+            CoreDirectionCode.incoming, CoreDirectionCode.outgoing,
+            CoreDirectionCode.internalTransfer, CoreDirectionCode.coinJoin
+        )
+        let cases: [(Bool, [UInt64], Bool, Bool, UInt32, UInt32)] = [
+            (true, [99], true, false, incoming, internalTransfer),
+            (true, [40], false, false, incoming, outgoing),
+            (true, [], true, false, incoming, outgoing),
+            (true, [], true, true, incoming, internalTransfer),
+            (true, [40], true, true, incoming, internalTransfer),
+            (true, [], false, true, incoming, outgoing),
+            (false, [40], true, false, incoming, incoming),
+            (true, [99], true, false, coinJoin, coinJoin),
+        ]
+        for (index, (spendsOurs, owned, allOwned, isLock, previous, expected)) in cases.enumerated() {
+            let result = PersistentTransaction.reconciledAccounting(
+                inputs: spendsOurs ? [spent] : [], ownedOutputAmounts: owned,
+                allOutputsOwned: allOwned, previousDirection: previous, isAssetLock: isLock
+            )
+            XCTAssertEqual(result?.direction, expected, "case \(index)")
+        }
+    }
+
+    func testShouldFormatSignedDuffsWithoutTrappingOnInt64Min() {
+        XCTAssertEqual(PersistentTransaction.format(duffs: 150_000_000), "+1.50000000 DASH")
+        XCTAssertEqual(PersistentTransaction.format(duffs: -100), "-0.00000100 DASH")
+        XCTAssertTrue(PersistentTransaction.format(duffs: .min).hasPrefix("-92233720368."))
     }
 
     func testShouldRejectOverflowInsteadOfWrappingHistory() {
@@ -54,7 +88,8 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(tx.netAmount(for: first.walletId), -100)
         XCTAssertEqual(tx.netAmount(for: other.walletId), -200)
     }
-    private func serializedSpend(inputs: [Data], outputValue: UInt64 = 40) -> Data {
+    /// `burn` makes the single output an OP_RETURN, as an asset lock's is.
+    private func serializedSpend(inputs: [Data], outputValue: UInt64 = 40, burn: Bool = false) -> Data {
         var bytes = Data([2, 0, 0, 0, UInt8(inputs.count)])
         for txid in inputs {
             bytes.append(txid)
@@ -62,7 +97,8 @@ final class TransactionAccountingTests: XCTestCase {
         }
         bytes.append(1)
         withUnsafeBytes(of: outputValue.littleEndian) { bytes.append(contentsOf: $0) }
-        bytes.append(contentsOf: [0, 0, 0, 0, 0])
+        bytes.append(contentsOf: burn ? [1, 0x6a] : [0])
+        bytes.append(contentsOf: [0, 0, 0, 0])
         return bytes
     }
 
@@ -137,6 +173,18 @@ final class TransactionAccountingTests: XCTestCase {
         let repaired = try ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
             .first { $0.txid == spender.txid }
         XCTAssertEqual(repaired?.netAmount, -100)
+    }
+
+    func testShouldRestoreWalletsWhenLoadTimeAccountingFails() throws {
+        let container = try DashModelContainer.createInMemory()
+        container.mainContext.insert(PersistentWallet(walletId: Data(repeating: 1, count: 32), network: .testnet))
+        try container.mainContext.save()
+        let injector = FetchFaultInjector(faulting: PersistentCoreAddress.self)
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet, modelFetcher: injector
+        )
+        XCTAssertFalse(handler.loadWalletList().errored, "display accounting must not block restore")
+        XCTAssertTrue(injector.observedReads.contains("PersistentCoreAddress"))
     }
 
     func testShouldPreserveAccountingWhenSomePrevoutsAreMissing() throws {
@@ -242,7 +290,7 @@ final class TransactionAccountingTests: XCTestCase {
         let walletId = Data(repeating: 1, count: 32)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         let spenderId = Data(repeating: 3, count: 32)
-        let bytes = serializedSpend(inputs: [walletId, Data(repeating: 2, count: 32)], outputValue: 0)
+        let bytes = serializedSpend(inputs: [walletId, Data(repeating: 2, count: 32)], outputValue: 0, burn: true)
         let spender = PersistentTransaction(txid: spenderId, transactionData: bytes, direction: 2, netAmount: -200)
         spender.transactionTypeKind = 6
         let coin = input(100)
@@ -258,6 +306,26 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(row.context, 2)
     }
 
+    func testShouldPreserveAssetLockDebitWhenNoInputIsLinkedYet() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let walletId = Data(repeating: 1, count: 32)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let spenderId = Data(repeating: 3, count: 32)
+        let bytes = serializedSpend(inputs: [Data(repeating: 2, count: 32)], outputValue: 0, burn: true)
+        let lock = PersistentTransaction(txid: spenderId, transactionData: bytes, direction: 2, netAmount: -200)
+        lock.transactionTypeKind = 6
+        lock.fee = 7
+        context.insert(lock)
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        persist(handler, walletId: walletId, txid: spenderId, bytes: bytes, kind: 6)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spenderId })
+        XCTAssertEqual(row.netAmount, -200, "a synthetic zero update must not erase the debit")
+        XCTAssertEqual(row.fee, 7)
+        XCTAssertEqual(row.direction, 2)
+    }
+
     func testShouldRepairNoChangeAssetLockToFullCoreDebit() throws {
         let container = try DashModelContainer.createInMemory()
         let walletId = Data(repeating: 1, count: 32)
@@ -267,11 +335,63 @@ final class TransactionAccountingTests: XCTestCase {
         let spenderId = Data(repeating: 3, count: 32)
         persist(handler, walletId: walletId, txid: walletId, outputs: [(walletId, 100)])
         persist(handler, walletId: walletId, txid: spenderId,
-                bytes: serializedSpend(inputs: [walletId], outputValue: 0), kind: 6, inputTxids: [walletId])
+                bytes: serializedSpend(inputs: [walletId], outputValue: 0, burn: true), kind: 6, inputTxids: [walletId])
         let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spenderId })
         XCTAssertEqual(row.netAmount, -100)
         XCTAssertEqual(row.direction, 2)
         XCTAssertTrue(row.isAssetLock)
+    }
+
+    func testShouldNotReportStoredAmountWhileInputsArePending() {
+        let walletId = Data(repeating: 1, count: 32)
+        let tx = PersistentTransaction(txid: Data(repeating: 3, count: 32), transactionData: Data(), netAmount: 40)
+        let change = PersistentTxo(transaction: tx, vout: 0, amount: 40, address: "", height: 1)
+        change.walletId = walletId
+        tx.outputs = [change]
+        XCTAssertEqual(tx.netAmount(for: walletId), 40)
+        tx.pendingInputs = [PersistentPendingInput(
+            outpoint: Data(repeating: 9, count: 36), inputIndex: 0,
+            spendingTxid: tx.txid, spendingTransaction: tx, walletId: walletId
+        )]
+        XCTAssertNil(tx.netAmount(for: walletId), "a missing input makes the stored amount provisional")
+    }
+
+    func testShouldNotCountAnotherLocalWalletsUnlinkedOutputForTheSender() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let senderId = Data(repeating: 1, count: 32)
+        let receiver = PersistentWallet(walletId: Data(repeating: 2, count: 32), network: .testnet)
+        let receiverAccount = PersistentAccount(
+            wallet: receiver, accountType: 0, accountIndex: 0, accountTypeName: "Standard BIP44 Account"
+        )
+        // P2PKH to pubkey hash 0x05 x 20 on testnet: B's address with no TXO row yet.
+        let receiverAddress = PersistentCoreAddress(
+            address: "yLmzEvw3frCPS4cyRmFFeKbt64fUPzMwFh", poolTypeTag: 0, addressIndex: 0, derivationPath: ""
+        )
+        receiverAddress.account = receiverAccount
+        context.insert(PersistentWallet(walletId: senderId, network: .testnet))
+        context.insert(receiver)
+        context.insert(receiverAccount)
+        context.insert(receiverAddress)
+        var bytes = Data([2, 0, 0, 0, 1])
+        bytes.append(senderId)
+        bytes.append(contentsOf: [0, 0, 0, 0, 0, 255, 255, 255, 255, 1])
+        withUnsafeBytes(of: UInt64(40).littleEndian) { bytes.append(contentsOf: $0) }
+        bytes.append(contentsOf: [25, 0x76, 0xa9, 0x14] + [UInt8](repeating: 5, count: 20) + [0x88, 0xac])
+        bytes.append(contentsOf: [0, 0, 0, 0])
+        let spender = PersistentTransaction(
+            txid: Data(repeating: 3, count: 32), transactionData: bytes, direction: 1, netAmount: -100
+        )
+        let coin = input(100)
+        coin.spendingTransaction = spender
+        context.insert(coin)
+        context.insert(spender)
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertFalse(handler.loadWalletList().errored)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spender.txid })
+        XCTAssertEqual(row.netAmount, -100, "the receiving wallet's credit is not the sender's")
+        XCTAssertEqual(row.netAmount(for: senderId), -100)
     }
 
     func testShouldExcludePersistedContactOutputsFromOwnedAccounting() throws {

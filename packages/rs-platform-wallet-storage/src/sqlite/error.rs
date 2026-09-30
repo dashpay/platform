@@ -32,12 +32,12 @@ pub enum AutoBackupOperation {
 }
 
 /// Errors produced by the wallet-storage SQLite backend.
+///
+/// `#[non_exhaustive]`: new failure modes get their own variant, so matches
+/// outside this crate need a wildcard arm.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum WalletStorageError {
-    /// Confirmed Core history could not be replayed into the restored wallet.
-    #[error("could not restore confirmed Core history: {0}")]
-    CoreHistoryReplay(#[source] dash_async::AsyncError),
-
     /// File-system I/O error reaching the database or backup files.
     #[error("io error")]
     Io(#[from] std::io::Error),
@@ -422,6 +422,37 @@ pub enum WalletStorageError {
         blob_height: Option<u32>,
     },
 
+    /// An incoming transaction record reuses a stored txid with a different
+    /// raw transaction body; neither copy is trusted to replace the other.
+    #[error(
+        "transaction {txid} in wallet {} arrived with a raw body that differs from the stored one",
+        hex::encode(wallet_id)
+    )]
+    TransactionBodyConflict {
+        wallet_id: [u8; 32],
+        txid: dashcore::Txid,
+    },
+
+    /// The `wallets.network` label is not one this build knows, so stored
+    /// scripts cannot be turned back into addresses.
+    #[error(
+        "wallet {} has unknown network label {label:?}",
+        hex::encode(wallet_id)
+    )]
+    UnknownWalletNetwork { wallet_id: [u8; 32], label: String },
+
+    /// A transaction's net amount (owned outputs minus owned inputs) does not
+    /// fit the `i64` the record stores.
+    #[error(
+        "net amount {value} of transaction {txid} in wallet {} does not fit i64",
+        hex::encode(wallet_id)
+    )]
+    NetAmountOverflow {
+        wallet_id: [u8; 32],
+        txid: dashcore::Txid,
+        value: i128,
+    },
+
     /// A blob exceeded the decode allocation cap (default 16 MiB).
     /// Separate from [`Self::BlobDecode`] so operators can distinguish an
     /// oversize blob from a structural decode failure.
@@ -710,8 +741,7 @@ impl WalletStorageError {
             // `ToSqlConversionFailure`, `InvalidColumnIndex`) — is a
             // logic bug, not a contention failure.
             Self::Sqlite(_) => false,
-            Self::CoreHistoryReplay(_)
-            | Self::Io(_)
+            Self::Io(_)
             | Self::Migration(_)
             | Self::IntegrityCheckFailed { .. }
             | Self::IntegrityCheckRunFailed { .. }
@@ -759,6 +789,9 @@ impl WalletStorageError {
             | Self::AssetLockEntryMismatch { .. }
             | Self::AssetLockStatusMismatch { .. }
             | Self::CoreTransactionEntryMismatch { .. }
+            | Self::TransactionBodyConflict { .. }
+            | Self::UnknownWalletNetwork { .. }
+            | Self::NetAmountOverflow { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
             | Self::RehydrationPoolMismatch { .. }
@@ -804,6 +837,11 @@ impl WalletStorageError {
             // Typed re-mapping of an FK violation — same class as the raw
             // `ConstraintViolation` above, so it reports the same kind.
             Self::IdentityKeyWalletMismatch { .. } => PersistenceErrorKind::Constraint,
+            // History invariants checked in Rust on the write path: the incoming
+            // record contradicts stored history, so the data is wrong, not the engine.
+            Self::TransactionBodyConflict { .. } | Self::NetAmountOverflow { .. } => {
+                PersistenceErrorKind::Constraint
+            }
             // Refinery surfaces FK / constraint problems through rusqlite;
             // if that path leaks through here the typed variant lives in
             // `Self::Migration`, which we leave as `Fatal` since a
@@ -863,6 +901,7 @@ impl WalletStorageError {
             | Self::AssetLockEntryMismatch { .. }
             | Self::AssetLockStatusMismatch { .. }
             | Self::CoreTransactionEntryMismatch { .. }
+            | Self::UnknownWalletNetwork { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
             | Self::RehydrationPoolMismatch { .. }
@@ -876,7 +915,6 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::CoreHistoryReplay(_)
             | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
         }
     }
@@ -897,7 +935,6 @@ impl WalletStorageError {
             },
             Self::Sqlite(_) => "sqlite_other",
             Self::FlushRetryable { .. } => "flush_retryable",
-            Self::CoreHistoryReplay(_) => "core_history_replay",
             Self::Io(_) => "io",
             Self::Migration(_) => "migration",
             Self::IntegrityCheckFailed { .. } => "integrity_check_failed",
@@ -946,6 +983,9 @@ impl WalletStorageError {
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::AssetLockStatusMismatch { .. } => "asset_lock_status_mismatch",
             Self::CoreTransactionEntryMismatch { .. } => "core_transaction_entry_mismatch",
+            Self::TransactionBodyConflict { .. } => "transaction_body_conflict",
+            Self::UnknownWalletNetwork { .. } => "unknown_wallet_network",
+            Self::NetAmountOverflow { .. } => "net_amount_overflow",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
             Self::RehydrationPoolMismatch { .. } => "rehydration_pool_mismatch",
