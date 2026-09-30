@@ -29,12 +29,10 @@ pub(super) fn preserve_known_details(
         return Ok(merged);
     };
     if previous.transaction != incoming.transaction {
-        // TODO(precise-history-error-variants): body conflict, unknown network and
-        // net-amount overflow are reported as BlobDecode; add dedicated variants
-        // (with #[non_exhaustive]) in a breaking release.
-        return Err(WalletStorageError::blob_decode(
-            "same transaction id has different raw transaction bodies",
-        ));
+        return Err(WalletStorageError::TransactionBodyConflict {
+            wallet_id: *wallet_id,
+            txid: incoming.txid,
+        });
     }
     let mut inputs: BTreeMap<_, _> = previous
         .input_details
@@ -132,8 +130,10 @@ fn network(
         params![wallet_id.as_slice()],
         |r| r.get(0),
     )?;
-    wallets::parse_network(&label)
-        .ok_or_else(|| WalletStorageError::blob_decode("wallets.network is unknown"))
+    wallets::parse_network(&label).ok_or_else(|| WalletStorageError::UnknownWalletNetwork {
+        wallet_id: *wallet_id,
+        label,
+    })
 }
 
 fn owned_output(
@@ -276,8 +276,11 @@ fn repair_record(
         .map(|d| i128::from(d.value))
         .sum();
     let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
-    record.net_amount = i64::try_from(received - spent).map_err(|_| {
-        WalletStorageError::blob_decode("wallet transaction net amount exceeds i64")
+    let net = received - spent;
+    record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
+        wallet_id: *wallet_id,
+        txid: *txid,
+        value: net,
     })?;
     let has_ours = outputs
         .values()
@@ -351,7 +354,144 @@ fn repaired_direction(
 
 #[cfg(test)]
 mod tests {
+    use dashcore::address::Payload;
+    use dashcore::{PubkeyHash, Transaction as CoreTransaction, TxOut};
+    use key_wallet::account::{AccountType, StandardAccountType};
+
     use super::*;
+
+    const WALLET_ID: WalletId = [0x5Au8; 32];
+
+    fn wallet_db(network: &str) -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        // The schema CHECK rejects unknown labels; a corrupt or newer file may still carry one.
+        conn.pragma_update(None, "ignore_check_constraints", true)
+            .unwrap();
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, 0)",
+            params![&WALLET_ID[..], network],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn record(output_values: &[u64], received: &[u64]) -> TransactionRecord {
+        let script = Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([7; 20])),
+        )
+        .script_pubkey();
+        let body = CoreTransaction {
+            version: 1,
+            lock_time: 0,
+            input: Vec::new(),
+            output: output_values
+                .iter()
+                .map(|&value| TxOut {
+                    value,
+                    script_pubkey: script.clone(),
+                })
+                .collect(),
+            special_transaction_payload: None,
+        };
+        let details = received
+            .iter()
+            .enumerate()
+            .map(|(index, &value)| OutputDetail {
+                index: index as u32,
+                role: OutputRole::Received,
+                address: None,
+                value,
+            })
+            .collect();
+        TransactionRecord::new(
+            body,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            details,
+            0,
+        )
+    }
+
+    fn store(conn: &Connection, record: &TransactionRecord) {
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) \
+             VALUES (?1, ?2, 0, ?3)",
+            params![
+                &WALLET_ID[..],
+                record.txid.as_byte_array().as_slice(),
+                blob::encode(record).unwrap()
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn should_report_a_body_conflict_for_the_same_txid_with_another_body() {
+        let mut conn = wallet_db("testnet");
+        let stored = record(&[1_000], &[]);
+        store(&conn, &stored);
+        let mut incoming = record(&[2_000], &[]);
+        incoming.txid = stored.txid;
+
+        let tx = conn.transaction().unwrap();
+        let err = preserve_known_details(&tx, &WALLET_ID, &incoming).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::TransactionBodyConflict { wallet_id, txid }
+                    if wallet_id == WALLET_ID && txid == stored.txid
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_report_an_unknown_wallet_network_label() {
+        let mut conn = wallet_db("moonnet");
+        let tx = conn.transaction().unwrap();
+
+        let err = network(&tx, &WALLET_ID).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                WalletStorageError::UnknownWalletNetwork { wallet_id, label }
+                    if *wallet_id == WALLET_ID && label == "moonnet"
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_report_a_net_amount_that_does_not_fit_i64() {
+        let mut conn = wallet_db("testnet");
+        let stored = record(&[u64::MAX, u64::MAX], &[u64::MAX, u64::MAX]);
+        store(&conn, &stored);
+        let tx = conn.transaction().unwrap();
+
+        let err =
+            repair_record(&tx, &WALLET_ID, &stored.txid, dashcore::Network::Testnet).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::NetAmountOverflow { wallet_id, txid, value }
+                    if wallet_id == WALLET_ID
+                        && txid == stored.txid
+                        && value == 2 * i128::from(u64::MAX)
+            ),
+            "got {err:?}"
+        );
+    }
 
     /// Shared with the Swift SDK's `TransactionAccountingTests` direction table.
     #[test]
