@@ -28,7 +28,7 @@ use crate::data_contract::document_type::class_methods::{
 };
 use crate::data_contract::document_type::index::{
     parse_derived_index_property_name, DerivedIndexField, DerivedIndexProperty,
-    DerivedIndexPropertyName, Index, IndexGrammarAdmissions,
+    DerivedIndexPropertyName, Index, IndexGrammarAdmissions, PreallocationBinding,
 };
 #[cfg(feature = "validation")]
 #[cfg(feature = "validation")]
@@ -920,6 +920,84 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
     Ok(())
 }
 
+/// Refuses, once every document type of the contract is parsed, a
+/// `preallocated` index whose path only a `moderatedDocument` reference
+/// determines when the removal record of the referenced document would not
+/// keep every key of it: a key the reference's `where` binds must be the
+/// referenced document's `$ownerId` or a field its type lists under
+/// `moderatorAbilities.deleteKeepsFields` (or inside an object listed there).
+/// The trees the referenced document's insert creates then stay a function of
+/// what is public about it once a moderator removes it, and are the ones a
+/// restore needs again. The parse of the referring type sees no other type,
+/// so it admits every binding through such a reference
+/// ([`Index::preallocation_bindings`]); the insert path preallocates only
+/// through one the record keeps
+/// ([`Index::preallocation_bindings_for_target`]), and this check makes sure
+/// every preallocated index has one. A binding whose referenced type the
+/// contract does not have, or which admits another kind of reference, is left
+/// to the reference check, which refuses it.
+///
+/// Full validation only (registration and update), like the derived index
+/// property checks: a contract read back from state passed it. Inert before
+/// protocol version 14: only parser generation 3 admits `preallocated` and
+/// `moderatedDocument`.
+pub(in crate::data_contract) fn validate_preallocated_indexes_kept_on_removal(
+    document_types: &BTreeMap<String, DocumentType>,
+) -> Result<(), ProtocolError> {
+    for (name, document_type) in document_types {
+        let document_type = document_type.as_ref();
+        for index in document_type.indexes().values() {
+            if !index.preallocated {
+                continue;
+            }
+            let bindings = index.preallocation_bindings(
+                document_type.flattened_properties(),
+                document_type.data_contract_id(),
+            );
+            let kept_fields = |binding: &PreallocationBinding| {
+                document_types
+                    .get(binding.target_document_type_name)
+                    .filter(|referenced| referenced.document_reference_kind() == binding.kind)
+                    .map(|referenced| referenced.moderator_deletion_kept_fields())
+            };
+            // A binding whose referenced type is missing, or admits another
+            // kind of reference, is the reference check's to refuse; one
+            // whose record keeps every key holds. Otherwise every binding is
+            // through a moderatedDocument reference whose record drops a
+            // key: name the first one
+            let mut first_dropped = None;
+            for binding in &bindings {
+                match kept_fields(binding).map(|kept| binding.first_key_dropped_on_removal(kept)) {
+                    None | Some(None) => {
+                        first_dropped = None;
+                        break;
+                    }
+                    Some(Some(referenced)) => {
+                        first_dropped.get_or_insert((binding, referenced));
+                    }
+                }
+            }
+            let Some((binding, referenced)) = first_dropped else {
+                continue;
+            };
+            let target = binding.target_document_type_name;
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "index \"{}\" of document type \"{name}\" is preallocated through the \
+                     moderatedDocument reference \"{}\", but \"{referenced}\" of \"{target}\" \
+                     is not kept by a moderator's removal, which replaces the document with a \
+                     record keeping its id, its owner and only the fields \"{target}\" lists \
+                     under `moderatorAbilities.deleteKeepsFields` (a list fixed when the type \
+                     is registered, which no update changes): the trees creating a \"{target}\" \
+                     document preallocates would be keyed by a value its record drops",
+                    index.name, binding.referring_property
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Why a schema property `path` of the referenced document type can not be
 /// read by a derived index property, or `None`: it must be stored, and fixed
 /// once written.
@@ -1445,6 +1523,8 @@ mod dotted_aggregate_name_tests;
 mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
+#[cfg(all(test, feature = "validation"))]
+mod moderated_preallocation_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;

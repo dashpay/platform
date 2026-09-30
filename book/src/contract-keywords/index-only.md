@@ -154,7 +154,8 @@ In the example, `byHashtagPost` could be preallocated: `postId` is the reference
 Rules at registration:
 
 - Only on an `indexOnly` type.
-- Every index property is either a property with a `permanentDocument` reference to a type of the same contract, or a referring value of that reference's `where`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target. `$ownerId` may only be the terminal.
+- Every index property is either a property with a `permanentDocument` or `moderatedDocument` reference to a type of the same contract, or a referring value of that reference's `where`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target with nothing left to say what they were keyed by. `$ownerId` may only be the terminal.
+- Through a `moderatedDocument` reference, every key of the path must be kept by the referenced document's [removal record](deletion.md#moderatorabilitiesdeletekeepsfields): each `where` entry the index uses compares the referenced `$id`, `$ownerId` or a property the referenced type lists under `moderatorAbilities.deleteKeepsFields` (or one inside an object listed there), never `$creatorId` (`InvalidContractStructure`, 10231). The trees then outlive a removed document the way its record does, and a moderator's restore finds them in place. As through a `permanentDocument` reference, they are keyed by the values the document was created with: a value changed afterwards leaves them empty, and the first entry under the new value builds its own.
 - The referenced property of each such `where` entry holds at most 255 bytes, since creating a referenced document makes its value an index key (40126 when the contract is created or updated).
 - Not with `timeRange` or `integerRange`.
 
@@ -197,5 +198,5 @@ What an index-only type adds to the rules of every type:
 
 - [Index-Only Document Types](../drive/index-only-document-types.md) for the entry layout, the row commitment, the full constraint list and the query surface.
 - [Indexes](indexes.md), [Counts, Sums and Averages](aggregates.md) and [Ranked Indexes](ranked.md) for the index keywords an index-only type uses.
-- [References (refersTo)](refers-to.md) for `permanentDocument` references and `where`, which `preallocated` relies on.
+- [References (refersTo)](refers-to.md) for `permanentDocument` and `moderatedDocument` references and `where`, which `preallocated` relies on.
 - [Mutability](mutability.md), [Deletion](deletion.md) and [Creation, Transfers and Trading](ownership-and-trading.md) for the flags an index-only type must set.
