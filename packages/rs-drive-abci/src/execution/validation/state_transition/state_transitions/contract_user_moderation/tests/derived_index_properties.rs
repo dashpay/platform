@@ -2,7 +2,8 @@
 //! filed under the owner of the post it replies to, which the reply never stores. Drive reads
 //! the owner from the post whenever it writes or removes the reply's entries, and from the
 //! post's removal record once a moderator removed the post. A permanent post's fixed
-//! properties can be read the same way (`postId.text`).
+//! properties can be read the same way (`postId.text`), and so can a moderated post's fixed
+//! properties its removal record keeps (`moderatorAbilities.deleteKeepsFields`).
 
 use super::*;
 
@@ -87,6 +88,32 @@ async fn permanent_setup() -> Setup {
                 contract,
                 REPLY,
                 reply_schema("permanentDocument", "postId.text"),
+            );
+        },
+    )
+    .await
+}
+
+/// Posts nobody changes, only the moderators take down, each removal record keeping the
+/// post's text, and replies filed under that text
+async fn kept_text_setup() -> Setup {
+    Setup::new_at_with(
+        Some(moderation(false, false, THE_MODERATOR)),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "canBeDeleted": false,
+                    "documentsMutable": false,
+                    "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["text"] },
+                })),
+            );
+            add_document_type(
+                contract,
+                REPLY,
+                reply_schema("moderatedDocument", "postId.text"),
             );
         },
     )
@@ -338,6 +365,66 @@ async fn should_read_the_owner_of_a_removed_post_from_its_removal_record() {
     assert!(setup
         .replies_found(owned_by(setup.user.id()), &transaction)
         .is_empty());
+}
+
+/// Once a moderator removes a post whose removal record keeps its text, the text is read from
+/// the record: a reply to it is still found under that text, directly and through a proof, can
+/// still be edited, and its deletion still takes its entry out.
+#[tokio::test]
+async fn should_read_a_kept_field_of_a_removed_post_from_its_removal_record() {
+    let setup = kept_text_setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create_post) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.set("text", "hello".into());
+        })
+        .await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let (mut reply, create_reply) = setup.reply_to(&setup.stranger, post.id(), "first").await;
+    assert_success(&setup.process(&create_reply, &transaction));
+    let (other_reply, create_other_reply) =
+        setup.reply_to(&setup.stranger, post.id(), "second").await;
+    assert_success(&setup.process(&create_other_reply, &transaction));
+
+    let by_text = |text: &str| platform_value!([["postId.text", "==", text]]);
+    let mut both = vec![reply.id(), other_reply.id()];
+    both.sort();
+
+    let remove = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&remove, &transaction));
+    assert!(setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .is_none());
+
+    // Still filed under the post's text
+    let mut found = setup.replies_found(by_text("hello"), &transaction);
+    found.sort();
+    assert_eq!(found, both);
+
+    // An edit moves nothing: the text the record keeps is the one the entry holds
+    reply.set("body", "an edit".into());
+    let edit = setup.reply_replacement(&setup.stranger, &mut reply).await;
+    assert_success(&setup.process(&edit, &transaction));
+    let mut found = setup.replies_found(by_text("hello"), &transaction);
+    found.sort();
+    assert_eq!(found, both);
+
+    // A deletion finds the entry under the text the record keeps
+    let delete = setup.reply_deletion(&setup.stranger, reply).await;
+    assert_success(&setup.process(&delete, &transaction));
+    assert_eq!(
+        setup.replies_found(by_text("hello"), &transaction),
+        vec![other_reply.id()]
+    );
+
+    setup.commit(transaction);
+    assert_eq!(
+        setup.replies_proved(by_text("hello"), None),
+        vec![other_reply.id()]
+    );
+    assert!(setup.replies_proved(by_text("goodbye"), None).is_empty());
 }
 
 /// A moderator's removal of a reply takes its entry out, and a restore puts it back, both

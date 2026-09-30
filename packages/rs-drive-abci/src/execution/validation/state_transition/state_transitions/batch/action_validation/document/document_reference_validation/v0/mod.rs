@@ -20,7 +20,9 @@ use dpp::data_contract::document_type::{
     PropertyReference,
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
-use dpp::data_contract::config::moderation::ContractDocumentRemoval;
+use dpp::data_contract::config::moderation::{
+    is_kept_path, kept_value_at, ContractDocumentRemoval,
+};
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use dpp::document::{Document, DocumentV0Getters};
@@ -1601,7 +1603,7 @@ fn validate_pairs_against_removal(
                 removal.document_owner_id.to_buffer(),
             ))),
             ID => Some(Cow::Owned(Value::Identifier(document_id.to_buffer()))),
-            property if !is_kept(kept_paths, property) => {
+            property if !is_kept_path(kept_paths, property) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentRemovedError::new(
                         document_id,
@@ -1616,7 +1618,7 @@ fn validate_pairs_against_removal(
                     Some(kept_values) => kept_values,
                     None => kept_values.insert(removal.kept_values(referenced_document_type)?),
                 };
-                kept_value(kept_paths, kept_values, property).map(Cow::Owned)
+                kept_value_at(kept_paths, kept_values, property).map(Cow::Owned)
             }
         };
         // As against a document in state: the writer for `$ownerId`, a
@@ -1648,41 +1650,6 @@ fn validate_pairs_against_removal(
         }
     }
     Ok(SimpleConsensusValidationResult::new())
-}
-
-/// Whether a path the type keeps (`kept_paths`) covers the referenced `property`: the path
-/// itself, or an object around it, kept whole.
-fn is_kept(kept_paths: &BTreeSet<String>, property: &str) -> bool {
-    kept_paths.iter().any(|kept| {
-        kept == property
-            || property
-                .strip_prefix(kept.as_str())
-                .is_some_and(|rest| rest.starts_with('.'))
-    })
-}
-
-/// The value a removal record keeps at the referenced `property`, one [`is_kept`] covers:
-/// itself kept or read inside a kept object, `None` when the document held no value there.
-fn kept_value(
-    kept_paths: &BTreeSet<String>,
-    kept_values: &BTreeMap<String, Value>,
-    property: &str,
-) -> Option<Value> {
-    if kept_paths.contains(property) {
-        return kept_values.get(property).cloned();
-    }
-    kept_paths.iter().find_map(|kept| {
-        let inner = property.strip_prefix(kept.as_str())?.strip_prefix('.')?;
-        // Down through the kept object, a member it lacks or a step through what is no
-        // object reading as absent, as a document's own path does
-        kept_values
-            .get(kept)?
-            .get_optional_value_at_path(inner)
-            .ok()
-            .flatten()
-            .filter(|value| !value.is_null())
-            .cloned()
-    })
 }
 
 /// A key reference declared on the key id property at `path`
