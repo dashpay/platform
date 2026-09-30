@@ -117,19 +117,34 @@ impl FeeRefunds {
         let recorded_owners = refunds_per_epoch_by_identifier
             .keys()
             .map(|identifier| {
-                owners
-                    .get(identifier)
-                    .map(|owner| (*identifier, *owner))
-                    .ok_or_else(|| {
-                        ProtocolError::CorruptedCodeExecution(format!(
-                            "storage removal carrier key {} has no recorded refund owner",
-                            hex::encode(identifier)
-                        ))
-                    })
+                let owner = owners.get(identifier).ok_or_else(|| {
+                    ProtocolError::CorruptedCodeExecution(format!(
+                        "storage removal carrier key {} has no recorded refund owner",
+                        hex::encode(identifier)
+                    ))
+                })?;
+                Self::ensure_owner_matches_key(identifier, owner)?;
+                Ok((*identifier, *owner))
             })
             .collect::<Result<RefundOwnersByIdentifier, ProtocolError>>()?;
 
         Ok(Self(refunds_per_epoch_by_identifier, recorded_owners))
+    }
+
+    /// A recorded owner must be the owner its carrier key was derived from;
+    /// any other record would route the refund to the wrong owner.
+    fn ensure_owner_matches_key(
+        identifier: &[u8; 32],
+        owner: &RefundOwner,
+    ) -> Result<(), ProtocolError> {
+        if owner.removal_key() != *identifier {
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "storage refund carrier key {} is recorded for {:?}, whose carrier key differs",
+                hex::encode(identifier),
+                owner
+            )));
+        }
+        Ok(())
     }
 
     fn price_storage_removal<I, C, E>(
@@ -273,22 +288,23 @@ impl FeeRefunds {
 
     /// Iterates the refunds with their recorded owners.
     ///
-    /// A carrier key without a recorded owner yields an error: a refund that
-    /// cannot name its owner cannot be routed and must halt rather than be
-    /// burned, minted or guessed.
+    /// A carrier key without a recorded owner, or recorded for an owner whose
+    /// carrier key is a different one, yields an error: a refund that cannot
+    /// name its owner cannot be routed and must halt rather than be burned,
+    /// minted or guessed.
     pub fn iter_typed(
         &self,
     ) -> impl Iterator<Item = Result<(RefundOwner, &[u8; 32], &CreditsPerEpoch), ProtocolError>>
     {
         self.0.iter().map(|(identifier, credits_per_epoch)| {
-            self.owner_of(identifier)
-                .map(|owner| (owner, identifier, credits_per_epoch))
-                .ok_or_else(|| {
-                    ProtocolError::CorruptedCodeExecution(format!(
-                        "storage refund carrier key {} has no recorded refund owner",
-                        hex::encode(identifier)
-                    ))
-                })
+            let owner = self.owner_of(identifier).ok_or_else(|| {
+                ProtocolError::CorruptedCodeExecution(format!(
+                    "storage refund carrier key {} has no recorded refund owner",
+                    hex::encode(identifier)
+                ))
+            })?;
+            Self::ensure_owner_matches_key(identifier, &owner)?;
+            Ok((owner, identifier, credits_per_epoch))
         })
     }
 
@@ -363,7 +379,8 @@ impl FeeRefunds {
     ///
     /// Owners are compared as typed values, so an identity and a contract
     /// bucket never match each other. A carrier key without a recorded owner
-    /// is an error, as is a sum that overflows.
+    /// or recorded for an owner whose carrier key differs is an error, as is
+    /// a sum that overflows.
     pub fn calculate_all_refunds_except_owner(
         &self,
         skip_owner: &RefundOwner,
@@ -532,6 +549,30 @@ mod tests {
             let owners = RefundOwnersByIdentifier::new();
             let storage_removal = BytesPerEpochByIdentifier::from_iter([(
                 bucket.removal_key(),
+                IntMap::from_iter([(1, 200)]),
+            )]);
+
+            let result = FeeRefunds::from_typed_storage_removal(
+                storage_removal,
+                &owners,
+                3,
+                20,
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+        }
+
+        #[test]
+        fn should_reject_an_owner_recorded_under_another_owners_carrier_key() {
+            let bucket = bucket_owner(6, 2);
+            let identity_key = [5u8; 32];
+            let owners = RefundOwnersByIdentifier::from_iter([(identity_key, bucket)]);
+            let storage_removal = BytesPerEpochByIdentifier::from_iter([(
+                identity_key,
                 IntMap::from_iter([(1, 200)]),
             )]);
 
@@ -723,6 +764,34 @@ mod tests {
             ));
             assert!(matches!(
                 refunds.calculate_all_refunds_except_owner(&bucket_owner(1, 1)),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+        }
+
+        #[test]
+        fn should_fail_closed_on_an_owner_recorded_under_another_carrier_key() {
+            let bucket = bucket_owner(3, 4);
+            let identity = RefundOwner::Identity(Identifier::from([4u8; 32]));
+            let refunds = FeeRefunds(
+                CreditsPerEpochByIdentifier::from_iter([(
+                    identity.removal_key(),
+                    CreditsPerEpoch::from_iter([(0, 100)]),
+                )]),
+                RefundOwnersByIdentifier::from_iter([(identity.removal_key(), bucket)]),
+            );
+
+            let entries: Vec<_> = refunds.iter_typed().collect();
+            assert_eq!(entries.len(), 1);
+            assert!(matches!(
+                entries[0],
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+            assert!(matches!(
+                refunds.calculate_all_refunds_except_owner(&identity),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+            assert!(matches!(
+                refunds.ensure_identity_owners_only(),
                 Err(ProtocolError::CorruptedCodeExecution(_))
             ));
         }

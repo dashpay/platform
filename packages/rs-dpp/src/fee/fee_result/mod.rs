@@ -146,8 +146,9 @@ impl BalanceChangeForIdentity {
     /// Returns the refund amount of credits for every recorded owner other
     /// than the paying identity, keyed by the typed owner.
     ///
-    /// A carrier key without a recorded owner is an error: the refund cannot
-    /// be routed and must not be guessed at.
+    /// A carrier key without a recorded owner, or recorded for an owner whose
+    /// carrier key differs, is an error: the refund cannot be routed and must
+    /// not be guessed at.
     pub fn other_typed_refunds(&self) -> Result<BTreeMap<RefundOwner, Credits>, ProtocolError> {
         self.fee_result
             .fee_refunds
