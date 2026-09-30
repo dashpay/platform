@@ -304,8 +304,12 @@ export class ContractsFacade {
   /**
    * One page of the actions an elected contract's seated moderation team votes on, `active`
    * (still gathering approvals) or `closed` (their approvals met the rule and they ran), in
-   * action id order. Pass a page's `nextStartAtActionId` as the next query's
-   * `startAtActionId`; a page without one (it holds fewer actions than the limit) is the last.
+   * action id order, each with its `approvalCount`. Pass a page's `nextStartAtActionId` as the
+   * next query's `startAtActionId`; a page without one (it holds fewer actions than the limit)
+   * is the last. An active action's `approvalCount` is an upper bound: a member who left the
+   * team is counted until a later approval reads the team. For the exact figure, read the
+   * action's `teamActionSigners` and keep those `moderationCharters.team` `contains`: worth it
+   * only for an action whose count could meet its rule.
    */
   async teamActions(query: wasm.ContractTeamActionsQuery): Promise<wasm.ContractTeamActionsPage> {
     const w = await this.sdk.getWasmSdkConnected();
@@ -334,6 +338,26 @@ export class ContractsFacade {
   ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractTeamActionSigners>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContractTeamActionSignersWithProofInfo(query);
+  }
+
+  /**
+   * How many counted moderation actions (bans, suspensions, warnings and document deletions)
+   * each member of an elected contract's seated moderation team signed since the moderators pot
+   * was last paid out, which resets every count, in identity id order: what the action share
+   * of a claim splits by. A preview of what a claim pays each member also needs `feePots` and
+   * the team's `submittedCharter` (its `rewardSplit`, whose leader and equal shares are paid
+   * first). Only an elected contract keeps counts; the node refuses any other.
+   */
+  async moderationActionCounts(contractId: wasm.IdentifierLike): Promise<wasm.ContractModerationActionCounts> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractModerationActionCounts(contractId);
+  }
+
+  async moderationActionCountsWithProof(
+    contractId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractModerationActionCounts>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractModerationActionCountsWithProofInfo(contractId);
   }
 
   /**

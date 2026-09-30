@@ -57,6 +57,9 @@ service Platform {
       returns (GetContractTeamActionsResponse);
   rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest)
       returns (GetContractTeamActionSignersResponse);
+  rpc getContractModerationActionCounts(
+      GetContractModerationActionCountsRequest)
+      returns (GetContractModerationActionCountsResponse);
   rpc getContractFeePots(GetContractFeePotsRequest)
       returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
@@ -963,6 +966,11 @@ message GetContractTeamActionsResponse {
     oneof event {
       DeleteSettledDocument delete_settled_document = 4; // What it does
     }
+    uint32 approval_count =
+        5; // How many approvals it holds, the proposer's among them; an active
+           // action's is an upper bound, counting a member who left the team
+           // until a later approval reads the team and drops it; the exact
+           // figure is its signers still on the team
   }
 
   message ContractTeamActions {
@@ -1012,6 +1020,38 @@ message GetContractTeamActionSignersResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetContractTeamActionSignersResponseV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsRequest {
+  message GetContractModerationActionCountsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the elected contract whose
+                           // seated moderation team's actions are counted
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationActionCountsRequestV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsResponse {
+  // How many counted moderation actions (a ban, a suspension, a warning or a
+  // document deletion) one member of the seated team signed since the
+  // moderators pot was last paid out, which resets every count
+  message ContractModerationActionCount {
+    bytes identity_id = 1; // The 32-byte id of the member
+    uint32 count = 2;      // How many
+  }
+  message ContractModerationActionCounts {
+    repeated ContractModerationActionCount counts =
+        1; // The counts, in identity id order; a member that did not act since
+           // the last payout has none
+  }
+  message GetContractModerationActionCountsResponseV0 {
+    oneof result {
+      ContractModerationActionCounts counts = 1; // The counts read
+      Proof proof = 2; // Cryptographic proof of the counts, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationActionCountsResponseV0 v0 = 1; }
 }
 
 message GetContractFeePotsRequest {

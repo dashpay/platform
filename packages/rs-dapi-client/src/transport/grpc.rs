@@ -366,6 +366,15 @@ impl_transport_request_grpc!(
     get_contract_team_action_signers
 );
 
+// rpc getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractModerationActionCountsRequest,
+    platform_proto::GetContractModerationActionCountsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_moderation_action_counts
+);
+
 // rpc getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse);
 impl_transport_request_grpc!(
     platform_proto::GetContractFeePotsRequest,

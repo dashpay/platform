@@ -710,7 +710,7 @@ fn transform_settled_deletion_proposal_v0<C: CoreRPCLike>(
             reason: reason.clone(),
         },
     };
-    let team_capacity = usize::from(charter.team_bound(elected.max_added_moderators));
+    let team_capacity = usize::from(charter.charter.seats(elected.max_added_moderators));
     let closes = rule.is_met_by(&[moderator_id], charter.leader_id, team_capacity);
     let (deletion, approver_action_counts) = if closes {
         let (deletion, counts) = run_settled_deletion(
@@ -911,13 +911,13 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
         );
     }
 
-    // The most members the seated team can hold (`SeatedModerationCharter::team_bound`): its
+    // The most members the seated team can hold (`ElectedCharter::seats`): its
     // leader, the members its charter elected and those the declaration lets the leader add. A
     // rule asking for more asks for all of them, so that a charter electing fewer members than
     // the rule allows for can still meet it. A member the leader removed still counts: the
     // leader can not lower the bar by removing members who would not approve, and gets the
     // seat back by deleting the removal.
-    let team_capacity = usize::from(charter.team_bound(elected.max_added_moderators));
+    let team_capacity = usize::from(charter.charter.seats(elected.max_added_moderators));
     // Approvals that can not meet the rule, even if every one still counts, need no team read,
     // and leave the approvals of members who left where they are until one that reads the team:
     // too few of them, or none of them, this one included, the leader's when the rule needs it.

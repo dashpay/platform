@@ -3,11 +3,12 @@ use crate::drive::contract::moderation::types::{
     ContractModerationEntriesQuery, ContractTeamActionsQuery,
 };
 use crate::drive::contract::paths::{
-    contract_document_type_removals_path_vec, contract_moderation_list_path_vec,
-    contract_team_action_path_vec, contract_team_action_signers_path_vec,
-    contract_team_action_status_path_vec, contract_team_actions_path_vec,
-    CONTRACT_TEAM_ACTION_INFO_KEY, CONTRACT_TEAM_ACTION_SIGNERS_KEY,
-    CONTRACT_TEAM_ACTIVE_ACTIONS_KEY, CONTRACT_TEAM_CLOSED_ACTIONS_KEY,
+    contract_document_type_removals_path_vec, contract_moderation_action_counts_path_vec,
+    contract_moderation_list_path_vec, contract_team_action_path_vec,
+    contract_team_action_signers_path_vec, contract_team_action_status_path_vec,
+    contract_team_actions_path_vec, CONTRACT_TEAM_ACTION_INFO_KEY,
+    CONTRACT_TEAM_ACTION_SIGNERS_KEY, CONTRACT_TEAM_ACTIVE_ACTIONS_KEY,
+    CONTRACT_TEAM_CLOSED_ACTIONS_KEY,
 };
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -155,9 +156,35 @@ impl Drive {
         Ok(())
     }
 
+    /// The query for the moderation action counts of an elected contract, in identity id
+    /// order: at most `limit` of them, or all when `None`. The proof reads them all, like the
+    /// approvals of a team action: a count exists only for a member of the seated team (every
+    /// settle of the moderators pot deletes them all, and a change of the team settles first),
+    /// so the tree never holds more than the team, bounded when its contract registered. A
+    /// limit from today's limits could cut a team registered under larger ones short, with a
+    /// proof that still verifies.
+    pub fn contract_moderation_action_counts_query(
+        contract_id: [u8; 32],
+        limit: Option<u16>,
+    ) -> PathQuery {
+        let mut query = Query::new_with_direction(true);
+        query.insert_item(QueryItem::RangeFull(RangeFull));
+        PathQuery {
+            path: contract_moderation_action_counts_path_vec(&contract_id),
+            query: SizedQuery {
+                query,
+                limit,
+                offset: None,
+            },
+        }
+    }
+
     /// The query for a page of a contract's team actions, active or closed: each action's info
-    /// (`I`), in action id order, from the start the query gives. The limit is the page's, so
-    /// the prover and the verifier bound the proof alike.
+    /// (`I`) and its approvals tree (`S`), whose sum is how many approvals it holds, in action id
+    /// order, from the start the query gives. Every action holds both, so the limit is twice the
+    /// page's, and the prover and the verifier bound the proof alike. It read `I` alone before
+    /// it was given `S`, in place at method version 0: no release carried that shape (the query
+    /// is protocol version 14's, unreleased), so every released prover and verifier agree.
     pub fn contract_team_actions_query(
         contract_id: [u8; 32],
         actions_query: &ContractTeamActionsQuery,
@@ -172,12 +199,17 @@ impl Drive {
                 query.insert_item(QueryItem::RangeAfter(action_id.to_vec()..))
             }
         }
-        query.set_subquery_key(CONTRACT_TEAM_ACTION_INFO_KEY.to_vec());
+        let mut action_query = Query::new_with_direction(true);
+        action_query.insert_keys(vec![
+            CONTRACT_TEAM_ACTION_INFO_KEY.to_vec(),
+            CONTRACT_TEAM_ACTION_SIGNERS_KEY.to_vec(),
+        ]);
+        query.set_subquery(action_query);
         PathQuery {
             path: contract_team_action_status_path_vec(&contract_id, actions_query.status),
             query: SizedQuery {
                 query,
-                limit: Some(actions_query.limit),
+                limit: Some(actions_query.limit.saturating_mul(2)),
                 offset: None,
             },
         }

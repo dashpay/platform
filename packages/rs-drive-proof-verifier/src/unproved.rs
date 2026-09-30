@@ -5,10 +5,11 @@ use crate::types::contract_groups::{
 };
 use crate::types::contract_moderation::{
     entries_from_response, fee_pots_from_response, list_from_request, lists_from_request,
-    reason_from_response, removals_from_response, removals_query_from_request,
-    team_action_signers_from_response, team_action_status_from_request, team_actions_from_response,
-    team_actions_query_from_request, warnings_from_response, ContractBan, ContractDocumentRemovals,
-    ContractFeePots, ContractModerationEntries, ContractModerationList,
+    moderation_action_counts_from_response, reason_from_response, removals_from_response,
+    removals_query_from_request, team_action_signers_from_response,
+    team_action_status_from_request, team_actions_from_response, team_actions_query_from_request,
+    warnings_from_response, ContractBan, ContractDocumentRemovals, ContractFeePots,
+    ContractModerationActionCounts, ContractModerationEntries, ContractModerationList,
     ContractModerationListStatuses, ContractModerationStatus, ContractSuspension,
     ContractTeamActionSigners, ContractTeamActions,
 };
@@ -21,6 +22,7 @@ use crate::types::CurrentQuorumsInfo;
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
+use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::get_contract_moderation_action_counts_response_v0::Result as ModerationActionCountsResult;
 use dapi_grpc::tonic::async_trait;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
@@ -1156,6 +1158,43 @@ impl FromUnproved<platform::GetContractTeamActionSignersRequest> for ContractTea
     }
 }
 
+impl FromUnproved<platform::GetContractModerationActionCountsRequest>
+    for ContractModerationActionCounts
+{
+    type Request = platform::GetContractModerationActionCountsRequest;
+    type Response = platform::GetContractModerationActionCountsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        let response: Self::Response = response.into();
+        let platform::get_contract_moderation_action_counts_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let counts = match v0.result {
+            Some(ModerationActionCountsResult::Counts(counts)) => {
+                Some(moderation_action_counts_from_response(counts.counts)?)
+            }
+            Some(ModerationActionCountsResult::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation action counts, got a proof"
+                        .to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((counts, metadata))
+    }
+}
+
 impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
     type Request = platform::GetContractFeePotsRequest;
     type Response = platform::GetContractFeePotsResponse;
@@ -1632,6 +1671,13 @@ mod contract_moderation_tests {
         ContractTeamActions as ContractTeamActionsProto, DeleteSettledDocument,
         GetContractTeamActionsResponseV0, Version as TeamActionsResponseVersion,
     };
+    use dapi_grpc::platform::v0::get_contract_moderation_action_counts_request::{
+        GetContractModerationActionCountsRequestV0, Version as CountsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::{
+        ContractModerationActionCount, ContractModerationActionCounts as CountsProto,
+        GetContractModerationActionCountsResponseV0, Version as CountsResponseVersion,
+    };
     use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
     use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
     use dapi_grpc::platform::v0::ResponseMetadata;
@@ -2008,6 +2054,7 @@ mod contract_moderation_tests {
                     }),
                 },
             )),
+            approval_count: u32::from(seed),
         }
     }
 
@@ -2074,5 +2121,49 @@ mod contract_moderation_tests {
             signers.expect("expected signers").signers(),
             &[Identifier::from([3; 32]), Identifier::from([4; 32])]
         );
+    }
+
+    #[test]
+    fn should_read_the_moderation_action_counts_of_a_contract() {
+        let counts = |result: Option<ModerationActionCountsResult>| {
+            ContractModerationActionCounts::maybe_from_unproved_with_metadata(
+                platform::GetContractModerationActionCountsRequest {
+                    version: Some(CountsRequestVersion::V0(
+                        GetContractModerationActionCountsRequestV0 {
+                            contract_id: vec![1; 32],
+                            prove: false,
+                        },
+                    )),
+                },
+                platform::GetContractModerationActionCountsResponse {
+                    version: Some(CountsResponseVersion::V0(
+                        GetContractModerationActionCountsResponseV0 {
+                            result,
+                            metadata: Some(ResponseMetadata::default()),
+                        },
+                    )),
+                },
+                Network::Testnet,
+                PlatformVersion::latest(),
+            )
+            .map(|(counts, _)| counts)
+        };
+        assert_eq!(
+            counts(Some(ModerationActionCountsResult::Counts(CountsProto {
+                counts: vec![ContractModerationActionCount {
+                    identity_id: vec![3; 32],
+                    count: 7,
+                }],
+            })))
+            .expect("expected the counts to convert")
+            .expect("expected counts")
+            .counts(),
+            &BTreeMap::from([(Identifier::from([3; 32]), 7)])
+        );
+        assert_eq!(counts(None).expect("expected no error"), None);
+        counts(Some(
+            ModerationActionCountsResult::Proof(Default::default()),
+        ))
+        .expect_err("expected a proof to be refused");
     }
 }

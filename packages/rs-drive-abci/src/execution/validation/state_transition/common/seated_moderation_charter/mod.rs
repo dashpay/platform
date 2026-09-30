@@ -240,17 +240,6 @@ impl SeatedModerationCharter {
             })
     }
 
-    /// The most members the team can hold: its leader, the members the charter elected and the
-    /// additions the target allows (`max_added_moderators`), whether each seat is filled now or
-    /// not. A member the leader removed still holds a seat here, which the leader can fill again
-    /// by deleting the removal.
-    pub(crate) fn team_bound(&self, max_added_moderators: u16) -> u16 {
-        u16::try_from(self.charter.members.len())
-            .unwrap_or(u16::MAX)
-            .saturating_add(max_added_moderators)
-            .saturating_add(1)
-    }
-
     /// The active members of the team besides the leader ([`ElectedCharter::active_members`]):
     /// the charter's `members` less its `removedModerator` documents, plus its
     /// `addedModerator` documents. Two billed queries of the `byElectedCharterMember` indexes,
@@ -378,10 +367,11 @@ impl SeatedModerationCharter {
             transaction,
             platform_version,
         )?;
-        let team_bound = self.team_bound(max_added_moderators);
+        // At most one count per seat the team holds (`ElectedCharter::seats`)
+        let seats = self.charter.seats(max_added_moderators);
         let (fee, action_counts) = drive.fetch_contract_moderation_action_counts_with_fee(
             contract_id,
-            team_bound,
+            seats,
             epoch,
             transaction,
             platform_version,

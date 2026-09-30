@@ -25,6 +25,7 @@ use dapi_grpc::platform::v0::{
     GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractGroupInfoRequest,
     GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
     GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
+    GetContractModerationActionCountsRequest, GetContractModerationActionCountsResponse,
     GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
     GetContractModerationStatusRequest, GetContractModerationStatusResponse,
     GetContractTeamActionSignersRequest, GetContractTeamActionSignersResponse,
@@ -494,6 +495,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contract_team_action_signers,
             "get_contract_team_action_signers",
+        )
+        .await
+    }
+
+    async fn get_contract_moderation_action_counts(
+        &self,
+        request: Request<GetContractModerationActionCountsRequest>,
+    ) -> Result<Response<GetContractModerationActionCountsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_moderation_action_counts,
+            "get_contract_moderation_action_counts",
         )
         .await
     }

@@ -139,6 +139,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetContractTeamActionSignersRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetContractTeamActionSignersResponse.FromString,
                 )
+        self.getContractModerationActionCounts = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractModerationActionCounts',
+                request_serializer=platform__pb2.GetContractModerationActionCountsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractModerationActionCountsResponse.FromString,
+                )
         self.getContractFeePots = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getContractFeePots',
                 request_serializer=platform__pb2.GetContractFeePotsRequest.SerializeToString,
@@ -525,6 +530,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getContractTeamActionSigners(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractModerationActionCounts(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -945,6 +956,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getContractTeamActionSigners,
                     request_deserializer=platform__pb2.GetContractTeamActionSignersRequest.FromString,
                     response_serializer=platform__pb2.GetContractTeamActionSignersResponse.SerializeToString,
+            ),
+            'getContractModerationActionCounts': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractModerationActionCounts,
+                    request_deserializer=platform__pb2.GetContractModerationActionCountsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractModerationActionCountsResponse.SerializeToString,
             ),
             'getContractFeePots': grpc.unary_unary_rpc_method_handler(
                     servicer.getContractFeePots,
@@ -1613,6 +1629,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractTeamActionSigners',
             platform__pb2.GetContractTeamActionSignersRequest.SerializeToString,
             platform__pb2.GetContractTeamActionSignersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractModerationActionCounts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractModerationActionCounts',
+            platform__pb2.GetContractModerationActionCountsRequest.SerializeToString,
+            platform__pb2.GetContractModerationActionCountsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

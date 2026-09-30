@@ -430,6 +430,7 @@ fn should_record_read_and_prove_team_actions_as_they_close() {
         vec![ContractTeamActionEntry {
             action_id: first,
             action: first_proposal.clone(),
+            approval_count: 2,
         }],
     );
     assert_signers(
@@ -488,11 +489,13 @@ fn should_record_read_and_prove_team_actions_as_they_close() {
         vec![
             ContractTeamActionEntry {
                 action_id: first,
-                action: first_proposal,
+                action: first_proposal.clone(),
+                approval_count: 3,
             },
             ContractTeamActionEntry {
                 action_id: second,
                 action: second_proposal.clone(),
+                approval_count: 1,
             },
         ],
     );
@@ -528,6 +531,22 @@ fn should_record_read_and_prove_team_actions_as_they_close() {
         vec![ContractTeamActionEntry {
             action_id: second,
             action: second_proposal,
+            approval_count: 1,
+        }],
+    );
+    // A page of one action holds that action whole: its info and its approvals
+    assert_team_actions(
+        &drive,
+        contract_id,
+        &ContractTeamActionsQuery {
+            status: GroupActionStatus::ActionClosed,
+            start_at: None,
+            limit: 1,
+        },
+        vec![ContractTeamActionEntry {
+            action_id: first,
+            action: first_proposal,
+            approval_count: 3,
         }],
     );
 }

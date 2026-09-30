@@ -1,10 +1,12 @@
 //! Contract moderation queries: one identity's status on a moderated contract, one page of a
 //! contract's banlist, suspension list or warning list, the records of the documents its
-//! moderators deleted, the actions its seated team votes on, and the fee pots a contract's
-//! document action fees collect in.
+//! moderators deleted, the actions its seated team votes on, how many moderation actions each
+//! member of that team signed since the last payout, and the fee pots a contract's document
+//! action fees collect in.
 
 mod contract_document_removals;
 mod contract_fee_pots;
+mod contract_moderation_action_counts;
 mod contract_moderation_entries;
 mod contract_moderation_status;
 mod contract_team_action_signers;
@@ -36,6 +38,8 @@ use dpp::version::PlatformVersion;
 use drive::drive::contract::moderation::types::{
     ContractDocumentRemovalEntry, ContractTeamActionEntry,
 };
+use drive::drive::contract::DataContractFetchInfo;
+use std::sync::Arc;
 
 /// Parses a 32 byte identifier out of a request field, naming the field in the error.
 pub(super) fn identifier_from_request(
@@ -139,6 +143,7 @@ pub(super) fn team_action_to_response(entry: ContractTeamActionEntry) -> Contrac
                 reason: Some(reason_to_response(reason)),
             },
         )),
+        approval_count: entry.approval_count,
     }
 }
 
@@ -154,6 +159,20 @@ pub(super) fn warnings_to_response(warnings: Vec<ContractWarning>) -> Vec<Contra
 }
 
 impl<C> Platform<C> {
+    /// The contract a moderation query names, or `NotFound` when there is none: the one read
+    /// every moderation query's check makes before refusing a contract without the tree it
+    /// reads.
+    fn fetch_queried_contract(
+        &self,
+        contract_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Result<Arc<DataContractFetchInfo>, QueryError>, Error> {
+        Ok(self
+            .drive
+            .get_contract_with_fetch_info(contract_id.to_buffer(), false, None, platform_version)?
+            .ok_or_else(|| QueryError::NotFound(format!("contract {} not found", contract_id))))
+    }
+
     /// The moderation lists the contract keeps, or a query error when the contract does not
     /// exist or keeps no list. A list the contract does not keep has no tree, so a query over
     /// it is refused here rather than failing in GroveDB.
@@ -162,18 +181,11 @@ impl<C> Platform<C> {
         contract_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Result<Vec<ContractModerationList>, QueryError>, Error> {
-        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
-            contract_id.to_buffer(),
-            false,
-            None,
-            platform_version,
-        )?
-        else {
-            return Ok(Err(QueryError::NotFound(format!(
-                "contract {} not found",
-                contract_id
-            ))));
-        };
+        let contract_fetch_info =
+            match self.fetch_queried_contract(contract_id, platform_version)? {
+                Ok(contract_fetch_info) => contract_fetch_info,
+                Err(error) => return Ok(Err(error)),
+            };
         let Some(moderation) = contract_fetch_info.contract.config().moderation() else {
             return Ok(Err(QueryError::InvalidArgument(format!(
                 "contract {} is not moderated",
@@ -181,6 +193,50 @@ impl<C> Platform<C> {
             ))));
         };
         Ok(Ok(moderation.lists().collect()))
+    }
+}
+
+impl<C> Platform<C> {
+    /// Nothing, or a query error when the contract does not exist or keeps no moderation action
+    /// counts: only an elected contract, whose seated team shares the moderators pot by them,
+    /// has a counts tree, and a proof over a tree that does not exist could not be built.
+    pub(super) fn check_keeps_moderation_action_counts(
+        &self,
+        contract_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Result<(), QueryError>, Error> {
+        let contract_fetch_info =
+            match self.fetch_queried_contract(contract_id, platform_version)? {
+                Ok(contract_fetch_info) => contract_fetch_info,
+                Err(error) => return Ok(Err(error)),
+            };
+        let elected = contract_fetch_info
+            .contract
+            .config()
+            .moderation()
+            .is_some_and(|moderation| moderation.moderators.elected().is_some());
+        if !elected {
+            return Ok(Err(QueryError::InvalidArgument(format!(
+                "contract {} keeps no moderation action counts: its moderators are not an \
+                 elected team",
+                contract_id
+            ))));
+        }
+        // An elected contract stored before protocol version 14 counted actions (a development
+        // network's) has no counts tree: no proof of it could be built, so it is refused with
+        // or without one, rather than answered empty unproved and failing proved.
+        if !self.drive.contract_keeps_moderation_action_counts(
+            contract_id,
+            None,
+            platform_version,
+        )? {
+            return Ok(Err(QueryError::InvalidArgument(format!(
+                "contract {} keeps no moderation action counts: it was stored before its \
+                 team's actions were counted",
+                contract_id
+            ))));
+        }
+        Ok(Ok(()))
     }
 }
 
@@ -193,18 +249,11 @@ impl<C> Platform<C> {
         contract_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Result<(), QueryError>, Error> {
-        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
-            contract_id.to_buffer(),
-            false,
-            None,
-            platform_version,
-        )?
-        else {
-            return Ok(Err(QueryError::NotFound(format!(
-                "contract {} not found",
-                contract_id
-            ))));
-        };
+        let contract_fetch_info =
+            match self.fetch_queried_contract(contract_id, platform_version)? {
+                Ok(contract_fetch_info) => contract_fetch_info,
+                Err(error) => return Ok(Err(error)),
+            };
         if !contract_fetch_info.contract.keeps_team_actions() {
             return Ok(Err(QueryError::InvalidArgument(format!(
                 "contract {} keeps no team actions: none of its document types lets a seated \

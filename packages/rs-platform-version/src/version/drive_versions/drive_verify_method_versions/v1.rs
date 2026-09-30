@@ -91,6 +91,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_contract_team_actions: 0,
         verify_contract_team_action_signers: 0,
         verify_contract_team_action_signature: 0,
+        verify_contract_moderation_action_counts: 0,
     },
     token: DriveVerifyTokenMethodVersions {
         verify_token_balances_for_identity_ids: 0,

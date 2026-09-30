@@ -508,6 +508,7 @@ describe('ContractsFacade', () => {
         documentRevision: BigInt(2),
         reason: settledReason,
       },
+      approvalCount: 2,
     };
 
     it('should forward moderatorDeleteSettledDocument() to contractDeleteSettledDocument() and return the team action it opened', async function run() {
@@ -592,6 +593,26 @@ describe('ContractsFacade', () => {
       const result = await client.contracts.teamActionSignersWithProof(query);
 
       expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result).to.equal(response);
+    });
+
+    it('should forward moderationActionCounts() to getContractModerationActionCounts()', async function run() {
+      const counts = { counts: [{ identityId, count: 3 }] };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationActionCounts').resolves(counts);
+
+      const result = await client.contracts.moderationActionCounts(contractId);
+
+      expect(stub).to.be.calledOnceWithExactly(contractId);
+      expect(result.counts).to.deep.equal([{ identityId, count: 3 }]);
+    });
+
+    it('should fetch the moderation action counts with proof', async function run() {
+      const response = { data: { counts: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationActionCountsWithProofInfo').resolves(response);
+
+      const result = await client.contracts.moderationActionCountsWithProof(contractId);
+
+      expect(stub).to.be.calledOnceWithExactly(contractId);
       expect(result).to.equal(response);
     });
   });

@@ -24,18 +24,17 @@ impl Drive {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
-        let entries = proved_key_values
-            .into_iter()
-            .filter_map(|(path, _key, element)| element.map(|element| (path, element)))
-            .map(|(path, element)| {
-                ContractTeamActionEntry::from_path_element(&path, &element).map_err(|description| {
-                    Error::Proof(ProofError::CorruptedProof(format!(
-                        "contract team actions proof is malformed: {}",
-                        description
-                    )))
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
+        let entries = ContractTeamActionEntry::from_path_key_elements(
+            proved_key_values
+                .into_iter()
+                .filter_map(|(path, key, element)| element.map(|element| (path, key, element))),
+        )
+        .map_err(|description| {
+            Error::Proof(ProofError::CorruptedProof(format!(
+                "contract team actions proof is malformed: {}",
+                description
+            )))
+        })?;
 
         Ok((root_hash, entries))
     }

@@ -44,6 +44,8 @@
 @class GetContractGroupMembersResponse;
 @class GetContractGroupsForContractRequest;
 @class GetContractGroupsForContractResponse;
+@class GetContractModerationActionCountsRequest;
+@class GetContractModerationActionCountsResponse;
 @class GetContractModerationEntriesRequest;
 @class GetContractModerationEntriesResponse;
 @class GetContractModerationStatusRequest;
@@ -288,6 +290,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse)
 
 - (GRPCUnaryProtoCall *)getContractTeamActionSignersWithMessage:(GetContractTeamActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse)
+
+- (GRPCUnaryProtoCall *)getContractModerationActionCountsWithMessage:(GetContractModerationActionCountsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
 
@@ -686,6 +692,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse)
+
+- (void)getContractModerationActionCountsWithRequest:(GetContractModerationActionCountsRequest *)request handler:(void(^)(GetContractModerationActionCountsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractModerationActionCountsWithRequest:(GetContractModerationActionCountsRequest *)request handler:(void(^)(GetContractModerationActionCountsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)

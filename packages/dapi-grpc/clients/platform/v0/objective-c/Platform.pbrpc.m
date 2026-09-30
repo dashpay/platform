@@ -583,6 +583,26 @@
              responseClass:[GetContractTeamActionSignersResponse class]];
 }
 
+#pragma mark getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse)
+
+- (void)getContractModerationActionCountsWithRequest:(GetContractModerationActionCountsRequest *)request handler:(void(^)(GetContractModerationActionCountsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractModerationActionCountsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractModerationActionCountsWithRequest:(GetContractModerationActionCountsRequest *)request handler:(void(^)(GetContractModerationActionCountsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractModerationActionCounts"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractModerationActionCountsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractModerationActionCountsWithMessage:(GetContractModerationActionCountsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractModerationActionCounts"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractModerationActionCountsResponse class]];
+}
+
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
 
 - (void)getContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler{
