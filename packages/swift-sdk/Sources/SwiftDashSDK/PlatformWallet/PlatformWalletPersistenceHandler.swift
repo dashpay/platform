@@ -419,6 +419,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 error: error
             )
             backgroundContext.rollback()
+            // Rows staged by the failed save are gone; never reconcile them.
+            accountingDirty.removeAll()
         }
     }
 
@@ -3300,6 +3302,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             self.inChangeset = true
             self.roundUtxoCreditVerdicts = [:]
             self.roundUtxoCreditTally = UtxoCreditVerdictTally()
+            // Out-of-round writers (heal paths, deferred backfills) stage
+            // entries too; they are not this round's to reconcile and may
+            // point at rows a failed save rolled back. Load-time accounting
+            // repairs whatever they touched.
+            self.accountingDirty.removeAll()
             SDKLogger.event(
                 "persistence_changeset_started",
                 category: .persistence,

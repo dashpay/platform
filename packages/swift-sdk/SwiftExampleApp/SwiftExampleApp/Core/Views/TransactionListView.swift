@@ -29,10 +29,9 @@ struct TransactionListView: View {
     @Query private var walletAccounts: [PersistentAccount]
     @Query private var transactionObservation: [PersistentTransaction]
     /// Per-wallet asset-lock rows. Used to look up the *locked* amount
-    /// for each asset-lock tx — `PersistentTransaction.netAmount` is
-    /// the wallet's input-vs-output diff, which sees the credit
-    /// output as "to-self" and reports ~0 for asset locks. The
-    /// `amountDuffs` on the asset-lock row is the actual L1 burn.
+    /// for each asset-lock tx: `amountDuffs` on the asset-lock row is the
+    /// payload funding amount, while `PersistentTransaction.netAmount` is
+    /// the Core debit, which includes the fee.
     @Query private var assetLocks: [PersistentAssetLock]
     /// This wallet's owning identities. The DashPay payment / contact
     /// join below must be scoped to these — two identities in one store
@@ -214,31 +213,6 @@ struct TransactionListView: View {
             .buttonStyle(.plain)
         }
         .listStyle(.insetGrouped)
-    }
-}
-
-// MARK: - Direction Style
-
-/// Direction icon and colour shared by the transaction list and detail views.
-enum TransactionDirectionStyle {
-    static func icon(for direction: UInt32) -> String {
-        switch direction {
-        case CoreDirectionCode.incoming: return "arrow.down.circle.fill"
-        case CoreDirectionCode.outgoing: return "arrow.up.circle.fill"
-        case CoreDirectionCode.internalTransfer: return "arrow.triangle.2.circlepath"
-        case CoreDirectionCode.coinJoin: return "shuffle.circle.fill"
-        default: return "questionmark.circle"
-        }
-    }
-
-    /// Internal transfers share the outgoing colour: they still pay a fee.
-    static func color(for direction: UInt32) -> Color {
-        switch direction {
-        case CoreDirectionCode.incoming: return .green
-        case CoreDirectionCode.outgoing, CoreDirectionCode.internalTransfer: return .red
-        case CoreDirectionCode.coinJoin: return .blue
-        default: return .secondary
-        }
     }
 }
 
@@ -439,7 +413,7 @@ struct TransactionRowView: View {
                 let dash = Double(duffs) / 100_000_000.0
                 return String(format: "-%.8f DASH", dash)
             }
-            return "Asset Lock (amount unknown)"
+            return "Asset Lock (amount unavailable)"
         }
         // A payload-only provider special tx moves no wallet balance;
         // `+0.00000000 DASH` reads as a broken zero-value receive, so

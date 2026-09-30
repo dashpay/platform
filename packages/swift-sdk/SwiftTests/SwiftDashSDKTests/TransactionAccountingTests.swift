@@ -45,15 +45,19 @@ final class TransactionAccountingTests: XCTestCase {
     func testShouldClassifyDirectionLikeTheRustRepair() {
         let spent = input(100)
         // (spends ours, owned output amounts, all outputs owned, asset lock, previous direction, expected)
+        let (incoming, outgoing, internalTransfer, coinJoin) = (
+            CoreDirectionCode.incoming, CoreDirectionCode.outgoing,
+            CoreDirectionCode.internalTransfer, CoreDirectionCode.coinJoin
+        )
         let cases: [(Bool, [UInt64], Bool, Bool, UInt32, UInt32)] = [
-            (true, [99], true, false, 0, 2),
-            (true, [40], false, false, 0, 1),
-            (true, [], true, false, 0, 1),
-            (true, [], true, true, 0, 2),
-            (true, [40], true, true, 0, 2),
-            (true, [], false, true, 0, 1),
-            (false, [40], true, false, 0, 0),
-            (true, [99], true, false, 3, 3),
+            (true, [99], true, false, incoming, internalTransfer),
+            (true, [40], false, false, incoming, outgoing),
+            (true, [], true, false, incoming, outgoing),
+            (true, [], true, true, incoming, internalTransfer),
+            (true, [40], true, true, incoming, internalTransfer),
+            (true, [], false, true, incoming, outgoing),
+            (false, [40], true, false, incoming, incoming),
+            (true, [99], true, false, coinJoin, coinJoin),
         ]
         for (index, (spendsOurs, owned, allOwned, isLock, previous, expected)) in cases.enumerated() {
             let result = PersistentTransaction.reconciledAccounting(

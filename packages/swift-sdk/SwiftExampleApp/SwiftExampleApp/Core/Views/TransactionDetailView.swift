@@ -20,7 +20,7 @@ struct TransactionDetailView: View {
                 let dash = Double(duffs) / 100_000_000.0
                 return String(format: "-%.8f DASH", dash)
             }
-            return "Asset Lock (amount unknown)"
+            return "Asset Lock (amount unavailable)"
         }
         if transaction.isProviderSpecial && netAmount == 0 {
             return nil
