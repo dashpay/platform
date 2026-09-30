@@ -604,6 +604,84 @@ mod tests {
         );
     }
 
+    /// The inner index and the expected classification of every generation of the create
+    /// transition, from a match with no wildcard: a generation added to the enum does not
+    /// compile until it is given both here and a fixture in
+    /// `should_classify_every_contract_transition_generation`, which is where the code-bearing
+    /// index gets revisited.
+    fn create_generation(
+        transition: &DataContractCreateTransition,
+    ) -> (u32, StateTransitionEnvelopeKind) {
+        match transition {
+            DataContractCreateTransition::V0(_) => (0, StateTransitionEnvelopeKind::Ordinary),
+            DataContractCreateTransition::V1(_) => (1, StateTransitionEnvelopeKind::Ordinary),
+        }
+    }
+
+    /// [`create_generation`] for the update transition.
+    fn update_generation(
+        transition: &DataContractUpdateTransition,
+    ) -> (u32, StateTransitionEnvelopeKind) {
+        match transition {
+            DataContractUpdateTransition::V0(_) => (0, StateTransitionEnvelopeKind::Ordinary),
+        }
+    }
+
+    /// Every generation of both contract transition enums serializes to the inner index and
+    /// classifies as [`create_generation`] and [`update_generation`] say, and the fixtures
+    /// cover every index below the code-bearing one, so an ordinary generation added below it
+    /// or in its place cannot slip through with the enlarged cap.
+    #[test]
+    fn should_classify_every_contract_transition_generation() {
+        let empty = || contract_with_document_schemas(BTreeMap::new());
+        let mut create_indices = Vec::new();
+        for fixture in [create_v0(empty()), create_v1_with_contract_groups(empty())] {
+            let StateTransition::DataContractCreate(transition) = &fixture else {
+                panic!("a create fixture");
+            };
+            let (index, kind) = create_generation(transition);
+            let bytes = fixture.serialize_to_bytes().expect("serialize create");
+            assert_eq!(
+                bytes[..2],
+                [DATA_CONTRACT_CREATE_VARIANT_INDEX as u8, index as u8]
+            );
+            assert_eq!(
+                StateTransition::peek_envelope_kind(&bytes),
+                kind,
+                "create V{index}"
+            );
+            create_indices.push(index);
+        }
+        assert_eq!(
+            create_indices,
+            (0..CONTRACT_CODE_CAPABLE_CREATE_GENERATION_INDEX).collect::<Vec<_>>()
+        );
+
+        let mut update_indices = Vec::new();
+        let update_fixtures = vec![update_v0(empty())];
+        for fixture in update_fixtures {
+            let StateTransition::DataContractUpdate(transition) = &fixture else {
+                panic!("an update fixture");
+            };
+            let (index, kind) = update_generation(transition);
+            let bytes = fixture.serialize_to_bytes().expect("serialize update");
+            assert_eq!(
+                bytes[..2],
+                [DATA_CONTRACT_UPDATE_VARIANT_INDEX as u8, index as u8]
+            );
+            assert_eq!(
+                StateTransition::peek_envelope_kind(&bytes),
+                kind,
+                "update V{index}"
+            );
+            update_indices.push(index);
+        }
+        assert_eq!(
+            update_indices,
+            (0..CONTRACT_CODE_CAPABLE_UPDATE_GENERATION_INDEX).collect::<Vec<_>>()
+        );
+    }
+
     /// The contract-group generation of the create transition (`V1`, protocol version 14) is
     /// an existing ordinary generation: it carries no code and keeps the ordinary cap and the
     /// historical decode budget on every protocol version, including the ones that bound the
