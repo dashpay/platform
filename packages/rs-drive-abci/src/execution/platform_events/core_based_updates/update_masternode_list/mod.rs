@@ -78,19 +78,29 @@ mod test {
     };
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::validator::v0::{NewValidatorIfMasternodeInState, ValidatorV0};
+    use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
+    use crate::platform_types::validator_set::ValidatorSet;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::core_types::validator_set::v0::ValidatorSetV0;
     use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::ProTxHash;
-    use dpp::dashcore_rpc::json::MasternodeListDiff;
+    use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
+    use dpp::dashcore_rpc::json::{
+        DMNStateDiff, MasternodeListDiff, MasternodeListItem, MasternodeType,
+    };
     use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{KeyID, Purpose};
     use dpp::prelude::Identifier;
-    use std::collections::BTreeMap;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use serde_json::{json, Value};
+    use std::collections::{BTreeMap, BTreeSet};
     use std::env;
     use std::fs::File;
     use std::io::BufReader;
+    use std::net::SocketAddr;
     use std::path::PathBuf;
     use std::str::FromStr;
 
@@ -211,6 +221,319 @@ mod test {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit");
+    }
+
+    /// A `protx listdiff` response from the mainnet fixtures. With
+    /// `core_23_addresses`, every masternode and diff also lists the
+    /// `addresses` Core 23 prints beside the legacy fields. `evonodes`
+    /// collects the ProTx hashes of the evonodes listed so far.
+    fn mainnet_list_diff(
+        file_name: &str,
+        core_23_addresses: bool,
+        evonodes: &mut BTreeSet<String>,
+    ) -> MasternodeListDiff {
+        let json = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/supporting_files/mainnet_protx_list_diffs")
+                .join(file_name),
+        )
+        .expect("expected to read the masternode list diff");
+        let mut list_diff: Value = serde_json::from_str(&json).expect("expected JSON");
+        for masternode in list_diff["addedMNs"]
+            .as_array_mut()
+            .expect("expected added masternodes")
+        {
+            let is_evonode = masternode["type"] == "Evo";
+            if is_evonode {
+                let pro_tx_hash = masternode["proTxHash"].as_str().expect("a ProTx hash");
+                evonodes.insert(pro_tx_hash.to_string());
+            }
+            if core_23_addresses {
+                let addresses = core_23_state_addresses(&masternode["state"], is_evonode);
+                masternode["state"]["addresses"] = addresses;
+            }
+        }
+        if core_23_addresses {
+            for update in list_diff["updatedMNs"]
+                .as_array_mut()
+                .expect("expected updated masternodes")
+            {
+                for (pro_tx_hash, state_diff) in update.as_object_mut().expect("a diff") {
+                    let is_evonode = evonodes.contains(pro_tx_hash);
+                    if let Some(addresses) = core_23_diff_addresses(state_diff, is_evonode) {
+                        state_diff["addresses"] = addresses;
+                    }
+                }
+            }
+        }
+        serde_json::from_value(list_diff).expect("expected a masternode list diff")
+    }
+
+    /// A listed `service`, `None` for a masternode without an address, which
+    /// Core lists as the unspecified address with port 0.
+    fn listed_service(service: &Value) -> Option<SocketAddr> {
+        let service: SocketAddr = service
+            .as_str()
+            .expect("a service")
+            .parse()
+            .expect("an ip:port service");
+        (!(service.ip().is_unspecified() && service.port() == 0)).then_some(service)
+    }
+
+    /// `port` on the IP of `service`, as Core prints a network address.
+    fn on_service_ip(service: SocketAddr, port: u16) -> String {
+        SocketAddr::new(service.ip(), port).to_string()
+    }
+
+    fn listed_port(port: &Value) -> u16 {
+        port.as_u64()
+            .and_then(|port| u16::try_from(port).ok())
+            .expect("a port")
+    }
+
+    /// The `addresses` Core 23 lists for a masternode that predates extended
+    /// addresses (`GetNetInfoWithLegacyFields`): its core entry is `service`,
+    /// and an evonode's platform entries pair the IP of `service` with the
+    /// legacy ports. A masternode without an address lists no entry.
+    fn core_23_state_addresses(state: &Value, is_evonode: bool) -> Value {
+        let Some(service) = listed_service(&state["service"]) else {
+            return json!({});
+        };
+        let mut addresses = json!({ "core_p2p": [service.to_string()] });
+        if is_evonode {
+            let http_port = listed_port(&state["platformHTTPPort"]);
+            let p2p_port = listed_port(&state["platformP2PPort"]);
+            addresses["platform_https"] = json!([on_service_ip(service, http_port)]);
+            addresses["platform_p2p"] = json!([on_service_ip(service, p2p_port)]);
+        }
+        addresses
+    }
+
+    /// The `addresses` Core 23 lists in the diff of a masternode that
+    /// predates extended addresses (`CDeterministicMNStateDiff::ToJson`): with
+    /// a changed `service`, its core entry; for an evonode, each changed
+    /// platform port, on the IP of the changed `service`, else on the
+    /// placeholder host 255.255.255.255. `None` when that lists nothing.
+    fn core_23_diff_addresses(state_diff: &Value, is_evonode: bool) -> Option<Value> {
+        let service: Option<SocketAddr> = state_diff.get("service").map(|service| {
+            service
+                .as_str()
+                .expect("a service")
+                .parse()
+                .expect("an ip:port service")
+        });
+        let mut addresses = serde_json::Map::new();
+        if let Some(service) = state_diff.get("service").and_then(listed_service) {
+            addresses.insert("core_p2p".to_string(), json!([service.to_string()]));
+        }
+        if is_evonode {
+            for (port_field, purpose) in [
+                ("platformP2PPort", "platform_p2p"),
+                ("platformHTTPPort", "platform_https"),
+            ] {
+                if let Some(port) = state_diff.get(port_field).map(listed_port) {
+                    let entry = match service {
+                        Some(service) => on_service_ip(service, port),
+                        None => format!("255.255.255.255:{port}"),
+                    };
+                    addresses.insert(purpose.to_string(), json!([entry]));
+                }
+            }
+        }
+        (!addresses.is_empty()).then_some(Value::Object(addresses))
+    }
+
+    /// The validator every binary before nested addresses builds for a listed
+    /// evonode: its ports are the legacy port fields as listed, and it is a
+    /// validator only with both of them and a platform node id.
+    fn validator_from_legacy_ports(evonode: &MasternodeListItem) -> Option<ValidatorV0> {
+        let state = &evonode.state;
+        #[allow(deprecated)]
+        let (p2p_port, http_port) = (
+            state.legacy_platform_p2p_port?,
+            state.legacy_platform_http_port?,
+        );
+        Some(ValidatorV0 {
+            pro_tx_hash: evonode.pro_tx_hash,
+            public_key: None,
+            node_ip: state.service.ip().to_string(),
+            node_id: PubkeyHash::from_byte_array(state.platform_node_id?),
+            core_port: state.service.port(),
+            platform_http_port: http_port as u16,
+            platform_p2p_port: p2p_port as u16,
+            is_banned: state.pose_ban_height.is_some(),
+        })
+    }
+
+    /// How every binary before nested addresses refreshes a validator-set
+    /// member from its evonode's diff: on a ban, `service` or legacy P2P port
+    /// change, it takes the ban, the IP and the legacy ports the diff lists.
+    fn refresh_from_legacy_ports(member: &mut ValidatorV0, state_diff: &DMNStateDiff) {
+        #[allow(deprecated)]
+        let (p2p_port, http_port) = (
+            state_diff.legacy_platform_p2p_port,
+            state_diff.legacy_platform_http_port,
+        );
+        if state_diff.pose_ban_height.is_none()
+            && state_diff.service.is_none()
+            && p2p_port.is_none()
+        {
+            return;
+        }
+        if let Some(pose_ban_height) = state_diff.pose_ban_height {
+            member.is_banned = pose_ban_height.is_some();
+        }
+        if let Some(service) = state_diff.service {
+            member.node_ip = service.ip().to_string();
+        }
+        if let Some(p2p_port) = p2p_port {
+            member.platform_p2p_port = p2p_port as u16;
+        }
+        if let Some(http_port) = http_port {
+            member.platform_http_port = http_port as u16;
+        }
+    }
+
+    /// Asserts that `state` lists exactly the `listed` evonodes and gives each
+    /// the validator binaries before nested addresses build for it.
+    fn assert_validators_from_legacy_ports(
+        state: &PlatformState,
+        listed: &BTreeMap<ProTxHash, MasternodeListItem>,
+        context: &str,
+    ) {
+        assert!(
+            state.hpmn_masternode_list().keys().eq(listed.keys()),
+            "{context}: the same evonodes are listed"
+        );
+        for (pro_tx_hash, evonode) in listed {
+            assert_eq!(
+                ValidatorV0::new_validator_if_masternode_in_state(*pro_tx_hash, None, state),
+                validator_from_legacy_ports(evonode),
+                "{context}: evonode {pro_tx_hash}"
+            );
+        }
+    }
+
+    /// Validator-set membership decides quorum rotation, and every binary
+    /// before nested addresses built it from the legacy port fields alone.
+    /// For every mainnet evonode, as the fixtures list it and with the
+    /// `addresses` Core 23 lists beside the legacy fields, the validator a new
+    /// quorum gets and the member an existing set refreshes from a diff must
+    /// be exactly what those binaries build.
+    #[test]
+    fn should_build_the_validators_earlier_binaries_built_from_mainnet_masternode_lists() {
+        let platform_version = PlatformVersion::latest();
+        let init_core_height = 2128896;
+        let next_core_height = 2129440;
+        let quorum_hash = QuorumHash::from_byte_array([0x55; 32]);
+
+        for core_23_addresses in [false, true] {
+            let context = if core_23_addresses {
+                "with Core 23 addresses"
+            } else {
+                "as listed"
+            };
+            let mut evonodes = BTreeSet::new();
+            let init_list = mainnet_list_diff("1-2128896.json", core_23_addresses, &mut evonodes);
+            let list_diff =
+                mainnet_list_diff("2128896-2129440.json", core_23_addresses, &mut evonodes);
+            assert!(
+                list_diff
+                    .updated_mns
+                    .iter()
+                    .any(|(pro_tx_hash, state_diff)| {
+                        evonodes.contains(&pro_tx_hash.to_string()) && state_diff.service.is_some()
+                    }),
+                "the diff moves an evonode"
+            );
+
+            let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+            let responses = [init_list.clone(), list_diff.clone()];
+            platform
+                .core_rpc
+                .expect_get_protx_diff_with_masternodes()
+                .returning(move |_base_block, block| {
+                    Ok(responses[usize::from(block != init_core_height)].clone())
+                });
+            let mut state = PlatformState::default_with_protocol_versions(
+                platform_version.protocol_version,
+                platform_version.protocol_version,
+                &PlatformConfig::default_for_network(Network::Mainnet),
+            )
+            .expect("platform state");
+
+            // The evonodes as every earlier binary holds them.
+            let is_evonode =
+                |masternode: &&MasternodeListItem| masternode.node_type == MasternodeType::Evo;
+            let mut listed: BTreeMap<ProTxHash, MasternodeListItem> = init_list
+                .added_mns
+                .iter()
+                .filter(is_evonode)
+                .map(|evonode| (evonode.pro_tx_hash, evonode.clone()))
+                .collect();
+
+            platform
+                .update_state_masternode_list_v0(&mut state, init_core_height, true)
+                .expect("expected to apply the masternode list");
+            assert_validators_from_legacy_ports(&state, &listed, context);
+
+            let members: BTreeMap<ProTxHash, ValidatorV0> = listed
+                .iter()
+                .filter_map(|(pro_tx_hash, evonode)| {
+                    validator_from_legacy_ports(evonode).map(|member| (*pro_tx_hash, member))
+                })
+                .collect();
+            assert_eq!(
+                members.len(),
+                listed.len(),
+                "{context}: every evonode is a member"
+            );
+            state.insert_validator_set(
+                quorum_hash,
+                ValidatorSet::V0(ValidatorSetV0 {
+                    quorum_hash,
+                    quorum_index: None,
+                    core_height: init_core_height,
+                    members: members.clone(),
+                    threshold_public_key: SecretKey::<Bls12381G2Impl>::random(
+                        &mut StdRng::seed_from_u64(1),
+                    )
+                    .public_key(),
+                }),
+            );
+
+            platform
+                .update_state_masternode_list_v0(&mut state, next_core_height, false)
+                .expect("expected to apply the masternode list diff");
+
+            let mut refreshed_members = members.clone();
+            for evonode in list_diff.added_mns.iter().filter(is_evonode) {
+                listed.insert(evonode.pro_tx_hash, evonode.clone());
+            }
+            for (pro_tx_hash, state_diff) in &list_diff.updated_mns {
+                if let Some(evonode) = listed.get_mut(pro_tx_hash) {
+                    evonode.state.apply_diff(state_diff.clone());
+                }
+                if let Some(member) = refreshed_members.get_mut(pro_tx_hash) {
+                    refresh_from_legacy_ports(member, state_diff);
+                }
+            }
+            for pro_tx_hash in &list_diff.removed_mns {
+                listed.remove(pro_tx_hash);
+                refreshed_members.remove(pro_tx_hash);
+            }
+
+            assert_validators_from_legacy_ports(&state, &listed, context);
+            assert_ne!(
+                refreshed_members, members,
+                "{context}: the diff refreshes members"
+            );
+            assert_eq!(
+                state.validator_sets()[&quorum_hash].members(),
+                &refreshed_members,
+                "{context}: the refreshed members"
+            );
+        }
     }
 
     /// Dash Core v24 prints masternodes that differ from every earlier list: a shared
@@ -468,5 +791,223 @@ mod test {
                 hex::encode(pro_tx_hash)
             );
         }
+    }
+
+    /// The quorum of the validator set `state_after_core_v24_lists` adds.
+    const VALIDATOR_QUORUM_HASH: [u8; 32] = [0x55; 32];
+
+    /// Runs one masternode list update per `(core height, fixture)`, in order,
+    /// as Drive runs one per block, with Core reporting the fixture's
+    /// `protx listdiff` JSON from `core_v24_protx_list_diffs` for that height.
+    /// Before the last update, one validator set lists every evonode that is a
+    /// validator then. Returns the state after the last update.
+    fn state_after_core_v24_lists(fixtures: &[(u32, &str)]) -> PlatformState {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let lists: BTreeMap<u32, String> = fixtures
+            .iter()
+            .map(|(core_height, file_name)| {
+                let json = std::fs::read_to_string(
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("tests/supporting_files/core_v24_protx_list_diffs")
+                        .join(file_name),
+                )
+                .expect("expected to read the masternode list diff");
+                (*core_height, json)
+            })
+            .collect();
+        platform
+            .core_rpc
+            .expect_get_protx_diff_with_masternodes()
+            .returning(move |_base_block, block| Ok(serde_json::from_str(&lists[&block])?));
+
+        let transaction = platform.drive.grove.start_transaction();
+        let mut platform_state: Option<PlatformState> = None;
+        let mut block_platform_state = platform.state.load().as_ref().clone();
+        for (index, (core_height, _)) in fixtures.iter().enumerate() {
+            let block = index as u64 + 1;
+            if block == fixtures.len() as u64 {
+                let members = block_platform_state
+                    .hpmn_masternode_list()
+                    .keys()
+                    .filter_map(|pro_tx_hash| {
+                        ValidatorV0::new_validator_if_masternode_in_state(
+                            *pro_tx_hash,
+                            None,
+                            &block_platform_state,
+                        )
+                        .map(|member| (*pro_tx_hash, member))
+                    })
+                    .collect();
+                let quorum_hash = QuorumHash::from_byte_array(VALIDATOR_QUORUM_HASH);
+                block_platform_state.insert_validator_set(
+                    quorum_hash,
+                    ValidatorSet::V0(ValidatorSetV0 {
+                        quorum_hash,
+                        quorum_index: None,
+                        core_height: *core_height,
+                        members,
+                        threshold_public_key: SecretKey::<Bls12381G2Impl>::random(
+                            &mut StdRng::seed_from_u64(1),
+                        )
+                        .public_key(),
+                    }),
+                );
+            }
+            platform
+                .update_masternode_list(
+                    platform_state.as_ref(),
+                    &mut block_platform_state,
+                    *core_height,
+                    index == 0,
+                    &BlockInfo {
+                        height: block,
+                        core_height: *core_height,
+                        time_ms: block,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process the Core v24 masternode list");
+            platform_state = Some(block_platform_state.clone());
+        }
+        block_platform_state
+    }
+
+    /// The validator of `pro_tx_hash` in the validator set
+    /// `state_after_core_v24_lists` adds, and the one a new quorum gets.
+    fn existing_and_new_validator(
+        state: &PlatformState,
+        pro_tx_hash: &str,
+    ) -> (Option<ValidatorV0>, Option<ValidatorV0>) {
+        let pro_tx_hash = ProTxHash::from_str(pro_tx_hash).expect("expected a pro tx hash");
+        let validator_set =
+            &state.validator_sets()[&QuorumHash::from_byte_array(VALIDATOR_QUORUM_HASH)];
+        (
+            validator_set.members().get(&pro_tx_hash).cloned(),
+            ValidatorV0::new_validator_if_masternode_in_state(pro_tx_hash, None, state),
+        )
+    }
+
+    /// An ExtAddr evonode keeps its platform ports in its network info, so a
+    /// ProUpServTx that only moves them reaches Drive as a diff with `service`
+    /// and the whole `addresses`, and no legacy port field. Tenderdash must be
+    /// told the new ports, by the existing validator set and by one built
+    /// later, or it keeps dialling the old ones.
+    #[test]
+    fn should_move_the_validator_of_an_ext_addr_evonode_on_a_core_v24_port_only_diff() {
+        let state = state_after_core_v24_lists(&[
+            (1250, "1-1250.json"),
+            (1260, "1250-1260.json"),
+            (1270, "1260-1270.json"),
+        ]);
+
+        let expected = ValidatorV0 {
+            pro_tx_hash: ProTxHash::from_str(
+                "ca3d32c4f2ef62eaf736bf41bb3235a832ec1eb6d8dfaccd4d3555e70f6757b0",
+            )
+            .expect("expected a pro tx hash"),
+            public_key: None,
+            node_ip: "192.0.2.40".to_string(),
+            node_id: PubkeyHash::from_byte_array(
+                hex::decode("9e391c2c041a122a779bafe09d6c47ea600dfcbe")
+                    .expect("expected hex")
+                    .try_into()
+                    .expect("expected 20 bytes"),
+            ),
+            core_port: 9999,
+            platform_http_port: 8443,
+            platform_p2p_port: 36657,
+            is_banned: false,
+        };
+        assert_eq!(
+            existing_and_new_validator(
+                &state,
+                "ca3d32c4f2ef62eaf736bf41bb3235a832ec1eb6d8dfaccd4d3555e70f6757b0"
+            ),
+            (Some(expected.clone()), Some(expected))
+        );
+    }
+
+    /// Core lists an evonode whose primary core address is a Tor address with
+    /// that address as `service`, which reads as `[::]:0`. It becomes a
+    /// validator on the unspecified IP with the ports of its platform entries:
+    /// unreachable, but its list does not fail the block.
+    #[test]
+    fn should_make_an_evonode_with_a_tor_primary_address_a_validator_on_the_unspecified_ip() {
+        let state = state_after_core_v24_lists(&[
+            (1250, "1-1250.json"),
+            (1260, "1250-1260.json"),
+            (1270, "1260-1270.json"),
+        ]);
+
+        let (_, new_quorum_validator) = existing_and_new_validator(
+            &state,
+            "99e719c608d603658f296acd00f271345a29e391e2d717d3615062f9a961920c",
+        );
+        assert_eq!(
+            new_quorum_validator,
+            Some(ValidatorV0 {
+                pro_tx_hash: ProTxHash::from_str(
+                    "99e719c608d603658f296acd00f271345a29e391e2d717d3615062f9a961920c",
+                )
+                .expect("expected a pro tx hash"),
+                public_key: None,
+                node_ip: "::".to_string(),
+                node_id: PubkeyHash::from_byte_array(
+                    hex::decode("9cea9116b333eba7631804e1be7efd62c56d5b58")
+                        .expect("expected hex")
+                        .try_into()
+                        .expect("expected 20 bytes"),
+                ),
+                core_port: 0,
+                platform_http_port: 443,
+                platform_p2p_port: 26656,
+                is_banned: false,
+            })
+        );
+    }
+
+    /// Before V24, a ProUpServTx that only moves a legacy evonode's P2P port
+    /// reaches Drive as the legacy port field and a platform entry on the
+    /// placeholder host 255.255.255.255, since the diff carries no address.
+    /// The validator takes the new port and keeps the evonode's IP.
+    #[test]
+    fn should_move_the_validator_of_a_legacy_evonode_on_a_core_v24_port_diff() {
+        let state = state_after_core_v24_lists(&[
+            (1000, "before_v24/1-1000.json"),
+            (1010, "before_v24/1000-1010.json"),
+        ]);
+
+        let expected = ValidatorV0 {
+            pro_tx_hash: ProTxHash::from_str(
+                "86e4a4274da5610322340e2f34adf8f6f2899f78b2ce1c31281b6d1754a88d76",
+            )
+            .expect("expected a pro tx hash"),
+            public_key: None,
+            node_ip: "192.0.2.60".to_string(),
+            node_id: PubkeyHash::from_byte_array(
+                hex::decode("416e5b04d3047def070bea5175431ca7732b4b7b")
+                    .expect("expected hex")
+                    .try_into()
+                    .expect("expected 20 bytes"),
+            ),
+            core_port: 9999,
+            platform_http_port: 443,
+            platform_p2p_port: 36657,
+            is_banned: false,
+        };
+        assert_eq!(
+            existing_and_new_validator(
+                &state,
+                "86e4a4274da5610322340e2f34adf8f6f2899f78b2ce1c31281b6d1754a88d76"
+            ),
+            (Some(expected.clone()), Some(expected))
+        );
     }
 }

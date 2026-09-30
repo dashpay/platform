@@ -2,7 +2,7 @@
 pub mod accessors;
 
 use dpp::bincode::{Decode, Encode};
-use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
+use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, DMNStateDiff, MasternodeType};
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use std::fmt::{Debug, Formatter};
 
@@ -154,9 +154,34 @@ pub struct MasternodeStateV0 {
     pub platform_http_port: Option<u32>,
 }
 
+/// `state` in the form Drive keeps masternode states in, in memory as in
+/// storage: `MasternodeStateV0` has no `addresses`, so the platform ports
+/// resolved from them move into the legacy port fields and `addresses` is
+/// dropped. It has no payout list either, so `payouts` is dropped too.
+///
+/// A node that restarted loads its masternode states in this form. Keeping
+/// them in it in memory too means every node derives the same validators
+/// from the same Core diffs, however long it has run.
+pub(crate) fn in_stored_form(state: DMNState) -> DMNState {
+    MasternodeStateV0::from(state).into()
+}
+
+/// `state`, kept in stored form, with a Core state diff applied, in stored
+/// form again.
+pub(crate) fn apply_diff_in_stored_form(state: &DMNState, diff: &DMNStateDiff) -> DMNState {
+    let mut updated = state.clone();
+    updated.apply_diff(diff.clone());
+    in_stored_form(updated)
+}
+
 impl From<DMNState> for MasternodeStateV0 {
     fn from(value: DMNState) -> Self {
-        // The payout list and the nested addresses are not stored.
+        // The payout list and the nested addresses are not stored. The stored state keeps the
+        // platform ports resolved from the addresses instead: an ExtAddr evonode's legacy port
+        // fields stay zero and go stale when its ports move. Loaded back as legacy ports, they
+        // resolve to the same ports. Without a nested port the legacy field is stored as it is.
+        let resolved_platform_p2p_port = value.platform_p2p_address().map(|(_, port)| port);
+        let resolved_platform_http_port = value.platform_http_address().map(|(_, port)| port);
         #[allow(deprecated)]
         let DMNState {
             service,
@@ -188,8 +213,8 @@ impl From<DMNState> for MasternodeStateV0 {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            platform_p2p_port: resolved_platform_p2p_port.or(platform_p2p_port),
+            platform_http_port: resolved_platform_http_port.or(platform_http_port),
         }
     }
 }
@@ -235,9 +260,11 @@ impl From<MasternodeStateV0> for DMNState {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::platform_types::platform_state::platform_state_for_saving::v2::{
         deserialize_masternode_entry, serialize_masternode_entry,
     };
+    use crate::platform_types::validator::v0::PlatformPorts;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{ProTxHash, PubkeyHash, ScriptBuf, Txid};
     use dpp::dashcore_rpc::dashcore_rpc_json::{
@@ -357,5 +384,187 @@ mod tests {
         assert_eq!(reloaded.collateral_address, None);
         assert_eq!(reloaded.state.owner_address, None);
         assert_eq!(reloaded.state.payout_address, None);
+    }
+
+    /// An evonode registered at 1.2.3.4 with the given legacy platform ports
+    /// and nested addresses.
+    fn evonode_state(
+        legacy_platform_p2p_port: Option<u32>,
+        legacy_platform_http_port: Option<u32>,
+        addresses: Option<MasternodeAddresses>,
+    ) -> DMNState {
+        #[allow(deprecated)]
+        DMNState {
+            service: "1.2.3.4:9999".parse().expect("socket address"),
+            registered_height: 0,
+            pose_revived_height: None,
+            pose_ban_height: None,
+            revocation_reason: 0,
+            owner_address: Some([0u8; 20]),
+            voting_address: [0u8; 20],
+            payout_address: Some([0u8; 20]),
+            payouts: None,
+            pub_key_operator: vec![0u8; 48],
+            operator_payout_address: None,
+            platform_node_id: Some([7u8; 20]),
+            legacy_platform_p2p_port,
+            legacy_platform_http_port,
+            addresses,
+        }
+    }
+
+    fn platform_addresses(p2p: &str, https: &str) -> MasternodeAddresses {
+        MasternodeAddresses {
+            core_p2p: vec!["1.2.3.4:9999".to_string()],
+            platform_p2p: vec![p2p.to_string()],
+            platform_https: vec![https.to_string()],
+        }
+    }
+
+    /// The stored state keeps no `addresses`, so it must keep the ports they
+    /// carry: an ExtAddr evonode's legacy port fields stay zero, and after a
+    /// port move they are stale.
+    #[test]
+    fn should_store_the_platform_ports_from_addresses() {
+        let stored = MasternodeStateV0::from(evonode_state(
+            Some(36656),
+            Some(0),
+            Some(platform_addresses("1.2.3.4:36657", "1.2.3.4:8443")),
+        ));
+
+        assert_eq!(stored.platform_p2p_port, Some(36657));
+        assert_eq!(stored.platform_http_port, Some(8443));
+    }
+
+    /// A node that restarts must resolve the same platform ports as one that
+    /// kept its state in memory, or it advertises stale validator ports.
+    #[test]
+    fn should_resolve_the_same_platform_ports_after_a_store_and_load() {
+        let in_memory = evonode_state(
+            Some(36656),
+            Some(0),
+            Some(platform_addresses("1.2.3.4:36657", "1.2.3.4:8443")),
+        );
+
+        let loaded = DMNState::from(MasternodeStateV0::from(in_memory.clone()));
+
+        assert_eq!(PlatformPorts::of(&loaded), PlatformPorts::of(&in_memory));
+        assert_eq!(
+            in_stored_form(loaded.clone()),
+            loaded,
+            "a loaded state is already in stored form"
+        );
+    }
+
+    /// Without nested platform ports the legacy fields are stored as they are,
+    /// zero included, and so is a value no port can have: that is what every
+    /// earlier binary stores, and a state loaded back is then already in
+    /// stored form.
+    #[test]
+    fn should_store_legacy_ports_unchanged_without_nested_ports() {
+        for (p2p, http) in [
+            (Some(26656), Some(443)),
+            (Some(0), Some(0)),
+            (None, None),
+            (Some(70000), Some(70000)),
+        ] {
+            let stored = MasternodeStateV0::from(evonode_state(p2p, http, None));
+            assert_eq!(
+                (stored.platform_p2p_port, stored.platform_http_port),
+                (p2p, http)
+            );
+            let loaded = DMNState::from(stored);
+            assert_eq!(in_stored_form(loaded.clone()), loaded);
+
+            let core_entry_only = MasternodeAddresses {
+                core_p2p: vec!["1.2.3.4:9999".to_string()],
+                platform_p2p: vec![],
+                platform_https: vec![],
+            };
+            let stored = MasternodeStateV0::from(evonode_state(p2p, http, Some(core_entry_only)));
+            assert_eq!(
+                (stored.platform_p2p_port, stored.platform_http_port),
+                (p2p, http)
+            );
+        }
+    }
+
+    /// Masternode states are kept in memory in stored form so that a node
+    /// that restarted holds the same state as one that did not. That only
+    /// holds while the stored form is exactly what the store writes and
+    /// reads back.
+    #[test]
+    fn should_hold_in_stored_form_exactly_what_the_store_reads_back() {
+        let revoked = |addresses: Option<MasternodeAddresses>| DMNState {
+            service: "[::]:0".parse().expect("socket address"),
+            pose_ban_height: Some(200),
+            revocation_reason: 1,
+            platform_node_id: Some([0u8; 20]),
+            ..evonode_state(Some(26656), Some(443), addresses)
+        };
+        let placeholder_host = MasternodeAddresses {
+            core_p2p: vec![],
+            platform_p2p: vec!["255.255.255.255:36657".to_string()],
+            platform_https: vec![],
+        };
+        let on_ipv6 = DMNState {
+            service: "[2001:db8::1]:9999".parse().expect("socket address"),
+            ..evonode_state(
+                None,
+                None,
+                Some(platform_addresses(
+                    "[2001:db8::1]:36656",
+                    "[2001:db8::1]:443",
+                )),
+            )
+        };
+        let states = [
+            evonode_state(Some(26656), Some(443), None),
+            evonode_state(Some(0), Some(0), None),
+            evonode_state(None, None, None),
+            evonode_state(
+                Some(36656),
+                Some(443),
+                Some(platform_addresses("1.2.3.4:36656", "1.2.3.4:443")),
+            ),
+            evonode_state(
+                Some(0),
+                Some(0),
+                Some(platform_addresses("1.2.3.4:36657", "1.2.3.4:8443")),
+            ),
+            evonode_state(
+                None,
+                None,
+                Some(platform_addresses("1.2.3.4:36657", "1.2.3.4:8443")),
+            ),
+            evonode_state(Some(36657), Some(443), Some(placeholder_host)),
+            on_ipv6,
+            revoked(None),
+            revoked(Some(MasternodeAddresses::default())),
+        ];
+
+        for state in states {
+            let masternode = MasternodeListItem {
+                node_type: MasternodeType::Evo,
+                pro_tx_hash: ProTxHash::from_byte_array([0x77u8; 32]),
+                collateral_hash: Txid::from_byte_array([0x11u8; 32]),
+                collateral_index: 1,
+                collateral_address: Some([0x22u8; 20]),
+                operator_reward: 0.0,
+                state: state.clone(),
+            };
+            let entry = serialize_masternode_entry(&masternode, PlatformVersion::latest())
+                .expect("serializable masternode");
+            let loaded = deserialize_masternode_entry(&entry).expect("its own entry");
+
+            assert_eq!(
+                loaded,
+                MasternodeListItem {
+                    state: in_stored_form(state.clone()),
+                    ..masternode
+                },
+                "state: {state:?}"
+            );
+        }
     }
 }
