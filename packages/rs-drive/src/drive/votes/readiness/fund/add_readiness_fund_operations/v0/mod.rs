@@ -55,6 +55,17 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
+        let path_vec = prefunded_specialized_balances_for_readiness_path_vec();
+        if estimated_costs_only_with_layer_info.is_some() {
+            // The estimator bills a plain insert by the element's serialized size while the
+            // applied write bills the fixed sum item size, so price the widest sum item.
+            drive_operations.push(GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
+                path_vec,
+                fund_id.to_vec(),
+                Element::new_sum_item(i64::MAX),
+            )));
+            return Ok(drive_operations);
+        }
         let had_previous_balance = previous_credits.is_some();
         let new_total = previous_credits
             .unwrap_or_default()
@@ -67,7 +78,6 @@ impl Drive {
                 "trying to set a readiness fund to over max credits amount (i64::MAX)",
             )));
         };
-        let path_vec = prefunded_specialized_balances_for_readiness_path_vec();
         let op = if had_previous_balance {
             QualifiedGroveDbOp::replace_op(
                 path_vec,

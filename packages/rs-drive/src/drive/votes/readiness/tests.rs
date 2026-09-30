@@ -18,7 +18,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::batch::drive_op_batch::ReadinessOperationType;
+use crate::util::batch::drive_op_batch::{
+    PrefundedSpecializedBalanceOperationType, ReadinessOperationType,
+};
 use crate::util::batch::DriveOperation;
 use crate::util::common::encode::encode_u64;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -581,6 +583,70 @@ mod funds {
         apply(&drive, operations, None, platform_version);
         assert_eq!(pool_credits(&drive, None), 10_000);
         assert!(conservation_holds(&drive, None));
+    }
+
+    #[test]
+    fn should_estimate_a_new_readiness_fund_at_least_as_high_as_its_write() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let fund_id = Identifier::from([0xF6u8; 32]);
+
+        let mut layer_info = Some(HashMap::new());
+        let operations = drive
+            .add_readiness_fund_operations(fund_id, 1, &mut layer_info, None, platform_version)
+            .expect("estimate");
+        let estimated = estimate(
+            &drive,
+            layer_info.expect("layer info"),
+            operations,
+            platform_version,
+        );
+        let operations = drive
+            .add_readiness_fund_operations(fund_id, 1, &mut None, None, platform_version)
+            .expect("add");
+        let applied = apply(&drive, operations, None, platform_version);
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "{estimated:?} < {applied:?}"
+        );
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "{estimated:?} < {applied:?}"
+        );
+    }
+
+    #[test]
+    fn should_estimate_a_batch_of_new_readiness_funds_at_least_as_high_as_its_write() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = block_info(1, 1, 1);
+        let funds = || {
+            (0..16u8)
+                .map(|i| {
+                    DriveOperation::PrefundedSpecializedBalanceOperation(
+                        PrefundedSpecializedBalanceOperationType::CreateNewReadinessFund {
+                            fund_id: Identifier::from([i; 32]),
+                            add_balance: 1,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let estimated = drive
+            .apply_drive_operations(funds(), false, &block_info, None, platform_version, None)
+            .expect("estimate");
+        let applied = drive
+            .apply_drive_operations(funds(), true, &block_info, None, platform_version, None)
+            .expect("apply");
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "{estimated:?} < {applied:?}"
+        );
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "{estimated:?} < {applied:?}"
+        );
     }
 }
 

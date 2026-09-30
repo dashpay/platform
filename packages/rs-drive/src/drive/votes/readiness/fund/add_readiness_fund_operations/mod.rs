@@ -13,6 +13,9 @@ use std::collections::HashMap;
 impl Drive {
     /// Creates a readiness fund or adds to an existing one.
     ///
+    /// In estimation mode the balance read is priced without state and the write is priced
+    /// as an insert of the widest sum item, which covers the applied write of any balance.
+    ///
     /// # Parameters
     ///
     /// * `fund_id` - The fund, derived from the round id.
