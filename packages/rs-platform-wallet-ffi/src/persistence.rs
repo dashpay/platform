@@ -34,7 +34,8 @@ use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     ListedCoreTxid, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
     PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
+    ProviderKeyExtendedPubKey, RecordedHistory, StoredTransaction,
+    PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 #[cfg(feature = "shielded")]
@@ -72,8 +73,9 @@ use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
-    ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnconfirmedOutgoingTxRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    ProviderSpecialTxRestoreEntryFFI, RecordedTransactionRestoreFFI, StandardAccountTypeTagFFI,
+    UnconfirmedOutgoingTxRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI,
+    WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -94,6 +96,10 @@ use std::ffi::CStr;
 /// `Mempool` vs no-evidence); see each match's comment.
 pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
 pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+/// Unconfirmed context values (see above), used by decoders that must tell
+/// an unconfirmed row apart from an unknown value.
+pub(crate) const TX_CONTEXT_RAW_MEMPOOL: u32 = 0;
+pub(crate) const TX_CONTEXT_RAW_INSTANT_SEND: u32 = 1;
 
 /// Byte budget for decoding a host-supplied account extended public key.
 ///
@@ -1549,7 +1555,11 @@ impl FFIPersister {
             capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES);
         }
         if wallet_restore {
-            capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
+            // History rides the same wallet-list load; a host that wires it
+            // must still declare the bit to attest it fills the rows.
+            capabilities = capabilities
+                .union(PersistenceCapabilities::WALLET_RESTORE)
+                .union(PersistenceCapabilities::CORE_HISTORY_RESTORE);
         }
         if self.callbacks.on_persist_asset_locks_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
@@ -5194,6 +5204,109 @@ fn order_unconfirmed_outgoing(
     ordered
 }
 
+/// Decode the stored transaction history the host handed back for replay.
+///
+/// Fail-closed per record, never for the load: a record that does not decode,
+/// does not hash to its row's txid, or carries an unknown context is dropped
+/// with a counted warning. The replay applies each transaction through the
+/// ordinary state-update path, so bytes that do not belong to their row would
+/// move accounting for unrelated inputs and outputs.
+///
+/// InstantSend rows replay as mempool: the host keeps no lock bytes, so the
+/// spend is still reserved but the lock's upgrade and conflict sweep wait for
+/// the lock to be observed again.
+fn decode_recorded_transactions(entry: &WalletRestoreEntryFFI) -> RecordedHistory {
+    use dashcore::consensus::Decodable;
+    use dashcore::hashes::Hash;
+    use key_wallet::managed_account::transaction_record::TransactionDirection;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+    let recs: &[RecordedTransactionRestoreFFI] =
+        if entry.recorded_transactions.is_null() || entry.recorded_transactions_count == 0 {
+            &[]
+        } else {
+            unsafe {
+                slice::from_raw_parts(
+                    entry.recorded_transactions,
+                    entry.recorded_transactions_count,
+                )
+            }
+        };
+    let mut transactions = Vec::with_capacity(recs.len());
+    let mut dropped_decode = 0usize;
+    let mut dropped_identity = 0usize;
+    let mut dropped_context = 0usize;
+    for rec in recs {
+        let bytes = unsafe { slice_from_raw(rec.tx_bytes, rec.tx_bytes_len) };
+        if bytes.is_empty() {
+            dropped_decode += 1;
+            continue;
+        }
+        let transaction = match dashcore::blockdata::transaction::Transaction::consensus_decode(
+            &mut &bytes[..],
+        ) {
+            Ok(tx) if *tx.txid().as_byte_array() == rec.txid => tx,
+            Ok(_) => {
+                dropped_identity += 1;
+                continue;
+            }
+            Err(_) => {
+                dropped_decode += 1;
+                continue;
+            }
+        };
+        let context = match rec.context {
+            TX_CONTEXT_RAW_MEMPOOL | TX_CONTEXT_RAW_INSTANT_SEND => TransactionContext::Mempool,
+            ctx @ (TX_CONTEXT_RAW_IN_BLOCK | TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK) => {
+                let mut info = BlockInfo::new(
+                    rec.block_height,
+                    dashcore::BlockHash::from_byte_array(rec.block_hash),
+                    rec.block_timestamp,
+                );
+                if rec.has_block_position {
+                    info = info.with_position(rec.block_position);
+                }
+                if ctx == TX_CONTEXT_RAW_IN_BLOCK {
+                    TransactionContext::InBlock(info)
+                } else {
+                    TransactionContext::InChainLockedBlock(info)
+                }
+            }
+            _ => {
+                dropped_context += 1;
+                continue;
+            }
+        };
+        let stored_direction = match rec.direction {
+            0 => Some(TransactionDirection::Incoming),
+            1 => Some(TransactionDirection::Outgoing),
+            2 => Some(TransactionDirection::Internal),
+            3 => Some(TransactionDirection::CoinJoin),
+            _ => None,
+        };
+        transactions.push(StoredTransaction {
+            txid: transaction.txid(),
+            transaction,
+            context,
+            stored_net_amount: Some(rec.net_amount),
+            stored_direction,
+        });
+    }
+    if dropped_decode > 0 || dropped_identity > 0 || dropped_context > 0 {
+        tracing::warn!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            dropped_decode,
+            dropped_identity,
+            dropped_context,
+            "load: recorded transaction history rows were dropped"
+        );
+    }
+    RecordedHistory {
+        transactions,
+        instant_locks: BTreeMap::new(),
+    }
+}
+
 /// Map a provider-account rebuild failure to a load error naming the
 /// curve-specific constructor or `AccountCollection` insert that failed.
 fn provider_rebuild_error(
@@ -5854,13 +5967,17 @@ fn build_wallet_start_state(
     // it.
     let unconfirmed_outgoing_txs = decode_unconfirmed_outgoing(entry);
 
+    // Decode only, like the sends above: the shared load replays the history
+    // (`platform_wallet::manager::history_replay`) at the async boundary.
+    let recorded_history = decode_recorded_transactions(entry);
+
     let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
         identity_manager,
         unused_asset_locks,
         unconfirmed_outgoing_txs,
-        recorded_history: Default::default(),
+        recorded_history,
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -8526,6 +8643,7 @@ mod tests {
             .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
             .union(PersistenceCapabilities::WALLET_RESTORE)
+            .union(PersistenceCapabilities::CORE_HISTORY_RESTORE)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
         cb.on_changeset_begin_fn = Some(noop_begin);
@@ -10929,5 +11047,295 @@ mod tests {
                 .all(|a| matches!(a.state, AddressState::Used)),
             "every emitted marked-used address must carry used == true"
         );
+    }
+
+    /// Owned bytes plus the FFI row that borrows them; the row is valid only
+    /// while `bytes` lives.
+    struct RecordedRow {
+        bytes: Vec<u8>,
+        context: u32,
+        height: u32,
+        position: Option<u32>,
+        txid: [u8; 32],
+    }
+
+    impl RecordedRow {
+        fn new(tx: &Transaction, context: u32, height: u32, position: Option<u32>) -> Self {
+            use dashcore::hashes::Hash;
+            Self {
+                bytes: serialize(tx),
+                context,
+                height,
+                position,
+                txid: *tx.txid().as_byte_array(),
+            }
+        }
+
+        fn ffi(&mut self) -> RecordedTransactionRestoreFFI {
+            RecordedTransactionRestoreFFI {
+                txid: self.txid,
+                tx_bytes: self.bytes.as_mut_ptr(),
+                tx_bytes_len: self.bytes.len(),
+                context: self.context,
+                block_height: self.height,
+                block_hash: [self.height as u8; 32],
+                block_timestamp: self.height,
+                block_position: self.position.unwrap_or(0),
+                has_block_position: self.position.is_some(),
+                net_amount: -7,
+                direction: 1,
+            }
+        }
+    }
+
+    /// A seeded wallet's BIP44 account spec (with its encoded xpub) and first
+    /// receive address.
+    fn bip44_wallet_fixture() -> (Wallet, Vec<u8>, dashcore::Address) {
+        let wallet = Wallet::from_seed_bytes(
+            [0x51; 64],
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("seeded wallet");
+        let xpub = wallet
+            .get_bip44_account(0)
+            .expect("a Default-created wallet has BIP44 account 0")
+            .account_xpub;
+        let xpub_bytes =
+            bincode::encode_to_vec(xpub, config::standard()).expect("encode account xpub");
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let address = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("bip44 account")
+            .next_receive_address(Some(&xpub), true)
+            .expect("receive address");
+        (wallet, xpub_bytes, address)
+    }
+
+    fn pay(previous_output: dashcore::OutPoint, outputs: Vec<TxOut>) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output,
+                ..Default::default()
+            }],
+            output: outputs,
+            special_transaction_payload: None,
+        }
+    }
+
+    /// The FFI restore path end to end: the host hands back only the unspent
+    /// change coin plus the stored history (funding and a confirmed spend),
+    /// `build_wallet_start_state` decodes it, the shared load replay runs, and
+    /// the funding transaction is redelivered (rescan). The confirmed-spent
+    /// output must not come back. Without history — the pre-change host
+    /// shape — the same redelivery resurrects it.
+    #[test]
+    fn should_not_resurrect_confirmed_spent_output_after_ffi_restore() {
+        use dashcore::hashes::Hash;
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+        use platform_wallet::manager::history_replay::replay_recorded_history;
+
+        let (wallet, xpub_bytes, address) = bip44_wallet_fixture();
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let spec = build_account_spec_ffi(&bip44, &xpub_bytes);
+        let funding = pay(
+            dashcore::OutPoint::new(dashcore::Txid::from_byte_array([0x61; 32]), 0),
+            [100_000, 20_000]
+                .map(|value| TxOut {
+                    value,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .to_vec(),
+        );
+        let spent = dashcore::OutPoint::new(funding.txid(), 0);
+        let spending = pay(
+            spent,
+            vec![TxOut {
+                value: 99_000,
+                script_pubkey: ScriptBuf::new(),
+            }],
+        );
+        let script = address.script_pubkey().to_bytes();
+        let change = UtxoRestoreEntryFFI {
+            type_tag: AccountTypeTagFFI::Standard as u8,
+            standard_tag: StandardAccountTypeTagFFI::Bip44 as u8,
+            account_index: 0,
+            registration_index: 0,
+            key_class: 0,
+            user_identity_id: [0; 32],
+            friend_identity_id: [0; 32],
+            prev_txid: *funding.txid().as_byte_array(),
+            vout: 1,
+            value_duffs: 20_000,
+            script_pubkey: script.as_ptr(),
+            script_pubkey_len: script.len(),
+            height: 100,
+            is_coinbase: false,
+            is_confirmed: true,
+            is_instantlocked: false,
+            is_locked: false,
+        };
+        // Stored out of chain order on purpose: the replay orders them.
+        let mut rows = [
+            RecordedRow::new(&spending, TX_CONTEXT_RAW_IN_BLOCK, 101, Some(0)),
+            RecordedRow::new(&funding, TX_CONTEXT_RAW_IN_BLOCK, 100, Some(0)),
+        ];
+        let history: Vec<_> = rows.iter_mut().map(RecordedRow::ffi).collect();
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime");
+        let redeliver = |recorded: &[RecordedTransactionRestoreFFI]| {
+            let entry = WalletRestoreEntryFFI {
+                wallet_id: wallet.wallet_id,
+                accounts: &spec,
+                accounts_count: 1,
+                utxos: &change,
+                utxos_count: 1,
+                recorded_transactions: recorded.as_ptr(),
+                recorded_transactions_count: recorded.len(),
+                ..Default::default()
+            };
+            let (state, _) = build_wallet_start_state(&entry).expect("wallet must restore");
+            let (mut wallet, mut info) = (state.wallet, state.wallet_info);
+            runtime.block_on(async {
+                replay_recorded_history(&mut info, &mut wallet, state.recorded_history).await;
+                info.check_core_transaction(
+                    &funding,
+                    TransactionContext::InBlock(BlockInfo::new(
+                        100,
+                        dashcore::BlockHash::from_byte_array([100; 32]),
+                        100,
+                    )),
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await;
+            });
+            info
+        };
+
+        let guarded = redeliver(&history);
+        assert!(
+            guarded
+                .accounts
+                .all_funding_accounts()
+                .into_iter()
+                .all(|account| !account.utxos.contains_key(&spent)),
+            "a redelivered funding must not re-credit a confirmed-spent output"
+        );
+        assert_eq!(guarded.balance.total(), 20_000);
+
+        let unguarded = redeliver(&[]);
+        assert!(
+            unguarded
+                .accounts
+                .all_funding_accounts()
+                .into_iter()
+                .any(|account| account.utxos.contains_key(&spent)),
+            "control: without history the redelivery resurrects the output"
+        );
+    }
+
+    /// Each stored row decodes into its own context, block position and
+    /// stored accounting; rows that do not hash to their txid or carry an
+    /// unknown context drop out instead of failing the load.
+    #[test]
+    fn should_decode_recorded_transactions_and_drop_bad_rows() {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::transaction_record::TransactionDirection;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let tx = |marker: u8| {
+            pay(
+                dashcore::OutPoint::new(dashcore::Txid::from_byte_array([marker; 32]), 0),
+                vec![TxOut {
+                    value: u64::from(marker),
+                    script_pubkey: ScriptBuf::new(),
+                }],
+            )
+        };
+        let mut rows = [
+            RecordedRow::new(&tx(1), TX_CONTEXT_RAW_MEMPOOL, 0, None),
+            RecordedRow::new(&tx(2), TX_CONTEXT_RAW_INSTANT_SEND, 0, None),
+            RecordedRow::new(&tx(3), TX_CONTEXT_RAW_IN_BLOCK, 50, Some(4)),
+            RecordedRow::new(&tx(4), TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK, 60, None),
+            RecordedRow::new(&tx(5), 9, 0, None),
+            RecordedRow::new(&tx(6), TX_CONTEXT_RAW_MEMPOOL, 0, None),
+        ];
+        // Row 6 claims another row's txid: its bytes do not belong to it.
+        rows[5].txid = rows[0].txid;
+        let mut ffi: Vec<_> = rows.iter_mut().map(RecordedRow::ffi).collect();
+        ffi[3].direction = 42;
+        let entry = WalletRestoreEntryFFI {
+            recorded_transactions: ffi.as_ptr(),
+            recorded_transactions_count: ffi.len(),
+            ..Default::default()
+        };
+
+        let history = decode_recorded_transactions(&entry);
+
+        let txids: Vec<_> = history.transactions.iter().map(|t| t.txid).collect();
+        assert_eq!(
+            txids,
+            vec![tx(1).txid(), tx(2).txid(), tx(3).txid(), tx(4).txid()]
+        );
+        let contexts: Vec<_> = history.transactions.iter().map(|t| &t.context).collect();
+        assert!(matches!(contexts[0], TransactionContext::Mempool));
+        assert!(
+            matches!(contexts[1], TransactionContext::Mempool),
+            "InstantSend rows carry no lock and replay as mempool"
+        );
+        assert!(matches!(
+            contexts[2],
+            TransactionContext::InBlock(info) if info.height() == 50 && info.position() == Some(4)
+        ));
+        assert!(matches!(
+            contexts[3],
+            TransactionContext::InChainLockedBlock(info) if info.height() == 60 && info.position().is_none()
+        ));
+        assert_eq!(history.transactions[0].stored_net_amount, Some(-7));
+        assert_eq!(
+            history.transactions[0].stored_direction,
+            Some(TransactionDirection::Outgoing)
+        );
+        assert_eq!(history.transactions[3].stored_direction, None);
+        assert!(history.instant_locks.is_empty());
+    }
+
+    #[test]
+    fn should_decode_no_history_from_a_null_array() {
+        let entry = WalletRestoreEntryFFI::default();
+        assert!(decode_recorded_transactions(&entry).is_empty());
+    }
+
+    /// History restore rides the wallet-list load: a host declaring the bit
+    /// attests it only with the load callback pair wired.
+    #[test]
+    fn core_history_restore_requires_the_wallet_list_load_callbacks() {
+        let declared = PersistenceCapabilities::CORE_HISTORY_RESTORE;
+        assert!(
+            !declared_persister(PersistenceCallbacks::default(), declared)
+                .persistence_capabilities()
+                .contains(declared)
+        );
+        let cb = PersistenceCallbacks {
+            on_load_wallet_list_fn: Some(noop_load_wallets),
+            on_load_wallet_list_free_fn: Some(noop_free_wallets),
+            ..Default::default()
+        };
+        assert!(declared_persister(cb, declared)
+            .persistence_capabilities()
+            .contains(declared));
     }
 }

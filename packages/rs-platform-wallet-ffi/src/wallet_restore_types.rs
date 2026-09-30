@@ -606,6 +606,42 @@ pub struct UnconfirmedOutgoingTxRecordFFI {
     pub first_seen: u64,
 }
 
+/// One stored transaction of the wallet, handed back at load so the shared
+/// history replay can rebuild the spend guards of confirmed AND unconfirmed
+/// spends.
+///
+/// Without it only the persisted unspent UTXO set comes back, so a funding
+/// transaction redelivered after restart (rescan, gap-limit rediscovery)
+/// re-credits an output a confirmed spend already consumed.
+#[repr(C)]
+pub struct RecordedTransactionRestoreFFI {
+    /// Wire-order txid of the stored row. The load path decodes `tx_bytes`
+    /// and drops the record unless it hashes to this: the replay applies the
+    /// transaction through the ordinary state-update path, so foreign bytes
+    /// would move accounting for unrelated inputs and outputs.
+    pub txid: [u8; 32],
+    /// Consensus-encoded transaction body. Swift-owned for the callback
+    /// window; freed by `LoadWalletListFreeFn`.
+    pub tx_bytes: *mut u8,
+    pub tx_bytes_len: usize,
+    /// Stored context: `0` mempool, `1` InstantSend, `2` in a block, `3` in a
+    /// chain-locked block. `1` replays as mempool (no lock bytes are carried);
+    /// any other value drops the record.
+    pub context: u32,
+    /// Block fields, read only for contexts `2` and `3`.
+    pub block_height: u32,
+    pub block_hash: [u8; 32],
+    pub block_timestamp: u32,
+    /// In-block position, meaningful only when `has_block_position`.
+    pub block_position: u32,
+    pub has_block_position: bool,
+    /// The wallet-level net amount the host stores for this row.
+    pub net_amount: i64,
+    /// The stored direction: `0` incoming, `1` outgoing, `2` internal,
+    /// `3` CoinJoin. Any other value reads as "unknown".
+    pub direction: u32,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -718,6 +754,16 @@ pub struct WalletRestoreEntryFFI {
     /// leaves every existing field where it was.
     pub unconfirmed_outgoing_tx_records: *const UnconfirmedOutgoingTxRecordFFI,
     pub unconfirmed_outgoing_tx_records_count: usize,
+    /// Every stored transaction of this wallet, in any order — see
+    /// [`RecordedTransactionRestoreFFI`]. `null` / `0` means "no history
+    /// supplied" and keeps the pre-history load behaviour. Each entry's
+    /// `tx_bytes` buffer is Swift-owned and freed by `LoadWalletListFreeFn`.
+    ///
+    /// Appended at the end for the same reason as the field above; the
+    /// struct carries no size field, so host and library must still be
+    /// built together.
+    pub recorded_transactions: *const RecordedTransactionRestoreFFI,
+    pub recorded_transactions_count: usize,
 }
 
 /// Every field named explicitly so that adding a field to this ABI struct
@@ -758,6 +804,8 @@ impl Default for WalletRestoreEntryFFI {
             last_applied_chain_lock_bytes_len: 0,
             unconfirmed_outgoing_tx_records: std::ptr::null(),
             unconfirmed_outgoing_tx_records_count: 0,
+            recorded_transactions: std::ptr::null(),
+            recorded_transactions_count: 0,
         }
     }
 }
