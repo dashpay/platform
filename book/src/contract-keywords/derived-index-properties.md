@@ -50,6 +50,8 @@ A reply is created with its own properties only, `postId` and `body`. Its author
 
 The replies come back as stored, without the owner: the proof ties them to it through the index path.
 
+A post whose removal record keeps a field can have its replies filed under that field too. With `"documentsMutable": false` and `"moderatorAbilities": { "delete": true, "deleteKeepsFields": ["hashtag"] }` on the post, a reply index on `postId.hashtag` files every reply under the hashtag of the post it replies to, before and after a moderator removes the post.
+
 ## The index property
 
 | | |
@@ -71,7 +73,7 @@ The name reads through a reference when its first segment names a top-level iden
 - **Create.** The reference is validated as usual, which reads the referenced document, and Drive writes the entries under the values it holds, without reading it again. A referenced document that has no value for the field, or a reference left out, puts the document under null, as a missing property would.
 - **Replace, transfer, purchase, price update and a moderator's change of fields.** Drive reads the referenced document once, for both versions of the document, since neither can point elsewhere. It reads it even when no index holding a derived value moves: every entry's reference is rewritten in place on an update, under the values it is filed by.
 - **Delete, a moderator's removal, and expiry by `ttl`.** Drive reads the referenced document to find the entries to remove.
-- **A removed referenced document.** Once a moderator removes a `moderatedDocument` target, Drive reads its owner from the removal record, which keeps it. A restored document is read again.
+- **A removed referenced document.** Once a moderator removes a `moderatedDocument` target, Drive reads its owner, and any field its type keeps under [`deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields), from the removal record, which keeps them as the document held them. So the entries are found under the values they were written under. A restored document is read again.
 
 Each read is billed as a processing fee with the write that makes it. A dry run prices the reads at their worst case and reads nothing, pricing the entries under a value of the field's type and typical size.
 
@@ -81,7 +83,7 @@ A derived value must stay what it was when an entry was written, or Drive could 
 
 - The reference is a `permanentDocument` or a `moderatedDocument` one, by id, to a document type of the same contract. A `deletableDocument` target could leave state without a record, and a `findBy`, an `inList` or an operand of an [expression](refers-to-expressions.md) does not name the document by id.
 - The reference property is fixed once written: the type's documents are immutable, or the property is listed under [`immutable`](mutability.md) and not `immutableAllowSetting`, and it is not one of the fields only moderators write.
-- Through a `moderatedDocument` reference, the field is `$ownerId`: the removal record keeps nothing else of the removed document.
+- Through a `moderatedDocument` reference, the field is `$ownerId`, or a schema property the referenced type lists under [`moderatorAbilities.deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields), or one inside an object listed there. The removal record keeps these and nothing else of the removed document, never its `$creatorId`.
 - `$ownerId` only of a type whose documents can not be transferred or traded, and `$creatorId` only of a type that records it.
 - A schema property must exist on the referenced type, be stored (not `transient` or inside a transient object), be fixed once written there under the same rule as the reference property, and be one an index can key: not an object or an array, a string of at most 63 characters, a byte array of at most 255 bytes, tighter on a [ranked index](ranked.md).
 - Not `$id` of the referenced document, which is the reference property itself: index that instead. Nor any other system property.

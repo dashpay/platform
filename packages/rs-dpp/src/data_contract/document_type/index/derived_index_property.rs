@@ -17,9 +17,10 @@
 //! - the field is fixed once written on the referenced type: `$creatorId`,
 //!   `$ownerId` of a type whose documents never change hands, or a schema
 //!   property no replace or moderator can change;
-//! - through a `moderatedDocument` reference, only `$ownerId`: a moderator's
-//!   removal leaves a record keeping the removed document's owner and nothing
-//!   else of its values.
+//! - through a `moderatedDocument` reference, only what a moderator's removal
+//!   record keeps of the removed document: its `$ownerId`, and a schema
+//!   property its type lists under `moderatorAbilities.deleteKeepsFields` (or
+//!   one inside an object listed there).
 
 use crate::data_contract::document_type::property::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceKind,
@@ -73,7 +74,7 @@ pub struct DerivedIndexProperty {
     pub referenced_document_type_name: String,
     /// `permanentDocument` or `moderatedDocument`: whether a moderator's
     /// removal can take the referenced document out of state, leaving its
-    /// removal record to read the owner from.
+    /// removal record to read the owner and the kept values from.
     pub kind: DocumentReferenceKind,
     /// The field of the referenced document the index holds.
     pub field: DerivedIndexField,
@@ -178,11 +179,14 @@ pub(crate) fn parse_derived_index_property_name(
         }
         path => (DerivedIndexField::Property(path.to_string()), None),
     };
-    if kind == DocumentReferenceKind::Moderated && field != DerivedIndexField::OwnerId {
+    // Whether the record keeps a schema property is judged where the referenced
+    // type is in hand (`resolve_derived_index_properties`)
+    if kind == DocumentReferenceKind::Moderated && field == DerivedIndexField::CreatorId {
         return DerivedIndexPropertyName::Refused(format!(
             "\"{reference_property}\" is a moderatedDocument reference, whose document a \
-             moderator's removal replaces with a record keeping only its owner: through it a \
-             derived index property reads $ownerId only"
+             moderator's removal replaces with a record keeping its owner and the fields its \
+             type lists under `moderatorAbilities.deleteKeepsFields`, never its creator: \
+             through it a derived index property reads $ownerId or a kept field"
         ));
     }
     DerivedIndexPropertyName::Derived(Box::new(DerivedIndexProperty {

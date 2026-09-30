@@ -1721,10 +1721,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     keys a document of such a type, on insert (`add_document` 1), update (`update_document`
 ///     1, one read for both versions) and delete (`delete_read_document`, shared by owner and
 ///     moderator deletes and `ttl` expiry), it reads the referenced document, billed with the
-///     write, or, for a `moderatedDocument` target a moderator removed, the owner its removal
-///     record keeps, and puts the values into the document's properties under the derived
-///     names, where `get_raw_for_document_type` 0 reads them (a missing one is refused, never
-///     keyed under null) and the serialization ignores them. A create reads nothing more: the
+///     write, or, for a `moderatedDocument` target a moderator removed, the owner and the
+///     values its removal record keeps (`ContractDocumentRemoval::kept_values`, read at a
+///     path by `kept_value_at`), and puts the values into the document's properties under
+///     the derived names, where `get_raw_for_document_type` 0 reads them (a missing one is
+///     refused, never keyed under null) and the serialization ignores them. A create reads nothing more: the
 ///     document reference validation 0, given a map, records the values from the documents it
 ///     fetched, and the create action carries them to Drive. A dry run keys the document
 ///     under a value of each field's type. `serialize_value_for_key` 0,
@@ -1734,9 +1735,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `permanentDocument` or `moderatedDocument` reference by id, on a reference property
 ///     fixed once written; `$ownerId` of a type that can not change hands, `$creatorId` of a
 ///     type recording it, or a stored schema property fixed once written and indexable;
-///     through `moderatedDocument`, `$ownerId` only; not `$id`; not in a unique or contested
-///     index, as a `timeRange` or `integerRange` source or a `skipIfAbsent` property; not on
-///     an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
+///     through `moderatedDocument`, `$ownerId` or a schema property the referenced type keeps
+///     under `moderatorAbilities.deleteKeepsFields` (a kept path or one inside a kept object,
+///     `is_kept_path`); not `$id`; not in a unique or contested index, as a `timeRange` or
+///     `integerRange` source or a `skipIfAbsent` property; not on an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
 ///     document stores, is refused on an index whose derived properties the query does not fix
 ///     with `==`. Every step is inert without a derived index property, which only generation 3
 ///     declares.
