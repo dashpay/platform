@@ -79,7 +79,7 @@ mod test {
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::validator::v0::{NewValidatorIfMasternodeInState, ValidatorV0};
     use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
-    use crate::platform_types::validator_set::ValidatorSet;
+    use crate::platform_types::validator_set::{ValidatorSet, ValidatorSetExt};
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
     use dpp::core_types::validator_set::v0::ValidatorSetV0;
@@ -643,6 +643,17 @@ mod test {
         assert_eq!(legacy_evo_validator.platform_p2p_port, 36656);
         assert_eq!(legacy_evo_validator.platform_http_port, 1443);
 
+        // An Evo on an IPv6 primary address is advertised to Tenderdash with
+        // its host in brackets, as a URL authority requires.
+        let ipv6_evo_validator =
+            validator("aecd2830b843e6a84283ba290492a213e355cea7c5026e6118a21e1bfbc36783")
+                .expect("expected the IPv6 Evo to be a validator");
+        assert_eq!(ipv6_evo_validator.node_ip, "2001:db8::4");
+        assert_eq!(
+            node_addresses([ipv6_evo_validator]),
+            ["tcp://4bcc85253e395ec272998a0722ac3ee1dd3965f7@[2001:db8::4]:26656"]
+        );
+
         // Every parsed masternode survives a store and reload, except for the payout list and
         // nested addresses, which are not stored.
         for masternode in block_platform_state.full_masternode_list().values() {
@@ -795,6 +806,30 @@ mod test {
 
     /// The quorum of the validator set `state_after_core_v24_lists` adds.
     const VALIDATOR_QUORUM_HASH: [u8; 32] = [0x55; 32];
+
+    /// The node addresses Drive hands Tenderdash for `validators`, as the
+    /// members of one validator set.
+    fn node_addresses(validators: impl IntoIterator<Item = ValidatorV0>) -> Vec<String> {
+        let quorum_hash = QuorumHash::from_byte_array(VALIDATOR_QUORUM_HASH);
+        ValidatorSet::V0(ValidatorSetV0 {
+            quorum_hash,
+            quorum_index: None,
+            core_height: 1,
+            members: validators
+                .into_iter()
+                .map(|validator| (validator.pro_tx_hash, validator))
+                .collect(),
+            threshold_public_key: SecretKey::<Bls12381G2Impl>::random(&mut StdRng::seed_from_u64(
+                1,
+            ))
+            .public_key(),
+        })
+        .to_update()
+        .validator_updates
+        .into_iter()
+        .map(|validator_update| validator_update.node_address)
+        .collect()
+    }
 
     /// Runs one masternode list update per `(core height, fixture)`, in order,
     /// as Drive runs one per block, with Core reporting the fixture's
@@ -970,6 +1005,10 @@ mod test {
                 platform_p2p_port: 26656,
                 is_banned: false,
             })
+        );
+        assert_eq!(
+            node_addresses(new_quorum_validator),
+            ["tcp://9cea9116b333eba7631804e1be7efd62c56d5b58@[::]:26656"]
         );
     }
 
