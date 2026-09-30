@@ -3182,6 +3182,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.trackedMasternodes
                 | PlatformWalletPersistenceCapabilities.coreSweepRemoval
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
+                | PlatformWalletPersistenceCapabilities.coreHistoryRestore
         )
     }
 
@@ -7129,6 +7130,35 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
         }
 
+        // Every stored transaction of each restorable wallet, replayed
+        // Rust-side at load so the spend guards of confirmed spends are
+        // rebuilt: without them a funding transaction redelivered after the
+        // restart (rescan, gap-limit rediscovery) re-credits an output a
+        // confirmed spend already consumed. Same fail-closed contract as the
+        // unspent fetch above: an unreadable table rejects the snapshot
+        // instead of claiming "no history".
+        var historyBuckets: [Data: [PersistentTransaction]] = [:]
+        do {
+            let transactions = try modelFetcher.fetch(
+                FetchDescriptor<PersistentTransaction>(), in: backgroundContext
+            )
+            for w in restorable {
+                historyBuckets[w.walletId] = transactions.filter {
+                    !$0.isDeleted
+                        && Self.walletOwnsTransaction(walletId: w.walletId, transaction: $0)
+                }
+            }
+        } catch {
+            SDKLogger.event(
+                "persistence_wallet_load_failed",
+                category: .persistence,
+                severity: .error,
+                fields: ["phase": .publicText("transaction_history_fetch")],
+                error: error
+            )
+            return (nil, 0, true)
+        }
+
         // Allocate `entriesPtr` and the `LoadAllocation` here — past
         // the fallible SwiftData fetch above — so an early-error path
         // doesn't leak the entries buffer (LoadAllocation only gets
@@ -7424,6 +7454,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
             entry.unconfirmed_outgoing_tx_records = unconfirmedBuf.map { UnsafePointer($0) }
             entry.unconfirmed_outgoing_tx_records_count = UInt(unconfirmedCount)
+
+            // The wallet's stored history; see `historyBuckets` above.
+            let (historyBuf, historyCount) = buildRecordedTransactionBuffer(
+                rows: historyBuckets[w.walletId] ?? [],
+                allocation: allocation
+            )
+            entry.recorded_transactions = historyBuf.map { UnsafePointer($0) }
+            entry.recorded_transactions_count = UInt(historyCount)
 
             // Provider special transactions (ProRegTx / ProUpServTx /
             // ProUpRegTx / ProUpRevTx) re-staged onto the provider-key
@@ -8044,6 +8082,70 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         buf.initialize(from: entries, count: entries.count)
         allocation.unconfirmedOutgoingTxRecordArrays.append((buf, entries.count))
+        return (buf, entries.count)
+    }
+
+    /// Marshal a wallet's stored transactions for the Rust load replay.
+    ///
+    /// Rows without a 32-byte txid or transaction bytes are skipped, as are
+    /// confirmed rows without a 32-byte block hash (a zero hash is not
+    /// fabricated). Rust re-checks that each body hashes to its txid.
+    private func buildRecordedTransactionBuffer(
+        rows: [PersistentTransaction],
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<RecordedTransactionRestoreFFI>?, Int) {
+        guard !rows.isEmpty else { return (nil, 0) }
+        var entries: [RecordedTransactionRestoreFFI] = []
+        entries.reserveCapacity(rows.count)
+        var skipped = 0
+        for row in rows {
+            let txBytes = row.transactionData
+            guard row.txid.count == 32, !txBytes.isEmpty else {
+                skipped += 1
+                continue
+            }
+            let confirmed = row.context >= TransactionContextType.inBlock.rawValue
+            if confirmed, row.blockHash?.count != 32 {
+                skipped += 1
+                continue
+            }
+            let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
+            txBytes.copyBytes(to: txBuf, count: txBytes.count)
+            allocation.scalarBuffers.append((txBuf, txBytes.count))
+            var entry = RecordedTransactionRestoreFFI()
+            withUnsafeMutableBytes(of: &entry.txid) { raw in
+                raw.copyBytes(from: row.txid)
+            }
+            entry.tx_bytes = txBuf
+            entry.tx_bytes_len = UInt(txBytes.count)
+            entry.context = row.context
+            if confirmed, let hash = row.blockHash {
+                entry.block_height = row.blockHeight
+                withUnsafeMutableBytes(of: &entry.block_hash) { raw in
+                    raw.copyBytes(from: hash)
+                }
+                entry.block_timestamp = row.blockTimestamp
+                entry.block_position = row.blockPosition
+                entry.has_block_position = row.hasBlockPosition
+            }
+            entry.net_amount = row.netAmount
+            entry.direction = row.direction
+            entries.append(entry)
+        }
+        if skipped > 0 {
+            SDKLogger.event(
+                "persistence_transaction_history_rows_skipped",
+                category: .persistence,
+                severity: .warning,
+                fields: ["skipped_count": .integer(Int64(skipped))]
+            )
+        }
+        guard !entries.isEmpty else { return (nil, 0) }
+        let buf = UnsafeMutablePointer<RecordedTransactionRestoreFFI>.allocate(
+            capacity: entries.count
+        )
+        buf.initialize(from: entries, count: entries.count)
+        allocation.recordedTransactionArrays.append((buf, entries.count))
         return (buf, entries.count)
     }
 
@@ -9226,6 +9328,10 @@ private final class LoadAllocation {
     /// each entry points at are staged on `scalarBuffers`, like the
     /// asset-lock records above.
     var unconfirmedOutgoingTxRecordArrays: [(UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>, Int)] = []
+    /// `RecordedTransactionRestoreFFI` arrays per wallet — the stored history
+    /// replayed at load. The `tx_bytes` each entry points at are staged on
+    /// `scalarBuffers`.
+    var recordedTransactionArrays: [(UnsafeMutablePointer<RecordedTransactionRestoreFFI>, Int)] = []
     /// Per-wallet `ProviderSpecialTxRestoreEntryFFI` arrays — provider
     /// special txs re-staged so #876 retention keeps them resident after a
     /// restart. The `tx_bytes` buffer each row references lives in
@@ -9307,6 +9413,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in unconfirmedOutgoingTxRecordArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in recordedTransactionArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
