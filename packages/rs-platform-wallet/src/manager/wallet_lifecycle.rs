@@ -8,6 +8,7 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
+use key_wallet_manager::{WalletError, WalletManager};
 
 #[cfg(any(feature = "bls", feature = "eddsa"))]
 use crate::changeset::ProviderKeyExtendedPubKey;
@@ -71,6 +72,34 @@ pub(crate) static REMOVE_WALLET_MIDPOINT_HOOK: std::sync::Mutex<Option<RemoveWal
     std::sync::Mutex::new(None);
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
+    /// Insert into the inner wallet manager and tell the broadcast resolver,
+    /// under the caller's write guard — the one way a wallet enters it, so the
+    /// resolver hears of every wallet before its events and in order with
+    /// removals.
+    pub(super) fn insert_into_inner(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet: Wallet,
+        info: PlatformWalletInfo,
+    ) -> Result<WalletId, WalletError> {
+        let wallet_id = wm.insert_wallet(wallet, info)?;
+        self.broadcast_resolver.wallet_added(&wallet_id);
+        Ok(wallet_id)
+    }
+
+    /// Remove from the inner wallet manager and tell the broadcast resolver,
+    /// under the caller's write guard (see
+    /// [`insert_into_inner`](Self::insert_into_inner)).
+    pub(super) fn remove_from_inner(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) -> Result<(), WalletError> {
+        wm.remove_wallet(wallet_id)?;
+        self.broadcast_resolver.wallet_removed(wallet_id);
+        Ok(())
+    }
+
     /// Create a PlatformWallet from a BIP39 mnemonic phrase.
     ///
     /// The mnemonic's language is auto-detected by trying each
@@ -438,8 +467,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // stays `WalletCreation`.
         let wallet_id = {
             let mut wm = self.wallet_manager.write().await;
-            let wallet_id = wm
-                .insert_wallet(wallet, platform_info)
+            let wallet_id = self
+                .insert_into_inner(&mut wm, wallet, platform_info)
                 .map_err(|e| match e {
                     key_wallet_manager::WalletError::WalletExists(id) => already_registered(id),
                     other => PlatformWalletError::WalletCreation(format!(
@@ -447,9 +476,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         other
                     )),
                 })?;
-            // Under the same guard as the insert: the resolver hears of the
-            // wallet before any of its events, and in order with a removal.
-            self.broadcast_resolver.wallet_added(&wallet_id);
             wallet_id
         };
 
@@ -548,13 +574,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 "failed to persist wallet registration changeset"
             );
             let mut wm = self.wallet_manager.write().await;
-            match wm.remove_wallet(&wallet_id) {
-                Ok(_) => self.broadcast_resolver.wallet_removed(&wallet_id),
-                Err(remove_err) => tracing::warn!(
+            if let Err(remove_err) = self.remove_from_inner(&mut wm, &wallet_id) {
+                tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     error = %remove_err,
                     "rollback: remove_wallet failed while unwinding a failed wallet registration"
-                ),
+                );
             }
             return Err(PlatformWalletError::from_store_failure(&*self.persister, e));
         }
@@ -597,13 +622,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "failed to restore persisted platform-address state"
                 );
                 let mut wm = self.wallet_manager.write().await;
-                match wm.remove_wallet(&wallet_id) {
-                    Ok(_) => self.broadcast_resolver.wallet_removed(&wallet_id),
-                    Err(remove_err) => tracing::warn!(
+                if let Err(remove_err) = self.remove_from_inner(&mut wm, &wallet_id) {
+                    tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         error = %remove_err,
                         "rollback: remove_wallet failed while unwinding a failed wallet setup"
-                    ),
+                    );
                 }
                 // Wrap the already-typed error rather than stringify it, so
                 // its concrete variant and source chain survive.
@@ -884,19 +908,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                      their identity-sync rows are left for the next launch to reconcile"
                 );
             }
-            if let Err(e) = wm.remove_wallet(wallet_id) {
+            // The resolver drops the wallet's broadcast-probe state too, and
+            // the host is told to drop the verdicts it shows for its sends.
+            if let Err(e) = self.remove_from_inner(&mut wm, wallet_id) {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     error = %e,
                     "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
                 );
             }
-            // Broadcast-probe state for the wallet's sends goes too, and the
-            // host is told to drop the verdicts it shows for them (from the
-            // resolver's task). After the inner removal, so no later pass can
-            // read the wallet and rebuild that state; under the same guard, so
-            // it is queued ahead of a same-id re-registration's WalletAdded.
-            self.broadcast_resolver.wallet_removed(wallet_id);
         }
 
         // Test-only rendezvous: the window a concurrent same-id registration can

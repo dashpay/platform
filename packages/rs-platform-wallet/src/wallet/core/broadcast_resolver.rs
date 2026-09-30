@@ -23,7 +23,8 @@
 //! dead root also takes every own send built on it (spending a dead
 //! transaction is dead too), including sends built on it after it was found
 //! dead. A root found in a block that the wallet has not
-//! seen yet counts as settled, so the sends built on it are probed next.
+//! seen yet counts as settled, so the sends built on it become roots, due at
+//! the next pass.
 //! Only changes are published — Unresolved never replaces a decided verdict,
 //! and Accepted and Mined count as the same. The host is told to drop a
 //! send's verdict (cleared) when the send settles or leaves the wallet, when
@@ -42,8 +43,9 @@
 //! forced) — a root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks,
 //! counted from the first height-driven pass that sees it while the wallet
 //! follows the tip (a forced pass does not start it), and every
-//! [`SLOW_INTERVAL`] blocks after. Each Uncertain report adds one immediate
-//! probe.
+//! [`SLOW_INTERVAL`] blocks after. Each Uncertain report forces a probe of
+//! its chain's current root in the next pass (reports queued together share
+//! it).
 //! Between passes a wallet waits for the height at which its next root is due;
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
@@ -660,7 +662,8 @@ pub(crate) struct PassStart {
 /// it `Uncertain`) are due regardless of their schedule — even if one went
 /// out at this height already: a repeat probe is cheaper than bookkeeping
 /// that tells the two apart. A root found mined counts as settled when
-/// picking roots, so its children are probed next. `anchor`: the tip height
+/// picking roots, so its children become roots, due at the next pass.
+/// `anchor`: the tip height
 /// a height-driven pass knows the wallet follows — it starts the every-block
 /// window of every root that has none yet.
 pub(crate) fn begin_pass(
@@ -1471,11 +1474,11 @@ impl Actor {
                             wallet_id = %hex::encode(wallet_id),
                             "broadcast probe: a registered wallet read as gone"
                         );
+                        // Idle, not re-read every block: a same-id wallet's
+                        // events or an Uncertain wake it.
+                        entry.wait_until = Some(u32::MAX);
                         let events = self.state.forget_wallet(&wallet_id);
                         deliver(&self.sink, events);
-                        if let Some(entry) = self.wallets.get_mut(&wallet_id) {
-                            entry.wait_until = None;
-                        }
                         self.end_run(wallet_id);
                     }
                     Some(None) => self.end_run(wallet_id),
@@ -2968,8 +2971,9 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
-    /// A wallet the manager dropped without `wallet_removed` (a rolled-back
-    /// registration or load): the pass that finds it gone clears its verdicts.
+    /// The fail-safe for a registered wallet read as gone (every removal path
+    /// notifies the resolver, so this cannot happen today): its verdicts are
+    /// cleared and it goes idle rather than being re-read every block.
     #[tokio::test]
     async fn should_clear_the_verdicts_of_a_wallet_gone_without_a_removal() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
@@ -2982,6 +2986,11 @@ mod tests {
 
         assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
         assert!(rig.actor.state.schedules.is_empty());
+        assert_eq!(
+            rig.actor.wallets[&wallet()].wait_until,
+            Some(u32::MAX),
+            "idle: not re-read on the next block"
+        );
     }
 
     /// An `Uncertain` result forces its root even if a height pass sent it at
