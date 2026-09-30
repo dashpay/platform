@@ -45,8 +45,9 @@
 //! Between passes a wallet waits for the height at which its next root is due;
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
-//! InstantSend-locked transaction, a block that changed records, a sweep) or an `Uncertain` result for one of its transactions wakes it. `Dead` and `Mined` end
-//! the probing of a root; `Accepted` does not — a mempool is not settlement.
+//! InstantSend-locked transaction, a block that changed records, a sweep) or
+//! an `Uncertain` result for one of its transactions wakes it. `Dead` and
+//! `Mined` end the probing of a root; `Accepted` does not — a mempool is not settlement.
 //! Probes run only while the SPV client delivers blocks, i.e. while the app is
 //! in the foreground.
 //!
@@ -1046,10 +1047,11 @@ struct PendingPass {
 /// (probing off, wallet removed) is ignored.
 struct Run {
     id: u64,
-    /// Txids a wallet event settled or removed while the run was under way:
-    /// its read is older than that, so it neither probes them nor publishes
-    /// anything for them. Gone with the run — a later read is current, a
-    /// send a reorg brings back included.
+    /// Txids a wallet event settled or removed while the run was reading: the
+    /// read may still list them, and they are left out of it. Once the run
+    /// probes, a settle prunes its views and due roots instead (a root whose
+    /// probe is out is moot once gone from the views). Gone with the run — a
+    /// later read is current, a send a reorg brings back included.
     settled: HashSet<Txid>,
     /// Cleared by a rewind: the wallet's schedules were restarted, and this
     /// run, older than that, marks no probes into them.
@@ -1279,10 +1281,12 @@ impl Actor {
                 // A pass under way read the wallet before this: it neither
                 // probes these any more nor publishes anything for them.
                 if let Some(run) = entry.run.as_mut() {
-                    run.settled.extend(txids.iter().copied());
-                    if let Some(probing) = run.probing.as_mut() {
-                        probing.due.retain(|root| !txids.contains(&root.txid));
-                        probing.views.retain(|view| !txids.contains(&view.txid));
+                    match run.probing.as_mut() {
+                        None => run.settled.extend(txids.iter().copied()),
+                        Some(probing) => {
+                            probing.due.retain(|root| !txids.contains(&root.txid));
+                            probing.views.retain(|view| !txids.contains(&view.txid));
+                        }
                     }
                 }
                 let events = self.state.settle(wallet_id, &txids);
@@ -1518,15 +1522,11 @@ impl Actor {
                     self.end_run(wallet_id);
                     return;
                 };
-                if current.settled.contains(&root.txid) {
+                if !probing.views.iter().any(|view| view.txid == root.txid) {
                     // Settled or gone while its probe was out: moot.
                     self.probe_next(wallet_id);
                     return;
                 }
-                let Some(probing) = current.probing.as_ref() else {
-                    self.end_run(wallet_id);
-                    return;
-                };
                 let events = record_probe(
                     &mut self.state,
                     wallet_id,
@@ -3665,8 +3665,8 @@ mod tests {
         assert!(settled_or_gone(&detected(TransactionContext::Mempool)).is_empty());
     }
 
-    /// A reorg brings a settled send back unsettled: a read that started after
-    /// the settle event drops the tombstone, and the send is probed again.
+    /// A reorg brings a settled send back unsettled: a run that starts after
+    /// the settle event reads it as current, and the send is probed again.
     #[tokio::test]
     async fn should_probe_a_send_again_after_a_reorg_unsettles_it() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
@@ -3778,6 +3778,37 @@ mod tests {
         .await;
 
         assert!(rig.sent().is_empty(), "root 1 is still dead");
+    }
+
+    /// A send settled while the pass is still reading is left out of the read
+    /// that may still list it: not probed, nothing published.
+    #[tokio::test]
+    async fn should_leave_a_send_settled_during_the_read_out_of_the_pass() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(2), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), Vec::new());
+        rig.follow(wallet(), 100).await;
+        rig.views(wallet(), vec![send(2, &[outpoint(91, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: true,
+        })
+        .await;
+
+        rig.source.pause(true);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        rig.handle(Command::Settled {
+            wallet_id: wallet(),
+            txids: HashSet::from([txid(2)]),
+        });
+        rig.source.pause(false);
+        rig.settle().await;
+
+        assert!(probe.probed().is_empty());
+        assert!(rig.sent().is_empty());
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
