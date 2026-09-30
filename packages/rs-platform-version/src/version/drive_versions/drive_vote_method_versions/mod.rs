@@ -73,6 +73,8 @@ pub struct DriveVoteReadinessMethodVersions {
     pub fetch_fund: OptionalFeatureVersion,
     /// Proves a readiness fund.
     pub prove_fund: OptionalFeatureVersion,
+    /// Credits readiness charges to the block epoch's processing fee pool.
+    pub credit_pool: OptionalFeatureVersion,
     /// Layer estimation for writes under the readiness subtrees.
     pub estimation_costs: OptionalFeatureVersion,
 }

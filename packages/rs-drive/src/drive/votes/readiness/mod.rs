@@ -9,6 +9,8 @@
 #[cfg(feature = "server")]
 mod activate_readiness_round_operations;
 #[cfg(feature = "server")]
+mod add_readiness_pool_credit_operation;
+#[cfg(feature = "server")]
 mod cancel_readiness_round_operations;
 #[cfg(feature = "server")]
 mod cleanup_retired_readiness_round_operations;

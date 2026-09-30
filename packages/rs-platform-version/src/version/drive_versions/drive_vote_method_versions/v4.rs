@@ -43,6 +43,7 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V4: DriveVoteMethodVersions = DriveVoteMeth
         empty_fund: Some(0),
         fetch_fund: Some(0),
         prove_fund: Some(0),
+        credit_pool: Some(0),
         estimation_costs: Some(0),
     },
     ..DRIVE_VOTE_METHOD_VERSIONS_V3

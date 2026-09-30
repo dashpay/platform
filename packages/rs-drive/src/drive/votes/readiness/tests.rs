@@ -387,6 +387,18 @@ mod genesis {
             result,
             Err(Error::Drive(DriveError::VersionNotActive { .. }))
         ));
+        let result = drive.add_readiness_pool_credit_operation(
+            &BlockInfo::default(),
+            1,
+            true,
+            None,
+            &mut vec![],
+            platform_version,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::VersionNotActive { .. }))
+        ));
     }
 }
 

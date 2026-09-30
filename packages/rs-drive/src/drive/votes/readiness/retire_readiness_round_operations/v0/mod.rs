@@ -1,5 +1,3 @@
-use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_POOL_PROCESSING_FEES;
-use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::votes::paths::{
     readiness_deadline_tree_path_vec, readiness_retired_rounds_tree_path_vec,
 };
@@ -9,16 +7,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
-use crate::util::type_constants::{
-    DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, U64_SIZE_U8,
-};
+use crate::util::type_constants::{DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8};
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use dpp::voting::readiness::round::ReadinessRound;
-use dpp::ProtocolError;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::EstimatedLayerCount::ApproximateElements;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
@@ -188,87 +182,6 @@ impl Drive {
                 refund,
             },
             drive_operations,
-        ))
-    }
-
-    /// The operation that adds `amount` to the block epoch's processing fee pool, reading
-    /// the current pool value in the same transaction. In estimation mode the read is
-    /// priced without state and the write is priced as an insert of the widest sum item
-    /// (the estimator bills a plain element by its serialized size, the applied write
-    /// bills the fixed sum item size); the caller describes the pool layers first.
-    ///
-    /// Readiness credits reach the pool this way (the cleanup reserve at retirement, the
-    /// membership lookup fees of the block event) so that every credit leaving a readiness
-    /// fund lands in a bucket conservation counts. The write is an absolute rewrite of the
-    /// pool item, so one such operation per applied batch.
-    ///
-    /// # Parameters
-    ///
-    /// * `block_info` - The block whose epoch receives the credits.
-    /// * `amount` - The credits to add.
-    /// * `apply` - Whether to read state (`true`) or only estimate the cost (`false`).
-    /// * `transaction` - The current transaction.
-    /// * `drive_operations` - The accumulator the read cost is appended to.
-    /// * `platform_version` - The platform version to use.
-    ///
-    /// # Returns
-    ///
-    /// * The operation that writes the pool item.
-    pub fn add_readiness_pool_credit_operation(
-        &self,
-        block_info: &BlockInfo,
-        amount: Credits,
-        apply: bool,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<LowLevelDriveOperation, Error> {
-        let epoch_tree_path = block_info.epoch.get_path();
-        let direct_query_type = if apply {
-            DirectQueryType::StatefulDirectQuery
-        } else {
-            DirectQueryType::StatelessDirectQuery {
-                in_tree_type: TreeType::SumTree,
-                query_target: QueryTargetValue(U64_SIZE_U32),
-            }
-        };
-        let existing_value = match self.grove_get_raw_optional(
-            (&epoch_tree_path).into(),
-            KEY_POOL_PROCESSING_FEES.as_slice(),
-            direct_query_type,
-            transaction,
-            drive_operations,
-            &platform_version.drive,
-        )? {
-            None => 0,
-            Some(Element::SumItem(existing_value, _)) => existing_value,
-            Some(_) => {
-                return Err(Error::Drive(DriveError::UnexpectedElementType(
-                    "epochs processing fee must be a sum item",
-                )))
-            }
-        };
-        if amount > i64::MAX as u64 {
-            return Err(Error::Protocol(Box::new(ProtocolError::Overflow(
-                "adding over i64::MAX to the processing fee pool",
-            ))));
-        }
-        let updated_value = if apply {
-            existing_value
-                .checked_add(amount as i64)
-                .ok_or(ProtocolError::Overflow(
-                    "overflow when adding to the processing fee pool",
-                ))?
-        } else {
-            i64::MAX
-        };
-        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
-            epoch_tree_path
-                .iter()
-                .map(|segment| segment.to_vec())
-                .collect(),
-            KEY_POOL_PROCESSING_FEES.to_vec(),
-            Element::new_sum_item(updated_value),
         ))
     }
 }
