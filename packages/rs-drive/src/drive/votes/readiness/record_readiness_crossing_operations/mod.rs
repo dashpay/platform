@@ -18,7 +18,8 @@ impl Drive {
     ///
     /// # Parameters
     ///
-    /// * `round` - The pending round; updated in place to its crossed state.
+    /// * `round` - The pending round; updated to its crossed state only once every operation
+    ///   is built, and left untouched by an estimate or a failure.
     /// * `crossing_ms` - The committed block time of the crossing.
     /// * `min_wait_ms` - The lower bound of the additional wait (from `SystemLimits`).
     /// * `max_wait_ms` - The upper bound of the additional wait (from `SystemLimits`).

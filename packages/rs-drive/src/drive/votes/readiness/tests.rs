@@ -1112,6 +1112,64 @@ mod rounds {
     }
 
     #[test]
+    fn should_leave_the_round_pending_when_a_crossing_is_estimated_or_fails() {
+        let (drive, payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = [1u8; 32];
+        let (mut round, _) = open_round(&drive, contract_id, payer, 10, None);
+        let pending = round.clone();
+
+        // An estimate prices the crossing without publishing it.
+        let mut layer_info = Some(HashMap::new());
+        drive
+            .record_readiness_crossing_operations(
+                &mut round,
+                1_500_000,
+                MIN_WAIT_MS,
+                MAX_WAIT_MS,
+                &mut layer_info,
+                None,
+                platform_version,
+            )
+            .expect("estimate");
+        assert_eq!(round, pending);
+
+        // A failure after the crossing is computed (here the cursor removal is not active)
+        // leaves the round as it was.
+        let mut no_cursor_removal = platform_version.clone();
+        no_cursor_removal
+            .drive
+            .methods
+            .vote
+            .readiness
+            .clear_scan_cursor = None;
+        let result = drive.record_readiness_crossing_operations(
+            &mut round,
+            1_500_000,
+            MIN_WAIT_MS,
+            MAX_WAIT_MS,
+            &mut None,
+            None,
+            &no_cursor_removal,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::VersionNotActive { .. }))
+        ));
+        assert_eq!(round, pending);
+
+        // The same round then crosses.
+        let deadline_ms = cross(&drive, &mut round, 1_500_000);
+        assert_eq!(round.deadline_ms(), Some(deadline_ms));
+        assert_eq!(
+            drive
+                .fetch_readiness_round(contract_id, None, platform_version)
+                .expect("fetch"),
+            Some(round)
+        );
+    }
+
+    #[test]
     fn should_prove_and_verify_a_round_present_and_absent() {
         let (drive, payer) = setup();
         let platform_version = PlatformVersion::latest();

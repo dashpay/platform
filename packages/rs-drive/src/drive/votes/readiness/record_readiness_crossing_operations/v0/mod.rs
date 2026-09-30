@@ -39,7 +39,9 @@ impl Drive {
         }
         let contract_id = round.contract_id().to_buffer();
         let round_id = round.round_id();
-        let deadline_ms = round.record_crossing(crossing_ms, min_wait_ms, max_wait_ms)?;
+        // Build on a copy so that a failure below leaves the caller's round pending.
+        let mut crossed = round.clone();
+        let deadline_ms = crossed.record_crossing(crossing_ms, min_wait_ms, max_wait_ms)?;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_readiness_deadline(
@@ -50,7 +52,7 @@ impl Drive {
         }
 
         let mut drive_operations = self.update_readiness_round_evaluation_operations(
-            round,
+            &crossed,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -120,6 +122,9 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
+        if estimated_costs_only_with_layer_info.is_none() {
+            *round = crossed;
+        }
         Ok((deadline_ms, drive_operations))
     }
 }
