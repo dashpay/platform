@@ -341,7 +341,7 @@ pub struct SystemLimits {
 }
 ```
 
-There are four `SYSTEM_LIMITS_V*` constants, one for each protocol version at
+There are five `SYSTEM_LIMITS_V*` constants, one for each protocol version at
 which a limit changed. The `Option` fields show the idiom for a parameter that
 did not exist before some version: `None` in the tables of the versions that
 predate the rule, `Some(value)` from the version that introduced it. It is the
@@ -406,8 +406,8 @@ every time the number moves. A new method version is warranted only when the
 *logic* changes. `daily_withdrawal_limit` in `rs-dpp` is the reference case:
 `v0` derives the limit from the current total credits, `v2` reads
 `daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`. Raising the percentage later is a `SYSTEM_LIMITS_V5`, not a
-`v3`.
+`SystemLimits`. Raising the percentage later is a table edit (the next
+`SYSTEM_LIMITS_V*`, or the unreleased version's own table), not a `v3`.
 
 Limits that only exist from a certain protocol version are `Option`s, `None`
 on every table that predates them. `SystemLimits` carries four such fields for
@@ -606,7 +606,7 @@ version/
     storage/, signature/, processing/, ...   # per-group tables, each with its own v*.rs
   system_limits/
     mod.rs                      # SystemLimits struct
-    v1.rs .. v4.rs
+    v1.rs .. v5.rs
   system_data_contract_versions/
     mod.rs
     v1.rs .. v3.rs
