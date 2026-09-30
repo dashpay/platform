@@ -83,6 +83,7 @@ pub mod shielded;
 pub mod signer;
 pub mod spv;
 pub mod tokens;
+pub mod tx_accounting;
 pub mod wait;
 pub mod wait_hub;
 pub mod wallet_factory;

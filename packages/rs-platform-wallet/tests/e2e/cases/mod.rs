@@ -11,6 +11,7 @@ pub mod al_001_concurrent_asset_lock_builds;
 pub mod cr_001_spv_mn_list_sync_readiness;
 pub mod cr_003_asset_lock_funded_registration;
 pub mod cr_004_legacy_bip32_utxo_update_after_spend;
+pub mod cr_005_asset_lock_record_accounting;
 pub mod dpns_001_register_name;
 // Found-bug pins (see TEST_SPEC.md ### Found bugs)
 pub mod found_004_fund_from_asset_lock_silent_fallback;

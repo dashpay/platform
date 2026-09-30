@@ -108,6 +108,12 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # `test-utils` exposes key-wallet's `TestWalletContext` + `Address::dummy`
 # (via `dashcore/test-utils`) for building funded, signable test wallets.
 key-wallet = { workspace = true, features = ["test-utils"] }
+# SQLite persister for the e2e CR-005 reload check. The dev-dependency
+# cycle is fine for integration tests, which link the same platform-wallet
+# build as the storage crate. `__test-helpers` is the storage crate's own
+# test configuration; its default-feature lib build has test-only readers
+# that `-D warnings` rejects as dead code.
+platform-wallet-storage = { path = "../rs-platform-wallet-storage", features = ["__test-helpers"] }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"

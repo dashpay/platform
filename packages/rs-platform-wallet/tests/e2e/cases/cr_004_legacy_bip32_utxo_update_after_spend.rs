@@ -197,6 +197,16 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
         "CR-004: legacy BIP32 partial spend broadcast"
     );
 
+    // Wallet-level accounting of a plain send to a foreign address.
+    {
+        use crate::framework::tx_accounting::{
+            assert_send_accounting, funding_record, wallet_tx_records,
+        };
+        let txid = tx.txid();
+        let records = wallet_tx_records(s.test_wallet.platform_wallet(), &txid).await;
+        assert_send_accounting(&funding_record(&records, &txid), send_amount);
+    }
+
     // Step 6: assert the post-broadcast state mutation actually
     // happened on `standard_bip32_accounts[0]`. The #845 contract:
     //

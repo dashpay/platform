@@ -5311,6 +5311,7 @@ dependencies = [
  "log",
  "parking_lot",
  "platform-encryption",
+ "platform-wallet-storage",
  "rand 0.8.6",
  "rayon",
  "rs-sdk-trusted-context-provider",
