@@ -348,18 +348,50 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertTrue(row.isAssetLock)
     }
 
-    func testShouldNotReportStoredAmountWhileInputsArePending() {
+    func testShouldReportSoleWalletsStoredAmountDespitePendingInputs() {
         let walletId = Data(repeating: 1, count: 32)
         let tx = PersistentTransaction(txid: Data(repeating: 3, count: 32), transactionData: Data(), netAmount: 40)
         let change = PersistentTxo(transaction: tx, vout: 0, amount: 40, address: "", height: 1)
         change.walletId = walletId
         tx.outputs = [change]
-        XCTAssertEqual(tx.netAmount(for: walletId), 40)
         tx.pendingInputs = [PersistentPendingInput(
             outpoint: Data(repeating: 9, count: 36), inputIndex: 0,
             spendingTxid: tx.txid, spendingTransaction: tx, walletId: walletId
         )]
-        XCTAssertNil(tx.netAmount(for: walletId), "a missing input makes the stored amount provisional")
+        XCTAssertEqual(tx.netAmount(for: walletId), 40, "the sole wallet's stored amount is Rust's net_amount")
+    }
+
+    func testShouldNotComputeSharedAmountWhileOwnInputsArePending() {
+        let (walletA, walletB) = (Data(repeating: 1, count: 32), Data(repeating: 2, count: 32))
+        let tx = PersistentTransaction(txid: Data(repeating: 3, count: 32), transactionData: Data(), netAmount: 40)
+        let toA = PersistentTxo(transaction: tx, vout: 0, amount: 40, address: "", height: 1)
+        toA.walletId = walletA
+        let toB = PersistentTxo(transaction: tx, vout: 1, amount: 60, address: "", height: 1)
+        toB.walletId = walletB
+        tx.outputs = [toA, toB]
+        tx.pendingInputs = [PersistentPendingInput(
+            outpoint: Data(repeating: 9, count: 36), inputIndex: 0,
+            spendingTxid: tx.txid, spendingTransaction: tx, walletId: walletA
+        )]
+        XCTAssertNil(tx.netAmount(for: walletA), "an unlinked input A recorded may be A's own coin")
+        XCTAssertEqual(tx.netAmount(for: walletB), 60)
+    }
+
+    func testShouldKeepIncomingAmountWhenInputsAreForeign() throws {
+        let container = try DashModelContainer.createInMemory()
+        let walletId = Data(repeating: 1, count: 32)
+        container.mainContext.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try container.mainContext.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        let paymentId = Data(repeating: 3, count: 32)
+        let foreign = Data(repeating: 2, count: 32)
+        persist(handler, walletId: walletId, txid: paymentId,
+                bytes: serializedSpend(inputs: [foreign]), net: 40,
+                inputTxids: [foreign], outputs: [(paymentId, 40)])
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+            .first { $0.txid == paymentId })
+        XCTAssertEqual(row.netAmount, 40)
+        XCTAssertEqual(row.netAmount(for: walletId), 40, "a foreign input is not an unresolved input of ours")
     }
 
     func testShouldNotCountAnotherLocalWalletsUnlinkedOutputForTheSender() throws {

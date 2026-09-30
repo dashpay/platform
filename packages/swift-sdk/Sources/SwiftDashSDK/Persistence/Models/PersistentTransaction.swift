@@ -228,7 +228,14 @@ public final class PersistentTransaction {
         }
     }
 
-    /// Core value movement for one wallet; the stored scalar spans all locally owned TXOs.
+    /// Core value movement for one wallet; `nil` when it cannot be derived yet.
+    ///
+    /// The stored scalar is the last recording wallet's (Rust `net_amount`,
+    /// or the reconciliation over its own TXOs), so it answers only when
+    /// `walletId` is the sole participant. Pending inputs do not veto that
+    /// answer: `upsertTransaction` writes one for every input whose prevout
+    /// has no local TXO — every foreign input of an incoming payment — and
+    /// never prunes them, so they cannot tell a late input of ours apart.
     public func netAmount(for walletId: Data) -> Int64? {
         func owned(_ rows: [PersistentTxo]) -> [PersistentTxo] {
             var seen = Set<Data>()
@@ -238,11 +245,11 @@ public final class PersistentTransaction {
                     && seen.insert($0.outpoint).inserted
             }
         }
-        let wallets = owningWalletIds
         let hasUnownedTxos = (inputs + outputs).contains { !PlatformWalletPersistenceHandler.isWalletOwnedTxo($0) }
-        // Unresolved inputs make any amount provisional, the stored one included.
-        guard pendingInputs.isEmpty else { return nil }
-        if wallets.count == 1, wallets.contains(walletId), !hasUnownedTxos { return netAmount }
+        if participatingWalletIds == [walletId], !hasUnownedTxos { return netAmount }
+        // Computed from TXOs alone: a pending input this wallet recorded may be
+        // one of its own still-unlinked coins, so the sum is only provisional.
+        guard !pendingInputs.contains(where: { $0.walletId == walletId }) else { return nil }
         let walletInputs = owned(inputs)
         let walletOutputs = owned(outputs)
         guard !walletInputs.isEmpty || !walletOutputs.isEmpty else { return nil }
@@ -254,7 +261,7 @@ public final class PersistentTransaction {
 
     /// Direction relative to one wallet for transactions shared by multiple local wallets.
     public func direction(for walletId: Data) -> UInt32 {
-        guard owningWalletIds.count > 1, direction != CoreDirectionCode.coinJoin,
+        guard participatingWalletIds.count > 1, direction != CoreDirectionCode.coinJoin,
               typedKind != .coinJoin, !isAssetLock else { return direction }
         let spendsOurs = inputs.contains {
             PlatformWalletPersistenceHandler.isWalletOwnedTxo($0)
@@ -289,10 +296,16 @@ public final class PersistentTransaction {
         String(format: "%@%.8f DASH", duffs >= 0 ? "+" : "-", Double(duffs.magnitude) / 100_000_000)
     }
 
-    /// Local wallets owning at least one of this transaction's TXOs.
-    private var owningWalletIds: Set<Data> {
-        Set((inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
-            .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
+    /// Local wallets owning one of this transaction's TXOs or having recorded it
+    /// (`involvedAccounts`), whose last writer's accounting is the stored scalar.
+    private var participatingWalletIds: Set<Data> {
+        let owning = (inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
+            .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) }
+        let recording = involvedAccounts.compactMap { account -> Data? in
+            let wallet: PersistentWallet? = account.wallet
+            return wallet?.walletId
+        }
+        return Set(owning + recording)
     }
 
     static func reconciledAccounting(
