@@ -277,6 +277,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     )));
                     break 'load;
                 }
+                // Under the insert's guard: before any of the wallet's events.
+                self.broadcast_resolver.wallet_added(&wallet_id);
             }
             inserted_in_manager.push(wallet_id);
 
@@ -368,7 +370,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 wallets.insert(wallet_id, Arc::clone(&platform_wallet));
                 wallets
             });
-            self.broadcast_resolver.wallet_added(&wallet_id);
             inserted_in_wallets.push((wallet_id, Arc::clone(platform_wallet.generation())));
 
             // Re-seed the balance atomic now that the wallet is published.

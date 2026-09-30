@@ -853,6 +853,30 @@ fn log_outgoing(item: &Outgoing) {
     }
 }
 
+/// The forced txids whose chain gains a root it did not have when the pass
+/// saw `views` with `mined_before` found in blocks, now that `gone` left and
+/// `mined_after` are known mined: a new root worth probing at once.
+fn forced_with_new_roots(
+    views: &[OutgoingView],
+    mined_before: &HashSet<Txid>,
+    mined_after: &HashSet<Txid>,
+    gone: &HashSet<Txid>,
+    forced: &HashSet<Txid>,
+) -> Vec<Txid> {
+    let before = ChainGraph::new(views, mined_before);
+    let remaining: Vec<OutgoingView> = views
+        .iter()
+        .filter(|view| !gone.contains(&view.txid))
+        .cloned()
+        .collect();
+    let after = ChainGraph::new(&remaining, mined_after);
+    forced
+        .iter()
+        .filter(|txid| !after.roots_of(txid).is_subset(&before.roots_of(txid)))
+        .copied()
+        .collect()
+}
+
 // ---- The actor -------------------------------------------------------------
 
 /// What a pass reads from a wallet.
@@ -1313,20 +1337,19 @@ impl Actor {
                         match run.probing.as_mut() {
                             None => run.settled.extend(txids.iter().copied()),
                             Some(probing) => {
-                                // The roots of each forced chain before this
-                                // settle: a root after it that was not one
-                                // before is new, and worth probing at once.
-                                let mined = self.state.mined(&wallet_id);
-                                let roots_before: Vec<(Txid, BTreeSet<Txid>)> =
-                                    if run.forced.is_empty() {
-                                        Vec::new()
-                                    } else {
-                                        let graph = ChainGraph::new(&probing.views, &mined);
-                                        run.forced
-                                            .iter()
-                                            .map(|txid| (*txid, graph.roots_of(txid)))
-                                            .collect()
-                                    };
+                                if !run.forced.is_empty() {
+                                    // A forced chain may gain a root (its parent
+                                    // settled): ask for it in a new pass rather
+                                    // than wait for the next block.
+                                    let mined = self.state.mined(&wallet_id);
+                                    requeue.extend(forced_with_new_roots(
+                                        &probing.views,
+                                        &mined,
+                                        &mined,
+                                        &txids,
+                                        &run.forced,
+                                    ));
+                                }
                                 probing.due.retain(|root| !txids.contains(&root.txid));
                                 probing.views.retain(|view| !txids.contains(&view.txid));
                                 // The root whose probe is out settled: stop
@@ -1339,22 +1362,6 @@ impl Actor {
                                     probing.in_flight = None;
                                     run.abort.abort();
                                     next_probe = true;
-                                }
-                                // A forced chain may have a new root now (its
-                                // parent settled): ask for it in a new pass
-                                // rather than wait for the next block.
-                                if !roots_before.is_empty() {
-                                    let graph = ChainGraph::new(&probing.views, &mined);
-                                    requeue.extend(
-                                        roots_before
-                                            .into_iter()
-                                            .filter(|(txid, before)| {
-                                                !txids.contains(txid)
-                                                    && graph.is_unsettled(txid)
-                                                    && !graph.roots_of(txid).is_subset(before)
-                                            })
-                                            .map(|(txid, _)| txid),
-                                    );
                                 }
                             }
                         }
@@ -1391,8 +1398,8 @@ impl Actor {
                 if !self.enabled {
                     return;
                 }
-                // Routed to the wallets holding it, including ones no event
-                // has introduced yet.
+                // Routed to the registered wallets holding it, including ones
+                // no height step has reached yet.
                 let source = Arc::clone(&self.source);
                 self.jobs.spawn(async move {
                     JobDone::Listed {
@@ -1486,9 +1493,14 @@ impl Actor {
                     return;
                 }
                 for wallet_id in wallets {
+                    // Only a wallet the actor was told about (see
+                    // `WalletAdded`): one removed since the lookup is gone.
                     // Counted like a command: a run that read the id as gone
                     // before this must not drop the entry and its request.
-                    let entry = self.entry(wallet_id);
+                    let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                        continue;
+                    };
+                    entry.seq += 1;
                     let pending = entry.pending.get_or_insert_with(PendingPass::default);
                     pending.height = pending.height.max(entry.height.unwrap_or(0));
                     pending.forced.insert(txid);
@@ -1613,12 +1625,13 @@ impl Actor {
                 }
                 let Some(root) = probing.in_flight.take() else {
                     // Cannot happen: a settle that clears the root in flight
-                    // re-arms the run or ends it at once. Fail safe.
+                    // re-arms the run or ends it at once. Log it and carry on
+                    // with the roots still due, forced ones included.
                     tracing::error!(
                         wallet_id = %hex::encode(wallet_id),
                         "broadcast probe: a probe result with no root in flight"
                     );
-                    self.end_run(wallet_id);
+                    self.probe_next(wallet_id);
                     return;
                 };
                 if !probing.views.iter().any(|view| view.txid == root.txid) {
@@ -1626,6 +1639,23 @@ impl Actor {
                     self.probe_next(wallet_id);
                     return;
                 }
+                // Found in a block: the sends built on it become roots, and a
+                // forced one among them is worth probing at once.
+                let reroot = if matches!(verdict, ProbeVerdict::Mined) && !current.forced.is_empty()
+                {
+                    let before = self.state.mined(&wallet_id);
+                    let mut after = before.clone();
+                    after.insert(root.txid);
+                    forced_with_new_roots(
+                        &probing.views,
+                        &before,
+                        &after,
+                        &HashSet::new(),
+                        &current.forced,
+                    )
+                } else {
+                    Vec::new()
+                };
                 let events = record_probe(
                     &mut self.state,
                     wallet_id,
@@ -1635,6 +1665,14 @@ impl Actor {
                     &verdict,
                 );
                 deliver(&self.sink, events);
+                if !reroot.is_empty() {
+                    if let Some(entry) = self.wallets.get_mut(&wallet_id) {
+                        let height = entry.height.unwrap_or(0);
+                        let pending = entry.pending.get_or_insert_with(PendingPass::default);
+                        pending.height = pending.height.max(height);
+                        pending.forced.extend(reroot);
+                    }
+                }
                 self.probe_next(wallet_id);
             }
         }
@@ -2791,12 +2829,19 @@ mod tests {
             }
         }
 
-        fn views(&self, wallet_id: WalletId, views: Vec<OutgoingView>) {
-            self.source
+        /// The wallet's unsettled records; the first call registers the
+        /// wallet, as the manager does before any of its events.
+        fn views(&mut self, wallet_id: WalletId, views: Vec<OutgoingView>) {
+            let new = self
+                .source
                 .views
                 .lock()
                 .expect("views")
-                .insert(wallet_id, views);
+                .insert(wallet_id, views)
+                .is_none();
+            if new && !self.actor.wallets.contains_key(&wallet_id) {
+                self.actor.handle(Command::WalletAdded(wallet_id));
+            }
         }
 
         /// Handle `command`, then every job it caused, as the task would.
@@ -2809,13 +2854,6 @@ mod tests {
         /// wallet's synced height along, as the SPV client does before it
         /// reports the step.
         fn handle(&mut self, command: Command) {
-            // A wallet the tests step through is registered, as the manager
-            // does before any of its events.
-            if let Command::Height { wallet_id, .. } = command {
-                if !self.actor.wallets.contains_key(&wallet_id) {
-                    self.actor.handle(Command::WalletAdded(wallet_id));
-                }
-            }
             if let Command::Height { wallet_id, height } = command {
                 let mut synced = self.source.synced.lock().expect("synced");
                 let at = synced.entry(wallet_id).or_insert(0);
@@ -3008,13 +3046,16 @@ mod tests {
         assert!(!rig.actor.wallets.contains_key(&wallet()));
     }
 
-    /// A late event can register an id the wallet manager no longer holds;
-    /// the first pass that finds it gone drops it.
+    /// A registered wallet the manager no longer holds (removed without the
+    /// removal reaching the resolver yet): the first pass that finds it gone
+    /// drops it.
     #[tokio::test]
     async fn should_drop_a_wallet_the_manager_no_longer_holds() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.actor.handle(Command::WalletAdded(wallet())); // never in the source
 
         rig.height(wallet(), 100).await;
+        assert!(rig.actor.wallets.contains_key(&wallet()));
         rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 101,
@@ -3024,8 +3065,8 @@ mod tests {
         assert!(!rig.actor.wallets.contains_key(&wallet()));
     }
 
-    /// An `Uncertain` result right after launch, before any event introduced
-    /// the wallet, still gets its immediate probe.
+    /// An `Uncertain` result right after launch, before any height step
+    /// reached the wallet, still gets its immediate probe.
     #[tokio::test]
     async fn should_route_an_uncertain_result_to_a_wallet_no_event_introduced() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
@@ -4128,6 +4169,38 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(2)], "root 1 stopped, root 2 once");
     }
 
+    /// The forced send's parent root is found in a block: the send becomes a
+    /// root and is probed at once, not at the next block.
+    #[tokio::test]
+    async fn should_probe_a_forced_send_at_once_when_its_root_is_found_mined() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined)]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), Vec::new());
+        rig.follow(wallet(), 100).await;
+        rig.views(
+            wallet(),
+            vec![incoming(1, &[outpoint(80, 0)]), send(2, &[outpoint(1, 0)])],
+        );
+
+        rig.send(Command::Uncertain(txid(2))).await;
+
+        assert_eq!(probe.probed(), vec![txid(1), txid(2)]);
+    }
+
+    /// An `Uncertain` lookup that lands after its wallet was removed does not
+    /// bring the wallet's entry back.
+    #[tokio::test]
+    async fn should_not_bring_back_a_removed_wallet_from_a_lookup() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.actor.handle(Command::Uncertain(txid(1)));
+        rig.actor.handle(Command::WalletRemoved(wallet()));
+
+        rig.settle().await;
+
+        assert!(!rig.actor.wallets.contains_key(&wallet()));
+    }
+
     /// A probe that panics on its `nth` call and accepts otherwise.
     struct PanicOnCall {
         nth: usize,
@@ -4239,7 +4312,7 @@ mod tests {
     /// outlives it.
     #[tokio::test]
     async fn should_end_with_every_job_when_stopped() {
-        let rig = Rig::new(Arc::new(HangingProbe));
+        let mut rig = Rig::new(Arc::new(HangingProbe));
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         let (commands, receiver) = mpsc::unbounded_channel();
         let (stop, stopped) = oneshot::channel();

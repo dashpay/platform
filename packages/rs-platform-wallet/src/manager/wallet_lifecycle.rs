@@ -438,14 +438,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // stays `WalletCreation`.
         let wallet_id = {
             let mut wm = self.wallet_manager.write().await;
-            wm.insert_wallet(wallet, platform_info)
+            let wallet_id = wm
+                .insert_wallet(wallet, platform_info)
                 .map_err(|e| match e {
                     key_wallet_manager::WalletError::WalletExists(id) => already_registered(id),
                     other => PlatformWalletError::WalletCreation(format!(
                         "Failed to register wallet in WalletManager: {}",
                         other
                     )),
-                })?
+                })?;
+            // Under the same guard as the insert: the resolver hears of the
+            // wallet before any of its events, and in order with a removal.
+            self.broadcast_resolver.wallet_added(&wallet_id);
+            wallet_id
         };
 
         // `insert_wallet` recomputes the id from the (now external-signable)
@@ -618,7 +623,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
             wallets
         });
-        self.broadcast_resolver.wallet_added(&wallet_id);
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
@@ -887,14 +891,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
                 );
             }
+            // Broadcast-probe state for the wallet's sends goes too, and the
+            // host is told to drop the verdicts it shows for them (from the
+            // resolver's task). After the inner removal, so no later pass can
+            // read the wallet and rebuild that state; under the same guard, so
+            // it is queued ahead of a same-id re-registration's WalletAdded.
+            self.broadcast_resolver.wallet_removed(wallet_id);
         }
-
-        // Broadcast-probe state for the wallet's sends goes too, and the host
-        // is told to drop the verdicts it shows for them (from the resolver's
-        // task). After the inner removal, so no later pass can read the wallet
-        // and rebuild that state; before the midpoint, so the removal is queued
-        // ahead of every event of a same-id recreation and never touches it.
-        self.broadcast_resolver.wallet_removed(wallet_id);
 
         // Test-only rendezvous: the window a concurrent same-id registration can
         // publish a new generation into. Sits AFTER every id-keyed unregister,
