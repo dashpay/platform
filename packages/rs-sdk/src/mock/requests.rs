@@ -499,27 +499,49 @@ type EncodedContractDocumentRemoval = (
     Option<(Identifier, u64)>,
 );
 
+/// One removal record in its mock wire shape.
+fn encode_removal_entry(entry: &ContractDocumentRemovalEntry) -> EncodedContractDocumentRemoval {
+    (
+        entry.document_id,
+        entry.removal.document_owner_id,
+        entry.removal.moderator_id,
+        entry.removal.removed_at,
+        entry.removal.reason.clone(),
+        entry.removal.document_hash,
+        entry
+            .removal
+            .restoration
+            .as_ref()
+            .map(|restoration| (restoration.moderator_id, restoration.restored_at)),
+    )
+}
+
+/// One removal record back from its mock wire shape.
+fn decode_removal_entry(
+    (document_id, document_owner_id, moderator_id, removed_at, reason, document_hash, restoration): EncodedContractDocumentRemoval,
+) -> ContractDocumentRemovalEntry {
+    ContractDocumentRemovalEntry {
+        document_id,
+        removal: ContractDocumentRemoval {
+            document_owner_id,
+            moderator_id,
+            reason,
+            removed_at,
+            document_hash,
+            restoration: restoration.map(|(moderator_id, restored_at)| {
+                ContractDocumentRestoration {
+                    moderator_id,
+                    restored_at,
+                }
+            }),
+        },
+    }
+}
+
 impl MockResponse for ContractDocumentRemovals {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        let removals: Vec<EncodedContractDocumentRemoval> = self
-            .removals()
-            .iter()
-            .map(|entry| {
-                (
-                    entry.document_id,
-                    entry.removal.document_owner_id,
-                    entry.removal.moderator_id,
-                    entry.removal.removed_at,
-                    entry.removal.reason.clone(),
-                    entry.removal.document_hash,
-                    entry
-                        .removal
-                        .restoration
-                        .as_ref()
-                        .map(|restoration| (restoration.moderator_id, restoration.restored_at)),
-                )
-            })
-            .collect();
+        let removals: Vec<EncodedContractDocumentRemoval> =
+            self.removals().iter().map(encode_removal_entry).collect();
         bincode::encode_to_vec(removals, BINCODE_CONFIG).expect("encode ContractDocumentRemovals")
     }
 
@@ -530,39 +552,7 @@ impl MockResponse for ContractDocumentRemovals {
         let (removals, _): (Vec<EncodedContractDocumentRemoval>, _) =
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode ContractDocumentRemovals");
-        ContractDocumentRemovals(
-            removals
-                .into_iter()
-                .map(
-                    |(
-                        document_id,
-                        document_owner_id,
-                        moderator_id,
-                        removed_at,
-                        reason,
-                        document_hash,
-                        restoration,
-                    )| {
-                        ContractDocumentRemovalEntry {
-                            document_id,
-                            removal: ContractDocumentRemoval {
-                                document_owner_id,
-                                moderator_id,
-                                reason,
-                                removed_at,
-                                document_hash,
-                                restoration: restoration.map(|(moderator_id, restored_at)| {
-                                    ContractDocumentRestoration {
-                                        moderator_id,
-                                        restored_at,
-                                    }
-                                }),
-                            },
-                        }
-                    },
-                )
-                .collect(),
-        )
+        ContractDocumentRemovals(removals.into_iter().map(decode_removal_entry).collect())
     }
 }
 
@@ -1163,7 +1153,12 @@ impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
 
 /// Wire shape for `ChainedDocuments` mock round-trip: both halves as
 /// per-document CBOR lists.
-type MockChainedHalves = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<[u8; 32]>);
+type MockChainedHalves = (
+    Vec<Vec<u8>>,
+    Vec<Vec<u8>>,
+    Vec<[u8; 32]>,
+    Vec<EncodedContractDocumentRemoval>,
+);
 
 impl MockResponse for drive_proof_verifier::ChainedDocuments {
     /// Both halves as per-document CBOR, bincode-framed as
@@ -1185,6 +1180,10 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
                 .iter()
                 .map(|id| id.to_buffer())
                 .collect(),
+            self.removed_outer_documents
+                .iter()
+                .map(encode_removal_entry)
+                .collect(),
         );
         bincode::encode_to_vec(halves, bincode_config).expect("encode ChainedDocuments")
     }
@@ -1194,7 +1193,7 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
         Self: Sized,
     {
         let bincode_config = standard();
-        let ((inner, outer, missing), _): (MockChainedHalves, _) =
+        let ((inner, outer, missing, removed), _): (MockChainedHalves, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode ChainedDocuments");
         let decode = |bufs: Vec<Vec<u8>>| {
             bufs.into_iter()
@@ -1207,6 +1206,7 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
             inner_documents: decode(inner),
             outer_documents: decode(outer),
             missing_outer_ids: missing.into_iter().map(Identifier::from).collect(),
+            removed_outer_documents: removed.into_iter().map(decode_removal_entry).collect(),
         }
     }
 }
@@ -1221,6 +1221,7 @@ type MockCompositeShape = (
     Vec<Vec<u8>>,
     Vec<MockCompositeSubResult>,
     Vec<Vec<[u8; 32]>>,
+    Vec<Vec<EncodedContractDocumentRemoval>>,
 );
 
 impl MockResponse for drive_proof_verifier::CompositeDocuments {
@@ -1259,6 +1260,10 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
                 .iter()
                 .map(|ids| ids.iter().map(|id| id.to_buffer()).collect())
                 .collect(),
+            self.sub_result_removals
+                .iter()
+                .map(|removals| removals.iter().map(encode_removal_entry).collect())
+                .collect(),
         );
         bincode::encode_to_vec(shape, bincode_config).expect("encode CompositeDocuments")
     }
@@ -1268,7 +1273,7 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
         Self: Sized,
     {
         let bincode_config = standard();
-        let ((page, sub_results, missing_ids), _): (MockCompositeShape, _) =
+        let ((page, sub_results, missing_ids, removals), _): (MockCompositeShape, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode CompositeDocuments");
         let decode = |bufs: Vec<Vec<u8>>| -> Vec<Document> {
             bufs.into_iter()
@@ -1303,6 +1308,10 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
             sub_result_missing_ids: missing_ids
                 .into_iter()
                 .map(|ids| ids.into_iter().map(Identifier::from).collect())
+                .collect(),
+            sub_result_removals: removals
+                .into_iter()
+                .map(|removals| removals.into_iter().map(decode_removal_entry).collect())
                 .collect(),
         }
     }

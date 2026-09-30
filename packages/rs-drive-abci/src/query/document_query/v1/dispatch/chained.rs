@@ -12,6 +12,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::contract_moderation_queries::removal_entry_to_response;
 use crate::query::document_query::v1::conversions;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
@@ -237,12 +238,20 @@ impl<C> Platform<C> {
                 .map(|id| id.to_vec())
                 .collect();
 
+            let removed_outer_documents = outcome
+                .result
+                .removed_outer_documents
+                .into_iter()
+                .map(removal_entry_to_response)
+                .collect();
+
             GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Data(ResultData {
                     variant: Some(result_data::Variant::Chained(ChainedDocuments {
                         inner_documents,
                         outer_documents,
                         missing_outer_ids,
+                        removed_outer_documents,
                     })),
                 })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),

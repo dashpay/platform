@@ -11,10 +11,10 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::contract_moderation::{
-    ContractDocumentRemoval, ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
-    ContractDocumentRemovalsSelection, ContractModerationEntries,
-    ContractModerationEntriesPageQuery, ContractModerationList, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationStatusQuery,
+    ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
+    ContractDocumentRemovalsPageQuery, ContractDocumentRemovalsSelection,
+    ContractModerationEntries, ContractModerationEntriesPageQuery, ContractModerationList,
+    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationStatusQuery,
 };
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use js_sys::Array;
@@ -484,6 +484,24 @@ pub(crate) fn set_removal_fields(
     Ok(())
 }
 
+/// One removal record with its document id, identifiers written by `id_to_js`: base58 strings
+/// for the removals query ([`ContractDocumentRemovalEntry`]), `Identifier`s for a join through a
+/// `moderatedDocument` reference (`JoinedDocumentRemoval`), as the join's other ids are.
+pub(crate) fn removal_entry_to_js(
+    entry: &ContractDocumentRemovalEntry,
+    id_to_js: impl Fn(Identifier) -> JsValue,
+) -> Result<JsValue, WasmSdkError> {
+    let js_entry = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &js_entry,
+        &"documentId".into(),
+        &id_to_js(entry.document_id),
+    )
+    .map_err(|_| WasmSdkError::generic("failed to set `documentId` on the removal"))?;
+    set_removal_fields(&js_entry, &entry.removal, id_to_js)?;
+    Ok(js_entry.into())
+}
+
 fn removals_to_js(
     page: ContractDocumentRemovals,
     query: &ContractDocumentRemovalsPageQuery,
@@ -496,10 +514,9 @@ fn removals_to_js(
     let id_to_js = |id: Identifier| JsValue::from_str(&IdentifierWasm::from(id).to_base58());
     let removals = Array::new();
     for entry in page.removals() {
-        let js_entry = js_sys::Object::new();
-        set(&js_entry, "documentId", id_to_js(entry.document_id))?;
-        set_removal_fields(&js_entry, &entry.removal, id_to_js)?;
-        removals.push(&js_entry);
+        removals.push(&removal_entry_to_js(entry, |id| {
+            JsValue::from_str(&IdentifierWasm::from(id).to_base58())
+        })?);
     }
     set(&result, "removals", removals.into())?;
     // A page shorter than the limit is the last one, and a read by ids has no page after it:

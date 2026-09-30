@@ -940,6 +940,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentLookupInvalid).to.equal(40137);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentListInvalid).to.equal(40138);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotModerated).to.equal(40143);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeModerated).to.equal(40144);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRemoved).to.equal(40145);
     });
 
     it('should resolve a code back to its name', () => {

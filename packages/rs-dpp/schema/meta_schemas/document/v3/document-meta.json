@@ -578,7 +578,8 @@
                 "token",
                 "permanentDocument",
                 "identityPublicKey",
-                "deletableDocument"
+                "deletableDocument",
+                "moderatedDocument"
               ]
             },
             "anyOf": {
@@ -621,7 +622,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
+              "description": "The name of the referenced document type, whose documents must leave state only as the reference type says: for permanentDocument never (canBeDeleted: false, no moderatorAbilities.delete and no ttl); for moderatedDocument only through a moderator's recorded removal (canBeDeleted: false, no ttl, moderatorAbilities.delete with deleteKeepsRecord not false), so the reference resolves to the document or to its removal record, which a replace keeps; for deletableDocument in any other way; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -744,7 +745,7 @@
               }
             },
             "where": {
-              "description": "permanentDocument and deletableDocument references only: what the referenced document must hold once found, checked by consensus when the referring document is written. Each entry maps a property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, to the referring document's value it must equal: a schema property of the declaring document type, or \"$ownerId\", the writer, which turns the entry into a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may be compared once. $creatorId needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract), and $ownerId, $creatorId or $id an identifier on the referring side. Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A document found that fails an entry refuses the write with ReferencedDocumentPropertyMismatchError (40127). Beside a findBy function the declaration is judged when the document is created only, so its entries gate the create alone, and every referring value other than $ownerId must be transient or fixed once written (not listed under immutableAllowSetting). where never finds the document: \".\" and functions belong to findBy. Available from protocol version 14.",
+              "description": "permanentDocument, moderatedDocument and deletableDocument references only: what the referenced document must hold once found, checked by consensus when the referring document is written. Each entry maps a property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, to the referring document's value it must equal: a schema property of the declaring document type, or \"$ownerId\", the writer, which turns the entry into a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may be compared once. $creatorId needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract), and $ownerId, $creatorId or $id an identifier on the referring side. Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A document found that fails an entry refuses the write with ReferencedDocumentPropertyMismatchError (40127). Beside a findBy function the declaration is judged when the document is created only, so its entries gate the create alone, and every referring value other than $ownerId must be transient or fixed once written (not listed under immutableAllowSetting). where never finds the document: \".\" and functions belong to findBy. Available from protocol version 14.",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
@@ -841,7 +842,9 @@
             {
               "if": {
                 "properties": {
-                  "type": { "enum": ["permanentDocument", "deletableDocument"] }
+                  "type": {
+                    "enum": ["permanentDocument", "deletableDocument", "moderatedDocument"]
+                  }
                 },
                 "required": ["type"]
               },
@@ -855,6 +858,16 @@
                   "findBy": false,
                   "where": false
                 }
+              }
+            },
+            {
+              "$comment": "A moderated document is referred to by its id alone: a moderator's removal frees the unique index keys a findBy finds by",
+              "if": {
+                "properties": { "type": { "const": "moderatedDocument" } },
+                "required": ["type"]
+              },
+              "then": {
+                "properties": { "findBy": false }
               }
             },
             {
@@ -2208,7 +2221,7 @@
       "properties": {
         "delete": {
           "type": "boolean",
-          "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints, or its seated team) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract, and restore them. Independent of `canBeDeleted`, which rules what a document's own owner may do. Refused on a type that keeps history, is indexOnly, restricts document creation or has a contested index. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it."
+          "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints, or its seated team) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract, and restore them. Independent of `canBeDeleted`, which rules what a document's own owner may do. Refused on a type that keeps history, is indexOnly, restricts document creation or has a contested index. For references a type carrying it is no longer permanent: a permanentDocument reference refuses it; a moderatedDocument reference is the one it takes when canBeDeleted is false, it declares no ttl and deleteKeepsRecord is not false, every document leaving state then leaving a removal record behind; a deletableDocument reference is the one it takes otherwise."
         },
         "deleteWithin": {
           "type": "integer",
@@ -2218,7 +2231,7 @@
         },
         "deleteKeepsRecord": {
           "type": "boolean",
-          "description": "Whether a moderator's deletion leaves a removal record under the contract: whose document it was, the moderator, the reason, the block time and a hash of the document, readable with getContractDocumentRemovals and never deleted. A deleted document can only be restored from its record, so false also means a deletion can not be undone, and the type has no removal records tree. Default true. Requires `delete: true`."
+          "description": "Whether a moderator's deletion leaves a removal record under the contract: whose document it was, the moderator, the reason, the block time and a hash of the document, readable with getContractDocumentRemovals and never deleted. A deleted document can only be restored from its record, so false also means a deletion can not be undone, and the type has no removal records tree. A type keeping records whose owners can not delete their documents (canBeDeleted: false) and that declares no ttl is referred to by a moderatedDocument reference, which resolves to the record once the document is removed; false makes it a deletableDocument target. Default true. Requires `delete: true`."
         },
         "deleteRefundsOwner": {
           "type": "boolean",
@@ -2243,7 +2256,7 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 4294967295,
-      "description": "Time to live, in seconds: the platform deletes each document of this type once its `$createdAt` plus this many seconds has passed, whoever owns it and whatever `canBeDeleted` says, at most a protocol-versioned number of documents per block (128 at protocol version 14) after the block's state transitions. Its documents are stored without storage flags and refund nothing when deleted: instead of the perpetual storage price, each byte they write pays a price for the time they will live (five tiers up to seven days, then per 9.125 days spanned), paid out as storage fees to the epochs they live in (at most one era of them), and a document prepays its deletion as processing when it is created. From its expiry on, a document can no longer be replaced, transferred, bought, repriced or restored by a moderator; its owner may still delete it where `canBeDeleted` allows. Requires `$createdAt` in `required`; refused together with `documentsKeepHistory`, `indexOnly` and a contested index. A `permanentDocument` reference, one found by `findBy` or with `inList` included, may not target the type; a `deletableDocument` reference, one found by `findBy` included, may. At least and at most protocol-versioned bounds (3600, one hour, and 31536000, one year, at protocol version 14). Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
+      "description": "Time to live, in seconds: the platform deletes each document of this type once its `$createdAt` plus this many seconds has passed, whoever owns it and whatever `canBeDeleted` says, at most a protocol-versioned number of documents per block (128 at protocol version 14) after the block's state transitions. Its documents are stored without storage flags and refund nothing when deleted: instead of the perpetual storage price, each byte they write pays a price for the time they will live (five tiers up to seven days, then per 9.125 days spanned), paid out as storage fees to the epochs they live in (at most one era of them), and a document prepays its deletion as processing when it is created. From its expiry on, a document can no longer be replaced, transferred, bought, repriced or restored by a moderator; its owner may still delete it where `canBeDeleted` allows. Requires `$createdAt` in `required`; refused together with `documentsKeepHistory`, `indexOnly` and a contested index. A `permanentDocument` reference, one found by `findBy` or with `inList` included, and a `moderatedDocument` reference may not target the type; a `deletableDocument` reference, one found by `findBy` included, may. At least and at most protocol-versioned bounds (3600, one hour, and 31536000, one year, at protocol version 14). Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
     },
     "indexOnly": {
       "type": "boolean",

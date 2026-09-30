@@ -16,6 +16,7 @@
 //! continue with a range clause past the last proven page document.
 
 use crate::error::WasmSdkError;
+use crate::queries::contract_moderation::removal_entry_to_js;
 use crate::queries::document::{
     build_documents_query, parse_order_clause, parse_where_clause, DocumentsQueryInput,
 };
@@ -63,8 +64,10 @@ export interface CompositeBind {
    * The sub-query field receiving the `IN` clause. `$id` makes this a
    * by-id JOIN (the source property must declare `refersTo:
    * permanentDocument`, where a missing document is a verification
-   * error, or `refersTo: deletableDocument`, where a document deleted
-   * since is proven absent and left out, targeting the sub-query's
+   * error, `refersTo: moderatedDocument`, where a document a moderator
+   * removed is reported by its proven removal record, or `refersTo:
+   * deletableDocument`, where a document deleted since is proven absent
+   * and left out, targeting the sub-query's
    * document type, and whose `refersTo` carries no `lookup`: a reference
    * resolved through a unique index holds no document ids); otherwise
    * `$ownerId` or an indexed property (a LOOKUP, where absence is a proven
@@ -133,9 +136,16 @@ export interface CompositeDocumentsSubResult {
    * By-id joins only: the derived ids that have NO document, in
    * first-appearance order (referenced documents deleted since, each one
    * a proven absence). Empty for a lookup or sibling, and always empty
-   * for a join off a `permanentDocument` property.
+   * for a join off a `permanentDocument` or `moderatedDocument` property.
    */
   missingIds: Identifier[];
+  /**
+   * By-id joins off a `moderatedDocument` property only: the derived ids
+   * whose document the contract's moderators removed, each with its
+   * proven removal record, in first-appearance order. Empty for every
+   * other sub-query.
+   */
+  removed: JoinedDocumentRemoval[];
 }
 
 /**
@@ -412,6 +422,18 @@ fn composite_result_to_js(
                     missing_ids.push(&JsValue::from(IdentifierWasm::from(*id)));
                 }
                 set_field(&entry, "missingIds", &missing_ids)?;
+                let removed = Array::new();
+                for removal in composite
+                    .sub_result_removals
+                    .get(index)
+                    .map(|removals| removals.as_slice())
+                    .unwrap_or_default()
+                {
+                    removed.push(&removal_entry_to_js(removal, |id| {
+                        IdentifierWasm::from(id).into()
+                    })?);
+                }
+                set_field(&entry, "removed", &removed)?;
                 set_field(
                     &entry,
                     "documents",

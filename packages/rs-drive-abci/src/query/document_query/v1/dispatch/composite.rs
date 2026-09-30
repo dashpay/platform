@@ -13,6 +13,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::contract_moderation_queries::removal_entry_to_response;
 use crate::query::document_query::v1::conversions;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
@@ -340,11 +341,12 @@ impl<C> Platform<C> {
             };
             let page_documents = serialize_all(&outcome.result.page_documents, None)?;
             let mut sub_results = Vec::with_capacity(composite.sub_queries.len());
-            for ((sub, result), missing_ids) in composite
+            for (((sub, result), missing_ids), removed) in composite
                 .sub_queries
                 .iter()
                 .zip(outcome.result.sub_results)
                 .zip(outcome.result.sub_result_missing_ids)
+                .zip(outcome.result.sub_result_removals)
             {
                 let result = match result {
                     SubQueryResult::Documents(documents) => {
@@ -361,6 +363,7 @@ impl<C> Platform<C> {
                 sub_results.push(composite_documents::SubQueryResult {
                     result: Some(result),
                     missing_ids: missing_ids.iter().map(|id| id.to_vec()).collect(),
+                    removed: removed.into_iter().map(removal_entry_to_response).collect(),
                 });
             }
             GetDocumentsResponseV1 {

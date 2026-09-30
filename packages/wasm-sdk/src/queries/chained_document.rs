@@ -16,6 +16,7 @@
 //! entry's join value>]]`.
 
 use crate::error::WasmSdkError;
+use crate::queries::contract_moderation::removal_entry_to_js;
 use crate::queries::document::{build_documents_query, DocumentsQueryInput};
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
@@ -89,9 +90,42 @@ interface ChainedDocumentsResult {
   /**
    * The join values that have NO outer document, in first-appearance
    * order: referenced documents deleted since, each one a proven
-   * absence. Always empty under a `permanentDocument` join property.
+   * absence. Always empty under a `permanentDocument` join property,
+   * and under a `moderatedDocument` one, which reports its missing
+   * documents in `removedOuterDocuments`.
    */
   missingOuterIds: Identifier[];
+  /**
+   * The join values whose outer document the contract's moderators
+   * removed, each with its proven removal record, in first-appearance
+   * order. Only a `moderatedDocument` join property reports any; there a
+   * join value with neither a document nor a record is a verification
+   * error.
+   */
+  removedOuterDocuments: JoinedDocumentRemoval[];
+}
+
+/**
+ * The removal record of a document a join through a `moderatedDocument`
+ * reference reports removed: the `ContractDocumentRemovalEntry` a removals
+ * query returns, its identifiers `Identifier`s, as the join's other ids are.
+ */
+interface JoinedDocumentRemoval {
+  documentId: Identifier;
+  /** The identity that owned the document when it was removed. */
+  documentOwnerId: Identifier;
+  /** The contract owner or moderator that removed it. */
+  moderatorId: Identifier;
+  /** Why, as the moderator wrote it: the text may be empty. */
+  reason: ContractModerationReason;
+  /** The time of the block that removed it, in milliseconds. */
+  removedAt: bigint;
+  /** A double SHA-256 of the document when it was removed, as 64 hex characters. */
+  documentHash: string;
+  /** The contract owner or moderator that restored the document; absent while the removal stands. */
+  restoredBy?: Identifier;
+  /** The time of the block that restored it, in milliseconds; absent while the removal stands. */
+  restoredAt?: bigint;
 }
 "#;
 
@@ -187,6 +221,18 @@ fn chained_result_to_js(
         &missing_outer_ids,
     )
     .map_err(|_| WasmSdkError::generic("failed to build chained result object"))?;
+    let removed_outer_documents = Array::new();
+    for entry in &chained.removed_outer_documents {
+        removed_outer_documents.push(&removal_entry_to_js(entry, |id| {
+            IdentifierWasm::from(id).into()
+        })?);
+    }
+    Reflect::set(
+        &result,
+        &JsValue::from_str("removedOuterDocuments"),
+        &removed_outer_documents,
+    )
+    .map_err(|_| WasmSdkError::generic("failed to build chained result object"))?;
     Ok(result)
 }
 
@@ -199,8 +245,10 @@ impl WasmSdk {
     /// proof commits to one quorum-signed root, and the proven outer
     /// documents must match the proven inner join values: exactly for a
     /// `permanentDocument` join property (a missing referenced document
-    /// is a verification error), while for a `deletableDocument` one a
-    /// document deleted since is proven absent and left out.
+    /// is a verification error), for a `moderatedDocument` one a document
+    /// a moderator removed is reported by its proven removal record, and
+    /// for a `deletableDocument` one a document deleted since is proven
+    /// absent and left out.
     #[wasm_bindgen(
         js_name = "getChainedDocuments",
         unchecked_return_type = "ChainedDocumentsResult"
