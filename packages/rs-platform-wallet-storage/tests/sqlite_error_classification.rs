@@ -513,6 +513,8 @@ fn tc_p2_005_is_transient_table() {
             // `WalletStorageError` is `#[non_exhaustive]`, so this external test
             // crate needs a catch-all arm. Exhaustiveness is enforced in-crate by
             // the wildcard-free matches in `src/sqlite/error.rs`.
+            // Required: the enum is #[non_exhaustive] from this external crate.
+            // Exhaustiveness is enforced by the wildcard-free in-crate matches.
             other => panic!("sample {other:?} has no expected classification"),
         }
     }
