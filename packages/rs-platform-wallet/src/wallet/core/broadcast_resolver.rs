@@ -531,8 +531,9 @@ pub(crate) struct DueRoot {
     pub transaction: Arc<Transaction>,
     /// The root is the wallet's own send.
     pub own: bool,
-    /// An `Uncertain` result forced it (for the log; it may also be due by
-    /// its schedule).
+    /// An `Uncertain` result forced it (it may also be due by its schedule).
+    /// Labels its verdict in the log, and is the only kind of root a pass
+    /// without an anchor probes.
     pub forced: bool,
 }
 
@@ -900,12 +901,11 @@ enum JobDone {
 #[derive(Default)]
 struct PendingPass {
     height: u32,
-    /// A height advance asked for this pass; otherwise only `Uncertain`
-    /// results did.
-    by_height: bool,
     forced: HashSet<Txid>,
     /// The latest height that joined this pass while the wallet followed the
-    /// tip; a catch-up step clears it.
+    /// tip; a catch-up step clears it. A pass without one — only `Uncertain`
+    /// results asked for it, or a catch-up overtook it — probes only the
+    /// roots those results forced and starts no windows.
     anchor_at: Option<u32>,
 }
 
@@ -919,12 +919,11 @@ struct Run {
     /// Something touched the wallet during the run: its read may be stale, so
     /// the next height must not be skipped.
     woken: bool,
-    /// Where this pass starts windows (see [`PendingPass::anchor_at`]).
+    /// Where this pass starts windows; `None` confines it to forced roots
+    /// (see [`PendingPass::anchor_at`]).
     anchor_at: Option<u32>,
-    /// A catch-up step arrived since the pass was queued: its height is
-    /// stale, and it probes only the roots an `Uncertain` result forced —
-    /// catch-up is skipped, the scan settles most roots.
-    stale: bool,
+    /// It carries txids an `Uncertain` result forced.
+    has_forced: bool,
     abort: AbortHandle,
     probing: Option<Probing>,
 }
@@ -1079,19 +1078,24 @@ impl Actor {
                 let entry = self.entry(wallet_id);
                 let previous = entry.height.replace(height);
                 if is_catch_up_step(previous, height) {
-                    // Behind the tip: passes queued or running from before are
-                    // stale — they keep only what an `Uncertain` result forced,
-                    // and start no windows.
-                    if let Some(run) = entry.run.as_mut() {
-                        run.stale = true;
-                        run.anchor_at = None;
-                    }
+                    // Behind the tip: passes queued or running from before keep
+                    // only what an `Uncertain` result forced — the scan
+                    // settles most roots — and start no windows.
                     if let Some(pending) = entry.pending.as_mut() {
-                        pending.by_height = false;
                         pending.anchor_at = None;
                         if pending.forced.is_empty() {
                             entry.pending = None;
                         }
+                    }
+                    let Some(run) = entry.run.as_mut() else {
+                        return;
+                    };
+                    run.anchor_at = None;
+                    // Still reading, with nothing forced: nothing it could
+                    // probe — stop the walk over the records now.
+                    if run.probing.is_none() && !run.has_forced {
+                        run.abort.abort();
+                        self.end_run(wallet_id);
                     }
                     return;
                 }
@@ -1104,7 +1108,6 @@ impl Actor {
                 }
                 let pending = entry.pending.get_or_insert_with(PendingPass::default);
                 pending.height = pending.height.max(height);
-                pending.by_height = true;
                 pending.anchor_at = Some(height);
                 self.start(wallet_id);
             }
@@ -1176,12 +1179,13 @@ impl Actor {
             return;
         };
         let anchor_at = pending.anchor_at;
+        let has_forced = !pending.forced.is_empty();
         self.next_run += 1;
         let run = self.next_run;
         let source = Arc::clone(&self.source);
         let abort = self.jobs.spawn(async move {
             let read = source
-                .read(wallet_id, pending.by_height, pending.forced)
+                .read(wallet_id, anchor_at.is_some(), pending.forced)
                 .await;
             JobDone::Read {
                 wallet_id,
@@ -1196,7 +1200,7 @@ impl Actor {
             seq: entry.seq,
             woken: false,
             anchor_at,
-            stale: false,
+            has_forced,
             abort,
             probing: None,
         });
@@ -1259,19 +1263,19 @@ impl Actor {
                         // carries 0; the wallet's own synced height is better.
                         let height = height.max(read.synced_height);
                         let Some(current) = entry.run.as_mut() else {
-                            return;
+                            return; // matched by id above
                         };
-                        // The wallet is further along than the height this
-                        // pass was queued at: a catch-up whose height step has
-                        // not reached the resolver yet. Stale all the same.
-                        if current
-                            .anchor_at
-                            .is_some_and(|at| read.synced_height > at.saturating_add(CATCH_UP_STEP))
-                        {
-                            current.stale = true;
+                        // The wallet is not where this pass was queued: far
+                        // ahead (a catch-up whose height step has not arrived
+                        // yet) or behind (a rewind for a rescan). Either way a
+                        // catch-up — confine the pass to forced roots.
+                        if current.anchor_at.is_some_and(|at| {
+                            read.synced_height < at
+                                || read.synced_height > at.saturating_add(CATCH_UP_STEP)
+                        }) {
                             current.anchor_at = None;
                         }
-                        let mut start = begin_pass(
+                        let start = begin_pass(
                             &mut self.state,
                             wallet_id,
                             height,
@@ -1279,17 +1283,12 @@ impl Actor {
                             &read.forced,
                             current.anchor_at,
                         );
-                        if current.stale {
-                            start.due.retain(|root| root.forced);
-                        }
-                        if let Some(current) = entry.run.as_mut() {
-                            current.probing = Some(Probing {
-                                views: read.views,
-                                height,
-                                due: start.due,
-                                in_flight: None,
-                            });
-                        }
+                        current.probing = Some(Probing {
+                            views: read.views,
+                            height,
+                            due: start.due,
+                            in_flight: None,
+                        });
                         // Clears and re-published dead verdicts reach the host
                         // before the pass goes out to the network.
                         deliver(&self.sink, start.events);
@@ -1355,7 +1354,7 @@ impl Actor {
         let Some(probing) = run.probing.as_mut() else {
             return;
         };
-        if run.stale {
+        if run.anchor_at.is_none() {
             probing.due.retain(|root| root.forced);
         }
         if let Some(root) = probing.due.pop_front() {
@@ -2415,8 +2414,19 @@ mod tests {
 
         /// Handle `command`, then every job it caused, as the task would.
         async fn send(&mut self, command: Command) {
-            self.actor.handle(command);
+            self.handle(command);
             self.settle().await;
+        }
+
+        /// Handle `command` without running its jobs. A height step moves the
+        /// wallet's synced height along, as the SPV client does before it
+        /// reports the step.
+        fn handle(&mut self, command: Command) {
+            if let Command::Height { height, .. } = command {
+                let mut synced = self.source.synced.lock().expect("synced");
+                *synced = (*synced).max(height);
+            }
+            self.actor.handle(command);
         }
 
         async fn settle(&mut self) {
@@ -2538,7 +2548,7 @@ mod tests {
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.height(wallet(), 100).await;
 
-        rig.actor.handle(Command::Height {
+        rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 101,
         });
@@ -2579,7 +2589,7 @@ mod tests {
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.height(wallet(), 100).await;
 
-        rig.actor.handle(Command::Height {
+        rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 101,
         });
@@ -2610,7 +2620,7 @@ mod tests {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
 
         rig.height(wallet(), 100).await;
-        rig.actor.handle(Command::Height {
+        rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 101,
         });
@@ -2677,7 +2687,7 @@ mod tests {
         let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
         rig.views(wallet(), vec![send(3, &[outpoint(93, 0)])]);
         rig.actor.joined(listed);
-        rig.actor.handle(Command::Height {
+        rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 102,
         });
@@ -2711,7 +2721,7 @@ mod tests {
         // The forced pass has read the wallet; its probe of root 2 is out.
         let read = rig.actor.jobs.join_next_with_id().await.expect("read");
         rig.actor.joined(read);
-        rig.actor.handle(Command::Height {
+        rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 103,
         });
@@ -2879,7 +2889,7 @@ mod tests {
         let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
         rig.actor.joined(listed);
         for height in [500, 501] {
-            rig.actor.handle(Command::Height {
+            rig.handle(Command::Height {
                 wallet_id: wallet(),
                 height,
             });
@@ -2932,7 +2942,7 @@ mod tests {
         .await;
 
         for height in [102, 132, 133] {
-            rig.actor.handle(Command::Height {
+            rig.handle(Command::Height {
                 wallet_id: wallet(),
                 height,
             });
@@ -2971,6 +2981,72 @@ mod tests {
         }
 
         assert_eq!(probe.probed().len(), 4, "every block from 1102");
+    }
+
+    /// A pass without an anchor — here a forced one during a catch-up —
+    /// probes only the root the `Uncertain` result forced, not every root
+    /// due by schedule.
+    #[tokio::test]
+    async fn should_probe_only_forced_roots_in_a_pass_without_an_anchor() {
+        let probe = Arc::new(ScriptedProbe::new(&[
+            (txid(1), ProbeVerdict::Accepted),
+            (txid(2), ProbeVerdict::Accepted),
+        ]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+        );
+        rig.follow(wallet(), 100).await;
+        assert_eq!(probe.probed().len(), 2);
+
+        rig.height(wallet(), 140).await; // catch-up
+        rig.send(Command::Uncertain(txid(1))).await;
+
+        assert_eq!(probe.probed()[2..], [txid(1)]);
+    }
+
+    /// A pass whose read finds the wallet behind the height it was queued at —
+    /// a rewind for a rescan — is confined to forced roots too.
+    #[tokio::test]
+    async fn should_treat_a_pass_whose_read_is_behind_as_catch_up() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        let before = probe.probed().len();
+
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        *rig.source.synced.lock().expect("synced") = 50; // rewound
+        rig.settle().await;
+
+        assert_eq!(probe.probed().len(), before);
+    }
+
+    /// A catch-up step stops a pass that is still reading and carries nothing
+    /// forced: its walk over the records could only be thrown away.
+    #[tokio::test]
+    async fn should_stop_a_reading_pass_with_nothing_forced_on_a_catch_up() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        let walks = rig.walks();
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 140,
+        });
+        rig.settle().await;
+
+        assert_eq!(rig.walks(), walks);
+        assert!(rig.actor.wallets[&wallet()].run.is_none());
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
