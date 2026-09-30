@@ -48,6 +48,8 @@
 @class GetContractModerationEntriesResponse;
 @class GetContractModerationStatusRequest;
 @class GetContractModerationStatusResponse;
+@class GetContractSettledDeletionsRequest;
+@class GetContractSettledDeletionsResponse;
 @class GetCurrentQuorumsInfoRequest;
 @class GetCurrentQuorumsInfoResponse;
 @class GetDataContractHistoryRequest;
@@ -276,6 +278,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getContractDocumentRemovals(GetContractDocumentRemovalsRequest) returns (GetContractDocumentRemovalsResponse)
 
 - (GRPCUnaryProtoCall *)getContractDocumentRemovalsWithMessage:(GetContractDocumentRemovalsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractSettledDeletions(GetContractSettledDeletionsRequest) returns (GetContractSettledDeletionsResponse)
+
+- (GRPCUnaryProtoCall *)getContractSettledDeletionsWithMessage:(GetContractSettledDeletionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
 
@@ -660,6 +666,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractSettledDeletions(GetContractSettledDeletionsRequest) returns (GetContractSettledDeletionsResponse)
+
+- (void)getContractSettledDeletionsWithRequest:(GetContractSettledDeletionsRequest *)request handler:(void(^)(GetContractSettledDeletionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractSettledDeletionsWithRequest:(GetContractSettledDeletionsRequest *)request handler:(void(^)(GetContractSettledDeletionsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)

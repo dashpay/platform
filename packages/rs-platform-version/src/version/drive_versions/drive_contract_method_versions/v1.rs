@@ -67,6 +67,11 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V1: DriveContractMethodVersions =
             fetch_contract_moderation_action_counts: 0,
             remove_contract_moderation_action_counts: 0,
             add_estimation_costs_for_contract_moderation_action_counts: 0,
+            add_contract_settled_deletion: 0,
+            fetch_contract_settled_deletions: 0,
+            prove_contract_settled_deletions: 0,
+            insert_contract_settled_deletion_trees: 0,
+            add_estimation_costs_for_contract_settled_deletion: 0,
         },
         fee_pots: DriveContractFeePotMethodVersions {
             insert_contract_fee_pot_trees: 0,

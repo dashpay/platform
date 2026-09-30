@@ -3554,6 +3554,278 @@ export namespace GetContractDocumentRemovalsResponse {
   }
 }
 
+export class GetContractSettledDeletionsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0 | undefined;
+  setV0(value?: GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0): void;
+
+  getVersionCase(): GetContractSettledDeletionsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractSettledDeletionsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractSettledDeletionsRequest): GetContractSettledDeletionsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractSettledDeletionsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractSettledDeletionsRequest;
+  static deserializeBinaryFromReader(message: GetContractSettledDeletionsRequest, reader: jspb.BinaryReader): GetContractSettledDeletionsRequest;
+}
+
+export namespace GetContractSettledDeletionsRequest {
+  export type AsObject = {
+    v0?: GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.AsObject,
+  }
+
+  export class DocumentIds extends jspb.Message {
+    clearDocumentIdsList(): void;
+    getDocumentIdsList(): Array<Uint8Array | string>;
+    getDocumentIdsList_asU8(): Array<Uint8Array>;
+    getDocumentIdsList_asB64(): Array<string>;
+    setDocumentIdsList(value: Array<Uint8Array | string>): void;
+    addDocumentIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DocumentIds.AsObject;
+    static toObject(includeInstance: boolean, msg: DocumentIds): DocumentIds.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DocumentIds, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DocumentIds;
+    static deserializeBinaryFromReader(message: DocumentIds, reader: jspb.BinaryReader): DocumentIds;
+  }
+
+  export namespace DocumentIds {
+    export type AsObject = {
+      documentIdsList: Array<Uint8Array | string>,
+    }
+  }
+
+  export class Page extends jspb.Message {
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): Uint8Array | string;
+    getStartAfter_asU8(): Uint8Array;
+    getStartAfter_asB64(): string;
+    setStartAfter(value: Uint8Array | string): void;
+
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): number;
+    setLimit(value: number): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): Page.AsObject;
+    static toObject(includeInstance: boolean, msg: Page): Page.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: Page, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): Page;
+    static deserializeBinaryFromReader(message: Page, reader: jspb.BinaryReader): Page;
+  }
+
+  export namespace Page {
+    export type AsObject = {
+      startAfter: Uint8Array | string,
+      limit: number,
+    }
+  }
+
+  export class GetContractSettledDeletionsRequestV0 extends jspb.Message {
+    getContractId(): Uint8Array | string;
+    getContractId_asU8(): Uint8Array;
+    getContractId_asB64(): string;
+    setContractId(value: Uint8Array | string): void;
+
+    getDocumentTypeName(): string;
+    setDocumentTypeName(value: string): void;
+
+    hasDocumentIds(): boolean;
+    clearDocumentIds(): void;
+    getDocumentIds(): GetContractSettledDeletionsRequest.DocumentIds | undefined;
+    setDocumentIds(value?: GetContractSettledDeletionsRequest.DocumentIds): void;
+
+    hasPage(): boolean;
+    clearPage(): void;
+    getPage(): GetContractSettledDeletionsRequest.Page | undefined;
+    setPage(value?: GetContractSettledDeletionsRequest.Page): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    getSelectionCase(): GetContractSettledDeletionsRequestV0.SelectionCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractSettledDeletionsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractSettledDeletionsRequestV0): GetContractSettledDeletionsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractSettledDeletionsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractSettledDeletionsRequestV0;
+    static deserializeBinaryFromReader(message: GetContractSettledDeletionsRequestV0, reader: jspb.BinaryReader): GetContractSettledDeletionsRequestV0;
+  }
+
+  export namespace GetContractSettledDeletionsRequestV0 {
+    export type AsObject = {
+      contractId: Uint8Array | string,
+      documentTypeName: string,
+      documentIds?: GetContractSettledDeletionsRequest.DocumentIds.AsObject,
+      page?: GetContractSettledDeletionsRequest.Page.AsObject,
+      prove: boolean,
+    }
+
+    export enum SelectionCase {
+      SELECTION_NOT_SET = 0,
+      DOCUMENT_IDS = 3,
+      PAGE = 4,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContractSettledDeletionsResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0 | undefined;
+  setV0(value?: GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0): void;
+
+  getVersionCase(): GetContractSettledDeletionsResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractSettledDeletionsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractSettledDeletionsResponse): GetContractSettledDeletionsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractSettledDeletionsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractSettledDeletionsResponse;
+  static deserializeBinaryFromReader(message: GetContractSettledDeletionsResponse, reader: jspb.BinaryReader): GetContractSettledDeletionsResponse;
+}
+
+export namespace GetContractSettledDeletionsResponse {
+  export type AsObject = {
+    v0?: GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.AsObject,
+  }
+
+  export class ContractSettledDeletion extends jspb.Message {
+    getDocumentId(): Uint8Array | string;
+    getDocumentId_asU8(): Uint8Array;
+    getDocumentId_asB64(): string;
+    setDocumentId(value: Uint8Array | string): void;
+
+    getProposedAt(): number;
+    setProposedAt(value: number): void;
+
+    getDocumentLastModifiedAt(): number;
+    setDocumentLastModifiedAt(value: number): void;
+
+    hasReason(): boolean;
+    clearReason(): void;
+    getReason(): ContractModerationReason | undefined;
+    setReason(value?: ContractModerationReason): void;
+
+    clearApprovalsList(): void;
+    getApprovalsList(): Array<Uint8Array | string>;
+    getApprovalsList_asU8(): Array<Uint8Array>;
+    getApprovalsList_asB64(): Array<string>;
+    setApprovalsList(value: Array<Uint8Array | string>): void;
+    addApprovals(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    hasDeletedAt(): boolean;
+    clearDeletedAt(): void;
+    getDeletedAt(): number;
+    setDeletedAt(value: number): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractSettledDeletion.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractSettledDeletion): ContractSettledDeletion.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractSettledDeletion, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractSettledDeletion;
+    static deserializeBinaryFromReader(message: ContractSettledDeletion, reader: jspb.BinaryReader): ContractSettledDeletion;
+  }
+
+  export namespace ContractSettledDeletion {
+    export type AsObject = {
+      documentId: Uint8Array | string,
+      proposedAt: number,
+      documentLastModifiedAt: number,
+      reason?: ContractModerationReason.AsObject,
+      approvalsList: Array<Uint8Array | string>,
+      deletedAt: number,
+    }
+  }
+
+  export class ContractSettledDeletions extends jspb.Message {
+    clearSettledDeletionsList(): void;
+    getSettledDeletionsList(): Array<GetContractSettledDeletionsResponse.ContractSettledDeletion>;
+    setSettledDeletionsList(value: Array<GetContractSettledDeletionsResponse.ContractSettledDeletion>): void;
+    addSettledDeletions(value?: GetContractSettledDeletionsResponse.ContractSettledDeletion, index?: number): GetContractSettledDeletionsResponse.ContractSettledDeletion;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractSettledDeletions.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractSettledDeletions): ContractSettledDeletions.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractSettledDeletions, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractSettledDeletions;
+    static deserializeBinaryFromReader(message: ContractSettledDeletions, reader: jspb.BinaryReader): ContractSettledDeletions;
+  }
+
+  export namespace ContractSettledDeletions {
+    export type AsObject = {
+      settledDeletionsList: Array<GetContractSettledDeletionsResponse.ContractSettledDeletion.AsObject>,
+    }
+  }
+
+  export class GetContractSettledDeletionsResponseV0 extends jspb.Message {
+    hasSettledDeletions(): boolean;
+    clearSettledDeletions(): void;
+    getSettledDeletions(): GetContractSettledDeletionsResponse.ContractSettledDeletions | undefined;
+    setSettledDeletions(value?: GetContractSettledDeletionsResponse.ContractSettledDeletions): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetContractSettledDeletionsResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractSettledDeletionsResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractSettledDeletionsResponseV0): GetContractSettledDeletionsResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractSettledDeletionsResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractSettledDeletionsResponseV0;
+    static deserializeBinaryFromReader(message: GetContractSettledDeletionsResponseV0, reader: jspb.BinaryReader): GetContractSettledDeletionsResponseV0;
+  }
+
+  export namespace GetContractSettledDeletionsResponseV0 {
+    export type AsObject = {
+      settledDeletions?: GetContractSettledDeletionsResponse.ContractSettledDeletions.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      SETTLED_DELETIONS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetContractFeePotsRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;

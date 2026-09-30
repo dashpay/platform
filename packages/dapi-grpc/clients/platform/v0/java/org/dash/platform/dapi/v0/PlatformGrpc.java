@@ -728,6 +728,37 @@ public final class PlatformGrpc {
     return getGetContractDocumentRemovalsMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse> getGetContractSettledDeletionsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractSettledDeletions",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse> getGetContractSettledDeletionsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse> getGetContractSettledDeletionsMethod;
+    if ((getGetContractSettledDeletionsMethod = PlatformGrpc.getGetContractSettledDeletionsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractSettledDeletionsMethod = PlatformGrpc.getGetContractSettledDeletionsMethod) == null) {
+          PlatformGrpc.getGetContractSettledDeletionsMethod = getGetContractSettledDeletionsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractSettledDeletions"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractSettledDeletions"))
+              .build();
+        }
+      }
+    }
+    return getGetContractSettledDeletionsMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> getGetContractFeePotsMethod;
 
@@ -2399,6 +2430,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getContractSettledDeletions(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractSettledDeletionsMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getContractFeePots(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractFeePotsMethod(), responseObserver);
@@ -2907,6 +2945,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse>(
                   this, METHODID_GET_CONTRACT_DOCUMENT_REMOVALS)))
+          .addMethod(
+            getGetContractSettledDeletionsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse>(
+                  this, METHODID_GET_CONTRACT_SETTLED_DELETIONS)))
           .addMethod(
             getGetContractFeePotsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3439,6 +3484,14 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetContractDocumentRemovalsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractSettledDeletions(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractSettledDeletionsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -4016,6 +4069,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse getContractSettledDeletions(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractSettledDeletionsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse getContractFeePots(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetContractFeePotsMethod(), getCallOptions(), request);
@@ -4565,6 +4625,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse> getContractSettledDeletions(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractSettledDeletionsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> getContractFeePots(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -4981,53 +5049,54 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_CONTRACT_MODERATION_STATUS = 20;
   private static final int METHODID_GET_CONTRACT_MODERATION_ENTRIES = 21;
   private static final int METHODID_GET_CONTRACT_DOCUMENT_REMOVALS = 22;
-  private static final int METHODID_GET_CONTRACT_FEE_POTS = 23;
-  private static final int METHODID_GET_DOCUMENT_HISTORY = 24;
-  private static final int METHODID_GET_DOCUMENTS = 25;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 26;
-  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 27;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 28;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 29;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 30;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 31;
-  private static final int METHODID_GET_EPOCHS_INFO = 32;
-  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 33;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 34;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 35;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 36;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 37;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 38;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 39;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 40;
-  private static final int METHODID_GET_PATH_ELEMENTS = 41;
-  private static final int METHODID_GET_STATUS = 42;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 43;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 44;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 45;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 46;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 47;
-  private static final int METHODID_GET_TOKEN_STATUSES = 48;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 49;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 50;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 51;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 52;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 53;
-  private static final int METHODID_GET_GROUP_INFO = 54;
-  private static final int METHODID_GET_GROUP_INFOS = 55;
-  private static final int METHODID_GET_GROUP_ACTIONS = 56;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 57;
-  private static final int METHODID_GET_ADDRESS_INFO = 58;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 59;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 60;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 61;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 62;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 63;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 64;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 65;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 66;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 67;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 68;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 69;
+  private static final int METHODID_GET_CONTRACT_SETTLED_DELETIONS = 23;
+  private static final int METHODID_GET_CONTRACT_FEE_POTS = 24;
+  private static final int METHODID_GET_DOCUMENT_HISTORY = 25;
+  private static final int METHODID_GET_DOCUMENTS = 26;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 27;
+  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 28;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 29;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 30;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 31;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 32;
+  private static final int METHODID_GET_EPOCHS_INFO = 33;
+  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 34;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 35;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 36;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 37;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 38;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 39;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 40;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 41;
+  private static final int METHODID_GET_PATH_ELEMENTS = 42;
+  private static final int METHODID_GET_STATUS = 43;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 44;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 45;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 46;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 47;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 48;
+  private static final int METHODID_GET_TOKEN_STATUSES = 49;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 50;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 51;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 52;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 53;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 54;
+  private static final int METHODID_GET_GROUP_INFO = 55;
+  private static final int METHODID_GET_GROUP_INFOS = 56;
+  private static final int METHODID_GET_GROUP_ACTIONS = 57;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 58;
+  private static final int METHODID_GET_ADDRESS_INFO = 59;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 60;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 61;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 62;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 63;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 64;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 65;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 66;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 67;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 68;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 69;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 70;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -5137,6 +5206,10 @@ public final class PlatformGrpc {
         case METHODID_GET_CONTRACT_DOCUMENT_REMOVALS:
           serviceImpl.getContractDocumentRemovals((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_SETTLED_DELETIONS:
+          serviceImpl.getContractSettledDeletions((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractSettledDeletionsResponse>) responseObserver);
           break;
         case METHODID_GET_CONTRACT_FEE_POTS:
           serviceImpl.getContractFeePots((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest) request,
@@ -5410,6 +5483,7 @@ public final class PlatformGrpc {
               .addMethod(getGetContractModerationStatusMethod())
               .addMethod(getGetContractModerationEntriesMethod())
               .addMethod(getGetContractDocumentRemovalsMethod())
+              .addMethod(getGetContractSettledDeletionsMethod())
               .addMethod(getGetContractFeePotsMethod())
               .addMethod(getGetDocumentHistoryMethod())
               .addMethod(getGetDocumentsMethod())

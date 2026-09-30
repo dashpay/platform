@@ -1,6 +1,6 @@
 # Deletion
 
-A document can leave the state three ways: its owner deletes it, the contract's moderators delete it, or the platform deletes it when its time to live runs out. `canBeDeleted` rules the first, `moderatorAbilities.delete` and `moderatorAbilities.deleteWithin` the second, and `ttl` the third (see [Time To Live](ttl.md)). Each is independent of the others: a type may let moderators remove what its authors cannot retract, or expire documents that nobody may delete by hand.
+A document can leave the state three ways: its owner deletes it, the contract's moderators delete it, or the platform deletes it when its time to live runs out. `canBeDeleted` rules the first, `moderatorAbilities.delete`, `moderatorAbilities.deleteWithin` and `moderatorAbilities.deleteSettled` the second, and `ttl` the third (see [Time To Live](ttl.md)). Each is independent of the others: a type may let moderators remove what its authors cannot retract, or expire documents that nobody may delete by hand.
 
 ## `canBeDeleted`
 
@@ -116,7 +116,7 @@ Limits the moderators' deletion to a window after a document's last change. Once
 
 ### How it works
 
-- The window is measured from the document's `$updatedAt`, or from its `$createdAt` on a type that does not record `$updatedAt`. A deletion at exactly that time plus the window still passes; after it, every moderator is refused, the contract owner included.
+- The window is measured from the document's `$updatedAt`, or from its `$createdAt` on a type that does not record `$updatedAt`. A deletion at exactly that time plus the window still passes; after it, every moderator is refused, the contract owner included. On a type that sets [`deleteSettled`](#moderatorabilitiesdeletesettled), the seated team may still delete it together.
 - A replace or a price update moves `$updatedAt`, so new content opens the window again. A transfer, a purchase or a moderator's [field change](moderator-abilities.md#changefields) does not move it.
 - A restored document comes back with its old `$updatedAt`, so it may already be settled.
 - The window says nothing about the document's own owner, whose deletion `canBeDeleted` rules at any age.
@@ -126,6 +126,58 @@ Limits the moderators' deletion to a window after a document's last change. Once
 - Needs `delete: true` (`InvalidContractStructure`, 10231).
 - A type whose documents can be replaced must list `$updatedAt` in `required`: measured from creation alone, an author could wait the window out and then rewrite a post into something no moderator can remove. A type with `documentsMutable: false` must list `$updatedAt` or `$createdAt`. Both refusals are 10231.
 - A window of 0 is refused by the meta-schema (`JsonSchemaError`, 10101). A type that moderators may never delete from simply leaves `delete` out.
+
+## `moderatorAbilities.deleteSettled`
+
+Who must agree to delete a settled document: one past its `deleteWithin` window, which no moderator deletes alone. It lets a contract keep settled content safe from any single moderator while leaving its elected moderation team a way to remove it when the team agrees: the leader alone, or the leader and so many members together.
+
+| | |
+|---|---|
+| **Where** | `moderatorAbilities` of a document type, with `delete: true` and `deleteWithin`, in a contract whose moderators are an elected team |
+| **Value** | object with `leader` (boolean, default `false`: whether the team's leader must be among the approvals) and `approvals` (integer, 1 to 31, default 1: how many members of the seated team must approve, the leader counted), at least one of them given |
+| **Default** | absent: nobody deletes a settled document |
+| **Since** | protocol version 14 |
+| **On update** | Fixed (`DocumentTypeUpdateError`, 40212), in both directions: fewer approvals would reach content written under more |
+| **Errors** | `DocumentTypeNotDeletableOnceSettledError` (41204), `ContractModerationTeamNotSeatedError` (41205), `DocumentNotSettledError` (41206), `SettledDeletionReasonMismatchError` (41207), `SettledDeletionAlreadyApprovedError` (41208), and those of a moderator's deletion (41101, 41102, 41201, 41203) |
+
+### Example
+
+```json
+"post": {
+  "type": "object",
+  "documentsMutable": true,
+  "moderatorAbilities": {
+    "delete": true,
+    "deleteWithin": 86400,
+    "deleteSettled": { "leader": true, "approvals": 3 }
+  },
+  "properties": {
+    "text": { "type": "string", "maxLength": 280, "position": 0 }
+  },
+  "required": ["$updatedAt", "text"],
+  "additionalProperties": false
+}
+```
+
+For a day after a post is written or edited, any moderator deletes it. After that, it is deleted only when the team's leader and two other members approve. `{ "leader": true }` would let the leader alone delete a settled post; `{ "approvals": 2 }` any two members.
+
+### How it works
+
+- Each member of the seated team who agrees sends the contract user moderation transition's `deleteSettledDocument` action, naming the document type, the document id and a reason. The first approval starts the approvals, and each later one must name the same reason: every approver approves the same thing. The approval that meets the rule deletes the document, as a moderator's `deleteDocument` would: its removal record (unless the type sets `deleteKeepsRecord: false`, with the reason and the member whose approval deleted it), and the owner's refund as `deleteRefundsOwner` says.
+- The approvals are kept under the contract, whether they delete the document or not: who approved, in what order, for what reason, when the first came, and when they deleted the document. They are readable with `getContractSettledDeletions`, which is how a member finds what the others have approved, and the reason to repeat.
+- The approvals hold for a week after the first (`SystemLimits::contract_settled_deletion_approval_window_ms`), and for the document as it was then. Once they lapse, or once the author edits the document, the next approval starts afresh, for its own reason. An edit opens the `deleteWithin` window again anyway, in which any moderator deletes the document alone.
+- A member who left the team since approving no longer counts: every approval checks the earlier approvers against the team and drops those who are gone. When none is left, the approvals hold nothing and the next one starts afresh, for its own reason: a member the leader removes can not hold the reason the others must repeat.
+- The checks, in order, each refusal paid: the document type exists (10406) and sets `deleteSettled` (41204); a team is seated (41205): the interim moderators and the contract owner never delete a settled document; the signer is on the team (41101), the declaration gives the team `deleteDocuments` on the type (41201) and the reason names a reason document the team's proposal lists (41203); the document exists (40101) and its owner is not protected (41102); the document is settled (41206: within the window, use `deleteDocument`); and when approvals are open, the reason is theirs (41207) and the signer has not approved already (41208).
+- A deletion counts toward the moderators pot's action share for every approver, once it happens. Approvals that fall short count for nobody.
+- Each approver pays for the transition and for the bytes its approval adds to the record.
+
+### Rules at registration
+
+All refusals below are `InvalidContractStructure` (10231).
+
+- Needs `deleteWithin`: without a window nothing is ever settled.
+- Needs a contract whose `moderation` declares an elected team. The elected declaration must give the team `deleteDocuments` on the type (`InvalidContractModerationConfigError`, 10900), or no team could ever use the rule.
+- `approvals` is at least 1 and at most 31, the most members a seated team holds: its leader, the 15 members a charter elects and the 15 its leader may add.
 
 ## `moderatorAbilities.deleteKeepsRecord`
 
@@ -177,13 +229,14 @@ Whether the owner of a document a moderator deletes is refunded its storage. By 
 |---|---|---|
 | The document's owner | `canBeDeleted: true`, on a type that does not keep history | Yes, except on a type with a `ttl` |
 | The contract's moderators | `moderatorAbilities.delete: true`, within `moderatorAbilities.deleteWithin` when set | Only with `moderatorAbilities.deleteRefundsOwner: true`, except on a type with a `ttl` |
+| The seated moderation team, together | `moderatorAbilities.deleteSettled`, once `moderatorAbilities.deleteWithin` has passed | As for the moderators |
 | The platform | `ttl`, once it has passed | No |
 
 A type that allows any of the three counts as deletable for references. Only a type that allows none of them can be the target of a `permanentDocument` reference, with `inList` or without.
 
 ## See also
 
-- [Deleting Documents](../data-model/contract-moderation.md#deleting-documents) and [Restoring Documents](../data-model/contract-moderation.md#restoring-documents), for the moderation transition and the removal record
+- [Deleting Documents](../data-model/contract-moderation.md#deleting-documents), [Deleting Settled Documents](../data-model/contract-moderation.md#deleting-settled-documents) and [Restoring Documents](../data-model/contract-moderation.md#restoring-documents), for the moderation transition, the approvals and the removal record
 - [Moderator Abilities](moderator-abilities.md), for the `moderatorAbilities` object and the fields only moderators write
 - [Time To Live](ttl.md), the third way a document leaves the state
 - [History](history.md), for why a type that keeps history can never delete

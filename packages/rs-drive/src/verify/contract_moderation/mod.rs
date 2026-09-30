@@ -2,3 +2,4 @@ mod verify_contract_document_removals;
 mod verify_contract_fee_pots;
 mod verify_contract_moderation_entries;
 mod verify_contract_moderation_status;
+mod verify_contract_settled_deletions;

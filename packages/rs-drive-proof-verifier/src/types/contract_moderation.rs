@@ -2,7 +2,9 @@
 //! share: one identity's status on the lists queried ([`ContractModerationListStatuses`]) and one
 //! page of a contract's banlist, suspension list or warning list ([`ContractModerationEntries`],
 //! read with a [`ContractModerationEntriesQuery`]). The records of the documents its moderators deleted
-//! ([`ContractDocumentRemovals`], read with a [`ContractDocumentRemovalsQuery`]) and the fee
+//! ([`ContractDocumentRemovals`], read with a [`ContractDocumentRemovalsQuery`]), the approvals
+//! its seated moderation team gave the deletion of settled documents
+//! ([`ContractSettledDeletions`], read with a [`ContractSettledDeletionsQuery`]) and the fee
 //! pots of a contract ([`ContractFeePots`]) are read here too: the pots are what its document
 //! action fees pay its owner and its moderators.
 
@@ -16,6 +18,11 @@ use dapi_grpc::platform::v0::get_contract_fee_pots_response::{
     ContractFeePot as ContractFeePotProto, ContractFeePots as ContractFeePotsProto,
 };
 use dapi_grpc::platform::v0::get_contract_moderation_entries_response::ContractModerationEntry as ContractModerationEntryProto;
+use dapi_grpc::platform::v0::get_contract_settled_deletions_request::get_contract_settled_deletions_request_v0::Selection as SettledDeletionsSelection;
+use dapi_grpc::platform::v0::get_contract_settled_deletions_request::{
+    DocumentIds as SettledDeletionsDocumentIds, Page as SettledDeletionsPage,
+};
+use dapi_grpc::platform::v0::get_contract_settled_deletions_response::ContractSettledDeletion as ContractSettledDeletionProto;
 #[cfg(test)]
 use dapi_grpc::platform::v0::ContractModerationDocument as ContractModerationDocumentProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
@@ -25,7 +32,7 @@ pub use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationDocument,
     ContractModerationList,
     ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
-    ContractModerationStatus, ContractSuspension, ContractWarning,
+    ContractModerationStatus, ContractSettledDeletion, ContractSuspension, ContractWarning,
 };
 pub use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::identifier::Identifier;
@@ -35,6 +42,7 @@ pub use drive::drive::contract::fee_pots::types::{ContractFeePotState, ContractF
 pub use drive::drive::contract::moderation::types::{
     ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
     ContractDocumentRemovalsSelection, ContractModerationEntriesQuery, ContractModerationEntry,
+    ContractSettledDeletionEntry, ContractSettledDeletionsQuery,
 };
 
 /// The page size a request without a limit asks for, which is also the largest page a node
@@ -110,6 +118,51 @@ impl ContractDocumentRemovals {
             return None;
         }
         self.0.last().map(|entry| ContractDocumentRemovalsQuery {
+            document_type_name: query.document_type_name.clone(),
+            selection: ContractDocumentRemovalsSelection::Page {
+                start_after: Some(entry.document_id),
+                limit,
+            },
+        })
+    }
+}
+
+/// The page size a settled deletions request without a limit asks for, which is also the
+/// largest page a node returns and the most document ids one may name: the platform version's
+/// `max_returned_elements`, the number the node reads too.
+pub fn default_contract_settled_deletions_limit(platform_version: &PlatformVersion) -> u16 {
+    platform_version.drive_abci.query.max_returned_elements
+}
+
+/// The approvals a contract's seated moderation team gave the deletion of settled documents
+/// within one document type, in document id order: one record per document, whether its
+/// approvals are still open, lapsed, or met the type's rule and deleted it (`deleted_at`). A
+/// page shorter than the limit is the last one; a read by ids holds only the ids that have a
+/// record.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ContractSettledDeletions(pub Vec<ContractSettledDeletionEntry>);
+
+impl ContractSettledDeletions {
+    /// The records read.
+    pub fn settled_deletions(&self) -> &[ContractSettledDeletionEntry] {
+        &self.0
+    }
+
+    /// The query for the page after this one, or `None` when this page is the last: it holds
+    /// fewer records than `query` asked for. A read by ids names every record it wants, so
+    /// nothing follows it.
+    pub fn next_query(
+        &self,
+        query: &ContractSettledDeletionsQuery,
+    ) -> Option<ContractSettledDeletionsQuery> {
+        let ContractDocumentRemovalsSelection::Page { limit, .. } = &query.selection else {
+            return None;
+        };
+        let limit = *limit;
+        if self.0.len() < usize::from(limit) {
+            return None;
+        }
+        self.0.last().map(|entry| ContractSettledDeletionsQuery {
             document_type_name: query.document_type_name.clone(),
             selection: ContractDocumentRemovalsSelection::Page {
                 start_after: Some(entry.document_id),
@@ -335,35 +388,9 @@ pub fn removals_query_from_request(
     selection: Option<Selection>,
     platform_version: &PlatformVersion,
 ) -> Result<ContractDocumentRemovalsQuery, Error> {
-    let selection = selection.ok_or_else(|| Error::RequestError {
-        error: "either document_ids or page must be set".to_string(),
-    })?;
-    let selection = match selection {
-        Selection::DocumentIds(DocumentIds { document_ids }) => {
-            ContractDocumentRemovalsSelection::DocumentIds(
-                document_ids
-                    .iter()
-                    .map(|bytes| identifier_from_request(bytes, "document_ids"))
-                    .collect::<Result<Vec<Identifier>, Error>>()?,
-            )
-        }
-        Selection::Page(Page { start_after, limit }) => ContractDocumentRemovalsSelection::Page {
-            start_after: start_after
-                .as_deref()
-                .map(|bytes| identifier_from_request(bytes, "start_after"))
-                .transpose()?,
-            // The page size when the request names none: the largest page, the number the node
-            // read and proved. A limit no u16 holds is past every bound, and is refused below
-            // as the largest u16 is.
-            limit: limit.map_or(
-                default_contract_document_removals_limit(platform_version),
-                |limit| u16::try_from(limit).unwrap_or(u16::MAX),
-            ),
-        },
-    };
     let query = ContractDocumentRemovalsQuery {
         document_type_name,
-        selection,
+        selection: document_selection_from_request(selection, platform_version)?,
     };
     // The bounds the node enforced, from the one place they are written.
     Drive::check_contract_document_removals_query(&query, platform_version).map_err(|error| {
@@ -447,6 +474,135 @@ pub fn removals_from_response(
         }
     }
     Ok(ContractDocumentRemovals(entries))
+}
+
+/// The documents a removals or a settled deletions request selects: the ids it names, or one
+/// page after an optional cursor. Both requests carry the same selection, each in messages of
+/// its own. A request that selects nothing asks for no records at all and is refused rather
+/// than read as a page. The bounds are checked by the caller, against the read it builds.
+fn document_selection_from_request(
+    selection: Option<Selection>,
+    platform_version: &PlatformVersion,
+) -> Result<ContractDocumentRemovalsSelection, Error> {
+    let selection = selection.ok_or_else(|| Error::RequestError {
+        error: "either document_ids or page must be set".to_string(),
+    })?;
+    Ok(match selection {
+        Selection::DocumentIds(DocumentIds { document_ids }) => {
+            ContractDocumentRemovalsSelection::DocumentIds(
+                document_ids
+                    .iter()
+                    .map(|bytes| identifier_from_request(bytes, "document_ids"))
+                    .collect::<Result<Vec<Identifier>, Error>>()?,
+            )
+        }
+        Selection::Page(Page { start_after, limit }) => ContractDocumentRemovalsSelection::Page {
+            start_after: start_after
+                .as_deref()
+                .map(|bytes| identifier_from_request(bytes, "start_after"))
+                .transpose()?,
+            // The page size when the request names none: the largest page, the number the node
+            // read and proved. A limit no u16 holds is past every bound, and is refused by the
+            // caller as the largest u16 is.
+            limit: limit.map_or(
+                default_contract_document_removals_limit(platform_version),
+                |limit| u16::try_from(limit).unwrap_or(u16::MAX),
+            ),
+        },
+    })
+}
+
+/// The Drive query of a settled deletions request: the document type and what to read of it,
+/// under the bounds the node enforces, so a request outside them never got a proof. A request
+/// that selects nothing asks for no records at all and is refused rather than read as a page.
+pub fn settled_deletions_query_from_request(
+    document_type_name: String,
+    selection: Option<SettledDeletionsSelection>,
+    platform_version: &PlatformVersion,
+) -> Result<ContractSettledDeletionsQuery, Error> {
+    // The selection of a settled deletions request is the one of a removals request, field for
+    // field, and is read the same way.
+    let selection = selection.map(|selection| match selection {
+        SettledDeletionsSelection::DocumentIds(SettledDeletionsDocumentIds { document_ids }) => {
+            Selection::DocumentIds(DocumentIds { document_ids })
+        }
+        SettledDeletionsSelection::Page(SettledDeletionsPage { start_after, limit }) => {
+            Selection::Page(Page { start_after, limit })
+        }
+    });
+    let query = ContractSettledDeletionsQuery {
+        document_type_name,
+        selection: document_selection_from_request(selection, platform_version)?,
+    };
+    // The bounds the node enforced, from the one place they are written.
+    Drive::check_contract_settled_deletions_query(&query, platform_version).map_err(|error| {
+        Error::RequestError {
+            error: error.to_string(),
+        }
+    })?;
+    Ok(query)
+}
+
+/// The approval records of an unproved response. Every record names its document and each of
+/// its approvers by a 32 byte identifier and carries a reason, so a response missing any of
+/// them is refused, and so is one that answers with more records than the query could hold or
+/// with the record of a document it did not name. How many approvals a record holds is not
+/// checked: the proved path reads whatever the proof holds, and the two must agree on which
+/// stored records a client can read.
+pub fn settled_deletions_from_response(
+    settled_deletions: Vec<ContractSettledDeletionProto>,
+    query: &ContractSettledDeletionsQuery,
+) -> Result<ContractSettledDeletions, Error> {
+    let limit = query.limit();
+    if settled_deletions.len() > usize::from(limit) {
+        return Err(Error::ResponseDecodeError {
+            error: format!(
+                "{} settled deletions returned, the query asked for at most {limit}",
+                settled_deletions.len()
+            ),
+        });
+    }
+    let entries = settled_deletions
+        .into_iter()
+        .map(|settled_deletion| {
+            Ok(ContractSettledDeletionEntry {
+                document_id: identifier_from_response(
+                    &settled_deletion.document_id,
+                    "settled deletion document id",
+                )?,
+                settled_deletion: ContractSettledDeletion {
+                    proposed_at: settled_deletion.proposed_at,
+                    document_last_modified_at: settled_deletion.document_last_modified_at,
+                    reason: reason_from_response(settled_deletion.reason)?,
+                    approvals: settled_deletion
+                        .approvals
+                        .iter()
+                        .map(|approver| {
+                            identifier_from_response(approver, "settled deletion approver id")
+                        })
+                        .collect::<Result<Vec<Identifier>, Error>>()?,
+                    deleted_at: settled_deletion.deleted_at,
+                },
+            })
+        })
+        .collect::<Result<Vec<ContractSettledDeletionEntry>, Error>>()?;
+    // A read by ids asked for those records and no others, so the record of another document
+    // is not an answer to it.
+    if let ContractDocumentRemovalsSelection::DocumentIds(ids) = &query.selection {
+        if let Some(entry) = entries
+            .iter()
+            .find(|entry| !ids.contains(&entry.document_id))
+        {
+            return Err(Error::ResponseDecodeError {
+                error: format!(
+                    "the response holds the settled deletion of document {}, which the query did \
+                     not name",
+                    entry.document_id
+                ),
+            });
+        }
+    }
+    Ok(ContractSettledDeletions(entries))
 }
 
 /// One pot of an unproved response. The epoch of a last claim is a u16 on the chain and its
@@ -1152,6 +1308,290 @@ mod tests {
         }]);
         assert_eq!(short.next_query(&query), None);
         assert_eq!(page.next_query(&ids_query(&[1, 2])), None);
+    }
+
+    fn settled_page_selection(
+        start_after: Option<u8>,
+        limit: Option<u32>,
+    ) -> Option<SettledDeletionsSelection> {
+        Some(SettledDeletionsSelection::Page(SettledDeletionsPage {
+            start_after: start_after.map(|seed| id(seed).to_vec()),
+            limit,
+        }))
+    }
+
+    fn settled_ids_selection(seeds: &[u8]) -> Option<SettledDeletionsSelection> {
+        Some(SettledDeletionsSelection::DocumentIds(
+            SettledDeletionsDocumentIds {
+                document_ids: seeds.iter().map(|seed| id(*seed).to_vec()).collect(),
+            },
+        ))
+    }
+
+    fn settled_deletion(seed: u8) -> ContractSettledDeletion {
+        ContractSettledDeletion {
+            proposed_at: 1_000 + u64::from(seed),
+            document_last_modified_at: 500 + u64::from(seed),
+            reason: ContractModerationReason::from_text("doxxing"),
+            approvals: vec![id(0x77), id(0x78)],
+            // Every other record met the rule and deleted its document.
+            deleted_at: seed.is_multiple_of(2).then(|| 2_000 + u64::from(seed)),
+        }
+    }
+
+    fn settled_deletion_proto(seed: u8) -> ContractSettledDeletionProto {
+        let settled_deletion = settled_deletion(seed);
+        ContractSettledDeletionProto {
+            document_id: id(seed).to_vec(),
+            proposed_at: settled_deletion.proposed_at,
+            document_last_modified_at: settled_deletion.document_last_modified_at,
+            reason: Some(ContractModerationReasonProto {
+                code: None,
+                text: "doxxing".to_string(),
+                documents: vec![],
+                reason_document_id: None,
+            }),
+            approvals: settled_deletion
+                .approvals
+                .iter()
+                .map(|approver| approver.to_vec())
+                .collect(),
+            deleted_at: settled_deletion.deleted_at,
+        }
+    }
+
+    fn settled_ids_query(seeds: &[u8]) -> ContractSettledDeletionsQuery {
+        ContractSettledDeletionsQuery {
+            document_type_name: POST.to_string(),
+            selection: ContractDocumentRemovalsSelection::DocumentIds(
+                seeds.iter().map(|seed| id(*seed)).collect(),
+            ),
+        }
+    }
+
+    fn settled_page_query(limit: u16) -> ContractSettledDeletionsQuery {
+        ContractSettledDeletionsQuery {
+            document_type_name: POST.to_string(),
+            selection: ContractDocumentRemovalsSelection::Page {
+                start_after: None,
+                limit,
+            },
+        }
+    }
+
+    #[test]
+    fn should_build_the_settled_deletions_query_of_a_request() {
+        let platform_version = PlatformVersion::latest();
+        let max = default_contract_settled_deletions_limit(platform_version);
+        assert_eq!(
+            settled_deletions_query_from_request(
+                POST.to_string(),
+                settled_page_selection(None, None),
+                platform_version
+            )
+            .expect("expected a query"),
+            settled_page_query(max)
+        );
+        assert_eq!(
+            settled_deletions_query_from_request(
+                POST.to_string(),
+                settled_page_selection(Some(3), Some(5)),
+                platform_version
+            )
+            .expect("expected a query"),
+            ContractSettledDeletionsQuery {
+                document_type_name: POST.to_string(),
+                selection: ContractDocumentRemovalsSelection::Page {
+                    start_after: Some(id(3)),
+                    limit: 5,
+                },
+            }
+        );
+        assert_eq!(
+            settled_deletions_query_from_request(
+                POST.to_string(),
+                settled_ids_selection(&[3, 1]),
+                platform_version
+            )
+            .expect("expected a query"),
+            settled_ids_query(&[3, 1])
+        );
+
+        for (selection, needle) in [
+            (None, "either document_ids or page must be set"),
+            (settled_ids_selection(&[]), "must name between 1 and"),
+            (settled_ids_selection(&[1, 1]), "name a document id twice"),
+            (
+                settled_page_selection(None, Some(0)),
+                "limit must be between 1 and",
+            ),
+            (
+                settled_page_selection(None, Some(u32::from(max) + 1)),
+                "limit must be between 1 and",
+            ),
+            (
+                settled_page_selection(None, Some(u16::MAX as u32 + 1)),
+                "limit must be between 1 and",
+            ),
+            (
+                Some(SettledDeletionsSelection::DocumentIds(
+                    SettledDeletionsDocumentIds {
+                        document_ids: vec![vec![1; 31]],
+                    },
+                )),
+                "document_ids",
+            ),
+            (
+                Some(SettledDeletionsSelection::Page(SettledDeletionsPage {
+                    start_after: Some(vec![1; 5]),
+                    limit: None,
+                })),
+                "start_after",
+            ),
+        ] {
+            let err =
+                settled_deletions_query_from_request(POST.to_string(), selection, platform_version)
+                    .unwrap_err();
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains(needle)),
+                "{needle}: {err:?}"
+            );
+        }
+
+        // One id over the cap: the node would not have read them either, and names the read in
+        // its refusal.
+        let err = settled_deletions_query_from_request(
+            POST.to_string(),
+            settled_ids_selection(&(0..=max as u8).collect::<Vec<u8>>()),
+            platform_version,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, Error::RequestError { error } if error.contains("contract settled deletions must name between 1 and")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_read_the_settled_deletions_of_an_unproved_response() {
+        let settled_deletions = settled_deletions_from_response(
+            vec![settled_deletion_proto(1), settled_deletion_proto(2)],
+            &settled_ids_query(&[1, 2, 9]),
+        )
+        .expect("expected settled deletions");
+        assert_eq!(
+            settled_deletions.settled_deletions(),
+            &[
+                ContractSettledDeletionEntry {
+                    document_id: id(1),
+                    settled_deletion: settled_deletion(1),
+                },
+                ContractSettledDeletionEntry {
+                    document_id: id(2),
+                    settled_deletion: settled_deletion(2),
+                }
+            ]
+        );
+        // One record still open, one whose approvals deleted the document.
+        assert!(!settled_deletions.settled_deletions()[0]
+            .settled_deletion
+            .is_deleted());
+        assert!(settled_deletions.settled_deletions()[1]
+            .settled_deletion
+            .is_deleted());
+
+        // Every identifier of a record is 32 bytes, each approver's included.
+        for spoil in [
+            |proto: &mut ContractSettledDeletionProto| proto.document_id = vec![1; 5],
+            |proto: &mut ContractSettledDeletionProto| proto.approvals.push(vec![1; 5]),
+            |proto: &mut ContractSettledDeletionProto| proto.approvals[0] = vec![1; 33],
+        ] {
+            let mut proto = settled_deletion_proto(1);
+            spoil(&mut proto);
+            let err =
+                settled_deletions_from_response(vec![proto], &settled_ids_query(&[1])).unwrap_err();
+            assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+        }
+
+        // Every record carries a reason, with a code that fits a u16.
+        for reason in [
+            None,
+            Some(ContractModerationReasonProto {
+                code: Some(u32::from(u16::MAX) + 1),
+                text: String::new(),
+                documents: vec![],
+                reason_document_id: None,
+            }),
+        ] {
+            let proto = ContractSettledDeletionProto {
+                reason,
+                ..settled_deletion_proto(1)
+            };
+            let err =
+                settled_deletions_from_response(vec![proto], &settled_ids_query(&[1])).unwrap_err();
+            assert!(
+                matches!(err, Error::ResponseDecodeError { .. }),
+                "got: {err:?}"
+            );
+        }
+
+        // A record of a document the query did not name is not an answer to it.
+        let err = settled_deletions_from_response(
+            vec![settled_deletion_proto(1), settled_deletion_proto(2)],
+            &settled_ids_query(&[1, 3]),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, Error::ResponseDecodeError { error } if error.contains("did not name")),
+            "got: {err:?}"
+        );
+
+        // More records than the read could hold, by ids and by page alike.
+        for query in [settled_ids_query(&[1]), settled_page_query(1)] {
+            let err = settled_deletions_from_response(
+                vec![settled_deletion_proto(1), settled_deletion_proto(2)],
+                &query,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(&err, Error::ResponseDecodeError { error } if error.contains("at most 1")),
+                "got: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_continue_after_a_full_settled_deletions_page_only() {
+        let query = settled_page_query(2);
+        let page = ContractSettledDeletions(vec![
+            ContractSettledDeletionEntry {
+                document_id: id(1),
+                settled_deletion: settled_deletion(1),
+            },
+            ContractSettledDeletionEntry {
+                document_id: id(2),
+                settled_deletion: settled_deletion(2),
+            },
+        ]);
+        assert_eq!(
+            page.next_query(&query),
+            Some(ContractSettledDeletionsQuery {
+                document_type_name: POST.to_string(),
+                selection: ContractDocumentRemovalsSelection::Page {
+                    start_after: Some(id(2)),
+                    limit: 2,
+                },
+            })
+        );
+        assert_eq!(ContractSettledDeletions::default().next_query(&query), None);
+        // A page shorter than the limit is the last one, and a read by ids has no page after
+        // it whatever it held.
+        let short = ContractSettledDeletions(vec![ContractSettledDeletionEntry {
+            document_id: id(1),
+            settled_deletion: settled_deletion(1),
+        }]);
+        assert_eq!(short.next_query(&query), None);
+        assert_eq!(page.next_query(&settled_ids_query(&[1, 2])), None);
     }
 
     #[test]

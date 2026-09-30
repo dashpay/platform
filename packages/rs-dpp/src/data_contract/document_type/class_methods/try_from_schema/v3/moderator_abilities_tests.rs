@@ -1,10 +1,13 @@
 //! The `moderatorAbilities` doctype keyword (protocol version 14): what each of its keys
-//! (`delete`, `deleteWithin`, `changeFields`) requires of the contract and of the document
-//! type.
+//! (`delete`, `deleteWithin`, `deleteSettled`, `changeFields`) requires of the contract and of
+//! the document type.
 use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+use crate::data_contract::config::moderation::{
+    ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+    ModerationAbility, SettledDeletionRule, DEFAULT_ELECTION_WINDOW_SECONDS,
+};
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use platform_value::platform_value;
@@ -983,4 +986,169 @@ fn should_refuse_fields_only_moderators_write_beside_a_required_transient_proper
             "moderatorAbilities.changeFields",
         ],
     );
+}
+
+// ---- deleteSettled: who must approve the deletion of a settled document -------------------
+
+/// An elected declaration moderating `post` with `deleteDocuments`, the owner in the interim.
+fn elected_config(platform_version: &PlatformVersion) -> DataContractConfig {
+    DataContractConfig::default_for_version(platform_version)
+        .expect("default config available")
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                challenge_cool_down: None,
+                election_delay: None,
+                max_added_moderators: 0,
+                moderated_document_types: BTreeMap::from([(
+                    "post".to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                )]),
+                interim: InterimModerators::ContractOwner,
+                owner_protected: false,
+            })),
+            warnings: false,
+        }))
+}
+
+/// A windowed `post` whose settled documents a seated team deletes by `rule`.
+fn settled_schema(rule: Value) -> Value {
+    windowed_schema(platform_value!({
+        "moderatorAbilities": { "delete": true, "deleteWithin": 86400, "deleteSettled": rule },
+    }))
+}
+
+fn parse_elected(schema: Value, full_validation: bool) -> Result<DocumentType, ProtocolError> {
+    let platform_version = PlatformVersion::latest();
+    parse_with_config(
+        schema,
+        &elected_config(platform_version),
+        platform_version.protocol_version,
+        full_validation,
+    )
+}
+
+#[test]
+fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
+    for (rule, expected) in [
+        (
+            platform_value!({ "leader": true }),
+            SettledDeletionRule {
+                leader: true,
+                approvals: 1,
+            },
+        ),
+        (
+            platform_value!({ "leader": true, "approvals": 3 }),
+            SettledDeletionRule {
+                leader: true,
+                approvals: 3,
+            },
+        ),
+        (
+            platform_value!({ "approvals": 2 }),
+            SettledDeletionRule {
+                leader: false,
+                approvals: 2,
+            },
+        ),
+    ] {
+        for full_validation in [true, false] {
+            let document_type =
+                parse_elected(settled_schema(rule.clone()), full_validation).expect("parse");
+            assert_eq!(
+                document_type.moderator_settled_deletion(),
+                Some(expected),
+                "{rule:?} (full validation: {full_validation})"
+            );
+        }
+    }
+}
+
+#[test]
+fn should_let_no_moderator_delete_a_settled_document_without_the_key() {
+    let document_type = parse_elected(windowed_schema(platform_value!({})), true).expect("parse");
+    assert_eq!(document_type.moderator_settled_deletion(), None);
+}
+
+#[test]
+fn should_refuse_a_settled_deletion_without_a_window() {
+    for full_validation in [true, false] {
+        assert_refused_naming(
+            parse_elected(
+                post_schema(platform_value!({
+                    "moderatorAbilities": { "delete": true, "deleteSettled": { "leader": true } },
+                })),
+                full_validation,
+            ),
+            &["deleteSettled", "deleteWithin"],
+        );
+    }
+}
+
+#[test]
+fn should_refuse_a_settled_deletion_on_a_contract_whose_moderators_are_not_elected() {
+    for full_validation in [true, false] {
+        let platform_version = PlatformVersion::latest();
+        assert_refused_naming(
+            parse_with_config(
+                settled_schema(platform_value!({ "leader": true })),
+                &moderated_config(platform_version),
+                platform_version.protocol_version,
+                full_validation,
+            ),
+            &["deleteSettled", "not elected"],
+        );
+    }
+}
+
+#[test]
+fn should_refuse_a_number_of_approvals_no_team_can_give() {
+    let max = PlatformVersion::latest()
+        .system_limits
+        .max_contract_moderation_settled_deletion_approvals;
+    // The meta-schema speaks first under full validation, so the parser's words are checked
+    // on the stored path.
+    for approvals in [0, max + 1] {
+        assert_refused_naming(
+            parse_elected(
+                settled_schema(platform_value!({ "approvals": approvals })),
+                false,
+            ),
+            &["deleteSettled.approvals", "between 1 and"],
+        );
+        assert!(parse_elected(
+            settled_schema(platform_value!({ "approvals": approvals })),
+            true
+        )
+        .is_err());
+    }
+    parse_elected(settled_schema(platform_value!({ "approvals": max })), true)
+        .expect("the most members a team holds may be required");
+}
+
+#[test]
+fn should_refuse_a_malformed_settled_deletion_on_the_stored_path_too() {
+    for (rule, fragment) in [
+        (platform_value!(true), "must be an object"),
+        (platform_value!({}), "is empty"),
+        (platform_value!({ "leaders": true }), "has no key"),
+        (platform_value!({ "leader": "yes" }), ""),
+        (platform_value!({ "approvals": -1 }), ""),
+    ] {
+        for full_validation in [true, false] {
+            let error = parse_elected(settled_schema(rule.clone()), full_validation)
+                .expect_err("a malformed `deleteSettled` must be refused");
+            let message = format!("{error:?}");
+            if !full_validation {
+                assert!(
+                    message.contains(fragment),
+                    "{rule:?} must be refused naming {fragment:?}, got {message}"
+                );
+            }
+        }
+    }
 }

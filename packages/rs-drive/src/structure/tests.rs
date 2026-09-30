@@ -323,8 +323,8 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::moderation::{
         ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
-        ContractModerators, ContractWarning, ElectedModerators, InterimModerators,
-        ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        ContractModerators, ContractSettledDeletion, ContractWarning, ElectedModerators,
+        InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
     };
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
@@ -873,6 +873,92 @@ mod fixtures {
             )
             .expect("expected to count a moderation action");
         conformance_of(&drive, "elected_contract", run);
+    }
+
+    /// An elected contract whose team deletes settled posts once its leader approves, with the
+    /// approvals of one deletion. Kept apart from the elected contract, whose other tree's shape
+    /// is recorded.
+    fn contract_with_settled_deletions(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract.json",
+            Some([12; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: false,
+                        suspensions: false,
+                        warnings: false,
+                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            challenge_cool_down: None,
+                            election_delay: None,
+                            max_added_moderators: 0,
+                            moderated_document_types: BTreeMap::from([(
+                                "post".to_string(),
+                                BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                            )]),
+                            interim: InterimModerators::ContractOwner,
+                            owner_protected: false,
+                        })),
+                    },
+                )));
+                // After the config: the keyword needs an elected declaration.
+                contract
+                    .set_document_schema(
+                        "post",
+                        platform_value!({
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "maxLength": 50, "position": 0 },
+                            },
+                            "required": ["$updatedAt"],
+                            "additionalProperties": false,
+                            "moderatorAbilities": {
+                                "delete": true,
+                                "deleteWithin": 86400,
+                                "deleteSettled": { "leader": true },
+                            },
+                        }),
+                        true,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected to add a document type whose settled posts a team deletes");
+            }),
+            None,
+            Some(platform_version),
+        );
+        drive
+            .apply_drive_operations(
+                vec![DriveOperation::ContractModerationOperation(
+                    ContractModerationOperationType::AddSettledDeletion {
+                        contract_id: contract.id(),
+                        document_type_name: "post".to_string(),
+                        document_id: Identifier::from([0x26; 32]),
+                        settled_deletion: ContractSettledDeletion {
+                            proposed_at: 1_000,
+                            document_last_modified_at: 10,
+                            reason: ContractModerationReason::from_text("doxxing"),
+                            approvals: vec![Identifier::from([0x27; 32])],
+                            deleted_at: None,
+                        },
+                        replaces_existing: false,
+                        moderator_id: Identifier::from([0x27; 32]),
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to record the approvals of a settled deletion");
+        conformance_of(&drive, "contract_with_settled_deletions", run);
     }
 
     /// A contract that keeps the banlist and the warning list, with one identity carrying two
@@ -1659,6 +1745,7 @@ mod fixtures {
         warned_contract(&mut run);
         elected_contract(&mut run);
         contract_with_document_removals(&mut run);
+        contract_with_settled_deletions(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
         current_then_paid_epoch(&mut run);

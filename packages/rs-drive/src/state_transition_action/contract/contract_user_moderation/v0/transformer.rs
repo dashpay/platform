@@ -1,7 +1,7 @@
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
-    ContractDocumentRestorationContext, ContractUserModerationTransitionActionV0,
-    ContractWarningContext,
+    ContractDocumentRestorationContext, ContractSettledDeletionContext,
+    ContractUserModerationTransitionActionV0, ContractWarningContext,
 };
 use dpp::data_contract::config::moderation::ContractModerationStatus;
 use dpp::identity::TimestampMillis;
@@ -40,6 +40,7 @@ impl ContractUserModerationTransitionActionV0 {
             document_deletion: None,
             document_restoration: None,
             document_change: None,
+            settled_deletion: None,
             moderation_action_count: None,
             user_fee_increase: *user_fee_increase,
         }
@@ -87,6 +88,22 @@ impl ContractUserModerationTransitionActionV0 {
             0,
         );
         action.document_change = Some(document_change);
+        action
+    }
+
+    /// The action of a borrowed transition that approves the deletion of a settled document,
+    /// carrying what the validation read and decided: the approvals to store, and the deletion
+    /// when they meet the rule
+    pub fn from_borrowed_transition_with_settled_deletion(
+        value: &ContractUserModerationTransitionV0,
+        settled_deletion: ContractSettledDeletionContext,
+    ) -> Self {
+        let mut action = Self::from_borrowed_transition_with_status(
+            value,
+            &ContractModerationStatus::default(),
+            0,
+        );
+        action.settled_deletion = Some(settled_deletion);
         action
     }
 }

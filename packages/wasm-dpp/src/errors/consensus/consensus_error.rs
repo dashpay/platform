@@ -104,8 +104,10 @@ use dpp::consensus::basic::moderation_charter::{
 use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
-    ContractModerationAbilityNotGrantedError, ModerationCharterAddedModeratorLimitReachedError,
-    ModerationReasonNotListedError,
+    ContractModerationAbilityNotGrantedError, ContractModerationTeamNotSeatedError,
+    DocumentNotSettledError, DocumentTypeNotDeletableOnceSettledError,
+    ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
+    SettledDeletionAlreadyApprovedError, SettledDeletionReasonMismatchError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
@@ -718,6 +720,21 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ModerationReasonNotListedError(e) => {
             generic_consensus_error!(ModerationReasonNotListedError, e).into()
+        }
+        StateError::DocumentTypeNotDeletableOnceSettledError(e) => {
+            generic_consensus_error!(DocumentTypeNotDeletableOnceSettledError, e).into()
+        }
+        StateError::ContractModerationTeamNotSeatedError(e) => {
+            generic_consensus_error!(ContractModerationTeamNotSeatedError, e).into()
+        }
+        StateError::DocumentNotSettledError(e) => {
+            generic_consensus_error!(DocumentNotSettledError, e).into()
+        }
+        StateError::SettledDeletionReasonMismatchError(e) => {
+            generic_consensus_error!(SettledDeletionReasonMismatchError, e).into()
+        }
+        StateError::SettledDeletionAlreadyApprovedError(e) => {
+            generic_consensus_error!(SettledDeletionAlreadyApprovedError, e).into()
         }
         StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
             generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()

@@ -4,8 +4,8 @@ pub mod transformer;
 pub mod v0;
 
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
-    ContractDocumentDeletionContext, ContractUserModerationTransitionActionV0,
-    ContractWarningContext,
+    ContractDocumentDeletionContext, ContractSettledDeletionContext,
+    ContractUserModerationTransitionActionV0, ContractWarningContext,
 };
 use derive_more::From;
 use dpp::platform_value::Identifier;
@@ -69,6 +69,14 @@ impl ContractUserModerationTransitionAction {
     pub fn document_deletion(&self) -> Option<&ContractDocumentDeletionContext> {
         match self {
             ContractUserModerationTransitionAction::V0(action) => action.document_deletion.as_ref(),
+        }
+    }
+
+    /// What the approval of a settled document's deletion read and decided when the transition
+    /// was validated, `None` for every other action
+    pub fn settled_deletion(&self) -> Option<&ContractSettledDeletionContext> {
+        match self {
+            ContractUserModerationTransitionAction::V0(action) => action.settled_deletion.as_ref(),
         }
     }
 

@@ -179,6 +179,28 @@ impl Drive {
                     platform_version,
                 )?;
             }
+
+            // The approvals of the deletions of settled documents, in the same shape: one tree
+            // per document type that says who must approve them, and their common tree only
+            // when there is one.
+            let settled_document_type_names: Vec<&str> = contract
+                .document_types()
+                .values()
+                .filter(|document_type| document_type.moderator_settled_deletion().is_some())
+                .map(|document_type| document_type.name().as_str())
+                .collect();
+            if !settled_document_type_names.is_empty() {
+                self.insert_contract_settled_deletion_trees_operations(
+                    contract.id().to_buffer(),
+                    true,
+                    &settled_document_type_names,
+                    storage_flags.as_ref(),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+            }
         }
 
         Ok(batch_operations)

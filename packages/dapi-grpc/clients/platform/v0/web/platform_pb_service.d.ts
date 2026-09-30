@@ -211,6 +211,15 @@ type PlatformgetContractDocumentRemovals = {
   readonly responseType: typeof platform_pb.GetContractDocumentRemovalsResponse;
 };
 
+type PlatformgetContractSettledDeletions = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractSettledDeletionsRequest;
+  readonly responseType: typeof platform_pb.GetContractSettledDeletionsResponse;
+};
+
 type PlatformgetContractFeePots = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -659,6 +668,7 @@ export class Platform {
   static readonly getContractModerationStatus: PlatformgetContractModerationStatus;
   static readonly getContractModerationEntries: PlatformgetContractModerationEntries;
   static readonly getContractDocumentRemovals: PlatformgetContractDocumentRemovals;
+  static readonly getContractSettledDeletions: PlatformgetContractSettledDeletions;
   static readonly getContractFeePots: PlatformgetContractFeePots;
   static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
@@ -946,6 +956,15 @@ export class PlatformClient {
   getContractDocumentRemovals(
     requestMessage: platform_pb.GetContractDocumentRemovalsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractDocumentRemovalsResponse|null) => void
+  ): UnaryResponse;
+  getContractSettledDeletions(
+    requestMessage: platform_pb.GetContractSettledDeletionsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractSettledDeletionsResponse|null) => void
+  ): UnaryResponse;
+  getContractSettledDeletions(
+    requestMessage: platform_pb.GetContractSettledDeletionsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractSettledDeletionsResponse|null) => void
   ): UnaryResponse;
   getContractFeePots(
     requestMessage: platform_pb.GetContractFeePotsRequest,

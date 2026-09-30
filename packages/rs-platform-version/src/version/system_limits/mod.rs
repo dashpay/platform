@@ -211,6 +211,18 @@ pub struct SystemLimits {
     /// after the election (`maxAddedModerators`). Read by the declaration's validation
     /// (protocol version 14) and never reached before.
     pub max_contract_moderation_added_moderators: u16,
+    /// Most members of a seated moderation team a document type's
+    /// `moderatorAbilities.deleteSettled` may require to approve the deletion of a settled
+    /// document: the most a team holds, its leader, the 15 members a charter may elect and the
+    /// `max_contract_moderation_added_moderators` its leader may add. Read by the document
+    /// type parser (protocol version 14) and never reached before.
+    pub max_contract_moderation_settled_deletion_approvals: u16,
+    /// How long the approvals of a moderator's deletion of a settled document hold, in
+    /// milliseconds of block time after the first (`ContractUserModeration`'s
+    /// `DeleteSettledDocument` action): a week. The next approval after that starts afresh.
+    /// Read by the `ContractUserModeration` state validation v0 (protocol version 14) and
+    /// never reached before.
+    pub contract_settled_deletion_approval_window_ms: u64,
     /// Most contenders one contested document resource vote poll accepts: a document that
     /// would add one more is refused. The end of a poll tallies, and cleans up, every
     /// contender in one block, so this bounds that work; `maximum_contenders_to_consider`

@@ -18,6 +18,7 @@
 //! `v1/mod.rs`, whose entry point serves generation 1 (schema 0) *and* backs
 //! generation 2 (schema 1 and 2).
 
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
@@ -33,7 +34,8 @@ use crate::data_contract::document_type::property::{
     KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_names::moderator_abilities::{
-    CHANGE_FIELDS, DELETE, DELETE_KEEPS_RECORD, DELETE_REFUNDS_OWNER, DELETE_WITHIN,
+    delete_settled, CHANGE_FIELDS, DELETE, DELETE_KEEPS_RECORD, DELETE_REFUNDS_OWNER,
+    DELETE_SETTLED, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
@@ -2198,6 +2200,10 @@ pub(super) struct ModeratorAbilitiesKeyword {
     /// `deleteRefundsOwner`: whether the owner of a document they delete is
     /// refunded its storage, `None` when left out.
     pub(super) delete_refunds_owner: Option<bool>,
+    /// `deleteSettled`: who must approve their deletion of a document past
+    /// `deleteWithin`, its defaults filled in; the number is checked against its
+    /// limit when applied.
+    pub(super) delete_settled: Option<SettledDeletionRule>,
     /// `changeFields`: the top-level properties only they write.
     pub(super) change_fields: BTreeSet<String>,
 }
@@ -2206,8 +2212,9 @@ pub(super) struct ModeratorAbilitiesKeyword {
 /// here and not left to the meta-schema, as for every doctype-level keyword of
 /// this generation: a stored contract is read without one. An object, with
 /// only the keys `delete`, `deleteKeepsRecord` and `deleteRefundsOwner`
-/// (booleans), `deleteWithin` (seconds, a u32) and `changeFields` (a non-empty
-/// list of property names), saying something.
+/// (booleans), `deleteWithin` (seconds, a u32), `deleteSettled` (an object with
+/// only `leader`, a boolean, and `approvals`, a u16, at least one of them) and
+/// `changeFields` (a non-empty list of property names), saying something.
 pub(super) fn parse_moderator_abilities_keyword(
     schema: &Value,
     name: &str,
@@ -2235,7 +2242,8 @@ pub(super) fn parse_moderator_abilities_keyword(
         .iter()
         .find_map(|(key, _)| match key.as_text() {
             Some(
-                DELETE | DELETE_WITHIN | DELETE_KEEPS_RECORD | DELETE_REFUNDS_OWNER | CHANGE_FIELDS,
+                DELETE | DELETE_WITHIN | DELETE_KEEPS_RECORD | DELETE_REFUNDS_OWNER
+                | DELETE_SETTLED | CHANGE_FIELDS,
             ) => None,
             Some(other) => Some(other.to_string()),
             None => Some(key.to_string()),
@@ -2243,8 +2251,8 @@ pub(super) fn parse_moderator_abilities_keyword(
     {
         return Err(structure_error(format!(
             "document type \"{name}\": `{MODERATOR_ABILITIES}` has no key \"{unknown}\", only \
-             `{DELETE}`, `{DELETE_WITHIN}`, `{DELETE_KEEPS_RECORD}`, `{DELETE_REFUNDS_OWNER}` \
-             and `{CHANGE_FIELDS}`"
+             `{DELETE}`, `{DELETE_WITHIN}`, `{DELETE_KEEPS_RECORD}`, `{DELETE_REFUNDS_OWNER}`, \
+             `{DELETE_SETTLED}` and `{CHANGE_FIELDS}`"
         )));
     }
 
@@ -2258,6 +2266,46 @@ pub(super) fn parse_moderator_abilities_keyword(
     let delete_refunds_owner =
         Value::inner_optional_bool_value(abilities_map, DELETE_REFUNDS_OWNER)
             .map_err(consensus_or_protocol_value_error)?;
+    let delete_settled = match Value::get_optional_from_map(abilities_map, DELETE_SETTLED) {
+        None => None,
+        Some(settled) => {
+            let Ok(settled_map) = settled.to_map() else {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` must be \
+                     an object"
+                )));
+            };
+            if let Some(unknown) = settled_map.iter().find_map(|(key, _)| match key.as_text() {
+                Some(delete_settled::LEADER | delete_settled::APPROVALS) => None,
+                Some(other) => Some(other.to_string()),
+                None => Some(key.to_string()),
+            }) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` has no \
+                     key \"{unknown}\", only `{}` and `{}`",
+                    delete_settled::LEADER,
+                    delete_settled::APPROVALS,
+                )));
+            }
+            if settled_map.is_empty() {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` is empty: \
+                     say whether the team's leader must approve (`{}`), how many must (`{}`), \
+                     or both",
+                    delete_settled::LEADER,
+                    delete_settled::APPROVALS,
+                )));
+            }
+            let leader = Value::inner_optional_bool_value(settled_map, delete_settled::LEADER)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or(false);
+            let approvals =
+                Value::inner_optional_integer_value::<u16>(settled_map, delete_settled::APPROVALS)
+                    .map_err(consensus_or_protocol_value_error)?
+                    .unwrap_or(1);
+            Some(SettledDeletionRule { leader, approvals })
+        }
+    };
     let change_fields = match Value::get_optional_from_map(abilities_map, CHANGE_FIELDS) {
         None => BTreeSet::new(),
         Some(_) => {
@@ -2283,6 +2331,7 @@ pub(super) fn parse_moderator_abilities_keyword(
         delete_within,
         delete_keeps_record,
         delete_refunds_owner,
+        delete_settled,
         change_fields,
     })
 }
@@ -2322,6 +2371,17 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// storage refund, forfeited unless the type gives it back. Each describes the
 /// moderators' deletion, so each needs `delete: true`.
 ///
+/// `deleteSettled` says who must approve a deletion once the window has passed,
+/// so:
+/// - the type must set `deleteWithin`: without a window no document is ever
+///   settled;
+/// - the contract's moderators must be an elected team: the rule names the
+///   seated team's leader and counts its members, and the owner and appointed
+///   moderators of the other kinds are neither;
+/// - `approvals` is at least 1 and at most
+///   `SystemLimits::max_contract_moderation_settled_deletion_approvals`, the most
+///   members a seated team can hold.
+///
 /// `changeFields` names the properties only the moderators write. A
 /// moderator's change is stored as an update that touches nothing else, and is
 /// not checked against the type's references, so each property must be:
@@ -2352,12 +2412,14 @@ pub(super) fn apply_moderator_abilities(
     abilities: ModeratorAbilitiesKeyword,
     data_contract_config: &DataContractConfig,
     name: &str,
+    platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     let ModeratorAbilitiesKeyword {
         delete,
         delete_within,
         delete_keeps_record,
         delete_refunds_owner,
+        delete_settled,
         change_fields,
     } = abilities;
     let structure_error = |message: String| {
@@ -2396,6 +2458,7 @@ pub(super) fn apply_moderator_abilities(
         && delete_within.is_none()
         && delete_keeps_record.is_none()
         && delete_refunds_owner.is_none()
+        && delete_settled.is_none()
         && change_fields.is_empty()
     {
         return Ok(());
@@ -2493,6 +2556,39 @@ pub(super) fn apply_moderator_abilities(
             )));
         }
         document_type.documents_can_be_deleted_by_moderators_for = Some(seconds);
+    }
+
+    if let Some(rule) = delete_settled {
+        if delete_within.is_none() {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}`, which \
+                 rules deletions past `{DELETE_WITHIN}` and means nothing without it",
+            )));
+        }
+        // The moderation config was checked present above
+        let elected = data_contract_config
+            .moderation()
+            .is_some_and(|moderation| moderation.moderators.elected().is_some());
+        if !elected {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}`, which \
+                 names the leader and the members of an elected moderation team, but the \
+                 contract's moderators are not elected",
+            )));
+        }
+        let max_approvals = platform_version
+            .system_limits
+            .max_contract_moderation_settled_deletion_approvals;
+        if rule.approvals == 0 || rule.approvals > max_approvals {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}.{}: {}`, \
+                 which must be between 1 and {max_approvals}, the most members a seated team \
+                 holds",
+                delete_settled::APPROVALS,
+                rule.approvals,
+            )));
+        }
+        document_type.moderator_settled_deletion = Some(rule);
     }
 
     if change_fields.is_empty() {

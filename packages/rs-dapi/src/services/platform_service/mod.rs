@@ -441,6 +441,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_contract_settled_deletions,
+        dapi_grpc::platform::v0::GetContractSettledDeletionsRequest,
+        dapi_grpc::platform::v0::GetContractSettledDeletionsResponse
+    );
+
+    drive_method!(
         get_contract_fee_pots,
         dapi_grpc::platform::v0::GetContractFeePotsRequest,
         dapi_grpc::platform::v0::GetContractFeePotsResponse

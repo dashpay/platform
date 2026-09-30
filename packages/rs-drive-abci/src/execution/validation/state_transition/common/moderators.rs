@@ -138,8 +138,8 @@ impl<'a> Moderators<'a> {
         }
     }
 
-    /// The refusal of a seated team's ban, suspension, warning, document deletion or field
-    /// change whose
+    /// The refusal of a seated team's ban, suspension, warning, document deletion, field change
+    /// or approval of a settled document's deletion whose
     /// reason names no reason document its proposal lists (decentralized moderation teams): a
     /// team acts only on the grounds it proposed, and a proposal that lists none can take no
     /// such action. The proposal is read, billed, only when the reason names a document. A
@@ -164,7 +164,8 @@ impl<'a> Moderators<'a> {
             | ContractUserModerationAction::Suspend { reason, .. }
             | ContractUserModerationAction::Warn { reason, .. }
             | ContractUserModerationAction::DeleteDocument { reason, .. }
-            | ContractUserModerationAction::ChangeDocumentFields { reason, .. } => reason,
+            | ContractUserModerationAction::ChangeDocumentFields { reason, .. }
+            | ContractUserModerationAction::DeleteSettledDocument { reason, .. } => reason,
             ContractUserModerationAction::Unban { .. }
             | ContractUserModerationAction::Unsuspend { .. }
             | ContractUserModerationAction::ClearWarnings { .. }
@@ -194,7 +195,9 @@ impl<'a> Moderators<'a> {
     /// by. A reversal (an unban, an unsuspension, a clearing, a restore) counts for nothing, and
     /// neither does a field change: changes of one document have no bound, as deletions of the
     /// content that exists do, so counting them would let a member farm the share. Neither does
-    /// an action of the moderators a declaration names, who share the pot equally.
+    /// an action of the moderators a declaration names, who share the pot equally. The approval
+    /// of a settled document's deletion is counted by its own transform, for every approver, and
+    /// only once the approvals delete the document.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn count_for_signer(
         &self,

@@ -56,6 +56,7 @@ use std::sync::Arc;
 
 mod pot;
 mod reasons;
+mod settled;
 
 const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
 const CONTRACT_MODERATION_ABILITY_NOT_GRANTED: u32 = 41201;
@@ -85,6 +86,14 @@ const REPLY: &str = "reply";
 const NOTE: &str = "note";
 /// A document type whose `label` only moderators write, moderated with field changes only.
 const BADGE: &str = "badge";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the leader and two members of the seated team approve.
+const STORY: &str = "story";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the seated team's leader approves.
+const MEMO: &str = "memo";
+/// The window the stories and memos give their moderators.
+const SETTLING_WINDOW_SECONDS: u64 = 60;
 const DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE: u32 = 41124;
 
 /// A document with a `title` and a `label` only the contract's moderators write
@@ -127,6 +136,14 @@ fn elected_posts(
                 (
                     BADGE.to_string(),
                     BTreeSet::from([ModerationAbility::ChangeDocumentFields]),
+                ),
+                (
+                    STORY.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    MEMO.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
                 ),
             ]),
             interim,
@@ -369,6 +386,24 @@ impl Team {
                     )
                 }
                 add_document_type(c, BADGE, labelled_schema());
+                for (name, rule) in [
+                    (STORY, platform_value!({ "leader": true, "approvals": 3 })),
+                    (MEMO, platform_value!({ "leader": true })),
+                ] {
+                    add_document_type(
+                        c,
+                        name,
+                        post_schema_with(platform_value!({
+                            "moderatorAbilities": {
+                                "delete": true,
+                                "deleteWithin": SETTLING_WINDOW_SECONDS,
+                                "deleteSettled": rule,
+                            },
+                            "documentsMutable": true,
+                            "required": ["text", "$updatedAt"],
+                        })),
+                    )
+                }
             },
         )
         .await;

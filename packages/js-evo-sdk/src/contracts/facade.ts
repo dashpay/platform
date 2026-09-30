@@ -178,6 +178,25 @@ export class ContractsFacade {
   }
 
   /**
+   * Approves, as a member of an elected contract's seated moderation team, the deletion of one
+   * settled document: one last modified longer ago than its type's
+   * `moderatorAbilities.deleteWithin` window, which no moderator deletes alone. The type must
+   * say who of the team must approve (`moderatorAbilities.deleteSettled`). Each member sends
+   * the same approval once (41208), for the reason of the first (41207), and the approval that
+   * meets the rule, the leader among them if it says so, deletes the document as
+   * `moderatorDeleteDocument` does. Approvals that fall short lapse a week after the first,
+   * when the document is replaced, or when every approver has left the team. Signed like the other moderations; `options.reason` is
+   * required and names a reason document the team's proposal lists. Resolves with the
+   * approvals the contract keeps of the deletion, `deletedAt` set once they deleted it.
+   */
+  async moderatorDeleteSettledDocument(
+    options: wasm.ContractDeleteSettledDocumentOptions,
+  ): Promise<wasm.ContractSettledDeletionResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractDeleteSettledDocument(options);
+  }
+
+  /**
    * Restores, as a moderator, one document a moderator deleted: `options.document` is the
    * document as it was (as fetched before the deletion), which must hash to what its removal
    * record holds, and the restore must come within a week of the deletion (41120). Any current
@@ -260,6 +279,26 @@ export class ContractsFacade {
   ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractDocumentRemovalsPage>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContractDocumentRemovalsWithProofInfo(query);
+  }
+
+  /**
+   * The approvals a contract's seated moderation team gave the deletion of settled documents
+   * within one document type, in document id order: the records of the `documentIds` named,
+   * where a document no approval was given for is left out, or else one page of them all. A
+   * record whose `deletedAt` is set deleted its document. Pass a page's `nextStartAfter` as the
+   * next query's `startAfter`; a page without one (it holds fewer records than the limit) is
+   * the last.
+   */
+  async settledDeletions(query: wasm.ContractSettledDeletionsQuery): Promise<wasm.ContractSettledDeletionsPage> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractSettledDeletions(query);
+  }
+
+  async settledDeletionsWithProof(
+    query: wasm.ContractSettledDeletionsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractSettledDeletionsPage>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractSettledDeletionsWithProofInfo(query);
   }
 
   /**

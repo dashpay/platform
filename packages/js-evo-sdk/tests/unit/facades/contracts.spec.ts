@@ -485,6 +485,98 @@ describe('ContractsFacade', () => {
       expect(stub).to.be.calledOnceWithExactly(query);
       expect(result).to.equal(response);
     });
+
+    // An approval of the deletion of a settled document names the document, carries the reason
+    // every approval repeats, and resolves to the approvals the contract keeps.
+    const settledReason = { code: 3, text: 'doxxing', reasonDocumentId: contractId };
+    const settledDeletion = {
+      proposedAt: BigInt(1800000000000),
+      documentLastModifiedAt: BigInt(1700000000000),
+      reason: settledReason,
+      approvals: [identityId],
+    };
+
+    it('should forward moderatorDeleteSettledDocument() to contractDeleteSettledDocument() and return the approvals', async function run() {
+      const record = {
+        contractId, documentTypeName, documentId, ...settledDeletion,
+      };
+      const stub = this.sinon.stub(wasmSdk, 'contractDeleteSettledDocument').resolves(record);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        documentId,
+        reason: settledReason,
+        signer,
+      };
+
+      const result = await client.contracts.moderatorDeleteSettledDocument(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(record);
+      // Short of the rule: the document stays.
+      expect(result.deletedAt).to.equal(undefined);
+    });
+
+    it('should resolve with the deletion time once the approvals meet the rule', async function run() {
+      const record = {
+        contractId,
+        documentTypeName,
+        documentId,
+        ...settledDeletion,
+        approvals: [identityId, contractId],
+        deletedAt: BigInt(1800000001000),
+      };
+      const stub = this.sinon.stub(wasmSdk, 'contractDeleteSettledDocument').resolves(record);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        documentId,
+        reason: settledReason,
+        signer,
+      };
+
+      const result = await client.contracts.moderatorDeleteSettledDocument(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result.approvals).to.deep.equal([identityId, contractId]);
+      expect(result.deletedAt).to.equal(BigInt(1800000001000));
+    });
+
+    it('should fetch the settled deletion approvals of the documents named, which carry no cursor', async function run() {
+      const page = { settledDeletions: [{ documentId, ...settledDeletion }] };
+      const stub = this.sinon.stub(wasmSdk, 'getContractSettledDeletions').resolves(page);
+      const query = { contractId, documentTypeName, documentIds: [documentId] };
+
+      const result = await client.contracts.settledDeletions(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.settledDeletions).to.deep.equal(page.settledDeletions);
+      expect(result.nextStartAfter).to.equal(undefined);
+    });
+
+    it('should fetch a page of settled deletion approvals and its cursor', async function run() {
+      const page = { settledDeletions: [{ documentId, ...settledDeletion }], nextStartAfter: documentId };
+      const stub = this.sinon.stub(wasmSdk, 'getContractSettledDeletions').resolves(page);
+      const query = { contractId, documentTypeName, limit: 1 };
+
+      const result = await client.contracts.settledDeletions(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.nextStartAfter).to.equal(documentId);
+    });
+
+    it('should fetch settled deletion approvals with proof', async function run() {
+      const response = { data: { settledDeletions: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractSettledDeletionsWithProofInfo').resolves(response);
+      const query = { contractId, documentTypeName, startAfter: documentId };
+
+      const result = await client.contracts.settledDeletionsWithProof(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result).to.equal(response);
+    });
   });
 
   describe('contract fee pots', () => {

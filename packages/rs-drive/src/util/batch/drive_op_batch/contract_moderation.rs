@@ -4,7 +4,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractModerationReason, ContractWarning,
+    ContractDocumentRemoval, ContractModerationReason, ContractSettledDeletion, ContractWarning,
 };
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
@@ -14,7 +14,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 /// Operations on a moderated contract's banlist, suspension list, warning list, document
-/// removal records and, for an elected contract, its team's moderation action counts.
+/// removal records and, for an elected contract, its team's moderation action counts and the
+/// approvals it gives the deletion of settled documents.
 #[derive(Clone, Debug)]
 pub enum ContractModerationOperationType {
     /// Puts an identity on the banlist.
@@ -100,6 +101,24 @@ pub enum ContractModerationOperationType {
         /// The identity that pays for the record, or for the bytes a replacement adds, and
         /// receives its refund: the moderator that removed the document, or the one that
         /// restored it.
+        moderator_id: Identifier,
+    },
+    /// Writes the approvals a seated moderation team gave the deletion of a settled document: a
+    /// fresh record, or the replacement of the one the document has, which every approval
+    /// rewrites.
+    AddSettledDeletion {
+        /// The moderated contract.
+        contract_id: Identifier,
+        /// The document's type.
+        document_type_name: String,
+        /// The document's id.
+        document_id: Identifier,
+        /// The approvals, their reason and times, and the deletion if they met the rule.
+        settled_deletion: ContractSettledDeletion,
+        /// Whether the document already has a record, which is then replaced.
+        replaces_existing: bool,
+        /// The identity that pays for the record, or for the bytes a replacement adds, and
+        /// receives its refund: the moderator whose approval writes it.
         moderator_id: Identifier,
     },
     /// Writes nothing: marks the batch it is in as one whose storage removals refund nobody
@@ -235,6 +254,25 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 &document_type_name,
                 document_id,
                 &removal,
+                replaces_existing,
+                moderator_id,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            ContractModerationOperationType::AddSettledDeletion {
+                contract_id,
+                document_type_name,
+                document_id,
+                settled_deletion,
+                replaces_existing,
+                moderator_id,
+            } => drive.add_contract_settled_deletion_operations(
+                contract_id,
+                &document_type_name,
+                document_id,
+                &settled_deletion,
                 replaces_existing,
                 moderator_id,
                 block_info,

@@ -1,5 +1,5 @@
 use crate::drive::contract::moderation::types::{
-    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection, ContractSettledDeletionsQuery,
 };
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{Drive, RootTree};
@@ -279,7 +279,9 @@ impl Drive {
             // moderators' deletions keep no record, it proves the document gone. A document
             // restore proves the same record, now marked restored; the document's id is inside
             // the bytes the transition carries, read under the contract's document type. A
-            // document field change proves the document itself, holding the fields it set.
+            // document field change proves the document itself, holding the fields it set. An
+            // approval of a settled document's deletion proves the approvals the contract keeps
+            // of it, which say whether the document was deleted.
             StateTransition::ContractUserModeration(st) => {
                 let contract_id = st.data_contract_id();
                 if let Some((document_type_name, document_id)) = st.action().document() {
@@ -348,6 +350,21 @@ impl Drive {
                             document_type_name: document_type_name.to_string(),
                             selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
                                 document.id(),
+                            ]),
+                        },
+                    )
+                } else if let Some((document_type_name, document_id, _)) =
+                    st.action().settled_document()
+                {
+                    // An approval of a settled document's deletion proves the approvals the
+                    // contract keeps of it, which the verifier rebuilds from the transition
+                    // alone: the record says whether the document was deleted.
+                    Drive::contract_settled_deletions_query(
+                        contract_id.to_buffer(),
+                        &ContractSettledDeletionsQuery {
+                            document_type_name: document_type_name.to_string(),
+                            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
+                                document_id,
                             ]),
                         },
                     )
@@ -423,10 +440,11 @@ impl Drive {
                         }
                         ContractUserModerationAction::DeleteDocument { .. }
                         | ContractUserModerationAction::RestoreDocument { .. }
-                        | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                        | ContractUserModerationAction::ChangeDocumentFields { .. }
+                        | ContractUserModerationAction::DeleteSettledDocument { .. } => {
                             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "a document deletion, restore or field change is proved by the \
-                                 arms above",
+                                "a document deletion, restore, field change or settled \
+                                 deletion approval is proved by the arms above",
                             )))
                         }
                     };

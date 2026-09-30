@@ -53,6 +53,8 @@ service Platform {
       returns (GetContractModerationEntriesResponse);
   rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest)
       returns (GetContractDocumentRemovalsResponse);
+  rpc getContractSettledDeletions(GetContractSettledDeletionsRequest)
+      returns (GetContractSettledDeletionsResponse);
   rpc getContractFeePots(GetContractFeePotsRequest)
       returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
@@ -897,6 +899,72 @@ message GetContractDocumentRemovalsResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetContractDocumentRemovalsResponseV0 v0 = 1; }
+}
+
+message GetContractSettledDeletionsRequest {
+  message DocumentIds {
+    repeated bytes document_ids =
+        1; // 32-byte document ids, from 1 to the protocol's
+           // max_returned_elements (100), none twice; an id with no approvals is
+           // left out of the response, and proved absent when a proof is asked
+  }
+
+  message Page {
+    optional bytes start_after =
+        1; // 32-byte document id; the page starts after it
+    optional uint32 limit =
+        2; // Maximum number of records to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+  }
+
+  message GetContractSettledDeletionsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    string document_type_name =
+        2; // The document type, which must say who of a seated moderation team
+           // approves the deletion of its settled documents
+           // (moderatorAbilities.deleteSettled)
+    oneof selection {
+      DocumentIds document_ids = 3; // The approvals of these documents
+      Page page = 4;                // One page of the type's approvals
+    }
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractSettledDeletionsRequestV0 v0 = 1; }
+}
+
+message GetContractSettledDeletionsResponse {
+  // The approvals a seated moderation team gave the deletion of one settled
+  // document: one past its type's deleteWithin window
+  message ContractSettledDeletion {
+    bytes document_id = 1; // The document the approvals delete
+    uint64 proposed_at =
+        2; // The time of the block of the first approval, in milliseconds
+    uint64 document_last_modified_at =
+        3; // The document's $updatedAt (or $createdAt) when the first approval
+           // was given: the approvals are of the document as it was then
+    ContractModerationReason reason =
+        4; // Why: the first approval's, which every later one repeated
+    repeated bytes approvals =
+        5; // The 32-byte ids of the members of the seated team that approved,
+           // in the order they did, each still on the team at the last approval
+    optional uint64 deleted_at =
+        6; // The time of the block whose approval met the rule and deleted the
+           // document, in milliseconds; absent while the approvals fall short
+  }
+
+  message ContractSettledDeletions {
+    repeated ContractSettledDeletion settled_deletions =
+        1; // The approval records, in document id order
+  }
+
+  message GetContractSettledDeletionsResponseV0 {
+    oneof result {
+      ContractSettledDeletions settled_deletions = 1; // The records read
+      Proof proof = 2; // Cryptographic proof of the records, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractSettledDeletionsResponseV0 v0 = 1; }
 }
 
 message GetContractFeePotsRequest {

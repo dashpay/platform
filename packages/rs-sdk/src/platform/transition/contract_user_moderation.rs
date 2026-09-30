@@ -1,6 +1,6 @@
 //! Ban, unban, suspend, unsuspend, warn and clear the warnings of identities on a moderated
 //! data contract, and delete documents of the document types that let moderators do so
-//! (protocol version 14).
+//! (protocol version 14), alone or, once settled, as a seated team.
 //!
 //! A contract whose config declares moderation keeps a banlist, a suspension list and/or a
 //! warning list. The contract owner, or a moderator the config names, edits them with a
@@ -14,6 +14,12 @@
 //! sets or removes the fields a document type keeps for its moderators
 //! (`moderatorAbilities.changeFields`) on one of its documents, whoever owns it.
 //!
+//! Past a type's `moderatorAbilities.deleteWithin` window a document is settled: no moderator
+//! deletes it alone. A type that says who of an elected contract's seated team must approve
+//! (`moderatorAbilities.deleteSettled`) lets the team's members delete it together, each
+//! sending the same approval, for the same reason, until the leader and as many as the rule
+//! asks for have; the approval that meets the rule deletes the document.
+//!
 //! ```ignore
 //! let reason = ContractModerationReason::from_text("spam");
 //! let status = moderator_identity
@@ -21,9 +27,19 @@
 //!     .await?;
 //! let removal = moderator_identity
 //!     .delete_contract_document(
-//!         &sdk, contract_id, "post".to_string(), document_id, reason, None, &signer, None,
+//!         &sdk, contract_id, "post".to_string(), document_id, reason.clone(), None, &signer,
+//!         None,
 //!     )
 //!     .await?;
+//! let approvals = team_member_identity
+//!     .delete_settled_contract_document(
+//!         &sdk, contract_id, "post".to_string(), settled_document_id, reason, None, &signer,
+//!         None,
+//!     )
+//!     .await?;
+//! if approvals.is_deleted() {
+//!     // This approval met the rule: the document is gone.
+//! }
 //! ```
 
 use crate::platform::Fetch;
@@ -31,6 +47,7 @@ use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
     ContractDocumentRemoval, ContractModerationListStatuses, ContractModerationReason,
+    ContractSettledDeletion,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -132,6 +149,29 @@ impl TryFrom<StateTransitionProofResult> for VerifiedDocumentRemoval {
             }
             other => Err(Error::Generic(format!(
                 "expected a contract document removal proof result, got {other}"
+            ))),
+        }
+    }
+}
+
+/// The approvals the contract keeps of a settled document's deletion, as the proof of an
+/// approval shows them. The proof binds the record to the transition: it holds the signer
+/// among its approvals and the transition's reason, so only the record itself is kept here.
+struct VerifiedSettledDeletion(ContractSettledDeletion);
+
+impl TryFrom<StateTransitionProofResult> for VerifiedSettledDeletion {
+    type Error = Error;
+
+    fn try_from(value: StateTransitionProofResult) -> Result<Self, Self::Error> {
+        match value {
+            StateTransitionProofResult::VerifiedContractSettledDeletion(
+                _,
+                _,
+                _,
+                settled_deletion,
+            ) => Ok(Self(settled_deletion)),
+            other => Err(Error::Generic(format!(
+                "expected a contract settled deletion proof result, got {other}"
             ))),
         }
     }
@@ -360,6 +400,37 @@ pub trait ModerateContractUser: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<Option<ContractDocumentRemoval>, Error>;
 
+    /// Approves, as a member of the seated moderation team of `contract_id`, the deletion of
+    /// settled document `document_id` of `document_type_name`, for `reason` (as for a ban): one
+    /// last modified longer ago than the type's `moderatorAbilities.deleteWithin` window, within
+    /// which a moderator deletes it alone. The type must say who of the team must approve
+    /// (`moderatorAbilities.deleteSettled`), and `reason` must name a reason document the
+    /// team's proposal lists. Resolves with the approvals the contract keeps of the deletion,
+    /// this one among them: when they meet the type's rule, the leader among them if it says
+    /// so, `deleted_at` is set and the document is gone, deleted as
+    /// `delete_contract_document` deletes it.
+    ///
+    /// Every member sends the same approval for the same reason as the first, which the
+    /// approvals keep (`reason`): an approval for another reason, or a second one by the same
+    /// member, is refused while they are open. An approver who left the team no longer counts.
+    /// They close `SystemLimits::contract_settled_deletion_approval_window_ms` after the first,
+    /// when the document is replaced, or when every approver has left the team, and the next
+    /// approval then starts afresh, for its own reason.
+    /// Each approval pays for the bytes it adds to the record, and nothing ever deletes it. The
+    /// proof is verified without the contract.
+    #[allow(clippy::too_many_arguments)]
+    async fn delete_settled_contract_document<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ContractSettledDeletion, Error>;
+
     /// Brings back `document`, of `document_type_name` on `contract`, that a moderator deleted:
     /// the document as it was when it was deleted, which must hash to what its removal record
     /// holds, within `SystemLimits::contract_document_restore_window_ms` (a week) of the
@@ -419,20 +490,22 @@ impl ModerateContractUser for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ModeratedUserStatus, Error> {
-        // A document deletion or restore is proved by its removal record, not by a status.
-        // Refused before the nonce is taken: sent from here it would execute, be paid for, and
-        // then fail to read its own result.
+        // A document deletion or restore is proved by its removal record, not by a status,
+        // and an approval of a settled document's deletion by the approvals it joined. Refused
+        // before the nonce is taken: sent from here it would execute, be paid for, and then
+        // fail to read its own result.
         if matches!(
             action,
             ContractUserModerationAction::DeleteDocument { .. }
                 | ContractUserModerationAction::RestoreDocument { .. }
                 | ContractUserModerationAction::ChangeDocumentFields { .. }
+                | ContractUserModerationAction::DeleteSettledDocument { .. }
         ) {
             return Err(Error::Generic(
-                "a document deletion, restore or field change names no identity to report a \
-                 status of: send it with `delete_contract_document`, \
-                 `restore_contract_document` or `change_contract_document_fields`, which \
-                 return what it left"
+                "a document deletion, restore, field change or settled deletion approval names \
+                 no identity to report a status of: send it with `delete_contract_document`, \
+                 `restore_contract_document`, `change_contract_document_fields` or \
+                 `delete_settled_contract_document`, which return what it left"
                     .to_string(),
             ));
         }
@@ -474,6 +547,34 @@ impl ModerateContractUser for Identity {
         )
         .await?;
         Ok(removal)
+    }
+
+    async fn delete_settled_contract_document<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ContractSettledDeletion, Error> {
+        let VerifiedSettledDeletion(settled_deletion) = broadcast_moderation(
+            self,
+            sdk,
+            contract_id,
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name,
+                document_id,
+                reason,
+            },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await?;
+        Ok(settled_deletion)
     }
 
     async fn restore_contract_document<S: Signer<IdentityPublicKey> + Send>(
@@ -616,6 +717,8 @@ where
     // whether the type keeps removal records, and so which proof to expect; a restore's
     // verifier decodes the document under the contract's document type, and a field change's
     // verifier reads the changed document back under it, so all three need the contract too.
+    // An approval of a settled document's deletion is verified by the approvals it joined, a
+    // query rebuilt from the transition alone, and needs none.
     if matches!(
         action,
         ContractUserModerationAction::Ban { .. }

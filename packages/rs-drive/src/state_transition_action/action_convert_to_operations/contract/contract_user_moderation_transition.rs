@@ -4,7 +4,8 @@ use crate::state_transition_action::action_convert_to_operations::DriveHighLevel
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
     ContractDocumentRemovalRecordContext, ContractDocumentRestorationContext,
-    ContractUserModerationTransitionActionV0, ContractWarningContext,
+    ContractSettledDeletionContext, ContractUserModerationTransitionActionV0,
+    ContractWarningContext,
 };
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use crate::util::batch::DriveOperation::{
@@ -17,8 +18,11 @@ use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::config::moderation::{ContractDocumentRemoval, ContractWarning};
+use dpp::data_contract::config::moderation::{
+    ContractDocumentRemoval, ContractModerationReason, ContractWarning,
+};
 use dpp::document::DocumentV0Getters;
+use dpp::identifier::Identifier;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::version::PlatformVersion;
 use std::borrow::Cow;
@@ -48,6 +52,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         document_deletion,
                         document_restoration,
                         document_change,
+                        settled_deletion,
                         moderation_action_count,
                         ..
                     },
@@ -153,61 +158,68 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         document_id,
                         reason,
                     } => {
-                        let ContractDocumentDeletionContext {
-                            data_contract_fetch_info,
-                            document_owner_id,
-                            record,
-                            refunds_owner,
-                        } =
+                        let deletion =
                             document_deletion
                                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                                 "a document deletion action must carry what its validation read",
                             )))?;
-                        // The deletion of the document, which keeps every index and aggregate
-                        // of its type right and does not ask `canBeDeleted` (that is the
-                        // owner's rule, not the moderators'), then its record when the type
-                        // keeps one: a fresh one, or in place of the restored one a document
-                        // deleted before carries. Unless the type refunds the owner, the
-                        // marker makes the batch refund nobody: the document's owner forfeits
-                        // the storage fee.
-                        operations.push(DocumentOperation(
-                            DocumentOperationType::ForceDeleteDocument {
+                        push_document_deletion_operations(
+                            &mut operations,
+                            contract_id,
+                            moderator_id,
+                            document_type_name,
+                            document_id,
+                            reason,
+                            deletion,
+                        );
+                    }
+                    ContractUserModerationAction::DeleteSettledDocument {
+                        document_type_name,
+                        document_id,
+                        reason,
+                    } => {
+                        let ContractSettledDeletionContext {
+                            settled_deletion,
+                            replaces_existing,
+                            deletion,
+                            approver_action_counts,
+                        } =
+                            settled_deletion
+                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "an approval of a settled document's deletion must carry what its \
+                                 validation read",
+                            )))?;
+                        // The approval that meets the rule deletes the document as a
+                        // moderator's deletion does, then the approvals are written, marked with
+                        // the deletion, and every approver is counted.
+                        if let Some(deletion) = deletion {
+                            push_document_deletion_operations(
+                                &mut operations,
+                                contract_id,
+                                moderator_id,
+                                document_type_name.clone(),
                                 document_id,
-                                contract_info: DataContractInfo::DataContractFetchInfo(
-                                    data_contract_fetch_info,
-                                ),
-                                document_type_info: DocumentTypeInfo::DocumentTypeName(
-                                    document_type_name.clone(),
-                                ),
+                                reason,
+                                deletion,
+                            );
+                        }
+                        operations.push(ContractModerationOperation(
+                            ContractModerationOperationType::AddSettledDeletion {
+                                contract_id,
+                                document_type_name,
+                                document_id,
+                                settled_deletion,
+                                replaces_existing,
+                                moderator_id,
                             },
                         ));
-                        if let Some(ContractDocumentRemovalRecordContext {
-                            removed_at,
-                            document_hash,
-                            replaces_restored_record,
-                        }) = record
-                        {
+                        for (identity_id, count) in approver_action_counts {
                             operations.push(ContractModerationOperation(
-                                ContractModerationOperationType::AddDocumentRemoval {
+                                ContractModerationOperationType::SetActionCount {
                                     contract_id,
-                                    document_type_name,
-                                    document_id,
-                                    removal: ContractDocumentRemoval {
-                                        document_owner_id,
-                                        moderator_id,
-                                        reason,
-                                        removed_at,
-                                        document_hash,
-                                        restoration: None,
-                                    },
-                                    replaces_existing: replaces_restored_record,
-                                    moderator_id,
+                                    identity_id,
+                                    count,
                                 },
-                            ));
-                        }
-                        if !refunds_owner {
-                            operations.push(ContractModerationOperation(
-                                ContractModerationOperationType::ForfeitStorageRefunds,
                             ));
                         }
                     }
@@ -321,6 +333,64 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
     }
 }
 
+/// The operations of a moderator's deletion of a document: the document goes, keeping every
+/// index and aggregate of its type right and not asking `canBeDeleted` (that is the owner's rule,
+/// not the moderators'), then its record when the type keeps one: a fresh one, or in place of
+/// the restored one a document deleted before carries. Unless the type refunds the owner, the
+/// marker makes the batch refund nobody: the document's owner forfeits the storage fee.
+fn push_document_deletion_operations(
+    operations: &mut Vec<DriveOperation<'_>>,
+    contract_id: Identifier,
+    moderator_id: Identifier,
+    document_type_name: String,
+    document_id: Identifier,
+    reason: ContractModerationReason,
+    deletion: ContractDocumentDeletionContext,
+) {
+    let ContractDocumentDeletionContext {
+        data_contract_fetch_info,
+        document_owner_id,
+        record,
+        refunds_owner,
+    } = deletion;
+    operations.push(DocumentOperation(
+        DocumentOperationType::ForceDeleteDocument {
+            document_id,
+            contract_info: DataContractInfo::DataContractFetchInfo(data_contract_fetch_info),
+            document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name.clone()),
+        },
+    ));
+    if let Some(ContractDocumentRemovalRecordContext {
+        removed_at,
+        document_hash,
+        replaces_restored_record,
+    }) = record
+    {
+        operations.push(ContractModerationOperation(
+            ContractModerationOperationType::AddDocumentRemoval {
+                contract_id,
+                document_type_name,
+                document_id,
+                removal: ContractDocumentRemoval {
+                    document_owner_id,
+                    moderator_id,
+                    reason,
+                    removed_at,
+                    document_hash,
+                    restoration: None,
+                },
+                replaces_existing: replaces_restored_record,
+                moderator_id,
+            },
+        ));
+    }
+    if !refunds_owner {
+        operations.push(ContractModerationOperation(
+            ContractModerationOperationType::ForfeitStorageRefunds,
+        ));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +411,7 @@ mod tests {
             document_deletion: None,
             document_restoration: None,
             document_change: None,
+            settled_deletion: None,
             moderation_action_count: None,
             user_fee_increase: 0,
         })
@@ -493,6 +564,62 @@ mod tests {
                 ..
             }) if *identity_id == Identifier::from([0xAA; 32])
         ));
+    }
+
+    #[test]
+    fn should_write_the_approvals_alone_while_they_fall_short() {
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).expect("epoch");
+        let document_id = Identifier::from([0xDD; 32]);
+        let reason = ContractModerationReason::from_text("doxxing");
+        let settled_deletion = dpp::data_contract::config::moderation::ContractSettledDeletion {
+            proposed_at: 5,
+            document_last_modified_at: 1,
+            reason: reason.clone(),
+            approvals: vec![Identifier::from([0xAA; 32])],
+            deleted_at: None,
+        };
+        let approval = || {
+            action(
+                ContractUserModerationAction::DeleteSettledDocument {
+                    document_type_name: "post".to_string(),
+                    document_id,
+                    reason: reason.clone(),
+                },
+                false,
+            )
+        };
+
+        let mut pending = approval();
+        let ContractUserModerationTransitionAction::V0(v0) = &mut pending;
+        v0.settled_deletion = Some(ContractSettledDeletionContext {
+            settled_deletion: settled_deletion.clone(),
+            replaces_existing: true,
+            deletion: None,
+            approver_action_counts: vec![],
+        });
+        let ops = pending
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("operations");
+        // The nonce, then the approvals: no deletion and no count while they fall short.
+        assert_eq!(ops.len(), 2);
+        assert!(matches!(
+            &ops[1],
+            ContractModerationOperation(ContractModerationOperationType::AddSettledDeletion {
+                document_id: id,
+                settled_deletion: written,
+                replaces_existing: true,
+                moderator_id,
+                ..
+            }) if *id == document_id
+                && *written == settled_deletion
+                && *moderator_id == Identifier::from([0xAA; 32])
+        ));
+
+        // An approval that lost what its validation read can not write the approvals.
+        assert!(approval()
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .is_err());
     }
 
     #[test]

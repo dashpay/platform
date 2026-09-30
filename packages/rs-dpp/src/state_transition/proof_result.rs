@@ -2,7 +2,7 @@ use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractModerationListStatuses,
+    ContractDocumentRemoval, ContractModerationListStatuses, ContractSettledDeletion,
 };
 use crate::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use crate::data_contract::group::GroupSumPower;
@@ -165,6 +165,13 @@ pub enum StateTransitionProofResult {
     /// and carries the transition's reason. A document id is produced at most once, so the
     /// record is of this document and of no other.
     VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
+    /// Returned by a `ContractUserModeration` that approves the deletion of a settled document:
+    /// the approvals the contract keeps of that deletion (contract id, document type name,
+    /// document id, approvals). The proof shows the record, and the verifier checks that it
+    /// holds the transition's signer among its approvals and the transition's reason. Its
+    /// `deleted_at` says whether the approvals met the document type's rule, the document then
+    /// deleted.
+    VerifiedContractSettledDeletion(Identifier, String, Identifier, ContractSettledDeletion),
 }
 
 /// The guarantee a verified state-transition proof establishes.

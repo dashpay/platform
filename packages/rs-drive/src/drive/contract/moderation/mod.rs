@@ -23,6 +23,18 @@
 //!             └── <document id> -> Item(document owner id ‖ moderator id ‖ removed at ‖ reason)
 //! ```
 //!
+//! and the approvals a seated moderation team gives the deletion of settled documents, under
+//! key `24` (when the contract has a document type that sets `moderatorAbilities.deleteSettled`):
+//!
+//! ```text
+//!         [24] settled deletions
+//!         └── <document type name>            (a type that sets `moderatorAbilities.deleteSettled`)
+//!             └── <document id> -> Item(proposed at ‖ last modified at ‖ deleted at? ‖ approvals ‖ reason)
+//! ```
+//!
+//! See [`types::encode_settled_deletion`]. Each approval pays for the bytes it adds, and nothing
+//! ever deletes a record: a closed one is replaced by the next approval of the document.
+//!
 //! `removed at` is a u64 of block time in milliseconds, big-endian: see
 //! [`types::encode_document_removal`]. The moderator pays for the record and nothing ever
 //! deletes it; the deleted document's own storage refund goes to nobody.
@@ -47,6 +59,8 @@ mod add_contract_ban;
 #[cfg(feature = "server")]
 mod add_contract_document_removal;
 #[cfg(feature = "server")]
+mod add_contract_settled_deletion;
+#[cfg(feature = "server")]
 mod add_contract_suspension;
 #[cfg(feature = "server")]
 mod add_contract_warning;
@@ -61,15 +75,21 @@ mod fetch_contract_moderation_entries;
 #[cfg(feature = "server")]
 mod fetch_contract_moderation_status;
 #[cfg(feature = "server")]
+mod fetch_contract_settled_deletions;
+#[cfg(feature = "server")]
 mod insert_contract_document_removal_trees;
 #[cfg(feature = "server")]
 mod insert_contract_moderation_trees;
+#[cfg(feature = "server")]
+mod insert_contract_settled_deletion_trees;
 #[cfg(feature = "server")]
 mod prove_contract_document_removals;
 #[cfg(feature = "server")]
 mod prove_contract_moderation_entries;
 #[cfg(feature = "server")]
 mod prove_contract_moderation_status;
+#[cfg(feature = "server")]
+mod prove_contract_settled_deletions;
 mod queries;
 #[cfg(feature = "server")]
 mod remove_contract_ban;
@@ -90,6 +110,9 @@ mod action_count_tests;
 #[cfg(test)]
 #[cfg(feature = "server")]
 mod document_removal_tests;
+#[cfg(test)]
+#[cfg(feature = "server")]
+mod settled_deletion_tests;
 #[cfg(test)]
 #[cfg(feature = "server")]
 mod tests;

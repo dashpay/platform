@@ -234,6 +234,16 @@ pub const CONTRACT_DOCUMENT_REMOVALS_KEY: u8 = 16;
 /// alone, or the banlist and one other list beside removal records.
 pub const CONTRACT_MODERATION_ACTION_COUNTS_KEY: u8 = 48;
 
+/// The key under a contract's other tree (`[64, id, 2]`) of the approvals a seated moderation
+/// team gives the deletion of settled documents (protocol version 14): `document type name ->
+/// document id -> Item(proposed at, last modified at, deleted at if any, approvals, reason)`.
+/// Present when the contract has a document type that sets `moderatorAbilities.deleteSettled`,
+/// with one subtree per such type, created with the type. Written by the team's approvals and
+/// read by them and by clients, never by a document transition, so it sorts below `128`, beside
+/// the removal records at `16`, which every such type keeps a tree under too unless it keeps no
+/// records.
+pub const CONTRACT_SETTLED_DELETIONS_KEY: u8 = 24;
+
 /// `[64, contract id, 2]`: the contract's other tree.
 pub fn contract_other_path(contract_id: &[u8]) -> [&[u8]; 3] {
     [
@@ -410,6 +420,47 @@ pub fn contract_document_type_removals_path_vec(
         contract_id.to_vec(),
         vec![CONTRACT_OTHER_KEY],
         vec![CONTRACT_DOCUMENT_REMOVALS_KEY],
+        document_type_name.as_bytes().to_vec(),
+    ]
+}
+
+/// `[64, contract id, 2, 24]`: the tree of the approvals of the contract's settled-document
+/// deletions, one subtree per document type that sets `moderatorAbilities.deleteSettled`.
+pub fn contract_settled_deletions_path(contract_id: &[u8]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_SETTLED_DELETIONS_KEY],
+    ]
+}
+
+/// `[64, contract id, 2, 24, document type name]`: the approvals of the settled-document
+/// deletions of one document type, keyed by document id.
+pub fn contract_document_type_settled_deletions_path<'a>(
+    contract_id: &'a [u8],
+    document_type_name: &'a str,
+) -> [&'a [u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_SETTLED_DELETIONS_KEY],
+        document_type_name.as_bytes(),
+    ]
+}
+
+/// `[64, contract id, 2, 24, document type name]`: the approvals of the settled-document
+/// deletions of one document type.
+pub fn contract_document_type_settled_deletions_path_vec(
+    contract_id: &[u8],
+    document_type_name: &str,
+) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
+        contract_id.to_vec(),
+        vec![CONTRACT_OTHER_KEY],
+        vec![CONTRACT_SETTLED_DELETIONS_KEY],
         document_type_name.as_bytes().to_vec(),
     ]
 }

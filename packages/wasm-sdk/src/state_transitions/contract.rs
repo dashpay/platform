@@ -3,7 +3,9 @@
 //! This module provides WASM bindings for contract operations like create and update.
 
 use crate::error::WasmSdkError;
-use crate::queries::contract_moderation::{set_removal_fields, set_status_fields};
+use crate::queries::contract_moderation::{
+    set_removal_fields, set_settled_deletion_fields, set_status_fields,
+};
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
@@ -388,6 +390,71 @@ export interface ContractDocumentRemovalResult {
 }
 
 /**
+ * Options for approving, as a member of an elected contract's seated moderation team, the
+ * deletion of one settled document (protocol version 14): one last modified longer ago than
+ * its type's `moderatorAbilities.deleteWithin` window, within which a moderator deletes it
+ * alone. The type must say who of the team must approve (`moderatorAbilities.deleteSettled`,
+ * else 41204), a team must be seated (41205), the signer must be on it (41101) with
+ * `deleteDocuments` on the type (41201), and the document must be settled (41206). Each member
+ * approves once (41208), for the reason of the first (41207), until the approvals meet the
+ * type's rule, the leader among them if it says so, and the approval that meets it deletes the
+ * document as a moderator's deletion does. An approver who left the team no longer counts.
+ * Approvals that fall short lapse a week after the first, when the document is replaced, or
+ * when every approver has left the team, and the next approval then starts afresh, for its
+ * own reason. Each approval pays for the bytes it adds. As for the other moderations, the
+ * signer must hold a CRITICAL authentication key without contract bounds of the moderating
+ * identity.
+ */
+export interface ContractDeleteSettledDocumentOptions {
+  /** The approving identity: a member of the contract's seated moderation team */
+  identity: Identity;
+  /** The moderated contract */
+  contractId: IdentifierLike;
+  /** The document type of the document */
+  documentTypeName: string;
+  /** The settled document to delete */
+  documentId: IdentifierLike;
+  /**
+   * Why. Needed: it names a reason document the seated team's proposal lists (41203), and while
+   * the approvals are open it must be the reason of the first. Stored with the approvals, so
+   * anyone reading them reads it.
+   */
+  reason: ContractModerationReason;
+  /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
+  signer: IdentitySigner;
+  /** Optional broadcast settings */
+  settings?: PutSettings;
+}
+
+/**
+ * The approvals the contract keeps of the deletion of a settled document, as the proof of an
+ * approval shows them: this approval among them. While they fall short of the type's rule the
+ * document stays and `deletedAt` is absent; once they meet it the document is gone. Use
+ * `getContractSettledDeletions` to read the approvals later.
+ */
+export interface ContractSettledDeletionResult {
+  contractId: Identifier;
+  documentTypeName: string;
+  documentId: Identifier;
+  /** The time of the block of the first approval, in milliseconds */
+  proposedAt: bigint;
+  /**
+   * The document's `$updatedAt` (or `$createdAt`) when the first approval was given, in
+   * milliseconds: the approvals are of the document as it was then
+   */
+  documentLastModifiedAt: bigint;
+  /** Why, as the first approval gave it and every later one repeated it */
+  reason: ContractModerationReason;
+  /** The members of the seated team that approved, in the order they did */
+  approvals: Identifier[];
+  /**
+   * The time of the block whose approval met the rule and deleted the document, in
+   * milliseconds; absent while the approvals fall short
+   */
+  deletedAt?: bigint;
+}
+
+/**
  * Options for restoring, as a moderator, one document a moderator deleted (protocol version
  * 14): the document as it was, within a week of its deletion. Any current moderator or the
  * contract owner may restore, whoever deleted. The document goes back through an ordinary
@@ -485,6 +552,12 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ContractRestoreDocumentOptions")]
     pub type ContractRestoreDocumentOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ContractDeleteSettledDocumentOptions")]
+    pub type ContractDeleteSettledDocumentOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ContractSettledDeletionResult")]
+    pub type ContractSettledDeletionResultJs;
 }
 
 #[derive(serde::Deserialize)]
@@ -502,6 +575,13 @@ struct ContractDeleteDocumentOptionsInput {
     document_type_name: String,
     #[serde(default)]
     reason: Option<ContractModerationReasonInput>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractDeleteSettledDocumentOptionsInput {
+    document_type_name: String,
+    reason: ContractModerationReasonInput,
 }
 
 #[derive(serde::Deserialize)]
@@ -741,6 +821,74 @@ impl WasmSdk {
         set("documentId", IdentifierWasm::from(document_id).into())?;
         // The record, with the fields `getContractDocumentRemovals` answers with.
         set_removal_fields(&result, &removal, |id| IdentifierWasm::from(id).into())?;
+        Ok(JsValue::from(result).into())
+    }
+
+    /// Approves, as a member of an elected contract's seated moderation team, the deletion of
+    /// one settled document: one last modified longer ago than its type's
+    /// `moderatorAbilities.deleteWithin` window. The type must say who of the team must approve
+    /// (`moderatorAbilities.deleteSettled`). Each member sends the same approval, for the
+    /// reason of the first, and the approval that meets the rule deletes the document as a
+    /// moderator's deletion does. The approvals stay under the contract, which
+    /// `getContractSettledDeletions` reads.
+    ///
+    /// @param options - The approving identity, the contract, the document type, the document, the `reason` and the signer
+    /// @returns The approvals the contract keeps of the deletion, this one among them, proved: `deletedAt` is set when they deleted the document
+    #[wasm_bindgen(js_name = "contractDeleteSettledDocument")]
+    pub async fn contract_delete_settled_document(
+        &self,
+        options: ContractDeleteSettledDocumentOptionsJs,
+    ) -> Result<ContractSettledDeletionResultJs, WasmSdkError> {
+        // Extract complex types first (borrows &options)
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let contract_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "contractId")?.into();
+        let document_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "documentId")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed: ContractDeleteSettledDocumentOptionsInput = deserialize_required_query(
+            options,
+            "Options object is required",
+            "contract settled document deletion options",
+        )?;
+
+        // An approval is proved by the approvals it joined, which the verifier reads by a query
+        // rebuilt from the transition alone: no contract is fetched for it.
+        let settled_deletion = identity
+            .delete_settled_contract_document(
+                self.inner_sdk(),
+                contract_id,
+                parsed.document_type_name.clone(),
+                document_id,
+                parsed.reason.into(),
+                None,
+                signer,
+                settings,
+            )
+            .await?;
+
+        let result = js_sys::Object::new();
+        let set = |key: &str, value: JsValue| {
+            js_sys::Reflect::set(&result, &key.into(), &value).map_err(|_| {
+                WasmSdkError::generic(format!(
+                    "failed to set `{key}` on the settled deletion result"
+                ))
+            })
+        };
+        set("contractId", IdentifierWasm::from(contract_id).into())?;
+        set(
+            "documentTypeName",
+            JsValue::from_str(&parsed.document_type_name),
+        )?;
+        set("documentId", IdentifierWasm::from(document_id).into())?;
+        // The approvals, with the fields `getContractSettledDeletions` answers with.
+        set_settled_deletion_fields(&result, &settled_deletion, |id| {
+            IdentifierWasm::from(id).into()
+        })?;
         Ok(JsValue::from(result).into())
     }
 

@@ -30,7 +30,8 @@ use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
     ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
     ContractModerationEntry, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationReason, ContractWarning,
+    ContractModerationListStatuses, ContractModerationReason, ContractSettledDeletion,
+    ContractSettledDeletionEntry, ContractSettledDeletions, ContractWarning,
 };
 use drive_proof_verifier::types::contract_groups::{
     ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
@@ -559,6 +560,40 @@ impl MockResponse for ContractDocumentRemovals {
                                 }),
                             },
                         }
+                    },
+                )
+                .collect(),
+        )
+    }
+}
+
+impl MockResponse for ContractSettledDeletions {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // A record has a bincode encoding of its own; the document id is the key it is stored
+        // under.
+        let settled_deletions: Vec<(Identifier, ContractSettledDeletion)> = self
+            .settled_deletions()
+            .iter()
+            .map(|entry| (entry.document_id, entry.settled_deletion.clone()))
+            .collect();
+        bincode::encode_to_vec(settled_deletions, BINCODE_CONFIG)
+            .expect("encode ContractSettledDeletions")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (settled_deletions, _): (Vec<(Identifier, ContractSettledDeletion)>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractSettledDeletions");
+        ContractSettledDeletions(
+            settled_deletions
+                .into_iter()
+                .map(
+                    |(document_id, settled_deletion)| ContractSettledDeletionEntry {
+                        document_id,
+                        settled_deletion,
                     },
                 )
                 .collect(),

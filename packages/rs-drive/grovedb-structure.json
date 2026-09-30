@@ -3072,6 +3072,81 @@
                     ]
                   },
                   {
+                    "id": "contracts.contract.other.settled_deletions",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "18",
+                      "label": "SettledDeletions",
+                      "constant": "CONTRACT_SETTLED_DELETIONS_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "flags": [
+                      "EpochOwned",
+                      "None"
+                    ],
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The approvals the contract's seated moderation team gave the deletion of settled documents, past their type's `deleteWithin`. Created with the first document type that sets `moderatorAbilities.deleteSettled`, by the contract's creation or by an update. Read by the team's approvals and by clients, never by a document transition, so it sorts below the rest.",
+                    "children": [
+                      {
+                        "id": "contracts.contract.other.settled_deletions.document_type",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "document_type_name",
+                          "matcher": {
+                            "type": "any"
+                          },
+                          "encoding": "utf8",
+                          "description": "The document type name"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                        "description": "The approvals of the settled deletions of one document type that sets `deleteSettled`. Created with the document type, by the contract's creation or by the update that adds the type.",
+                        "children": [
+                          {
+                            "id": "contracts.contract.other.settled_deletions.document_type.document",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "document_id",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The id of the document the approvals delete"
+                            },
+                            "kinds": [
+                              "Item"
+                            ],
+                            "flags": [
+                              "EpochOwned"
+                            ],
+                            "flags_note": "The owner is the member of the seated team whose approval wrote the record last and made it longer, who paid for the added bytes; a record rewritten no longer stays the earlier member's. Nothing deletes it.",
+                            "value": "the block time of the first approval and the document's last modification then, each a u64 big endian, a tag byte (1: deleted) followed when deleted by the block time of the deletion as a u64 big endian, the count of approvals in one byte and each approver's id, then the reason as in a banlist entry",
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                            "description": "The approvals of one document's deletion: who approved, for what reason, and whether they met the rule and deleted it. Rewritten by every approval, and replaced by a fresh one once closed.",
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
                     "id": "contracts.contract.other.last_owner_fee_claim",
                     "key": {
                       "type": "fixed",

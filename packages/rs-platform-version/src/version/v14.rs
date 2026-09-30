@@ -1663,6 +1663,31 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     moderation charters system contract is written in the new keywords;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
+/// 64. **A seated team deletes a settled document together**: past a type's
+///     `deleteWithin` window no moderator deletes a document alone (41116); the
+///     new `moderatorAbilities.deleteSettled: { leader, approvals }` (meta-schema
+///     v3, `DocumentTypeV2::moderator_settled_deletion`, fixed with the type,
+///     40212) lets the members of an elected contract's seated team delete it
+///     once `approvals` of them approve, the leader among them when `leader` is
+///     set. It needs `deleteWithin` and an elected declaration giving the team
+///     `deleteDocuments` on the type (10231, 10900), `approvals` 1 to
+///     `SystemLimits::max_contract_moderation_settled_deletion_approvals` (31).
+///     `ContractUserModeration` gains the `DeleteSettledDocument` action
+///     (appended): each approver sends it for the same reason, and the approvals
+///     are kept under the contract (other tree key `24`, one subtree per such
+///     type, created with it, the record never deleted), open until they delete
+///     the document, the document is edited, or they lapse
+///     (`SystemLimits::contract_settled_deletion_approval_window_ms`, a week);
+///     each approval drops earlier approvers no longer on the team (none left:
+///     it starts afresh, for its own reason), and the one that meets the rule
+///     deletes the document as `DeleteDocument` does and
+///     counts toward the action share for every approver. The proof is the
+///     record (`VerifiedContractSettledDeletion`, appended), read with the new
+///     `getContractSettledDeletions` query. New errors, appended:
+///     `DocumentTypeNotDeletableOnceSettledError` (41204),
+///     `ContractModerationTeamNotSeatedError` (41205), `DocumentNotSettledError`
+///     (41206), `SettledDeletionReasonMismatchError` (41207) and
+///     `SettledDeletionAlreadyApprovedError` (41208).
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

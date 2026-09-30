@@ -1,7 +1,8 @@
 use crate::drive::contract::paths::{
     CONTRACT_BANLIST_KEY, CONTRACT_DOCUMENT_REMOVALS_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY,
     CONTRACT_LAST_OWNER_FEE_CLAIM_KEY, CONTRACT_MODERATION_ACTION_COUNTS_KEY, CONTRACT_OTHER_KEY,
-    CONTRACT_SUSPENSIONS_KEY, CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
+    CONTRACT_SETTLED_DELETIONS_KEY, CONTRACT_SUSPENSIONS_KEY, CONTRACT_VERSION_KEY,
+    CONTRACT_WARNINGS_KEY,
 };
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
@@ -17,6 +18,10 @@ pub(crate) const CONTRACT_FLAGS: &str =
 const REMOVAL_FLAGS: &str =
     "The owner is the moderator who deleted the document. They pay for the record, \
      which nothing deletes or replaces.";
+const SETTLED_DELETION_FLAGS: &str =
+    "The owner is the member of the seated team whose approval wrote the record last and \
+     made it longer, who paid for the added bytes; a record rewritten no longer stays the \
+     earlier member's. Nothing deletes it.";
 const MODERATOR_FLAGS: &str =
     "The owner is the moderator who added the entry. They pay for it, and are \
      refunded when it is removed. A suspension replaced with a longer reason \
@@ -147,6 +152,64 @@ pub(crate) fn structure() -> StructureNode {
                                 "One removal: whose document it was, who removed it, \
                                      when and why. Never deleted and never replaced: a \
                                      document id is produced at most once.",
+                            ),
+                        ),
+                    ),
+                    StructureNode::fixed(
+                        "settled_deletions",
+                        &[CONTRACT_SETTLED_DELETIONS_KEY],
+                        "SettledDeletions",
+                        "CONTRACT_SETTLED_DELETIONS_KEY",
+                    )
+                    .kind(ElementKind::Tree)
+                    .lazy()
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                    .describe(
+                        "The approvals the contract's seated moderation team gave the \
+                             deletion of settled documents, past their type's \
+                             `deleteWithin`. Created with the first document type that \
+                             sets `moderatorAbilities.deleteSettled`, by the contract's \
+                             creation or by an update. Read by the team's approvals and by \
+                             clients, never by a document transition, so it sorts below \
+                             the rest.",
+                    )
+                    .child(
+                        StructureNode::dynamic(
+                            "document_type",
+                            "document_type_name",
+                            KeyMatcher::Any,
+                            KeyEncoding::Utf8,
+                            "The document type name",
+                        )
+                        .kind(ElementKind::Tree)
+                        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                        .describe(
+                            "The approvals of the settled deletions of one document type \
+                                 that sets `deleteSettled`. Created with the document type, \
+                                 by the contract's creation or by the update that adds the \
+                                 type.",
+                        )
+                        .child(
+                            StructureNode::identifier(
+                                "document",
+                                "document_id",
+                                "The id of the document the approvals delete",
+                            )
+                            .kind(ElementKind::Item)
+                            .flags(&[FlagsKind::EpochOwned], SETTLED_DELETION_FLAGS)
+                            .value(
+                                "the block time of the first approval and the document's \
+                                     last modification then, each a u64 big endian, a tag \
+                                     byte (1: deleted) followed when deleted by the block \
+                                     time of the deletion as a u64 big endian, the count of \
+                                     approvals in one byte and each approver's id, then the \
+                                     reason as in a banlist entry",
+                            )
+                            .describe(
+                                "The approvals of one document's deletion: who approved, \
+                                     for what reason, and whether they met the rule and \
+                                     deleted it. Rewritten by every approval, and replaced \
+                                     by a fresh one once closed.",
                             ),
                         ),
                     ),

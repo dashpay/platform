@@ -27,6 +27,7 @@ use dapi_grpc::platform::v0::{
     GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
     GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
     GetContractModerationStatusRequest, GetContractModerationStatusResponse,
+    GetContractSettledDeletionsRequest, GetContractSettledDeletionsResponse,
     GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest,
     GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse,
     GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
@@ -469,6 +470,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contract_document_removals,
             "get_contract_document_removals",
+        )
+        .await
+    }
+
+    async fn get_contract_settled_deletions(
+        &self,
+        request: Request<GetContractSettledDeletionsRequest>,
+    ) -> Result<Response<GetContractSettledDeletionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_settled_deletions,
+            "get_contract_settled_deletions",
         )
         .await
     }

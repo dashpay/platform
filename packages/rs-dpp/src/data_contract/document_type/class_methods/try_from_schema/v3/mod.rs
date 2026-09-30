@@ -571,7 +571,13 @@ fn parse_generation_3(
     // references and generated properties: each ability is refused on an
     // indexOnly type, and the fields only moderators write may be neither
     // immutable, nor read by a reference, nor generated.
-    common::apply_moderator_abilities(&mut v2, moderator_abilities, data_contact_config, name)?;
+    common::apply_moderator_abilities(
+        &mut v2,
+        moderator_abilities,
+        data_contact_config,
+        name,
+        platform_version,
+    )?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.
     common::apply_documents_ttl(
         &mut v2,

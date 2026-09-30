@@ -3,18 +3,21 @@
 use crate::error::MapGroveDbError;
 use crate::types::contract_moderation::{
     entries_query_from_request, identifier_from_request, lists_from_request,
-    removals_query_from_request, ContractDocumentRemovals, ContractFeePots,
-    ContractModerationEntries, ContractModerationListStatuses, CONTRACT_FEE_POTS_QUERIED,
+    removals_query_from_request, settled_deletions_query_from_request, ContractDocumentRemovals,
+    ContractFeePots, ContractModerationEntries, ContractModerationListStatuses,
+    ContractSettledDeletions, CONTRACT_FEE_POTS_QUERIED,
 };
 use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_contract_document_removals_request, get_contract_fee_pots_request,
     get_contract_moderation_entries_request, get_contract_moderation_status_request,
-    GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
-    GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractModerationEntriesRequest,
-    GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
-    GetContractModerationStatusResponse, Proof, ResponseMetadata,
+    get_contract_settled_deletions_request, GetContractDocumentRemovalsRequest,
+    GetContractDocumentRemovalsResponse, GetContractFeePotsRequest, GetContractFeePotsResponse,
+    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
+    GetContractModerationStatusRequest, GetContractModerationStatusResponse,
+    GetContractSettledDeletionsRequest, GetContractSettledDeletionsResponse, Proof,
+    ResponseMetadata,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
@@ -207,6 +210,60 @@ impl FromProof<GetContractDocumentRemovalsRequest> for ContractDocumentRemovals 
     }
 }
 
+impl FromProof<GetContractSettledDeletionsRequest> for ContractSettledDeletions {
+    type Request = GetContractSettledDeletionsRequest;
+    type Response = GetContractSettledDeletionsResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let get_contract_settled_deletions_request::Version::V0(v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let contract_id = identifier_from_request(&v0.contract_id, "contract_id")?;
+        let query = settled_deletions_query_from_request(
+            v0.document_type_name,
+            v0.selection,
+            platform_version,
+        )?;
+
+        let metadata = response
+            .metadata()
+            .or(Err(Error::EmptyResponseMetadata))?
+            .clone();
+        let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, settled_deletions) = Drive::verify_contract_settled_deletions(
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            contract_id,
+            &query,
+            false,
+            platform_version,
+        )
+        .map_drive_error(&proof, &metadata)?;
+
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+
+        // A document type whose settled documents nobody approved deleting proves as no records
+        // at all, and an id with no record is proved absent rather than missing, so the records
+        // are always the answer.
+        Ok((
+            Some(ContractSettledDeletions(settled_deletions)),
+            metadata,
+            proof,
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,6 +289,15 @@ mod tests {
     use dapi_grpc::platform::v0::get_contract_moderation_status_response::{
         get_contract_moderation_status_response_v0::Result as StatusResult,
         GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_settled_deletions_request::get_contract_settled_deletions_request_v0::Selection as SettledDeletionsSelection;
+    use dapi_grpc::platform::v0::get_contract_settled_deletions_request::{
+        DocumentIds as SettledDeletionsDocumentIds, GetContractSettledDeletionsRequestV0,
+        Page as SettledDeletionsPage,
+    };
+    use dapi_grpc::platform::v0::get_contract_settled_deletions_response::{
+        get_contract_settled_deletions_response_v0::Result as SettledDeletionsResult,
+        GetContractSettledDeletionsResponseV0, Version as SettledDeletionsResponseVersion,
     };
     use dash_context_provider::ContextProviderError;
     use dpp::data_contract::TokenConfiguration;
@@ -689,6 +755,162 @@ mod tests {
                 })),
             ),
             removals_response(Some(RemovalsResult::Proof(Proof::default()))),
+        );
+        assert!(
+            !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
+            "got: {err:?}"
+        );
+    }
+
+    fn settled_deletions_request(
+        contract_id: Vec<u8>,
+        document_type_name: &str,
+        selection: Option<SettledDeletionsSelection>,
+    ) -> GetContractSettledDeletionsRequest {
+        GetContractSettledDeletionsRequest {
+            version: Some(get_contract_settled_deletions_request::Version::V0(
+                GetContractSettledDeletionsRequestV0 {
+                    contract_id,
+                    document_type_name: document_type_name.to_string(),
+                    selection,
+                    prove: true,
+                },
+            )),
+        }
+    }
+
+    fn settled_deletions_response(
+        result: Option<SettledDeletionsResult>,
+    ) -> GetContractSettledDeletionsResponse {
+        GetContractSettledDeletionsResponse {
+            version: Some(SettledDeletionsResponseVersion::V0(
+                GetContractSettledDeletionsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        }
+    }
+
+    fn settled_deletions_error(
+        request: GetContractSettledDeletionsRequest,
+        response: GetContractSettledDeletionsResponse,
+    ) -> Error {
+        <ContractSettledDeletions as FromProof<_>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err()
+    }
+
+    fn settled_deletions_page(
+        start_after: Option<Vec<u8>>,
+        limit: Option<u32>,
+    ) -> Option<SettledDeletionsSelection> {
+        Some(SettledDeletionsSelection::Page(SettledDeletionsPage {
+            start_after,
+            limit,
+        }))
+    }
+
+    #[test]
+    fn should_fail_settled_deletions_with_empty_version_when_request_has_no_version() {
+        let err = settled_deletions_error(
+            GetContractSettledDeletionsRequest { version: None },
+            settled_deletions_response(Some(SettledDeletionsResult::Proof(Proof::default()))),
+        );
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_reject_malformed_settled_deletions_requests() {
+        let id = vec![1; 32];
+        for (request, needle) in [
+            (
+                settled_deletions_request(vec![1; 5], "post", settled_deletions_page(None, None)),
+                "contract_id",
+            ),
+            (
+                settled_deletions_request(id.clone(), "post", None),
+                "either document_ids or page must be set",
+            ),
+            (
+                settled_deletions_request(
+                    id.clone(),
+                    "post",
+                    Some(SettledDeletionsSelection::DocumentIds(
+                        SettledDeletionsDocumentIds {
+                            document_ids: vec![],
+                        },
+                    )),
+                ),
+                "must name between 1 and",
+            ),
+            (
+                settled_deletions_request(
+                    id.clone(),
+                    "post",
+                    Some(SettledDeletionsSelection::DocumentIds(
+                        SettledDeletionsDocumentIds {
+                            document_ids: vec![id.clone(), id.clone()],
+                        },
+                    )),
+                ),
+                "name a document id twice",
+            ),
+            (
+                settled_deletions_request(
+                    id.clone(),
+                    "post",
+                    settled_deletions_page(Some(vec![1; 5]), None),
+                ),
+                "start_after",
+            ),
+            (
+                settled_deletions_request(
+                    id.clone(),
+                    "post",
+                    settled_deletions_page(None, Some(70_000)),
+                ),
+                "limit must be between 1 and",
+            ),
+        ] {
+            let err = settled_deletions_error(
+                request,
+                settled_deletions_response(Some(SettledDeletionsResult::Proof(Proof::default()))),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains(needle)),
+                "{needle}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_fail_settled_deletions_without_proof_when_response_carries_none() {
+        let err = settled_deletions_error(
+            settled_deletions_request(vec![1; 32], "post", settled_deletions_page(None, None)),
+            settled_deletions_response(None),
+        );
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_fail_on_a_settled_deletions_proof_that_does_not_verify() {
+        let err = settled_deletions_error(
+            settled_deletions_request(
+                vec![1; 32],
+                "post",
+                Some(SettledDeletionsSelection::DocumentIds(
+                    SettledDeletionsDocumentIds {
+                        document_ids: vec![vec![2; 32]],
+                    },
+                )),
+            ),
+            settled_deletions_response(Some(SettledDeletionsResult::Proof(Proof::default()))),
         );
         assert!(
             !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),

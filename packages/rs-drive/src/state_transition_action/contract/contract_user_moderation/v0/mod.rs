@@ -1,7 +1,9 @@
 mod transformer;
 
 use crate::drive::contract::DataContractFetchInfo;
-use dpp::data_contract::config::moderation::{ContractDocumentRemoval, ContractWarning};
+use dpp::data_contract::config::moderation::{
+    ContractDocumentRemoval, ContractSettledDeletion, ContractWarning,
+};
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
@@ -35,6 +37,9 @@ pub struct ContractUserModerationTransitionActionV0 {
     /// what a document field change read and built when the transition was validated,
     /// `None` for every other action
     pub document_change: Option<ContractDocumentChangeContext>,
+    /// what the approval of a settled document's deletion read and decided when the transition
+    /// was validated, `None` for every other action
+    pub settled_deletion: Option<ContractSettledDeletionContext>,
     /// the signer's count of moderation actions on the elected contract since its moderators
     /// pot was last settled, this action included, when the signer is on the contract's seated
     /// team and the action counts (a ban, a suspension, a warning or a document deletion);
@@ -96,6 +101,27 @@ pub struct ContractDocumentRestorationContext {
     /// the document's removal record as it will be stored: the record read, marked restored
     /// by the signer at the block's time
     pub removal: ContractDocumentRemoval,
+}
+
+/// What the validation of an approval of a settled document's deletion read and decided, so that
+/// Drive writes the approvals, and deletes the document when they meet the rule, without reading
+/// again.
+#[derive(Debug, Clone)]
+pub struct ContractSettledDeletionContext {
+    /// the approvals as they will be stored: the open ones with this approval added, or a fresh
+    /// record holding this one alone; `deleted_at` is set when they meet the document type's
+    /// rule
+    pub settled_deletion: ContractSettledDeletion,
+    /// whether the document has an approval record already, which this one replaces
+    pub replaces_existing: bool,
+    /// the deletion of the document, as a moderator's `DeleteDocument` would delete it, when the
+    /// approvals meet the rule; `None` while they fall short
+    pub deletion: Option<ContractDocumentDeletionContext>,
+    /// the moderation action count of every approver of a deletion that runs, the signer
+    /// included: each one's count since the moderators pot was last settled, one higher, for
+    /// Drive to write. Empty while the approvals fall short, and on a contract stored elected
+    /// before the counts existed
+    pub approver_action_counts: Vec<(Identifier, u32)>,
 }
 
 /// What the validation of a document field change read and built, so that Drive stores the

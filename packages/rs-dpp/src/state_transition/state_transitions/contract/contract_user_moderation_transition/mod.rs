@@ -174,6 +174,11 @@ mod test {
             ContractUserModerationAction::Unsuspend {
                 identity_id: target,
             },
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: target,
+                reason: ContractModerationReason::from_text("doxxing"),
+            },
         ] {
             let mut t = make();
             t.set_action(action);

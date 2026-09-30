@@ -40,11 +40,13 @@ use std::fmt;
 mod document_removal;
 pub mod elected;
 mod reason;
+mod settled_deletion;
 pub use document_removal::{ContractDocumentRemoval, ContractDocumentRestoration};
 pub use elected::{
     ElectedModerators, InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
 };
 pub use reason::{ContractModerationDocument, ContractModerationReason};
+pub use settled_deletion::{ContractSettledDeletion, SettledDeletionRule};
 
 /// The `moderatorAbilities` object of a raw document type schema, `None` when it has none
 /// or it is not an object.
@@ -65,6 +67,16 @@ pub fn document_schema_lets_moderators_delete(schema: &Value) -> bool {
         })
         .flatten()
         .unwrap_or(false)
+}
+
+/// Whether a raw document type schema lets the members of a seated moderation team delete its
+/// documents once settled, past `deleteWithin` (a `moderatorAbilities.deleteSettled` object).
+pub fn document_schema_lets_moderators_delete_settled(schema: &Value) -> bool {
+    document_schema_moderator_abilities(schema)
+        .and_then(|abilities| {
+            Value::get_optional_from_map(abilities, moderator_abilities::DELETE_SETTLED)
+        })
+        .is_some()
 }
 
 /// Whether a raw document type schema lists fields only the contract's moderators write

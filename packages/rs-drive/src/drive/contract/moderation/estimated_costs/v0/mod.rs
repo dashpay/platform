@@ -4,10 +4,12 @@ use crate::drive::constants::{
 use crate::drive::contract::moderation::types::CONTRACT_MODERATION_ACTION_COUNT_SIZE;
 use crate::drive::contract::moderation::types::{
     estimated_document_removal_value_size, estimated_entry_value_size,
+    estimated_settled_deletion_value_size,
 };
 use crate::drive::contract::paths::{
     contract_document_removals_path, contract_document_type_removals_path,
-    contract_moderation_action_counts_path, contract_moderation_list_path,
+    contract_document_type_settled_deletions_path, contract_moderation_action_counts_path,
+    contract_moderation_list_path, contract_settled_deletions_path,
 };
 use crate::drive::Drive;
 use crate::error::Error;
@@ -162,6 +164,72 @@ impl Drive {
                 estimated_layer_sizes: AllItems(
                     DEFAULT_HASH_SIZE_U8,
                     estimated_document_removal_value_size(),
+                    Some(StorageFlags::approximate_size(true, None)),
+                ),
+            },
+        );
+
+        Ok(())
+    }
+
+    pub(super) fn add_estimation_costs_for_contract_settled_deletion_trees_v0(
+        contract_id: [u8; 32],
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        Self::add_estimation_costs_for_contract_moderation_trees_v0(
+            contract_id,
+            estimated_costs_only_with_layer_info,
+            drive_version,
+        )?;
+
+        // The tree of all the approvals (`[64, id, 2, 24]`): one subtree per document type that
+        // sets `deleteSettled`, keyed by the type's name. A contract has few, fewer than the
+        // types moderators may delete from.
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(contract_settled_deletions_path(&contract_id)),
+            EstimatedLayerInformation {
+                tree_type: TreeType::NormalTree,
+                estimated_layer_count: ApproximateElements(
+                    ESTIMATED_DOCUMENT_TYPES_DELETABLE_BY_MODERATORS,
+                ),
+                estimated_layer_sizes: AllSubtrees(
+                    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,
+                    NoSumTrees,
+                    Some(StorageFlags::approximate_size(true, None)),
+                ),
+            },
+        );
+
+        Ok(())
+    }
+
+    pub(super) fn add_estimation_costs_for_contract_settled_deletion_v0(
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        Self::add_estimation_costs_for_contract_settled_deletion_trees_v0(
+            contract_id,
+            estimated_costs_only_with_layer_info,
+            drive_version,
+        )?;
+
+        // The approvals of one document type: one item per document a member of the team moved
+        // to delete once settled, keyed by document id. The records a write walks past are
+        // sized like a typical one; the record being written is priced by its own size.
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(contract_document_type_settled_deletions_path(
+                &contract_id,
+                document_type_name,
+            )),
+            EstimatedLayerInformation {
+                tree_type: TreeType::NormalTree,
+                estimated_layer_count: PotentiallyAtMaxElements,
+                estimated_layer_sizes: AllItems(
+                    DEFAULT_HASH_SIZE_U8,
+                    estimated_settled_deletion_value_size(),
                     Some(StorageFlags::approximate_size(true, None)),
                 ),
             },

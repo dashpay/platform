@@ -81,6 +81,13 @@ use crate::version::system_limits::SystemLimits;
 ///   seated team's leader add at most 15 members (`max_contract_moderation_added_moderators`),
 ///   which joined this table in place while protocol version 14 was unreleased. A charter's
 ///   description cap is the charter schema's own `maxBytes`, not a limit here.
+/// * Settled-document deletions (protocol version 14): a document type's
+///   `moderatorAbilities.deleteSettled` requires at most 31 approvals
+///   (`max_contract_moderation_settled_deletion_approvals`: a leader, 15 elected members and 15
+///   added ones), and the approvals of one deletion hold for a week after the first
+///   (`contract_settled_deletion_approval_window_ms`). Both joined this table in place while
+///   protocol version 14 was unreleased, and were backfilled into the earlier tables, whose
+///   parsers and validations never read them.
 /// * Contested documents (protocol version 14): a contest accepts at most 1,000 contenders
 ///   (`max_contenders_per_contest`, backfilled into the earlier tables, whose validation never
 ///   reads it). The end of a poll within the cap tallies and cleans up every contender in one
@@ -127,6 +134,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     contract_document_restore_window_ms: 604_800_000,                // 7 days
     max_contract_moderation_added_moderators: 15,
+    max_contract_moderation_settled_deletion_approvals: 31,
+    contract_settled_deletion_approval_window_ms: 604_800_000, // 7 days
     max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,
     max_evonode_reward_claim_epochs: 100,

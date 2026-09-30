@@ -200,4 +200,80 @@ impl Drive {
             })),
         }
     }
+
+    /// Adds the layers the trees of a contract's settled-deletion approvals are created
+    /// through: the moderation layers above them, and the tree of all of them.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract whose approvals trees are created.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version, or that of a nested estimation, is unknown.
+    pub(crate) fn add_estimation_costs_for_contract_settled_deletion_trees(
+        contract_id: [u8; 32],
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_settled_deletion
+        {
+            0 => Self::add_estimation_costs_for_contract_settled_deletion_trees_v0(
+                contract_id,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_settled_deletion_trees".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Adds the layers the approvals of a settled document's deletion are written through.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract the document is of.
+    /// * `document_type_name`: The document's type, whose approvals tree holds the record.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version, or that of a nested estimation, is unknown.
+    pub(crate) fn add_estimation_costs_for_contract_settled_deletion(
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_settled_deletion
+        {
+            0 => Self::add_estimation_costs_for_contract_settled_deletion_v0(
+                contract_id,
+                document_type_name,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_settled_deletion".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
 }

@@ -113,6 +113,21 @@ pub enum ContractUserModerationAction {
         /// Why, checked against a seated team's proposal like every other reason.
         reason: ContractModerationReason,
     },
+    /// Approves the deletion of a settled document: one of a document type that says who must
+    /// approve it (`moderatorAbilities.deleteSettled`), past the window its moderators delete
+    /// in alone (`moderatorAbilities.deleteWithin`). Only a member of the contract's seated
+    /// team approves. The approvals are kept under the contract, and the one that meets the
+    /// rule deletes the document as a `DeleteDocument` would: the members each send this same
+    /// action, for the same reason, until the leader and as many as the rule asks for have.
+    DeleteSettledDocument {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
+        document_type_name: String,
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentId"))]
+        document_id: Identifier,
+        /// Why: the first approval's, which every later one must repeat, stored with the
+        /// approvals and with the removal record the deletion leaves.
+        reason: ContractModerationReason,
+    },
 }
 
 impl Default for ContractUserModerationAction {
@@ -220,14 +235,16 @@ impl ContractUserModerationAction {
             | ContractUserModerationAction::ClearWarnings { identity_id } => Some(*identity_id),
             ContractUserModerationAction::DeleteDocument { .. }
             | ContractUserModerationAction::RestoreDocument { .. }
-            | ContractUserModerationAction::ChangeDocumentFields { .. } => None,
+            | ContractUserModerationAction::ChangeDocumentFields { .. }
+            | ContractUserModerationAction::DeleteSettledDocument { .. } => None,
         }
     }
 
     /// The document a deletion targets, as its document type name and its id. `None` for an
-    /// action on an identity, for a field change ([`Self::changed_document`]), and for a
-    /// restore, which carries the document itself: its id is only known once the bytes are
-    /// decoded under the document type.
+    /// action on an identity, for a field change ([`Self::changed_document`]), for the approval
+    /// of a settled document's deletion ([`Self::settled_document`]), and for a restore, which
+    /// carries the document itself: its id is only known once the bytes are decoded under the
+    /// document type.
     pub fn document(&self) -> Option<(&str, Identifier)> {
         match self {
             ContractUserModerationAction::DeleteDocument {
@@ -235,6 +252,19 @@ impl ContractUserModerationAction {
                 document_id,
                 ..
             } => Some((document_type_name.as_str(), *document_id)),
+            _ => None,
+        }
+    }
+
+    /// The settled document whose deletion an approval targets, as its document type name and
+    /// its id, with the reason. `None` for every other action.
+    pub fn settled_document(&self) -> Option<(&str, Identifier, &ContractModerationReason)> {
+        match self {
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name,
+                document_id,
+                reason,
+            } => Some((document_type_name.as_str(), *document_id, reason)),
             _ => None,
         }
     }
@@ -265,8 +295,8 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The document type name a deletion, a restore or a field change names, `None` for an
-    /// action on an identity.
+    /// The document type name a deletion, a restore, a field change or the approval of a
+    /// settled document's deletion names, `None` for an action on an identity.
     pub fn document_type_name(&self) -> Option<&str> {
         match self {
             ContractUserModerationAction::DeleteDocument {
@@ -276,6 +306,9 @@ impl ContractUserModerationAction {
                 document_type_name, ..
             }
             | ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name, ..
+            }
+            | ContractUserModerationAction::DeleteSettledDocument {
                 document_type_name, ..
             } => Some(document_type_name.as_str()),
             _ => None,
@@ -290,15 +323,17 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The reason a ban, a suspend, a warn, a document deletion or a field change carries,
-    /// `None` for an action that takes an identity off a list, and for a restore.
+    /// The reason a ban, a suspend, a warn, a document deletion, a field change or the approval
+    /// of a settled document's deletion carries, `None` for an action that takes an identity
+    /// off a list, and for a restore.
     pub fn reason(&self) -> Option<&ContractModerationReason> {
         match self {
             ContractUserModerationAction::Ban { reason, .. }
             | ContractUserModerationAction::Suspend { reason, .. }
             | ContractUserModerationAction::Warn { reason, .. }
             | ContractUserModerationAction::DeleteDocument { reason, .. }
-            | ContractUserModerationAction::ChangeDocumentFields { reason, .. } => Some(reason),
+            | ContractUserModerationAction::ChangeDocumentFields { reason, .. }
+            | ContractUserModerationAction::DeleteSettledDocument { reason, .. } => Some(reason),
             ContractUserModerationAction::Unban { .. }
             | ContractUserModerationAction::Unsuspend { .. }
             | ContractUserModerationAction::ClearWarnings { .. }
@@ -318,6 +353,7 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::DeleteDocument { .. } => "deleteDocument",
             ContractUserModerationAction::RestoreDocument { .. } => "restoreDocument",
             ContractUserModerationAction::ChangeDocumentFields { .. } => "changeDocumentFields",
+            ContractUserModerationAction::DeleteSettledDocument { .. } => "deleteSettledDocument",
         }
     }
 }
@@ -336,6 +372,17 @@ impl fmt::Display for ContractUserModerationAction {
                 ..
             } => {
                 write!(f, "delete {} document {}", document_type_name, document_id)
+            }
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name,
+                document_id,
+                ..
+            } => {
+                write!(
+                    f,
+                    "approve the deletion of settled {} document {}",
+                    document_type_name, document_id
+                )
             }
             ContractUserModerationAction::RestoreDocument {
                 document_type_name,
@@ -382,9 +429,9 @@ impl JsonSafeFields for ContractUserModerationAction {}
 
 /// Edits the banlist, the suspension list or the warning list of a moderated data contract,
 /// deletes or restores a document of one of its document types that moderators may delete,
-/// or changes the fields only moderators write of one of its documents. Signed by the
-/// contract owner or a moderator named in the contract's config, with a CRITICAL
-/// authentication key, under the signer's contract-scoped nonce.
+/// approves the deletion of a settled one, or changes the fields only moderators write of one
+/// of its documents. Signed by the contract owner or a moderator named in the contract's
+/// config, with a CRITICAL authentication key, under the signer's contract-scoped nonce.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq, DecodeUntrusted)]
 #[cfg_attr(

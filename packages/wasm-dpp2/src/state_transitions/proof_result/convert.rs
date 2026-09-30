@@ -8,7 +8,8 @@ use super::address_funds::{
 };
 use super::data_contract::{
     VerifiedContractDocumentRemovalWasm, VerifiedContractFeeClaimWasm,
-    VerifiedContractModerationListStatusesWasm, VerifiedDataContractWasm,
+    VerifiedContractModerationListStatusesWasm, VerifiedContractSettledDeletionWasm,
+    VerifiedDataContractWasm,
 };
 use super::document::VerifiedDocumentsWasm;
 use super::helpers::{
@@ -76,7 +77,8 @@ export type StateTransitionProofResultType =
   | VerifiedIdentityWithShieldedNullifiers
   | VerifiedContractModerationListStatuses
   | VerifiedContractFeeClaim
-  | VerifiedContractDocumentRemoval;
+  | VerifiedContractDocumentRemoval
+  | VerifiedContractSettledDeletion;
 "#;
 
 #[wasm_bindgen]
@@ -418,6 +420,26 @@ pub fn convert_proof_result(
                 .restoration
                 .as_ref()
                 .map(|restoration| restoration.restored_at),
+        }
+        .into(),
+        StateTransitionProofResult::VerifiedContractSettledDeletion(
+            contract_id,
+            document_type_name,
+            document_id,
+            settled_deletion,
+        ) => VerifiedContractSettledDeletionWasm {
+            contract_id: contract_id.into(),
+            document_type_name,
+            document_id: document_id.into(),
+            proposed_at: settled_deletion.proposed_at,
+            document_last_modified_at: settled_deletion.document_last_modified_at,
+            reason: settled_deletion.reason,
+            approvals: settled_deletion
+                .approvals
+                .into_iter()
+                .map(IdentifierWasm::from)
+                .collect(),
+            deleted_at: settled_deletion.deleted_at,
         }
         .into(),
     };

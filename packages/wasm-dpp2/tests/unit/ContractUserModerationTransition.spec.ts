@@ -12,19 +12,19 @@ const DOCUMENT_ID = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 const DOCUMENT_TYPE_NAME = 'post';
 
 interface ModerationOptions {
-  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument' | 'restoreDocument' | 'changeDocumentFields';
-  /** `null` leaves the identity out; left undefined, every action but a deleteDocument or a restoreDocument gets `TARGET_ID` */
+  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument' | 'restoreDocument' | 'changeDocumentFields' | 'deleteSettledDocument';
+  /** `null` leaves the identity out; left undefined, every action but one naming a document gets `TARGET_ID` */
   identityId?: string | null;
-  /** `null` leaves it out; left undefined, a deleteDocument or a restoreDocument gets `DOCUMENT_TYPE_NAME` */
+  /** `null` leaves it out; left undefined, every action naming a document gets `DOCUMENT_TYPE_NAME` */
   documentTypeName?: string | null;
-  /** `null` leaves it out; left undefined, a deleteDocument gets `DOCUMENT_ID` */
+  /** `null` leaves it out; left undefined, a deleteDocument, a changeDocumentFields or a deleteSettledDocument gets `DOCUMENT_ID` */
   documentId?: string | null;
   /** `null` leaves it out; left undefined, a restoreDocument gets `DOCUMENT_BYTES` */
   document?: Uint8Array | null;
   /** `null` leaves them out; left undefined, a changeDocumentFields gets `FIELDS` */
   fields?: Record<string, unknown> | null;
   until?: bigint;
-  /** `null` leaves the reason out; left undefined, a ban, a suspend and a warn get `REASON` */
+  /** `null` leaves the reason out; left undefined, a ban, a suspend, a warn and a deleteSettledDocument get `REASON` */
   reason?: {
     code?: number;
     text: string;
@@ -44,16 +44,19 @@ const FIELDS = { status: 2, resolution: null };
 function createTransition(options: ModerationOptions = {}) {
   const action = options.action ?? 'ban';
   const addsAnEntry = action === 'ban' || action === 'suspend' || action === 'warn';
+  // Every approval of a settled document's deletion repeats the first's reason.
+  const approvesASettledDeletion = action === 'deleteSettledDocument';
   let { reason } = options;
-  if (reason === undefined && addsAnEntry) {
+  if (reason === undefined && (addsAnEntry || approvesASettledDeletion)) {
     reason = REASON;
   }
-  // A deletion, a restore and a field change name a document and every other action an
-  // identity.
+  // A deletion, a restore, a field change and the approval of a settled document's deletion
+  // name a document and every other action an identity.
   const deletesADocument = action === 'deleteDocument';
   const restoresADocument = action === 'restoreDocument';
   const changesADocument = action === 'changeDocumentFields';
-  const namesADocument = deletesADocument || restoresADocument || changesADocument;
+  const namesADocument = deletesADocument || restoresADocument || changesADocument
+    || approvesASettledDeletion;
   let {
     identityId, documentTypeName, documentId, document, fields,
   } = options;
@@ -63,7 +66,7 @@ function createTransition(options: ModerationOptions = {}) {
   if (documentTypeName === undefined && namesADocument) {
     documentTypeName = DOCUMENT_TYPE_NAME;
   }
-  if (documentId === undefined && (deletesADocument || changesADocument)) {
+  if (documentId === undefined && (deletesADocument || changesADocument || approvesASettledDeletion)) {
     documentId = DOCUMENT_ID;
   }
   if (document === undefined && restoresADocument) {
@@ -232,6 +235,34 @@ describe('ContractUserModeration', () => {
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
 
+    it('should create an approval of the deletion of a settled document, which names a document and no identity', () => {
+      const reason = { code: 2, text: 'doxxing', reasonDocumentId: TARGET_ID };
+      const transition = createTransition({ action: 'deleteSettledDocument', reason });
+
+      expect(transition.action).to.equal('deleteSettledDocument');
+      expect(transition.documentTypeName).to.equal(DOCUMENT_TYPE_NAME);
+      expect(transition.documentId?.toString()).to.equal(DOCUMENT_ID);
+      expect(transition.identityId).to.equal(undefined);
+      expect(transition.document).to.equal(undefined);
+      expect(transition.fields).to.equal(undefined);
+      expect(transition.until).to.equal(undefined);
+      expect(transition.reason).to.deep.equal(reason);
+    });
+
+    it('should refuse an approval of the deletion of a settled document without its reason, its document type or its document', () => {
+      // Unlike a deletion's, the reason is needed: every approval repeats the first's.
+      expect(() => createTransition({ action: 'deleteSettledDocument', reason: null })).to.throw();
+      expect(() => createTransition({ action: 'deleteSettledDocument', documentTypeName: null })).to.throw();
+      expect(() => createTransition({ action: 'deleteSettledDocument', documentId: null })).to.throw();
+    });
+
+    it('should refuse on an approval of the deletion of a settled document what it does not carry', () => {
+      expect(() => createTransition({ action: 'deleteSettledDocument', identityId: TARGET_ID })).to.throw();
+      expect(() => createTransition({ action: 'deleteSettledDocument', until: BigInt(5) })).to.throw();
+      expect(() => createTransition({ action: 'deleteSettledDocument', document: DOCUMENT_BYTES })).to.throw();
+      expect(() => createTransition({ action: 'deleteSettledDocument', fields: FIELDS })).to.throw();
+    });
+
     it('should create a warning and its clearing, which name an identity', () => {
       const warn = createTransition({ action: 'warn', reason: { code: 1, text: 'first strike' } });
 
@@ -369,6 +400,7 @@ describe('ContractUserModeration', () => {
         createTransition({ action: 'deleteDocument', reason: { code: 9, text: 'spam' } }),
         createTransition({ action: 'deleteDocument' }),
         createTransition({ action: 'changeDocumentFields', reason: { text: 'handled' } }),
+        createTransition({ action: 'deleteSettledDocument', reason: { text: 'doxxing', reasonDocumentId: TARGET_ID } }),
       ]) {
         const bytes = transition.toBytes();
         expect(wasm.ContractUserModeration.fromBytes(bytes).toBytes()).to.deep.equal(bytes);
@@ -437,6 +469,18 @@ describe('ContractUserModeration', () => {
         reason: { code: 2, text: 'spam' },
       });
     });
+
+    it('should tag an approval of the deletion of a settled document and name its document', () => {
+      const reason = { code: 2, text: 'doxxing', reasonDocumentId: TARGET_ID };
+      const json = createTransition({ action: 'deleteSettledDocument', reason }).toJSON();
+
+      expect(json.action).to.deep.equal({
+        $type: 'deleteSettledDocument',
+        documentTypeName: DOCUMENT_TYPE_NAME,
+        documentId: DOCUMENT_ID,
+        reason,
+      });
+    });
   });
 
   describe('fromJSON()', () => {
@@ -463,6 +507,19 @@ describe('ContractUserModeration', () => {
       expect(restored.documentId?.toString()).to.equal(DOCUMENT_ID);
       expect(restored.identityId).to.equal(undefined);
       expect(restored.reason).to.deep.equal({ code: null, text: 'spam' });
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+
+    it('should restore an approval of the deletion of a settled document from JSON', () => {
+      const transition = createTransition({ action: 'deleteSettledDocument', reason: { text: 'doxxing' } });
+
+      const restored = wasm.ContractUserModeration.fromJSON(transition.toJSON());
+
+      expect(restored.action).to.equal('deleteSettledDocument');
+      expect(restored.documentTypeName).to.equal(DOCUMENT_TYPE_NAME);
+      expect(restored.documentId?.toString()).to.equal(DOCUMENT_ID);
+      expect(restored.identityId).to.equal(undefined);
+      expect(restored.reason).to.deep.equal({ code: null, text: 'doxxing' });
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
   });
@@ -500,6 +557,20 @@ describe('ContractUserModeration', () => {
       expect(obj.action.documentId).to.be.instanceOf(Uint8Array);
       expect(obj.action.identityId).to.equal(undefined);
       expect(obj.action.reason).to.deep.equal({ code: 3, text: 'spam' });
+
+      const restored = wasm.ContractUserModeration.fromObject(obj);
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+
+    it('should round trip an approval of the deletion of a settled document through a plain object', () => {
+      const transition = createTransition({ action: 'deleteSettledDocument', reason: { code: 3, text: 'doxxing' } });
+
+      const obj = transition.toObject();
+      expect(obj.action.$type).to.equal('deleteSettledDocument');
+      expect(obj.action.documentTypeName).to.equal(DOCUMENT_TYPE_NAME);
+      expect(obj.action.documentId).to.be.instanceOf(Uint8Array);
+      expect(obj.action.identityId).to.equal(undefined);
+      expect(obj.action.reason).to.deep.equal({ code: 3, text: 'doxxing' });
 
       const restored = wasm.ContractUserModeration.fromObject(obj);
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());

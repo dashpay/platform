@@ -1354,6 +1354,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContractSettledDeletions}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getContractSettledDeletionsCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} [response] GetContractSettledDeletionsResponse
+                         */
+
+                        /**
+                         * Calls getContractSettledDeletions.
+                         * @function getContractSettledDeletions
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest} request GetContractSettledDeletionsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getContractSettledDeletionsCallback} callback Node-style callback called with the error, if any, and GetContractSettledDeletionsResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getContractSettledDeletions = function getContractSettledDeletions(request, callback) {
+                            return this.rpcCall(getContractSettledDeletions, $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest, $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse, request, callback);
+                        }, "name", { value: "getContractSettledDeletions" });
+
+                        /**
+                         * Calls getContractSettledDeletions.
+                         * @function getContractSettledDeletions
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest} request GetContractSettledDeletionsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContractFeePots}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getContractFeePotsCallback
@@ -30012,6 +30045,2030 @@ $root.org = (function() {
                         })();
 
                         return GetContractDocumentRemovalsResponse;
+                    })();
+
+                    v0.GetContractSettledDeletionsRequest = (function() {
+
+                        /**
+                         * Properties of a GetContractSettledDeletionsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContractSettledDeletionsRequest
+                         * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0|null} [v0] GetContractSettledDeletionsRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetContractSettledDeletionsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContractSettledDeletionsRequest.
+                         * @implements IGetContractSettledDeletionsRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest=} [properties] Properties to set
+                         */
+                        function GetContractSettledDeletionsRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContractSettledDeletionsRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @instance
+                         */
+                        GetContractSettledDeletionsRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContractSettledDeletionsRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetContractSettledDeletionsRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContractSettledDeletionsRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} GetContractSettledDeletionsRequest instance
+                         */
+                        GetContractSettledDeletionsRequest.create = function create(properties) {
+                            return new GetContractSettledDeletionsRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContractSettledDeletionsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest} message GetContractSettledDeletionsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractSettledDeletionsRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContractSettledDeletionsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsRequest} message GetContractSettledDeletionsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractSettledDeletionsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContractSettledDeletionsRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} GetContractSettledDeletionsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractSettledDeletionsRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContractSettledDeletionsRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} GetContractSettledDeletionsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractSettledDeletionsRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContractSettledDeletionsRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContractSettledDeletionsRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContractSettledDeletionsRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} GetContractSettledDeletionsRequest
+                         */
+                        GetContractSettledDeletionsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContractSettledDeletionsRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest} message GetContractSettledDeletionsRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContractSettledDeletionsRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContractSettledDeletionsRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContractSettledDeletionsRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContractSettledDeletionsRequest.DocumentIds = (function() {
+
+                            /**
+                             * Properties of a DocumentIds.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                             * @interface IDocumentIds
+                             * @property {Array.<Uint8Array>|null} [documentIds] DocumentIds documentIds
+                             */
+
+                            /**
+                             * Constructs a new DocumentIds.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                             * @classdesc Represents a DocumentIds.
+                             * @implements IDocumentIds
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds=} [properties] Properties to set
+                             */
+                            function DocumentIds(properties) {
+                                this.documentIds = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * DocumentIds documentIds.
+                             * @member {Array.<Uint8Array>} documentIds
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @instance
+                             */
+                            DocumentIds.prototype.documentIds = $util.emptyArray;
+
+                            /**
+                             * Creates a new DocumentIds instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} DocumentIds instance
+                             */
+                            DocumentIds.create = function create(properties) {
+                                return new DocumentIds(properties);
+                            };
+
+                            /**
+                             * Encodes the specified DocumentIds message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds} message DocumentIds message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DocumentIds.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.documentIds != null && message.documentIds.length)
+                                    for (var i = 0; i < message.documentIds.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.documentIds[i]);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified DocumentIds message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds} message DocumentIds message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DocumentIds.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a DocumentIds message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} DocumentIds
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DocumentIds.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.documentIds && message.documentIds.length))
+                                            message.documentIds = [];
+                                        message.documentIds.push(reader.bytes());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a DocumentIds message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} DocumentIds
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DocumentIds.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a DocumentIds message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            DocumentIds.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.documentIds != null && message.hasOwnProperty("documentIds")) {
+                                    if (!Array.isArray(message.documentIds))
+                                        return "documentIds: array expected";
+                                    for (var i = 0; i < message.documentIds.length; ++i)
+                                        if (!(message.documentIds[i] && typeof message.documentIds[i].length === "number" || $util.isString(message.documentIds[i])))
+                                            return "documentIds: buffer[] expected";
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a DocumentIds message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} DocumentIds
+                             */
+                            DocumentIds.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds();
+                                if (object.documentIds) {
+                                    if (!Array.isArray(object.documentIds))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.documentIds: array expected");
+                                    message.documentIds = [];
+                                    for (var i = 0; i < object.documentIds.length; ++i)
+                                        if (typeof object.documentIds[i] === "string")
+                                            $util.base64.decode(object.documentIds[i], message.documentIds[i] = $util.newBuffer($util.base64.length(object.documentIds[i])), 0);
+                                        else if (object.documentIds[i].length >= 0)
+                                            message.documentIds[i] = object.documentIds[i];
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a DocumentIds message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds} message DocumentIds
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            DocumentIds.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.documentIds = [];
+                                if (message.documentIds && message.documentIds.length) {
+                                    object.documentIds = [];
+                                    for (var j = 0; j < message.documentIds.length; ++j)
+                                        object.documentIds[j] = options.bytes === String ? $util.base64.encode(message.documentIds[j], 0, message.documentIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.documentIds[j]) : message.documentIds[j];
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this DocumentIds to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            DocumentIds.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return DocumentIds;
+                        })();
+
+                        GetContractSettledDeletionsRequest.Page = (function() {
+
+                            /**
+                             * Properties of a Page.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                             * @interface IPage
+                             * @property {Uint8Array|null} [startAfter] Page startAfter
+                             * @property {number|null} [limit] Page limit
+                             */
+
+                            /**
+                             * Constructs a new Page.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                             * @classdesc Represents a Page.
+                             * @implements IPage
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage=} [properties] Properties to set
+                             */
+                            function Page(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Page startAfter.
+                             * @member {Uint8Array} startAfter
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @instance
+                             */
+                            Page.prototype.startAfter = $util.newBuffer([]);
+
+                            /**
+                             * Page limit.
+                             * @member {number} limit
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @instance
+                             */
+                            Page.prototype.limit = 0;
+
+                            /**
+                             * Creates a new Page instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} Page instance
+                             */
+                            Page.create = function create(properties) {
+                                return new Page(properties);
+                            };
+
+                            /**
+                             * Encodes the specified Page message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage} message Page message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            Page.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.startAfter);
+                                if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified Page message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage} message Page message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            Page.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a Page message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} Page
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            Page.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.startAfter = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.limit = reader.uint32();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a Page message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} Page
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            Page.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a Page message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            Page.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
+                                    if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                        return "startAfter: buffer expected";
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    if (!$util.isInteger(message.limit))
+                                        return "limit: integer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a Page message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} Page
+                             */
+                            Page.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page();
+                                if (object.startAfter != null)
+                                    if (typeof object.startAfter === "string")
+                                        $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                    else if (object.startAfter.length >= 0)
+                                        message.startAfter = object.startAfter;
+                                if (object.limit != null)
+                                    message.limit = object.limit >>> 0;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a Page message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page} message Page
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            Page.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.startAfter = "";
+                                    else {
+                                        object.startAfter = [];
+                                        if (options.bytes !== Array)
+                                            object.startAfter = $util.newBuffer(object.startAfter);
+                                    }
+                                    object.limit = 0;
+                                }
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
+                                    object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    object.limit = message.limit;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this Page to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            Page.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return Page;
+                        })();
+
+                        GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractSettledDeletionsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                             * @interface IGetContractSettledDeletionsRequestV0
+                             * @property {Uint8Array|null} [contractId] GetContractSettledDeletionsRequestV0 contractId
+                             * @property {string|null} [documentTypeName] GetContractSettledDeletionsRequestV0 documentTypeName
+                             * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds|null} [documentIds] GetContractSettledDeletionsRequestV0 documentIds
+                             * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage|null} [page] GetContractSettledDeletionsRequestV0 page
+                             * @property {boolean|null} [prove] GetContractSettledDeletionsRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetContractSettledDeletionsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest
+                             * @classdesc Represents a GetContractSettledDeletionsRequestV0.
+                             * @implements IGetContractSettledDeletionsRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0=} [properties] Properties to set
+                             */
+                            function GetContractSettledDeletionsRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractSettledDeletionsRequestV0 contractId.
+                             * @member {Uint8Array} contractId
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @instance
+                             */
+                            GetContractSettledDeletionsRequestV0.prototype.contractId = $util.newBuffer([]);
+
+                            /**
+                             * GetContractSettledDeletionsRequestV0 documentTypeName.
+                             * @member {string} documentTypeName
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @instance
+                             */
+                            GetContractSettledDeletionsRequestV0.prototype.documentTypeName = "";
+
+                            /**
+                             * GetContractSettledDeletionsRequestV0 documentIds.
+                             * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IDocumentIds|null|undefined} documentIds
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @instance
+                             */
+                            GetContractSettledDeletionsRequestV0.prototype.documentIds = null;
+
+                            /**
+                             * GetContractSettledDeletionsRequestV0 page.
+                             * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IPage|null|undefined} page
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @instance
+                             */
+                            GetContractSettledDeletionsRequestV0.prototype.page = null;
+
+                            /**
+                             * GetContractSettledDeletionsRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @instance
+                             */
+                            GetContractSettledDeletionsRequestV0.prototype.prove = false;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetContractSettledDeletionsRequestV0 selection.
+                             * @member {"documentIds"|"page"|undefined} selection
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetContractSettledDeletionsRequestV0.prototype, "selection", {
+                                get: $util.oneOfGetter($oneOfFields = ["documentIds", "page"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetContractSettledDeletionsRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} GetContractSettledDeletionsRequestV0 instance
+                             */
+                            GetContractSettledDeletionsRequestV0.create = function create(properties) {
+                                return new GetContractSettledDeletionsRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContractSettledDeletionsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0} message GetContractSettledDeletionsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractSettledDeletionsRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.contractId);
+                                if (message.documentTypeName != null && Object.hasOwnProperty.call(message, "documentTypeName"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentTypeName);
+                                if (message.documentIds != null && Object.hasOwnProperty.call(message, "documentIds"))
+                                    $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.encode(message.documentIds, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.page != null && Object.hasOwnProperty.call(message, "page"))
+                                    $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.encode(message.page, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContractSettledDeletionsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.IGetContractSettledDeletionsRequestV0} message GetContractSettledDeletionsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractSettledDeletionsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContractSettledDeletionsRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} GetContractSettledDeletionsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractSettledDeletionsRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.documentTypeName = reader.string();
+                                        break;
+                                    case 3:
+                                        message.documentIds = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.page = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContractSettledDeletionsRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} GetContractSettledDeletionsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractSettledDeletionsRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContractSettledDeletionsRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContractSettledDeletionsRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
+                                        return "contractId: buffer expected";
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    if (!$util.isString(message.documentTypeName))
+                                        return "documentTypeName: string expected";
+                                if (message.documentIds != null && message.hasOwnProperty("documentIds")) {
+                                    properties.selection = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.verify(message.documentIds);
+                                        if (error)
+                                            return "documentIds." + error;
+                                    }
+                                }
+                                if (message.page != null && message.hasOwnProperty("page")) {
+                                    if (properties.selection === 1)
+                                        return "selection: multiple values";
+                                    properties.selection = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.verify(message.page);
+                                        if (error)
+                                            return "page." + error;
+                                    }
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContractSettledDeletionsRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} GetContractSettledDeletionsRequestV0
+                             */
+                            GetContractSettledDeletionsRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0();
+                                if (object.contractId != null)
+                                    if (typeof object.contractId === "string")
+                                        $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
+                                    else if (object.contractId.length >= 0)
+                                        message.contractId = object.contractId;
+                                if (object.documentTypeName != null)
+                                    message.documentTypeName = String(object.documentTypeName);
+                                if (object.documentIds != null) {
+                                    if (typeof object.documentIds !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.documentIds: object expected");
+                                    message.documentIds = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.fromObject(object.documentIds);
+                                }
+                                if (object.page != null) {
+                                    if (typeof object.page !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0.page: object expected");
+                                    message.page = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.fromObject(object.page);
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContractSettledDeletionsRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0} message GetContractSettledDeletionsRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContractSettledDeletionsRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.contractId = "";
+                                    else {
+                                        object.contractId = [];
+                                        if (options.bytes !== Array)
+                                            object.contractId = $util.newBuffer(object.contractId);
+                                    }
+                                    object.documentTypeName = "";
+                                    object.prove = false;
+                                }
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    object.documentTypeName = message.documentTypeName;
+                                if (message.documentIds != null && message.hasOwnProperty("documentIds")) {
+                                    object.documentIds = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.DocumentIds.toObject(message.documentIds, options);
+                                    if (options.oneofs)
+                                        object.selection = "documentIds";
+                                }
+                                if (message.page != null && message.hasOwnProperty("page")) {
+                                    object.page = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.Page.toObject(message.page, options);
+                                    if (options.oneofs)
+                                        object.selection = "page";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContractSettledDeletionsRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsRequest.GetContractSettledDeletionsRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContractSettledDeletionsRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContractSettledDeletionsRequestV0;
+                        })();
+
+                        return GetContractSettledDeletionsRequest;
+                    })();
+
+                    v0.GetContractSettledDeletionsResponse = (function() {
+
+                        /**
+                         * Properties of a GetContractSettledDeletionsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContractSettledDeletionsResponse
+                         * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0|null} [v0] GetContractSettledDeletionsResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetContractSettledDeletionsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContractSettledDeletionsResponse.
+                         * @implements IGetContractSettledDeletionsResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsResponse=} [properties] Properties to set
+                         */
+                        function GetContractSettledDeletionsResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContractSettledDeletionsResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @instance
+                         */
+                        GetContractSettledDeletionsResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContractSettledDeletionsResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetContractSettledDeletionsResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContractSettledDeletionsResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} GetContractSettledDeletionsResponse instance
+                         */
+                        GetContractSettledDeletionsResponse.create = function create(properties) {
+                            return new GetContractSettledDeletionsResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContractSettledDeletionsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsResponse} message GetContractSettledDeletionsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractSettledDeletionsResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContractSettledDeletionsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractSettledDeletionsResponse} message GetContractSettledDeletionsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractSettledDeletionsResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContractSettledDeletionsResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} GetContractSettledDeletionsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractSettledDeletionsResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContractSettledDeletionsResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} GetContractSettledDeletionsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractSettledDeletionsResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContractSettledDeletionsResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContractSettledDeletionsResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContractSettledDeletionsResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} GetContractSettledDeletionsResponse
+                         */
+                        GetContractSettledDeletionsResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContractSettledDeletionsResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse} message GetContractSettledDeletionsResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContractSettledDeletionsResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContractSettledDeletionsResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContractSettledDeletionsResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContractSettledDeletionsResponse.ContractSettledDeletion = (function() {
+
+                            /**
+                             * Properties of a ContractSettledDeletion.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                             * @interface IContractSettledDeletion
+                             * @property {Uint8Array|null} [documentId] ContractSettledDeletion documentId
+                             * @property {number|Long|null} [proposedAt] ContractSettledDeletion proposedAt
+                             * @property {number|Long|null} [documentLastModifiedAt] ContractSettledDeletion documentLastModifiedAt
+                             * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [reason] ContractSettledDeletion reason
+                             * @property {Array.<Uint8Array>|null} [approvals] ContractSettledDeletion approvals
+                             * @property {number|Long|null} [deletedAt] ContractSettledDeletion deletedAt
+                             */
+
+                            /**
+                             * Constructs a new ContractSettledDeletion.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                             * @classdesc Represents a ContractSettledDeletion.
+                             * @implements IContractSettledDeletion
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion=} [properties] Properties to set
+                             */
+                            function ContractSettledDeletion(properties) {
+                                this.approvals = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ContractSettledDeletion documentId.
+                             * @member {Uint8Array} documentId
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @instance
+                             */
+                            ContractSettledDeletion.prototype.documentId = $util.newBuffer([]);
+
+                            /**
+                             * ContractSettledDeletion proposedAt.
+                             * @member {number|Long} proposedAt
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @instance
+                             */
+                            ContractSettledDeletion.prototype.proposedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * ContractSettledDeletion documentLastModifiedAt.
+                             * @member {number|Long} documentLastModifiedAt
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @instance
+                             */
+                            ContractSettledDeletion.prototype.documentLastModifiedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * ContractSettledDeletion reason.
+                             * @member {org.dash.platform.dapi.v0.IContractModerationReason|null|undefined} reason
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @instance
+                             */
+                            ContractSettledDeletion.prototype.reason = null;
+
+                            /**
+                             * ContractSettledDeletion approvals.
+                             * @member {Array.<Uint8Array>} approvals
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @instance
+                             */
+                            ContractSettledDeletion.prototype.approvals = $util.emptyArray;
+
+                            /**
+                             * ContractSettledDeletion deletedAt.
+                             * @member {number|Long} deletedAt
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @instance
+                             */
+                            ContractSettledDeletion.prototype.deletedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * Creates a new ContractSettledDeletion instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} ContractSettledDeletion instance
+                             */
+                            ContractSettledDeletion.create = function create(properties) {
+                                return new ContractSettledDeletion(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractSettledDeletion message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion} message ContractSettledDeletion message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractSettledDeletion.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.documentId != null && Object.hasOwnProperty.call(message, "documentId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.documentId);
+                                if (message.proposedAt != null && Object.hasOwnProperty.call(message, "proposedAt"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.proposedAt);
+                                if (message.documentLastModifiedAt != null && Object.hasOwnProperty.call(message, "documentLastModifiedAt"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.documentLastModifiedAt);
+                                if (message.reason != null && Object.hasOwnProperty.call(message, "reason"))
+                                    $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.reason, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.approvals != null && message.approvals.length)
+                                    for (var i = 0; i < message.approvals.length; ++i)
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.approvals[i]);
+                                if (message.deletedAt != null && Object.hasOwnProperty.call(message, "deletedAt"))
+                                    writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.deletedAt);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractSettledDeletion message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion} message ContractSettledDeletion message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractSettledDeletion.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractSettledDeletion message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} ContractSettledDeletion
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractSettledDeletion.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.documentId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.proposedAt = reader.uint64();
+                                        break;
+                                    case 3:
+                                        message.documentLastModifiedAt = reader.uint64();
+                                        break;
+                                    case 4:
+                                        message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        if (!(message.approvals && message.approvals.length))
+                                            message.approvals = [];
+                                        message.approvals.push(reader.bytes());
+                                        break;
+                                    case 6:
+                                        message.deletedAt = reader.uint64();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractSettledDeletion message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} ContractSettledDeletion
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractSettledDeletion.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractSettledDeletion message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractSettledDeletion.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.documentId != null && message.hasOwnProperty("documentId"))
+                                    if (!(message.documentId && typeof message.documentId.length === "number" || $util.isString(message.documentId)))
+                                        return "documentId: buffer expected";
+                                if (message.proposedAt != null && message.hasOwnProperty("proposedAt"))
+                                    if (!$util.isInteger(message.proposedAt) && !(message.proposedAt && $util.isInteger(message.proposedAt.low) && $util.isInteger(message.proposedAt.high)))
+                                        return "proposedAt: integer|Long expected";
+                                if (message.documentLastModifiedAt != null && message.hasOwnProperty("documentLastModifiedAt"))
+                                    if (!$util.isInteger(message.documentLastModifiedAt) && !(message.documentLastModifiedAt && $util.isInteger(message.documentLastModifiedAt.low) && $util.isInteger(message.documentLastModifiedAt.high)))
+                                        return "documentLastModifiedAt: integer|Long expected";
+                                if (message.reason != null && message.hasOwnProperty("reason")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ContractModerationReason.verify(message.reason);
+                                    if (error)
+                                        return "reason." + error;
+                                }
+                                if (message.approvals != null && message.hasOwnProperty("approvals")) {
+                                    if (!Array.isArray(message.approvals))
+                                        return "approvals: array expected";
+                                    for (var i = 0; i < message.approvals.length; ++i)
+                                        if (!(message.approvals[i] && typeof message.approvals[i].length === "number" || $util.isString(message.approvals[i])))
+                                            return "approvals: buffer[] expected";
+                                }
+                                if (message.deletedAt != null && message.hasOwnProperty("deletedAt"))
+                                    if (!$util.isInteger(message.deletedAt) && !(message.deletedAt && $util.isInteger(message.deletedAt.low) && $util.isInteger(message.deletedAt.high)))
+                                        return "deletedAt: integer|Long expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractSettledDeletion message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} ContractSettledDeletion
+                             */
+                            ContractSettledDeletion.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion();
+                                if (object.documentId != null)
+                                    if (typeof object.documentId === "string")
+                                        $util.base64.decode(object.documentId, message.documentId = $util.newBuffer($util.base64.length(object.documentId)), 0);
+                                    else if (object.documentId.length >= 0)
+                                        message.documentId = object.documentId;
+                                if (object.proposedAt != null)
+                                    if ($util.Long)
+                                        (message.proposedAt = $util.Long.fromValue(object.proposedAt)).unsigned = true;
+                                    else if (typeof object.proposedAt === "string")
+                                        message.proposedAt = parseInt(object.proposedAt, 10);
+                                    else if (typeof object.proposedAt === "number")
+                                        message.proposedAt = object.proposedAt;
+                                    else if (typeof object.proposedAt === "object")
+                                        message.proposedAt = new $util.LongBits(object.proposedAt.low >>> 0, object.proposedAt.high >>> 0).toNumber(true);
+                                if (object.documentLastModifiedAt != null)
+                                    if ($util.Long)
+                                        (message.documentLastModifiedAt = $util.Long.fromValue(object.documentLastModifiedAt)).unsigned = true;
+                                    else if (typeof object.documentLastModifiedAt === "string")
+                                        message.documentLastModifiedAt = parseInt(object.documentLastModifiedAt, 10);
+                                    else if (typeof object.documentLastModifiedAt === "number")
+                                        message.documentLastModifiedAt = object.documentLastModifiedAt;
+                                    else if (typeof object.documentLastModifiedAt === "object")
+                                        message.documentLastModifiedAt = new $util.LongBits(object.documentLastModifiedAt.low >>> 0, object.documentLastModifiedAt.high >>> 0).toNumber(true);
+                                if (object.reason != null) {
+                                    if (typeof object.reason !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.reason: object expected");
+                                    message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.reason);
+                                }
+                                if (object.approvals) {
+                                    if (!Array.isArray(object.approvals))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.approvals: array expected");
+                                    message.approvals = [];
+                                    for (var i = 0; i < object.approvals.length; ++i)
+                                        if (typeof object.approvals[i] === "string")
+                                            $util.base64.decode(object.approvals[i], message.approvals[i] = $util.newBuffer($util.base64.length(object.approvals[i])), 0);
+                                        else if (object.approvals[i].length >= 0)
+                                            message.approvals[i] = object.approvals[i];
+                                }
+                                if (object.deletedAt != null)
+                                    if ($util.Long)
+                                        (message.deletedAt = $util.Long.fromValue(object.deletedAt)).unsigned = true;
+                                    else if (typeof object.deletedAt === "string")
+                                        message.deletedAt = parseInt(object.deletedAt, 10);
+                                    else if (typeof object.deletedAt === "number")
+                                        message.deletedAt = object.deletedAt;
+                                    else if (typeof object.deletedAt === "object")
+                                        message.deletedAt = new $util.LongBits(object.deletedAt.low >>> 0, object.deletedAt.high >>> 0).toNumber(true);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractSettledDeletion message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} message ContractSettledDeletion
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractSettledDeletion.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.approvals = [];
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.documentId = "";
+                                    else {
+                                        object.documentId = [];
+                                        if (options.bytes !== Array)
+                                            object.documentId = $util.newBuffer(object.documentId);
+                                    }
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.proposedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.proposedAt = options.longs === String ? "0" : 0;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.documentLastModifiedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.documentLastModifiedAt = options.longs === String ? "0" : 0;
+                                    object.reason = null;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.deletedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.deletedAt = options.longs === String ? "0" : 0;
+                                }
+                                if (message.documentId != null && message.hasOwnProperty("documentId"))
+                                    object.documentId = options.bytes === String ? $util.base64.encode(message.documentId, 0, message.documentId.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentId) : message.documentId;
+                                if (message.proposedAt != null && message.hasOwnProperty("proposedAt"))
+                                    if (typeof message.proposedAt === "number")
+                                        object.proposedAt = options.longs === String ? String(message.proposedAt) : message.proposedAt;
+                                    else
+                                        object.proposedAt = options.longs === String ? $util.Long.prototype.toString.call(message.proposedAt) : options.longs === Number ? new $util.LongBits(message.proposedAt.low >>> 0, message.proposedAt.high >>> 0).toNumber(true) : message.proposedAt;
+                                if (message.documentLastModifiedAt != null && message.hasOwnProperty("documentLastModifiedAt"))
+                                    if (typeof message.documentLastModifiedAt === "number")
+                                        object.documentLastModifiedAt = options.longs === String ? String(message.documentLastModifiedAt) : message.documentLastModifiedAt;
+                                    else
+                                        object.documentLastModifiedAt = options.longs === String ? $util.Long.prototype.toString.call(message.documentLastModifiedAt) : options.longs === Number ? new $util.LongBits(message.documentLastModifiedAt.low >>> 0, message.documentLastModifiedAt.high >>> 0).toNumber(true) : message.documentLastModifiedAt;
+                                if (message.reason != null && message.hasOwnProperty("reason"))
+                                    object.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.reason, options);
+                                if (message.approvals && message.approvals.length) {
+                                    object.approvals = [];
+                                    for (var j = 0; j < message.approvals.length; ++j)
+                                        object.approvals[j] = options.bytes === String ? $util.base64.encode(message.approvals[j], 0, message.approvals[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.approvals[j]) : message.approvals[j];
+                                }
+                                if (message.deletedAt != null && message.hasOwnProperty("deletedAt"))
+                                    if (typeof message.deletedAt === "number")
+                                        object.deletedAt = options.longs === String ? String(message.deletedAt) : message.deletedAt;
+                                    else
+                                        object.deletedAt = options.longs === String ? $util.Long.prototype.toString.call(message.deletedAt) : options.longs === Number ? new $util.LongBits(message.deletedAt.low >>> 0, message.deletedAt.high >>> 0).toNumber(true) : message.deletedAt;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractSettledDeletion to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractSettledDeletion.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractSettledDeletion;
+                        })();
+
+                        GetContractSettledDeletionsResponse.ContractSettledDeletions = (function() {
+
+                            /**
+                             * Properties of a ContractSettledDeletions.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                             * @interface IContractSettledDeletions
+                             * @property {Array.<org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion>|null} [settledDeletions] ContractSettledDeletions settledDeletions
+                             */
+
+                            /**
+                             * Constructs a new ContractSettledDeletions.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                             * @classdesc Represents a ContractSettledDeletions.
+                             * @implements IContractSettledDeletions
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions=} [properties] Properties to set
+                             */
+                            function ContractSettledDeletions(properties) {
+                                this.settledDeletions = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ContractSettledDeletions settledDeletions.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletion>} settledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @instance
+                             */
+                            ContractSettledDeletions.prototype.settledDeletions = $util.emptyArray;
+
+                            /**
+                             * Creates a new ContractSettledDeletions instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} ContractSettledDeletions instance
+                             */
+                            ContractSettledDeletions.create = function create(properties) {
+                                return new ContractSettledDeletions(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractSettledDeletions message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions} message ContractSettledDeletions message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractSettledDeletions.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.settledDeletions != null && message.settledDeletions.length)
+                                    for (var i = 0; i < message.settledDeletions.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.encode(message.settledDeletions[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractSettledDeletions message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions} message ContractSettledDeletions message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractSettledDeletions.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractSettledDeletions message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} ContractSettledDeletions
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractSettledDeletions.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.settledDeletions && message.settledDeletions.length))
+                                            message.settledDeletions = [];
+                                        message.settledDeletions.push($root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.decode(reader, reader.uint32()));
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractSettledDeletions message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} ContractSettledDeletions
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractSettledDeletions.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractSettledDeletions message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractSettledDeletions.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.settledDeletions != null && message.hasOwnProperty("settledDeletions")) {
+                                    if (!Array.isArray(message.settledDeletions))
+                                        return "settledDeletions: array expected";
+                                    for (var i = 0; i < message.settledDeletions.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.verify(message.settledDeletions[i]);
+                                        if (error)
+                                            return "settledDeletions." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractSettledDeletions message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} ContractSettledDeletions
+                             */
+                            ContractSettledDeletions.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions();
+                                if (object.settledDeletions) {
+                                    if (!Array.isArray(object.settledDeletions))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.settledDeletions: array expected");
+                                    message.settledDeletions = [];
+                                    for (var i = 0; i < object.settledDeletions.length; ++i) {
+                                        if (typeof object.settledDeletions[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.settledDeletions: object expected");
+                                        message.settledDeletions[i] = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.fromObject(object.settledDeletions[i]);
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractSettledDeletions message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions} message ContractSettledDeletions
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractSettledDeletions.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.settledDeletions = [];
+                                if (message.settledDeletions && message.settledDeletions.length) {
+                                    object.settledDeletions = [];
+                                    for (var j = 0; j < message.settledDeletions.length; ++j)
+                                        object.settledDeletions[j] = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.toObject(message.settledDeletions[j], options);
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractSettledDeletions to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractSettledDeletions.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractSettledDeletions;
+                        })();
+
+                        GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractSettledDeletionsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                             * @interface IGetContractSettledDeletionsResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions|null} [settledDeletions] GetContractSettledDeletionsResponseV0 settledDeletions
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContractSettledDeletionsResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContractSettledDeletionsResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetContractSettledDeletionsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse
+                             * @classdesc Represents a GetContractSettledDeletionsResponseV0.
+                             * @implements IGetContractSettledDeletionsResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0=} [properties] Properties to set
+                             */
+                            function GetContractSettledDeletionsResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractSettledDeletionsResponseV0 settledDeletions.
+                             * @member {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IContractSettledDeletions|null|undefined} settledDeletions
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @instance
+                             */
+                            GetContractSettledDeletionsResponseV0.prototype.settledDeletions = null;
+
+                            /**
+                             * GetContractSettledDeletionsResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @instance
+                             */
+                            GetContractSettledDeletionsResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetContractSettledDeletionsResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @instance
+                             */
+                            GetContractSettledDeletionsResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetContractSettledDeletionsResponseV0 result.
+                             * @member {"settledDeletions"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetContractSettledDeletionsResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["settledDeletions", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetContractSettledDeletionsResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} GetContractSettledDeletionsResponseV0 instance
+                             */
+                            GetContractSettledDeletionsResponseV0.create = function create(properties) {
+                                return new GetContractSettledDeletionsResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContractSettledDeletionsResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0} message GetContractSettledDeletionsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractSettledDeletionsResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.settledDeletions != null && Object.hasOwnProperty.call(message, "settledDeletions"))
+                                    $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.encode(message.settledDeletions, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContractSettledDeletionsResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.IGetContractSettledDeletionsResponseV0} message GetContractSettledDeletionsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractSettledDeletionsResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContractSettledDeletionsResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} GetContractSettledDeletionsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractSettledDeletionsResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.settledDeletions = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContractSettledDeletionsResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} GetContractSettledDeletionsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractSettledDeletionsResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContractSettledDeletionsResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContractSettledDeletionsResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.settledDeletions != null && message.hasOwnProperty("settledDeletions")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.verify(message.settledDeletions);
+                                        if (error)
+                                            return "settledDeletions." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContractSettledDeletionsResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} GetContractSettledDeletionsResponseV0
+                             */
+                            GetContractSettledDeletionsResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0();
+                                if (object.settledDeletions != null) {
+                                    if (typeof object.settledDeletions !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.settledDeletions: object expected");
+                                    message.settledDeletions = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.fromObject(object.settledDeletions);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContractSettledDeletionsResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0} message GetContractSettledDeletionsResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContractSettledDeletionsResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.settledDeletions != null && message.hasOwnProperty("settledDeletions")) {
+                                    object.settledDeletions = $root.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletions.toObject(message.settledDeletions, options);
+                                    if (options.oneofs)
+                                        object.result = "settledDeletions";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContractSettledDeletionsResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.GetContractSettledDeletionsResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContractSettledDeletionsResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContractSettledDeletionsResponseV0;
+                        })();
+
+                        return GetContractSettledDeletionsResponse;
                     })();
 
                     v0.GetContractFeePotsRequest = (function() {

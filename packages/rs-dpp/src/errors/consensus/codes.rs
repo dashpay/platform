@@ -502,6 +502,11 @@ impl ErrorWithCode for StateError {
             Self::ContractModerationAbilityNotGrantedError(_) => 41201,
             Self::ModerationCharterAddedModeratorLimitReachedError(_) => 41202,
             Self::ModerationReasonNotListedError(_) => 41203,
+            Self::DocumentTypeNotDeletableOnceSettledError(_) => 41204,
+            Self::ContractModerationTeamNotSeatedError(_) => 41205,
+            Self::DocumentNotSettledError(_) => 41206,
+            Self::SettledDeletionReasonMismatchError(_) => 41207,
+            Self::SettledDeletionAlreadyApprovedError(_) => 41208,
         }
     }
 }

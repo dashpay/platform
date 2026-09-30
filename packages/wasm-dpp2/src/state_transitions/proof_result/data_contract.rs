@@ -469,3 +469,125 @@ impl_wasm_type_info!(
     VerifiedContractDocumentRemovalWasm,
     VerifiedContractDocumentRemoval
 );
+
+/// `VerifiedContractSettledDeletion` proof-result wrapper: the approvals the contract keeps of
+/// the deletion of a settled document, as an approval by a member of its seated moderation team
+/// leaves them. They hold the signer among `approvals` and its reason, which every approval of
+/// one deletion repeats. While they fall short of the document type's rule the document stays
+/// and `deletedAt` is undefined; the approval that meets the rule deletes the document and sets
+/// `deletedAt`.
+#[wasm_bindgen(js_name = "VerifiedContractSettledDeletion")]
+#[derive(Clone)]
+pub struct VerifiedContractSettledDeletionWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
+    pub contract_id: IdentifierWasm,
+    #[wasm_bindgen(getter_with_clone, js_name = "documentTypeName")]
+    pub document_type_name: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "documentId")]
+    pub document_id: IdentifierWasm,
+    /// The time of the block of the first approval, in milliseconds
+    #[wasm_bindgen(js_name = "proposedAt")]
+    pub proposed_at: u64,
+    /// The document's `$updatedAt` (or `$createdAt`) when the first approval was given, in
+    /// milliseconds: the approvals are of the document as it was then
+    #[wasm_bindgen(js_name = "documentLastModifiedAt")]
+    pub document_last_modified_at: u64,
+    #[wasm_bindgen(skip)]
+    pub reason: ContractModerationReason,
+    /// The members of the seated team that approved, in the order they did, each still on the
+    /// team when the last approval was given
+    #[wasm_bindgen(getter_with_clone)]
+    pub approvals: Vec<IdentifierWasm>,
+    /// The time of the block whose approval met the rule and deleted the document, in
+    /// milliseconds, undefined while the approvals fall short
+    #[wasm_bindgen(js_name = "deletedAt")]
+    pub deleted_at: Option<u64>,
+}
+
+#[wasm_bindgen(js_class = VerifiedContractSettledDeletion)]
+impl VerifiedContractSettledDeletionWasm {
+    /// Why, as the first approval gave it and every later one repeated it
+    #[wasm_bindgen(getter = "reason")]
+    pub fn reason(&self) -> ContractModerationReasonJs {
+        moderation_reason_to_js(&self.reason).into()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            ("contractId", self.contract_id.into()),
+            (
+                "documentTypeName",
+                JsValue::from_str(&self.document_type_name),
+            ),
+            ("documentId", self.document_id.into()),
+            (
+                "proposedAt",
+                JsValue::from(js_sys::BigInt::from(self.proposed_at)),
+            ),
+            (
+                "documentLastModifiedAt",
+                JsValue::from(js_sys::BigInt::from(self.document_last_modified_at)),
+            ),
+            ("reason", moderation_reason_to_js(&self.reason)),
+            (
+                "approvals",
+                self.approvals
+                    .iter()
+                    .map(|approver| JsValue::from(*approver))
+                    .collect::<js_sys::Array>()
+                    .into(),
+            ),
+            (
+                "deletedAt",
+                self.deleted_at.map_or(JsValue::UNDEFINED, |deleted_at| {
+                    JsValue::from(js_sys::BigInt::from(deleted_at))
+                }),
+            ),
+        ]))
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            (
+                "contractId",
+                JsValue::from_str(&self.contract_id.to_base58()),
+            ),
+            (
+                "documentTypeName",
+                JsValue::from_str(&self.document_type_name),
+            ),
+            (
+                "documentId",
+                JsValue::from_str(&self.document_id.to_base58()),
+            ),
+            // A block time in milliseconds stays exact as a JavaScript number.
+            ("proposedAt", JsValue::from_f64(self.proposed_at as f64)),
+            (
+                "documentLastModifiedAt",
+                JsValue::from_f64(self.document_last_modified_at as f64),
+            ),
+            ("reason", moderation_reason_to_js(&self.reason)),
+            (
+                "approvals",
+                self.approvals
+                    .iter()
+                    .map(|approver| JsValue::from_str(&approver.to_base58()))
+                    .collect::<js_sys::Array>()
+                    .into(),
+            ),
+            (
+                "deletedAt",
+                self.deleted_at.map_or(JsValue::UNDEFINED, |deleted_at| {
+                    JsValue::from_f64(deleted_at as f64)
+                }),
+            ),
+        ]))
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedContractSettledDeletionWasm,
+    VerifiedContractSettledDeletion
+);

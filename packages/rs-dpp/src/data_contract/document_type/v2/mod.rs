@@ -6,6 +6,7 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, GeneratedFrom};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
@@ -166,6 +167,13 @@ pub struct DocumentTypeV2 {
     /// out, the owner then forfeiting it). Only ever `true` beside
     /// `documents_can_be_deleted_by_moderators`.
     pub(in crate::data_contract) moderator_deletions_refund_owner: bool,
+    /// Who must approve a moderator's deletion of a document of this type once it is settled,
+    /// past `documents_can_be_deleted_by_moderators_for` (`moderatorAbilities.deleteSettled`,
+    /// protocol version 14): the seated team's leader, and so many of its members. `None`
+    /// when no moderator deletes a settled document, and on every type that predates the
+    /// keyword. Only ever `Some` beside a window, on a contract whose moderators are an
+    /// elected team (`apply_moderator_abilities`).
+    pub(in crate::data_contract) moderator_settled_deletion: Option<SettledDeletionRule>,
     /// The top-level properties only the contract's moderators write
     /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
     /// changes them with a `ContractUserModeration` transition, and a document's
@@ -325,6 +333,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_can_be_deleted_by_moderators_for: None,
             moderator_deletions_keep_records: false,
             moderator_deletions_refund_owner: false,
+            moderator_settled_deletion: None,
             moderator_changeable_fields: BTreeSet::new(),
             owner_reference: None,
             creator_reference: None,
@@ -382,6 +391,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_can_be_deleted_by_moderators_for: None,
             moderator_deletions_keep_records: false,
             moderator_deletions_refund_owner: false,
+            moderator_settled_deletion: None,
             moderator_changeable_fields: BTreeSet::new(),
             owner_reference: None,
             creator_reference: None,

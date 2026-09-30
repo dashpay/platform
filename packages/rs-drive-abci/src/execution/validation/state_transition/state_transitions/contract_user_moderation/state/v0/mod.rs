@@ -22,12 +22,15 @@ use dpp::consensus::state::contract_moderation::{
     ContractDocumentAlreadyRestoredError, ContractDocumentRemovalNotFoundError,
     ContractModerationAbilityNotGrantedError, ContractModerationNotEnabledError,
     ContractModerationTargetNotAllowedError, ContractModerationTargetNotFoundError,
-    ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
-    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserNotWarnedError,
+    ContractModerationTeamNotSeatedError, ContractSuspensionNotInFutureError,
+    ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
+    ContractUserNotSuspendedError, ContractUserNotWarnedError,
     ContractUserWarningLimitReachedError, DocumentFieldNotChangeableByModeratorsError,
-    DocumentModerationWindowElapsedError, DocumentRestoreHashMismatchError,
-    DocumentRestoreWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
-    IdentityNotContractModeratorError,
+    DocumentModerationWindowElapsedError, DocumentNotSettledError,
+    DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
+    DocumentTypeNotDeletableByModeratorsError, DocumentTypeNotDeletableOnceSettledError,
+    IdentityNotContractModeratorError, SettledDeletionAlreadyApprovedError,
+    SettledDeletionReasonMismatchError,
 };
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::state_error::StateError;
@@ -35,12 +38,14 @@ use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
     ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
-    ContractModerationList, ContractModerationStatus, ModerationAbility,
+    ContractModerationList, ContractModerationReason, ContractModerationStatus,
+    ContractSettledDeletion, ModerationAbility,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -59,6 +64,7 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
     ContractDocumentRemovalRecordContext, ContractDocumentRestorationContext,
+    ContractSettledDeletionContext,
 };
 use drive::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
@@ -181,6 +187,24 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                     &contract_fetch_info,
                     document_type_name,
                     document.as_slice(),
+                    execution_context,
+                    tx,
+                    platform_version,
+                );
+            }
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name,
+                document_id,
+                reason,
+            } => {
+                return transform_settled_document_deletion_v0(
+                    self,
+                    platform,
+                    block_info,
+                    &contract_fetch_info,
+                    document_type_name,
+                    *document_id,
+                    reason,
                     execution_context,
                     tx,
                     platform_version,
@@ -518,6 +542,349 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         }
     }
 
+    let deletion = document_deletion_context(
+        platform,
+        contract_fetch_info,
+        document_type,
+        document_type_name,
+        &document,
+        block_info,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    let moderation_action =
+        ContractUserModerationTransitionAction::from_borrowed_transition_with_document_deletion(
+            transition, deletion,
+        );
+    let moderation_action = moderators.count_for_signer(
+        moderation_action,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    Ok(ConsensusValidationResult::new_with_data(
+        moderation_action.into(),
+    ))
+}
+
+/// An approval of the deletion of a settled document: the document type exists and says who
+/// of a seated team must approve the deletion of its settled documents
+/// (`moderatorAbilities.deleteSettled`), a team is seated on the contract, the signer is on it and
+/// the declaration gives the team `deleteDocuments` on the type, the reason names a reason
+/// document the team's proposal lists, the document exists, its owner is not protected, and it
+/// is settled: last modified longer ago than the type's `deleteWithin` window, within which a
+/// moderator deletes it alone. Every refusal is paid for by bumping the signer's contract nonce.
+///
+/// The approvals the contract keeps of the deletion are then read. While they are open (they
+/// have not met the rule, are of the document as it is, and have not lapsed,
+/// `SystemLimits::contract_settled_deletion_approval_window_ms` after the first), every earlier
+/// approver is checked to still be on the team, and one that has left no longer counts; this
+/// approval joins those that remain: it must be for their reason, and the signer must not be
+/// among them already. Otherwise, or when none remains, this approval is the first of a fresh
+/// record in their place, for its own reason.
+///
+/// When the approvals meet the type's rule, the leader among them if it says so, the document is
+/// deleted as a moderator's `DeleteDocument` deletes it, the record is marked with the deletion,
+/// and every approver's moderation action count goes up by one: a deletion signed by several
+/// counts for each of them. An approval that falls short counts for nobody, so that approving
+/// what never passes earns no share of the moderators pot.
+#[allow(clippy::too_many_arguments)]
+fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
+    transition: &ContractUserModerationTransition,
+    platform: &PlatformRef<C>,
+    block_info: &BlockInfo,
+    contract_fetch_info: &Arc<DataContractFetchInfo>,
+    document_type_name: &str,
+    document_id: Identifier,
+    reason: &ContractModerationReason,
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    let contract = &contract_fetch_info.contract;
+    let contract_id = contract.id();
+    let moderator_id = transition.owner_id();
+    let refuse = |error: ConsensusError| {
+        Ok(ConsensusValidationResult::new_with_data_and_errors(
+            StateTransitionAction::BumpIdentityDataContractNonceAction(
+                BumpIdentityDataContractNonceAction::from_borrowed_contract_user_moderation_transition(
+                    transition,
+                ),
+            ),
+            vec![error],
+        ))
+    };
+
+    let Some(document_type) = contract.document_type_optional_for_name(document_type_name) else {
+        return refuse(
+            InvalidDocumentTypeError::new(document_type_name.to_string(), contract_id).into(),
+        );
+    };
+    // The keyword is only admitted beside `delete` and `deleteWithin`, on a contract whose
+    // moderators are elected, so a type that carries it always has all three.
+    let (Some(moderation), Some(rule), Some(window_seconds)) = (
+        contract.config().moderation(),
+        document_type.moderator_settled_deletion(),
+        document_type.documents_can_be_deleted_by_moderators_for(),
+    ) else {
+        return refuse(
+            DocumentTypeNotDeletableOnceSettledError::new(
+                contract_id,
+                document_type_name.to_string(),
+            )
+            .into(),
+        );
+    };
+
+    let owner_id = contract.owner_id();
+    let epoch = &block_info.epoch;
+    let moderators = Moderators::read(
+        moderation,
+        contract_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    // Only a seated team deletes a settled document: the rule names its leader and counts its
+    // members, and the moderators of an interim are neither.
+    let Moderators::Seated { charter, .. } = &moderators else {
+        return refuse(ContractModerationTeamNotSeatedError::new(contract_id).into());
+    };
+    if !moderators.may_moderate(
+        owner_id,
+        moderator_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        return refuse(IdentityNotContractModeratorError::new(contract_id, moderator_id).into());
+    }
+    if moderators.lacks(ModerationAbility::DeleteDocuments, Some(document_type_name)) {
+        return refuse(
+            ContractModerationAbilityNotGrantedError::new(
+                contract_id,
+                ModerationAbility::DeleteDocuments,
+                Some(document_type_name.to_string()),
+            )
+            .into(),
+        );
+    }
+    if let Some(error) = moderators.unlisted_reason(
+        transition.action(),
+        contract_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        return refuse(error);
+    }
+
+    let Some(document) = fetch_document_with_id(
+        platform.drive,
+        contract,
+        document_type,
+        document_id,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?
+    else {
+        return refuse(ConsensusError::StateError(
+            StateError::DocumentNotFoundError(DocumentNotFoundError::new(document_id)),
+        ));
+    };
+
+    // The team's own documents are as protected from a settled deletion as from any other.
+    if moderators.protects(
+        owner_id,
+        document.owner_id(),
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        return refuse(
+            ContractModerationTargetNotAllowedError::new(contract_id, document.owner_id()).into(),
+        );
+    }
+
+    // Measured as the window of a moderator's deletion is: from the last modification, the
+    // boundary millisecond still inside it.
+    let last_modified_at = document
+        .updated_at()
+        .or(document.created_at())
+        .unwrap_or_default();
+    let settled_at = last_modified_at
+        .saturating_add(u64::from(window_seconds).saturating_mul(MILLIS_PER_SECOND));
+    if block_info.time_ms <= settled_at {
+        return refuse(
+            DocumentNotSettledError::new(
+                contract_id,
+                document_id,
+                last_modified_at,
+                window_seconds,
+                block_info.time_ms,
+            )
+            .into(),
+        );
+    }
+
+    let (approvals_fee, existing) = platform.drive.fetch_contract_settled_deletion_with_fee(
+        contract_id,
+        document_type_name,
+        document_id,
+        epoch,
+        tx,
+        platform_version,
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(approvals_fee));
+    let approval_window_ms = platform_version
+        .system_limits
+        .contract_settled_deletion_approval_window_ms;
+    let replaces_existing = existing.is_some();
+    // The open approvals, less the approvers no longer on the team: a member who left since
+    // approving no longer counts. One point read each, billed, and the team bounds how many
+    // there are. Approvals nobody on the team still stands behind are no approvals at all, so
+    // a member who left can not hold the reason the others must repeat.
+    let open = match existing {
+        Some(open) if open.is_open_at(block_info.time_ms, last_modified_at, approval_window_ms) => {
+            let mut still_seated = Vec::with_capacity(open.approvals.len() + 1);
+            for approver in open.approvals.iter().copied() {
+                if charter.seats(
+                    platform.drive,
+                    approver,
+                    epoch,
+                    execution_context,
+                    tx,
+                    platform_version,
+                )? {
+                    still_seated.push(approver);
+                }
+            }
+            (!still_seated.is_empty()).then_some(ContractSettledDeletion {
+                approvals: still_seated,
+                ..open
+            })
+        }
+        _ => None,
+    };
+    let mut settled_deletion = match open {
+        Some(mut open) => {
+            if open.reason != *reason {
+                return refuse(
+                    SettledDeletionReasonMismatchError::new(contract_id, document_id, open.reason)
+                        .into(),
+                );
+            }
+            if open.approvals.contains(&moderator_id) {
+                return refuse(
+                    SettledDeletionAlreadyApprovedError::new(
+                        contract_id,
+                        document_id,
+                        moderator_id,
+                    )
+                    .into(),
+                );
+            }
+            open.approvals.push(moderator_id);
+            open
+        }
+        // None yet, or closed: deleted before a restore, of the document as it was before a
+        // replace, lapsed, or approved only by members who left since. This approval starts
+        // afresh in its place, for its own reason.
+        None => ContractSettledDeletion {
+            proposed_at: block_info.time_ms,
+            document_last_modified_at: last_modified_at,
+            reason: reason.clone(),
+            approvals: vec![moderator_id],
+            deleted_at: None,
+        },
+    };
+
+    let (deletion, approver_action_counts) =
+        if rule.is_met_by(&settled_deletion.approvals, charter.leader_id) {
+            settled_deletion.deleted_at = Some(block_info.time_ms);
+            let deletion = document_deletion_context(
+                platform,
+                contract_fetch_info,
+                document_type,
+                document_type_name,
+                &document,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            )?;
+            // Every approver's count, one point read each, billed. A contract stored elected
+            // before the counts existed has nowhere to count, and none is written.
+            let mut counts = Vec::with_capacity(settled_deletion.approvals.len());
+            for approver in settled_deletion.approvals.iter().copied() {
+                let (fee, count) = platform
+                    .drive
+                    .fetch_contract_moderation_action_count_with_fee(
+                        contract_id,
+                        approver,
+                        epoch,
+                        tx,
+                        platform_version,
+                    )?;
+                execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+                let Some(count) = count else {
+                    counts.clear();
+                    break;
+                };
+                counts.push((approver, count.saturating_add(1)));
+            }
+            (Some(deletion), counts)
+        } else {
+            (None, vec![])
+        };
+
+    Ok(ConsensusValidationResult::new_with_data(
+        ContractUserModerationTransitionAction::from_borrowed_transition_with_settled_deletion(
+            transition,
+            ContractSettledDeletionContext {
+                settled_deletion,
+                replaces_existing,
+                deletion,
+                approver_action_counts,
+            },
+        )
+        .into(),
+    ))
+}
+
+/// What Drive needs to delete `document` as a moderator deletes it: the contract, the document's
+/// owner, the removal record when the type keeps one, and whether the owner is refunded. The
+/// record commits to the document as serialized under its type, and is read first, billed, for
+/// a restored record it replaces. Shared by a moderator's deletion and the approval of a settled
+/// document's deletion that meets its type's rule.
+#[allow(clippy::too_many_arguments)]
+fn document_deletion_context<C: CoreRPCLike>(
+    platform: &PlatformRef<C>,
+    contract_fetch_info: &Arc<DataContractFetchInfo>,
+    document_type: DocumentTypeRef,
+    document_type_name: &str,
+    document: &Document,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<ContractDocumentDeletionContext, Error> {
+    let contract = &contract_fetch_info.contract;
+    let contract_id = contract.id();
+    let document_id = document.id();
     // The removal record, when the type keeps one. What it commits to: the document as
     // serialized under its type, which a restore must bring back byte for byte. It is
     // serialized here, from the document as read, rather than hashed as stored: a document
@@ -565,27 +932,12 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         None
     };
 
-    let moderation_action =
-        ContractUserModerationTransitionAction::from_borrowed_transition_with_document_deletion(
-            transition,
-            ContractDocumentDeletionContext {
-                data_contract_fetch_info: Arc::clone(contract_fetch_info),
-                document_owner_id,
-                record,
-                refunds_owner: document_type.moderator_deletions_refund_owner(),
-            },
-        );
-    let moderation_action = moderators.count_for_signer(
-        moderation_action,
-        platform.drive,
-        epoch,
-        execution_context,
-        tx,
-        platform_version,
-    )?;
-    Ok(ConsensusValidationResult::new_with_data(
-        moderation_action.into(),
-    ))
+    Ok(ContractDocumentDeletionContext {
+        data_contract_fetch_info: Arc::clone(contract_fetch_info),
+        document_owner_id: document.owner_id(),
+        record,
+        refunds_owner: document_type.moderator_deletions_refund_owner(),
+    })
 }
 
 /// A document field change: the document type exists and every field the change names is
@@ -1174,7 +1526,8 @@ fn list_of(action: &ContractUserModerationAction) -> Option<ContractModerationLi
         }
         ContractUserModerationAction::DeleteDocument { .. }
         | ContractUserModerationAction::RestoreDocument { .. }
-        | ContractUserModerationAction::ChangeDocumentFields { .. } => None,
+        | ContractUserModerationAction::ChangeDocumentFields { .. }
+        | ContractUserModerationAction::DeleteSettledDocument { .. } => None,
     }
 }
 
@@ -1197,7 +1550,8 @@ fn lists_to_read(
         | ContractUserModerationAction::ClearWarnings { .. }
         | ContractUserModerationAction::DeleteDocument { .. }
         | ContractUserModerationAction::RestoreDocument { .. }
-        | ContractUserModerationAction::ChangeDocumentFields { .. } => vec![list],
+        | ContractUserModerationAction::ChangeDocumentFields { .. }
+        | ContractUserModerationAction::DeleteSettledDocument { .. } => vec![list],
     }
 }
 
@@ -1248,9 +1602,10 @@ fn refusal_for_status(
         }
         ContractUserModerationAction::ClearWarnings { .. } => (!status.warned())
             .then(|| ContractUserNotWarnedError::new(contract_id, target_id).into()),
-        // A document deletion, restore or field change reads no list.
+        // A document deletion, restore, field change or settled deletion approval reads no list.
         ContractUserModerationAction::DeleteDocument { .. }
         | ContractUserModerationAction::RestoreDocument { .. }
-        | ContractUserModerationAction::ChangeDocumentFields { .. } => None,
+        | ContractUserModerationAction::ChangeDocumentFields { .. }
+        | ContractUserModerationAction::DeleteSettledDocument { .. } => None,
     }
 }

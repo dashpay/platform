@@ -42,6 +42,7 @@ use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
 use crate::drive::contract::moderation::types::{
     ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+    ContractSettledDeletionsQuery,
 };
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
@@ -68,7 +69,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractSettledDeletion, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1274,6 +1275,16 @@ impl Drive {
                 )
             }
             StateTransition::ContractUserModeration(transition)
+                if transition.action().settled_document().is_some() =>
+            {
+                verify_contract_settled_deletion_execution(
+                    proof,
+                    transition,
+                    carries_owner_balance,
+                    platform_version,
+                )
+            }
+            StateTransition::ContractUserModeration(transition)
                 if transition.action().changed_document().is_some() =>
             {
                 verify_contract_document_change_execution(
@@ -1322,9 +1333,11 @@ impl Drive {
                     }
                     ContractUserModerationAction::DeleteDocument { .. }
                     | ContractUserModerationAction::RestoreDocument { .. }
-                    | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                    | ContractUserModerationAction::ChangeDocumentFields { .. }
+                    | ContractUserModerationAction::DeleteSettledDocument { .. } => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
-                            "a document deletion, restore or field change is verified above"
+                            "a document deletion, restore, field change or settled deletion \
+                             approval is verified above"
                                 .to_string(),
                         )))
                     }
@@ -1369,7 +1382,8 @@ impl Drive {
                     }
                     ContractUserModerationAction::DeleteDocument { .. }
                     | ContractUserModerationAction::RestoreDocument { .. }
-                    | ContractUserModerationAction::ChangeDocumentFields { .. } => false,
+                    | ContractUserModerationAction::ChangeDocumentFields { .. }
+                    | ContractUserModerationAction::DeleteSettledDocument { .. } => false,
                 };
                 if !as_expected {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -3081,6 +3095,63 @@ fn verify_contract_document_deletion_execution(
         }
         Ok(Some(_)) => record_error,
     })
+}
+
+/// A seated moderation team member's approval of a settled document's deletion is proved by the
+/// approvals the contract keeps of that deletion: the record holds the transition's signer among
+/// its approvals and the transition's reason, which every approval of one deletion repeats. The
+/// record's `deleted_at` says whether the approvals met the document type's rule and the document
+/// was deleted. The query is rebuilt from the transition alone: no contract is needed.
+fn verify_contract_settled_deletion_execution(
+    proof: &[u8],
+    transition: &ContractUserModerationTransition,
+    verify_subset_of_proof: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let contract_id = transition.data_contract_id();
+    let Some((document_type_name, document_id, reason)) = transition.action().settled_document()
+    else {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "only an approval of a settled document's deletion is verified by its approvals"
+                .to_string(),
+        )));
+    };
+    let (root_hash, mut entries) = Drive::verify_contract_settled_deletions(
+        proof,
+        contract_id,
+        &ContractSettledDeletionsQuery {
+            document_type_name: document_type_name.to_string(),
+            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![document_id]),
+        },
+        verify_subset_of_proof,
+        platform_version,
+    )?;
+    match (entries.pop(), entries.is_empty()) {
+        (Some(entry), true)
+            if entry.document_id == document_id
+                && entry
+                    .settled_deletion
+                    .approvals
+                    .contains(&transition.owner_id())
+                && entry.settled_deletion.reason == *reason =>
+        {
+            Ok((
+                root_hash,
+                VerifiedContractSettledDeletion(
+                    contract_id,
+                    document_type_name.to_string(),
+                    document_id,
+                    entry.settled_deletion,
+                ),
+            ))
+        }
+        _ => Err(Error::Proof(ProofError::IncorrectProof(format!(
+            "proof of state transition execution does not show the {} on contract {} by {}",
+            transition.action(),
+            contract_id,
+            transition.owner_id()
+        )))),
+    }
 }
 
 /// A moderator's document restore is proved by the document's removal record, now marked

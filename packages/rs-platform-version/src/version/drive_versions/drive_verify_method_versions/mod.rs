@@ -43,6 +43,7 @@ pub struct DriveVerifyContractModerationMethodVersions {
     pub verify_contract_moderation_entries: FeatureVersion,
     pub verify_contract_fee_pots: FeatureVersion,
     pub verify_contract_document_removals: FeatureVersion,
+    pub verify_contract_settled_deletions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

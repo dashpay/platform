@@ -31,7 +31,8 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
             .collect(),
         // A ban's proof covers every list the contract keeps, which the verifier reads from
         // the contract. The other moderations prove the one entry they edit, or for a document
-        // deletion the removal record it wrote, and need none.
+        // deletion the removal record it wrote, and for the approval of a settled document's
+        // deletion the approvals it joined, and need none.
         StateTransition::ContractUserModeration(moderation)
             if matches!(
                 moderation.action(),
@@ -488,6 +489,21 @@ mod tests {
             }),
         );
         assert!(referenced_contract_ids(&deletion).is_empty());
+
+        // An approval of a settled document's deletion is proved by the approvals it joined,
+        // read by a query rebuilt from the transition alone, contract unread.
+        let settled_deletion = StateTransition::ContractUserModeration(
+            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                action: ContractUserModerationAction::DeleteSettledDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: Identifier::new([0x66; 32]),
+                    reason: Default::default(),
+                },
+                ..Default::default()
+            }),
+        );
+        assert!(referenced_contract_ids(&settled_deletion).is_empty());
     }
 
     #[test]

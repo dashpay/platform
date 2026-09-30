@@ -13,6 +13,9 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
     ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
+    ContractModerationTeamNotSeatedError, DocumentNotSettledError,
+    DocumentTypeNotDeletableOnceSettledError, SettledDeletionAlreadyApprovedError,
+    SettledDeletionReasonMismatchError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
@@ -648,6 +651,23 @@ pub enum StateError {
     // `minimumAgeBlocks` (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
+
+    // The deletion of a settled document by the approvals of a seated moderation team,
+    // `moderatorAbilities.deleteSettled` (protocol version 14).
+    #[error(transparent)]
+    DocumentTypeNotDeletableOnceSettledError(DocumentTypeNotDeletableOnceSettledError),
+
+    #[error(transparent)]
+    ContractModerationTeamNotSeatedError(ContractModerationTeamNotSeatedError),
+
+    #[error(transparent)]
+    DocumentNotSettledError(DocumentNotSettledError),
+
+    #[error(transparent)]
+    SettledDeletionReasonMismatchError(SettledDeletionReasonMismatchError),
+
+    #[error(transparent)]
+    SettledDeletionAlreadyApprovedError(SettledDeletionAlreadyApprovedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1373,7 +1393,7 @@ mod tests {
             154
         );
         // A commitment a `findBy` function found that does not meet the reference's
-        // `minimumAgeSeconds` (protocol version 14): the tail of the enum.
+        // `minimumAgeSeconds` (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentRequirementNotMetError(
                 ReferencedDocumentRequirementNotMetError::new(
@@ -1384,6 +1404,38 @@ mod tests {
                 )
             )),
             155
+        );
+        // The deletion of a settled document by the approvals of a seated moderation team
+        // (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotDeletableOnceSettledError(
+                DocumentTypeNotDeletableOnceSettledError::new(group_id, "post".to_string())
+            )),
+            156
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTeamNotSeatedError(
+                ContractModerationTeamNotSeatedError::new(group_id)
+            )),
+            157
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentNotSettledError(
+                DocumentNotSettledError::new(group_id, identity_id, 1_000, 60, 2_000)
+            )),
+            158
+        );
+        assert_eq!(
+            discriminant_of(StateError::SettledDeletionReasonMismatchError(
+                SettledDeletionReasonMismatchError::new(group_id, identity_id, Default::default(),)
+            )),
+            159
+        );
+        assert_eq!(
+            discriminant_of(StateError::SettledDeletionAlreadyApprovedError(
+                SettledDeletionAlreadyApprovedError::new(group_id, identity_id, identity_id)
+            )),
+            160
         );
     }
 }

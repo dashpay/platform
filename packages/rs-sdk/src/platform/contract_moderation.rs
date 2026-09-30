@@ -1,7 +1,8 @@
 //! Contract moderation queries: one identity's status on a moderated contract
 //! (`getContractModerationStatus`), one page of a contract's banlist, suspension list or
-//! warning list (`getContractModerationEntries`) and the records of the documents its
-//! moderators deleted (`getContractDocumentRemovals`).
+//! warning list (`getContractModerationEntries`), the records of the documents its
+//! moderators deleted (`getContractDocumentRemovals`) and the approvals its seated moderation
+//! team gave the deletion of settled documents (`getContractSettledDeletions`).
 //!
 //! A moderated contract declares in its config which lists it keeps
 //! (`DataContractConfig::moderation`). A status query names the lists to read, and each must be
@@ -20,6 +21,12 @@
 //!   whose moderators' deletions keep records (`moderatorAbilities.delete`, without
 //!   `deleteKeepsRecord: false`): no other keeps records, and the node refuses a query over a
 //!   tree that does not exist.
+//! * [`ContractSettledDeletions::fetch`] with a [`ContractSettledDeletionsPageQuery`] returns
+//!   the approvals a seated moderation team gave the deletion of settled documents within one
+//!   document type, selected as removal records are: one record per document, open, lapsed, or
+//!   met and the document deleted (`deleted_at`). The document type must say who of the team
+//!   approves such a deletion (`moderatorAbilities.deleteSettled`): no other keeps approvals,
+//!   and the node refuses the query.
 //!
 //! Every type also implements [`FetchUnproved`] for the unverified fast path.
 
@@ -31,10 +38,16 @@ use dapi_grpc::platform::v0::get_contract_document_removals_request::{
 };
 use dapi_grpc::platform::v0::get_contract_moderation_entries_request::GetContractModerationEntriesRequestV0;
 use dapi_grpc::platform::v0::get_contract_moderation_status_request::GetContractModerationStatusRequestV0;
+use dapi_grpc::platform::v0::get_contract_settled_deletions_request::get_contract_settled_deletions_request_v0::Selection as SettledDeletionsSelection;
+use dapi_grpc::platform::v0::get_contract_settled_deletions_request::{
+    DocumentIds as SettledDeletionsDocumentIds, GetContractSettledDeletionsRequestV0,
+    Page as SettledDeletionsPage,
+};
 use dapi_grpc::platform::v0::{
     get_contract_document_removals_request, get_contract_moderation_entries_request,
-    get_contract_moderation_status_request, GetContractDocumentRemovalsRequest,
-    GetContractModerationEntriesRequest, GetContractModerationStatusRequest,
+    get_contract_moderation_status_request, get_contract_settled_deletions_request,
+    GetContractDocumentRemovalsRequest, GetContractModerationEntriesRequest,
+    GetContractModerationStatusRequest, GetContractSettledDeletionsRequest,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
@@ -42,11 +55,12 @@ use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 pub use drive_proof_verifier::types::contract_moderation::{
     default_contract_document_removals_limit, default_contract_moderation_entries_limit,
-    list_to_request, ContractDocumentRemoval, ContractDocumentRemovalEntry,
-    ContractDocumentRemovals, ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
-    ContractModerationEntries, ContractModerationEntriesQuery, ContractModerationEntry,
-    ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
-    ContractWarning,
+    default_contract_settled_deletions_limit, list_to_request, ContractDocumentRemoval,
+    ContractDocumentRemovalEntry, ContractDocumentRemovals, ContractDocumentRemovalsQuery,
+    ContractDocumentRemovalsSelection, ContractModerationEntries, ContractModerationEntriesQuery,
+    ContractModerationEntry, ContractModerationList, ContractModerationListStatus,
+    ContractModerationListStatuses, ContractSettledDeletion, ContractSettledDeletionEntry,
+    ContractSettledDeletions, ContractSettledDeletionsQuery, ContractWarning,
 };
 
 /// Query for one identity's status on a moderated contract.
@@ -282,4 +296,113 @@ impl Fetch for ContractDocumentRemovals {
 
 impl FetchUnproved for ContractDocumentRemovals {
     type Request = GetContractDocumentRemovalsRequest;
+}
+
+/// Query for the approvals a moderated contract keeps of the deletion of settled documents of
+/// one of its document types: one page of them, or the records of the document ids named.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractSettledDeletionsPageQuery {
+    /// The moderated contract.
+    pub contract_id: Identifier,
+    /// The document type, and which of its records to read.
+    pub query: ContractSettledDeletionsQuery,
+}
+
+impl ContractSettledDeletionsPageQuery {
+    /// The first page of the records of `document_type_name`, up to the page cap of
+    /// `platform_version`: the version of the network queried (`Sdk::version`), whose cap is
+    /// the one the node enforces.
+    pub fn new(
+        contract_id: Identifier,
+        document_type_name: String,
+        platform_version: &PlatformVersion,
+    ) -> Self {
+        Self {
+            contract_id,
+            query: ContractSettledDeletionsQuery {
+                document_type_name,
+                selection: ContractDocumentRemovalsSelection::Page {
+                    start_after: None,
+                    limit: default_contract_settled_deletions_limit(platform_version),
+                },
+            },
+        }
+    }
+
+    /// The records of `document_ids` alone, from one to the page cap of the network queried.
+    /// A document no approval was given for is left out of the answer rather than refused.
+    pub fn for_document_ids(
+        contract_id: Identifier,
+        document_type_name: String,
+        document_ids: Vec<Identifier>,
+    ) -> Self {
+        Self {
+            contract_id,
+            query: ContractSettledDeletionsQuery {
+                document_type_name,
+                selection: ContractDocumentRemovalsSelection::DocumentIds(document_ids),
+            },
+        }
+    }
+
+    /// Bounds the page to `limit` records, leaving a read by ids as it is: it is already
+    /// bounded by the ids it names.
+    pub fn with_limit(mut self, limit: u16) -> Self {
+        if let ContractDocumentRemovalsSelection::Page { start_after, .. } = &self.query.selection {
+            self.query.selection = ContractDocumentRemovalsSelection::Page {
+                start_after: *start_after,
+                limit,
+            };
+        }
+        self
+    }
+
+    /// The query for the page after `page`, or `None` when `page` holds fewer records than the
+    /// limit and so was the last. A read by ids has no page after it.
+    pub fn after(&self, page: &ContractSettledDeletions) -> Option<Self> {
+        page.next_query(&self.query).map(|query| Self {
+            contract_id: self.contract_id,
+            query,
+        })
+    }
+}
+
+impl Query<GetContractSettledDeletionsRequest> for ContractSettledDeletionsPageQuery {
+    fn query(
+        &self,
+        settings: &QuerySettings<'_>,
+    ) -> Result<GetContractSettledDeletionsRequest, Error> {
+        let selection = match &self.query.selection {
+            ContractDocumentRemovalsSelection::DocumentIds(document_ids) => {
+                SettledDeletionsSelection::DocumentIds(SettledDeletionsDocumentIds {
+                    document_ids: document_ids.iter().map(|id| id.to_vec()).collect(),
+                })
+            }
+            ContractDocumentRemovalsSelection::Page { start_after, limit } => {
+                SettledDeletionsSelection::Page(SettledDeletionsPage {
+                    start_after: start_after.map(|id| id.to_vec()),
+                    limit: Some(u32::from(*limit)),
+                })
+            }
+        };
+        Ok(GetContractSettledDeletionsRequest {
+            version: Some(get_contract_settled_deletions_request::Version::V0(
+                GetContractSettledDeletionsRequestV0 {
+                    contract_id: self.contract_id.to_vec(),
+                    document_type_name: self.query.document_type_name.clone(),
+                    selection: Some(selection),
+                    prove: settings.prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Fetch for ContractSettledDeletions {
+    type Query = GetContractSettledDeletionsRequest;
+    type Request = GetContractSettledDeletionsRequest;
+}
+
+impl FetchUnproved for ContractSettledDeletions {
+    type Request = GetContractSettledDeletionsRequest;
 }

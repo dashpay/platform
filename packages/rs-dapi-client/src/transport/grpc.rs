@@ -348,6 +348,15 @@ impl_transport_request_grpc!(
     get_contract_document_removals
 );
 
+// rpc getContractSettledDeletions(GetContractSettledDeletionsRequest) returns (GetContractSettledDeletionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractSettledDeletionsRequest,
+    platform_proto::GetContractSettledDeletionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_settled_deletions
+);
+
 // rpc getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse);
 impl_transport_request_grpc!(
     platform_proto::GetContractFeePotsRequest,

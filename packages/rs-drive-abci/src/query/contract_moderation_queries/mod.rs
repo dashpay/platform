@@ -6,6 +6,7 @@ mod contract_document_removals;
 mod contract_fee_pots;
 mod contract_moderation_entries;
 mod contract_moderation_status;
+mod contract_settled_deletions;
 
 use crate::error::query::QueryError;
 use crate::error::Error;
