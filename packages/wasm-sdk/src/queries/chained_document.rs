@@ -284,3 +284,44 @@ impl WasmSdk {
         ))
     }
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use crate::queries::contract_moderation::joined_removal_tests::{
+        assert_joined_removal, field, removal_entry,
+    };
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::platform::DocumentQuery;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// A join off a `moderatedDocument` property reports a removed outer document by its
+    /// record in `removedOuterDocuments`, identifiers as `Identifier`s like `missingOuterIds`.
+    /// Only a proved fetch produces such a result, so the conversion is fed one directly.
+    #[wasm_bindgen_test]
+    fn a_removed_outer_document_crosses_with_its_record() {
+        let contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("the DPNS contract loads");
+        let query = ChainedDocumentQuery::new(
+            DocumentQuery::new(contract, "domain").expect("a documents query"),
+            "parentDomainName",
+            "domain",
+        );
+        let entry = removal_entry();
+        let chained = ChainedDocuments {
+            removed_outer_documents: vec![entry.clone()],
+            ..Default::default()
+        };
+
+        let result: JsValue = chained_result_to_js(&chained, &query)
+            .expect("the result converts")
+            .into();
+
+        assert_eq!(Array::from(&field(&result, "missingOuterIds")).length(), 0);
+        let removed = Array::from(&field(&result, "removedOuterDocuments"));
+        assert_eq!(removed.length(), 1);
+        assert_joined_removal(&removed.get(0), &entry);
+    }
+}
