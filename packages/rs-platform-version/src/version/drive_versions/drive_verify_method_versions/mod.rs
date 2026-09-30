@@ -182,6 +182,12 @@ pub struct DriveVerifyVoteMethodVersions {
     pub verify_contests_proof: FeatureVersion,
     pub verify_vote_polls_by_end_date_proof: FeatureVersion,
     pub verify_specialized_balance: FeatureVersion,
+    /// Verifies a contract's compilation readiness round (pointer, record, raw count).
+    pub verify_readiness_round: FeatureVersion,
+    /// Verifies one accepted readiness report of a round.
+    pub verify_readiness_report: FeatureVersion,
+    /// Verifies a readiness fund balance.
+    pub verify_readiness_fund: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
