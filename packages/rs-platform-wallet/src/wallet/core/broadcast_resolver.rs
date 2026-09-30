@@ -311,7 +311,8 @@ pub(crate) struct ProbeSchedule {
     /// Where the every-block window starts: the first height-driven pass that
     /// saw the root while the wallet followed the tip. `None` until then —
     /// the root was only seen by a forced pass, whose height may be a stale
-    /// stored tip — and it is due at every pass that runs meanwhile.
+    /// stored tip. Only anchored passes probe unforced roots, and they set the
+    /// window first; `None` counting as in-window matters for `next_due`.
     window_start: Option<u32>,
     last_probe: Option<u32>,
 }
@@ -614,7 +615,8 @@ pub(crate) fn begin_pass(
             schedule.anchor(anchor);
         }
         let forced = forced_roots.contains(&view.txid);
-        if forced || schedule.is_due(height) {
+        // Without an anchor the pass is confined to forced roots.
+        if forced || (anchor.is_some() && schedule.is_due(height)) {
             due.push_back(DueRoot {
                 txid: view.txid,
                 transaction: Arc::clone(&view.transaction),
@@ -740,15 +742,16 @@ pub(crate) struct WalletRead {
 }
 
 /// An `Uncertain` result is queued for every wallet; only one holding the
-/// transaction acts on it. `None`: nothing to do for this wallet — no height
-/// asked for the pass and it holds none of `forced`.
+/// transaction acts on it. `None`: nothing to do for this wallet — the pass
+/// need not `walk` the records (it is confined to forced roots and has no
+/// verdicts to clear) and the wallet holds none of `forced`.
 fn forced_held(
-    by_height: bool,
+    walk: bool,
     forced: HashSet<Txid>,
     holds: impl Fn(&Txid) -> bool,
 ) -> Option<HashSet<Txid>> {
     let forced: HashSet<Txid> = forced.into_iter().filter(|txid| holds(txid)).collect();
-    (by_height || !forced.is_empty()).then_some(forced)
+    (walk || !forced.is_empty()).then_some(forced)
 }
 
 /// Where passes read wallets from.
@@ -758,11 +761,12 @@ pub(crate) trait WalletSource: Send + Sync {
     async fn holders(&self, txid: Txid) -> Vec<WalletId>;
 
     /// `None`: no such wallet. `Some(None)`: nothing to do (see
-    /// [`forced_held`]) — decided without walking the records.
+    /// [`forced_held`]) — decided without walking the records. `walk` is read
+    /// once the wallet is at hand: a catch-up may clear it meanwhile.
     async fn read(
         &self,
         wallet_id: WalletId,
-        by_height: bool,
+        walk: &AtomicBool,
         forced: HashSet<Txid>,
     ) -> Option<Option<WalletRead>>;
 }
@@ -798,14 +802,16 @@ impl WalletSource for ManagerSource {
     async fn read(
         &self,
         wallet_id: WalletId,
-        by_height: bool,
+        walk: &AtomicBool,
         forced: HashSet<Txid>,
     ) -> Option<Option<WalletRead>> {
         let manager = self.0.read().await;
         let info = manager.get_wallet_info(&wallet_id)?;
         // Checked again under this lock: the record may have left since the
         // holders lookup (a sweep, a removal).
-        let forced = forced_held(by_height, forced, |txid| holds(info, txid));
+        let forced = forced_held(walk.load(Ordering::SeqCst), forced, |txid| {
+            holds(info, txid)
+        });
         Some(forced.map(|forced| WalletRead {
             views: collect_views(info),
             synced_height: info.core_wallet.synced_height(),
@@ -924,6 +930,10 @@ struct Run {
     anchor_at: Option<u32>,
     /// It carries txids an `Uncertain` result forced.
     has_forced: bool,
+    /// Whether the read walks the records even when none of the forced txids
+    /// is held: shared with the read job, and cleared by a catch-up when the
+    /// pass has nothing left to do there — no anchor, no verdicts to clear.
+    walk: Arc<AtomicBool>,
     abort: AbortHandle,
     probing: Option<Probing>,
 }
@@ -1087,13 +1097,29 @@ impl Actor {
                             entry.pending = None;
                         }
                     }
-                    let Some(run) = entry.run.as_mut() else {
+                    // With verdicts out the pass runs on, for the clears.
+                    let has_verdicts = self
+                        .state
+                        .published
+                        .keys()
+                        .any(|(wallet, _)| *wallet == wallet_id);
+                    let Some(run) = self
+                        .wallets
+                        .get_mut(&wallet_id)
+                        .and_then(|entry| entry.run.as_mut())
+                    else {
                         return;
                     };
                     run.anchor_at = None;
-                    // Still reading, with nothing forced: nothing it could
-                    // probe — stop the walk over the records now.
-                    if run.probing.is_none() && !run.has_forced {
+                    if !has_verdicts {
+                        run.walk.store(false, Ordering::SeqCst);
+                    }
+                    if let Some(probing) = run.probing.as_mut() {
+                        probing.due.retain(|root| root.forced);
+                    }
+                    // Still reading, with nothing forced and nothing to clear:
+                    // stop its walk over the records now.
+                    if run.probing.is_none() && !run.has_forced && !has_verdicts {
                         run.abort.abort();
                         self.end_run(wallet_id);
                     }
@@ -1180,13 +1206,13 @@ impl Actor {
         };
         let anchor_at = pending.anchor_at;
         let has_forced = !pending.forced.is_empty();
+        let walk = Arc::new(AtomicBool::new(anchor_at.is_some()));
         self.next_run += 1;
         let run = self.next_run;
         let source = Arc::clone(&self.source);
+        let job_walk = Arc::clone(&walk);
         let abort = self.jobs.spawn(async move {
-            let read = source
-                .read(wallet_id, anchor_at.is_some(), pending.forced)
-                .await;
+            let read = source.read(wallet_id, &job_walk, pending.forced).await;
             JobDone::Read {
                 wallet_id,
                 run,
@@ -1201,6 +1227,7 @@ impl Actor {
             woken: false,
             anchor_at,
             has_forced,
+            walk,
             abort,
             probing: None,
         });
@@ -1354,9 +1381,6 @@ impl Actor {
         let Some(probing) = run.probing.as_mut() else {
             return;
         };
-        if run.anchor_at.is_none() {
-            probing.due.retain(|root| root.forced);
-        }
         if let Some(root) = probing.due.pop_front() {
             let probe = Arc::clone(&self.probe);
             let id = run.id;
@@ -2333,8 +2357,8 @@ mod tests {
     struct FakeSource {
         views: StdMutex<HashMap<WalletId, Vec<OutgoingView>>>,
         walks: StdMutex<Vec<WalletId>>,
-        /// The synced height every read reports.
-        synced: StdMutex<u32>,
+        /// The synced height each wallet's reads report.
+        synced: StdMutex<HashMap<WalletId, u32>>,
     }
 
     #[async_trait]
@@ -2352,18 +2376,24 @@ mod tests {
         async fn read(
             &self,
             wallet_id: WalletId,
-            by_height: bool,
+            walk: &AtomicBool,
             forced: HashSet<Txid>,
         ) -> Option<Option<WalletRead>> {
             let views = self.views.lock().expect("views").get(&wallet_id)?.clone();
-            let forced = forced_held(by_height, forced, |txid| {
+            let forced = forced_held(walk.load(Ordering::SeqCst), forced, |txid| {
                 views.iter().any(|view| view.txid == *txid)
             });
             Some(forced.map(|forced| {
                 self.walks.lock().expect("walks").push(wallet_id);
                 WalletRead {
                     views,
-                    synced_height: *self.synced.lock().expect("synced"),
+                    synced_height: self
+                        .synced
+                        .lock()
+                        .expect("synced")
+                        .get(&wallet_id)
+                        .copied()
+                        .unwrap_or(0),
                     forced,
                 }
             }))
@@ -2422,9 +2452,10 @@ mod tests {
         /// wallet's synced height along, as the SPV client does before it
         /// reports the step.
         fn handle(&mut self, command: Command) {
-            if let Command::Height { height, .. } = command {
+            if let Command::Height { wallet_id, height } = command {
                 let mut synced = self.source.synced.lock().expect("synced");
-                *synced = (*synced).max(height);
+                let at = synced.entry(wallet_id).or_insert(0);
+                *at = (*at).max(height);
             }
             self.actor.handle(command);
         }
@@ -2960,7 +2991,7 @@ mod tests {
     /// queued at — a catch-up whose height step has not arrived yet — is
     /// stale: it neither probes by schedule nor starts a window.
     #[tokio::test]
-    async fn should_treat_a_pass_whose_read_is_far_ahead_as_stale() {
+    async fn should_treat_a_pass_whose_read_is_far_ahead_as_catch_up() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
         let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), Vec::new());
@@ -2971,10 +3002,17 @@ mod tests {
             touched: true,
         })
         .await;
-        *rig.source.synced.lock().expect("synced") = 1_101;
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 1_101);
 
         rig.height(wallet(), 102).await;
-        assert!(probe.probed().is_empty(), "stale: no probe during the scan");
+        assert!(
+            probe.probed().is_empty(),
+            "catch-up: no probe during the scan"
+        );
         rig.height(wallet(), 1_101).await;
         for height in 1_102..=1_105 {
             rig.height(wallet(), height).await;
@@ -3020,7 +3058,11 @@ mod tests {
             wallet_id: wallet(),
             height: 102,
         });
-        *rig.source.synced.lock().expect("synced") = 50; // rewound
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 50); // rewound
         rig.settle().await;
 
         assert_eq!(probe.probed().len(), before);
@@ -3031,8 +3073,15 @@ mod tests {
     #[tokio::test]
     async fn should_stop_a_reading_pass_with_nothing_forced_on_a_catch_up() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        // No verdict published: nothing for the pass to clear.
+        rig.views(wallet(), Vec::new());
         rig.follow(wallet(), 100).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: true,
+        })
+        .await;
         let walks = rig.walks();
 
         rig.handle(Command::Height {
@@ -3047,6 +3096,79 @@ mod tests {
 
         assert_eq!(rig.walks(), walks);
         assert!(rig.actor.wallets[&wallet()].run.is_none());
+    }
+
+    /// A catch-up does not stop a reading pass while the host holds verdicts
+    /// for the wallet: the pass still clears the send that settled.
+    #[tokio::test]
+    async fn should_let_a_pass_clear_verdicts_through_a_catch_up() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        assert_eq!(
+            rig.sent(),
+            vec![ResolverEvent::Verdict(txid(1), unresolved())]
+        );
+        rig.views(wallet(), Vec::new()); // settled
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 140,
+        });
+        rig.settle().await;
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+    }
+
+    /// A catch-up takes the anchor from a queued pass that carries a forced
+    /// txid; the pass still runs, confined to what was forced, and — with the
+    /// txid no longer held — without walking the records.
+    #[tokio::test]
+    async fn should_run_a_forced_pass_overtaken_by_a_catch_up_without_an_anchor() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        // No verdict published: nothing for the pass to clear.
+        rig.views(wallet(), Vec::new());
+        rig.follow(wallet(), 100).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: true,
+        })
+        .await;
+        let walks = rig.walks();
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 103,
+        });
+        rig.actor
+            .wallets
+            .get_mut(&wallet())
+            .and_then(|entry| entry.pending.as_mut())
+            .expect("queued")
+            .forced
+            .insert(txid(9));
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 140,
+        });
+
+        let run = rig.actor.wallets[&wallet()]
+            .run
+            .as_ref()
+            .expect("the forced pass");
+        assert_eq!(run.anchor_at, None);
+        assert!(!run.walk.load(Ordering::SeqCst));
+        rig.settle().await;
+        assert_eq!(rig.walks(), walks, "txid 9 is not held: no walk");
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
