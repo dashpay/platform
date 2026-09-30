@@ -49,6 +49,8 @@ impl Drive {
     ///
     /// * The new round and the low level operations that perform the writes.
     /// * `Err(IdentityError::IdentityInsufficientBalance)` when the payer cannot fund it.
+    /// * `Err(DriveError::CorruptedCodeExecution)` when the opening derives the id of the
+    ///   contract's current round.
     /// * `Err(DriveError::VersionNotActive)` on a platform version without readiness.
     pub fn open_readiness_round_operations(
         &self,

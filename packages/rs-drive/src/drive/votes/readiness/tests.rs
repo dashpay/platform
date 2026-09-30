@@ -1112,6 +1112,55 @@ mod rounds {
     }
 
     #[test]
+    fn should_refuse_to_reopen_the_current_round() {
+        let (drive, payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = [1u8; 32];
+        let (round, _) = open_round(&drive, contract_id, payer, 10, None);
+        insert_reports(&drive, &round, 0, 1, None);
+
+        // The same opening derives the same round id.
+        let result = drive.open_readiness_round_operations(
+            opening(contract_id, payer, 10),
+            FUNDING,
+            &block_info(1_000_000, 10, 100),
+            &mut None,
+            None,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            drive
+                .fetch_readiness_round(contract_id, None, platform_version)
+                .expect("fetch"),
+            Some(round.clone())
+        );
+        assert_eq!(
+            drive
+                .fetch_readiness_round_raw_count(
+                    contract_id,
+                    round.round_id(),
+                    None,
+                    platform_version
+                )
+                .expect("count"),
+            1
+        );
+        assert_eq!(
+            drive
+                .fetch_retired_readiness_round(None, platform_version)
+                .expect("retired"),
+            None
+        );
+    }
+
+    #[test]
     fn should_leave_the_round_pending_when_a_crossing_is_estimated_or_fails() {
         let (drive, payer) = setup();
         let platform_version = PlatformVersion::latest();

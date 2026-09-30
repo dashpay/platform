@@ -6,6 +6,7 @@ use crate::drive::votes::paths::{
 };
 use crate::drive::votes::readiness::open_readiness_round_operations::ReadinessRoundFunding;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
@@ -76,6 +77,16 @@ impl Drive {
             placeholder.record_crossing(opening.accepted_at_ms, 0, u64::MAX)?;
             Some(placeholder)
         };
+        // The same opening derives the same id: retiring the current round and recreating it
+        // under its own key would queue the live round for cleanup.
+        if previous
+            .as_ref()
+            .is_some_and(|previous| previous.round_id() == round_id)
+        {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "opening a readiness round whose id is already the contract's current round",
+            )));
+        }
         let contract_tree_exists = if estimated_costs_only_with_layer_info.is_none() {
             let contracts_path = readiness_contracts_tree_path();
             self.grove_has_raw(
