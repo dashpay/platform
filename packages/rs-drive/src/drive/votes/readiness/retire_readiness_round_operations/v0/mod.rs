@@ -145,7 +145,25 @@ impl Drive {
     /// The operation that adds `amount` to the block epoch's processing fee pool, reading
     /// the current pool value in the same transaction. In estimation mode the read is
     /// priced and the write is priced as an insert of a sum item.
-    pub(crate) fn add_readiness_pool_credit_operation(
+    ///
+    /// Readiness credits reach the pool this way (the cleanup reserve at retirement, the
+    /// membership lookup fees of the block event) so that every credit leaving a readiness
+    /// fund lands in a bucket conservation counts. The write is an absolute rewrite of the
+    /// pool item, so one such operation per applied batch.
+    ///
+    /// # Parameters
+    ///
+    /// * `block_info` - The block whose epoch receives the credits.
+    /// * `amount` - The credits to add.
+    /// * `apply` - Whether to read state (`true`) or only estimate the cost (`false`).
+    /// * `transaction` - The current transaction.
+    /// * `drive_operations` - The accumulator the read cost is appended to.
+    /// * `platform_version` - The platform version to use.
+    ///
+    /// # Returns
+    ///
+    /// * The operation that writes the pool item.
+    pub fn add_readiness_pool_credit_operation(
         &self,
         block_info: &BlockInfo,
         amount: Credits,
