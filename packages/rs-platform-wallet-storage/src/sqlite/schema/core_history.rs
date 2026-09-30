@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, HashSet};
 use dashcore::hashes::Hash;
 use dashcore::{Address, OutPoint, ScriptBuf, Txid};
 use key_wallet::managed_account::transaction_record::{
-    InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+    InputDetail, OutputDetail, OutputRole, TransactionRecord,
 };
-use key_wallet::transaction_checking::{TransactionContext, TransactionType};
-use platform_wallet::changeset::CoreChangeSet;
+use key_wallet::transaction_checking::TransactionContext;
+use platform_wallet::changeset::{wallet_direction, CoreChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, Transaction};
 
@@ -299,7 +299,9 @@ fn repair_record(
                     )
                 })
         });
-    record.direction = repaired_direction(
+    // The live projection classifies with the same rule, so repair never
+    // flips a row it just wrote.
+    record.direction = wallet_direction(
         record.transaction_type,
         !inputs.is_empty(),
         has_ours,
@@ -329,34 +331,14 @@ fn repair_record(
     Ok(())
 }
 
-/// Direction of a repaired record. The Swift SDK's
-/// `PersistentTransaction.reconciledAccounting` applies the same rule; keep
-/// both in step (each side tests the same case table).
-///
-/// `has_external` counts every output that is neither ours nor an OP_RETURN
-/// burn, so an asset lock is internal only when nothing leaves the wallet.
-fn repaired_direction(
-    transaction_type: TransactionType,
-    spends_ours: bool,
-    has_ours: bool,
-    has_external: bool,
-) -> TransactionDirection {
-    if transaction_type == TransactionType::CoinJoin {
-        TransactionDirection::CoinJoin
-    } else if !spends_ours {
-        TransactionDirection::Incoming
-    } else if !has_external && (has_ours || transaction_type == TransactionType::AssetLock) {
-        TransactionDirection::Internal
-    } else {
-        TransactionDirection::Outgoing
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use dashcore::address::Payload;
     use dashcore::{PubkeyHash, Transaction as CoreTransaction, TxOut};
     use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::transaction_record::TransactionDirection;
+    use key_wallet::transaction_checking::TransactionType;
+    use platform_wallet::test_support::fold_wallet_records;
 
     use super::*;
 
@@ -493,7 +475,8 @@ mod tests {
         );
     }
 
-    /// Shared with the Swift SDK's `TransactionAccountingTests` direction table.
+    /// Shared with the Swift SDK's `TransactionAccountingTests` direction
+    /// table; pins the rule repair takes from `platform_wallet`.
     #[test]
     fn should_classify_repaired_direction_like_the_swift_sdk() {
         use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
@@ -511,10 +494,214 @@ mod tests {
         ];
         for (kind, spends_ours, has_ours, has_external, expected) in cases {
             assert_eq!(
-                repaired_direction(kind, spends_ours, has_ours, has_external),
+                wallet_direction(kind, spends_ours, has_ours, has_external),
                 expected,
                 "{kind:?} spends_ours={spends_ours} has_ours={has_ours} has_external={has_external}"
             );
+        }
+    }
+
+    const FUNDING: u64 = 100_000_000;
+    const LOCK_CREDIT: u64 = 60_000_000;
+    const LOCK_FEE: u64 = 1_000;
+
+    fn address(byte: u8) -> Address {
+        Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([byte; 20])),
+        )
+    }
+
+    fn bip44() -> AccountType {
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        }
+    }
+
+    /// The funding account's record upstream emits for a spend of one
+    /// wallet coin worth [`FUNDING`], classified the way upstream
+    /// `record_transaction` does. `outputs` are `(script, value, role)`.
+    fn funding_slice(
+        kind: TransactionType,
+        outputs: &[(ScriptBuf, u64, OutputRole)],
+    ) -> TransactionRecord {
+        let body = CoreTransaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output: OutPoint {
+                    txid: Txid::from_byte_array([0x11; 32]),
+                    vout: 0,
+                },
+                ..Default::default()
+            }],
+            output: outputs
+                .iter()
+                .map(|(script, value, _)| TxOut {
+                    value: *value,
+                    script_pubkey: script.clone(),
+                })
+                .collect(),
+            special_transaction_payload: None,
+        };
+        let details: Vec<OutputDetail> = outputs
+            .iter()
+            .enumerate()
+            .map(|(index, (script, value, role))| OutputDetail {
+                index: index as u32,
+                role: *role,
+                address: Address::from_script(script, dashcore::Network::Testnet).ok(),
+                value: *value,
+            })
+            .collect();
+        let owned: u64 = details
+            .iter()
+            .filter(|d| matches!(d.role, OutputRole::Received | OutputRole::Change))
+            .map(|d| d.value)
+            .sum();
+        let has_sent = details.iter().any(|d| d.role == OutputRole::Sent);
+        let direction = if !has_sent && owned > 0 {
+            TransactionDirection::Internal
+        } else {
+            TransactionDirection::Outgoing
+        };
+        TransactionRecord::new(
+            body,
+            bip44(),
+            TransactionContext::Mempool,
+            kind,
+            direction,
+            vec![InputDetail {
+                index: 0,
+                value: FUNDING,
+                address: address(1),
+            }],
+            details,
+            owned as i64 - FUNDING as i64,
+        )
+    }
+
+    /// The keys account's thin marker for an asset lock: `Internal`, no
+    /// details, net `+credit` (the OP_RETURN output's value).
+    fn keys_marker(funding: &TransactionRecord) -> TransactionRecord {
+        let credit = funding.transaction.output[0].value;
+        TransactionRecord::new(
+            funding.transaction.clone(),
+            AccountType::AssetLockAddressTopUp,
+            TransactionContext::Mempool,
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            Vec::new(),
+            Vec::new(),
+            credit as i64,
+        )
+    }
+
+    /// The live projection and the SQLite repair must agree on a row's
+    /// net and direction, or the row flips each time storage repairs
+    /// what the live path just wrote. Covers the asset-lock shapes (no
+    /// change, change, paying an external output) and a plain
+    /// cross-account transfer.
+    #[test]
+    fn should_repair_live_folded_records_without_changing_their_accounting() {
+        let burn = || ScriptBuf::new_op_return(&[]);
+        let change = FUNDING - LOCK_CREDIT - LOCK_FEE;
+        // With no change, everything but the fee is burned into credits.
+        let lock_no_change = funding_slice(
+            TransactionType::AssetLock,
+            &[(burn(), FUNDING - LOCK_FEE, OutputRole::Unspendable)],
+        );
+        let lock_change = funding_slice(
+            TransactionType::AssetLock,
+            &[
+                (burn(), LOCK_CREDIT, OutputRole::Unspendable),
+                (address(2).script_pubkey(), change, OutputRole::Change),
+            ],
+        );
+        let lock_external = funding_slice(
+            TransactionType::AssetLock,
+            &[
+                (burn(), LOCK_CREDIT, OutputRole::Unspendable),
+                (
+                    address(2).script_pubkey(),
+                    change - 5_000,
+                    OutputRole::Change,
+                ),
+                (address(9).script_pubkey(), 5_000, OutputRole::Sent),
+            ],
+        );
+        // Output 0 lands on a second account of the same wallet, which the
+        // funding account's local view can only call `Sent`.
+        let transfer = funding_slice(
+            TransactionType::Standard,
+            &[(
+                address(3).script_pubkey(),
+                FUNDING - LOCK_FEE,
+                OutputRole::Sent,
+            )],
+        );
+        let mut transfer_receiver = transfer.clone();
+        transfer_receiver.account_type = AccountType::Standard {
+            index: 1,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        transfer_receiver.direction = TransactionDirection::Incoming;
+        transfer_receiver.input_details.clear();
+        transfer_receiver.output_details[0].role = OutputRole::Received;
+        transfer_receiver.net_amount = (FUNDING - LOCK_FEE) as i64;
+
+        let lock_net = -((LOCK_CREDIT + LOCK_FEE) as i64);
+        let cases = [
+            (
+                "asset lock, no change",
+                vec![lock_no_change.clone(), keys_marker(&lock_no_change)],
+                TransactionDirection::Internal,
+                -(FUNDING as i64),
+            ),
+            (
+                "asset lock, change",
+                vec![lock_change.clone(), keys_marker(&lock_change)],
+                TransactionDirection::Internal,
+                lock_net,
+            ),
+            (
+                "asset lock, no change, funding slice alone",
+                vec![lock_no_change.clone()],
+                TransactionDirection::Internal,
+                -(FUNDING as i64),
+            ),
+            (
+                "asset lock paying an external output",
+                vec![lock_external.clone(), keys_marker(&lock_external)],
+                TransactionDirection::Outgoing,
+                lock_net - 5_000,
+            ),
+            (
+                "cross-account transfer",
+                vec![transfer, transfer_receiver],
+                TransactionDirection::Internal,
+                -(LOCK_FEE as i64),
+            ),
+        ];
+        for (name, mut records, direction, net) in cases {
+            fold_wallet_records(&mut records);
+            assert_eq!(records.len(), 1, "{name}");
+            let live = &records[0];
+            assert_eq!(live.direction, direction, "{name}: live direction");
+            assert_eq!(live.net_amount, net, "{name}: live net");
+
+            let mut conn = wallet_db("testnet");
+            store(&conn, live);
+            let tx = conn.transaction().unwrap();
+            repair_record(&tx, &WALLET_ID, &live.txid, dashcore::Network::Testnet).unwrap();
+            let repaired = prior_record(&tx, &WALLET_ID, &live.txid).unwrap().unwrap();
+
+            assert_eq!(
+                repaired.direction, live.direction,
+                "{name}: repaired direction"
+            );
+            assert_eq!(repaired.net_amount, live.net_amount, "{name}: repaired net");
         }
     }
 }

@@ -35,6 +35,7 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
+use crate::changeset::wallet_accounting::apply_wallet_accounting;
 use crate::wallet::platform_wallet::WalletId;
 
 use dpp::balances::credits::Credits;
@@ -423,9 +424,6 @@ impl HighestUsedIndexes {
 /// −0.005 stored for a −2.61920199 spend).
 ///
 /// The fold, per txid group of 2+ records:
-/// - `net_amount` — the SUM of the slices: each account's
-///   `received − spent` over disjoint detail sets, so the sum is the
-///   wallet's `Σreceived − Σspent` by construction.
 /// - `input_details` / `output_details` — the union (deduped by input
 ///   index / output index): the slices are disjoint per account, and the
 ///   union is exactly the wallet-relevant view downstream consumers
@@ -433,15 +431,7 @@ impl HighestUsedIndexes {
 /// - `fee` — the first `Some` (only the funding account's record carries
 ///   one, and disjoint accounts cannot disagree); left `None` when no
 ///   record knew it.
-/// - `direction` — recomputed over the MERGED details with the same rule
-///   upstream applies per account (`record_transaction`): `CoinJoin`
-///   transaction type wins outright; otherwise no `Sent` output + our
-///   inputs + our outputs → `Internal` (a cross-account move whose
-///   account-local slices said `Outgoing`/`Incoming` is, wallet-level, a
-///   self-transfer); otherwise our inputs → `Outgoing`, else `Incoming`.
-///   Deriving from the net's sign instead erased `Internal` and
-///   `CoinJoin`: an internal transfer nets −fee and would relabel
-///   `Outgoing`.
+/// - `net_amount` / `direction` — see the wallet-level pass below.
 /// - `context` — the most advanced in the group (`Mempool` <
 ///   `InstantSend` < `InBlock` < `InChainLockedBlock`), so a group mixing
 ///   a stale mempool observation with a confirmed one keeps the
@@ -451,6 +441,22 @@ impl HighestUsedIndexes {
 ///   input details) so the row's account attribution names the spender,
 ///   else the first record.
 ///
+/// Then EVERY record — folded or single — gets its wallet-level
+/// `net_amount` and `direction` from its details via
+/// [`apply_wallet_accounting`], the rule the SQLite repair also applies,
+/// so a row never changes accounting when storage repairs it:
+/// - `net_amount` is `Σ owned outputs − Σ owned inputs`. Over
+///   detail-bearing slices that equals the sum of their nets, but a
+///   keys-account marker's `+credit` (Platform credits, not Core funds)
+///   stays out: an asset lock nets `−(credit + fee)`, not `−fee`.
+/// - `direction` is [`wallet_direction`](super::wallet_direction): account-local slices that said
+///   `Outgoing`/`Incoming` for a cross-account move become `Internal`, and
+///   an asset lock with no change is `Internal` like one with change.
+///   Deriving direction from the net's sign instead would erase
+///   `Internal` and `CoinJoin`.
+/// - A group or record with no details at all (keys markers only) keeps
+///   upstream's net and direction.
+///
 /// Order-preserving for untouched records; a fold lands at the group's
 /// FIRST position (`group[0]`) regardless of which record supplied the
 /// funding metadata, so unrelated records between two slices never move
@@ -458,8 +464,16 @@ impl HighestUsedIndexes {
 /// reach here (filtered at projection — see
 /// `core_bridge::is_contact_watch_only`).
 pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
-    use key_wallet::managed_account::transaction_record::{OutputRole, TransactionDirection};
-    use key_wallet::transaction_checking::transaction_router::TransactionType;
+    fold_groups(records);
+    for record in records.iter_mut() {
+        apply_wallet_accounting(record);
+    }
+}
+
+/// The per-txid merge of [`fold_same_txid_records`], before the
+/// wallet-level accounting pass.
+fn fold_groups(records: &mut Vec<TransactionRecord>) {
+    use key_wallet::managed_account::transaction_record::OutputRole;
 
     if records.len() < 2 {
         return;
@@ -547,30 +561,10 @@ pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
         drop_idx.insert(base_pos);
         let first_pos = group[0];
         drop_idx.remove(&first_pos);
+        // The slice sum stands only for a detail-less group (keys
+        // markers alone); `apply_wallet_accounting` recomputes net and
+        // direction from the merged details otherwise.
         merged.net_amount = net;
-        // Wallet-level direction over the merged details — same rule
-        // upstream applies per account (see the doc comment). The sign
-        // of the net cannot express `Internal` or `CoinJoin`.
-        merged.direction = if merged.transaction_type == TransactionType::CoinJoin {
-            TransactionDirection::CoinJoin
-        } else {
-            let has_inputs = !merged.input_details.is_empty();
-            let has_sent = merged
-                .output_details
-                .iter()
-                .any(|d| d.role == OutputRole::Sent);
-            let has_our_outputs = merged
-                .output_details
-                .iter()
-                .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
-            if !has_sent && has_inputs && has_our_outputs {
-                TransactionDirection::Internal
-            } else if has_inputs {
-                TransactionDirection::Outgoing
-            } else {
-                TransactionDirection::Incoming
-            }
-        };
         folded.insert(first_pos, merged);
     }
 
