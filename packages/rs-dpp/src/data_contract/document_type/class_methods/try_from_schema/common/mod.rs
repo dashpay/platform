@@ -4018,7 +4018,10 @@ pub(super) fn apply_index_only(
         // The binding derivation is shared with the rs-drive insert path
         // (see `index::preallocation`); rejecting a flag with no binding
         // here is what lets that path trust every `preallocated: true` it
-        // sees.
+        // sees. A binding through a moderatedDocument reference also needs
+        // the target's removal record to keep every key it binds, which
+        // only the parse of the whole contract can see
+        // (`validate_preallocated_indexes_kept_on_removal`).
         if index.preallocated
             && index
                 .preallocation_bindings(
@@ -4030,10 +4033,11 @@ pub(super) fn apply_index_only(
             return Err(structure_error(format!(
                 "index \"{}\" on indexOnly document type \"{}\" declares `preallocated`, \
                  but its path is not determined by a reference: every index property must \
-                 be either a property with a same-contract permanentDocument `refersTo` \
-                 declaration (the referring property — its value is the referenced \
-                 document's $id; a deletableDocument declaration does not qualify, \
-                 since the trees would outlive a deleted target) or a referring value of \
+                 be either a property with a same-contract permanentDocument or \
+                 moderatedDocument `refersTo` declaration (the referring property — its \
+                 value is the referenced document's $id; a deletableDocument declaration \
+                 does not qualify, since the trees would outlive a deleted target with \
+                 nothing left to say what they were keyed by) or a referring value of \
                  that declaration's `where` \
                  (consensus-equal to a referenced-document property, which may be the \
                  referenced document's $ownerId or $creatorId). The referring document's \

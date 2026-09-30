@@ -45,7 +45,9 @@ mod v1;
 mod v2;
 mod v3;
 
-pub(in crate::data_contract) use v3::resolve_derived_index_properties;
+pub(in crate::data_contract) use v3::{
+    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+};
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 

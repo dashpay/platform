@@ -108,6 +108,8 @@ A removed document has no values left but those its record keeps: its id, its ow
 
 A chained or composite query that joins through a moderated reference proves each removed document's record beside the documents it joins, and reports the removal with it.
 
+An index of an `indexOnly` type may be [`preallocated`](index-only.md#preallocated) through a moderated reference when the removal record keeps every key of its path: each `where` entry the index uses compares the referenced `$ownerId` or a property the type keeps. The trees then outlive a removed post the way its record does, and a restore finds them in place.
+
 ### `deletableDocument`
 
 The same for a type whose documents can disappear without a record: deleted by their owner (`canBeDeleted`), removed by the contract's moderators when `deleteKeepsRecord` is `false`, or removed by the platform when their `ttl` passes. A type whose documents only moderators remove, keeping records, is a `moderatedDocument` target instead, and a `deletableDocument` reference to it is refused. The document must exist when the referring document is written, and may be deleted afterwards.

@@ -1765,6 +1765,26 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract update (document type update validation 1) a condition is
 ///     kept as it is or dropped for listing the property without one.
 ///
+/// 67. **A preallocated index may be bound through `moderatedDocument`**:
+///     `Index::preallocation_bindings`, in place, binds through a same-contract
+///     `moderatedDocument` reference as through a `permanentDocument` one, and a
+///     binding records its kind (`PreallocationBinding::kind`). Through a moderated
+///     reference a binding holds only when the removal record of the referenced
+///     document keeps every key it binds, the referenced `$ownerId` or a property
+///     the referenced type lists under `moderatorAbilities.deleteKeepsFields`
+///     (`is_path_listed`), never `$creatorId`
+///     (`PreallocationBinding::is_kept_on_removal`). `create_document_types_from_document_schemas`
+///     1 refuses, under full validation, a preallocated index with no binding that
+///     holds (`validate_preallocated_indexes_kept_on_removal`,
+///     `InvalidContractStructure`), and the Drive insert of a referenced document
+///     (`add_document_for_contract_operations` 1) and the document cost model
+///     preallocate only through one that holds
+///     (`Index::preallocation_bindings_for_target`, now given the referenced type).
+///     A moderator's removal leaves the trees, like its record, and a restore,
+///     which puts the document back through the create path, finds them in place.
+///     Inert for every contract that could be registered before: a moderated
+///     reference never bound a preallocated index.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

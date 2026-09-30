@@ -321,11 +321,23 @@ may declare `preallocated: true` iff every index property is either the
 referring property itself (its value is the referenced document's `$id`)
 or a referring value of that reference's `where` (consensus-equal to a
 referenced-document property, its `$ownerId` and `$creatorId` included),
-and the reference is a `permanentDocument` one targeting a document type
-of the **same contract**. A `deletableDocument` reference shapes the path
-the same way but does not qualify: its target can be deleted, and the
-trees created alongside it would outlive it with other owners' entries
-inside. `byHashtagPost` (`[hashtag, postId]`) qualifies:
+and the reference is a `permanentDocument` or `moderatedDocument` one
+targeting a document type of the **same contract**. A `deletableDocument`
+reference shapes the path the same way but does not qualify: its target can
+be deleted without a record, and the trees created alongside it would
+outlive it with other owners' entries inside and nothing left to say what
+they were keyed by. A `moderatedDocument` target leaves state only through a
+moderator's removal, whose record is never deleted, so its trees outlive it
+the way the record does, and a restore (which puts the document back through
+the create path) finds them in place. Through such a reference a binding
+counts only when the record keeps every key it binds: the referenced
+`$ownerId`, or a property the referenced type lists under
+`moderatorAbilities.deleteKeepsFields` (`PreallocationBinding::is_kept_on_removal`).
+Registration refuses a preallocated index with no such binding
+(`validate_preallocated_indexes_kept_on_removal`, once every document type
+of the contract is parsed), and the insert path preallocates only through
+one (`Index::preallocation_bindings_for_target`, given the referenced
+type). `byHashtagPost` (`[hashtag, postId]`) qualifies:
 `hashtag` through `where`, `postId` as the reference;
 `byLiker` (`[$ownerId]`) cannot, since no referenced document determines
 the liker. An `[authorId, postId]` index whose `authorId` agrees with the

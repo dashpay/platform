@@ -25,6 +25,7 @@
 //!   false` dry-run — which now sweeps the referring type's layers —
 //!   upper-bounds the applied storage fee.
 
+use super::chained_query_e2e_tests::remove_post;
 use super::index_only_e2e_tests::{
     assert_grovedb_is_consistent, build_like, count_top_k, delete_like, doctype_path, insert_like,
     likes_query, platform_version, read_grove_element,
@@ -36,6 +37,8 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+use dpp::data_contract::config::DataContractConfig;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
@@ -1006,6 +1009,161 @@ fn should_skip_preallocation_for_a_bound_value_wider_than_the_referring_property
     assert!(
         read_grove_element(&drive, &hashtag_level, b"dash").is_some(),
         "a hashtag a like can carry is preallocated as before"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ---------------------------------------------------------------------------
+// Through a moderatedDocument reference
+// ---------------------------------------------------------------------------
+
+/// The preallocated fixture's `post` and `like` alone, with the post taken
+/// down only by the moderators, each removal on the record keeping the fields
+/// `kept` lists (none when `None`), and `like.postId` a `moderatedDocument`
+/// reference to it.
+fn setup_likes_of_a_moderated_post(kept: Option<&[&str]>) -> (Drive, DataContract) {
+    let pv = platform_version();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let mut schema = json_document_to_json_value(
+        "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json",
+    )
+    .expect("read contract fixture");
+    let document_schemas = schema["documentSchemas"]
+        .as_object_mut()
+        .expect("document schemas");
+    document_schemas.retain(|name, _| name == "post" || name == "like");
+    document_schemas["post"]["moderatorAbilities"] = match kept {
+        Some(kept) => json!({ "delete": true, "deleteKeepsFields": kept }),
+        None => json!({ "delete": true }),
+    };
+    document_schemas["like"]["properties"]["postId"]["refersTo"]["type"] =
+        json!("moderatedDocument");
+    let config = DataContractConfig::default_for_version(pv)
+        .expect("default config available")
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: false,
+        }));
+    schema["config"] = serde_json::to_value(config).expect("config serializes");
+    let contract = DataContract::try_from_platform_versioned(
+        serde_json::from_value(schema).expect("contract serialization format"),
+        false,
+        &mut vec![],
+        pv,
+    )
+    .expect("parse the moderated-post contract");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the contract");
+    (drive, contract)
+}
+
+/// A moderated post whose removal record keeps its hashtag preallocates the
+/// like trees of both `byHashtagPost` and `byPost`, as a permanent post does.
+/// A moderator's removal of the post leaves them, like the record; a like of the post is still removed, and the
+/// restore puts the post back through the create path onto the trees already
+/// there, paying for none of them again.
+#[test]
+fn should_preallocate_through_a_moderated_reference_whose_record_keeps_the_path() {
+    let (drive, contract) = setup_likes_of_a_moderated_post(Some(&["hashtag"]));
+    let post = build_post(&contract, "dash", 1);
+    let post_id = post.id().to_buffer();
+    let first_insert = insert_post(&drive, &contract, &post, true).expect("insert post");
+
+    let base = doctype_path(&contract);
+    let mut hashtag_post_level = base.clone();
+    hashtag_post_level.extend([b"hashtag".to_vec(), b"dash".to_vec(), b"postId".to_vec()]);
+    let mut hashtag_member_bucket = hashtag_post_level.clone();
+    hashtag_member_bucket.push(post_id.to_vec());
+    let mut by_post_level = base.clone();
+    by_post_level.push(b"postId".to_vec());
+    let mut by_post_member_bucket = by_post_level.clone();
+    by_post_member_bucket.push(post_id.to_vec());
+    let assert_preallocated = |when: &str| {
+        assert!(
+            read_grove_element(&drive, &hashtag_member_bucket, &[0]).is_some(),
+            "the byHashtagPost member bucket must be there {when}"
+        );
+        assert!(
+            read_grove_element(&drive, &by_post_member_bucket, &[0]).is_some(),
+            "the byPost member bucket must be there {when}"
+        );
+    };
+    assert_preallocated("once the post is inserted");
+
+    let like = build_like(&contract, "dash", post_id, OWNER_1, 1);
+    insert_like(&drive, &contract, &like, true).expect("insert like");
+
+    remove_post(&drive, &contract, post_id, None);
+    assert_preallocated("after the post is removed");
+    assert_eq!(
+        count_top_k(&drive, &by_post_level, 10, true),
+        vec![(1, post_id.to_vec())],
+        "the like of the removed post stays counted"
+    );
+
+    delete_like(&drive, &contract, like.clone(), true).expect("unlike the removed post");
+    assert_preallocated("after the last like of the removed post is removed");
+
+    let restore = insert_post(&drive, &contract, &post, true).expect("restore the post");
+    assert!(
+        restore.storage_fee < first_insert.storage_fee,
+        "the restore must not pay for the trees again: {} >= {}",
+        restore.storage_fee,
+        first_insert.storage_fee
+    );
+    insert_like(&drive, &contract, &like, true).expect("like the restored post");
+    assert_eq!(
+        count_top_k(&drive, &by_post_level, 10, true),
+        vec![(1, post_id.to_vec())]
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Through a moderatedDocument reference, a post preallocates only the trees
+/// its removal record would keep every key of: with no field kept,
+/// `byHashtagPost`, keyed by the post's hashtag, is left to the first like,
+/// while `byPost`, keyed by the post's id alone, is preallocated. (Such a
+/// contract only parses without full validation: registration refuses a
+/// preallocated index none of whose bindings the record keeps.)
+#[test]
+fn should_not_preallocate_through_a_moderated_reference_whose_record_drops_a_key() {
+    let (drive, contract) = setup_likes_of_a_moderated_post(None);
+    let post = build_post(&contract, "dash", 1);
+    let post_id = post.id().to_buffer();
+    let estimated = insert_post(&drive, &contract, &post, false).expect("estimate post");
+    let actual = insert_post(&drive, &contract, &post, true).expect("insert post");
+    assert!(
+        estimated.storage_fee >= actual.storage_fee,
+        "estimated post storage fee {} must upper-bound actual {}",
+        estimated.storage_fee,
+        actual.storage_fee
+    );
+
+    let base = doctype_path(&contract);
+    assert!(
+        matches!(
+            read_grove_element(&drive, &base, b"hashtag"),
+            Some(grovedb::Element::Tree(None, _))
+        ),
+        "no hashtag trees may be preallocated for a hashtag the record drops"
+    );
+    let mut by_post_member_bucket = base.clone();
+    by_post_member_bucket.extend([b"postId".to_vec(), post_id.to_vec()]);
+    assert!(
+        read_grove_element(&drive, &by_post_member_bucket, &[0]).is_some(),
+        "the id-bound byPost trees must still be preallocated"
     );
 
     assert_grovedb_is_consistent(&drive);
