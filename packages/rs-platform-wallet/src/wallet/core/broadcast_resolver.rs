@@ -610,20 +610,6 @@ impl ResolverState {
         }
     }
 
-    /// A rewind replays the chain: every root of `wallet_id` starts its
-    /// schedule over (due at once, window from the next following pass).
-    fn restart_schedules(&mut self, wallet_id: &WalletId) {
-        for ((wallet, _), schedule) in self.schedules.iter_mut() {
-            if wallet == wallet_id {
-                *schedule = ProbeSchedule::default();
-            }
-        }
-        // The replay may drop a block a probe saw: roots found mined are
-        // asked again, and so are roots found dead — one may have become a
-        // root only because its parent counted as mined.
-        self.finished.retain(|(wallet, _), _| wallet != wallet_id);
-    }
-
     /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
     fn mined(&self, wallet_id: &WalletId) -> HashSet<Txid> {
         self.finished
@@ -1253,12 +1239,18 @@ impl Actor {
                 let previous = entry.height.replace(height);
                 let rewound = previous.is_some_and(|previous| height < previous);
                 if rewound {
-                    // The wait was worked out from the schedules restarted below.
+                    // A rewind replays the chain: whatever the resolver kept
+                    // for the wallet may rest on blocks the replay drops — a
+                    // root found mined, a child that became a root only then —
+                    // so it starts over: every verdict cleared, every root due
+                    // at once, its window from the next following pass. A run
+                    // under way marks nothing into that.
                     entry.wait_until = None;
                     if let Some(run) = entry.run.as_mut() {
                         run.marks = false;
                     }
-                    self.state.restart_schedules(&wallet_id);
+                    let events = self.state.forget_wallet(&wallet_id, "rewound");
+                    deliver(&self.sink, events);
                 }
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
@@ -3613,24 +3605,30 @@ mod tests {
         assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
     }
 
-    /// A step back (a rewind for a rescan) starts every root's schedule over:
-    /// due at once, its window from the next following pass.
+    /// A step back (a rewind for a rescan) starts the wallet over: every
+    /// verdict cleared — the root's and the ones its chain inherited alike —
+    /// every schedule gone, so every root is due at once.
     #[tokio::test]
-    async fn should_restart_schedules_on_a_rewind() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        assert_eq!(
-            rig.actor.state.schedules[&(wallet(), txid(1))].last_probe,
-            Some(101)
+    async fn should_start_over_on_a_rewind() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
         );
+        rig.follow(wallet(), 100).await;
+        rig.sent();
 
         rig.height(wallet(), 50).await;
 
         assert_eq!(
-            rig.actor.state.schedules[&(wallet(), txid(1))],
-            ProbeSchedule::default()
+            rig.sent(),
+            vec![
+                ResolverEvent::Cleared(txid(1)),
+                ResolverEvent::Cleared(txid(2)),
+            ]
         );
+        assert!(rig.actor.state.schedules.is_empty());
+        assert!(rig.actor.state.finished.is_empty());
         assert_eq!(rig.actor.wallets[&wallet()].wait_until, None);
     }
 

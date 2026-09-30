@@ -28,7 +28,15 @@
 //! 1560020, both outputs spent → `-25`). Before a dead verdict the probe
 //! therefore asks nodes whether they know the txid at all (DAPI
 //! `getTransaction`, served from the evonode's transaction index); a node that
-//! knows it settles the verdict as accepted.
+//! knows it rules out a dead verdict.
+//!
+//! Mined needs two distinct nodes reporting the transaction in a block
+//! ([`MINED_QUORUM`]); one such report makes it accepted — it exists — and the
+//! second opinion is asked by lookup, not by resubmitting. On a network with
+//! a single reachable evonode (a devnet pinned to one address) nothing is
+//! ever mined by probe, only accepted; the wallet's own block processing
+//! settles it. A block two nodes saw that a reorg drops before its ChainLock
+//! (seconds on Dash) is not revisited: Mined is final.
 //!
 //! The two DAPI implementations surface those codes differently — the JS
 //! server maps `-25` to `InvalidArgument`, rs-dapi to `FailedPrecondition` —
@@ -176,11 +184,13 @@ pub trait AcceptanceProbe: Send + Sync + 'static {
     async fn probe(&self, transaction: &Transaction) -> ProbeVerdict;
 }
 
-/// Evidence rules shared by every probe: stop at the first node that holds
-/// the transaction; call it dead only when [`DEAD_QUORUM`] distinct nodes
-/// refuse it for its inputs **and** [`DEAD_QUORUM`] distinct nodes do not know
-/// its txid; give up after [`MAX_SUBMISSIONS_PER_PROBE`] submissions and
-/// [`MAX_LOOKUPS_PER_PROBE`] lookups.
+/// Evidence rules shared by every probe: a node holding the transaction in its
+/// mempool makes it accepted; one reporting it in a block rules out dead and
+/// sends the probe to lookups for a second opinion ([`MINED_QUORUM`] distinct
+/// nodes make it mined); dead needs [`DEAD_QUORUM`] distinct nodes refusing
+/// it for its inputs **and** [`DEAD_QUORUM`] distinct nodes not knowing its
+/// txid, with none knowing it; give up after [`MAX_SUBMISSIONS_PER_PROBE`]
+/// submissions and [`MAX_LOOKUPS_PER_PROBE`] lookups.
 pub(crate) async fn probe_with(
     submitter: &dyn NodeSubmitter,
     transaction: &Transaction,
@@ -201,9 +211,10 @@ pub(crate) async fn probe_with(
         match verdict {
             NodeVerdict::Accepted => return ProbeVerdict::Accepted,
             NodeVerdict::Mined => {
-                if mined.add(node) {
-                    return ProbeVerdict::Mined;
-                }
+                // In a block by this node's word: not dead. A second opinion
+                // comes from a lookup, not from sending it again.
+                mined.add(node);
+                return confirm_by_lookup(submitter, &transaction.txid(), mined, None).await;
             }
             NodeVerdict::Dead { reason } => {
                 // A dead verdict from an unidentified node cannot count
@@ -213,13 +224,8 @@ pub(crate) async fn probe_with(
                 }
                 dead_reason.get_or_insert(reason);
                 if dead_nodes.len() >= DEAD_QUORUM {
-                    return confirm_dead(
-                        submitter,
-                        &transaction.txid(),
-                        dead_reason.unwrap_or_default(),
-                        mined,
-                    )
-                    .await;
+                    return confirm_by_lookup(submitter, &transaction.txid(), mined, dead_reason)
+                        .await;
                 }
             }
             NodeVerdict::Unknown { reason } => {
@@ -228,9 +234,6 @@ pub(crate) async fn probe_with(
         }
     }
 
-    if mined.seen {
-        return ProbeVerdict::Accepted;
-    }
     ProbeVerdict::Unresolved {
         reason: match dead_reason {
             Some(reason) => format!(
@@ -262,15 +265,17 @@ impl MinedEvidence {
     }
 }
 
-/// A rejection for missing or spent inputs is also what a *mined* transaction
-/// whose outputs are all spent gets (see the module docs). Ask nodes whether
-/// they know the txid: one that does settles it as accepted; only
-/// [`DEAD_QUORUM`] distinct nodes not knowing it confirm the dead verdict.
-async fn confirm_dead(
+/// Settle by `getTransaction` lookups. A node that knows the txid in its
+/// mempool makes it accepted; in a block, counts towards [`MINED_QUORUM`] and
+/// rules out dead. With `refused` — the dead quorum of refusals is met — only
+/// [`DEAD_QUORUM`] distinct nodes not knowing the txid, and none knowing it,
+/// make it dead: a rejection for missing or spent inputs is also what a
+/// *mined* transaction whose outputs are all spent gets (see the module docs).
+async fn confirm_by_lookup(
     submitter: &dyn NodeSubmitter,
     txid: &Txid,
-    reason: String,
     mut mined: MinedEvidence,
+    refused: Option<String>,
 ) -> ProbeVerdict {
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
@@ -293,8 +298,12 @@ async fn confirm_dead(
                 if let Some(node) = node {
                     not_found.insert(node);
                 }
-                if not_found.len() >= DEAD_QUORUM {
-                    return ProbeVerdict::Dead { reason };
+                if let Some(reason) = &refused {
+                    if !mined.seen && not_found.len() >= DEAD_QUORUM {
+                        return ProbeVerdict::Dead {
+                            reason: reason.clone(),
+                        };
+                    }
                 }
             }
             LookupAnswer::Unknown { reason } => last_unknown = reason,
@@ -304,10 +313,13 @@ async fn confirm_dead(
         return ProbeVerdict::Accepted;
     }
     ProbeVerdict::Unresolved {
-        reason: format!(
-            "refused as {reason}, but only {} of {DEAD_QUORUM} nodes confirmed the txid is unknown; last lookup answer: {last_unknown}",
-            not_found.len()
-        ),
+        reason: match refused {
+            Some(reason) => format!(
+                "refused as {reason}, but only {} of {DEAD_QUORUM} nodes confirmed the txid is unknown; last lookup answer: {last_unknown}",
+                not_found.len()
+            ),
+            None => last_unknown,
+        },
     }
 }
 
@@ -693,20 +705,49 @@ mod tests {
     /// must not settle a transaction as mined: two distinct nodes must.
     #[tokio::test]
     async fn should_report_mined_only_when_two_distinct_nodes_have_it_in_a_block() {
-        let two = ScriptedNodes::new(vec![
-            (Some("a"), NodeVerdict::Mined),
-            (Some("b"), NodeVerdict::Mined),
-        ]);
-        let same_twice = ScriptedNodes::new(vec![
-            (Some("a"), NodeVerdict::Mined),
-            (Some("a"), NodeVerdict::Mined),
-        ]);
+        let two = ScriptedNodes::with_lookups(
+            vec![(Some("a"), NodeVerdict::Mined)],
+            vec![(Some("b"), LookupAnswer::Known { mined: true })],
+        );
+        let same_twice = ScriptedNodes::with_lookups(
+            vec![(Some("a"), NodeVerdict::Mined)],
+            vec![(Some("a"), LookupAnswer::Known { mined: true })],
+        );
 
         assert_eq!(probe_with(&two, &transaction()).await, ProbeVerdict::Mined);
+        assert_eq!(two.submissions(), 1, "the second opinion is a lookup");
         assert_eq!(
             probe_with(&same_twice, &transaction()).await,
             ProbeVerdict::Accepted,
             "one node's word: it exists, not that it is final"
+        );
+    }
+
+    /// A node that has the transaction in a block rules out dead, whatever
+    /// the refusals and lookups that follow say.
+    #[tokio::test]
+    async fn should_never_call_dead_a_transaction_a_node_has_in_a_block() {
+        let refused_then_seen_mined = ScriptedNodes::with_lookups(
+            vec![(Some("a"), dead()), (Some("b"), dead())],
+            vec![
+                (Some("c"), LookupAnswer::Known { mined: true }),
+                (Some("d"), LookupAnswer::NotFound),
+                (Some("e"), LookupAnswer::NotFound),
+            ],
+        );
+        let mined_then_refused = ScriptedNodes::new(vec![
+            (Some("a"), NodeVerdict::Mined),
+            (Some("b"), dead()),
+            (Some("c"), dead()),
+        ]);
+
+        assert_eq!(
+            probe_with(&refused_then_seen_mined, &transaction()).await,
+            ProbeVerdict::Accepted
+        );
+        assert_eq!(
+            probe_with(&mined_then_refused, &transaction()).await,
+            ProbeVerdict::Accepted
         );
     }
 
