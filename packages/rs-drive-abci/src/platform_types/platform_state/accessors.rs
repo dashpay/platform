@@ -1,5 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::masternode::v0::{apply_diff_in_stored_form, in_stored_form};
 use crate::platform_types::platform_state::masternode_list_changes::MasternodeListChanges;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
@@ -138,10 +139,12 @@ pub trait PlatformStateV0Methods {
     /// Sets the current instant lock validating quorums.
     fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet);
 
-    /// Sets the full masternode list.
+    /// Sets the full masternode list. Its states must be in stored form (see
+    /// `in_stored_form`), as `insert_masternode` keeps them.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>);
 
-    /// Sets the list of high performance masternodes.
+    /// Sets the list of high performance masternodes. Its states must be in
+    /// stored form (see `in_stored_form`), as `insert_masternode` keeps them.
     fn set_hpmn_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>);
     /// Sets the platform initialization information.
     fn set_genesis_block_info(&mut self, info: Option<BlockInfo>);
@@ -170,19 +173,23 @@ pub trait PlatformStateV0Methods {
     /// Returns a mutable reference to the instant lock validating quorums.
     fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet;
 
-    /// Returns a mutable reference to the full masternode list.
+    /// Returns a mutable reference to the full masternode list. States written
+    /// through it must be in stored form (see `in_stored_form`).
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem>;
 
     /// Returns a mutable reference to the list of high performance masternodes.
+    /// States written through it must be in stored form (see `in_stored_form`).
     fn hpmn_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem>;
 
     /// Adds or replaces a masternode in the full list, and in the HPMN list when
-    /// it is an Evo node. Records the change for the per-entry store.
+    /// it is an Evo node. Records the change for the per-entry store. The
+    /// state is kept in the form it is stored in (see `in_stored_form`).
     fn insert_masternode(&mut self, masternode: MasternodeListItem);
 
     /// Applies a Core state diff to a listed masternode in both lists, recording
-    /// an entry change only when its stored state changes. Returns false,
-    /// changing nothing, when the masternode is not listed.
+    /// an entry change only when its stored state changes. The state stays in
+    /// the form it is stored in. Returns false, changing nothing, when the
+    /// masternode is not listed.
     fn apply_masternode_state_diff(
         &mut self,
         pro_tx_hash: &ProTxHash,
@@ -556,7 +563,8 @@ impl PlatformStateV0Methods for PlatformState {
         &mut self.hpmn_masternode_list
     }
 
-    fn insert_masternode(&mut self, masternode: MasternodeListItem) {
+    fn insert_masternode(&mut self, mut masternode: MasternodeListItem) {
+        masternode.state = in_stored_form(masternode.state);
         let pro_tx_hash = masternode.pro_tx_hash;
         if masternode.node_type == MasternodeType::Evo {
             self.hpmn_masternode_list
@@ -577,11 +585,11 @@ impl PlatformStateV0Methods for PlatformState {
         let Some(masternode) = self.full_masternode_list.get_mut(pro_tx_hash) else {
             return false;
         };
-        let previous_state = masternode.state.clone();
-        masternode.state.apply_diff(state_diff.clone());
-        let entry_changed = masternode.state != previous_state;
+        let updated_state = apply_diff_in_stored_form(&masternode.state, state_diff);
+        let entry_changed = updated_state != masternode.state;
+        masternode.state = updated_state;
         if let Some(hpmn) = self.hpmn_masternode_list.get_mut(pro_tx_hash) {
-            hpmn.state.apply_diff(state_diff.clone());
+            hpmn.state = apply_diff_in_stored_form(&hpmn.state, state_diff);
         }
         self.heavy_fields_dirty = true;
         // A mixed Core diff can include payment-only updates alongside real
