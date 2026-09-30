@@ -21,8 +21,9 @@ pub const PROTOCOL_VERSION_17: ProtocolVersion = 17;
 ///   `[Votes] / r / 1`, the block event's fairness cursor at `[Votes] / r / 2`, the retired
 ///   round cleanup queue at `[Votes] / r / 3`, and the readiness funds sum tree at
 ///   `[PreFundedSpecializedBalances] / 129` beside the voting funds. Genesis creates them
-///   through `add_initial_vote_tree_main_structure_operations` generation 1; three verifiers
-///   prove a round, a report and a fund.
+///   through `add_initial_vote_tree_main_structure_operations` generation 1. The three
+///   verifiers of a round, a report and a fund are generation 0 in every verify table, so the
+///   verify table is unchanged.
 /// * `DRIVE_ABCI_METHOD_VERSIONS_V11` selects generation 3 of the protocol change hook, which
 ///   creates the same structures on upgraded nodes.
 /// * `VOTING_VERSION_V3` declares the structure versions of the round, report record and
@@ -35,7 +36,7 @@ pub const PROTOCOL_VERSION_17: ProtocolVersion = 17;
 /// any network is asked to propose this version.
 pub const PLATFORM_V17: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_17,
-    drive: DRIVE_VERSION_V10, // changed: compilation readiness storage, genesis setup and verifiers
+    drive: DRIVE_VERSION_V10, // changed: compilation readiness storage and genesis setup
     drive_abci: DriveAbciVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: protocol change hook generation 3 creates the readiness structures
         ..PLATFORM_V16.drive_abci
