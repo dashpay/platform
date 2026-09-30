@@ -313,6 +313,10 @@ pub enum LayoutNote {
     /// A preallocated indexOnly index: its value trees and empty terminal
     /// are created when the referenced document is inserted.
     Preallocated,
+    /// An indexOnly index whose entries outlive a delete of their document:
+    /// a delete leaves them to expire with their window, and a create keeps
+    /// one already standing at its key.
+    OutlivesDelete,
     /// A time window level: a document written here lands in every window
     /// that contains its time, up to this many.
     TimeRangeOverlap {
@@ -342,6 +346,7 @@ impl LayoutNote {
             LayoutNote::Contested => "contested",
             LayoutNote::SkipIfAbsent { .. } => "skipIfAbsent",
             LayoutNote::Preallocated => "preallocated",
+            LayoutNote::OutlivesDelete => "outlivesDelete",
             LayoutNote::TimeRangeOverlap { .. } => "timeRangeOverlap",
             LayoutNote::TimeRangeTtl { .. } => "timeRangeTtl",
             LayoutNote::IntegerRangeOverlap { .. } => "integerRangeOverlap",
@@ -375,6 +380,9 @@ impl LayoutNote {
                  when the referenced document is inserted"
                     .to_string()
             }
+            LayoutNote::OutlivesDelete => "outlivesDelete: a delete leaves these entries to \
+                 expire with their window, and a create keeps one already here"
+                .to_string(),
             LayoutNote::TimeRangeOverlap { windows } => {
                 format!(
                     "a document written here lands in every window containing its time: up to \
@@ -780,6 +788,9 @@ fn terminal_node(info: &IndexLevelTypeInfo, indexes: Vec<String>) -> LayoutNode 
     }
     if info.preallocated {
         notes.push(LayoutNote::Preallocated);
+    }
+    if info.outlives_delete {
+        notes.push(LayoutNote::OutlivesDelete);
     }
 
     let members = |member: LayoutNode, indexes: Vec<String>, notes: Vec<LayoutNote>| LayoutNode {

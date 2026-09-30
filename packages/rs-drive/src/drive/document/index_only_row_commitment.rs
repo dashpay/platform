@@ -11,7 +11,9 @@ use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 #[cfg(any(feature = "server", feature = "verify"))]
-use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use dpp::data_contract::document_type::{
+    index_only_row_commits_created_at, DocumentPropertyType, DocumentTypeRef,
+};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::document_methods::DocumentMethodsV0;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -151,9 +153,20 @@ pub fn index_only_row_commitment_with_preimage_size(
         preimage.extend_from_slice(&raw);
     }
 
-    if let Some(created_at) = document.created_at() {
-        preimage.extend_from_slice(b"$createdAt");
-        preimage.extend_from_slice(&created_at.to_be_bytes());
+    // `$createdAt` is committed unless only indexes whose entries outlive a
+    // delete involve it: a delete then carries no timestamp, and the entries
+    // it checks and removes are keyed by none (see
+    // `index_only_row_commits_created_at`, shared with the delete's
+    // construction and validation). A create's document carries the block
+    // time either way.
+    if index_only_row_commits_created_at(
+        document_type.required_fields(),
+        document_type.indexes().values(),
+    ) {
+        if let Some(created_at) = document.created_at() {
+            preimage.extend_from_slice(b"$createdAt");
+            preimage.extend_from_slice(&created_at.to_be_bytes());
+        }
     }
 
     // Index-bearing properties are bounded far below 64 KiB; saturate

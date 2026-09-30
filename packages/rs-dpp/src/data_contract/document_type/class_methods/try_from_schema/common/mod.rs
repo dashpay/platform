@@ -243,6 +243,10 @@ pub(super) struct ParserGeneration {
     /// (refersTo-determined indexOnly indexes). Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
     pub admit_index_preallocated: bool,
+    /// Whether the index grammar admits the `outlivesDelete` keyword
+    /// (indexOnly `timeRange` indexes with a `ttl`). Forwarded to
+    /// [`Index::try_from_value_map`] exactly like the admissions above.
+    pub admit_index_outlives_delete: bool,
     /// Whether the index grammar admits the `skipIfAbsent` keyword
     /// (conditional-participation indexOnly indexes). Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
@@ -918,6 +922,7 @@ fn parse_indices(
                             integer_range: ctx.generation.admit_integer_range,
                             terminal: ctx.generation.admit_index_terminal,
                             preallocated: ctx.generation.admit_index_preallocated,
+                            outlives_delete: ctx.generation.admit_index_outlives_delete,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
                             range_countable_implies_countable: ctx
                                 .generation
@@ -3511,6 +3516,21 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // And for `outlivesDelete`: a stored document is deleted by id, its
+        // stored row saying where each of its entries is, so a delete never
+        // lacks a value to find one by.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.outlives_delete)
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" declares `outlivesDelete`, which is \
+                 only allowed on indexOnly document types (set `indexOnly: true` on the \
+                 document type, or remove the flag)",
+                index_name, name,
+            )));
+        }
         // `skipIfAbsent` on a stored type: a document that omits a property
         // of the index's skip set writes no reference into the index; the
         // index's other optional properties keep the null layout.
@@ -4119,6 +4139,45 @@ pub(super) fn apply_index_only(
             )));
         }
 
+        // `outlivesDelete` leaves the index's entries behind when their
+        // document is deleted, so they must expire on their own: only a
+        // `timeRange` index with a `ttl` qualifies, whose windows are dropped
+        // whole once past it. A kept entry stands for the first document
+        // that wrote it, which a later one with the same key cannot change:
+        // an entry holding an amount (a sum) or payload values would keep
+        // the first document's.
+        if index.outlives_delete {
+            if index
+                .time_range
+                .as_ref()
+                .is_none_or(|time_range| time_range.ttl_seconds.is_none())
+            {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" declares \
+                     `outlivesDelete` without a `timeRange` carrying a `ttl`: the entries a \
+                     delete leaves must expire with their window, or they would count for \
+                     good",
+                    index_name, name,
+                )));
+            }
+            if index.summable.is_some() {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" declares \
+                     `outlivesDelete` together with a sum: a create keeps an entry already \
+                     there, which holds the amount of the document that wrote it",
+                    index_name, name,
+                )));
+            }
+            if !document_type.entry_payload.is_empty() {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" declares \
+                     `outlivesDelete` on a type with `entryPayload`: a create keeps an entry \
+                     already there, which holds the payload of the document that wrote it",
+                    index_name, name,
+                )));
+            }
+        }
+
         // The binding derivation is shared with the rs-drive insert path
         // (see `index::preallocation`); rejecting a flag with no binding
         // here is what lets that path trust every `preallocated: true` it
@@ -4162,9 +4221,11 @@ pub(super) fn apply_index_only(
     // If every index were time-keyed or skippable, creates and deletes of
     // the type would work while transition-proof requests failed. (Every
     // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
-    // index qualifies as the proof index.)
+    // index qualifies as the proof index.) Nor may it outlive deletes: a
+    // delete's proof shows the entry gone, which such an index keeps.
     let has_proof_index = document_type.indices.values().any(|index| {
         !index.skip_if_absent
+            && !index.outlives_delete
             && !index.terminal_contains(CREATED_AT)
             && !index
                 .properties
@@ -4174,10 +4235,11 @@ pub(super) fn apply_index_only(
     if !has_proof_index {
         return Err(structure_error(format!(
             "indexOnly document type \"{}\" must declare at least one index that neither \
-             involves $createdAt nor sets skipIfAbsent: executed-transition proofs locate \
-             entries from the transition's values alone — they cannot reproduce the block \
-             timestamp a time-keyed entry was written with, and a skipIfAbsent index has \
-             no entry for the documents it skips",
+             involves $createdAt nor sets skipIfAbsent or outlivesDelete: \
+             executed-transition proofs locate entries from the transition's values alone — \
+             they cannot reproduce the block timestamp a time-keyed entry was written with, \
+             a skipIfAbsent index has no entry for the documents it skips, and an \
+             outlivesDelete index keeps the entries a delete leaves",
             name,
         )));
     }
@@ -4253,14 +4315,18 @@ pub(super) fn apply_index_only(
         } else if !document_type
             .indices
             .values()
-            .any(|index| !index.skip_if_absent && holds_property(index))
+            .any(|index| !index.skip_if_absent && !index.outlives_delete && holds_property(index))
         {
+            // Nor may an outlivesDelete index be the only one holding it: a
+            // delete carries every schema property, and could not be checked
+            // against entries it leaves
             return Err(structure_error(format!(
                 "property \"{}\" on indexOnly document type \"{}\" does not appear in any \
-                 non-skipIfAbsent index (as a property or terminal): on an indexOnly type \
-                 only indexed values exist and are recoverable, and a skipIfAbsent index \
-                 holds no value at all for documents it skips, so the property would be \
-                 silently dropped",
+                 index that neither sets skipIfAbsent nor outlivesDelete (as a property or \
+                 terminal): on an indexOnly type only indexed values exist and are \
+                 recoverable, a skipIfAbsent index holds no value at all for documents it \
+                 skips, and an outlivesDelete index is not checked by a delete, so the \
+                 property would be silently dropped",
                 property_name, name,
             )));
         }

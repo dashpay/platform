@@ -449,6 +449,9 @@ fn parse_generation_3(
             // PREALLOCATED: the fourth generation-3 index keyword, from the
             // same shared mapping.
             admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
+            // OUTLIVES DELETE: from the same shared mapping.
+            admit_index_outlives_delete: IndexGrammarAdmissions::for_schema_generation(3)
+                .outlives_delete,
             // SKIP IF ABSENT: the fifth generation-3 index keyword, from the
             // same shared mapping.
             admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
@@ -1525,6 +1528,8 @@ mod immutable_tests;
 mod index_only_tests;
 #[cfg(all(test, feature = "validation"))]
 mod moderated_preallocation_tests;
+#[cfg(all(test, feature = "validation"))]
+mod outlives_delete_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;

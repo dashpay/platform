@@ -284,6 +284,7 @@ Expressions:
 | `integerRange.range`, `.step`, `.phase` | integers, `phase` default 0 | Each window's length, the distance between window starts, and the shift of the window boundaries. | 14 | [The keys](contract-keywords/integer-range.md#the-keys) |
 | `terminal` | property name or list | On an index-only type, what keys each entry in place of the document id. | 14 | [terminal](contract-keywords/index-only.md#terminal) |
 | `preallocated` | boolean | On an index-only type, creates the index's trees with the referenced document. | 14 | [preallocated](contract-keywords/index-only.md#preallocated) · [internals](drive/index-only-document-types.md#preallocated-index-paths) |
+| `outlivesDelete` | boolean | On an index-only type's time window with a `ttl`, a delete leaves the index's entries to expire, and a create keeps one already there. | 14 | [outlivesDelete](contract-keywords/index-only.md#outlivesdelete) · [internals](drive/index-only-document-types.md#entries-that-outlive-a-delete-outlivesdelete) |
 | `skipIfAbsent` | `true` or property names | A document missing a property of the skip set writes no entry into the index. | 14 | [skipIfAbsent](contract-keywords/indexes.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |
 
 ### System properties
