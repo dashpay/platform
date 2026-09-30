@@ -39,7 +39,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use platform_wallet::wallet::persister::NoPlatformPersistence;
+use super::harness_persister::HarnessPersister;
 use platform_wallet::PlatformWalletManager;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -76,7 +76,7 @@ impl IdentitySync {
     /// immediately; the loop runs until [`Self::stop`] is called or
     /// `cancel` fires (whichever comes first).
     pub fn start(
-        manager: Arc<PlatformWalletManager<NoPlatformPersistence>>,
+        manager: Arc<PlatformWalletManager<HarnessPersister>>,
         cancel: CancellationToken,
         interval: Duration,
     ) -> Self {
@@ -115,7 +115,7 @@ impl IdentitySync {
 }
 
 async fn run_loop(
-    manager: Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    manager: Arc<PlatformWalletManager<HarnessPersister>>,
     cancel: CancellationToken,
     interval: Duration,
 ) {
@@ -153,11 +153,7 @@ async fn run_loop(
 
 /// Single pass: snapshot every `(wallet, identity_id)` pair held by
 /// the manager and refresh each. Errors are logged and skipped.
-async fn tick(
-    manager: &PlatformWalletManager<NoPlatformPersistence>,
-    tick_n: u64,
-    elapsed_ms: u64,
-) {
+async fn tick(manager: &PlatformWalletManager<HarnessPersister>, tick_n: u64, elapsed_ms: u64) {
     use dpp::prelude::Identifier;
     use platform_wallet::wallet::WalletId;
     use platform_wallet::PlatformWallet;

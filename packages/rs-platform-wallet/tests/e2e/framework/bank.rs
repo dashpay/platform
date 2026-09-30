@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::harness_persister::HarnessPersister;
 use bip39::Mnemonic as Bip39Mnemonic;
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::AddressInfo;
@@ -32,7 +33,6 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::Wallet;
 use key_wallet::{AccountType, ChildNumber, Network};
 use parking_lot::Mutex as SyncMutex;
-use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{
     PlatformAddressChangeSet, PlatformWallet, PlatformWalletError, PlatformWalletManager,
@@ -231,7 +231,7 @@ impl BankWallet {
     /// [`Self::assert_floor`] after [`sweep_orphans`] so the sweep can
     /// recover stranded funds before the floor check fires (QA-V26-007).
     pub async fn load(
-        manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+        manager: &Arc<PlatformWalletManager<HarnessPersister>>,
         config: &Config,
     ) -> FrameworkResult<Self> {
         if config.bank_mnemonic.trim().is_empty() {

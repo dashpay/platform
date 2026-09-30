@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::harness_persister::HarnessPersister;
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::IdentityBalance;
 use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
@@ -26,7 +27,6 @@ use key_wallet::bip32::ExtendedPrivKey;
 use key_wallet::gap_limit::DIP17_GAP_LIMIT;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
-use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{PlatformWallet, PlatformWalletError, PlatformWalletManager};
 use simple_signer::signer::SimpleSigner;
@@ -148,7 +148,7 @@ struct OrphanSweepSummary {
 /// broadcast failure flips the entry to [`EntryStatus::Failed`] and
 /// retains it for next-run retry — the loop never aborts. (QA-V26-006)
 pub async fn sweep_orphans(
-    manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     bank_identity: &BankIdentity,
     registry: &PersistentTestWalletRegistry,
@@ -265,7 +265,7 @@ async fn derive_sweep_pool_signer(
 }
 
 async fn sweep_one(
-    manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     bank_identity: &BankIdentity,
     hash: &WalletSeedHash,
@@ -394,7 +394,7 @@ async fn sweep_one(
 /// branch even when an inner best-effort sweep silently logged-and-
 /// continued, leaking the funds permanently.)
 pub async fn teardown_one(
-    manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     bank_identity: &BankIdentity,
     registry: &PersistentTestWalletRegistry,

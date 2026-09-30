@@ -291,6 +291,20 @@ async fn id_002b_asset_lock_funded_top_up() {
         );
     }
 
+    // Step 7b: the top-up lock's wallet-level accounting, live and after a
+    // reload — Internal, net == -(lock + fee) (dashpay/platform#5150).
+    assert_eq!(
+        top_up_locks.len(),
+        1,
+        "ID-002b builds exactly one top-up lock"
+    );
+    crate::framework::tx_accounting::assert_tracked_lock_accounting(
+        &s.ctx.persister,
+        s.test_wallet.platform_wallet().wallet_id(),
+        top_up_locks[0],
+    )
+    .await;
+
     // Step 8: assert the test wallet's confirmed Core balance dropped
     // by approximately (TOP_UP_ASSET_LOCK_AMOUNT + asset_lock_fee +
     // core_send_fee). Use a generous lower bound on the drop to stay

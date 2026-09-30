@@ -101,3 +101,43 @@ pub fn assert_send_accounting(record: &TransactionRecord, sent_duffs: u64) {
         record.txid
     );
 }
+
+/// Deadline for a tracked lock's wallet-level record to reach the
+/// harness persister.
+const LIVE_RECORD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Pin a tracked asset lock's wallet-level accounting on both host-facing
+/// observation points of the harness persister: the live record the
+/// manager stored, and the row reread from a reopened SQLite snapshot.
+/// Both must be `Internal` with `net_amount == -(lock.amount + fee)`.
+pub async fn assert_tracked_lock_accounting(
+    persister: &super::harness_persister::HarnessPersister,
+    wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
+    lock: &platform_wallet::TrackedAssetLock,
+) {
+    let txid = lock.out_point.txid;
+    let deadline = std::time::Instant::now() + LIVE_RECORD_TIMEOUT;
+    let live = loop {
+        if let Some(record) = persister.live_record(wallet_id, &txid) {
+            break record;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no wallet-level record for asset lock {txid} reached the persister \
+             within {LIVE_RECORD_TIMEOUT:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    };
+    assert_asset_lock_accounting(&live, lock.amount);
+
+    let reloaded = persister
+        .reloaded_record(wallet_id, &txid)
+        .unwrap_or_else(|e| panic!("reload asset lock {txid}: {e}"))
+        .unwrap_or_else(|| panic!("asset lock {txid} has no row after a reload"));
+    assert_asset_lock_accounting(&reloaded, lock.amount);
+    assert_eq!(
+        (reloaded.direction, reloaded.net_amount),
+        (live.direction, live.net_amount),
+        "a reload must not change asset lock {txid}'s accounting"
+    );
+}

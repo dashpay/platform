@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use super::harness_persister::HarnessPersister;
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -20,7 +21,6 @@ use key_wallet::wallet::initialization::{
     PlatformPaymentAccountSpec, WalletAccountCreationOptions,
 };
 use key_wallet::Network;
-use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{
     PlatformAddressChangeSet, PlatformWallet, PlatformWalletError, PlatformWalletManager,
@@ -87,7 +87,7 @@ impl TestWallet {
     /// registry can persist them BEFORE the wallet is returned —
     /// a crashed test still has a recoverable record.
     pub async fn create(
-        manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+        manager: &Arc<PlatformWalletManager<HarnessPersister>>,
         seed_bytes: [u8; 64],
         network: Network,
         wait_hub: Arc<WaitEventHub>,

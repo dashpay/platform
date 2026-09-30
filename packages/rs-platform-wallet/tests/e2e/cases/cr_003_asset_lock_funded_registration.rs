@@ -292,5 +292,15 @@ async fn cr_003_asset_lock_funded_registration() {
         );
     }
 
+    // Step 7: the asset lock's wallet-level accounting, live and after a
+    // reload — Internal, net == -(lock + fee) (dashpay/platform#5150).
+    assert_eq!(tracked.len(), 1, "CR-003 builds exactly one asset lock");
+    crate::framework::tx_accounting::assert_tracked_lock_accounting(
+        &s.ctx.persister,
+        s.test_wallet.platform_wallet().wallet_id(),
+        &tracked[0],
+    )
+    .await;
+
     s.teardown().await.expect("teardown");
 }

@@ -74,6 +74,7 @@ pub mod context_provider;
 pub mod funding_ledger;
 pub mod gap_limit;
 pub mod harness;
+pub mod harness_persister;
 pub mod identities;
 pub mod identity_sync;
 pub mod registry;

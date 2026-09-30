@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::harness_persister::HarnessPersister;
 use dash_sdk::platform::types::identity::PublicKeyHash;
 use dash_sdk::platform::Fetch;
 use dash_sdk::Sdk;
@@ -39,7 +40,6 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 use key_wallet::Network;
-use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::PlatformWalletManager;
 use serde::{Deserialize, Serialize};
 
@@ -156,7 +156,7 @@ impl std::fmt::Debug for BankIdentity {
 /// 3. Auto-register from the bank's primary receive address, persist
 ///    the resulting id, return it.
 pub async fn resolve_bank_identity(
-    manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     workdir: &Path,
     bank_identity_env: Option<&str>,
@@ -330,7 +330,7 @@ async fn try_recover_on_chain(
 /// or the bank's confirmed Core balance can't cover the lock plus its L1
 /// fee.
 async fn bootstrap_register(
-    manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     network: Network,
     master_key: &IdentityPublicKey,
@@ -458,7 +458,7 @@ fn is_unconsumed_address_lock(lock_type: u8, status: u8) -> bool {
 /// - the bank's confirmed Core balance can't cover the lock plus its L1
 ///   fee — names the Core top-up address and the shortfall.
 async fn self_fund_bootstrap(
-    manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     address: &PlatformAddress,
     current_credits: Credits,

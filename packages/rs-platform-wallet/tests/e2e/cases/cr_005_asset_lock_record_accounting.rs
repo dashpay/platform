@@ -19,9 +19,12 @@
 //!    consistent `backup_to` snapshot: the live handle cannot be reopened
 //!    in-process, `SqlitePersister::open` refuses a double open).
 //!
-//! The shared harness manager runs on `NoPlatformPersistence`, so this case
-//! builds its own manager on a SQLite store and runs its own SPV client
-//! (storage under `<workdir>/cr_005/`), the way
+//! The shared harness persister (CR-003 / ID-002b / AL-001 check the same
+//! accounting through it) claims no durability, so the manager drives its
+//! non-durable paths. This case covers the durable one: its own manager on
+//! a real SQLite store (capabilities attested), with its own SPV client
+//! (SPV storage under `<workdir>/cr_005/`, the SQLite store in a private
+//! temporary directory), the way
 //! `found_coinjoin_gap_limit_sync` drives its own runtime.
 //!
 //! Funding: the bank sends [`WALLET_CORE_FUNDING`] duffs to a fresh seed.
@@ -51,6 +54,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 
 use crate::framework::bank::core_send_from_account;
+use crate::framework::harness_persister::private_temp_dir;
 use crate::framework::prelude::*;
 use crate::framework::signer::SeedBackedCoreSigner;
 use crate::framework::spv::{self, MnListErrorObserver};
@@ -185,7 +189,9 @@ async fn cr_005_asset_lock_record_accounting() {
     // wallet and a warm-but-foreign chain state; start clean.
     let _ = std::fs::remove_dir_all(&case_dir);
     std::fs::create_dir_all(&case_dir).expect("create CR-005 workdir");
-    let db_path = case_dir.join("wallet.db");
+    // SQLite refuses a group-writable ancestor, which the workdir may be.
+    let db_dir = private_temp_dir("platform-wallet-e2e-cr005-").expect("CR-005 private dir");
+    let db_path = db_dir.path().join("wallet.db");
     let sqlite = SqlitePersister::open(
         SqlitePersisterConfig::new(&db_path)
             .with_flush_mode(FlushMode::Immediate)
@@ -263,7 +269,7 @@ async fn cr_005_asset_lock_record_accounting() {
     // persisted row back.
     let snapshot: PathBuf = persister
         .inner
-        .backup_to(&case_dir.join("reload.db"))
+        .backup_to(&db_dir.path().join("reload.db"))
         .expect("snapshot CR-005 store");
     let reloaded_store =
         SqlitePersister::open(SqlitePersisterConfig::new(&snapshot).with_auto_backup_dir(None))

@@ -467,12 +467,16 @@ async fn al_001_concurrent_asset_lock_builds() {
         .asset_locks()
         .list_tracked_locks()
         .await;
-    for lock in tracked.iter().filter(|l| {
-        matches!(
-            l.funding_type,
-            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUp
-        )
-    }) {
+    let top_up_locks: Vec<_> = tracked
+        .iter()
+        .filter(|l| {
+            matches!(
+                l.funding_type,
+                key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUp
+            )
+        })
+        .collect();
+    for lock in &top_up_locks {
         assert!(
             matches!(
                 lock.status,
@@ -485,6 +489,23 @@ async fn al_001_concurrent_asset_lock_builds() {
             lock.out_point,
             lock.status
         );
+    }
+
+    // Step 5b: every concurrently built lock keeps its own wallet-level
+    // accounting, live and after a reload — Internal, net == -(lock + fee)
+    // (dashpay/platform#5150). Concurrent builds must not blend records.
+    assert_eq!(
+        top_up_locks.len(),
+        N,
+        "AL-001 builds exactly {N} top-up locks"
+    );
+    for lock in &top_up_locks {
+        crate::framework::tx_accounting::assert_tracked_lock_accounting(
+            &s.ctx.persister,
+            s.test_wallet.platform_wallet().wallet_id(),
+            lock,
+        )
+        .await;
     }
 
     // Step 6: every identity must have a chain-visible balance increase.

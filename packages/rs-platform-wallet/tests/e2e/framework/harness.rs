@@ -15,7 +15,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex as StdMutex, Once};
 use std::time::{Duration, Instant};
 
-use platform_wallet::wallet::persister::NoPlatformPersistence;
+use super::harness_persister::HarnessPersister;
 use platform_wallet::{PlatformEventHandler, PlatformWalletManager, SpvRuntime};
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use tokio::sync::OnceCell;
@@ -191,7 +191,9 @@ pub struct E2eContext {
     /// inner caches are `Arc<Mutex<...>>`, so the SDK's clone of
     /// the provider sees mutations made through this handle. (QA-900)
     pub context_provider: Arc<TrustedHttpContextProvider>,
-    pub manager: Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    pub manager: Arc<PlatformWalletManager<HarnessPersister>>,
+    /// The manager's persister, for the Core accounting checks.
+    pub persister: Arc<HarnessPersister>,
     /// SPV runtime started by [`Self::build`]. The SDK still uses
     /// the trusted HTTP context provider; this handle is exposed via
     /// [`Self::spv`] for tests that need to observe SPV state
@@ -264,7 +266,7 @@ impl E2eContext {
         &self.sdk
     }
 
-    pub fn manager(&self) -> &Arc<PlatformWalletManager<NoPlatformPersistence>> {
+    pub fn manager(&self) -> &Arc<PlatformWalletManager<HarnessPersister>> {
         &self.manager
     }
 
@@ -447,19 +449,21 @@ impl E2eContext {
             ),
         }
 
-        // Persister discards changesets (testnet re-sync is fast).
+        // Persister: non-durable to the wallet (testnet re-sync is fast),
+        // but captures wallet-level Core records and tees changesets into
+        // a SQLite store for the accounting checks (see `harness_persister`).
         // App handlers: the shared [`WaitEventHub`] so test helpers
         // await on real events instead of fixed polling, plus the
         // [`MnListErrorObserver`] so `wait_for_mn_list_synced` can
         // surface dash-spv `ManagerError`s without a post-construction
         // handler-registration escape hatch.
-        let persister: Arc<NoPlatformPersistence> = Arc::new(NoPlatformPersistence);
+        let persister = Arc::new(HarnessPersister::open());
         let wait_hub = Arc::new(WaitEventHub::new());
         let mn_list_observer = Arc::new(spv::MnListErrorObserver::new());
 
         let manager = Arc::new(PlatformWalletManager::new(
             Arc::clone(&sdk),
-            persister,
+            Arc::clone(&persister),
             vec![
                 Arc::clone(&wait_hub) as Arc<dyn PlatformEventHandler>,
                 Arc::clone(&mn_list_observer) as Arc<dyn PlatformEventHandler>,
@@ -1104,6 +1108,7 @@ impl E2eContext {
             sdk,
             context_provider,
             manager,
+            persister,
             spv_runtime,
             bank,
             bank_identity,
