@@ -261,25 +261,193 @@ fn should_refuse_a_reference_whose_document_can_leave_state_without_a_record() {
     );
 }
 
+/// A post only the moderators take down, each removal on the record keeping `kept`
+/// (`moderatorAbilities.deleteKeepsFields`), with `extra` merged in.
+fn moderated_post_keeping(kept: Value, extra: Value) -> Value {
+    merged(
+        post(platform_value!({
+            "moderatorAbilities": { "delete": true, "deleteKeepsFields": kept },
+        })),
+        extra,
+    )
+}
+
 #[test]
-fn should_refuse_any_field_but_the_owner_through_a_moderated_reference() {
-    // The removal record keeps the owner of the removed post, and nothing else of it
+fn should_admit_a_field_a_moderated_posts_removal_record_keeps() {
+    // Read from the post while it is in state, and from its removal record once a moderator
+    // removed it, which keeps the hashtag as the post held it
+    for full_validation in [true, false] {
+        let document_types = parse(
+            moderated_post_keeping(platform_value!(["hashtag"]), Value::Null),
+            reply(moderated_reference(), "postId.hashtag", Value::Null),
+            full_validation,
+        )
+        .expect("the contract should parse");
+        let reply = document_types.get("reply").expect("the reply type");
+        let derived = reply
+            .derived_index_properties()
+            .get("postId.hashtag")
+            .expect("the derived index property");
+        assert_eq!(derived.kind, DocumentReferenceKind::Moderated);
+        assert_eq!(
+            derived.field,
+            DerivedIndexField::Property("hashtag".to_string())
+        );
+        let hashtag_type = document_types
+            .get("post")
+            .and_then(|post| post.flattened_properties().get("hashtag"))
+            .map(|property| property.property_type.clone());
+        assert!(hashtag_type.is_some());
+        assert_eq!(
+            derived.property_type, hashtag_type,
+            "full validation {full_validation}"
+        );
+    }
+
+    // A property inside an object the record keeps whole
+    let meta = platform_value!({
+        "properties": {
+            "hashtag": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
+            "meta": {
+                "type": "object",
+                "properties": {
+                    "topic": { "type": "string", "maxLength": 63, "position": 0 },
+                },
+                "additionalProperties": false,
+                "position": 1,
+            },
+        },
+    });
+    let document_types = parse(
+        moderated_post_keeping(platform_value!(["meta"]), meta),
+        reply(moderated_reference(), "postId.meta.topic", Value::Null),
+        true,
+    )
+    .expect("the contract should parse");
+    let derived = document_types
+        .get("reply")
+        .and_then(|reply| reply.derived_index_properties().get("postId.meta.topic"))
+        .cloned()
+        .expect("the derived index property");
+    assert_eq!(
+        derived.field,
+        DerivedIndexField::Property("meta.topic".to_string())
+    );
+}
+
+#[test]
+fn should_refuse_a_field_a_moderated_posts_removal_record_does_not_keep() {
+    // The record keeps the owner of the removed post and the fields its type lists, and
+    // nothing else of it
     assert_refused(
         parse(
             moderated_post(),
             reply(moderated_reference(), "postId.hashtag", Value::Null),
             true,
         ),
-        "reads $ownerId only",
+        "\"hashtag\" of \"post\" is not kept by a moderator's removal",
     );
     assert_refused(
         parse(
-            merged(moderated_post(), platform_value!({ "transferable": 1 })),
+            moderated_post_keeping(platform_value!(["text"]), Value::Null),
+            reply(moderated_reference(), "postId.hashtag", Value::Null),
+            true,
+        ),
+        "is not kept by a moderator's removal",
+    );
+    // The refusal gives no advice an update could not follow: the list is fixed with the type
+    assert_refused(
+        parse(
+            moderated_post(),
+            reply(moderated_reference(), "postId.hashtag", Value::Null),
+            true,
+        ),
+        "a list fixed when the type is registered, which no update changes",
+    );
+    // Never its creator, which no record keeps
+    assert_refused(
+        parse(
+            moderated_post_keeping(
+                platform_value!(["hashtag"]),
+                platform_value!({ "transferable": 1 }),
+            ),
             reply(moderated_reference(), "postId.$creatorId", Value::Null),
             true,
         ),
-        "reads $ownerId only",
+        "never its creator",
     );
+}
+
+#[test]
+fn should_refuse_a_moderated_posts_field_no_index_can_key_before_asking_it_to_be_kept() {
+    // `text` is longer than an index key can hold: keeping it would not make it a key, so
+    // that is what the refusal says
+    let error = parse(
+        moderated_post(),
+        reply(moderated_reference(), "postId.text", Value::Null),
+        true,
+    )
+    .expect_err("the contract should be refused");
+    assert!(error.to_string().contains("maxLength"), "got {error}");
+    assert!(!error.to_string().contains("is not kept"), "got {error}");
+}
+
+/// Protocol versions 9 to 13 select the whole-contract parse that resolves derived index
+/// properties too, but no parser generation before 3, and so no protocol version before 14,
+/// declares one: a name reading through an identifier is an unknown property there, refused
+/// as it always was, and a contract otherwise parses with none.
+#[test]
+fn should_declare_no_derived_index_property_before_protocol_version_14() {
+    let platform_version = PlatformVersion::get(13).expect("platform version 13 exists");
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available");
+    let post = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeleted": false,
+        "properties": {
+            "hashtag": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
+        },
+        "required": ["hashtag"],
+        "additionalProperties": false,
+    });
+    let reply_indexed_by = |index_property: &str| {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "indices": [{ "name": "byPost", "properties": [{ index_property: "asc" }] }],
+            "properties": { "postId": identifier(0, None) },
+            "required": ["postId"],
+            "additionalProperties": false,
+        })
+    };
+    let parse_at_13 = |reply: Value| {
+        DocumentType::create_document_types_from_document_schemas(
+            Identifier::new(CONTRACT_ID),
+            1,
+            config.version(),
+            BTreeMap::from([
+                ("post".to_string(), post.clone()),
+                ("reply".to_string(), reply),
+            ]),
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+    };
+
+    let document_types =
+        parse_at_13(reply_indexed_by("postId")).expect("the contract should parse at 13");
+    assert!(document_types
+        .values()
+        .all(|document_type| document_type.derived_index_properties().is_empty()));
+
+    parse_at_13(reply_indexed_by("postId.hashtag"))
+        .expect_err("a name through an identifier is no property before 14");
 }
 
 #[test]

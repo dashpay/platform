@@ -12,9 +12,9 @@
 //! The parser admits a derived property only where the value can not change once the entry is
 //! written: the reference is fixed once written, and the field is fixed on a referenced type
 //! whose documents never leave state (`permanentDocument`) or leave it only through a
-//! moderator's removal, whose record keeps the removed document's owner
-//! (`moderatedDocument`, `$ownerId` only). So a later read finds the value the entry was
-//! written under.
+//! moderator's removal, whose record keeps the removed document's owner and the values its
+//! type lists under `moderatorAbilities.deleteKeepsFields` (`moderatedDocument`, `$ownerId` or
+//! a kept field only). So a later read finds the value the entry was written under.
 
 use crate::drive::contract::moderation::types::{
     estimated_document_removal_kept_fields_size, estimated_document_removal_value_size,
@@ -34,6 +34,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{DirectQueryType, QueryType};
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
@@ -169,7 +170,9 @@ impl Drive {
     /// validation took from the documents it fetched).
     ///
     /// A referenced document a moderator removed is read from its removal record, which keeps
-    /// its owner, the one field a `moderatedDocument` reference may derive. When `estimate` is
+    /// what a `moderatedDocument` reference may derive: its owner, and the values its type lists
+    /// under `moderatorAbilities.deleteKeepsFields`, as the document held them, decoded only
+    /// when a derived property reads one. When `estimate` is
     /// true nothing is read: the reads are priced by their worst case (the removal record's
     /// read too, and the hop to a current version keeping history), and every value is one of
     /// the field's type and typical size, which keys the document on the layout a real value
@@ -240,40 +243,39 @@ impl Drive {
                     platform_version,
                 )?,
             };
+            // The values a removal record keeps, decoded the first time a derived property
+            // reads one
+            let mut kept_values = None;
             for (name, derived) in derived_properties {
-                let value =
-                    match &read {
-                        ReferencedValues::None => Value::Null,
-                        // A value of the field's type and typical size, so a dry run prices the
-                        // entry on the layout a real value writes
-                        ReferencedValues::Estimate => derived
-                            .property_type
-                            .as_ref()
-                            .map(|property_type| {
-                                let length = property_type
-                                    .middle_size(platform_version)
-                                    .map(u32::from)
-                                    .unwrap_or_default();
-                                value_of(property_type, length, platform_version)
-                            })
-                            .unwrap_or(Value::Null),
-                        ReferencedValues::Document(referenced) => {
-                            derived.field.value_in(referenced).map_err(|error| {
-                                Error::Drive(DriveError::CorruptedDriveState(format!(
-                                    "document {} of {} can not be read at {:?}: {error}",
-                                    referenced.id(),
-                                    derived.referenced_document_type_name,
-                                    derived.field
-                                )))
-                            })?
-                        }
-                        ReferencedValues::RemovedOwner(owner_id) => match derived.field {
-                            DerivedIndexField::OwnerId => Value::Identifier(owner_id.to_buffer()),
-                            _ => return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "a moderatedDocument reference derives the referenced owner only",
-                            ))),
-                        },
-                    };
+                let value = match &read {
+                    ReferencedValues::None => Value::Null,
+                    // A value of the field's type and typical size, so a dry run prices the
+                    // entry on the layout a real value writes
+                    ReferencedValues::Estimate => derived
+                        .property_type
+                        .as_ref()
+                        .map(|property_type| {
+                            let length = property_type
+                                .middle_size(platform_version)
+                                .map(u32::from)
+                                .unwrap_or_default();
+                            value_of(property_type, length, platform_version)
+                        })
+                        .unwrap_or(Value::Null),
+                    ReferencedValues::Document(referenced) => {
+                        derived.field.value_in(referenced).map_err(|error| {
+                            Error::Drive(DriveError::CorruptedDriveState(format!(
+                                "document {} of {} can not be read at {:?}: {error}",
+                                referenced.id(),
+                                derived.referenced_document_type_name,
+                                derived.field
+                            )))
+                        })?
+                    }
+                    ReferencedValues::Removed(removal) => {
+                        removed_document_value(contract, derived, removal, &mut kept_values)?
+                    }
+                };
                 values.insert(name.clone(), value);
             }
         }
@@ -281,7 +283,7 @@ impl Drive {
     }
 
     /// Reads the document `referenced_id` of the type `derived` reads through, or, when a
-    /// moderator removed it, the owner its removal record keeps.
+    /// moderator removed it, its removal record.
     #[allow(clippy::too_many_arguments)]
     fn read_referenced_values(
         &self,
@@ -353,7 +355,7 @@ impl Drive {
                 )?;
                 match removal {
                     Some(removal) if !removal.is_restored() => {
-                        Ok(ReferencedValues::RemovedOwner(removal.document_owner_id))
+                        Ok(ReferencedValues::Removed(Box::new(removal)))
                     }
                     _ => Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                         "document {referenced_id} of {referenced_type_name}, which a derived \
@@ -478,14 +480,60 @@ impl Drive {
     }
 }
 
-/// What a derived index property reads from: the referenced document, the owner the removal
-/// record of a removed one keeps, nothing (an absent reference), or, in a dry run, a value of
-/// the field's type.
+/// What a derived index property reads from: the referenced document, the removal record of
+/// a removed one, nothing (an absent reference), or, in a dry run, a value of the field's type.
 enum ReferencedValues {
     None,
     Estimate,
     Document(Box<Document>),
-    RemovedOwner(Identifier),
+    Removed(Box<ContractDocumentRemoval>),
+}
+
+/// The value `derived` reads from `removal`, the record of the referenced document a
+/// moderator removed: the owner it keeps, or a value it keeps as the document held it,
+/// `Value::Null` where the document held none, so the key is the one the document gave while
+/// in state. `kept_values` is `None` until a derived property first reads a kept value, then
+/// the record's values, decoded under the referenced type. A field the record does not keep
+/// is refused by the parser, so reaching one is an error, never a key under a value the entry
+/// was not written under.
+fn removed_document_value(
+    contract: &DataContract,
+    derived: &DerivedIndexProperty,
+    removal: &ContractDocumentRemoval,
+    kept_values: &mut Option<BTreeMap<String, Value>>,
+) -> Result<Value, Error> {
+    let not_kept = || {
+        Error::Drive(DriveError::CorruptedCodeExecution(
+            "a moderatedDocument reference derives the referenced owner or a kept field only",
+        ))
+    };
+    let path = match &derived.field {
+        DerivedIndexField::OwnerId => {
+            return Ok(Value::Identifier(removal.document_owner_id.to_buffer()))
+        }
+        DerivedIndexField::Property(path) => path,
+        DerivedIndexField::CreatorId => return Err(not_kept()),
+    };
+    let referenced_type =
+        contract.document_type_for_name(&derived.referenced_document_type_name)?;
+    let kept_values = match kept_values {
+        Some(kept_values) => kept_values,
+        None => kept_values.insert(removal.kept_values(referenced_type).map_err(|error| {
+            Error::Drive(DriveError::CorruptedDriveState(format!(
+                "the removal record of a document of {}, which a derived index property reads, \
+                 keeps values its type can not read: {error}",
+                derived.referenced_document_type_name
+            )))
+        })?),
+    };
+    match kept_value_at(
+        referenced_type.moderator_deletion_kept_fields(),
+        kept_values,
+        path,
+    ) {
+        Some(value) => Ok(value.unwrap_or(Value::Null)),
+        None => Err(not_kept()),
+    }
 }
 
 /// The id `document` holds in `reference_property`, `None` when it holds none.

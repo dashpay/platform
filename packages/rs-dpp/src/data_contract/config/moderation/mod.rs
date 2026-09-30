@@ -42,7 +42,8 @@ pub mod elected;
 mod reason;
 mod settled_deletion;
 pub use document_removal::{
-    decode_kept_fields, encode_kept_fields, ContractDocumentRemoval, ContractDocumentRestoration,
+    decode_kept_fields, encode_kept_fields, kept_value_at, ContractDocumentRemoval,
+    ContractDocumentRestoration,
 };
 pub use elected::{
     ElectedModerators, InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,

@@ -1472,16 +1472,23 @@ pub fn property_at_path<'a>(
     Some(property)
 }
 
+/// Whether the dotted `path` is one of `paths`, or inside an object one of
+/// them names: the rule every list of property paths a type declares is read
+/// by (its transient fields, the fields a moderator's removal record keeps),
+/// and the one a write's changed fields are matched by.
+pub fn is_path_listed(paths: &BTreeSet<String>, path: &str) -> bool {
+    path.match_indices('.')
+        .map(|(end, _)| &path[..end])
+        .chain(std::iter::once(path))
+        .any(|prefix| paths.contains(prefix))
+}
+
 /// Whether the property at the dotted `path` of `document_type`, or an object
 /// around it, is transient: either way its value is never stored.
 /// `transient_fields()` holds the paths as declared, so a leaf of a transient
 /// object is found only through the object's path, a prefix of its own.
 pub fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
-    let transient_fields = document_type.transient_fields();
-    path.match_indices('.')
-        .map(|(end, _)| &path[..end])
-        .chain(std::iter::once(path))
-        .any(|prefix| transient_fields.contains(prefix))
+    is_path_listed(document_type.transient_fields(), path)
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {

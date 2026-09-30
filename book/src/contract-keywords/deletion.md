@@ -269,8 +269,9 @@ A moderator deleting a post of this type leaves a record that still says which h
 
 - The values are copied from the document as stored at the deletion, each under the path the type lists: a top-level property, a property inside an object (`meta.tags`), or a whole object (`meta`). A path the document holds no value at is left out of the record.
 - The record stores them as the document stores its properties, so they are read, as the document is, under its document type, and come back typed exactly as the document's values: the SDKs do this for you (`keptFields`). An object kept whole shows members an update added after the removal as absent, as an older document does.
-- They are read wherever the record is: `getContractDocumentRemovals`, by document id or by page, the proof of the deletion, and a join through a [`moderatedDocument`](refers-to.md#moderateddocument) reference. They are not indexed: no query finds records by a kept value.
+- They are read wherever the record is: `getContractDocumentRemovals`, by document id or by page, the proof of the deletion, and a join through a [`moderatedDocument`](refers-to.md#moderateddocument) reference. The records are not indexed by them: no query finds a record by a kept value.
 - A `moderatedDocument` reference to a removed document checks a `where` pair on a kept property against the kept value, as it would against the document.
+- An index of a referring type may hold a kept value, read through a `moderatedDocument` reference: a [derived index property](derived-index-properties.md), such as a reply's `postId.hashtag`. The value must be one an index can key and fixed once written: the example above is not, since its documents are mutable and `hashtag` is not listed under [`immutable`](mutability.md). Once the document is removed, Drive reads the value from the record.
 - A restore brings the document back and leaves the record, marked restored, with what it kept. A later deletion of the restored document writes a fresh record, with the values the document then held.
 - The moderator pays for the record, kept values included.
 

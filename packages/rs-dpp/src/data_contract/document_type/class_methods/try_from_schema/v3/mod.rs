@@ -33,6 +33,7 @@ use crate::data_contract::document_type::index::{
 #[cfg(feature = "validation")]
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property::{is_path_listed, DocumentReferenceKind};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::{
     is_transient, DocumentPropertyReferenceTarget, PropertyReference, ReferenceHolder,
@@ -782,7 +783,15 @@ fn derived_index_property_referring_side_error(
 /// * a schema property the referenced type does not have, one that is
 ///   transient or inside a transient object, one a replace or a moderator can
 ///   change, and one the index encoding can not key (the shape and ranked
-///   key-length checks every indexed property passes).
+///   key-length checks every indexed property passes);
+/// * through a `moderatedDocument` reference, a schema property a moderator's
+///   removal record does not keep: one the referenced type lists under
+///   `moderatorAbilities.deleteKeepsFields`, or one inside an object listed
+///   there, is read from the record once the document is removed.
+///
+/// The transient, fixed and key checks of a schema property need the
+/// `validation` feature; the owner, creator and kept checks run in every
+/// build.
 pub(in crate::data_contract) fn resolve_derived_index_properties(
     document_types: &mut BTreeMap<String, DocumentType>,
     data_contract_system_version: u16,
@@ -871,6 +880,22 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                                 &index_property.name,
                                 &property.property_type,
                             )?;
+                        }
+                        // In every build, like the owner and creator checks, so a client
+                        // refuses what the platform refuses; after the checks above, so a
+                        // field no index could key is not told to be kept
+                        if full_validation
+                            && derived.kind == DocumentReferenceKind::Moderated
+                            && !is_path_listed(referenced.moderator_deletion_kept_fields(), path)
+                        {
+                            return Err(refusal(format!(
+                                "\"{path}\" of \"{referenced_name}\" is not kept by a \
+                                 moderator's removal, which replaces the document a \
+                                 moderatedDocument reference points at with a record keeping \
+                                 its owner and only the fields \"{referenced_name}\" lists under \
+                                 `moderatorAbilities.deleteKeepsFields` (a list fixed when the \
+                                 type is registered, which no update changes)"
+                            )));
                         }
                         resolved.push((
                             name.clone(),

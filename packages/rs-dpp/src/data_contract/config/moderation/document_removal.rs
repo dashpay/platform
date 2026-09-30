@@ -16,7 +16,7 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use byteorder::{BigEndian, ReadBytesExt};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufReader, Read};
 
 /// The record a contract keeps of a document one of its moderators deleted.
@@ -225,6 +225,34 @@ fn read_system_property(
     }
 }
 
+/// What a removal record says of `property`, from the paths its document type keeps
+/// (`kept_paths`, its `moderatorAbilities.deleteKeepsFields`) and the values the record keeps
+/// (`kept_values`, [`ContractDocumentRemoval::kept_values`]): `None` when the record does not
+/// keep it, neither kept itself nor inside a kept object; otherwise the value, `Some(None)`
+/// when the document held none there. Kept paths never nest, so at most one covers it.
+pub fn kept_value_at(
+    kept_paths: &BTreeSet<String>,
+    kept_values: &BTreeMap<String, Value>,
+    property: &str,
+) -> Option<Option<Value>> {
+    if kept_paths.contains(property) {
+        return Some(kept_values.get(property).cloned());
+    }
+    let (kept, inner) = kept_paths.iter().find_map(|kept| {
+        let inner = property.strip_prefix(kept.as_str())?.strip_prefix('.')?;
+        Some((kept, inner))
+    })?;
+    // Down through the kept object, a member it lacks or a step through what is no object
+    // reading as absent, as a document's own path does
+    Some(
+        kept_values
+            .get(kept)
+            .and_then(|object| object.get_optional_value_at_path(inner).ok().flatten())
+            .filter(|value| !value.is_null())
+            .cloned(),
+    )
+}
+
 impl ContractDocumentRemoval {
     /// Whether the document was restored: the record then describes a removal that was
     /// undone, and the document is live again.
@@ -251,7 +279,7 @@ mod tests {
     use super::*;
     use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::document_type::DocumentType;
+    use crate::data_contract::document_type::{is_path_listed, DocumentType};
     use crate::document::DocumentV0;
     use platform_value::platform_value;
     use platform_version::version::PlatformVersion;
@@ -407,6 +435,62 @@ mod tests {
                 ("score".to_string(), Value::I64(-3)),
             ])
         );
+    }
+
+    #[test]
+    fn should_read_a_kept_path_or_a_path_inside_a_kept_object() {
+        let document_type = post_type();
+        let kept_paths = document_type.moderator_deletion_kept_fields();
+        let document = post(BTreeMap::from([
+            ("hashtag".to_string(), Value::Text("dash".to_string())),
+            (
+                "meta".to_string(),
+                Value::Map(vec![(
+                    Value::Text("tags".to_string()),
+                    Value::Array(vec![Value::Text("privacy".to_string())]),
+                )]),
+            ),
+            (
+                "extra".to_string(),
+                Value::Map(vec![(Value::Text("count".to_string()), Value::I64(7))]),
+            ),
+        ]));
+        let removal = ContractDocumentRemoval {
+            kept_fields: encode_kept_fields(&document, document_type.as_ref())
+                .expect("expected to encode"),
+            ..Default::default()
+        };
+        let kept_values = removal
+            .kept_values(document_type.as_ref())
+            .expect("expected to decode");
+        // Each as the document holds it, at the path the document holds it
+        for path in ["hashtag", "meta.tags", "extra.count"] {
+            let value = document.get(path).cloned();
+            assert!(value.is_some(), "{path}");
+            assert_eq!(
+                kept_value_at(kept_paths, &kept_values, path),
+                Some(value),
+                "{path}"
+            );
+        }
+        // Kept, but nothing where the document held nothing, inside a kept object or not
+        for path in ["meta.note", "text"] {
+            assert_eq!(
+                kept_value_at(kept_paths, &kept_values, path),
+                Some(None),
+                "{path}"
+            );
+        }
+        // Not kept: a member of an object only partly kept, the object itself, a name
+        // sharing a kept path's prefix, and the owner, which every record holds apart
+        for path in ["extra.label", "extra", "hashtagged", "$ownerId"] {
+            assert!(!is_path_listed(kept_paths, path), "{path}");
+            assert_eq!(
+                kept_value_at(kept_paths, &kept_values, path),
+                None,
+                "{path}"
+            );
+        }
     }
 
     #[test]
