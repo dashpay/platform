@@ -41,8 +41,7 @@ mod document_removal;
 pub mod elected;
 mod reason;
 pub use document_removal::{
-    kept_field_values, ContractDocumentRemoval, ContractDocumentRestoration,
-    KEEPABLE_SYSTEM_PROPERTIES,
+    decode_kept_fields, encode_kept_fields, ContractDocumentRemoval, ContractDocumentRestoration,
 };
 pub use elected::{
     ElectedModerators, InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,

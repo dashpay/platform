@@ -34376,7 +34376,7 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
     reason: (f = msg.getReason()) && proto.org.dash.platform.dapi.v0.ContractModerationReason.toObject(includeInstance, f),
     documentHash: msg.getDocumentHash_asB64(),
     restoration: (f = msg.getRestoration()) && proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.toObject(includeInstance, f),
-    keptFieldsMap: (f = msg.getKeptFieldsMap()) ? f.toObject(includeInstance, undefined) : []
+    keptFields: msg.getKeptFields_asB64()
   };
 
   if (includeInstance) {
@@ -34444,10 +34444,8 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
       msg.setRestoration(value);
       break;
     case 8:
-      var value = msg.getKeptFieldsMap();
-      reader.readMessage(value, function(message, reader) {
-        jspb.Map.deserializeBinary(message, reader, jspb.BinaryReader.prototype.readString, jspb.BinaryReader.prototype.readBytes, null, "", "");
-         });
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setKeptFields(value);
       break;
     default:
       reader.skipField();
@@ -34529,9 +34527,12 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
       proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.serializeBinaryToWriter
     );
   }
-  f = message.getKeptFieldsMap(true);
-  if (f && f.getLength() > 0) {
-    f.serializeBinary(8, writer, jspb.BinaryWriter.prototype.writeString, jspb.BinaryWriter.prototype.writeBytes);
+  f = message.getKeptFields_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      8,
+      f
+    );
   }
 };
 
@@ -34797,25 +34798,45 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
 
 
 /**
- * map<string, bytes> kept_fields = 8;
- * @param {boolean=} opt_noLazyCreate Do not create the map if
- * empty, instead returning `undefined`
- * @return {!jspb.Map<string,!(string|Uint8Array)>}
+ * optional bytes kept_fields = 8;
+ * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.getKeptFieldsMap = function(opt_noLazyCreate) {
-  return /** @type {!jspb.Map<string,!(string|Uint8Array)>} */ (
-      jspb.Message.getMapField(this, 8, opt_noLazyCreate,
-      null));
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.getKeptFields = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 8, ""));
 };
 
 
 /**
- * Clears values from the map. The map will be non-null.
+ * optional bytes kept_fields = 8;
+ * This is a type-conversion wrapper around `getKeptFields()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.getKeptFields_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getKeptFields()));
+};
+
+
+/**
+ * optional bytes kept_fields = 8;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getKeptFields()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.getKeptFields_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getKeptFields()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
  * @return {!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.clearKeptFieldsMap = function() {
-  this.getKeptFieldsMap().clear();
-  return this;};
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.setKeptFields = function(value) {
+  return jspb.Message.setProto3BytesField(this, 8, value);
+};
 
 
 

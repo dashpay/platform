@@ -133,10 +133,7 @@ impl<C> Platform<C> {
                 .drive
                 .fetch_contract_document_removals(contract_id, &query, None, platform_version));
 
-            let removals = entries
-                .into_iter()
-                .map(removal_entry_to_response)
-                .collect::<Result<_, Error>>()?;
+            let removals = entries.into_iter().map(removal_entry_to_response).collect();
 
             GetContractDocumentRemovalsResponseV0 {
                 result: Some(
@@ -170,12 +167,10 @@ mod tests {
     };
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::DataContract;
-    use dpp::platform_value::{platform_value, Value};
+    use dpp::platform_value::platform_value;
     use dpp::tests::fixtures::get_data_contract_fixture;
-    use drive::drive::contract::moderation::types::encode_kept_field_value;
     use drive::drive::Drive;
     use drive::util::batch::{ContractModerationOperationType, DriveOperation};
-    use std::collections::BTreeMap;
 
     const POST: &str = "post";
 
@@ -227,22 +222,12 @@ mod tests {
                 moderator_id: Identifier::from([0x78; 32]),
                 restored_at: 2_000 + seed as u64,
             }),
-            // Every odd record keeps fields of its document: the response carries them too, and
-            // each value keeps its type, nested ones included.
+            // Every odd record keeps fields of its document, as the document encoded them: the
+            // response carries them as the record stores them.
             kept_fields: if seed.is_multiple_of(2) {
-                BTreeMap::new()
+                Vec::new()
             } else {
-                BTreeMap::from([
-                    ("$createdAt".to_string(), Value::U64(500 + seed as u64)),
-                    ("hashtag".to_string(), Value::Text(format!("tag{seed}"))),
-                    (
-                        "meta.tags".to_string(),
-                        Value::Array(vec![
-                            Value::Text("a".to_string()),
-                            Value::Identifier([seed; 32]),
-                        ]),
-                    ),
-                ])
+                vec![1, 3, b't', b'a', b'g', seed, 0]
             },
         }
     }
@@ -255,8 +240,9 @@ mod tests {
                         contract_id: contract.id(),
                         document_type_name: POST.to_string(),
                         document_id: Identifier::from([seed; 32]),
-                        removal: removal(seed),
-                        replaces_existing: false,
+                        removal: Box::new(removal(seed)),
+                        replaced_record_size: None,
+                        estimated_kept_fields_size: 0,
                         moderator_id: Identifier::from([0x77; 32]),
                     },
                 )],
@@ -316,16 +302,7 @@ mod tests {
                     moderator_id: restoration.moderator_id.to_vec(),
                     restored_at: restoration.restored_at,
                 }),
-            kept_fields: removal
-                .kept_fields
-                .iter()
-                .map(|(path, value)| {
-                    (
-                        path.clone(),
-                        encode_kept_field_value(value).expect("expected to encode"),
-                    )
-                })
-                .collect(),
+            kept_fields: removal.kept_fields,
         }
     }
 

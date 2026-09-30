@@ -1,15 +1,23 @@
 use crate::data_contract::config::moderation::ContractModerationReason;
-use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
-    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
-    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
+use crate::data_contract::document_type::property_constraints::SystemProperty;
+use crate::data_contract::document_type::{
+    property_at_path, DocumentPropertyType, DocumentTypeRef,
+};
+use crate::data_contract::errors::DataContractError;
 use crate::document::{Document, DocumentV0Getters};
 use crate::identity::TimestampMillis;
+#[cfg(feature = "serde-conversion")]
+use crate::serialization::serde_bytes_var;
+use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
+use byteorder::{BigEndian, ReadBytesExt};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+use std::io::{BufReader, Read};
 
 /// The record a contract keeps of a document one of its moderators deleted.
 ///
@@ -23,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// the removal, which marks the record restored and leaves it in place. A later deletion of
 /// the restored document replaces the record with a fresh one.
 #[derive(
-    Debug, Clone, PartialEq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ContractDocumentRemoval {
@@ -42,12 +50,14 @@ pub struct ContractDocumentRemoval {
     pub document_hash: [u8; 32],
     /// Set once a moderator restored the document: it is live again, at its id, as it was.
     pub restoration: Option<ContractDocumentRestoration>,
-    /// The values the record keeps of the document, by the property path its type lists
-    /// under `moderatorAbilities.deleteKeepsFields`, copied from the document as it was
-    /// removed (see [`kept_field_values`]): what of it stays public once it is gone. A path
-    /// the document held no value at is left out. Empty on a type that lists none.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub kept_fields: BTreeMap<String, Value>,
+    /// The values the record keeps of the document, the fields its type lists under
+    /// `moderatorAbilities.deleteKeepsFields`, as the record stores them: encoded as the
+    /// document encodes its properties (see [`encode_kept_fields`]), so read, as a document is,
+    /// under the document's type ([`ContractDocumentRemoval::kept_values`]). What of the
+    /// document stays public once it is gone. Empty on a type that lists none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde-conversion", serde(with = "serde_bytes_var"))]
+    pub kept_fields: Vec<u8>,
 }
 
 /// The mark a restore leaves on a removal record: who brought the document back, and when.
@@ -62,56 +72,157 @@ pub struct ContractDocumentRestoration {
     pub restored_at: TimestampMillis,
 }
 
-/// The system properties a removal record can keep (`moderatorAbilities.deleteKeepsFields`):
-/// the timestamps and block heights a document carries when its type lists them in
-/// `required`. `$id` and `$ownerId` are in every record already.
-pub const KEEPABLE_SYSTEM_PROPERTIES: [&str; 9] = [
-    CREATED_AT,
-    UPDATED_AT,
-    TRANSFERRED_AT,
-    CREATED_AT_BLOCK_HEIGHT,
-    UPDATED_AT_BLOCK_HEIGHT,
-    TRANSFERRED_AT_BLOCK_HEIGHT,
-    CREATED_AT_CORE_BLOCK_HEIGHT,
-    UPDATED_AT_CORE_BLOCK_HEIGHT,
-    TRANSFERRED_AT_CORE_BLOCK_HEIGHT,
-];
+/// No value at the path.
+const KEPT_VALUE_ABSENT: u8 = 0;
+/// A value follows.
+const KEPT_VALUE_PRESENT: u8 = 1;
 
-/// The values a removal record keeps of `document`: for each path of `kept_fields`, the value
-/// the document holds there, a property at any depth or one of the
-/// [`KEEPABLE_SYSTEM_PROPERTIES`] (a time as a `U64` of milliseconds, a block height as a
-/// `U64`, a core block height as a `U32`). A path the document holds no value at, or a null,
-/// is left out.
-pub fn kept_field_values(
+/// Encodes the values a removal record keeps of `document`, a document of `document_type`
+/// (`moderatorAbilities.deleteKeepsFields`), the way the document encodes its properties: for
+/// each path the type lists, in the list's order, `0` when the document holds no value there,
+/// or `1` followed by the value as an optional property of its type is written
+/// (`DocumentPropertyType::encode_value_ref_with_size`), an object length-prefixed with its
+/// members in order, a time or a block height as eight big-endian bytes and a core block
+/// height as four. The paths themselves are not written: the type lists them and never changes
+/// the list, so a reader knows them from the type. Empty for a type that keeps none.
+pub fn encode_kept_fields(
     document: &Document,
-    kept_fields: &BTreeSet<String>,
-) -> BTreeMap<String, Value> {
-    kept_fields
-        .iter()
-        .filter_map(|path| {
-            let value = match path.as_str() {
-                CREATED_AT => document.created_at().map(Value::U64),
-                UPDATED_AT => document.updated_at().map(Value::U64),
-                TRANSFERRED_AT => document.transferred_at().map(Value::U64),
-                CREATED_AT_BLOCK_HEIGHT => document.created_at_block_height().map(Value::U64),
-                UPDATED_AT_BLOCK_HEIGHT => document.updated_at_block_height().map(Value::U64),
-                TRANSFERRED_AT_BLOCK_HEIGHT => {
-                    document.transferred_at_block_height().map(Value::U64)
+    document_type: DocumentTypeRef,
+) -> Result<Vec<u8>, ProtocolError> {
+    let mut encoded = Vec::new();
+    for path in document_type.moderator_deletion_kept_fields() {
+        let value = match SystemProperty::from_name(path) {
+            Some(property) => system_property_bytes(document, property),
+            None => {
+                let property = kept_property_type(&document_type, path)?;
+                match document.get(path).filter(|value| !value.is_null()) {
+                    Some(value) => Some(property.encode_value_ref_with_size(value, false)?),
+                    None => None,
                 }
-                CREATED_AT_CORE_BLOCK_HEIGHT => {
-                    document.created_at_core_block_height().map(Value::U32)
+            }
+        };
+        match value {
+            Some(value) => {
+                encoded.push(KEPT_VALUE_PRESENT);
+                encoded.extend(value);
+            }
+            None => encoded.push(KEPT_VALUE_ABSENT),
+        }
+    }
+    Ok(encoded)
+}
+
+/// Reads the values [`encode_kept_fields`] wrote, under `document_type`: each kept path to its
+/// value, typed as reading the document gives it, a path the document held no value at left
+/// out. Refuses bytes that end before the last path or run past it.
+pub fn decode_kept_fields(
+    encoded: &[u8],
+    document_type: DocumentTypeRef,
+) -> Result<BTreeMap<String, Value>, ProtocolError> {
+    let corrupted = |message: String| {
+        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(message))
+    };
+    let mut buf = BufReader::new(encoded);
+    let mut values = BTreeMap::new();
+    for path in document_type.moderator_deletion_kept_fields() {
+        let value = match SystemProperty::from_name(path) {
+            Some(property) => {
+                let marker = buf
+                    .read_u8()
+                    .map_err(|_| corrupted(format!("kept fields end before \"{path}\"")))?;
+                match marker {
+                    KEPT_VALUE_ABSENT => None,
+                    KEPT_VALUE_PRESENT => Some(
+                        read_system_property(&mut buf, property)
+                            .map_err(|_| corrupted(format!("kept fields end inside \"{path}\"")))?,
+                    ),
+                    marker => {
+                        return Err(corrupted(format!(
+                            "kept field \"{path}\" has unknown marker {marker}"
+                        )))
+                    }
                 }
-                UPDATED_AT_CORE_BLOCK_HEIGHT => {
-                    document.updated_at_core_block_height().map(Value::U32)
+            }
+            None => {
+                let (value, finished) = kept_property_type(&document_type, path)?
+                    .read_optionally_from(&mut buf, false)
+                    .map_err(ProtocolError::DataContractError)?;
+                if finished {
+                    return Err(corrupted(format!("kept fields end before \"{path}\"")));
                 }
-                TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
-                    document.transferred_at_core_block_height().map(Value::U32)
-                }
-                path => document.get(path).filter(|value| !value.is_null()).cloned(),
-            }?;
-            Some((path.clone(), value))
+                value
+            }
+        };
+        if let Some(value) = value {
+            values.insert(path.clone(), value);
+        }
+    }
+    let mut trailing = [0u8; 1];
+    if buf
+        .read(&mut trailing)
+        .map_err(|error| corrupted(error.to_string()))?
+        > 0
+    {
+        return Err(corrupted(
+            "kept fields run past the last path their type keeps".to_string(),
+        ));
+    }
+    Ok(values)
+}
+
+/// The type of the property at `path`, one the parser admitted as kept on `document_type`.
+fn kept_property_type<'a>(
+    document_type: &'a DocumentTypeRef,
+    path: &str,
+) -> Result<&'a DocumentPropertyType, ProtocolError> {
+    property_at_path(document_type.properties(), path)
+        .map(|property| &property.property_type)
+        .ok_or_else(|| {
+            ProtocolError::CorruptedCodeExecution(format!(
+                "document type {} keeps \"{path}\", which it does not declare",
+                document_type.name()
+            ))
         })
-        .collect()
+}
+
+/// The bytes `document` holds for `property`, as the document stores its times and heights.
+fn system_property_bytes(document: &Document, property: SystemProperty) -> Option<Vec<u8>> {
+    let long = |value: Option<u64>| value.map(|value| value.to_be_bytes().to_vec());
+    let short = |value: Option<u32>| value.map(|value| value.to_be_bytes().to_vec());
+    match property {
+        SystemProperty::CreatedAt => long(document.created_at()),
+        SystemProperty::UpdatedAt => long(document.updated_at()),
+        SystemProperty::TransferredAt => long(document.transferred_at()),
+        SystemProperty::CreatedAtBlockHeight => long(document.created_at_block_height()),
+        SystemProperty::UpdatedAtBlockHeight => long(document.updated_at_block_height()),
+        SystemProperty::TransferredAtBlockHeight => long(document.transferred_at_block_height()),
+        SystemProperty::CreatedAtCoreBlockHeight => short(document.created_at_core_block_height()),
+        SystemProperty::UpdatedAtCoreBlockHeight => short(document.updated_at_core_block_height()),
+        SystemProperty::TransferredAtCoreBlockHeight => {
+            short(document.transferred_at_core_block_height())
+        }
+    }
+}
+
+/// Reads what [`system_property_bytes`] wrote for `property`: a `U64` for a time or a block
+/// height, a `U32` for a core block height.
+fn read_system_property(
+    buf: &mut BufReader<&[u8]>,
+    property: SystemProperty,
+) -> std::io::Result<Value> {
+    match property {
+        SystemProperty::CreatedAtCoreBlockHeight
+        | SystemProperty::UpdatedAtCoreBlockHeight
+        | SystemProperty::TransferredAtCoreBlockHeight => {
+            buf.read_u32::<BigEndian>().map(Value::U32)
+        }
+        SystemProperty::CreatedAt
+        | SystemProperty::UpdatedAt
+        | SystemProperty::TransferredAt
+        | SystemProperty::CreatedAtBlockHeight
+        | SystemProperty::UpdatedAtBlockHeight
+        | SystemProperty::TransferredAtBlockHeight => buf.read_u64::<BigEndian>().map(Value::U64),
+    }
 }
 
 impl ContractDocumentRemoval {
@@ -119,5 +230,220 @@ impl ContractDocumentRemoval {
     /// undone, and the document is live again.
     pub fn is_restored(&self) -> bool {
         self.restoration.is_some()
+    }
+
+    /// The values the record keeps, read under `document_type`, the removed document's type,
+    /// as its documents are: each path the type keeps to its value, a path the document held
+    /// no value at left out (see [`decode_kept_fields`]). Empty when the record keeps none.
+    pub fn kept_values(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        if self.kept_fields.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        decode_kept_fields(&self.kept_fields, document_type)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::DocumentType;
+    use crate::document::DocumentV0;
+    use platform_value::platform_value;
+    use platform_version::version::PlatformVersion;
+
+    /// A post keeping a text it may lack, an integer, an identifier, a whole object, a member
+    /// of another object, and its creation time and core block height
+    fn post_type() -> DocumentType {
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("expected a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "post",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    "hashtag": { "type": "string", "maxLength": 61, "position": 1 },
+                    "score": { "type": "integer", "position": 2 },
+                    "author": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 3,
+                    },
+                    "meta": {
+                        "type": "object",
+                        "position": 4,
+                        "properties": {
+                            "tags": {
+                                "type": "array",
+                                "items": { "type": "string", "maxLength": 20 },
+                                "maxItems": 5,
+                                "position": 0,
+                            },
+                            "note": { "type": "string", "maxLength": 20, "position": 1 },
+                        },
+                        "additionalProperties": false,
+                    },
+                    "extra": {
+                        "type": "object",
+                        "position": 5,
+                        "properties": {
+                            "count": { "type": "integer", "position": 0 },
+                            "label": { "type": "string", "maxLength": 20, "position": 1 },
+                        },
+                        "additionalProperties": false,
+                    },
+                },
+                "required": ["$createdAt", "$createdAtCoreBlockHeight"],
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": [
+                        "$createdAt",
+                        "$createdAtCoreBlockHeight",
+                        "author",
+                        "extra.count",
+                        "hashtag",
+                        "meta",
+                        "score",
+                        "text",
+                    ],
+                },
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("expected the post type")
+    }
+
+    fn post(properties: BTreeMap<String, Value>) -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::new([2; 32]),
+            owner_id: Identifier::new([3; 32]),
+            properties,
+            created_at: Some(1_700_000_000_000),
+            created_at_core_block_height: Some(55),
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn should_keep_values_as_the_document_holds_them() {
+        let document_type = post_type();
+        let meta = Value::Map(vec![
+            (
+                Value::Text("tags".to_string()),
+                Value::Array(vec![
+                    Value::Text("privacy".to_string()),
+                    Value::Text("payments".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("note".to_string()),
+                Value::Text("n".to_string()),
+            ),
+        ]);
+        let document = post(BTreeMap::from([
+            ("hashtag".to_string(), Value::Text("dash".to_string())),
+            ("score".to_string(), Value::I64(-3)),
+            ("author".to_string(), Value::Identifier([4; 32])),
+            ("meta".to_string(), meta.clone()),
+            (
+                "extra".to_string(),
+                Value::Map(vec![
+                    (Value::Text("count".to_string()), Value::I64(7)),
+                    (
+                        Value::Text("label".to_string()),
+                        Value::Text("not kept".to_string()),
+                    ),
+                ]),
+            ),
+        ]));
+
+        let encoded =
+            encode_kept_fields(&document, document_type.as_ref()).expect("expected to encode");
+        // One marker per kept path, in the list's order: `$createdAt` first, then its value
+        assert_eq!(encoded[0], KEPT_VALUE_PRESENT);
+        assert_eq!(&encoded[1..9], &1_700_000_000_000u64.to_be_bytes());
+        // `text`, last in the list, holds nothing
+        assert_eq!(encoded.last(), Some(&KEPT_VALUE_ABSENT));
+
+        let removal = ContractDocumentRemoval {
+            kept_fields: encoded,
+            ..Default::default()
+        };
+        assert_eq!(
+            removal
+                .kept_values(document_type.as_ref())
+                .expect("expected to decode"),
+            BTreeMap::from([
+                ("$createdAt".to_string(), Value::U64(1_700_000_000_000)),
+                ("$createdAtCoreBlockHeight".to_string(), Value::U32(55)),
+                ("author".to_string(), Value::Identifier([4; 32])),
+                ("extra.count".to_string(), Value::I64(7)),
+                ("hashtag".to_string(), Value::Text("dash".to_string())),
+                ("meta".to_string(), meta),
+                ("score".to_string(), Value::I64(-3)),
+            ])
+        );
+    }
+
+    #[test]
+    fn should_keep_nothing_of_a_document_that_holds_none_of_the_paths() {
+        let document_type = post_type();
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::new([2; 32]),
+            owner_id: Identifier::new([3; 32]),
+            ..Default::default()
+        });
+        let encoded =
+            encode_kept_fields(&document, document_type.as_ref()).expect("expected to encode");
+        assert_eq!(encoded, vec![KEPT_VALUE_ABSENT; 8]);
+        assert_eq!(
+            decode_kept_fields(&encoded, document_type.as_ref()).expect("expected to decode"),
+            BTreeMap::new()
+        );
+    }
+
+    #[test]
+    fn should_refuse_kept_fields_cut_short_or_running_past_the_last_path() {
+        let document_type = post_type();
+        let document = post(BTreeMap::from([(
+            "hashtag".to_string(),
+            Value::Text("dash".to_string()),
+        )]));
+        let encoded =
+            encode_kept_fields(&document, document_type.as_ref()).expect("expected to encode");
+        decode_kept_fields(&encoded[..encoded.len() - 1], document_type.as_ref())
+            .expect_err("the last path's marker is missing");
+        decode_kept_fields(&encoded[..3], document_type.as_ref())
+            .expect_err("cut short inside a time");
+        let mut trailing = encoded.clone();
+        trailing.push(0);
+        decode_kept_fields(&trailing, document_type.as_ref()).expect_err("a byte past the end");
+        let mut unknown_marker = encoded;
+        unknown_marker[0] = 7;
+        decode_kept_fields(&unknown_marker, document_type.as_ref()).expect_err("an unknown marker");
     }
 }

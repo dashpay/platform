@@ -15,7 +15,6 @@ use dpp::{
     dashcore::{hashes::Hash as CoreHash, ProTxHash},
     document::{serialization_traits::DocumentCborMethodsV0, Document},
     identifier::Identifier,
-    platform_value::Value,
     identity::{identities_contract_keys::IdentitiesContractKeys, IdentityPublicKey},
     platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
@@ -498,7 +497,7 @@ type EncodedContractDocumentRemoval = (
     ContractModerationReason,
     [u8; 32],
     Option<(Identifier, u64)>,
-    BTreeMap<String, Value>,
+    Vec<u8>,
 );
 
 /// One removal record in its mock wire shape.

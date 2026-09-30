@@ -830,14 +830,15 @@ pub(super) fn remove_post(
                 contract_id: contract.id(),
                 document_type_name: "post".to_string(),
                 document_id: Identifier::from(id),
-                removal,
-                replaces_existing: false,
+                removal: Box::new(removal),
+                replaced_record_size: None,
+                estimated_kept_fields_size: 0,
                 moderator_id,
             },
         ));
     }
     operations.push(DriveOperation::ContractModerationOperation(
-        ContractModerationOperationType::ForfeitStorageRefunds,
+        ContractModerationOperationType::ForfeitStorageRefunds { spared: None },
     ));
     drive
         .apply_drive_operations(

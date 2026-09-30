@@ -2958,8 +2958,9 @@ impl Drive {
 }
 
 /// A moderator's document deletion is proved by the record it left: the one of the document
-/// named, saying that the transition's signer removed it for the transition's reason. When is
-/// the block's to say, and whose the document was only the record knows. A document id is
+/// named, saying that the transition's signer removed it for the transition's reason, and not
+/// marked restored. When is the block's to say, and whose the document was only the record
+/// knows. A document id is
 /// produced at most once, so the record is of that document and of no other.
 ///
 /// On a type whose moderators' deletions keep no record
@@ -3033,10 +3034,13 @@ fn verify_contract_document_deletion_execution(
             platform_version,
         )?;
         match (entries.pop(), entries.is_empty()) {
+            // A record marked restored says the document is live again: it proves an
+            // earlier deletion, undone since, not this one
             (Some(entry), true)
                 if entry.document_id == *document_id
                     && entry.removal.moderator_id == transition.owner_id()
-                    && entry.removal.reason == *reason =>
+                    && entry.removal.reason == *reason
+                    && entry.removal.restoration.is_none() =>
             {
                 Ok((
                     root_hash,

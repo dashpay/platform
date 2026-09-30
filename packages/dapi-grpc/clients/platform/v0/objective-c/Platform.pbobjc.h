@@ -3601,9 +3601,7 @@ GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRemoval
 @property(nonatomic, readwrite) BOOL hasRestoration;
 
 /** again as it was; absent while the removal stands */
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableDictionary<NSString*, NSData*> *keptFields;
-/** The number of items in @c keptFields without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger keptFields_Count;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *keptFields;
 
 @end
 

@@ -6,8 +6,9 @@
 //! What sets it apart from `deletableDocument` is what a replace does once a moderator removed
 //! the referenced post: the reference is kept, resolving to the post's removal record, and is
 //! re-validated only as a `permanentDocument` one is. A `where` pair asked about again is
-//! checked against the record where the record can answer it (the post's owner and id) and
-//! refused where it can not.
+//! checked against the record where the record can answer it (the post's owner and id, and the
+//! properties its type keeps under `moderatorAbilities.deleteKeepsFields`) and refused where
+//! it can not.
 
 use super::*;
 
@@ -282,10 +283,10 @@ async fn should_keep_a_reference_to_a_post_a_moderator_removed() {
     assert_success(&setup.process(&reply_to_restored, &transaction));
 }
 
-/// A removed post's record keeps its id and its owner, not its properties. A replace of a
-/// quote whose post a moderator removed re-checks the writer gate on every replace, against
-/// the owner the record keeps, and a changed referring property of a pair on the post's text,
-/// which the record can not answer and so refuses.
+/// A removed post's record keeps its id and its owner, and here none of its properties. A
+/// replace of a quote whose post a moderator removed re-checks the writer gate on every
+/// replace, against the owner the record keeps, and a changed referring property of a pair on
+/// the post's text, which the record can not answer and so refuses.
 #[tokio::test]
 async fn should_check_a_pair_against_the_record_of_a_removed_post() {
     let setup = setup().await;
@@ -647,4 +648,117 @@ async fn should_keep_a_reference_into_another_contract_to_a_post_its_moderators_
         &setup.process(&reply_to_removed, &transaction),
         REFERENCED_ENTITY_NOT_FOUND,
     );
+}
+
+/// A quote whose repeated text sits inside an object beside a note: an edit of the note makes
+/// the replace ask about the pair on the text again without changing the text
+fn boxed_quote_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "postId": identifier_property(
+                0,
+                platform_value!({
+                    "type": "moderatedDocument",
+                    "documentType": POST,
+                    "where": { "text": "quoted.text" },
+                }),
+            ),
+            "quoted": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    "note": { "type": "string", "maxLength": 50, "position": 1 },
+                },
+                "additionalProperties": false,
+                "position": 1,
+            },
+        },
+        "required": ["postId", "quoted"],
+        "additionalProperties": false,
+    })
+}
+
+/// A contract whose posts' removal records keep their text or not, with boxed quotes of them
+async fn setup_with_boxed_quotes(keeps_text: bool) -> Setup {
+    let abilities = if keeps_text {
+        platform_value!({ "delete": true, "deleteKeepsFields": ["text"] })
+    } else {
+        platform_value!({ "delete": true })
+    };
+    Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "canBeDeleted": false,
+                    "moderatorAbilities": abilities,
+                })),
+            );
+            add_document_type(contract, QUOTE, boxed_quote_schema());
+        },
+    )
+    .await
+}
+
+/// A pair on a property the removed post's record keeps (`deleteKeepsFields`) is checked
+/// against the kept value, as against the post itself: the same text holds, another one is a
+/// mismatch. On a type whose records keep no text the same edit is refused, the record having
+/// nothing to answer with.
+#[tokio::test]
+async fn should_check_a_pair_against_a_value_the_record_keeps() {
+    for keeps_text in [true, false] {
+        let setup = setup_with_boxed_quotes(keeps_text).await;
+        let transaction = setup.platform.drive.grove.start_transaction();
+        let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+        assert_success(&setup.process(&create_post, &transaction));
+        let text = post.get("text").cloned().expect("expected the post's text");
+        let quoted = |text: Value, note: &str| {
+            Value::Map(vec![
+                (Value::Text("text".to_string()), text),
+                (Value::Text("note".to_string()), note.into()),
+            ])
+        };
+        let (mut quote, create_quote) = setup
+            .create_with(
+                &setup.user,
+                QUOTE,
+                vec![
+                    ("postId", id_value(post.id())),
+                    ("quoted", quoted(text.clone(), "first")),
+                ],
+            )
+            .await;
+        assert_success(&setup.process(&create_quote, &transaction));
+
+        let remove = setup
+            .moderate(&setup.moderator, delete_action(POST, post.id()))
+            .await;
+        assert_success(&setup.process(&remove, &transaction));
+
+        // The object changed, so the pair on the text inside it is asked about again
+        quote.set("quoted", quoted(text.clone(), "second"));
+        let renote = setup.replacement(&setup.user, QUOTE, &mut quote).await;
+        if keeps_text {
+            assert_success(&setup.process(&renote, &transaction));
+        } else {
+            assert_paid_with_code(
+                &setup.process(&renote, &transaction),
+                REFERENCED_DOCUMENT_REMOVED,
+            );
+            continue;
+        }
+
+        // A text the kept one is not is a mismatch
+        let mut requoted = quote.clone();
+        requoted.set("quoted", quoted("something else".into(), "second"));
+        let requote = setup.replacement(&setup.user, QUOTE, &mut requoted).await;
+        assert_paid_with_code(
+            &setup.process(&requote, &transaction),
+            REFERENCED_DOCUMENT_PROPERTY_MISMATCH,
+        );
+    }
 }

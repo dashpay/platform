@@ -260,9 +260,20 @@ impl DriveOperation<'_> {
         matches!(
             self,
             Self::ContractModerationOperation(
-                ContractModerationOperationType::ForfeitStorageRefunds
+                ContractModerationOperationType::ForfeitStorageRefunds { .. }
             )
         )
+    }
+
+    /// The identity a batch forfeiting its refunds still refunds, when this operation is the
+    /// marker and names one: see [`ContractModerationOperationType::ForfeitStorageRefunds`].
+    pub fn spared_storage_refund(&self) -> Option<Identifier> {
+        match self {
+            Self::ContractModerationOperation(
+                ContractModerationOperationType::ForfeitStorageRefunds { spared },
+            ) => *spared,
+            _ => None,
+        }
     }
 
     /// Convert a member of a batch whose document TTL cleanup is complete.

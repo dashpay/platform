@@ -1,6 +1,4 @@
-use crate::drive::contract::moderation::types::{
-    document_removal_kept_fields_encoded_size, encode_document_removal,
-};
+use crate::drive::contract::moderation::types::encode_document_removal;
 use crate::drive::contract::paths::contract_document_type_removals_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -28,9 +26,12 @@ impl Drive {
     /// record passes, with the refund of its removal, to the moderator that replaced it, who
     /// pays for the added bytes; a shorter or an equally long one stays the first moderator's.
     ///
-    /// An estimate prices a replacement as a fresh insert of the whole record: GroveDB's
+    /// An estimate prices a replacement as a fresh insert of what it adds to the record it
+    /// replaces (`replaced_record_size`), so never less than the bytes it adds: GroveDB's
     /// average-case replace assumes an item keeps its size and would price no storage for the
-    /// restoration a restore adds, which the moderator's balance is then not checked against.
+    /// restoration a restore adds, which the moderator's balance is then not checked against,
+    /// and pricing the whole record would charge the estimate for the reason and the kept
+    /// fields the record already holds.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contract_document_removal_operations_v0(
@@ -39,7 +40,8 @@ impl Drive {
         document_type_name: &str,
         document_id: Identifier,
         removal: &ContractDocumentRemoval,
-        replaces_existing: bool,
+        replaced_record_size: Option<u32>,
+        estimated_kept_fields_size: u32,
         moderator_id: Identifier,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -58,12 +60,10 @@ impl Drive {
         };
         let estimating = estimated_costs_only_with_layer_info.is_some();
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            let kept_fields_size = document_removal_kept_fields_encoded_size(&removal.kept_fields)
-                .map_err(lost_bound)?;
             Drive::add_estimation_costs_for_contract_document_removal(
                 contract_id.to_buffer(),
                 document_type_name,
-                u32::try_from(kept_fields_size).unwrap_or(u32::MAX),
+                estimated_kept_fields_size,
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
@@ -72,17 +72,21 @@ impl Drive {
         let storage_flags =
             StorageFlags::new_single_epoch(block_info.epoch.index, Some(moderator_id.to_buffer()));
 
+        let mut value = encode_document_removal(removal).map_err(lost_bound)?;
+        if let (true, Some(replaced_record_size)) = (estimating, replaced_record_size) {
+            let added = value
+                .len()
+                .saturating_sub(usize::try_from(replaced_record_size).unwrap_or(usize::MAX));
+            value = vec![0; added];
+        }
         let path_key_element = PathFixedSizeKeyRefElement((
             contract_document_type_removals_path(contract_id.as_slice(), document_type_name),
             document_id.as_slice(),
-            Element::new_item_with_flags(
-                encode_document_removal(removal).map_err(lost_bound)?,
-                storage_flags.to_some_element_flags(),
-            ),
+            Element::new_item_with_flags(value, storage_flags.to_some_element_flags()),
         ));
 
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if replaces_existing && !estimating {
+        if replaced_record_size.is_some() && !estimating {
             self.batch_replace(
                 path_key_element,
                 &mut batch_operations,

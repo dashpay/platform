@@ -11,8 +11,11 @@ use crate::data_contract::{
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::serialization::conversions::{kept_fields_to_js, normalize_js_value_for_json};
-use dpp::data_contract::config::moderation::{ContractModerationReason, ContractWarning};
-use dpp::platform_value::Value;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::moderation::{
+    ContractModerationReason, ContractWarning, decode_kept_fields,
+};
+use dpp::platform_value::string_encoding::{Encoding, encode};
 use js_sys::{BigInt, Map};
 use std::collections::BTreeMap;
 use wasm_bindgen::JsCast;
@@ -371,8 +374,10 @@ pub struct VerifiedContractDocumentRemovalWasm {
     /// stands
     #[wasm_bindgen(js_name = "restoredAt")]
     pub restored_at: Option<u64>,
+    /// The values the record keeps, as it stores them: encoded as the document encoded its
+    /// properties, read under the contract's document type by [`Self::kept_fields`]
     #[wasm_bindgen(skip)]
-    pub kept_fields: BTreeMap<String, Value>,
+    pub kept_fields: Vec<u8>,
 }
 
 #[wasm_bindgen(js_class = VerifiedContractDocumentRemoval)]
@@ -390,16 +395,36 @@ impl VerifiedContractDocumentRemovalWasm {
         hex::encode(self.document_hash)
     }
 
-    /// The values the record keeps of the document, by the property path its type lists
-    /// under `moderatorAbilities.deleteKeepsFields`, as the document's `properties` show
-    /// them: what of it stays public once it is gone. Empty when the type keeps none; a path
-    /// the document held no value at is absent
+    /// The values the record keeps of the document, as it stores them: encoded as the
+    /// document encoded its properties, so read under the contract's document type, as the
+    /// document is (see `keptFields`). Empty when the type keeps none
+    #[wasm_bindgen(getter = "keptFieldsBytes")]
+    pub fn kept_fields_bytes(&self) -> Vec<u8> {
+        self.kept_fields.clone()
+    }
+
+    /// The values the record keeps of the document, read under `dataContract`'s document type:
+    /// each path the type lists under `moderatorAbilities.deleteKeepsFields` to its value, as
+    /// the document's `properties` show them, a path the document held no value at absent.
+    /// What of it stays public once it is gone
     #[wasm_bindgen(
-        getter = "keptFields",
+        js_name = "keptFields",
         unchecked_return_type = "Record<string, unknown>"
     )]
-    pub fn kept_fields(&self) -> WasmDppResult<JsValue> {
-        kept_fields_to_js(&self.kept_fields, false)
+    pub fn kept_fields(&self, data_contract: &DataContractWasm) -> WasmDppResult<JsValue> {
+        if self.kept_fields.is_empty() {
+            return kept_fields_to_js(&BTreeMap::new());
+        }
+        let document_type = data_contract
+            .as_ref()
+            .document_type_for_name(&self.document_type_name)
+            .map_err(|error| {
+                WasmDppError::invalid_argument(format!(
+                    "the contract has no document type {}: {error}",
+                    self.document_type_name
+                ))
+            })?;
+        kept_fields_to_js(&decode_kept_fields(&self.kept_fields, document_type)?)
     }
 
     #[wasm_bindgen(js_name = toObject)]
@@ -433,7 +458,10 @@ impl VerifiedContractDocumentRemovalWasm {
                     JsValue::from(js_sys::BigInt::from(restored_at))
                 }),
             ),
-            ("keptFields", kept_fields_to_js(&self.kept_fields, false)?),
+            (
+                "keptFieldsBytes",
+                js_sys::Uint8Array::from(self.kept_fields.as_slice()).into(),
+            ),
         ]))
     }
 
@@ -478,7 +506,10 @@ impl VerifiedContractDocumentRemovalWasm {
                     JsValue::from_f64(restored_at as f64)
                 }),
             ),
-            ("keptFields", kept_fields_to_js(&self.kept_fields, true)?),
+            (
+                "keptFieldsBytes",
+                JsValue::from_str(&encode(&self.kept_fields, Encoding::Base64)),
+            ),
         ]))
     }
 }

@@ -983,9 +983,10 @@ pub enum DocumentPropertyReferenceTarget {
     /// when the value or a property it binds changes, or always for a writer
     /// gate, and an unchanged value whose document was removed resolves to
     /// its removal record. A removed document has no values to compare but
-    /// its owner, which the record keeps, so a re-check of a `where` entry on
-    /// any other of its properties refuses the replace until the reference is
-    /// repointed or the document restored. A join through it reports each
+    /// those its record keeps: its owner, its id, and the fields its type lists
+    /// under `moderatorAbilities.deleteKeepsFields`; a re-check of a `where`
+    /// entry on any other of its properties refuses the replace until the
+    /// reference is repointed or the document restored. A join through it reports each
     /// removed document by its proven removal record.
     ///
     /// The id form only: no `findBy` (a removal frees the unique index keys a
@@ -1452,6 +1453,23 @@ pub(crate) fn top_level_property(path: &str) -> &str {
 /// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referring_system_agreement_property(name: &str) -> bool {
     REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
+}
+
+/// The property at the dotted `path` of `properties`, an object or a member of
+/// one included, `None` when the path names none.
+pub fn property_at_path<'a>(
+    properties: &'a IndexMap<String, DocumentProperty>,
+    path: &str,
+) -> Option<&'a DocumentProperty> {
+    let mut segments = path.split('.');
+    let mut property = properties.get(segments.next()?)?;
+    for segment in segments {
+        let DocumentPropertyType::Object(members) = &property.property_type else {
+            return None;
+        };
+        property = members.get(segment)?;
+    }
+    Some(property)
 }
 
 /// Whether the property at the dotted `path` of `document_type`, or an object

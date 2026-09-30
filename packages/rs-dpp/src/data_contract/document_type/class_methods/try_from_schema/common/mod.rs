@@ -18,7 +18,6 @@
 //! `v1/mod.rs`, whose entry point serves generation 1 (schema 0) *and* backs
 //! generation 2 (schema 1 and 2).
 
-use crate::data_contract::config::moderation::KEEPABLE_SYSTEM_PROPERTIES;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
@@ -30,9 +29,10 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{
-    top_level_property, DocumentPropertyReferenceTarget, KeyIdReference,
-    KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
+    is_transient, property_at_path, top_level_property, DocumentPropertyReferenceTarget,
+    KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
+use crate::data_contract::document_type::property_constraints::SystemProperty;
 use crate::data_contract::document_type::property_names::moderator_abilities::{
     CHANGE_FIELDS, DELETE, DELETE_KEEPS_FIELDS, DELETE_KEEPS_RECORD, DELETE_REFUNDS_OWNER,
     DELETE_WITHIN,
@@ -2371,9 +2371,9 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - the path of a declared property at any depth (`hashtag`, `meta.tags`, or
 ///   an object, kept whole), not transient (no stored document holds it) and
 ///   not inside another listed path (which keeps it already); or
-/// - one of the timestamps and block heights a document carries
-///   ([`KEEPABLE_SYSTEM_PROPERTIES`]), listed in `required`, without which no
-///   document carries it. `$id` and `$ownerId` are in every record already.
+/// - one of the timestamps and block heights a document carries (a
+///   [`SystemProperty`]), listed in `required`, without which no document
+///   carries it. `$id` and `$ownerId` are in every record already.
 ///
 /// `changeFields` names the properties only the moderators write. A
 /// moderator's change is stored as an update that touches nothing else, and is
@@ -2667,10 +2667,10 @@ fn apply_delete_keeps_fields(
         let refusal = if [ID, OWNER_ID].contains(&field.as_str()) {
             Some("every removal record holds it already".to_string())
         } else if field.starts_with('$') {
-            if !KEEPABLE_SYSTEM_PROPERTIES.contains(&field.as_str()) {
+            if SystemProperty::from_name(field).is_none() {
                 Some(format!(
                     "the system properties a record keeps are {}",
-                    KEEPABLE_SYSTEM_PROPERTIES.join(", ")
+                    SystemProperty::ALL.map(SystemProperty::name).join(", ")
                 ))
             } else if !document_type.required_fields.contains(field) {
                 Some("it is not listed in `required`, so no document carries it".to_string())
@@ -2685,12 +2685,12 @@ fn apply_delete_keeps_fields(
             Some(format!(
                 "it is inside \"{outer}\", which the record keeps whole"
             ))
+        } else if property_at_path(&document_type.properties, field).is_none() {
+            Some("it is not a declared property of the document type".to_string())
+        } else if is_transient(DocumentTypeRef::V2(document_type), field) {
+            Some("it is transient, so no stored document holds it".to_string())
         } else {
-            match declared_property_is_transient(&document_type.properties, field) {
-                None => Some("it is not a declared property of the document type".to_string()),
-                Some(true) => Some("it is transient, so no stored document holds it".to_string()),
-                Some(false) => None,
-            }
+            None
         };
         if let Some(refusal) = refusal {
             return Err(structure_error(format!(
@@ -2701,25 +2701,6 @@ fn apply_delete_keeps_fields(
     }
     document_type.moderator_deletion_kept_fields = kept_fields;
     Ok(())
-}
-
-/// Whether the property at the dotted `path` of `properties` is transient, it or an object
-/// around it: `None` when the path names no declared property, stepping through objects only.
-fn declared_property_is_transient(
-    properties: &IndexMap<String, DocumentProperty>,
-    path: &str,
-) -> Option<bool> {
-    let mut segments = path.split('.');
-    let mut property = properties.get(segments.next()?)?;
-    let mut transient = property.transient;
-    for segment in segments {
-        let DocumentPropertyType::Object(inner) = &property.property_type else {
-            return None;
-        };
-        property = inner.get(segment)?;
-        transient |= property.transient;
-    }
-    Some(transient)
 }
 
 /// The top-level properties of `document_type` that a reference declared on it

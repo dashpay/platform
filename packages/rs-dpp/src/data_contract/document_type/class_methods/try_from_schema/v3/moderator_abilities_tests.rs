@@ -756,6 +756,58 @@ fn should_refuse_kept_fields_a_record_can_not_keep() {
     }
 }
 
+/// A transient top-level property whose name starts like an object around a kept path
+/// (`meta_note` beside `meta.note`): the kept path is stored and kept, only the transient
+/// property is refused, on both parse paths.
+#[test]
+fn should_judge_transience_by_the_declared_transient_paths() {
+    let platform_version = PlatformVersion::latest();
+    let post = |kept: Value| {
+        merged(
+            post_schema(platform_value!({
+                "moderatorAbilities": { "delete": true, "deleteKeepsFields": kept },
+            })),
+            platform_value!({
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    "meta_note": { "type": "string", "maxLength": 20, "position": 1 },
+                    "meta": {
+                        "type": "object",
+                        "position": 2,
+                        "properties": {
+                            "note": { "type": "string", "maxLength": 20, "position": 0 },
+                        },
+                        "additionalProperties": false,
+                    },
+                },
+                "transient": ["meta_note"],
+            }),
+        )
+    };
+    for full_validation in [true, false] {
+        let document_type = parse_with_config(
+            post(platform_value!(["meta.note"])),
+            &moderated_config(platform_version),
+            platform_version.protocol_version,
+            full_validation,
+        )
+        .expect("a stored nested property is kept");
+        assert_eq!(
+            document_type.moderator_deletion_kept_fields(),
+            &BTreeSet::from(["meta.note".to_string()])
+        );
+        assert_refused_naming(
+            parse_with_config(
+                post(platform_value!(["meta_note"])),
+                &moderated_config(platform_version),
+                platform_version.protocol_version,
+                full_validation,
+            ),
+            &["list \\\"meta_note\\\"", "transient"],
+        );
+    }
+}
+
 #[test]
 fn should_refuse_a_malformed_kept_fields_list_on_the_stored_path_too() {
     let platform_version = PlatformVersion::latest();

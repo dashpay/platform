@@ -26,6 +26,17 @@ async fn setup_with(abilities: Value) -> Setup {
 }
 
 impl Setup {
+    /// The values `removal` keeps, read under the post type, as the post's are
+    fn kept_values(&self, removal: &ContractDocumentRemoval) -> BTreeMap<String, Value> {
+        removal
+            .kept_values(
+                self.contract
+                    .document_type_for_name(POST)
+                    .expect("expected the post type"),
+            )
+            .expect("expected the kept values to read under the post type")
+    }
+
     /// Whether the contract has a removal records tree at all
     fn has_removals_tree(&self) -> bool {
         let contract_id = self.contract.id().to_buffer();
@@ -300,13 +311,13 @@ async fn should_keep_the_listed_fields_of_a_deleted_document_in_its_record() {
     assert_eq!(setup.stored_document(POST, post.id(), None), None);
 
     // The document is gone; what its type keeps public is in the record, copied as it was
-    // stored, nested values and the creation time included. The note, not listed, went with
-    // the document.
+    // stored and read back under the type as the document's values are, nested values and the
+    // creation time included. The note, not listed, went with the document.
     let removal = setup
         .post_removal(post.id(), None)
         .expect("expected the removal record");
     assert_eq!(
-        removal.kept_fields,
+        setup.kept_values(&removal),
         BTreeMap::from([
             (
                 "$createdAt".to_string(),
@@ -339,6 +350,26 @@ async fn should_keep_the_listed_fields_of_a_deleted_document_in_its_record() {
     assert!(restored.is_restored());
     assert_eq!(restored.kept_fields, removal.kept_fields);
     assert_eq!(setup.assert_removal_proved(&restore), restored);
+
+    // The record now says the deletion was undone, so it no longer proves the deletion
+    let platform_version = PlatformVersion::latest();
+    let proof = setup
+        .platform
+        .drive
+        .prove_state_transition(&delete, None, platform_version)
+        .expect("expected to prove the deletion's record")
+        .into_data()
+        .expect("expected proof bytes");
+    let known_contracts: BTreeMap<Identifier, DataContract> =
+        BTreeMap::from([(setup.contract.id(), setup.contract.clone())]);
+    Drive::verify_state_transition_was_executed_with_proof(
+        &delete,
+        &BlockInfo::default(),
+        &proof,
+        &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
+        platform_version,
+    )
+    .expect_err("a restored record does not prove the deletion");
 }
 
 #[tokio::test]
@@ -369,7 +400,7 @@ async fn should_leave_out_of_the_record_a_path_the_document_holds_no_value_at() 
         .post_removal(post.id(), None)
         .expect("expected the removal record");
     assert_eq!(
-        removal.kept_fields,
+        setup.kept_values(&removal),
         BTreeMap::from([(
             "$createdAt".to_string(),
             Value::U64(stored.created_at().expect("expected a creation time")),

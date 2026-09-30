@@ -17,7 +17,7 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
-    property_names, ContractReferenceModeration, ContractReferenceOwner,
+    property_at_path, property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
@@ -1213,10 +1213,12 @@ fn parse_reference_target(
         // contract registration
         //
         // A writer gate (a `where` entry valued `"$ownerId"`) is asked about on
-        // every replace, and once a moderator removes the document its removal
-        // record keeps only its owner and its id: a gate on any other property
-        // would refuse every later replace, for good on a property that can not
-        // be repointed or cleared, so it may compare only those two
+        // every replace, and once a moderator removes the document only its owner
+        // and its id are sure to be in its removal record (the fields a type keeps,
+        // `moderatorAbilities.deleteKeepsFields`, are left out where the document
+        // held none, and the type may be another contract's): a gate on any other
+        // property could refuse every later replace, for good on a property that
+        // can not be repointed or cleared, so it may compare only those two
         "moderatedDocument" => {
             let (contract_id, document_type_name) =
                 parse_document_reference_type(refers_to_map, reference_type)?;
@@ -1233,8 +1235,9 @@ fn parse_reference_target(
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "moderatedDocument refersTo where compares the writer with \
                      \"{referenced_property}\": a writer is checked on every replace, and \
-                     once a moderator removes the document its removal record keeps only its \
-                     $ownerId and $id, so the writer may be compared with those alone"
+                     once a moderator removes the document only its $ownerId and $id are sure \
+                     to be in its removal record, so the writer may be compared with those \
+                     alone"
                 )));
             }
             DocumentPropertyReferenceTarget::ModeratedDocument {
@@ -2638,23 +2641,6 @@ pub(super) fn apply_property_constraints(
             "parse_property_constraints version {version} is not supported"
         ))),
     }
-}
-
-/// The property at the dotted `path` of `properties`, an object or a member of
-/// one included, `None` when the path names none.
-fn property_at_path<'a>(
-    properties: &'a IndexMap<String, DocumentProperty>,
-    path: &str,
-) -> Option<&'a DocumentProperty> {
-    let mut segments = path.split('.');
-    let mut property = properties.get(segments.next()?)?;
-    for segment in segments {
-        let DocumentPropertyType::Object(members) = &property.property_type else {
-            return None;
-        };
-        property = members.get(segment)?;
-    }
-    Some(property)
 }
 
 fn apply_property_constraints_v0(
@@ -4854,9 +4840,9 @@ mod tests {
         }
     }
 
-    /// A writer gate on a moderatedDocument reference is asked about on every replace, and a
-    /// removed document's record keeps its owner and id alone: a gate on anything else is
-    /// refused, one on `$ownerId` or `$id` parses.
+    /// A writer gate on a moderatedDocument reference is asked about on every replace, and
+    /// only a removed document's owner and id are sure to be in its record: a gate on anything
+    /// else is refused, one on `$ownerId` or `$id` parses.
     #[test]
     fn should_refuse_a_moderated_document_writer_gate_the_removal_record_can_not_answer() {
         let schema = |where_entries: serde_json::Value| {
