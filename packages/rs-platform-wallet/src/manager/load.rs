@@ -295,6 +295,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     break 'load;
                 }
                 durable_cursors.insert(wallet_id, loaded_cursor);
+                self.inherit_rewind_barrier(&mut wm, &wallet_id);
             }
             inserted_in_manager.push(wallet_id);
 
@@ -485,7 +486,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    if let Err(e) = wm.remove_wallet(id) {
+                    if let Err(e) = self.remove_from_wallet_manager(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
                             error = %e,

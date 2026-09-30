@@ -312,7 +312,10 @@ impl DashPayBackfillRecord {
             })
             .collect();
         // Canonical order and one entry per account, whatever the host stored.
-        covered.sort_by_key(DashPayBackfillCoveredContact::key);
+        // A duplicated account keeps its HIGHEST `covered_from`: an ambiguous
+        // record must fail closed, and the higher height is the one that
+        // re-arms more checkpoints.
+        covered.sort_by_key(|entry| (entry.key(), std::cmp::Reverse(entry.covered_from)));
         covered.dedup_by(|a, b| a.key() == b.key());
         Some(Self {
             floor,
@@ -453,7 +456,12 @@ mod tests {
         let record = DashPayBackfillRecord::from_parts(100, 1_000, &bytes).expect("decodes");
         assert_eq!(record.covered.len(), 2);
         assert_eq!(record.covered[0].owner, id(1));
-        assert_eq!(record.covered_from(&id(5), &id(6), 0), Some(700));
+        assert_eq!(
+            record.covered_from(&id(5), &id(6), 0),
+            Some(900),
+            "a duplicated account keeps its highest height, re-arming more"
+        );
+        assert!(!record.covers(&id(5), &id(6), 0, 800));
     }
 
     #[test]

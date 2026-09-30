@@ -367,6 +367,23 @@ impl RewindBarrier {
         self.epoch
     }
 
+    /// What a removed wallet leaves for a successor registered under the same
+    /// id: its advances still in flight, and its epoch.
+    pub(crate) fn retire(&self) -> (u64, u64) {
+        (self.in_flight, self.epoch)
+    }
+
+    /// Take over a removed predecessor's [`retire`](Self::retire) state. The
+    /// shared adapter can still hold advances the predecessor emitted, queued
+    /// or already projected; all of them predate this wallet's own scan, so
+    /// the queued ones are counted as stale and the epoch moves past the
+    /// predecessor's, which strips the projected ones at commit.
+    pub(crate) fn inherit(&mut self, (in_flight, epoch): (u64, u64)) {
+        self.in_flight = self.in_flight.saturating_add(in_flight);
+        self.stale = self.stale.saturating_add(in_flight);
+        self.epoch = self.epoch.wrapping_add(epoch).wrapping_add(1);
+    }
+
     /// A receival account was inserted outside key-wallet's account-add
     /// API: invalidate every in-flight scan snapshot of the account set.
     pub(crate) fn note_account_registered(&mut self) {
@@ -5076,6 +5093,69 @@ mod tests {
         let mut next = project(&manager, &mut receiver, 1).await;
         super::drop_watermarks_above_the_live_cursor(&manager, &mut next).await;
         assert_eq!(next[&wallet_id].core.synced_height, Some(1_200));
+    }
+
+    /// A wallet removed and registered again under the same id shares the
+    /// adapter with its predecessor, which can still hold that predecessor's
+    /// advances — queued, or already projected. The successor inherits the
+    /// predecessor's barrier: the queued ones drop as stale and the
+    /// projected ones fail the epoch check at commit, even once the new
+    /// scan has climbed above them (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_same_id_successor_drops_its_predecessors_queued_and_projected_advances() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let (manager, mut receiver, wallet_id) = engine_wallet(0).await;
+        engine_advance(&manager, wallet_id, 700).await;
+        let mut projected = project(&manager, &mut receiver, 1).await; // in an adapter batch
+        engine_advance(&manager, wallet_id, 1_000).await; // still queued
+
+        // Removed, then registered again under the same id.
+        let (wallet, retired) = {
+            let (wallet, info) = manager
+                .write()
+                .await
+                .remove_wallet(&wallet_id)
+                .expect("remove");
+            (wallet, info.rewind_barrier.retire())
+        };
+        let mut successor = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
+            core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
+        };
+        successor.rewind_barrier.inherit(retired);
+        assert_eq!(
+            manager
+                .write()
+                .await
+                .insert_wallet(wallet, successor)
+                .expect("reinsert"),
+            wallet_id
+        );
+        engine_advance(&manager, wallet_id, 1_200).await; // the successor's own scan
+
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut projected).await;
+        assert_eq!(
+            projected[&wallet_id].core.synced_height, None,
+            "the predecessor's projected advance is stripped although 1200 is above it"
+        );
+        let mut queued = project(&manager, &mut receiver, 1).await;
+        assert_eq!(
+            queued[&wallet_id].core.synced_height, None,
+            "the predecessor's queued advance drops as stale"
+        );
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut queued).await;
+        let mut own = project(&manager, &mut receiver, 1).await;
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut own).await;
+        assert_eq!(own[&wallet_id].core.synced_height, Some(1_200));
     }
 
     /// A store panicking mid-batch must not release the writer lock with the

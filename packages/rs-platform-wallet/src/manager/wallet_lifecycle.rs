@@ -415,12 +415,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // and it is deliberately not assumed equal to `registration_wallet_id`
         // (see the divergence branch below).
         //
-        // The same read also yields the cursor the host holds for every
-        // persisted wallet: a registration that recreates a wallet the host
-        // already has must measure durable writes against that cursor, not
-        // the one it just built (see the seed below).
+        // The same read also yields what the host holds for every persisted
+        // wallet: a registration that recreates a wallet the host already has
+        // must measure durable writes against the host's cursor, not the one
+        // it just built, and must keep the host's DashPay backfill record
+        // rather than start from an empty one that re-arms every covered
+        // contact (see the seed below).
         let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
-        let (mut persisted_platform_addresses, host_cursors) =
+        let (mut persisted_platform_addresses, mut host_wallets) =
             match super::run_blocking_load(move || load_persister.load()).await {
                 Ok(crate::changeset::ClientStartState {
                     platform_addresses,
@@ -429,9 +431,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }) => (
                     platform_addresses,
                     wallets
-                        .iter()
-                        .map(|(id, state)| (*id, state.wallet_info.metadata.synced_height))
-                        .collect::<std::collections::BTreeMap<WalletId, u32>>(),
+                        .into_iter()
+                        .map(|(id, state)| {
+                            (
+                                id,
+                                (
+                                    state.wallet_info.metadata.synced_height,
+                                    state.dashpay_backfill,
+                                ),
+                            )
+                        })
+                        .collect::<std::collections::BTreeMap<
+                            WalletId,
+                            (u32, crate::changeset::DashPayBackfillRecord),
+                        >>(),
                 ),
                 Err(e) => {
                     tracing::error!(
@@ -483,17 +496,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         other
                     )),
                 })?;
-            let host_cursor = host_cursors
-                .get(&wallet_id)
-                .copied()
-                .unwrap_or(created_cursor);
-            if created_cursor < host_cursor {
-                if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
+            let (host_cursor, host_backfill) = host_wallets
+                .remove(&wallet_id)
+                .unwrap_or((created_cursor, Default::default()));
+            if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
+                // The host's record vouches for `[covered_from, host_cursor]`
+                // per account; the recreated wallet scans from no higher than
+                // that, so the coverage stays true.
+                info.dashpay_backfill = host_backfill;
+                if created_cursor < host_cursor {
                     let owed = &mut info.dashpay_backfill.unpersisted_cursor;
                     *owed = Some(owed.map_or(created_cursor, |cursor| cursor.min(created_cursor)));
                 }
             }
             durable_cursors.insert(wallet_id, host_cursor);
+            self.inherit_rewind_barrier(&mut wm, &wallet_id);
             wallet_id
         };
 
@@ -592,7 +609,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 "failed to persist wallet registration changeset"
             );
             let mut wm = self.wallet_manager.write().await;
-            if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
+            if let Err(remove_err) = self.remove_from_wallet_manager(&mut wm, &wallet_id) {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     error = %remove_err,
@@ -642,7 +659,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "failed to restore persisted platform-address state"
                 );
                 let mut wm = self.wallet_manager.write().await;
-                if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
+                if let Err(remove_err) = self.remove_from_wallet_manager(&mut wm, &wallet_id) {
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         error = %remove_err,
@@ -928,7 +945,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                      their identity-sync rows are left for the next launch to reconcile"
                 );
             }
-            if let Err(e) = wm.remove_wallet(wallet_id) {
+            if let Err(e) = self.remove_from_wallet_manager(&mut wm, wallet_id) {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     error = %e,
@@ -1287,6 +1304,58 @@ mod register_wallet_duplicate_tests {
             matches!(err, PlatformWalletError::WalletAlreadyExists(_)),
             "duplicate create must map to WalletAlreadyExists, got: {err:?}"
         );
+    }
+
+    /// Removing a wallet keeps its rewind barrier's in-flight state, and a
+    /// same-id registration inherits it in the critical section that
+    /// publishes it, so advances the removed wallet emitted cannot be stored
+    /// against its successor (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_same_id_registration_inherits_the_removed_wallets_barrier() {
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
+        let seed_bytes = mnemonic.to_seed("");
+        let create = |manager: Arc<PlatformWalletManager<NoopPersister>>| async move {
+            manager
+                .create_wallet_from_seed_bytes(
+                    network,
+                    &seed_bytes,
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+        };
+        let wallet_id = create(Arc::clone(&manager))
+            .await
+            .expect("first create")
+            .wallet_id();
+        {
+            // Three advances emitted and not yet drained by the adapter.
+            let mut wm = manager.wallet_manager.write().await;
+            let barrier = &mut wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .rewind_barrier;
+            for _ in 0..3 {
+                barrier.note_emitted();
+            }
+            barrier.arm();
+        }
+        manager.remove_wallet(&wallet_id).await.expect("remove");
+
+        create(Arc::clone(&manager)).await.expect("second create");
+        let wm = manager.wallet_manager.read().await;
+        let (in_flight, epoch) = wm
+            .get_wallet_info(&wallet_id)
+            .expect("published")
+            .rewind_barrier
+            .retire();
+        assert_eq!(
+            in_flight, 3,
+            "the predecessor's queued advances are carried"
+        );
+        assert!(epoch > 1, "the epoch moves past the predecessor's");
     }
 
     /// The durable cursor is seeded in the critical section that publishes
