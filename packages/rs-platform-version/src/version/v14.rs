@@ -1845,15 +1845,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     leaves such an index's entries to expire with their window: document
 ///     index-only delete state validation 0 and Drive's row-integrity gate do
 ///     not probe it, and the delete walkers (top and index level 2) skip it
-///     (`level_removes_entry`). The row commitment leaves `$createdAt` out when
+///     (`level_removes_entry`, with `IndexLevel::cleared_on_delete_at_or_below`). The row commitment leaves `$createdAt` out when
 ///     every index involving it outlives deletes
-///     (`index_only_row_commits_created_at`, shared by the commitment, the
-///     delete transition's construction and advanced structure validation 0,
-///     which then refuses a carried `$createdAt`). Document create state
-///     validation 1 does not probe such an index for a duplicate, and the
-///     indexOnly terminal insert keeps an entry already standing there instead
-///     of refusing it. Inert for every contract without the keyword, which
-///     every earlier grammar refuses.
+///     (`index_only_row_commits_created_at`, read off the index structure's
+///     root, `IndexLevel::created_at_indexed_only_by_outliving`, and shared by
+///     the commitment, the delete transition's construction, advanced
+///     structure validation 0, which then refuses a carried `$createdAt`, and
+///     Drive's indexOnly delete, which refuses one too). Document create state
+///     validation 1 and the within-batch collision tracker do not probe such
+///     an index, and the indexOnly terminal insert writes over an entry
+///     already standing there, without reading it. Registration requires the
+///     index's key (its properties but `$createdAt`, and its terminal) to hold
+///     the key of an index a delete clears that skips nothing, so no two
+///     documents in state share one of its entries. Inert for every contract
+///     without the keyword, which every earlier grammar refuses.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

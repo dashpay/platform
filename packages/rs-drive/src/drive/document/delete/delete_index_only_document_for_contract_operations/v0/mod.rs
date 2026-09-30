@@ -1,7 +1,7 @@
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{index_only_row_commits_created_at, DocumentTypeRef};
 
 use std::collections::HashMap;
 
@@ -131,6 +131,21 @@ impl Drive {
         if !document_type.documents_can_be_deleted() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "this document type can not be deleted",
+            )));
+        }
+
+        // The values name the row as it committed to them: with no index a
+        // delete clears keyed by `$createdAt`, the row committed to none and a
+        // delete carries none (state validation refuses one that does)
+        if document.created_at().is_some()
+            && !index_only_row_commits_created_at(
+                document_type.required_fields(),
+                document_type.index_structure(),
+            )
+        {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "an indexOnly delete carries $createdAt its rows do not commit to: only \
+                 indexes whose entries outlive a delete involve it",
             )));
         }
 

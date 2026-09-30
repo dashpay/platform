@@ -314,8 +314,8 @@ pub enum LayoutNote {
     /// are created when the referenced document is inserted.
     Preallocated,
     /// An indexOnly index whose entries outlive a delete of their document:
-    /// a delete leaves them to expire with their window, and a create keeps
-    /// one already standing at its key.
+    /// a delete leaves them to expire with their window, and a create writes
+    /// over one already standing at its key.
     OutlivesDelete,
     /// A time window level: a document written here lands in every window
     /// that contains its time, up to this many.
@@ -381,7 +381,7 @@ impl LayoutNote {
                     .to_string()
             }
             LayoutNote::OutlivesDelete => "outlivesDelete: a delete leaves these entries to \
-                 expire with their window, and a create keeps one already here"
+                 expire with their window, and a create writes over one already here"
                 .to_string(),
             LayoutNote::TimeRangeOverlap { windows } => {
                 format!(

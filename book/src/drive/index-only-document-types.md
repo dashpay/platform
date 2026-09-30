@@ -334,20 +334,26 @@ that timestamp could not delete the document. `outlivesDelete: true` on a
   (structure validation refuses one that does). The executed-transition
   proof verifier computes the same commitment, so it no longer needs the
   block time for such a type.
-- **Create.** State validation does not probe the index for a duplicate, and
-  the terminal insert keeps an entry already standing at the same key (left
-  by an earlier document of the same owner with the same values) instead of
-  writing it again: the count does not move, nothing is written, and only
-  the read is paid. The within-batch collision tracker still claims these
-  entries, since one grove batch cannot see its own earlier inserts.
+- **Create.** State validation does not probe the index for a duplicate,
+  and the terminal insert writes over an entry already standing at the same
+  key (left by a deleted document with the same key) without reading it: the
+  count does not move, and the entry carries the commitment of the row
+  writing it. Registration makes the index's key hold the key of an index a
+  delete clears that skips nothing, so no two documents in state share an
+  entry, and the within-batch collision tracker leaves these entries to that
+  index.
 - **Proofs.** `index_only_proof_index` never picks such an index, and the
   parser requires another one to exist.
 
 Registration admits the keyword only on an indexOnly `timeRange` index with
 a `ttl`, without a sum and on a type without `entryPayload` (a kept entry
 holds the first document's amount or payload), and requires every schema
-property to sit in an index that neither skips nor outlives deletes. The
-flag is fixed with the index (`find_first_outlives_delete_change`).
+property to sit in an index that neither skips nor outlives deletes, and the
+index's key to hold the key of such an index. The flag is fixed with the
+index (`find_first_outlives_delete_change`). The index structure caches the
+decisions a delete reads (`IndexLevel::cleared_on_delete_at_or_below`, and at
+its root `created_at_indexed_only_by_outliving`), and Drive's delete refuses a
+document carrying a `$createdAt` its row does not commit to.
 
 The cost is on the aggregates: a deleted document still counts in the
 windows it wrote until they move past it.

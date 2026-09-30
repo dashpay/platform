@@ -1432,7 +1432,21 @@ pub(super) mod index_only_tests {
 mod index_only_executed_proof_tests {
     use super::index_only_tests::*;
     use super::*;
-    use dpp::document::Document;
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::platform_value;
+    use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::{
+        DocumentIndexOnlyDeleteTransition, DocumentIndexOnlyDeleteTransitionV0,
+    };
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::tests::json_document::json_document_to_json_value;
+    use dpp::version::TryFromPlatformVersioned;
     use dpp::identifier::Identifier;
     use dpp::prelude::DataContract;
     use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -2874,16 +2888,12 @@ mod index_only_executed_proof_tests {
     /// outliving deletes: only the window involves `$createdAt`, so a beat's
     /// row commits to no timestamp and its delete carries none.
     fn register_likes_with_outliving_beats(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        platform: &TempPlatform<MockCoreRPCLike>,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> DataContract {
-        use dpp::data_contract::accessors::v0::DataContractV0Setters;
-        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-        use dpp::version::TryFromPlatformVersioned;
-        let mut schema =
-            dpp::tests::json_document::json_document_to_json_value(YAPPR_LIKES_CONTRACT)
-                .expect("read the yappr-likes fixture");
+        let mut schema = json_document_to_json_value(YAPPR_LIKES_CONTRACT)
+            .expect("read the yappr-likes fixture");
         for index in schema["documentSchemas"]["beat"]["indices"]
             .as_array_mut()
             .expect("beat indices")
@@ -2921,15 +2931,6 @@ mod index_only_executed_proof_tests {
     /// first beat's entries, which the create keeps.
     #[tokio::test]
     async fn should_delete_a_beat_by_its_values_alone_and_beat_again_while_its_window_stands() {
-        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-        use dpp::consensus::ConsensusError;
-        use dpp::document::DocumentV0Setters;
-        use dpp::platform_value;
-        use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::{
-            DocumentIndexOnlyDeleteTransition, DocumentIndexOnlyDeleteTransitionV0,
-        };
-        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-        use dpp::state_transition::batch_transition::BatchTransitionV0;
         const T_MS: u64 = 1_700_000_000_000;
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -2988,9 +2989,7 @@ mod index_only_executed_proof_tests {
         )
         .expect("window paths");
         assert!(!window_paths.is_empty());
-        let window_entries = |platform: &crate::test::helpers::setup::TempPlatform<
-            crate::rpc::core::MockCoreRPCLike,
-        >| {
+        let window_entries = |platform: &TempPlatform<MockCoreRPCLike>| {
             window_paths
                 .iter()
                 .map(|path| {
@@ -3137,10 +3136,20 @@ mod index_only_executed_proof_tests {
             platform_version,
         )
         .expect("expected the executed create proof to verify");
+        // The rows commit to no timestamp, so a verifier that does not know
+        // the block time the create executed at verifies it all the same
+        Drive::verify_state_transition_was_executed_with_proof(
+            &create_again,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .expect("expected the executed create proof to verify at another block time");
         assert_eq!(
             window_entries(&platform),
             before,
-            "the create keeps the entries the window already holds"
+            "the create writes the same entries over those the window already holds"
         );
     }
 }

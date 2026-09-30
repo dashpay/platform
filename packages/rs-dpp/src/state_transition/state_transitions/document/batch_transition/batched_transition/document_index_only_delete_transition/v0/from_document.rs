@@ -50,7 +50,7 @@ impl DocumentIndexOnlyDeleteTransitionV0 {
                 document_type.regenerate_generated_properties(&mut data, platform_version)?;
                 if index_only_row_commits_created_at(
                     document_type.required_fields(),
-                    document_type.indexes().values(),
+                    document_type.index_structure(),
                 ) {
                     let created_at = document.created_at().ok_or_else(|| {
                         ProtocolError::Generic(format!(

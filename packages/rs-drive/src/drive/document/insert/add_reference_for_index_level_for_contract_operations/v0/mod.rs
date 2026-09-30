@@ -365,7 +365,7 @@ impl Drive {
     /// the same backstop role the unique-index "reference already exists"
     /// above plays. The exception is an index whose entries outlive a delete
     /// (`outlivesDelete`): validation does not probe it, and an entry there
-    /// already, left by an earlier document with the same values, is kept.
+    /// already, left by a deleted document with the same key, is written over.
     ///
     /// Under a summable index the element is
     /// `ItemWithSumItem(commitment, amount, flags)` instead — the same
@@ -602,6 +602,14 @@ impl Drive {
             }
         };
 
+        // An index whose entries outlive a delete may hold the entry of a
+        // deleted document with the same key (registration makes sure no
+        // document in state shares it): the create writes over it, so the
+        // entry carries the commitment of the row writing it, and the count
+        // does not move. Nothing is read.
+        if index_type.outlives_delete {
+            return self.batch_insert(path_key_element_info, batch_operations, drive_version);
+        }
         let inserted = self.batch_insert_if_not_exists(
             path_key_element_info,
             apply_type,
@@ -609,12 +617,8 @@ impl Drive {
             batch_operations,
             drive_version,
         )?;
-        // An index whose entries outlive a delete keeps the entry an earlier
-        // document with the same values left: it already stands for this
-        // owner under these values, so the write is skipped and nothing
-        // counts twice. Every other index's collision was refused by state
-        // validation.
-        if !inserted && !index_type.outlives_delete {
+        // Every other index's collision was refused by state validation.
+        if !inserted {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
                 "index-only entry already exists: state validation must reject a create \
                  whose entries collide before it reaches storage"

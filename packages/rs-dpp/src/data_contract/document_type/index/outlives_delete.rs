@@ -2,7 +2,7 @@
 //! (`outlivesDelete`, see [`super::OUTLIVES_DELETE`]) changes about an
 //! indexOnly row.
 
-use crate::data_contract::document_type::Index;
+use crate::data_contract::document_type::IndexLevel;
 use crate::document::property_names::CREATED_AT;
 use std::collections::BTreeSet;
 
@@ -14,31 +14,22 @@ use std::collections::BTreeSet;
 /// the value. A type that requires `$createdAt` but indexes it nowhere commits
 /// to it, as every type did before `outlivesDelete`.
 ///
-/// Shared by the parser, the delete transition's construction and its
-/// validation, and Drive's row commitment, so the four agree.
-pub fn index_only_row_commits_created_at<'a>(
+/// `index_structure` is the type's index structure, which records the fact at
+/// its root ([`IndexLevel::created_at_indexed_only_by_outliving`]) when it is
+/// derived. Shared by the delete transition's construction and its
+/// validation, and Drive's row commitment, so the three agree.
+pub fn index_only_row_commits_created_at(
     required_fields: &BTreeSet<String>,
-    indexes: impl IntoIterator<Item = &'a Index>,
+    index_structure: &IndexLevel,
 ) -> bool {
-    if !required_fields.contains(CREATED_AT) {
-        return false;
-    }
-    let mut involved = false;
-    for index in indexes {
-        if index.involves(CREATED_AT) {
-            if !index.outlives_delete {
-                return true;
-            }
-            involved = true;
-        }
-    }
-    !involved
+    required_fields.contains(CREATED_AT) && !index_structure.created_at_indexed_only_by_outliving()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::IndexProperty;
+    use crate::data_contract::document_type::{Index, IndexProperty};
+    use platform_version::version::PlatformVersion;
 
     fn index(properties: &[&str], outlives_delete: bool) -> Index {
         Index {
@@ -71,6 +62,11 @@ mod tests {
         }
     }
 
+    fn structure(indexes: &[Index]) -> IndexLevel {
+        IndexLevel::try_from_indices(indexes, "like", PlatformVersion::latest())
+            .expect("index structure")
+    }
+
     #[test]
     fn should_commit_created_at_unless_only_outliving_indexes_involve_it() {
         let required: BTreeSet<String> = ["$createdAt".to_string()].into();
@@ -80,18 +76,21 @@ mod tests {
 
         assert!(!index_only_row_commits_created_at(
             &required,
-            [&by_post, &trend]
+            &structure(&[by_post.clone(), trend.clone()])
         ));
         assert!(index_only_row_commits_created_at(
             &required,
-            [&by_post, &trend, &by_time]
+            &structure(&[by_post.clone(), trend, by_time.clone()])
         ));
         // Required but indexed nowhere: committed, as before the keyword
-        assert!(index_only_row_commits_created_at(&required, [&by_post]));
+        assert!(index_only_row_commits_created_at(
+            &required,
+            &structure(&[by_post])
+        ));
         // Not required: never
         assert!(!index_only_row_commits_created_at(
             &BTreeSet::new(),
-            [&by_time]
+            &structure(&[by_time])
         ));
     }
 }

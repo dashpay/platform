@@ -123,7 +123,7 @@ fn should_admit_an_outliving_window_and_commit_no_timestamp() {
         // Only the window involves `$createdAt`, so the row commits to none
         assert!(!index_only_row_commits_created_at(
             &document_type.required_fields,
-            document_type.indices.values(),
+            &document_type.index_structure,
         ));
         // The flag is stamped on the window's terminating level
         let level = document_type
@@ -327,5 +327,20 @@ fn should_refuse_an_update_flipping_outlives_delete() {
         }),
         "{:?}",
         result.errors
+    );
+}
+
+#[test]
+fn should_refuse_an_outliving_index_whose_key_holds_no_cleared_index_key() {
+    // Keyed by the liker alone in each window: two likes of different posts
+    // by one liker would share an entry, and no index a delete clears keys
+    // them apart
+    expect_structure_error(
+        parse_with(
+            like_schema(platform_value!({ "properties": [{ "$createdAt": "asc" }] })),
+            PlatformVersion::latest(),
+            false,
+        ),
+        "holds the whole key of no index that a delete clears",
     );
 }

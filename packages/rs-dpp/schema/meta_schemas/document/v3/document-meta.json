@@ -2043,7 +2043,7 @@
           },
           "outlivesDelete": {
             "type": "boolean",
-            "description": "Only on a timeRange index with a ttl of an indexOnly document type, without a sum and on a type without entryPayload: a delete of a document leaves its entries in this index to expire with their window, and a create whose entry here already exists keeps it rather than being refused as a duplicate. A value only such indexes use ($createdAt, when every index involving it outlives deletes) is neither carried by a delete nor part of the row commitment. Available from protocol version 14."
+            "description": "Only on a timeRange index with a ttl of an indexOnly document type, without a sum and on a type without entryPayload: a delete of a document leaves its entries in this index to expire with their window, and a create whose entry here already exists writes over it rather than being refused as a duplicate. The index's key (its properties but $createdAt, and its terminal) must hold the whole key of an index a delete clears that skips no document. A value only such indexes use ($createdAt, when every index involving it outlives deletes) is neither carried by a delete nor part of the row commitment. Available from protocol version 14."
           },
           "skipIfAbsent": {
             "oneOf": [

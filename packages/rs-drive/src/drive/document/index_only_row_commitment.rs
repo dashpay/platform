@@ -161,7 +161,7 @@ pub fn index_only_row_commitment_with_preimage_size(
     // time either way.
     if index_only_row_commits_created_at(
         document_type.required_fields(),
-        document_type.indexes().values(),
+        document_type.index_structure(),
     ) {
         if let Some(created_at) = document.created_at() {
             preimage.extend_from_slice(b"$createdAt");
