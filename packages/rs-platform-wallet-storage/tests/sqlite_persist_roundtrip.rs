@@ -449,8 +449,8 @@ fn tc010_asset_lock_roundtrip() {
 /// reconstruction's status, admitted by the V004 CHECK widening —
 /// round-trips through the writer's TEXT status mapping and the
 /// lifecycle blob, chain proof included.
-#[test]
-fn tc010b_recovered_from_chain_lock_roundtrip() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc010b_recovered_from_chain_lock_roundtrip() {
     use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
@@ -483,6 +483,15 @@ fn tc010b_recovered_from_chain_lock_roundtrip() {
     locks.asset_locks.insert(outpoint, entry.clone());
 
     let (persister, tmp, path) = fresh_persister();
+    assert!(
+        persister.persistence_capabilities().contains(
+            platform_wallet::changeset::PersistenceCapabilities::ASSET_LOCK_RECONCILIATION
+        ),
+        "SQLite must support reconciliation of the asset-lock rows it restores"
+    );
+    assert!(!persister
+        .persistence_capabilities()
+        .contains(platform_wallet::changeset::PersistenceCapabilities::WALLET_RESTORE));
     let w = wid(0xFB);
     ensure_wallet_meta(&persister, &w);
     persister
@@ -497,20 +506,45 @@ fn tc010b_recovered_from_chain_lock_roundtrip() {
     drop(persister);
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-    let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
-        &p2.lock_conn_for_test(),
-        &w,
-        &platform_wallet_storage::LoadCtx::strict(),
-    )
-    .unwrap();
-    let tracked = &bucketed[&0][&outpoint];
+    let state = p2
+        .load()
+        .expect("public load restores recovered asset locks");
+    let tracked = &state.wallets[&w].unused_asset_locks[&0][&outpoint];
     assert_eq!(tracked.status, AssetLockStatus::RecoveredFromChain);
-    match &tracked.proof {
-        Some(dpp::prelude::AssetLockProof::Chain(chain)) => {
-            assert_eq!(chain.core_chain_locked_height, 411_495);
-        }
-        other => panic!("chain proof must survive the roundtrip, got {other:?}"),
-    }
+    assert_eq!(tracked.proof, entry.proof);
+    assert_eq!(tracked.amount, entry.amount_duffs);
+    assert_eq!(tracked.funding_type, entry.funding_type);
+
+    struct NoopHandler;
+    impl platform_wallet::events::EventHandler for NoopHandler {}
+    impl platform_wallet::PlatformEventHandler for NoopHandler {}
+
+    let sdk = std::sync::Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap());
+    let manager = platform_wallet::PlatformWalletManager::new(
+        sdk,
+        std::sync::Arc::new(p2),
+        std::sync::Arc::new(NoopHandler),
+    );
+    manager
+        .load_from_persistor()
+        .await
+        .expect("manager hydration");
+    let wallet_manager = manager.wallet_manager_arc();
+    let wallets = wallet_manager.read().await;
+    let restored = &wallets
+        .get_wallet_info(&w)
+        .expect("restored wallet")
+        .tracked_asset_locks[&outpoint];
+    assert_eq!(restored.status, tracked.status);
+    assert_eq!(restored.proof, tracked.proof);
+    assert_eq!(restored.out_point, tracked.out_point);
+    assert_eq!(restored.transaction, tracked.transaction);
+    assert_eq!(restored.amount, tracked.amount);
+    assert_eq!(restored.account_index, tracked.account_index);
+    assert_eq!(restored.identity_index, tracked.identity_index);
+    assert_eq!(restored.funding_type, tracked.funding_type);
+    drop(wallets);
+    assert!(manager.shutdown().await.all_clean());
     drop(tmp);
 }
 
