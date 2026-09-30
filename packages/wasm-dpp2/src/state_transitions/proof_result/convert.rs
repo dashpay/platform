@@ -8,7 +8,8 @@ use super::address_funds::{
 };
 use super::data_contract::{
     VerifiedContractDocumentRemovalWasm, VerifiedContractFeeClaimWasm,
-    VerifiedContractModerationListStatusesWasm, VerifiedDataContractWasm,
+    VerifiedContractModerationListStatusesWasm, VerifiedContractTeamActionSignatureWasm,
+    VerifiedDataContractWasm,
 };
 use super::document::VerifiedDocumentsWasm;
 use super::helpers::{
@@ -76,7 +77,8 @@ export type StateTransitionProofResultType =
   | VerifiedIdentityWithShieldedNullifiers
   | VerifiedContractModerationListStatuses
   | VerifiedContractFeeClaim
-  | VerifiedContractDocumentRemoval;
+  | VerifiedContractDocumentRemoval
+  | VerifiedContractTeamActionSignature;
 "#;
 
 #[wasm_bindgen]
@@ -419,6 +421,16 @@ pub fn convert_proof_result(
                 .as_ref()
                 .map(|restoration| restoration.restored_at),
             kept_fields: removal.kept_fields,
+        }
+        .into(),
+        StateTransitionProofResult::VerifiedContractTeamActionSignature(
+            contract_id,
+            action_id,
+            status,
+        ) => VerifiedContractTeamActionSignatureWasm {
+            contract_id: contract_id.into(),
+            action_id: action_id.into(),
+            status,
         }
         .into(),
     };

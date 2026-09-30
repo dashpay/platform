@@ -1,15 +1,20 @@
 use crate::drive::contract::moderation::types::{
     ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
-    ContractModerationEntriesQuery,
+    ContractModerationEntriesQuery, ContractTeamActionsQuery,
 };
 use crate::drive::contract::paths::{
     contract_document_type_removals_path_vec, contract_moderation_list_path_vec,
+    contract_team_action_path_vec, contract_team_action_signers_path_vec,
+    contract_team_action_status_path_vec, contract_team_actions_path_vec,
+    CONTRACT_TEAM_ACTION_INFO_KEY, CONTRACT_TEAM_ACTION_SIGNERS_KEY,
+    CONTRACT_TEAM_ACTIVE_ACTIONS_KEY, CONTRACT_TEAM_CLOSED_ACTIONS_KEY,
 };
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{Query, QueryItem};
 use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, SizedQuery};
 use grovedb_version::version::GroveVersion;
@@ -146,6 +151,99 @@ impl Drive {
                     ))));
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// The query for a page of a contract's team actions, active or closed: each action's info
+    /// (`I`), in action id order, from the start the query gives. The limit is the page's, so
+    /// the prover and the verifier bound the proof alike.
+    pub fn contract_team_actions_query(
+        contract_id: [u8; 32],
+        actions_query: &ContractTeamActionsQuery,
+    ) -> PathQuery {
+        let mut query = Query::new_with_direction(true);
+        match actions_query.start_at {
+            None => query.insert_item(QueryItem::RangeFull(RangeFull)),
+            Some((action_id, true)) => {
+                query.insert_item(QueryItem::RangeFrom(action_id.to_vec()..))
+            }
+            Some((action_id, false)) => {
+                query.insert_item(QueryItem::RangeAfter(action_id.to_vec()..))
+            }
+        }
+        query.set_subquery_key(CONTRACT_TEAM_ACTION_INFO_KEY.to_vec());
+        PathQuery {
+            path: contract_team_action_status_path_vec(&contract_id, actions_query.status),
+            query: SizedQuery {
+                query,
+                limit: Some(actions_query.limit),
+                offset: None,
+            },
+        }
+    }
+
+    /// The query for one team action's info (`I`), active or closed as `status` says: proved
+    /// present with its value, or absent.
+    pub fn contract_team_action_query(
+        contract_id: [u8; 32],
+        status: GroupActionStatus,
+        action_id: [u8; 32],
+    ) -> PathQuery {
+        PathQuery::new_single_key(
+            contract_team_action_path_vec(&contract_id, status, &action_id),
+            CONTRACT_TEAM_ACTION_INFO_KEY.to_vec(),
+        )
+    }
+
+    /// The query for every approval of one team action, active or closed as `status` says. A
+    /// team action holds at most the members of the team, so the query needs no limit.
+    pub fn contract_team_action_signers_query(
+        contract_id: [u8; 32],
+        status: GroupActionStatus,
+        action_id: [u8; 32],
+    ) -> PathQuery {
+        PathQuery::new_unsized(
+            contract_team_action_signers_path_vec(&contract_id, status, &action_id),
+            Query::new_range_full(),
+        )
+    }
+
+    /// The query for one member's approval of one team action wherever it is, active or closed:
+    /// what a proposal's or an approval's execution proves. An approval never moves but with its
+    /// action, when the action closes, so the proof holds while the approval stands: one deleted
+    /// because its member left the team no longer proves.
+    pub fn contract_team_action_signer_query(
+        contract_id: [u8; 32],
+        action_id: [u8; 32],
+        signer_id: [u8; 32],
+    ) -> PathQuery {
+        let mut query = Query::new_with_direction(true);
+        query.insert_keys(vec![
+            CONTRACT_TEAM_ACTIVE_ACTIONS_KEY.to_vec(),
+            CONTRACT_TEAM_CLOSED_ACTIONS_KEY.to_vec(),
+        ]);
+        query.set_subquery_path(vec![
+            action_id.to_vec(),
+            CONTRACT_TEAM_ACTION_SIGNERS_KEY.to_vec(),
+            signer_id.to_vec(),
+        ]);
+        PathQuery::new_unsized(contract_team_actions_path_vec(&contract_id), query)
+    }
+
+    /// A page of team actions returns at least one and at most `max_returned_elements`: what
+    /// bounds the proof the verifier accepts. Drive, the node's query handler and the proof
+    /// verifier all call it.
+    pub fn check_contract_team_actions_query(
+        query: &ContractTeamActionsQuery,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let max_limit = platform_version.drive_abci.query.max_returned_elements;
+        if query.limit == 0 || query.limit > max_limit {
+            return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "contract team actions limit must be between 1 and {}, got {}",
+                max_limit, query.limit
+            ))));
         }
         Ok(())
     }

@@ -928,16 +928,7 @@ fn delete_post_by_moderator<'a>(
 }
 
 fn forfeit<'a>() -> DriveOperation<'a> {
-    ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds {
-        spared: None,
-    })
-}
-
-/// The forfeiture of a deletion replacing the record `holder` holds, which spares its refund
-fn forfeit_sparing<'a>(holder: Identifier) -> DriveOperation<'a> {
-    ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds {
-        spared: Some(holder),
-    })
+    ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds)
 }
 
 #[test]
@@ -1145,8 +1136,9 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
     );
 
     // Deleted again by a moderator: a fresh record in place of the restored one, the author
-    // refunded nothing again. The fresh record is shorter by the restoration, whose bytes are
-    // the restorer's, who holds the record: the deletion spares that refund.
+    // refunded nothing again. The fresh record is shorter than the restored one it replaces,
+    // and the restorer, who paid for the bytes that frees, keeps that refund: the forfeiture
+    // takes the document's removals alone.
     let again = ContractDocumentRemoval {
         moderator_id: restorer,
         removed_at: 30,
@@ -1158,7 +1150,7 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
         vec![
             delete_post_by_moderator(&contract, post.id()),
             replace_record(contract.id(), post.id(), again.clone(), &restored, restorer),
-            forfeit_sparing(restorer),
+            forfeit(),
         ],
         true,
     );
@@ -1320,4 +1312,57 @@ fn should_keep_refunding_a_batch_without_the_forfeiture_before_protocol_version_
             .apply_drive_operations,
         1
     );
+}
+
+#[test]
+fn should_price_a_forfeiting_deletion_as_one_batch_when_it_rewrites_no_record() {
+    let platform_version = PlatformVersion::latest();
+    let author = identity(0x41);
+    let moderator = identity(0x42);
+    let contract = contract_with(true, false, &[POST]);
+    // A moderator's deletion with a fresh record, with or without the forfeiture: nothing but
+    // the document frees bytes, so the forfeiting batch is applied as one, as the other is,
+    // and costs the same, estimated and applied; only the refund differs.
+    let fees = |forfeiting: bool| {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        insert(&drive, &contract);
+        let post = add_post(&drive, &contract, author);
+        let operations = || {
+            let mut operations = vec![
+                delete_post_by_moderator(&contract, post.id()),
+                record(
+                    contract.id(),
+                    post.id(),
+                    ContractDocumentRemoval {
+                        document_owner_id: author,
+                        moderator_id: moderator,
+                        reason: ContractModerationReason::from_text("spam"),
+                        removed_at: 10,
+                        document_hash: [0x43; 32],
+                        restoration: None,
+                        kept_fields: Default::default(),
+                    },
+                ),
+            ];
+            if forfeiting {
+                operations.push(forfeit());
+            }
+            operations
+        };
+        (
+            apply(&drive, operations(), false),
+            apply(&drive, operations(), true),
+        )
+    };
+    let (estimated_forfeiting, forfeiting) = fees(true);
+    let (estimated, refunding) = fees(false);
+    assert_eq!(
+        estimated_forfeiting.processing_fee,
+        estimated.processing_fee
+    );
+    assert_eq!(estimated_forfeiting.storage_fee, estimated.storage_fee);
+    assert_eq!(forfeiting.processing_fee, refunding.processing_fee);
+    assert_eq!(forfeiting.storage_fee, refunding.storage_fee);
+    assert!(forfeiting.fee_refunds.0.is_empty());
+    assert!(refunding.fee_refunds.get(author.as_bytes()).is_some());
 }

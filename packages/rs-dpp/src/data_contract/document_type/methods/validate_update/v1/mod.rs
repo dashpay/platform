@@ -24,6 +24,7 @@ use crate::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, DataContractInvalidRequiredFieldsUpdateError,
 };
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV1Getters, DocumentTypeV2Getters,
 };
@@ -453,6 +454,37 @@ impl DocumentTypeRef<'_> {
                         );
                     }
                 }
+                // Who must approve the deletion of a settled document is fixed with the
+                // window: fewer approvals would reach content its author wrote under more.
+                let (old_rule, new_rule) = (
+                    self.moderator_settled_deletion(),
+                    new_document_type.moderator_settled_deletion(),
+                );
+                if old_rule != new_rule {
+                    let rule = |rule: Option<SettledDeletionRule>| match rule {
+                        None => "no deletion once settled".to_string(),
+                        Some(SettledDeletionRule {
+                            leader: true,
+                            approvals,
+                        }) => format!("{approvals} approvals, the team's leader among them"),
+                        Some(SettledDeletionRule {
+                            leader: false,
+                            approvals,
+                        }) => format!("{approvals} approvals"),
+                    };
+                    return SimpleConsensusValidationResult::new_with_error(
+                        DocumentTypeUpdateError::new(
+                            self.data_contract_id(),
+                            self.name(),
+                            format!(
+                                "document type can not change who must approve a moderator's deletion of a settled document: changing from {} to {}",
+                                rule(old_rule),
+                                rule(new_rule)
+                            ),
+                        )
+                        .into(),
+                    );
+                }
                 return SimpleConsensusValidationResult::new();
             }
             let seconds = |window: Option<u32>| {
@@ -765,14 +797,17 @@ mod tests {
     use crate::consensus::ConsensusError;
     use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-    use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use crate::data_contract::config::moderation::{
+        ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+        ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+    };
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::DocumentType;
     use crate::validation::SimpleConsensusValidationResult;
     use assert_matches::assert_matches;
     use platform_value::{platform_value, Identifier, Value};
     use platform_version::version::PlatformVersion;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn doc_type_with_indices(indices: Value, platform_version: &PlatformVersion) -> DocumentType {
         let schema = platform_value!({
@@ -1087,6 +1122,100 @@ mod tests {
                 2,
                 platform_version,
             )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_return_invalid_result_when_who_approves_a_settled_deletion_is_changed() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                    join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                    vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                    challenge_cool_down: None,
+                    election_delay: None,
+                    max_added_moderators: 0,
+                    moderated_document_types: BTreeMap::from([(
+                        "post".to_string(),
+                        BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                    )]),
+                    interim: InterimModerators::ContractOwner,
+                    owner_protected: false,
+                })),
+                warnings: false,
+            }));
+        let make_document_type = |rule: Option<Value>| {
+            let mut abilities = platform_value!({ "delete": true, "deleteWithin": 86400 });
+            if let Some(rule) = rule {
+                abilities
+                    .insert("deleteSettled".to_string(), rule)
+                    .expect("expected to set the rule");
+            }
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "post",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    },
+                    "required": ["$updatedAt"],
+                    "additionalProperties": false,
+                    "moderatorAbilities": abilities,
+                }),
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+
+        // Fewer approvals would reach content written under more, and more would take back
+        // what the contract promised its moderators: the rule changes in no direction.
+        for (old, new, expected) in [
+            (
+                None,
+                Some(platform_value!({ "leader": true })),
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from no deletion once settled to 1 approvals, the team's leader among them",
+            ),
+            (
+                Some(platform_value!({ "leader": true, "approvals": 3 })),
+                Some(platform_value!({ "approvals": 3 })),
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from 3 approvals, the team's leader among them to 3 approvals",
+            ),
+            (
+                Some(platform_value!({ "approvals": 2 })),
+                None,
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from 2 approvals to no deletion once settled",
+            ),
+        ] {
+            let result = make_document_type(old)
+                .as_ref()
+                .validate_update(make_document_type(new).as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message() == expected
+            );
+        }
+
+        // Unchanged, it passes.
+        let rule = || Some(platform_value!({ "leader": true, "approvals": 3 }));
+        let result = make_document_type(rule())
+            .as_ref()
+            .validate_update(make_document_type(rule()).as_ref(), 2, platform_version)
             .expect("validate_update should not error");
         assert!(result.is_valid(), "{:?}", result.errors);
     }

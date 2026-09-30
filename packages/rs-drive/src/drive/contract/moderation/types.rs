@@ -1,10 +1,13 @@
+use crate::drive::constants::ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE;
 use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationDocument,
-    ContractModerationList, ContractModerationReason, ContractSuspension, ContractWarning,
+    ContractModerationList, ContractModerationReason, ContractSuspension, ContractTeamAction,
+    ContractTeamActionEvent, ContractWarning,
 };
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::property_constraints::SystemProperty;
 use dpp::data_contract::document_type::{property_at_path, DocumentTypeRef};
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
@@ -547,6 +550,191 @@ pub fn decode_warnings(value: &[u8]) -> Result<Vec<ContractWarning>, String> {
     Ok(warnings)
 }
 
+/// One page of a contract's team actions, active or closed, in action id order: at most
+/// `limit`, from `start_at` (the id, and whether it is included) when set. A page shorter than
+/// the limit is the last one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractTeamActionsQuery {
+    /// Active (still collecting approvals) or closed (ran).
+    pub status: GroupActionStatus,
+    /// Start at this action id, included when the flag is set.
+    pub start_at: Option<(Identifier, bool)>,
+    /// At most this many actions.
+    pub limit: u16,
+}
+
+/// One of a contract's team actions, by its id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractTeamActionEntry {
+    /// The action's id.
+    pub action_id: Identifier,
+    /// Who proposed it, when, and what it does.
+    pub action: ContractTeamAction,
+}
+
+/// What one member's signature writes of a team action: see
+/// `Drive::add_contract_team_action_signature_operations`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractTeamActionWrite {
+    /// A proposal, the proposer's approval: the action written active, or closed when its
+    /// proposer meets the rule alone (`closes`).
+    Propose {
+        /// The action.
+        action: ContractTeamAction,
+        /// Whether the proposal meets the action's rule alone, the action then written straight
+        /// to the closed actions.
+        closes: bool,
+    },
+    /// An approval of an active action that stays active.
+    Approve {
+        /// The approvals of members no longer on the team, which the approval found when it
+        /// read the team and which it deletes: they no longer count, nor prove, and a member
+        /// who comes back after this approves again.
+        dropped_signers: Vec<Identifier>,
+    },
+    /// The approval that meets the rule: the action, with the approvals that counted and its
+    /// info, moves to the closed actions.
+    Close {
+        /// The action as stored, whose info moves: an estimate prices the move by its size.
+        action: ContractTeamAction,
+        /// The approvals given before this one that counted, which move with the action.
+        earlier_signers: Vec<Identifier>,
+        /// The approvals of members no longer on the team, which are deleted.
+        dropped_signers: Vec<Identifier>,
+    },
+}
+
+/// The tag a team action's value starts with: what it does.
+const TEAM_ACTION_DELETE_SETTLED_DOCUMENT: u8 = 0;
+
+/// The stored size of a team action less its document type name and its reason: the tag, the
+/// proposer id, the proposal time, the name's length, the document id, the document's last
+/// modification and its revision.
+pub const CONTRACT_TEAM_ACTION_FIXED_SIZE: usize = 1 + 32 + 8 + 1 + 32 + 8 + 8;
+
+/// The size a team action is estimated at: the fixed part, a typical document type name and a
+/// typical reason, whose tag, code and reason document it always carries (a seated team's reason
+/// names one its proposal lists).
+pub fn estimated_contract_team_action_value_size() -> u32 {
+    CONTRACT_TEAM_ACTION_FIXED_SIZE as u32
+        + u32::from(ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE)
+        + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
+        + CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE
+        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
+}
+
+/// The stored size of a team action.
+pub fn contract_team_action_encoded_size(action: &ContractTeamAction) -> usize {
+    match &action.event {
+        ContractTeamActionEvent::DeleteSettledDocument {
+            document_type_name,
+            reason,
+            ..
+        } => {
+            CONTRACT_TEAM_ACTION_FIXED_SIZE + document_type_name.len() + reason_encoded_size(reason)
+        }
+    }
+}
+
+/// Encodes a team action: the tag (`0`, the deletion of a settled document), the proposer id,
+/// the proposal time as a u64 big-endian, the document type name's length as a byte and the
+/// name, the document id, the document's last modification as a u64 big-endian, its revision as
+/// a u64 big-endian (`0` for a type whose documents carry none: a revision starts at 1), and the
+/// reason, see [`encode_ban`].
+pub fn encode_contract_team_action(action: &ContractTeamAction) -> Vec<u8> {
+    let mut value = Vec::with_capacity(contract_team_action_encoded_size(action));
+    match &action.event {
+        ContractTeamActionEvent::DeleteSettledDocument {
+            document_type_name,
+            document_id,
+            document_last_modified_at,
+            document_revision,
+            reason,
+        } => {
+            value.push(TEAM_ACTION_DELETE_SETTLED_DOCUMENT);
+            value.extend_from_slice(action.proposer_id.as_slice());
+            value.extend_from_slice(&action.proposed_at.to_be_bytes());
+            // A document type name is at most 64 bytes, which a byte holds
+            value.push(document_type_name.len().min(u8::MAX as usize) as u8);
+            value.extend_from_slice(document_type_name.as_bytes());
+            value.extend_from_slice(document_id.as_slice());
+            value.extend_from_slice(&document_last_modified_at.to_be_bytes());
+            value.extend_from_slice(&document_revision.unwrap_or_default().to_be_bytes());
+            encode_reason_into(reason, &mut value);
+        }
+    }
+    value
+}
+
+/// Decodes a team action: see [`encode_contract_team_action`].
+pub fn decode_contract_team_action(value: &[u8]) -> Result<ContractTeamAction, String> {
+    let cut_short = |inside: &str| format!("team action is cut short inside its {}", inside);
+    let (&tag, rest) = value.split_first().ok_or_else(|| cut_short("tag"))?;
+    if tag != TEAM_ACTION_DELETE_SETTLED_DOCUMENT {
+        return Err(format!("team action has unknown tag {}", tag));
+    }
+    let (proposer_id, rest) = rest
+        .split_first_chunk::<32>()
+        .ok_or_else(|| cut_short("proposer id"))?;
+    let (proposed_at, rest) = rest
+        .split_first_chunk::<8>()
+        .ok_or_else(|| cut_short("proposal time"))?;
+    let (&name_length, rest) = rest
+        .split_first()
+        .ok_or_else(|| cut_short("document type name"))?;
+    if rest.len() < usize::from(name_length) {
+        return Err(cut_short("document type name"));
+    }
+    let (name, rest) = rest.split_at(usize::from(name_length));
+    let (document_id, rest) = rest
+        .split_first_chunk::<32>()
+        .ok_or_else(|| cut_short("document id"))?;
+    let (last_modified_at, rest) = rest
+        .split_first_chunk::<8>()
+        .ok_or_else(|| cut_short("document's last modification"))?;
+    let (revision, rest) = rest
+        .split_first_chunk::<8>()
+        .ok_or_else(|| cut_short("document's revision"))?;
+    // A team action always carries a reason, its tag at least: an empty rest is corrupted
+    // state, not an entry written before reasons.
+    if rest.is_empty() {
+        return Err(cut_short("reason"));
+    }
+    let revision = u64::from_be_bytes(*revision);
+    Ok(ContractTeamAction {
+        proposer_id: Identifier::from(*proposer_id),
+        proposed_at: u64::from_be_bytes(*proposed_at),
+        event: ContractTeamActionEvent::DeleteSettledDocument {
+            document_type_name: std::str::from_utf8(name)
+                .map_err(|_| "team action document type name is not UTF-8".to_string())?
+                .to_string(),
+            document_id: Identifier::from(*document_id),
+            document_last_modified_at: u64::from_be_bytes(*last_modified_at),
+            document_revision: (revision != 0).then_some(revision),
+            reason: decode_reason(rest)?,
+        },
+    })
+}
+
+impl ContractTeamActionEntry {
+    /// Decodes one team action as a query returns it: the action's info item (`I`), under the
+    /// path whose last segment is the action id.
+    pub fn from_path_element(path: &[Vec<u8>], element: &Element) -> Result<Self, String> {
+        let key = path
+            .last()
+            .ok_or_else(|| "team action path is empty".to_string())?;
+        let action_id = Identifier::from_bytes(key)
+            .map_err(|_| format!("team action key is not an action id: {:?}", key))?;
+        let Element::Item(value, _) = element else {
+            return Err("team action is not an item".to_string());
+        };
+        Ok(Self {
+            action_id,
+            action: decode_contract_team_action(value)?,
+        })
+    }
+}
+
 fn reason_encoded_size(reason: &ContractModerationReason) -> usize {
     let documents_size = if reason.documents.is_empty() {
         0
@@ -1078,6 +1266,79 @@ mod tests {
             .expect_err("key is not an id");
         ContractDocumentRemovalEntry::from_key_element(&[4; 32], &Element::empty_tree())
             .expect_err("not an item");
+    }
+
+    #[test]
+    fn should_round_trip_a_team_action() {
+        let action = ContractTeamAction {
+            proposer_id: Identifier::from([2; 32]),
+            proposed_at: 1_000,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from([5; 32]),
+                document_last_modified_at: 10,
+                document_revision: Some(3),
+                reason: ContractModerationReason {
+                    code: Some(7),
+                    text: "doxxing".to_string(),
+                    documents: vec![],
+                    reason_document_id: None,
+                },
+            },
+        };
+        let value = encode_contract_team_action(&action);
+        assert_eq!(value.len(), contract_team_action_encoded_size(&action));
+        assert_eq!(decode_contract_team_action(&value).expect("decode"), action);
+
+        let no_revision = ContractTeamAction {
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "note".to_string(),
+                document_id: Identifier::from([6; 32]),
+                document_last_modified_at: 11,
+                document_revision: None,
+                reason: ContractModerationReason::from_text("spam"),
+            },
+            ..action.clone()
+        };
+        let value = encode_contract_team_action(&no_revision);
+        assert_eq!(
+            decode_contract_team_action(&value).expect("decode"),
+            no_revision
+        );
+
+        let path = vec![
+            vec![64],
+            vec![9; 32],
+            vec![2],
+            vec![24],
+            b"M".to_vec(),
+            vec![4; 32],
+        ];
+        assert_eq!(
+            ContractTeamActionEntry::from_path_element(
+                &path,
+                &Element::new_item(encode_contract_team_action(&action))
+            )
+            .expect("entry"),
+            ContractTeamActionEntry {
+                action_id: Identifier::from([4; 32]),
+                action,
+            }
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_malformed_team_action() {
+        decode_contract_team_action(&[]).expect_err("no tag");
+        decode_contract_team_action(&[1]).expect_err("unknown tag");
+        decode_contract_team_action(&[0; 33]).expect_err("cut short before the proposal time");
+        let mut no_reason = vec![0; 42];
+        no_reason.extend_from_slice(&[0; 48]);
+        decode_contract_team_action(&no_reason).expect_err("no reason");
+        let mut name_cut_short = vec![0; 41];
+        name_cut_short.push(10);
+        name_cut_short.extend_from_slice(b"post");
+        decode_contract_team_action(&name_cut_short).expect_err("name cut short");
     }
 
     #[test]

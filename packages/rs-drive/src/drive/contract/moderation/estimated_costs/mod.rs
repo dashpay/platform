@@ -206,4 +206,86 @@ impl Drive {
             })),
         }
     }
+
+    /// Adds the layers a contract insertion touches when it creates the trees of the contract's
+    /// team actions: its other tree and the team actions tree above the active and the closed
+    /// actions.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract whose team action trees are created.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version, or that of a nested estimation, is unknown.
+    pub(crate) fn add_estimation_costs_for_contract_team_action_trees(
+        contract_id: [u8; 32],
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_team_action
+        {
+            0 => Self::add_estimation_costs_for_contract_team_action_trees_v0(
+                contract_id,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_team_action_trees".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Adds the layers a proposal or an approval of one of a contract's team actions is written
+    /// through: the active actions and the action's own trees, and when it closes the action,
+    /// the closed actions and the action's trees there.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract whose seated team votes on the action.
+    /// * `action_id`: The action.
+    /// * `closes`: Whether the write closes the action, moving it to the closed actions.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version, or that of a nested estimation, is unknown.
+    pub(crate) fn add_estimation_costs_for_contract_team_action(
+        contract_id: [u8; 32],
+        action_id: [u8; 32],
+        closes: bool,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_team_action
+        {
+            0 => Self::add_estimation_costs_for_contract_team_action_v0(
+                contract_id,
+                action_id,
+                closes,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_team_action".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
 }

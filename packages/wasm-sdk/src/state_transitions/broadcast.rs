@@ -34,7 +34,9 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
         // type, and a field change's reads the changed document back under it. A deletion's
         // reads from the contract whether the type keeps removal records: one that keeps none
         // is proved by the document's absence, read under the type. The other moderations
-        // prove the one list entry they edit and need none.
+        // prove the one list entry they edit, and a team action's proposal or approval the
+        // signer's approval of the action, read by a query rebuilt from the transition alone:
+        // they need none.
         StateTransition::ContractUserModeration(moderation) => match moderation.action() {
             ContractUserModerationAction::Ban { .. }
             | ContractUserModerationAction::DeleteDocument { .. }
@@ -46,7 +48,9 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
             | ContractUserModerationAction::Suspend { .. }
             | ContractUserModerationAction::Unsuspend { .. }
             | ContractUserModerationAction::Warn { .. }
-            | ContractUserModerationAction::ClearWarnings { .. } => BTreeSet::new(),
+            | ContractUserModerationAction::ClearWarnings { .. }
+            | ContractUserModerationAction::DeleteSettledDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => BTreeSet::new(),
         },
         _ => BTreeSet::new(),
     }
@@ -504,7 +508,8 @@ mod tests {
             );
         }
 
-        // The other moderations prove the one list entry they edit, contract unread.
+        // The other moderations prove the one list entry they edit, and a team action's proposal
+        // or approval the signer's approval of the action, contract unread.
         for action in [
             ContractUserModerationAction::Unban { identity_id },
             ContractUserModerationAction::Suspend {
@@ -518,6 +523,14 @@ mod tests {
                 reason: Default::default(),
             },
             ContractUserModerationAction::ClearWarnings { identity_id },
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::ApproveTeamAction {
+                action_id: document_id,
+            },
         ] {
             assert!(
                 referenced_contract_ids(&moderation(action.clone())).is_empty(),

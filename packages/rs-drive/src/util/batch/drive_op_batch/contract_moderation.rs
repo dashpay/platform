@@ -1,3 +1,4 @@
+use crate::drive::contract::moderation::types::ContractTeamActionWrite;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -14,7 +15,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 /// Operations on a moderated contract's banlist, suspension list, warning list, document
-/// removal records and, for an elected contract, its team's moderation action counts.
+/// removal records and, for an elected contract, its team's moderation action counts and the
+/// actions it votes on.
 #[derive(Clone, Debug)]
 pub enum ContractModerationOperationType {
     /// Puts an identity on the banlist.
@@ -108,17 +110,29 @@ pub enum ContractModerationOperationType {
         /// restored it.
         moderator_id: Identifier,
     },
-    /// Writes nothing: marks the batch it is in as one whose storage removals refund nobody
-    /// but `spared` (`Drive::apply_drive_operations` generation 1). A moderator's document
-    /// deletion carries it, so the deleted document's owner gets no storage refund, unless the
-    /// document's type refunds the owner (`moderatorAbilities.deleteRefundsOwner`).
-    ForfeitStorageRefunds {
-        /// The identity still refunded: when the deletion replaces the record of a deletion a
-        /// moderator restored, the moderator holding that record, whose bytes a shorter fresh
-        /// record frees, as for any replacement. `None` otherwise, and when the holder is the
-        /// document's owner.
-        spared: Option<Identifier>,
+    /// Writes a seated moderation team member's proposal or approval of one of the contract's
+    /// team actions, closing the action when it meets its rule: see
+    /// `Drive::add_contract_team_action_signature_operations`.
+    AddTeamActionSignature {
+        /// The contract whose seated team votes on the action.
+        contract_id: Identifier,
+        /// The action.
+        action_id: Identifier,
+        /// The member that proposes or approves, who pays for what it adds.
+        signer_id: Identifier,
+        /// What the signature writes: a proposal, an approval, or the closing approval.
+        write: ContractTeamActionWrite,
     },
+    /// Writes nothing: marks the batch it is in as one whose document operations' storage
+    /// removals refund nobody (`Drive::apply_drive_operations` generation 1, which applies them
+    /// as a GroveDB batch of their own when the batch also frees moderation storage someone is
+    /// owed). A
+    /// moderator's document deletion carries it, so whoever paid for the deleted document, its
+    /// owner or an earlier one, gets no storage refund, and nor does whoever created an index
+    /// subtree the deletion empties, unless the document's type refunds the owner
+    /// (`moderatorAbilities.deleteRefundsOwner`); the removal record the deletion replaces and
+    /// the team action approvals it moves refund as ever.
+    ForfeitStorageRefunds,
     /// Writes a seated moderation team member's count of moderation actions on an elected
     /// contract since the moderators pot was last settled.
     SetActionCount {
@@ -256,7 +270,22 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 transaction,
                 platform_version,
             ),
-            ContractModerationOperationType::ForfeitStorageRefunds { .. } => Ok(vec![]),
+            ContractModerationOperationType::AddTeamActionSignature {
+                contract_id,
+                action_id,
+                signer_id,
+                write,
+            } => drive.add_contract_team_action_signature_operations(
+                contract_id,
+                action_id,
+                signer_id,
+                &write,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            ContractModerationOperationType::ForfeitStorageRefunds => Ok(vec![]),
             ContractModerationOperationType::SetActionCount {
                 contract_id,
                 identity_id,

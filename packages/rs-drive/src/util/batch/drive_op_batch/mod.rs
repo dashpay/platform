@@ -16,6 +16,7 @@ mod withdrawals;
 
 use crate::util::batch::GroveDbOpBatch;
 
+use crate::drive::contract::moderation::types::ContractTeamActionWrite;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -254,25 +255,39 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
-    /// Whether the batch this operation is in refunds nobody for the storage it removes: see
-    /// [`ContractModerationOperationType::ForfeitStorageRefunds`].
+    /// Whether the batch this operation is in refunds nobody for the storage its document
+    /// operations remove: see [`ContractModerationOperationType::ForfeitStorageRefunds`].
     pub fn forfeits_storage_refunds(&self) -> bool {
         matches!(
             self,
             Self::ContractModerationOperation(
-                ContractModerationOperationType::ForfeitStorageRefunds { .. }
+                ContractModerationOperationType::ForfeitStorageRefunds
             )
         )
     }
 
-    /// The identity a batch forfeiting its refunds still refunds, when this operation is the
-    /// marker and names one: see [`ContractModerationOperationType::ForfeitStorageRefunds`].
-    pub fn spared_storage_refund(&self) -> Option<Identifier> {
+    /// Whether this operation frees moderation storage its payer is owed a refund of: the
+    /// replacement of a removal record (a restored one, by a fresh deletion), which may leave
+    /// it shorter, the approval that closes a team action, which moves the approvals given
+    /// before it and the action's info to the closed actions, and an approval that deletes the
+    /// approvals of members who left the team. A batch forfeiting its refunds then keeps its
+    /// document operations apart (`Drive::apply_drive_operations` generation 1).
+    pub fn refunds_moderation_storage(&self) -> bool {
         match self {
             Self::ContractModerationOperation(
-                ContractModerationOperationType::ForfeitStorageRefunds { spared },
-            ) => *spared,
-            _ => None,
+                ContractModerationOperationType::AddDocumentRemoval {
+                    replaced_record_size,
+                    ..
+                },
+            ) => replaced_record_size.is_some(),
+            Self::ContractModerationOperation(
+                ContractModerationOperationType::AddTeamActionSignature { write, .. },
+            ) => match write {
+                ContractTeamActionWrite::Close { .. } => true,
+                ContractTeamActionWrite::Approve { dropped_signers } => !dropped_signers.is_empty(),
+                ContractTeamActionWrite::Propose { .. } => false,
+            },
+            _ => false,
         }
     }
 

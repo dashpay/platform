@@ -15,6 +15,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
     ContractModerationReason, ContractWarning, decode_kept_fields,
 };
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::platform_value::string_encoding::{Encoding, encode};
 use js_sys::{BigInt, Map};
 use std::collections::BTreeMap;
@@ -517,4 +518,75 @@ impl VerifiedContractDocumentRemovalWasm {
 impl_wasm_type_info!(
     VerifiedContractDocumentRemovalWasm,
     VerifiedContractDocumentRemoval
+);
+
+/// `VerifiedContractTeamActionSignature` proof-result wrapper: a team action of an elected
+/// contract's seated moderation team, as the proof of one member's proposal or approval of it
+/// shows it. The proof finds the signer's approval under the action, whose id the verifier
+/// rebuilds from the transition: for the proposal of a settled document's deletion, the id
+/// computed from its contract, signer, nonce, document and reason, which the other members
+/// approve; for an approval, the id it carries. `status` is `'active'` while the approvals fall
+/// short of the rule, and `'closed'` once they met it and the action ran, by this approval or a
+/// later one: the document is deleted.
+#[wasm_bindgen(js_name = "VerifiedContractTeamActionSignature")]
+#[derive(Clone)]
+pub struct VerifiedContractTeamActionSignatureWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
+    pub contract_id: IdentifierWasm,
+    /// The team action proposed or approved
+    #[wasm_bindgen(getter_with_clone, js_name = "actionId")]
+    pub action_id: IdentifierWasm,
+    #[wasm_bindgen(skip)]
+    pub status: GroupActionStatus,
+}
+
+/// A team action's status as JavaScript reads it: `'active'` while its approvals fall short of
+/// its rule, `'closed'` once they met it and it ran.
+pub fn team_action_status_to_str(status: GroupActionStatus) -> &'static str {
+    match status {
+        GroupActionStatus::ActionActive => "active",
+        GroupActionStatus::ActionClosed => "closed",
+    }
+}
+
+#[wasm_bindgen(js_class = VerifiedContractTeamActionSignature)]
+impl VerifiedContractTeamActionSignatureWasm {
+    /// `'active'` while the approvals fall short of the rule, `'closed'` once they met it and
+    /// the action ran
+    #[wasm_bindgen(getter = "status", unchecked_return_type = "'active' | 'closed'")]
+    pub fn status(&self) -> String {
+        team_action_status_to_str(self.status).to_string()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            ("contractId", self.contract_id.into()),
+            ("actionId", self.action_id.into()),
+            (
+                "status",
+                JsValue::from_str(team_action_status_to_str(self.status)),
+            ),
+        ]))
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            (
+                "contractId",
+                JsValue::from_str(&self.contract_id.to_base58()),
+            ),
+            ("actionId", JsValue::from_str(&self.action_id.to_base58())),
+            (
+                "status",
+                JsValue::from_str(team_action_status_to_str(self.status)),
+            ),
+        ]))
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedContractTeamActionSignatureWasm,
+    VerifiedContractTeamActionSignature
 );

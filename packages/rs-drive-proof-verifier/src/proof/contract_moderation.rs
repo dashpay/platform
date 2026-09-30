@@ -3,18 +3,23 @@
 use crate::error::MapGroveDbError;
 use crate::types::contract_moderation::{
     entries_query_from_request, identifier_from_request, lists_from_request,
-    removals_query_from_request, ContractDocumentRemovals, ContractFeePots,
-    ContractModerationEntries, ContractModerationListStatuses, CONTRACT_FEE_POTS_QUERIED,
+    removals_query_from_request, team_action_status_from_request, team_actions_query_from_request,
+    ContractDocumentRemovals, ContractFeePots, ContractModerationEntries,
+    ContractModerationListStatuses, ContractTeamActionSigners, ContractTeamActions,
+    CONTRACT_FEE_POTS_QUERIED,
 };
 use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_contract_document_removals_request, get_contract_fee_pots_request,
     get_contract_moderation_entries_request, get_contract_moderation_status_request,
+    get_contract_team_action_signers_request, get_contract_team_actions_request,
     GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
     GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractModerationEntriesRequest,
     GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
-    GetContractModerationStatusResponse, Proof, ResponseMetadata,
+    GetContractModerationStatusResponse, GetContractTeamActionSignersRequest,
+    GetContractTeamActionSignersResponse, GetContractTeamActionsRequest,
+    GetContractTeamActionsResponse, Proof, ResponseMetadata,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
@@ -207,6 +212,103 @@ impl FromProof<GetContractDocumentRemovalsRequest> for ContractDocumentRemovals 
     }
 }
 
+impl FromProof<GetContractTeamActionsRequest> for ContractTeamActions {
+    type Request = GetContractTeamActionsRequest;
+    type Response = GetContractTeamActionsResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let get_contract_team_actions_request::Version::V0(v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let contract_id = identifier_from_request(&v0.contract_id, "contract_id")?;
+        let query = team_actions_query_from_request(
+            v0.status,
+            v0.start_at_action_id,
+            v0.count,
+            platform_version,
+        )?;
+
+        let metadata = response
+            .metadata()
+            .or(Err(Error::EmptyResponseMetadata))?
+            .clone();
+        let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, actions) = Drive::verify_contract_team_actions(
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            contract_id,
+            &query,
+            false,
+            platform_version,
+        )
+        .map_drive_error(&proof, &metadata)?;
+
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+
+        // A page past the last action proves as no actions at all, so the actions are always
+        // the answer.
+        Ok((Some(ContractTeamActions(actions)), metadata, proof))
+    }
+}
+
+impl FromProof<GetContractTeamActionSignersRequest> for ContractTeamActionSigners {
+    type Request = GetContractTeamActionSignersRequest;
+    type Response = GetContractTeamActionSignersResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let get_contract_team_action_signers_request::Version::V0(v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let contract_id = identifier_from_request(&v0.contract_id, "contract_id")?;
+        let action_id = identifier_from_request(&v0.action_id, "action_id")?;
+        let status = team_action_status_from_request(v0.status)?;
+
+        let metadata = response
+            .metadata()
+            .or(Err(Error::EmptyResponseMetadata))?
+            .clone();
+        let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, signers) = Drive::verify_contract_team_action_signers(
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            contract_id,
+            status,
+            action_id,
+            false,
+            platform_version,
+        )
+        .map_drive_error(&proof, &metadata)?;
+
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+
+        // An action that is not there with that status proves as no approvals, so the approvals
+        // are always the answer.
+        Ok((Some(ContractTeamActionSigners(signers)), metadata, proof))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,6 +334,18 @@ mod tests {
     use dapi_grpc::platform::v0::get_contract_moderation_status_response::{
         get_contract_moderation_status_response_v0::Result as StatusResult,
         GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_action_signers_request::GetContractTeamActionSignersRequestV0;
+    use dapi_grpc::platform::v0::get_contract_team_action_signers_response::{
+        get_contract_team_action_signers_response_v0::Result as SignersResult,
+        GetContractTeamActionSignersResponseV0, Version as SignersResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_actions_request::{
+        ActionStatus, GetContractTeamActionsRequestV0,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_actions_response::{
+        get_contract_team_actions_response_v0::Result as TeamActionsResult,
+        GetContractTeamActionsResponseV0, Version as TeamActionsResponseVersion,
     };
     use dash_context_provider::ContextProviderError;
     use dpp::data_contract::TokenConfiguration;
@@ -689,6 +803,190 @@ mod tests {
                 })),
             ),
             removals_response(Some(RemovalsResult::Proof(Proof::default()))),
+        );
+        assert!(
+            !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
+            "got: {err:?}"
+        );
+    }
+
+    fn team_actions_request(
+        contract_id: Vec<u8>,
+        status: i32,
+        count: Option<u32>,
+    ) -> GetContractTeamActionsRequest {
+        GetContractTeamActionsRequest {
+            version: Some(get_contract_team_actions_request::Version::V0(
+                GetContractTeamActionsRequestV0 {
+                    contract_id,
+                    status,
+                    start_at_action_id: None,
+                    count,
+                    prove: true,
+                },
+            )),
+        }
+    }
+
+    fn team_actions_response(result: Option<TeamActionsResult>) -> GetContractTeamActionsResponse {
+        GetContractTeamActionsResponse {
+            version: Some(TeamActionsResponseVersion::V0(
+                GetContractTeamActionsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        }
+    }
+
+    fn team_actions_error(
+        request: GetContractTeamActionsRequest,
+        response: GetContractTeamActionsResponse,
+    ) -> Error {
+        <ContractTeamActions as FromProof<_>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err()
+    }
+
+    fn signers_request(
+        contract_id: Vec<u8>,
+        status: i32,
+        action_id: Vec<u8>,
+    ) -> GetContractTeamActionSignersRequest {
+        GetContractTeamActionSignersRequest {
+            version: Some(get_contract_team_action_signers_request::Version::V0(
+                GetContractTeamActionSignersRequestV0 {
+                    contract_id,
+                    status,
+                    action_id,
+                    prove: true,
+                },
+            )),
+        }
+    }
+
+    fn signers_response(result: Option<SignersResult>) -> GetContractTeamActionSignersResponse {
+        GetContractTeamActionSignersResponse {
+            version: Some(SignersResponseVersion::V0(
+                GetContractTeamActionSignersResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        }
+    }
+
+    fn signers_error(
+        request: GetContractTeamActionSignersRequest,
+        response: GetContractTeamActionSignersResponse,
+    ) -> Error {
+        <ContractTeamActionSigners as FromProof<_>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err()
+    }
+
+    #[test]
+    fn should_fail_team_action_queries_with_empty_version_when_request_has_no_version() {
+        let err = team_actions_error(
+            GetContractTeamActionsRequest { version: None },
+            team_actions_response(Some(TeamActionsResult::Proof(Proof::default()))),
+        );
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+        let err = signers_error(
+            GetContractTeamActionSignersRequest { version: None },
+            signers_response(Some(SignersResult::Proof(Proof::default()))),
+        );
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_reject_malformed_team_action_requests() {
+        let id = vec![1; 32];
+        let active = ActionStatus::Active as i32;
+        for (request, needle) in [
+            (
+                team_actions_request(vec![1; 5], active, None),
+                "contract_id",
+            ),
+            (
+                team_actions_request(id.clone(), 7, None),
+                "is not an action status",
+            ),
+            (
+                team_actions_request(id.clone(), active, Some(70_000)),
+                "limit must be between 1 and",
+            ),
+        ] {
+            let err = team_actions_error(
+                request,
+                team_actions_response(Some(TeamActionsResult::Proof(Proof::default()))),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains(needle)),
+                "{needle}: {err:?}"
+            );
+        }
+        for (request, needle) in [
+            (
+                signers_request(vec![1; 5], active, id.clone()),
+                "contract_id",
+            ),
+            (signers_request(id.clone(), active, vec![1; 5]), "action_id"),
+            (
+                signers_request(id.clone(), 7, id.clone()),
+                "is not an action status",
+            ),
+        ] {
+            let err = signers_error(
+                request,
+                signers_response(Some(SignersResult::Proof(Proof::default()))),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains(needle)),
+                "{needle}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_fail_team_action_queries_without_proof_when_response_carries_none() {
+        let active = ActionStatus::Active as i32;
+        let err = team_actions_error(
+            team_actions_request(vec![1; 32], active, None),
+            team_actions_response(None),
+        );
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+        let err = signers_error(
+            signers_request(vec![1; 32], active, vec![2; 32]),
+            signers_response(None),
+        );
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_fail_on_team_action_proofs_that_do_not_verify() {
+        let active = ActionStatus::Active as i32;
+        let err = team_actions_error(
+            team_actions_request(vec![1; 32], active, None),
+            team_actions_response(Some(TeamActionsResult::Proof(Proof::default()))),
+        );
+        assert!(
+            !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
+            "got: {err:?}"
+        );
+        let err = signers_error(
+            signers_request(vec![1; 32], active, vec![2; 32]),
+            signers_response(Some(SignersResult::Proof(Proof::default()))),
         );
         assert!(
             !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
