@@ -19,15 +19,19 @@
 //! index-key length ceilings, and the constants they are derived from.
 
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
 };
-// Only the ranked key-length rule below names `Index`, and it is validation-only.
-use crate::data_contract::document_type::action_fees::DocumentActionFees;
+use crate::data_contract::document_type::index::{
+    parse_derived_index_property_name, DerivedIndexField, DerivedIndexProperty,
+    DerivedIndexPropertyName, Index, IndexGrammarAdmissions,
+};
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::index::Index;
-use crate::data_contract::document_type::index::IndexGrammarAdmissions;
+use crate::data_contract::document_type::property::top_level_property;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
@@ -36,7 +40,9 @@ use crate::data_contract::document_type::property::{
     ReferenceOperands,
 };
 use crate::data_contract::document_type::property_names;
-use crate::data_contract::document_type::reference_lookup::owner_can_change;
+use crate::data_contract::document_type::reference_lookup::{
+    owner_can_change, schema_property_is_fixed_once_written,
+};
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -467,6 +473,9 @@ fn parse_generation_3(
             // MODERATION STAMPS: `$moderatedAt` and `$moderatedBy`, which only a type keeping
             // fields for its moderators carries (checked by `apply_moderator_abilities`).
             admit_moderation_stamp_indexes: true,
+            // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
+            // moderated reference (`apply_derived_index_properties`).
+            admit_derived_index_properties: true,
         },
         platform_version,
     )?;
@@ -580,6 +589,11 @@ fn parse_generation_3(
         full_validation,
         platform_version,
     )?;
+    // After `apply_index_only`, `apply_immutable_fields` and `apply_moderator_abilities`: the
+    // reference a derived index property reads through must be fixed once written, which the
+    // immutable list and the fields only moderators write decide, on a type storing its
+    // documents.
+    apply_derived_index_properties(&mut v2, data_contract_id, name, full_validation)?;
 
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
@@ -616,6 +630,294 @@ fn parse_generation_3(
     }
 
     Ok(v2)
+}
+
+/// Registers the derived index properties the type's indexes name, each
+/// `"<reference property>.<field>"` (see [`DerivedIndexProperty`]), on every
+/// parse: Drive reads their values through the references whenever it keys a
+/// document, a contract read back from state included. A schema property's
+/// type is filled in by [`resolve_derived_index_properties`], which sees the
+/// referenced document type.
+///
+/// Under full validation it also refuses, on the referring side, what would
+/// let Drive read a value other than the one an entry was written under, or
+/// need one it can not read:
+///
+/// * a reference a replace could repoint: it must be fixed once written (the
+///   type's documents are immutable, or it is listed under `immutable` and not
+///   `immutableAllowSetting`, and moderators do not write it);
+/// * an indexOnly type, whose entries hold every value of its documents and
+///   whose delete carries them;
+/// * a unique or contested index, whose check reads the values a create
+///   carries, which a derived value is not among;
+/// * a derived property bucketed by `timeRange` or `integerRange`, or skipped
+///   by `skipIfAbsent`, whose rules read the value off the document itself.
+fn apply_derived_index_properties(
+    document_type: &mut DocumentTypeV2,
+    data_contract_id: Identifier,
+    name: &str,
+    full_validation: bool,
+) -> Result<(), ProtocolError> {
+    let mut derived_index_properties = BTreeMap::new();
+    for index in document_type.indices.values() {
+        for index_property in &index.properties {
+            let refusal = |reason: String| {
+                consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "index \"{}\" of document type \"{name}\" reads \"{}\": {reason}",
+                        index.name, index_property.name
+                    )),
+                )
+            };
+            let derived = match parse_derived_index_property_name(
+                &index_property.name,
+                &document_type.flattened_properties,
+                data_contract_id,
+            ) {
+                DerivedIndexPropertyName::NotDerived => continue,
+                DerivedIndexPropertyName::Refused(reason) => {
+                    if full_validation {
+                        return Err(refusal(reason));
+                    }
+                    continue;
+                }
+                DerivedIndexPropertyName::Derived(derived) => derived,
+            };
+            if full_validation {
+                if let Some(reason) =
+                    derived_index_property_referring_side_error(document_type, index, &derived)
+                {
+                    return Err(refusal(reason));
+                }
+            }
+            derived_index_properties.insert(index_property.name.clone(), *derived);
+        }
+    }
+    document_type.derived_index_properties = derived_index_properties;
+    Ok(())
+}
+
+/// Why the referring document type or `index` can not hold `derived`, or
+/// `None`: see [`apply_derived_index_properties`].
+fn derived_index_property_referring_side_error(
+    document_type: &DocumentTypeV2,
+    index: &Index,
+    derived: &DerivedIndexProperty,
+) -> Option<String> {
+    let reference_property = derived.reference_property.as_str();
+    let index_property_name = format!("{reference_property}.{}", derived.field.name());
+    if document_type.index_only {
+        return Some(
+            "the type is indexOnly, whose index entries hold every value of its documents: \
+             declare the value as a property"
+                .to_string(),
+        );
+    }
+    if !schema_property_is_fixed_once_written(
+        DocumentTypeRef::V2(document_type),
+        reference_property,
+    ) || document_type
+        .immutable_fields_allow_setting
+        .contains(reference_property)
+    {
+        return Some(format!(
+            "a replace could point \"{reference_property}\" at another document, and the \
+             entry would no longer be found under the value it was written under: list \
+             \"{reference_property}\" under `immutable` (and not `immutableAllowSetting`), or \
+             make the type's documents immutable"
+        ));
+    }
+    if index.unique || index.contested_index.is_some() {
+        return Some(
+            "a unique index is checked against the values a create carries, and a derived \
+             value is read from the referenced document instead"
+                .to_string(),
+        );
+    }
+    let bucketed = index
+        .time_range
+        .as_ref()
+        .is_some_and(|transform| transform.source == index_property_name)
+        || index
+            .integer_range
+            .as_ref()
+            .is_some_and(|transform| transform.source == index_property_name);
+    if bucketed {
+        return Some(
+            "a derived value can not be bucketed by timeRange or integerRange".to_string(),
+        );
+    }
+    if index
+        .skip_if_absent_properties
+        .contains(&index_property_name)
+    {
+        return Some(
+            "skipIfAbsent reads whether the document holds a value, and a derived value is \
+             read from the referenced document instead"
+                .to_string(),
+        );
+    }
+    None
+}
+
+/// Fills in the type of every derived index property reading a schema
+/// property of the referenced document type, once every document type of the
+/// contract is parsed, on every parse: a key is encoded by its type
+/// ([`derived_index_property_type`](crate::data_contract::document_type::methods::DocumentTypeBasicMethods::derived_index_property_type)). A derived
+/// property whose referenced document type the contract does not have, or
+/// admits another kind of reference, is left without one: registration
+/// refuses the reference itself (`ReferencedDocumentTypeNotFoundError`, or the
+/// kind's error), and a stored contract passed it.
+///
+/// Under full validation it also refuses, on the referenced side, a field
+/// whose value could change or vanish once written, or could not be a key:
+///
+/// * `$ownerId` of a type whose documents can be transferred or traded;
+/// * `$creatorId` of a type that records no creator;
+/// * a schema property the referenced type does not have, one that is
+///   transient or inside a transient object, one a replace or a moderator can
+///   change, and one the index encoding can not key (the shape and ranked
+///   key-length checks every indexed property passes).
+pub(in crate::data_contract) fn resolve_derived_index_properties(
+    document_types: &mut BTreeMap<String, DocumentType>,
+    data_contract_system_version: u16,
+    contract_config_version: u16,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let mut resolved = Vec::new();
+    for (name, document_type) in document_types.iter() {
+        let DocumentType::V2(declaring) = document_type else {
+            continue;
+        };
+        for index in declaring.indices.values() {
+            for index_property in &index.properties {
+                let Some(derived) = declaring.derived_index_properties.get(&index_property.name)
+                else {
+                    continue;
+                };
+                let Some(referenced) = document_types.get(&derived.referenced_document_type_name)
+                else {
+                    continue;
+                };
+                let referenced = referenced.as_ref();
+                if referenced.document_reference_kind() != derived.kind {
+                    continue;
+                }
+                let refusal = |reason: String| {
+                    consensus_or_protocol_data_contract_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "index \"{}\" of document type \"{name}\" reads \"{}\": {reason}",
+                            index.name, index_property.name
+                        )),
+                    )
+                };
+                let referenced_name = derived.referenced_document_type_name.as_str();
+                match &derived.field {
+                    DerivedIndexField::OwnerId => {
+                        if full_validation && owner_can_change(referenced) {
+                            return Err(refusal(format!(
+                                "documents of \"{referenced_name}\" can be transferred or \
+                                 traded, so the owner an entry was written under could change; \
+                                 $creatorId never does"
+                            )));
+                        }
+                    }
+                    DerivedIndexField::CreatorId => {
+                        if full_validation
+                            && !referenced.should_use_creator_id(
+                                data_contract_system_version,
+                                contract_config_version,
+                                platform_version,
+                            )?
+                        {
+                            return Err(refusal(format!(
+                                "\"{referenced_name}\" records no creator: its documents never \
+                                 change hands, so their creator is their owner, $ownerId"
+                            )));
+                        }
+                    }
+                    DerivedIndexField::Property(path) => {
+                        let Some(property) = referenced.flattened_properties().get(path) else {
+                            if full_validation {
+                                return Err(refusal(format!(
+                                    "\"{referenced_name}\" has no property \"{path}\""
+                                )));
+                            }
+                            continue;
+                        };
+                        #[cfg(feature = "validation")]
+                        if full_validation {
+                            if let Some(reason) =
+                                derived_index_field_error(referenced, referenced_name, path)
+                            {
+                                return Err(refusal(reason));
+                            }
+                            validate_ranked_index_property_key_length(
+                                name,
+                                index,
+                                &index_property.name,
+                                &property.property_type,
+                                platform_version,
+                            )?;
+                            common::check_indexable_property_shape(
+                                name,
+                                &index.name,
+                                &index_property.name,
+                                &property.property_type,
+                            )?;
+                        }
+                        resolved.push((
+                            name.clone(),
+                            index_property.name.clone(),
+                            property.property_type.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    for (name, index_property_name, property_type) in resolved {
+        if let Some(DocumentType::V2(declaring)) = document_types.get_mut(&name) {
+            if let Some(derived) = declaring
+                .derived_index_properties
+                .get_mut(&index_property_name)
+            {
+                derived.property_type = Some(property_type);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Why a schema property `path` of the referenced document type can not be
+/// read by a derived index property, or `None`: it must be stored, and fixed
+/// once written.
+#[cfg(feature = "validation")]
+fn derived_index_field_error(
+    referenced: DocumentTypeRef,
+    referenced_name: &str,
+    path: &str,
+) -> Option<String> {
+    if is_transient(referenced, path) {
+        return Some(format!(
+            "\"{path}\" of \"{referenced_name}\" is transient or inside a transient object: \
+             its value is never stored"
+        ));
+    }
+    if !schema_property_is_fixed_once_written(referenced, path)
+        || referenced
+            .immutable_fields_allow_setting()
+            .contains(top_level_property(path))
+    {
+        return Some(format!(
+            "\"{path}\" of \"{referenced_name}\" can change once written, and the entry would \
+             no longer be found under the value it was written under: make \
+             \"{referenced_name}\" immutable, or list the property under its `immutable` (and \
+             not `immutableAllowSetting`), and keep it out of `moderatorAbilities.changeFields`"
+        ));
+    }
+    None
 }
 
 /// Every entry of the `transient` list names a top-level property of the
@@ -1092,6 +1394,8 @@ impl DocumentType {
 
 #[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
+#[cfg(all(test, feature = "validation"))]
+mod derived_index_property_tests;
 #[cfg(test)]
 mod documents_ttl_tests;
 #[cfg(all(test, feature = "validation"))]

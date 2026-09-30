@@ -1699,6 +1699,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     additive); a joined id with neither a document nor a record is refused
 ///     as a missing permanent target is. StateError discriminants 156-158.
 ///
+/// 65. **An index may hold a value of the document a reference points at**: an
+///     index property `"<reference property>.<field>"` (`DerivedIndexProperty`,
+///     `DocumentTypeV2Getters::derived_index_properties`), such as a reply's
+///     `postId.$ownerId`, in place in parser generation 3 (`admit_derived_index_properties`,
+///     `apply_derived_index_properties`) and `create_document_types_from_document_schemas`
+///     1 (`resolve_derived_index_properties`, which gives a schema field its type on the
+///     referenced type on every parse). The document never stores the value: before Drive
+///     keys a document of such a type, on insert (`add_document` 1), update (`update_document`
+///     1, one read for both versions) and delete (`delete_read_document`, shared by owner and
+///     moderator deletes and `ttl` expiry), it reads the referenced document, billed with the
+///     write, or, for a `moderatedDocument` target a moderator removed, the owner its removal
+///     record keeps, and puts the values into the document's properties under the derived
+///     names, where `get_raw_for_document_type` 0 reads them (a missing one is refused, never
+///     keyed under null) and the serialization ignores them. `serialize_value_for_key` 0,
+///     `deserialize_value_for_key` 0 and Drive's estimated key sizes take a derived name's type
+///     from the declaration. Registration (full validation, `InvalidContractStructure`)
+///     admits one only where the value can not change once written: a same-contract
+///     `permanentDocument` or `moderatedDocument` reference by id, on a reference property
+///     fixed once written; `$ownerId` of a type that can not change hands, `$creatorId` of a
+///     type recording it, or a stored schema property fixed once written and indexable;
+///     through `moderatedDocument`, `$ownerId` only; not `$id`; not in a unique or contested
+///     index, as a `timeRange` or `integerRange` source or a `skipIfAbsent` property; not on
+///     an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
+///     document stores, is refused on an index whose derived properties the query does not fix
+///     with `==`. Every step is inert without a derived index property, which only generation 3
+///     declares.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
+use crate::data_contract::document_type::index::DerivedIndexProperty;
 use crate::data_contract::document_type::property::{
     DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
@@ -151,6 +152,12 @@ pub trait DocumentTypeV2Getters {
     /// 14). Empty on document types that declare none and on those that predate
     /// the keyword.
     fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint>;
+
+    /// The index properties whose values are read from the document a
+    /// reference of the type points at (`"<reference property>.<field>"`,
+    /// protocol version 14), by their names in the indexes. Empty on document
+    /// types that declare none and on those that predate them.
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

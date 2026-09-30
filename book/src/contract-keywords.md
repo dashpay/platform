@@ -262,7 +262,7 @@ Expressions:
 | Key | Takes | What it does | Since | Read more |
 |---|---|---|---|---|
 | `name` | 1 to 32 characters, required | The index's name, unique in the type. | 1 | [name](contract-keywords/indexes.md#name) |
-| `properties` | 1 to 10 `{ "<path>": "asc" }` | The indexed properties, in order. A flat index of an index-only type leaves it out. | 1 | [properties](contract-keywords/indexes.md#properties) · [internals](drive/indexes.md) |
+| `properties` | 1 to 10 `{ "<path>": "asc" }` | The indexed properties, in order. A flat index of an index-only type leaves it out. From protocol version 14 a path may read through a reference, `"<reference property>.<field>"`, a value of the referenced document the document does not store. | 1 | [properties](contract-keywords/indexes.md#properties) · [Values of Referenced Documents](contract-keywords/derived-index-properties.md) · [internals](drive/indexes.md) |
 | `unique` | boolean | No two documents share the indexed values. | 1 | [unique](contract-keywords/indexes.md#unique) |
 | `nullSearchable` | boolean, default `true` | `false` leaves out documents whose indexed values are all null. | 1 | [nullSearchable](contract-keywords/indexes.md#nullsearchable) |
 | `contested` | object | Matching values are decided by a masternode vote, not first come. | 1 | [Contested Indexes](contract-keywords/contested.md) · [internals](data-model/contested-documents.md) |
