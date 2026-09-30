@@ -185,7 +185,7 @@ impl DocumentType {
                         contract_id,
                         document_type_name,
                         lookup: Some(lookup),
-                        permanent,
+                        kind,
                         ..
                     }) = target.as_any_document_reference()
                     else {
@@ -199,18 +199,19 @@ impl DocumentType {
                     else {
                         continue;
                     };
-                    // A permanentDocument lookup into a deletable type, or a
-                    // deletableDocument lookup into one that forbids deletion, fails that
-                    // reference whatever its indexes say: registration reports it
-                    // (ReferencedDocumentTypeDeletableError or
-                    // ReferencedDocumentTypeNotDeletableError), so the lookup is not judged
+                    // A lookup into a document type admitting another kind of reference (a
+                    // permanentDocument lookup into a type whose documents can leave state,
+                    // a deletableDocument lookup into one whose documents never do, or
+                    // leave it only on a moderator's record) fails that reference whatever
+                    // its indexes say: registration reports it
+                    // (ReferencedDocumentTypeDeletableError,
+                    // ReferencedDocumentTypeNotDeletableError or
+                    // ReferencedDocumentTypeModeratedError), so the lookup is not judged
                     // against a type it could never reference. A deletableDocument lookup
                     // exists from the same protocol version 14 as every other lookup, so
                     // this stays inert before it
                     let referenced = referenced_document_type.as_ref();
-                    // Deletable by anyone: owner, moderators, or the platform (`ttl`).
-                    let deletable = referenced.documents_can_disappear();
-                    if permanent == deletable {
+                    if kind != referenced.document_reference_kind() {
                         continue;
                     }
                     if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {
