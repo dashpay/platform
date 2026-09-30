@@ -35,18 +35,19 @@ use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees, SomeSumTrees};
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
-/// The serialized size of a readiness round record, rounded up: a versioned enum around two
-/// identifiers, two 32-byte digests, a handful of integers, the status with two timestamps,
-/// the optional evaluation mark and the typed payer.
-pub(crate) const ESTIMATED_READINESS_ROUND_RECORD_SIZE: u32 = 200;
+/// The largest serialized size of a readiness round record (223 bytes), rounded up: a
+/// versioned enum around two identifiers, two 32-byte digests, a handful of integers, the
+/// crossed status with two timestamps, the evaluation mark and the typed payer, every integer
+/// at its widest varint.
+pub(crate) const ESTIMATED_READINESS_ROUND_RECORD_SIZE: u32 = 224;
 
-/// The serialized size of a readiness report record: a versioned enum around a height and a
-/// profile.
+/// The largest serialized size of a readiness report record (13 bytes), rounded up: a
+/// versioned enum around a height and a profile.
 pub(crate) const ESTIMATED_READINESS_REPORT_RECORD_SIZE: u32 = 16;
 
-/// The serialized size of a readiness scan cursor: a versioned enum around two counters, an
-/// optional key and three counts.
-pub(crate) const ESTIMATED_READINESS_SCAN_CURSOR_SIZE: u32 = 56;
+/// The largest serialized size of a readiness scan cursor (59 bytes), rounded up: a versioned
+/// enum around two counters, the pagination key and three counts.
+pub(crate) const ESTIMATED_READINESS_SCAN_CURSOR_SIZE: u32 = 64;
 
 /// The number of readiness rounds we expect to be pending at once (one per contract with a
 /// pending bundle).
@@ -384,5 +385,64 @@ impl Drive {
             &platform_version.drive,
         )?;
         Ok(placeholder)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::voting::readiness::report_record::ReadinessReportRecord;
+    use dpp::voting::readiness::round::ReadinessEvaluation;
+    use dpp::voting::readiness::scan_cursor::ReadinessScanCursor;
+
+    #[test]
+    fn should_cover_the_widest_serialized_readiness_records() {
+        let platform_version = PlatformVersion::latest();
+
+        // Every integer past u32::MAX takes the widest varint; the round is crossed and
+        // evaluated so that every optional field is present.
+        let mut round = ReadinessRound::new(
+            u32::MAX,
+            ReadinessRoundOpening {
+                contract_id: Identifier::new([0xFFu8; 32]),
+                version: u32::MAX,
+                bundle_digest: [0xFFu8; 32],
+                preparation_profile: u16::MAX,
+                accepted_at_ms: 1 << 40,
+                accepted_at_height: u64::MAX,
+                payer: ReadinessPayer::Identity(Identifier::new([0xFFu8; 32])),
+            },
+            platform_version,
+        )
+        .expect("round");
+        round.set_evaluation(
+            ReadinessEvaluation {
+                core_height: u32::MAX,
+                raw_count: u64::MAX,
+            },
+            true,
+        );
+        round
+            .record_crossing(1 << 41, 1 << 40, 1 << 40)
+            .expect("crossing");
+        let round_size = round.serialize_to_bytes().expect("round bytes").len();
+        assert_eq!(round_size, 223);
+        assert!(ESTIMATED_READINESS_ROUND_RECORD_SIZE as usize >= round_size);
+
+        let report =
+            ReadinessReportRecord::new(u64::MAX, u16::MAX, platform_version).expect("report");
+        let report_size = report.serialize_to_bytes().expect("report bytes").len();
+        assert_eq!(report_size, 13);
+        assert!(ESTIMATED_READINESS_REPORT_RECORD_SIZE as usize >= report_size);
+
+        let mut cursor =
+            ReadinessScanCursor::new(u32::MAX, u32::MAX, platform_version).expect("cursor");
+        cursor
+            .advance([0xFFu8; 32], u32::MAX, u32::MAX, u32::MAX)
+            .expect("advance");
+        let cursor_size = cursor.serialize_to_bytes().expect("cursor bytes").len();
+        assert_eq!(cursor_size, 59);
+        assert!(ESTIMATED_READINESS_SCAN_CURSOR_SIZE as usize >= cursor_size);
     }
 }
