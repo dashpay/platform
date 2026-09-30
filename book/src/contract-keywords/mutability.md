@@ -157,7 +157,7 @@ The top-level properties a replace may change only for a while after the documen
 | **Default** | empty: no property is frozen after a window |
 | **Since** | protocol version 14 |
 | **On update** | A property may gain a window and a window may shorten. A window may not lengthen, and a property may leave the object only for `immutable` (`DocumentTypeUpdateError`, 40212). |
-| **Errors** | `DocumentPropertyEditWindowElapsedError` (40143) for a replace past the window that changes, adds or removes the property |
+| **Errors** | `DocumentPropertyEditWindowElapsedError` (40146) for a replace past the window that changes, adds or removes the property |
 
 ### Example
 
@@ -182,7 +182,7 @@ The author can fix a typo in `text` or change `language` for five minutes after 
 
 ### How it works
 
-- The window of a property starts at the document's `$createdAt`. A replace whose block time is at most `$createdAt` plus the window may change the property; one later than that which changes, adds or removes it is refused with `DocumentPropertyEditWindowElapsedError` (40143). The error names the property, the document's `$createdAt`, the window and the block time it was judged at.
+- The window of a property starts at the document's `$createdAt`. A replace whose block time is at most `$createdAt` plus the window may change the property; one later than that which changes, adds or removes it is refused with `DocumentPropertyEditWindowElapsedError` (40146). The error names the property, the document's `$createdAt`, the window and the block time it was judged at.
 - Nothing moves the window: a replace, a transfer or a purchase leaves `$createdAt` as it is, so editing a post does not buy more time to edit it again.
 - "Changes" means what it means for `immutable`: a value that differs by its data, a value the stored document did not have, or one the replace leaves out. Freezing an object freezes everything inside it.
 - As for `immutable`, one change is always allowed: a replace may clear a `deletableDocument` reference by id once the document it points to has been deleted. See [References](refers-to.md).

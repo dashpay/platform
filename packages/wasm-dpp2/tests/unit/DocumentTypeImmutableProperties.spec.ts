@@ -7,7 +7,7 @@
  * while the stored document has no value for them, and `immutableAfter` the
  * properties a replace may change only for so many seconds after the
  * document's `$createdAt`. Consensus enforces them on every replace (codes
- * 40128 and 40143). What the JS layer offers is *discovery*
+ * 40128 and 40146). What the JS layer offers is *discovery*
  * (which properties are frozen, and which may still be set once) plus a
  * branchable error code for when a replace is rejected.
  */
@@ -213,14 +213,14 @@ describe('DataContract — immutable properties (v14)', () => {
      */
     it('should map the immutable-property errors to their consensus codes', () => {
       expect(wasm.DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged).to.equal(40128);
-      expect(wasm.DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed).to.equal(40143);
+      expect(wasm.DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed).to.equal(40146);
     });
 
     it('should resolve the codes back to their names', () => {
       const codes = wasm.DocumentImmutabilityErrorCode as unknown as Record<number, string>;
 
       expect(codes[40128]).to.equal('DocumentImmutablePropertyChanged');
-      expect(codes[40143]).to.equal('DocumentPropertyEditWindowElapsed');
+      expect(codes[40146]).to.equal('DocumentPropertyEditWindowElapsed');
     });
   });
 });

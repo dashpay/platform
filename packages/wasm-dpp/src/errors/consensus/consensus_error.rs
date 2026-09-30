@@ -81,6 +81,9 @@ use dpp::consensus::state::document::document_contest_identity_already_contestan
 use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use dpp::consensus::state::document::document_property_edit_window_elapsed_error::DocumentPropertyEditWindowElapsedError;
+use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
+use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
+use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
@@ -737,6 +740,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentRequirementNotMetError(e) => {
             generic_consensus_error!(ReferencedDocumentRequirementNotMetError, e).into()
+        }
+        StateError::ReferencedDocumentTypeNotModeratedError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypeNotModeratedError, e).into()
+        }
+        StateError::ReferencedDocumentTypeModeratedError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypeModeratedError, e).into()
+        }
+        StateError::ReferencedDocumentRemovedError(e) => {
+            generic_consensus_error!(ReferencedDocumentRemovedError, e).into()
         }
         StateError::DocumentPropertyEditWindowElapsedError(e) => {
             generic_consensus_error!(DocumentPropertyEditWindowElapsedError, e).into()

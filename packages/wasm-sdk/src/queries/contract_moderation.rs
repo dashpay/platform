@@ -11,10 +11,10 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::contract_moderation::{
-    ContractDocumentRemoval, ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
-    ContractDocumentRemovalsSelection, ContractModerationEntries,
-    ContractModerationEntriesPageQuery, ContractModerationList, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationStatusQuery,
+    ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
+    ContractDocumentRemovalsPageQuery, ContractDocumentRemovalsSelection,
+    ContractModerationEntries, ContractModerationEntriesPageQuery, ContractModerationList,
+    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationStatusQuery,
 };
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use js_sys::Array;
@@ -484,6 +484,24 @@ pub(crate) fn set_removal_fields(
     Ok(())
 }
 
+/// One removal record with its document id, identifiers written by `id_to_js`: base58 strings
+/// for the removals query ([`ContractDocumentRemovalEntry`]), `Identifier`s for a join through a
+/// `moderatedDocument` reference (`JoinedDocumentRemoval`), as the join's other ids are.
+pub(crate) fn removal_entry_to_js(
+    entry: &ContractDocumentRemovalEntry,
+    id_to_js: impl Fn(Identifier) -> JsValue,
+) -> Result<JsValue, WasmSdkError> {
+    let js_entry = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &js_entry,
+        &"documentId".into(),
+        &id_to_js(entry.document_id),
+    )
+    .map_err(|_| WasmSdkError::generic("failed to set `documentId` on the removal"))?;
+    set_removal_fields(&js_entry, &entry.removal, id_to_js)?;
+    Ok(js_entry.into())
+}
+
 fn removals_to_js(
     page: ContractDocumentRemovals,
     query: &ContractDocumentRemovalsPageQuery,
@@ -496,10 +514,9 @@ fn removals_to_js(
     let id_to_js = |id: Identifier| JsValue::from_str(&IdentifierWasm::from(id).to_base58());
     let removals = Array::new();
     for entry in page.removals() {
-        let js_entry = js_sys::Object::new();
-        set(&js_entry, "documentId", id_to_js(entry.document_id))?;
-        set_removal_fields(&js_entry, &entry.removal, id_to_js)?;
-        removals.push(&js_entry);
+        removals.push(&removal_entry_to_js(entry, |id| {
+            JsValue::from_str(&IdentifierWasm::from(id).to_base58())
+        })?);
     }
     set(&result, "removals", removals.into())?;
     // A page shorter than the limit is the last one, and a read by ids has no page after it:
@@ -663,5 +680,84 @@ impl WasmSdk {
             metadata,
             proof,
         ))
+    }
+}
+
+/// A removal record, and the check that a join reports it as a `JoinedDocumentRemoval`,
+/// shared by the chained and composite conversion tests. wasm32 only: what they pin, that the
+/// record's identifiers cross as `Identifier` objects rather than base58 strings, exists only
+/// at the JS boundary.
+#[cfg(all(test, target_arch = "wasm32"))]
+pub(crate) mod joined_removal_tests {
+    use super::*;
+    use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
+    use js_sys::{Function, Reflect};
+    use wasm_bindgen::JsCast;
+
+    pub(crate) fn removal_entry() -> ContractDocumentRemovalEntry {
+        ContractDocumentRemovalEntry {
+            document_id: Identifier::new([0xB2; 32]),
+            removal: ContractDocumentRemoval {
+                document_owner_id: Identifier::new([0x11; 32]),
+                moderator_id: Identifier::new([0x77; 32]),
+                reason: ContractModerationReason::from_text("spam"),
+                removed_at: 1_700_000_000_000,
+                document_hash: [0x5A; 32],
+                restoration: None,
+            },
+        }
+    }
+
+    pub(crate) fn field(object: &JsValue, key: &str) -> JsValue {
+        Reflect::get(object, &key.into()).expect("reading a field of a plain object")
+    }
+
+    /// The base58 form of an `Identifier` object, refusing a value that is not one (a base58
+    /// string among them)
+    fn identifier_base58(value: &JsValue) -> String {
+        assert_eq!(
+            value.js_typeof().as_string().as_deref(),
+            Some("object"),
+            "expected an Identifier, got {value:?}"
+        );
+        let to_base58: Function = field(value, "toBase58")
+            .dyn_into()
+            .expect("an Identifier has toBase58");
+        to_base58
+            .call0(value)
+            .expect("toBase58 runs")
+            .as_string()
+            .expect("toBase58 yields a string")
+    }
+
+    /// Asserts `js` is `entry` as a join reports it: every identifier an `Identifier`, as the
+    /// join's other ids are, and no restoration fields while the removal stands
+    pub(crate) fn assert_joined_removal(js: &JsValue, entry: &ContractDocumentRemovalEntry) {
+        let base58 = |id: Identifier| IdentifierWasm::from(id).to_base58();
+        assert_eq!(
+            identifier_base58(&field(js, "documentId")),
+            base58(entry.document_id)
+        );
+        assert_eq!(
+            identifier_base58(&field(js, "documentOwnerId")),
+            base58(entry.removal.document_owner_id)
+        );
+        assert_eq!(
+            identifier_base58(&field(js, "moderatorId")),
+            base58(entry.removal.moderator_id)
+        );
+        assert_eq!(
+            field(js, "removedAt"),
+            JsValue::from(entry.removal.removed_at)
+        );
+        assert_eq!(
+            field(js, "documentHash").as_string(),
+            Some(hex::encode(entry.removal.document_hash))
+        );
+        assert_eq!(
+            field(&field(js, "reason"), "text").as_string().as_deref(),
+            Some("spam")
+        );
+        assert!(!Reflect::has(js, &"restoredBy".into()).expect("has() on a plain object"));
     }
 }

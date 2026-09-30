@@ -82,6 +82,23 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// `minimumAgeBlocks`: it was created too recently, in the same block
     /// with a minimum of 1. Retry in a later block.
     ReferencedDocumentRequirementNotMet = 40142,
+    /// The referenced document type's documents can leave state otherwise
+    /// than through a moderator's recorded removal. Only types declaring
+    /// `canBeDeleted: false`, no `ttl`, and `moderatorAbilities.delete`
+    /// keeping removal records may be the target of a `moderatedDocument`
+    /// reference.
+    ReferencedDocumentTypeNotModerated = 40143,
+    /// The referenced document type's documents leave state only through a
+    /// moderator's recorded removal: a `moderatedDocument` reference is the
+    /// one for it, not a `deletableDocument` one.
+    ReferencedDocumentTypeModerated = 40144,
+    /// A replace kept a `moderatedDocument` reference whose document the
+    /// contract's moderators removed, and had to check a `where` entry
+    /// against a property of it other than its id and owner, which its
+    /// removal record does not keep. Point the reference at a document in
+    /// state, or leave the properties `where` reads unchanged until the
+    /// document is restored.
+    ReferencedDocumentRemoved = 40145,
     /// A create cannot reveal the preimage of a `refersTo` `findBy`
     /// function: a value a param reads is absent, or a variable-length
     /// value holds the one-byte separator that follows it in the preimage.
@@ -90,7 +107,8 @@ pub enum DocumentReferenceErrorCodeWasm {
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142 or 10423.
+    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40145 or
+    /// 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -105,6 +123,9 @@ impl DocumentReferenceErrorCodeWasm {
             40137 => Some(Self::ReferencedDocumentLookupInvalid),
             40138 => Some(Self::ReferencedDocumentListInvalid),
             40142 => Some(Self::ReferencedDocumentRequirementNotMet),
+            40143 => Some(Self::ReferencedDocumentTypeNotModerated),
+            40144 => Some(Self::ReferencedDocumentTypeModerated),
+            40145 => Some(Self::ReferencedDocumentRemoved),
             10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
@@ -136,7 +157,7 @@ pub enum DocumentImmutabilityErrorCodeWasm {
     /// The replace changed, added or removed a property the document type
     /// lists under `immutableAfter`, and block time was past the document's
     /// `$createdAt` plus the property's window.
-    DocumentPropertyEditWindowElapsed = 40143,
+    DocumentPropertyEditWindowElapsed = 40146,
 }
 
 impl DocumentImmutabilityErrorCodeWasm {
@@ -144,7 +165,7 @@ impl DocumentImmutabilityErrorCodeWasm {
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40128 => Some(Self::DocumentImmutablePropertyChanged),
-            40143 => Some(Self::DocumentPropertyEditWindowElapsed),
+            40146 => Some(Self::DocumentPropertyEditWindowElapsed),
             _ => None,
         }
     }
@@ -352,14 +373,15 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135-40138, 40142 and 10423.
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40145 and
+    /// 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
     }
 
     /// The immutable-property error this is, or `undefined` when it is not
-    /// code 40128 or 40143.
+    /// code 40128 or 40146.
     #[wasm_bindgen(getter = "documentImmutabilityErrorCode")]
     pub fn document_immutability_error_code(&self) -> Option<DocumentImmutabilityErrorCodeWasm> {
         DocumentImmutabilityErrorCodeWasm::from_code(self.0.code())
@@ -416,9 +438,12 @@ mod tests {
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
     use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+    use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
     use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+    use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+    use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
     use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
     use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -774,6 +799,37 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedDocumentRequirementNotMet,
+            ),
+            (
+                StateError::ReferencedDocumentTypeNotModeratedError(
+                    ReferencedDocumentTypeNotModeratedError::new(
+                        id(),
+                        "post".to_string(),
+                        "replyTo".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeNotModerated,
+            ),
+            (
+                StateError::ReferencedDocumentTypeModeratedError(
+                    ReferencedDocumentTypeModeratedError::new(
+                        id(),
+                        "post".to_string(),
+                        "replyTo".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeModerated,
+            ),
+            (
+                StateError::ReferencedDocumentRemovedError(ReferencedDocumentRemovedError::new(
+                    id(),
+                    "replyTo".to_string(),
+                    "threadId".to_string(),
+                ))
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRemoved,
             ),
             (
                 BasicError::DocumentReferencePreimageInvalidError(

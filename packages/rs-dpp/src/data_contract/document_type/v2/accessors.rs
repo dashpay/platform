@@ -6,7 +6,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyReferenceTarget, GeneratedFrom,
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
 
 use platform_value::{Identifier, Value};
@@ -268,6 +268,20 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.documents_can_be_deleted
             || self.documents_can_be_deleted_by_moderators
             || self.documents_ttl_seconds.is_some()
+    }
+
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        if !self.documents_can_disappear() {
+            DocumentReferenceKind::Permanent
+        } else if !self.documents_can_be_deleted
+            && self.documents_ttl_seconds.is_none()
+            && self.documents_can_be_deleted_by_moderators
+            && self.moderator_deletions_keep_records
+        {
+            DocumentReferenceKind::Moderated
+        } else {
+            DocumentReferenceKind::Deletable
+        }
     }
 
     fn immutable_fields(&self) -> &BTreeSet<String> {

@@ -441,8 +441,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     that declares moderation may set `moderatorAbilities.delete` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps
 ///     history, is indexOnly or restricts creation; for references such a type
-///     is deletable, so a permanentDocument reference refuses it and a
-///     deletableDocument reference accepts it). A moderation declaration may then keep
+///     is no longer permanent, so a permanentDocument reference refuses it, and
+///     a moderatedDocument or a deletableDocument reference takes it, see 64). A
+///     moderation declaration may then keep
 ///     no list at all. `ContractUserModeration` gains the `DeleteDocument`
 ///     action: the owner or a moderator deletes a document of such a type,
 ///     except the owner's and the moderators' own, with a reason like a
@@ -1664,15 +1665,49 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
 ///
-/// 64. **Properties frozen some time after creation (`immutableAfter`)**: a
+/// 64. **`refersTo: moderatedDocument`**: a third kind of document reference,
+///     between `permanentDocument` and `deletableDocument` and disjoint from
+///     both (`DocumentReferenceKind`, `DocumentTypeV2Getters::document_reference_kind`),
+///     in place in meta-schema v3, parser generation 3 and the generation 0
+///     reference validators. Its target is a document type whose documents
+///     leave state only when the contract's moderators remove them, each
+///     removal on the record: `canBeDeleted: false`, no `ttl`, and
+///     `moderatorAbilities.delete` with `deleteKeepsRecord` not false. Such a
+///     type is no longer a `deletableDocument` target
+///     (`ReferencedDocumentTypeModeratedError`, 40144), and a
+///     `moderatedDocument` reference to any other type is refused
+///     (`ReferencedDocumentTypeNotModeratedError`, 40143), at registration
+///     and at write time. The id form only: no `findBy`, `inList` or operand
+///     of an expression. The document must exist when the reference is
+///     written; a replace re-validates it as a permanent one (the value or a
+///     property its `where` reads changed, or always for a writer gate), and a
+///     value the stored document held whose document a moderator removed
+///     resolves to the removal record, read and billed: a `where` pair asked
+///     about again compares the record's document owner for `$ownerId` and the
+///     id for `$id`, and refuses any other property
+///     (`ReferencedDocumentRemovedError`, 40145); a writer gate may compare
+///     only those two (parser, 10231), being asked about on every replace. A
+///     value is held when it is the stored document's at its path, compared
+///     through the stored values the replace action carries for a changed
+///     top-level property. The write-time kind check still lets a
+///     `deletableDocument` reference to a moderated type through, which a
+///     contract registered before this note may hold. Chained and composite joins
+///     through it prove, as one more component of the merged proof, the
+///     removal records of the joined ids beside their documents, and report
+///     each removed document by its record (`removed_outer_documents = 4` on
+///     `ChainedDocuments`, `removed = 4` on a composite `SubQueryResult`,
+///     additive); a joined id with neither a document nor a record is refused
+///     as a missing permanent target is. StateError discriminants 156-158.
+///
+/// 65. **Properties frozen some time after creation (`immutableAfter`)**: a
 ///     doctype-level object of meta-schema v3 and parser generation 3, in
 ///     place, mapping top-level properties of a mutable document type to a
 ///     window in seconds (1 to `u32::MAX`). Document replace state
 ///     validation 1, extended in place, refuses a replace that changes, adds
 ///     or removes such a property once block time is later than the stored
 ///     document's `$createdAt` plus its window
-///     (`DocumentPropertyEditWindowElapsedError`, 40143, `StateError`
-///     discriminant 156), with the dead `deletableDocument` reference clear
+///     (`DocumentPropertyEditWindowElapsedError`, 40146, `StateError`
+///     discriminant 159), with the dead `deletableDocument` reference clear
 ///     that `immutable` allows. The type must require `$createdAt`; no
 ///     property may also be under `immutable`, be transient, or be a field
 ///     only moderators write, and the reference rules of `immutable` apply

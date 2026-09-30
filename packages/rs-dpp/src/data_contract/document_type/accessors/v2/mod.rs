@@ -1,6 +1,6 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::property::{
-    DocumentPropertyReferenceTarget, GeneratedFrom,
+    DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
 use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use std::collections::{BTreeMap, BTreeSet};
@@ -84,10 +84,20 @@ pub trait DocumentTypeV2Getters {
     /// Whether a document of the type can stop existing once written: its owner may delete
     /// it (`canBeDeleted`), the contract's moderators may (`moderatorAbilities.delete`), or
     /// the platform deletes it when its `ttl` passes. A `permanentDocument` reference and a
-    /// list element reference may only target a type for which this is false, and a
-    /// `deletableDocument` reference only one for which it is true; a lookup follows the
-    /// kind it declares.
+    /// list element reference may only target a type for which this is false; which of the
+    /// other two kinds may target one for which it is true is
+    /// [`Self::document_reference_kind`]'s answer.
     fn documents_can_disappear(&self) -> bool;
+
+    /// The one kind of document reference that may target the type, from what
+    /// can make its documents leave state: `permanentDocument` when nothing can
+    /// ([`Self::documents_can_disappear`] is false), `moderatedDocument` when
+    /// only the contract's moderators can and every removal leaves a record (its
+    /// owner can not delete one, no `ttl` expires one, and
+    /// `moderatorAbilities.deleteKeepsRecord` holds), `deletableDocument`
+    /// otherwise. None of what it reads can change on a contract update, so the
+    /// answer holds for good.
+    fn document_reference_kind(&self) -> DocumentReferenceKind;
 
     /// The top-level properties frozen at document creation on a mutable
     /// document type (the `immutable` keyword, protocol version 14). A

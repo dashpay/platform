@@ -7,7 +7,7 @@
 //! the stored document has no value for them (frozen from then on), and
 //! `immutableAfter` the properties a replace may change only for so many
 //! seconds after the document's `$createdAt`. Consensus enforces them on
-//! every replace (codes 40128 and 40143). What this module
+//! every replace (codes 40128 and 40146). What this module
 //! adds is the ability to *discover* the declarations, "which properties of
 //! this document type can never change, and which may still be set once?",
 //! without hand-parsing the contract's raw JSON schema.
@@ -53,7 +53,7 @@ export type DocumentTypeImmutableProperties = {
    * document is created, each mapped to that window in seconds. Once block
    * time is past the document's `$createdAt` plus the window, a replace that
    * changes, adds or removes the property is rejected with consensus code
-   * 40143 (`DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed`).
+   * 40146 (`DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed`).
    * No key is also in `immutable`.
    */
   immutableAfter: Record<string, number>;

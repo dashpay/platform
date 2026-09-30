@@ -10,7 +10,9 @@ pub use {
     // Chained-query building blocks: the result shape and the join-value
     // cap. The join itself is a by-id join sub-query in
     // [`DriveDocumentQuery::sub_queries`].
-    chained_document_query::{ChainedDocumentsResult, MAX_CHAINED_JOIN_VALUES},
+    chained_document_query::{
+        ChainedDocumentsResult, ChainedOuterDocuments, MAX_CHAINED_JOIN_VALUES,
+    },
     // Composite-query building blocks: the sub-query shapes carried by
     // [`DriveDocumentQuery::sub_queries`] and the assembled result. The
     // verifier needs them all to rebuild and route the merged proof.
@@ -309,6 +311,12 @@ pub(crate) mod index_only_synthesis;
 /// See the module docs.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod chained_document_query;
+
+/// Joins through a `refersTo: moderatedDocument` property: the removal
+/// records a chained or composite join proves beside the documents it joins.
+/// See the module docs.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod moderated_join;
 
 /// Composite document queries — a [`DriveDocumentQuery`] page plus
 /// sub-queries derived from its proven results (joins, lookups, counts),

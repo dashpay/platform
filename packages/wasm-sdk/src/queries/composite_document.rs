@@ -16,6 +16,7 @@
 //! continue with a range clause past the last proven page document.
 
 use crate::error::WasmSdkError;
+use crate::queries::contract_moderation::removal_entry_to_js;
 use crate::queries::document::{
     build_documents_query, parse_order_clause, parse_where_clause, DocumentsQueryInput,
 };
@@ -63,8 +64,10 @@ export interface CompositeBind {
    * The sub-query field receiving the `IN` clause. `$id` makes this a
    * by-id JOIN (the source property must declare `refersTo:
    * permanentDocument`, where a missing document is a verification
-   * error, or `refersTo: deletableDocument`, where a document deleted
-   * since is proven absent and left out, targeting the sub-query's
+   * error, `refersTo: moderatedDocument`, where a document a moderator
+   * removed is reported by its proven removal record, or `refersTo:
+   * deletableDocument`, where a document deleted since is proven absent
+   * and left out, targeting the sub-query's
    * document type, and whose `refersTo` carries no `lookup`: a reference
    * resolved through a unique index holds no document ids); otherwise
    * `$ownerId` or an indexed property (a LOOKUP, where absence is a proven
@@ -133,9 +136,16 @@ export interface CompositeDocumentsSubResult {
    * By-id joins only: the derived ids that have NO document, in
    * first-appearance order (referenced documents deleted since, each one
    * a proven absence). Empty for a lookup or sibling, and always empty
-   * for a join off a `permanentDocument` property.
+   * for a join off a `permanentDocument` or `moderatedDocument` property.
    */
   missingIds: Identifier[];
+  /**
+   * By-id joins off a `moderatedDocument` property only: the derived ids
+   * whose document the contract's moderators removed, each with its
+   * proven removal record, in first-appearance order. Empty for every
+   * other sub-query.
+   */
+  removed: JoinedDocumentRemoval[];
 }
 
 /**
@@ -412,6 +422,18 @@ fn composite_result_to_js(
                     missing_ids.push(&JsValue::from(IdentifierWasm::from(*id)));
                 }
                 set_field(&entry, "missingIds", &missing_ids)?;
+                let removed = Array::new();
+                for removal in composite
+                    .sub_result_removals
+                    .get(index)
+                    .map(|removals| removals.as_slice())
+                    .unwrap_or_default()
+                {
+                    removed.push(&removal_entry_to_js(removal, |id| {
+                        IdentifierWasm::from(id).into()
+                    })?);
+                }
+                set_field(&entry, "removed", &removed)?;
                 set_field(
                     &entry,
                     "documents",
@@ -688,5 +710,52 @@ mod tests {
         assert_eq!(sibling.limit, Some(5));
         assert_eq!(sibling.binding, None);
         assert!(sdk.get_cached_contract(&other_contract.id()).is_some());
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use crate::queries::contract_moderation::joined_removal_tests::{
+        assert_joined_removal, field, removal_entry,
+    };
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use std::sync::Arc;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// A by-id join off a `moderatedDocument` property reports a removed document by its
+    /// record in the sub-result's `removed`, identifiers as `Identifier`s like `missingIds`.
+    /// Only a proved fetch produces such a result, so the conversion is fed one directly.
+    #[wasm_bindgen_test]
+    fn a_removed_joined_document_crosses_with_its_record() {
+        let contract = Arc::new(
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("the DPNS contract loads"),
+        );
+        let query = DocumentQuery::new(contract.clone(), "domain")
+            .expect("a documents query")
+            .with_sub_query(
+                CompositeSubQuery::documents(contract, "domain")
+                    .expect("a documents sub-query")
+                    .bound_to_page("$ownerId", "$id"),
+            );
+        let entry = removal_entry();
+        let composite = CompositeDocuments {
+            sub_results: vec![CompositeSubQueryResult::Documents(Vec::new())],
+            sub_result_missing_ids: vec![Vec::new()],
+            sub_result_removals: vec![vec![entry.clone()]],
+            ..Default::default()
+        };
+
+        let result: JsValue = composite_result_to_js(&composite, &query)
+            .expect("the result converts")
+            .into();
+
+        let sub_result = Array::from(&field(&result, "subResults")).get(0);
+        assert_eq!(Array::from(&field(&sub_result, "missingIds")).length(), 0);
+        let removed = Array::from(&field(&sub_result, "removed"));
+        assert_eq!(removed.length(), 1);
+        assert_joined_removal(&removed.get(0), &entry);
     }
 }

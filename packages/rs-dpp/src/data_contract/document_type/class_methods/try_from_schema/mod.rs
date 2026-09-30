@@ -1016,6 +1016,10 @@ fn expression_leaf_refusal_reason(reference_type: &str) -> Option<&'static str> 
              deleted, which assumes the property refers to that one target; declare it with \
              findBy to combine it",
         ),
+        "moderatedDocument" => Some(
+            "its value may resolve to a moderator's removal record rather than a document, \
+             which no other operand accounts for",
+        ),
         "identityPublicKey" => {
             Some("it pairs the value with a key id property, which no other operand reads")
         }
@@ -1099,18 +1103,37 @@ fn validate_reference_target_keys(
     // `findBy` finds a referenced DOCUMENT through a unique index of its type,
     // of either kind: a permanent one never dangles, and a deletable one is
     // re-validated on every replace, since a key into a deletable type may find
-    // a new document once the one it found is deleted. `where` compares a
-    // referenced DOCUMENT's values. The other targets are found by the value
-    // itself and have no document body
-    for keyword in [property_names::FIND_BY, property_names::WHERE] {
-        if refers_to_map.contains_key(keyword)
-            && !matches!(reference_type, "permanentDocument" | "deletableDocument")
-        {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "{reference_type} refersTo does not take {keyword}: it is only allowed on \
-                 permanentDocument and deletableDocument references"
-            )));
-        }
+    // a new document once the one it found is deleted. A moderated one takes no
+    // `findBy`: a moderator's removal frees the document's unique index keys, so
+    // a key could come to find another document while the reference is held to
+    // the removed one's record. `where` compares a referenced DOCUMENT's values,
+    // of any kind. The other targets are found by the value itself and have no
+    // document body
+    if refers_to_map.contains_key(property_names::FIND_BY)
+        && !matches!(reference_type, "permanentDocument" | "deletableDocument")
+    {
+        let reason = if reference_type == "moderatedDocument" {
+            "a moderator's removal frees the unique index keys of the document it found, so \
+             the same key could find another document; refer to the document by its id"
+        } else {
+            "it is only allowed on permanentDocument and deletableDocument references"
+        };
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo does not take {}: {reason}",
+            property_names::FIND_BY
+        )));
+    }
+    if refers_to_map.contains_key(property_names::WHERE)
+        && !matches!(
+            reference_type,
+            "permanentDocument" | "moderatedDocument" | "deletableDocument"
+        )
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo does not take {}: it is only allowed on \
+             permanentDocument, moderatedDocument and deletableDocument references",
+            property_names::WHERE
+        )));
     }
 
     // `inList` names a list on the document found by its `$id`, whose value
@@ -1142,6 +1165,34 @@ fn validate_reference_target_keys(
     Ok(())
 }
 
+/// The document type a document reference of `reference_type` names: its
+/// `contractId`, absent for a document type of the declaring contract itself,
+/// and its `documentType`.
+fn parse_document_reference_type(
+    refers_to_map: &BTreeMap<String, &Value>,
+    reference_type: &str,
+) -> Result<(Option<Identifier>, String), DataContractError> {
+    let contract_id = refers_to_map
+        .get(property_names::CONTRACT_ID)
+        .map(|value| {
+            value
+                .to_identifier()
+                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))
+        })
+        .transpose()?;
+
+    let document_type_name = refers_to_map
+        .get_str(property_names::DOCUMENT_TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+
+    if document_type_name.is_empty() || document_type_name.len() > 64 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo documentType must be between 1 and 64 characters"
+        )));
+    }
+    Ok((contract_id, document_type_name.to_string()))
+}
+
 /// Parses a single target declaration of `reference_type` whose keys
 /// [`validate_reference_target_keys`] accepted: the target of an identifier
 /// property, or one target of an `anyOf`.
@@ -1155,6 +1206,43 @@ fn parse_reference_target(
             contract_requirements: parse_contract_reference_requirements(refers_to_map)?,
         },
         "token" => DocumentPropertyReferenceTarget::Token,
+        // A moderated document is found by the value as its id alone (the keys
+        // refused `findBy` and `inList`), with the declaration shape the other
+        // two share; whether the referenced document type leaves its documents
+        // only to a moderator's recorded removal is checked against state at
+        // contract registration
+        //
+        // A writer gate (a `where` entry valued `"$ownerId"`) is asked about on
+        // every replace, and once a moderator removes the document its removal
+        // record keeps only its owner and its id: a gate on any other property
+        // would refuse every later replace, for good on a property that can not
+        // be repointed or cleared, so it may compare only those two
+        "moderatedDocument" => {
+            let (contract_id, document_type_name) =
+                parse_document_reference_type(refers_to_map, reference_type)?;
+            let property_agreement = parse_where(refers_to_map, reference_type)?;
+            if let Some(referenced_property) =
+                property_agreement
+                    .iter()
+                    .find_map(|(referring_property, referenced_property)| {
+                        (is_referring_system_agreement_property(referring_property)
+                            && !matches!(referenced_property.as_str(), OWNER_ID | ID))
+                        .then_some(referenced_property)
+                    })
+            {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "moderatedDocument refersTo where compares the writer with \
+                     \"{referenced_property}\": a writer is checked on every replace, and \
+                     once a moderator removes the document its removal record keeps only its \
+                     $ownerId and $id, so the writer may be compared with those alone"
+                )));
+            }
+            DocumentPropertyReferenceTarget::ModeratedDocument {
+                contract_id,
+                document_type_name,
+                property_agreement,
+            }
+        }
         // The two document targets share one declaration shape; they differ in
         // whether the referenced document type must forbid deletion, checked
         // against state at contract registration. The document is found by the
@@ -1162,27 +1250,8 @@ fn parse_reference_target(
         // the value must be in (`inList`, permanent only), by a `findBy` naming
         // its `$id` from another property
         document_target @ ("permanentDocument" | "deletableDocument") => {
-            // An absent contractId means the reference targets a document
-            // type of the declaring contract itself
-            let contract_id = refers_to_map
-                .get(property_names::CONTRACT_ID)
-                .map(|value| {
-                    value
-                        .to_identifier()
-                        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))
-                })
-                .transpose()?;
-
-            let document_type_name = refers_to_map
-                .get_str(property_names::DOCUMENT_TYPE)
-                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-
-            if document_type_name.is_empty() || document_type_name.len() > 64 {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "{document_target} refersTo documentType must be between 1 and 64 characters"
-                )));
-            }
-            let document_type_name = document_type_name.to_string();
+            let (contract_id, document_type_name) =
+                parse_document_reference_type(refers_to_map, document_target)?;
 
             let property_agreement = parse_where(refers_to_map, document_target)?;
             let find_by = refers_to_map.get(property_names::FIND_BY);
@@ -1748,7 +1817,8 @@ pub(super) fn parse_doctype_reference(
                 )))
             }
             DocumentPropertyReferenceTarget::PermanentDocument { .. }
-            | DocumentPropertyReferenceTarget::DeletableDocument { .. } => {
+            | DocumentPropertyReferenceTarget::DeletableDocument { .. }
+            | DocumentPropertyReferenceTarget::ModeratedDocument { .. } => {
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "{keyword}{at} takes a document reference only with findBy: its value, \
                      {value}'s identity id, is never a document id"
@@ -4645,6 +4715,198 @@ mod tests {
                 }
             )
         );
+    }
+
+    #[test]
+    fn should_parse_moderated_document_refers_to() {
+        let contract_id = Identifier::from([7u8; 32]);
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "moderatedDocument",
+                        "contractId": contract_id.to_string(Encoding::Base58),
+                        "documentType": "post",
+                        "where": { "topic": "topic", "$ownerId": "$ownerId" }
+                    }
+                },
+                "ownPostId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1,
+                    "refersTo": {
+                        "type": "moderatedDocument",
+                        "documentType": "post"
+                    }
+                },
+                "topic": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "position": 2
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = |name: &str| {
+            document_type
+                .as_ref()
+                .flattened_properties()
+                .get(name)
+                .map(|p| p.property_type.clone())
+                .expect("property should be present")
+        };
+
+        assert_eq!(
+            property_type("postId"),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::ModeratedDocument {
+                    contract_id: Some(contract_id),
+                    document_type_name: "post".to_string(),
+                    property_agreement: [
+                        ("topic".to_string(), "topic".to_string()),
+                        ("$ownerId".to_string(), "$ownerId".to_string()),
+                    ]
+                    .into(),
+                }
+            )
+        );
+        assert_eq!(
+            property_type("ownPostId"),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::ModeratedDocument {
+                    contract_id: None,
+                    document_type_name: "post".to_string(),
+                    property_agreement: Default::default(),
+                }
+            )
+        );
+    }
+
+    /// A moderated document is referred to by its id alone: `findBy` (a removal frees the
+    /// keys it finds by), `inList` (a list on a document that may leave state) and an operand
+    /// of a reference expression (whose other operands know nothing of removal records) are
+    /// each refused.
+    #[test]
+    fn should_refuse_a_moderated_document_refers_to_not_by_its_id() {
+        for refers_to in [
+            json!({
+                "type": "moderatedDocument",
+                "documentType": "post",
+                "findBy": { "slug": "." }
+            }),
+            json!({
+                "type": "moderatedDocument",
+                "documentType": "post",
+                "findBy": { "$id": "parentId" },
+                "inList": "members"
+            }),
+            json!({
+                "anyOf": [
+                    { "type": "identity" },
+                    { "type": "moderatedDocument", "documentType": "post" }
+                ]
+            }),
+            json!({ "type": "moderatedDocument" }),
+        ] {
+            let schema = json!({
+                "type": "object",
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": refers_to.clone()
+                    },
+                    "parentId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 1
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            });
+            // By the parser alone, as a stored contract is read, and with the meta-schema
+            try_document_type_from_schema(schema.clone())
+                .expect_err(&format!("{refers_to} must be refused"));
+            try_document_type_from_schema_full_validation(schema).expect_err(&format!(
+                "{refers_to} must be refused under full validation"
+            ));
+        }
+    }
+
+    /// A writer gate on a moderatedDocument reference is asked about on every replace, and a
+    /// removed document's record keeps its owner and id alone: a gate on anything else is
+    /// refused, one on `$ownerId` or `$id` parses.
+    #[test]
+    fn should_refuse_a_moderated_document_writer_gate_the_removal_record_can_not_answer() {
+        let schema = |where_entries: serde_json::Value| {
+            json!({
+                "type": "object",
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "moderatedDocument",
+                            "documentType": "post",
+                            "where": where_entries
+                        }
+                    },
+                    "authorId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 1
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            })
+        };
+        for refused in [
+            json!({ "$creatorId": "$ownerId" }),
+            json!({ "authorId": "$ownerId" }),
+        ] {
+            let error = try_document_type_from_schema(schema(refused.clone()))
+                .expect_err(&format!("{refused} must be refused"));
+            assert!(
+                error.to_string().contains("compares the writer"),
+                "unexpected error: {error}"
+            );
+        }
+        for admitted in [
+            json!({ "$ownerId": "$ownerId" }),
+            json!({ "$creatorId": "authorId" }),
+        ] {
+            try_document_type_from_schema(schema(admitted.clone()))
+                .unwrap_or_else(|error| panic!("{admitted} must parse: {error}"));
+        }
     }
 
     #[test]
