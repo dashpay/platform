@@ -3406,9 +3406,9 @@ mod tests {
         }
     }
 
-    /// Same-height records without a block position: an output the load
-    /// projection still parks as unspent must end up excluded whichever of
-    /// funding and spend is stored first.
+    /// Same-block funding and spend, with and without in-block positions: an
+    /// output the load projection still parks as unspent must end up excluded,
+    /// and recorded as observed spent, whichever of the two is stored first.
     #[tokio::test]
     async fn should_exclude_spent_output_for_either_same_height_replay_order() {
         use dashcore::hashes::Hash;
@@ -3416,7 +3416,10 @@ mod tests {
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
         use key_wallet::Utxo;
 
-        for spend_first in [false, true] {
+        for (spend_first, positioned) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let case = format!("spend_first={spend_first} positioned={positioned}");
             let mut wallet =
                 Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default)
                     .unwrap();
@@ -3461,24 +3464,27 @@ mod tests {
                 }],
                 special_transaction_payload: None,
             };
-            let context = TransactionContext::InBlock(BlockInfo::new(
-                100,
-                BlockHash::from_byte_array([7; 32]),
-                100,
-            ));
+            let context = |position: u32| {
+                let block = BlockInfo::new(100, BlockHash::from_byte_array([7; 32]), 100);
+                TransactionContext::InBlock(if positioned {
+                    block.with_position(position)
+                } else {
+                    block
+                })
+            };
             let mut records = info
-                .check_core_transaction(&funding, context.clone(), &mut wallet, true, true)
+                .check_core_transaction(&funding, context(1), &mut wallet, true, true)
                 .await
                 .new_records;
             records.extend(
-                info.check_core_transaction(&spending, context, &mut wallet, true, true)
+                info.check_core_transaction(&spending, context(2), &mut wallet, true, true)
                     .await
                     .new_records,
             );
             assert_eq!(records.len(), 2);
-            assert!(records
-                .iter()
-                .all(|r| r.block_info().is_some_and(|b| b.position().is_none())));
+            assert!(records.iter().all(|r| r
+                .block_info()
+                .is_some_and(|b| b.position().is_some() == positioned)));
             if spend_first {
                 records.reverse();
             }
@@ -3509,13 +3515,13 @@ mod tests {
             restore_recorded_transactions(&mut restored, &mut wallet, records, &Default::default());
 
             let coins = &restored.accounts.standard_bip44_accounts[&0].utxos;
-            assert!(!coins.contains_key(&spent), "spend_first={spend_first}");
-            assert!(coins.contains_key(&available), "spend_first={spend_first}");
-            assert_eq!(
-                restored.balance.total(),
-                20_000,
-                "spend_first={spend_first}"
+            assert!(!coins.contains_key(&spent), "{case}");
+            assert!(coins.contains_key(&available), "{case}");
+            assert!(
+                restored.observed_spent_outpoints().contains_key(&spent),
+                "{case}"
             );
+            assert_eq!(restored.balance.total(), 20_000, "{case}");
         }
     }
 
@@ -3740,6 +3746,22 @@ mod tests {
             replayed_txids(vec![pending, late_second, late_first, early]),
             expected
         );
+    }
+
+    /// Within one block, in-block position decides: a spend follows the
+    /// funding transaction it spends, and unrelated transactions keep their
+    /// place around the pair.
+    #[test]
+    fn should_keep_block_position_order_for_same_block_spends() {
+        use dashcore::hashes::Hash;
+
+        let parent = replay_record(&[Txid::from_byte_array([9; 32])], 10, in_block(20, Some(1)));
+        let child = replay_record(&[parent.txid], 9, in_block(20, Some(2)));
+        let before = replay_record(&[Txid::from_byte_array([10; 32])], 8, in_block(20, Some(0)));
+        let after = replay_record(&[Txid::from_byte_array([11; 32])], 7, in_block(20, Some(3)));
+        let expected = vec![before.txid, parent.txid, child.txid, after.txid];
+
+        assert_eq!(replayed_txids(vec![after, child, before, parent]), expected);
     }
 
     /// Records that name each other as parents (impossible for real txids)
