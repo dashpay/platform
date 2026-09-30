@@ -333,6 +333,100 @@ describe('DocumentsTransitions', () => {
       });
     });
 
+    describe('contest fund from dataContract', () => {
+      // A DPNS-like name contested while its label is 3 to 19 characters
+      const contract = () => new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: {
+          domain: {
+            type: 'object',
+            documentsMutable: false,
+            canBeDeleted: true,
+            properties: {
+              normalizedLabel: { type: 'string', maxLength: 63, position: 0 },
+              normalizedParentDomainName: { type: 'string', maxLength: 63, position: 1 },
+            },
+            required: ['normalizedLabel', 'normalizedParentDomainName'],
+            indices: [{
+              name: 'parentNameAndLabel',
+              properties: [{ normalizedParentDomainName: 'asc' }, { normalizedLabel: 'asc' }],
+              unique: true,
+              contested: {
+                fieldMatches: [{ field: 'normalizedLabel', regexPattern: '^[a-zA-Z01-]{3,19}$' }],
+                resolution: 0,
+              },
+            }],
+            additionalProperties: false,
+          },
+        },
+        definitions: null,
+        fullValidation: false,
+        platformVersion: new wasm.PlatformVersion(14),
+      });
+      const name = (dataContract: InstanceType<typeof wasm.DataContract>, label: string) => new wasm.Document({
+        properties: { normalizedLabel: label, normalizedParentDomainName: 'dash' },
+        documentTypeName: 'domain',
+        dataContractId: dataContract.id,
+        ownerId,
+      });
+      // 0.1 Dash, the contested document fund of protocol version 14
+      const contestedDocumentFund = BigInt(10000000000);
+
+      it('should state the contest fund on the contested index of a contested document', () => {
+        const dataContract = contract();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: name(dataContract, 'quantum'),
+          identityContractNonce: BigInt(1),
+          dataContract,
+        });
+
+        expect(createTransition.prefundedVotingBalance.indexName).to.equal('parentNameAndLabel');
+        expect(createTransition.prefundedVotingBalance.credits).to.equal(contestedDocumentFund);
+      });
+
+      it('should state contestFund in place of the contest fund', () => {
+        const dataContract = contract();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: name(dataContract, 'quantum'),
+          identityContractNonce: BigInt(1),
+          dataContract,
+          contestFund: BigInt(7),
+        });
+
+        expect(createTransition.prefundedVotingBalance.indexName).to.equal('parentNameAndLabel');
+        expect(createTransition.prefundedVotingBalance.credits).to.equal(BigInt(7));
+      });
+
+      it('should state no fund for a document that matches no contested index', () => {
+        const dataContract = contract();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: name(dataContract, 'quantumexplorerdashx'),
+          identityContractNonce: BigInt(1),
+          dataContract,
+          contestFund: BigInt(7),
+        });
+
+        expect(createTransition.prefundedVotingBalance).to.equal(undefined);
+      });
+
+      it('should refuse contestFund without dataContract or prefundedVotingBalance', () => {
+        expect(() => new wasm.DocumentCreateTransition({
+          document: name(contract(), 'quantum'),
+          identityContractNonce: BigInt(1),
+          contestFund: BigInt(7),
+        })).to.throw(/contestFund needs dataContract/);
+      });
+
+      it('should refuse a dataContract that is not the contract of the document', () => {
+        expect(() => new wasm.DocumentCreateTransition({
+          document: createDocument(),
+          identityContractNonce: BigInt(1),
+          dataContract: contract(),
+        })).to.throw(/is not the contract of the document/);
+      });
+    });
+
     describe('BatchTransition.fromBatchedTransitions()', () => {
       it('should create BatchTransition from document transitions', () => {
         const documentInstance = createDocument();

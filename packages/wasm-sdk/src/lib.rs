@@ -3,6 +3,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 mod browser_storage;
 pub mod context_provider;
 mod contract_store;
+pub mod document_create_cost;
+pub mod document_type_layout;
 pub mod dpns;
 pub mod encrypted_for;
 pub mod error;

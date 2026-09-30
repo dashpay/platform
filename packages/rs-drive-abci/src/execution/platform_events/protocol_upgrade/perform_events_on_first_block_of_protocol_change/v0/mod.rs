@@ -835,6 +835,14 @@ impl<C> Platform<C> {
         self.drive
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
 
+        // The document time to live trees: the documents expirations tree under `Misc`, which
+        // indexes every document of a type declaring a `ttl` (a keyword protocol version 14
+        // introduces) by when it expires, and the lifetime storage fee pools sum tree under
+        // `Pools`, which holds their storage fees until an epoch change spreads them. Fresh
+        // chains call the same helper last in `create_initial_state_structure` v4.
+        self.drive
+            .insert_document_ttl_trees(Some(transaction), platform_version)?;
+
         Ok(())
     }
 }
@@ -847,10 +855,14 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::version::PlatformVersion;
+    use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
+    use drive::drive::credit_pools::pools_path;
+    use drive::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
     use drive::drive::shielded::paths::{
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::util::grove_operations::DirectQueryType;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
     /// two platforms and returns a list of human-readable differences (empty ⇒
@@ -2126,6 +2138,76 @@ mod tests {
             diffs.is_empty(),
             "the prefunded balances subtree differs between a chain born at version 14 and one \
              upgraded to it:\n{}",
+            diffs.join("\n"),
+        );
+    }
+
+    #[test]
+    fn should_create_the_document_ttl_trees_on_transition_to_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let trees_exist = |transaction: &Transaction| {
+            let has = |path: &[&[u8]], key: &[u8]| {
+                upgraded
+                    .drive
+                    .grove_has_raw(
+                        path.into(),
+                        key,
+                        DirectQueryType::StatefulDirectQuery,
+                        Some(transaction),
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to query the tree")
+            };
+            (
+                has(&misc_path(), DOCUMENTS_EXPIRATIONS_KEY),
+                has(&pools_path(), KEY_LIFETIME_STORAGE_FEE_POOLS),
+            )
+        };
+        assert_eq!(
+            trees_exist(&transaction),
+            (false, false),
+            "protocol version 13 has neither the documents expirations tree nor the lifetime \
+             storage fee pools"
+        );
+
+        upgraded
+            .transition_to_version_14(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+        assert_eq!(
+            trees_exist(&transaction),
+            (true, true),
+            "both trees must exist after the transition"
+        );
+
+        let mut diffs = collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::Misc as u8]],
+        );
+        diffs.extend(collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![
+                vec![RootTree::Pools as u8],
+                KEY_LIFETIME_STORAGE_FEE_POOLS.to_vec(),
+            ],
+        ));
+        assert!(
+            diffs.is_empty(),
+            "the trees differ between a chain born at version 14 and one upgraded to it:\n{}",
             diffs.join("\n"),
         );
     }
@@ -3470,6 +3552,7 @@ mod tests {
 
 #[cfg(test)]
 mod shielded_profile_schema_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
     use dpp::platform_value::{platform_value, Value};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -3484,7 +3567,12 @@ mod shielded_profile_schema_tests {
                 let properties =
                     platform_value!({ "shieldedAddress": Value::Bytes(vec![0; length]) });
                 let result = contract
-                    .validate_document_properties("profile", properties, pv)
+                    .validate_document_properties(
+                        "profile",
+                        properties,
+                        &DocumentSystemValues::default(),
+                        pv,
+                    )
                     .unwrap();
                 assert_eq!(
                     result.is_valid(),
@@ -3496,6 +3584,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"shieldedAddress": "not bytes"}),
+                    &DocumentSystemValues::default(),
                     pv,
                 )
                 .unwrap();
@@ -3504,6 +3593,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"displayName": "Alice"}),
+                    &DocumentSystemValues::default(),
                     pv,
                 )
                 .unwrap();

@@ -150,9 +150,10 @@ pub struct DashPayState {
     /// on-chain ciphertext + public-key indices; each entry still carries its
     /// `owner_identity_id` (== this identity) as the drain's routing key and the
     /// SQLite key column. In-memory only for the live session: the queue is
-    /// persisted to the changeset (SQLite backend), but cold-load restore is
-    /// blocked upstream, so a re-imported wallet re-syncs from scratch and the
-    /// sweep re-enqueues what it needs. Deliberately NOT captured by
+    /// persisted to the changeset (SQLite backend), but `load()` does not
+    /// restore it (nothing blocks that any more; see the storage crate's
+    /// `pending_contact_crypto` reader), so after a restart the sweep
+    /// re-enqueues what it needs. Deliberately NOT captured by
     /// `IdentityEntry::from_managed` — persistence rides the flat changeset
     /// delta, not a per-identity snapshot.
     /// See [`PendingContactCrypto`](crate::changeset::PendingContactCrypto).

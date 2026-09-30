@@ -782,6 +782,26 @@ public class PlatformWalletManager: ObservableObject {
         qos: .userInitiated
     )
 
+    /// Runs the blocking native stop behind the async [`stopSpv()`]. The
+    /// Rust stop waits for the SPV run loop to finish its current sync tick
+    /// and drain its tasks — up to 15 s for the client stop and 15 s for the
+    /// run-loop join plus a 2 s abort grace, about 32 s in all, after any SPV
+    /// broadcast still waiting for acceptance — so it must park a plain GCD
+    /// thread: never the main thread, and never
+    /// a Swift Concurrency cooperative-pool thread. Per-manager, not
+    /// [`destroyQueue`]: a slow SPV stop must not hold up other managers'
+    /// creates, loads and teardowns on that process-wide queue. Internal so
+    /// the SPV extension can dispatch to it.
+    let spvStopQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.spv-stop",
+        qos: .userInitiated
+    )
+
+    /// Async SPV stops between admission and completion.
+    /// [`startSpv(config:)`] refuses to start while one is in flight.
+    /// Internal so the SPV extension can maintain it.
+    var spvStopsInFlight = 0
+
     // MARK: - Init
 
     /// Empty init for `@StateObject` usage. Call [`configure`] before

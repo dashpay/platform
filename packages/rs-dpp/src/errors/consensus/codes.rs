@@ -170,6 +170,8 @@ impl ErrorWithCode for BasicError {
             Self::InvalidEncryptedPropertyShapeError(_) => 10420,
             Self::DocumentPropertyMaxBytesExceededError(_) => 10421,
             Self::DocumentPropertyConstraintViolatedError(_) => 10422,
+            Self::DocumentReferencePreimageInvalidError(_) => 10423,
+            Self::DocumentPropertyNotGeneratedError(_) => 10424,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
@@ -274,6 +276,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentActionFeesWithoutModerationError(_) => 10902,
             Self::ContractModerationReasonTooLongError(_) => 10903,
             Self::InvalidContractModerationReasonDocumentsError(_) => 10904,
+            Self::InvalidContractModerationDocumentFieldsError(_) => 10905,
 
             // Moderation Team Errors: 11000-11099
             Self::ModerationCharterMalformedFieldError(_) => 11000,
@@ -371,6 +374,9 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentLookupInvalidError(_) => 40137,
             Self::ReferencedDocumentListInvalidError(_) => 40138,
             Self::DocumentActionFeeModeratorsShareMismatchError(_) => 40139,
+            Self::DocumentExpiredError(_) => 40140,
+            Self::DocumentContestMaximumContendersReachedError(_) => 40141,
+            Self::ReferencedDocumentRequirementNotMetError(_) => 40142,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -488,6 +494,8 @@ impl ErrorWithCode for StateError {
             Self::DocumentRestoreWindowElapsedError(_) => 41120,
             Self::DocumentRestoreHashMismatchError(_) => 41121,
             Self::ContractDocumentAlreadyRestoredError(_) => 41122,
+            Self::DocumentFieldNotChangeableByModeratorsError(_) => 41123,
+            Self::DocumentModeratorFieldNotWritableError(_) => 41124,
 
             // Contract moderation team errors: 41200-41299
             Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,

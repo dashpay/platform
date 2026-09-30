@@ -132,8 +132,11 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
         // an elected declaration within its bounds and naming document types of the contract).
         // That the named moderators exist is checked against the state.
         if let Some(moderation) = self.data_contract().config().moderation() {
-            let result =
-                moderation.validate(self.data_contract().document_schemas(), platform_version)?;
+            let result = moderation.validate(
+                self.data_contract().document_schemas(),
+                network_type,
+                platform_version,
+            )?;
             if !result.is_valid() {
                 return Ok(result);
             }

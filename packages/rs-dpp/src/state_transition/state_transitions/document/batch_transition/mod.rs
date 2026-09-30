@@ -59,6 +59,10 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::state_transition::batch_transition::fields::property_names;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 pub use v0::*;
 pub use v1::*;
 
@@ -93,10 +97,10 @@ pub enum BatchTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for BatchTransition {}
+impl JsonConvertible for BatchTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for BatchTransition {}
+impl ValueConvertible for BatchTransition {}
 
 impl StateTransitionFieldTypes for BatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {

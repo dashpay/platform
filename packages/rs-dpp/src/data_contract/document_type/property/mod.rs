@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
@@ -41,12 +41,20 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
+pub mod generated_from;
 pub mod list_element_reference;
+pub mod lookup_preimage;
 pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use generated_from::{
+    GeneratedFrom, GenerationParam, HashFunction, StringTransformation, SystemFunction,
+};
 pub use list_element_reference::ListElementReference;
+pub use lookup_preimage::{
+    first_unrevealable_lookup_key, LookupHashKey, LookupKeyParam, LookupPreimageError,
+};
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
@@ -80,6 +88,20 @@ pub struct DocumentProperty {
     /// and only on contracts parsed from protocol version 14 on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encrypted_for: Option<EncryptedFor>,
+    /// The function the platform generates this property's value with, and
+    /// the properties it reads (`generatedFrom`). Only ever `Some` on a string
+    /// property, and only on contracts parsed from protocol version 14 on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated_from: Option<GeneratedFrom>,
+    /// The `refersTo` of a string or byte array property, whose value is not
+    /// an id but is revealed into a computed key, a `findBy` function naming
+    /// the property by its path among its `params`, such as a
+    /// salt a commitment hashed. An identifier property's
+    /// `refersTo` is folded into its type instead
+    /// ([`DocumentPropertyType::IdentifierWithReference`]). Only ever `Some` on
+    /// contracts parsed from protocol version 14 on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revealed_reference: Option<DocumentPropertyReferenceTarget>,
 }
 
 /// What a `distinctFrom` identifier property must differ from.
@@ -832,14 +854,15 @@ pub enum DocumentPropertyReferenceTarget {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
     },
-    /// A `permanentDocument` reference declared with a `lookup`: the
-    /// property's value (or each element of a typed array) is NOT the
-    /// referenced document's id, but one part of a key; the referenced
-    /// document is the one the named unique index of the referenced document
-    /// type finds for the key the [`DocumentReferenceLookup`] assembles from
-    /// the referring document. Everything else is as for
-    /// [`Self::PermanentDocument`]: the referenced type must forbid deletion,
-    /// the agreement pairs are checked against the document found, and the
+    /// A `permanentDocument` reference found by `findBy`: the property's
+    /// value (or each element of a typed array) is NOT the referenced
+    /// document's id, but one part of a key; the referenced document is the
+    /// one the unique index of the referenced document type over exactly the
+    /// properties `findBy` names finds for the key the
+    /// [`DocumentReferenceLookup`] assembles from the referring document.
+    /// Everything else is as for [`Self::PermanentDocument`]: the referenced
+    /// type must forbid deletion, the `where` entries are checked against the
+    /// document found, and the
     /// key must stay with that document (its parts cannot be changed by a
     /// replace, a transfer or a purchase), so the reference can not dangle
     /// either. Its deletable form is [`Self::DeletableDocumentLookup`].
@@ -849,7 +872,7 @@ pub enum DocumentPropertyReferenceTarget {
     /// id reference keeps its consensus encoding (the enum is embedded in
     /// reference errors), and code matching `PermanentDocument` as "the value
     /// is a document id" can not mistake a lookup for one. It serializes
-    /// under the same `permanentDocument` tag, with a `lookup` field (the
+    /// under the same `permanentDocument` tag, with the parsed `lookup` (the
     /// enum is serialize-only, so the shared tag is never read back).
     #[serde(rename = "permanentDocument")]
     PermanentDocumentLookup {
@@ -865,15 +888,15 @@ pub enum DocumentPropertyReferenceTarget {
     },
     /// Two or more operands, declared as `{ "anyOf": [operand, ...] }`: the
     /// reference holds if at least one of them holds. An operand is a leaf,
-    /// an ordinary declaration of an `identity` or a `permanentDocument` (by
-    /// id or through a lookup), or an [`Self::AllOf`] (see
+    /// an ordinary declaration of an `identity`, a `permanentDocument` (by
+    /// id, by `findBy` or with `inList`) or a `deletableDocument` found by
+    /// `findBy`, or an [`Self::AllOf`] (see
     /// [`ReferenceOperands`] for the rules and why the other kinds are left
     /// out). At write time the operands are checked in declared order and
     /// the first that holds ends the check; every read is billed, and when
     /// none holds the write is refused with the error of the last operand,
-    /// so a reference error never carries this variant. A
-    /// `propertyAgreement` belongs to its leaf and is checked only against
-    /// that leaf's document.
+    /// so a reference error never carries this variant. A `where` belongs to
+    /// its leaf and is checked only against that leaf's document.
     ///
     /// Not a document reference as a whole
     /// ([`Self::as_any_document_reference`] is `None`): code that checks
@@ -889,23 +912,24 @@ pub enum DocumentPropertyReferenceTarget {
     /// read is billed. Otherwise as [`Self::AnyOf`].
     #[serde(rename = "allOf")]
     AllOf(ReferenceOperands),
-    /// An element of a list: the value must be one of the identifiers the
-    /// typed array [`ListElementReference::in_list`] holds on the one
-    /// document of a permanent document type that agrees with the referring
-    /// document on every `propertyAgreement` pair, found by the pair whose
-    /// referenced side is `$id`. A document reference in every other respect
-    /// ([`Self::as_any_document_reference`] carries it with `in_list` set):
-    /// the value is neither the document's id nor a lookup key, so
+    /// An element of a list, a `permanentDocument` declared with `inList`: the
+    /// value must be one of the identifiers the typed array
+    /// [`ListElementReference::in_list`] holds on the one document of a
+    /// permanent document type `findBy` `{ "$id": <property> }` names (held
+    /// as the `property_agreement` pair `{property: "$id"}`), which every
+    /// `where` entry is checked against. A document reference in every other
+    /// respect ([`Self::as_any_document_reference`] carries it with `in_list`
+    /// set): the value is neither the document's id nor a `findBy` key, so
     /// [`Self::as_document_reference`] leaves it out. The list's document can
     /// never be deleted and its list never changes (checked at registration),
     /// so an accepted value stays an element for good. Appended, so every
     /// earlier variant keeps its consensus encoding.
     #[serde(rename = "listElement")]
     ListElement(ListElementReference),
-    /// A `deletableDocument` reference declared with a `lookup`: the value is
-    /// one part of a key, as for [`Self::PermanentDocumentLookup`], into a
+    /// A `deletableDocument` reference found by `findBy`: the value is one
+    /// part of a key, as for [`Self::PermanentDocumentLookup`], into a
     /// document type whose documents CAN be deleted. The document the key
-    /// finds must exist, and the agreement pairs hold against it, when the
+    /// finds must exist, and the `where` entries hold against it, when the
     /// referring document is written, and every replace re-validates it, as a
     /// [`Self::DeletableDocument`] reference is. It promises less than the id
     /// form: once the document it found is deleted, the same key may find
@@ -917,8 +941,15 @@ pub enum DocumentPropertyReferenceTarget {
     /// dead one nor clear it), and it may be an operand of a reference
     /// expression, which is then re-validated on every replace as well.
     ///
+    /// One whose key a `findBy` function computes
+    /// ([`DocumentReferenceLookup::is_checked_on_create_only`]) is the
+    /// exception: the document it finds is a commitment the create reveals, so
+    /// it is judged when the document is created only and holds on a replace
+    /// without a read. An immutable property may hold one, and on a type whose
+    /// documents can be replaced it may not be an operand of an `anyOf`.
+    ///
     /// Appended, so every earlier variant keeps its consensus encoding. It
-    /// serializes under the `deletableDocument` tag, with a `lookup` field.
+    /// serializes under the `deletableDocument` tag, with the parsed `lookup`.
     #[serde(rename = "deletableDocument")]
     DeletableDocumentLookup {
         /// The contract the referenced document type lives in; `None` means
@@ -937,7 +968,7 @@ pub enum DocumentPropertyReferenceTarget {
 /// [`DocumentPropertyReferenceTarget::PermanentDocument`] and
 /// [`DocumentPropertyReferenceTarget::DeletableDocument`], whose value is the
 /// referenced document's id, [`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]
-/// (`lookup` set), whose value is one part of a key, and
+/// (`lookup` set, from `findBy`), whose value is one part of a key, and
 /// [`DocumentPropertyReferenceTarget::ListElement`] (`in_list` set), whose
 /// value is an element of the referenced document's list. Only
 /// [`DocumentPropertyReferenceTarget::as_document_reference`] promises the
@@ -952,7 +983,7 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// The `{referring property: referenced property}` equalities
     pub property_agreement: &'a BTreeMap<String, String>,
     /// Whether the referenced document type must forbid deletion
-    /// (`permanentDocument`, by id or through a lookup, and `listElement`)
+    /// (`permanentDocument`, by id, by `findBy` or with `inList`)
     /// or must allow it (`deletableDocument`)
     pub permanent: bool,
     /// How the referenced document is found when the value is not its id
@@ -964,7 +995,7 @@ pub struct DocumentReferenceDeclaration<'a> {
     pub lookup: Option<&'a DocumentReferenceLookup>,
     /// The typed array of identifiers the value must be an element of
     /// ([`DocumentPropertyReferenceTarget::ListElement`]); `None` when the
-    /// value is the referenced document's id or a lookup key part. Only
+    /// value is the referenced document's id or a `findBy` key part. Only
     /// [`DocumentPropertyReferenceTarget::as_any_document_reference`] ever
     /// returns a declaration carrying one.
     pub in_list: Option<&'a str>,
@@ -972,8 +1003,8 @@ pub struct DocumentReferenceDeclaration<'a> {
 
 impl DocumentPropertyReferenceTarget {
     /// The declaration of a reference whose value is a DOCUMENT's id, of
-    /// either kind; `None` for every other target, a lookup reference or a
-    /// list element included, whose value is not a document id. This is the
+    /// either kind; `None` for every other target, one found by `findBy` or
+    /// with `inList` included, whose value is not a document id. This is the
     /// accessor for code that treats the value as the referenced document's
     /// `$id` (by-id joins); code that validates every kind of document
     /// reference uses [`Self::as_any_document_reference`].
@@ -983,9 +1014,9 @@ impl DocumentPropertyReferenceTarget {
     }
 
     /// The declaration of any reference to a DOCUMENT: of either kind, and
-    /// found by its id, through a `lookup` (then `lookup` is `Some`, and the
-    /// value is not the document's id) or by a `$id` agreement pair with the
-    /// value an element of its list (then `in_list` is `Some`). `None` for
+    /// found by its id, by `findBy` (then `lookup` is `Some`, and the value is
+    /// not the document's id) or by a `findBy` `$id` with the value an
+    /// element of its list (then `in_list` is `Some`). `None` for
     /// every other target.
     pub fn as_any_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
         match self {
@@ -1058,7 +1089,7 @@ impl DocumentPropertyReferenceTarget {
         }
     }
 
-    /// The declaration of a `listElement` reference; `None` for every other
+    /// The declaration of a reference with `inList`; `None` for every other
     /// target.
     pub fn as_list_element_reference(&self) -> Option<&ListElementReference> {
         match self {
@@ -1160,6 +1191,11 @@ pub enum PropertyReference<'a> {
     /// A key id property carrying an `identityPublicKey` declaration that
     /// names whose key it is ([`DocumentPropertyType::KeyIdWithReference`]).
     KeyId(&'a KeyIdReference),
+    /// A string or byte array property whose value is revealed into the
+    /// computed key of its `refersTo` ([`DocumentProperty::revealed_reference`]):
+    /// not an id, so read only as a param of that key's `findBy` function,
+    /// which names the property by its path, on a create.
+    Revealed(&'a DocumentPropertyReferenceTarget),
 }
 
 impl<'a> PropertyReference<'a> {
@@ -1167,9 +1203,9 @@ impl<'a> PropertyReference<'a> {
     /// key reference on the key id, which has no identifier target.
     pub fn target(&self) -> Option<&'a DocumentPropertyReferenceTarget> {
         match self {
-            PropertyReference::Value(target) | PropertyReference::Elements { target, .. } => {
-                Some(target)
-            }
+            PropertyReference::Value(target)
+            | PropertyReference::Elements { target, .. }
+            | PropertyReference::Revealed(target) => Some(target),
             PropertyReference::KeyId(_) => None,
         }
     }
@@ -1181,7 +1217,9 @@ impl<'a> PropertyReference<'a> {
     pub fn max_references(&self) -> u32 {
         let values = match self {
             PropertyReference::Elements { max_items, .. } => u32::from(*max_items),
-            PropertyReference::Value(_) | PropertyReference::KeyId(_) => 1,
+            PropertyReference::Value(_)
+            | PropertyReference::KeyId(_)
+            | PropertyReference::Revealed(_) => 1,
         };
         let leaves = self.target().map_or(1, |target| target.leaves().len());
         values.saturating_mul(u32::try_from(leaves).unwrap_or(u32::MAX))
@@ -1256,18 +1294,44 @@ impl<'a> DocumentTypeRef<'a> {
                 property
                     .property_type
                     .reference()
+                    .or_else(|| {
+                        property
+                            .revealed_reference
+                            .as_ref()
+                            .map(PropertyReference::Revealed)
+                    })
                     .map(|reference| (ReferenceHolder::Property(path.as_str()), reference))
             }))
     }
+
+    /// The names of the document types a create of this type may consume: those a
+    /// `refersTo` lookup finds where the reference declares `consume`, on any
+    /// holder and in any leaf of an expression, each a type of this type's own
+    /// contract. A create deletes such a document along with its own write, so
+    /// whatever may sign the create must be allowed to act on these types too.
+    pub fn consumable_document_type_names(self) -> BTreeSet<&'a str> {
+        self.reference_declarations()
+            .filter_map(|(_, reference)| reference.target())
+            .flat_map(|target| target.leaves())
+            .filter_map(|leaf| match leaf {
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                    document_type_name,
+                    lookup,
+                    ..
+                } if lookup.consume => Some(document_type_name.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
-/// The system properties of a referenced document that the referenced side
-/// of a `propertyAgreement` pair may name, next to the referenced document
+/// The system properties of a referenced document that a `where` entry may
+/// name as its key (the referenced side), next to the referenced document
 /// type's schema properties: `$ownerId`, the current owner (which follows
 /// the document through transfers), `$creatorId`, the original creator
 /// (set once, and only recorded by transferable or tradeable document types
 /// of a format-1 contract), and `$id`, the document's own id, which never
-/// changes (a `listElement` reference finds its document by such a pair).
+/// changes (`findBy` names it to find the document holding a list, `inList`).
 /// All are identifiers, so the referring side must be an identifier
 /// property. The referring side is a schema property or the writer's own
 /// `$ownerId`, see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
@@ -1278,8 +1342,8 @@ pub fn is_referenced_system_agreement_property(name: &str) -> bool {
     REFERENCED_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
 }
 
-/// The system properties of the REFERRING document that the referring side
-/// of a `propertyAgreement` pair may name, next to the declaring document
+/// The system properties of the REFERRING document that a `where` entry may
+/// name as its value (the referring side), next to the declaring document
 /// type's schema properties: only `$ownerId`, the writer. Such a pair is a
 /// write gate: consensus refuses a create or replace unless the writer's id
 /// equals the referenced side, so the referenced document's owner (or its
@@ -1292,6 +1356,11 @@ pub fn is_referenced_system_agreement_property(name: &str) -> bool {
 /// than in the document data, which is why it is threaded into write-time
 /// validation separately.
 pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];
+
+/// The top-level property a dotted property path is in: the path itself when it has no dot.
+pub(crate) fn top_level_property(path: &str) -> &str {
+    path.split('.').next().unwrap_or(path)
+}
 
 /// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referring_system_agreement_property(name: &str) -> bool {
@@ -1506,8 +1575,7 @@ impl KeyIdReference {
 }
 
 /// How the two document reference targets read: the kind, the contract, the
-/// document type and, for a lookup, the unique index the document is found
-/// through.
+/// document type and, for one found by `findBy`, the properties it names.
 fn write_document_reference(
     f: &mut std::fmt::Formatter<'_>,
     kind: &str,
@@ -1526,7 +1594,15 @@ fn write_document_reference(
         )?,
     }
     if let Some(lookup) = lookup {
-        write!(f, ", found through unique index {}", lookup.index)?;
+        write!(f, ", found by {}", lookup.find_by_names())?;
+        // A computed key: the document found is a commitment the write reveals
+        if let Some((index_property, key)) = lookup.hash_key() {
+            write!(
+                f,
+                ", {index_property} the {} of a revealed preimage",
+                key.function.as_str()
+            )?;
+        }
     }
     write!(f, ")")
 }
@@ -1571,6 +1647,21 @@ pub enum DocumentPropertyType {
     KeyIdWithReference(KeyIdReference),
 }
 
+/// Adds byte sizes the way summing `Option<u16>` does, `None` once any size is
+/// `None`, but saturating at `u16::MAX` instead of overflowing.
+fn saturating_sum(
+    sizes: impl Iterator<Item = Result<Option<u16>, ProtocolError>>,
+) -> Result<Option<u16>, ProtocolError> {
+    let mut total = 0u16;
+    for size in sizes {
+        let Some(size) = size? else {
+            return Ok(None);
+        };
+        total = total.saturating_add(size);
+    }
+    Ok(Some(total))
+}
+
 impl DocumentPropertyType {
     #[deprecated = "this method is missing required information to create a type. Use TryFrom<&Value> instead."]
     pub fn try_from_name(name: &str) -> Result<Self, DataContractError> {
@@ -1611,8 +1702,8 @@ impl DocumentPropertyType {
     }
 
     /// The kind of value this type holds, for the rules that compare a value of
-    /// one property with a value of another (`propertyAgreement` pairs,
-    /// `lookup` key parts): two types of the same kind can hold equal values.
+    /// one property with a value of another (`where` entries, `findBy` key
+    /// parts): two types of the same kind can hold equal values.
     /// Sizes and other constraints do not count, and an identifier, or a `u32`
     /// key id, is one kind whether or not it carries its own reference.
     pub fn value_kind(&self) -> std::mem::Discriminant<DocumentPropertyType> {
@@ -1976,6 +2067,80 @@ impl DocumentPropertyType {
         } else {
             Ok(Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2))
         }
+    }
+
+    /// [`Self::min_byte_size`], with a bound past `u16::MAX` held at
+    /// `u16::MAX` instead of refused with an overflow. A string counts four
+    /// bytes a character, so `minLength` 16384 or more does not fit. For size
+    /// estimates, which only need a bound.
+    pub fn saturating_min_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        match self {
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(length),
+                ..
+            }) => Ok(Some(length.saturating_mul(4))),
+            DocumentPropertyType::Object(sub_fields) => {
+                saturating_sum(sub_fields.values().map(|sub_field| {
+                    sub_field
+                        .property_type
+                        .saturating_min_byte_size(platform_version)
+                }))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array
+                .saturating_min_encoded_size(platform_version)
+                .map(Some),
+            property_type => property_type.min_byte_size(platform_version),
+        }
+    }
+
+    /// [`Self::max_byte_size`], with a bound past `u16::MAX` held at
+    /// `u16::MAX` instead of refused with an overflow. A string without
+    /// `maxBytes` counts four bytes a character, so `maxLength` 16384 or more
+    /// does not fit; it then sizes like a string without `maxLength`. For size
+    /// estimates, which only need a bound.
+    pub fn saturating_max_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        match self {
+            DocumentPropertyType::String(StringPropertySizes {
+                max_length: Some(length),
+                max_bytes: None,
+                ..
+            }) => Ok(Some(length.saturating_mul(4))),
+            DocumentPropertyType::Object(sub_fields) => {
+                saturating_sum(sub_fields.values().map(|sub_field| {
+                    sub_field
+                        .property_type
+                        .saturating_max_byte_size(platform_version)
+                }))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array
+                .saturating_max_encoded_size(platform_version)
+                .map(Some),
+            property_type => property_type.max_byte_size(platform_version),
+        }
+    }
+
+    /// [`Self::middle_byte_size_ceil`] from [`Self::saturating_min_byte_size`]
+    /// and [`Self::saturating_max_byte_size`].
+    pub fn saturating_middle_byte_size_ceil(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        let Some(min_size) = self.saturating_min_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        let Some(max_size) = self.saturating_max_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        // The mean of two `u16` values fits in a `u16`
+        Ok(Some(
+            ((min_size as u32 + max_size as u32).div_ceil(2)) as u16,
+        ))
     }
 
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {
@@ -3725,6 +3890,16 @@ impl DocumentPropertyType {
         )
     }
 
+    /// Whether the value is one identifier, whether or not the property
+    /// carries its own `refersTo` reference. A typed array of identifiers is
+    /// not one.
+    pub fn is_identifier(&self) -> bool {
+        matches!(
+            self,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        )
+    }
+
     pub fn sanitize_value_mut(&self, value: &mut Value) {
         match (self, value.clone()) {
             // Convert hex or base64 strings to byte arrays for ByteArray fields
@@ -4463,6 +4638,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -4474,6 +4651,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -4763,6 +4942,107 @@ mod tests {
         // min_byte_size = 1*4 = 4, max_byte_size = 10*4 = 40
         // ceil((4+40)/2) = 22
         assert_eq!(s.middle_byte_size_ceil(pv).unwrap(), Some(22));
+    }
+
+    // -----------------------------------------------------------------------
+    // saturating_min_byte_size() / saturating_max_byte_size() tests
+    // -----------------------------------------------------------------------
+
+    fn string_sizes(
+        min_length: Option<u16>,
+        max_length: Option<u16>,
+        max_bytes: Option<u16>,
+    ) -> DocumentPropertyType {
+        DocumentPropertyType::String(StringPropertySizes {
+            min_length,
+            max_length,
+            max_bytes,
+        })
+    }
+
+    #[test]
+    fn should_hold_string_byte_bounds_past_u16_max_at_u16_max() {
+        let pv = PlatformVersion::latest();
+        // 20000 characters of up to four bytes each is 80000 bytes
+        let long = string_sizes(Some(20000), Some(20000), None);
+        assert!(matches!(
+            long.min_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        assert!(matches!(
+            long.max_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        assert_eq!(long.saturating_min_byte_size(pv).unwrap(), Some(u16::MAX));
+        assert_eq!(long.saturating_max_byte_size(pv).unwrap(), Some(u16::MAX));
+        assert_eq!(
+            long.saturating_middle_byte_size_ceil(pv).unwrap(),
+            Some(u16::MAX)
+        );
+
+        // Past 16383 characters the bound is the one a string without
+        // `maxLength` has
+        assert_eq!(
+            string_sizes(None, Some(20000), None)
+                .saturating_middle_byte_size_ceil(pv)
+                .unwrap(),
+            string_sizes(None, None, None)
+                .middle_byte_size_ceil(pv)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn should_size_bounds_that_fit_as_the_non_saturating_methods_do() {
+        let pv = PlatformVersion::latest();
+        for property_type in [
+            string_sizes(Some(1), Some(10), None),
+            string_sizes(None, Some(16383), None),
+            string_sizes(None, None, None),
+            // `maxBytes` bounds a long string below u16::MAX
+            string_sizes(None, Some(20000), Some(100)),
+            DocumentPropertyType::U64,
+            DocumentPropertyType::Identifier,
+            DocumentPropertyType::Array(ArrayItemType::Integer),
+        ] {
+            assert_eq!(
+                property_type.saturating_min_byte_size(pv).unwrap(),
+                property_type.min_byte_size(pv).unwrap(),
+                "{property_type:?}"
+            );
+            assert_eq!(
+                property_type.saturating_max_byte_size(pv).unwrap(),
+                property_type.max_byte_size(pv).unwrap(),
+                "{property_type:?}"
+            );
+            assert_eq!(
+                property_type.saturating_middle_byte_size_ceil(pv).unwrap(),
+                property_type.middle_byte_size_ceil(pv).unwrap(),
+                "{property_type:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_saturate_the_byte_bounds_of_a_typed_array_of_long_strings() {
+        let pv = PlatformVersion::latest();
+        let typed_array = DocumentPropertyType::TypedArray(TypedArrayProperty {
+            item_type: Box::new(string_sizes(None, Some(20000), None)),
+            item_constraints: Default::default(),
+            min_items: None,
+            max_items: 2,
+            unique_items: false,
+        });
+        assert!(matches!(
+            typed_array.max_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        // No element at least: the one byte count
+        assert_eq!(typed_array.saturating_min_byte_size(pv).unwrap(), Some(1));
+        assert_eq!(
+            typed_array.saturating_max_byte_size(pv).unwrap(),
+            Some(u16::MAX)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -7200,6 +7480,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         inner_fields.insert(
@@ -7211,6 +7493,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7265,6 +7549,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7287,6 +7573,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         inner_fields.insert(
@@ -7298,6 +7586,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7735,6 +8025,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7772,6 +8064,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -7783,6 +8077,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -7803,6 +8099,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -7814,6 +8112,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -8109,6 +8409,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8120,6 +8422,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8183,6 +8487,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8194,6 +8500,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8283,6 +8591,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8294,6 +8604,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8565,6 +8877,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8596,6 +8910,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         // Second field is required
@@ -8608,6 +8924,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8728,6 +9046,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8748,6 +9068,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -9057,6 +9379,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -9323,6 +9647,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
+            revealed_reference: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -9346,6 +9672,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
+            revealed_reference: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -9990,13 +10318,13 @@ mod tests {
                 document_type_name: "joinRequest".to_string(),
                 property_agreement: Default::default(),
                 lookup: DocumentReferenceLookup {
-                    index: "bySubmittedCharter".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             }
             .to_string(),
-            "permanent document (own contract, document type joinRequest, found through unique \
-             index bySubmittedCharter)"
+            "permanent document (own contract, document type joinRequest, found by $ownerId)"
         );
     }
 
@@ -10035,8 +10363,9 @@ mod tests {
     #[test]
     fn should_return_a_lookup_reference_only_from_the_accessor_for_every_kind() {
         let lookup = DocumentReferenceLookup {
-            index: "bySubmittedCharter".to_string(),
             keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+            minimum_age_blocks: None,
+            consume: false,
         };
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
@@ -10367,8 +10696,9 @@ mod tests {
                 document_type_name: "note".to_string(),
                 property_agreement: Default::default(),
                 lookup: DocumentReferenceLookup {
-                    index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             },
             DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
@@ -10398,8 +10728,9 @@ mod tests {
                 document_type_name: "note".to_string(),
                 property_agreement: Default::default(),
                 lookup: DocumentReferenceLookup {
-                    index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             },
         ];

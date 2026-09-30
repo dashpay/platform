@@ -573,6 +573,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_reference_expression_depth: 4,
         max_property_constraints: 16,
         max_property_constraint_nodes: 32,
+        max_property_constraint_aggregates: 4,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
         // Load-bearing for state correctness, not just for throughput — see
         // SystemLimits::max_transitions_in_documents_batch. Raising it here
@@ -596,18 +597,23 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_moderation_reason_length: 1024,
         max_contract_warnings_per_identity: 16,
         max_contract_moderation_reason_documents: 16,
-        min_contract_moderation_election_window_seconds: 86_400,
+        min_mainnet_contract_moderation_election_window_seconds: 86_400,
         max_contract_moderation_election_window_seconds: 2_419_200,
         min_contract_moderation_challenge_cool_down_seconds: 1_209_600,
         max_contract_moderation_challenge_cool_down_seconds: 94_608_000,
         contract_document_restore_window_ms: 604_800_000,
         max_contract_moderation_added_moderators: 15,
+        max_contenders_per_contest: 1_000,
         max_token_redemption_cycles: 128,
         max_evonode_reward_claim_epochs: 100,
         max_shielded_transition_actions: 16,
         max_time_range_overlap_factor: None,
         max_time_range_ttl_seconds: None,
         min_time_range_ttl_drop_operations_per_write: None,
+        min_document_ttl_seconds: None,
+        max_document_ttl_seconds: None,
+        max_document_expirations_per_block: 0,
+        max_document_expiration_weight_per_block: 0,
         minimum_grovedb_proof_envelope_version: 0,
     },
     consensus: ConsensusVersions {

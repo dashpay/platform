@@ -295,13 +295,14 @@ fn check_page_shape(page: &DocumentQuery) -> Result<(), Error> {
         ));
     }
     if !page.time_range_clauses.is_empty()
+        || !page.integer_range_clauses.is_empty()
         || page.start.is_some()
         || page.offset.is_some()
         || !page.group_by.is_empty()
         || !page.having.is_empty()
     {
         return Err(Error::Config(
-            "a composite page supports where/order_by/limit only: no time-range \
+            "a composite page supports where/order_by/limit only: no window \
              selections, cursors, offsets, group_by, or having (paginate with a range \
              clause on the page's ordering property)"
                 .to_string(),
@@ -594,6 +595,19 @@ mod tests {
         ] {
             assert_eq!(restored.expect("preserves the composition"), query);
         }
+    }
+
+    #[test]
+    fn should_refuse_a_window_selection_on_a_composite_page_before_sending() {
+        // The node refuses window selections on composite requests; the
+        // local shape check refuses both kinds first, without a round trip.
+        let integer_page = feed_page(10).with_integer_range("likeCount", 100u64);
+        let refused =
+            GetDocumentsRequest::try_from_platform_versioned(integer_page, platform_version());
+        assert!(
+            matches!(&refused, Err(Error::Config(message)) if message.contains("no window")),
+            "{refused:?}"
+        );
     }
 
     #[test]

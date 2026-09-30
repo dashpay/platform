@@ -9,6 +9,7 @@
 use super::COPIED_PENDING_GROVE_OPERATIONS;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::fees::op::EphemeralPricing;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::{
     CalculatedCostOperation, EphemeralGroveOperation, GroveOperation,
@@ -434,7 +435,7 @@ fn last_grove_op(operations: &[LowLevelDriveOperation]) -> Option<&GroveOp> {
         .iter()
         .rev()
         .find_map(|operation| match operation {
-            GroveOperation(op) | EphemeralGroveOperation(op) => Some(&op.op),
+            GroveOperation(op) | EphemeralGroveOperation(op, _) => Some(&op.op),
             _ => None,
         })
 }
@@ -619,14 +620,14 @@ fn should_build_tree_deletes_that_depend_on_earlier_deletes_as_before() {
         &drive,
         || {
             vec![
-                EphemeralGroveOperation(QualifiedGroveDbOp::delete_op(
-                    path(&[b"root", b"a"]),
-                    b"x".to_vec(),
-                )),
-                EphemeralGroveOperation(QualifiedGroveDbOp::delete_op(
-                    path(&[b"root", b"a"]),
-                    b"y".to_vec(),
-                )),
+                EphemeralGroveOperation(
+                    QualifiedGroveDbOp::delete_op(path(&[b"root", b"a"]), b"x".to_vec()),
+                    EphemeralPricing::TimeRangeTtl,
+                ),
+                EphemeralGroveOperation(
+                    QualifiedGroveDbOp::delete_op(path(&[b"root", b"a"]), b"y".to_vec()),
+                    EphemeralPricing::TimeRangeTtl,
+                ),
             ]
         },
         path(&[b"root"]),

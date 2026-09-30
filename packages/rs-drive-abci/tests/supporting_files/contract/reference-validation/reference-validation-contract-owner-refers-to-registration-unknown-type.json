@@ -9,11 +9,8 @@
       "ownerRefersTo": {
         "type": "permanentDocument",
         "documentType": "ghost",
-        "lookup": {
-          "index": "byMember",
-          "keys": {
-            "memberId": "."
-          }
+        "findBy": {
+          "memberId": "."
         }
       },
       "properties": {

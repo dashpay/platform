@@ -4616,6 +4616,62 @@ export namespace GetDocumentsRequest {
     export const Selector: SelectorMap;
   }
 
+  export class IntegerRangeSelection extends jspb.Message {
+    hasStart(): boolean;
+    clearStart(): void;
+    getStart(): GetDocumentsRequest.DocumentFieldValue | undefined;
+    setStart(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+    hasGrid(): boolean;
+    clearGrid(): void;
+    getGrid(): GetDocumentsRequest.IntegerRangeSelection.Grid | undefined;
+    setGrid(value?: GetDocumentsRequest.IntegerRangeSelection.Grid): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): IntegerRangeSelection.AsObject;
+    static toObject(includeInstance: boolean, msg: IntegerRangeSelection): IntegerRangeSelection.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: IntegerRangeSelection, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): IntegerRangeSelection;
+    static deserializeBinaryFromReader(message: IntegerRangeSelection, reader: jspb.BinaryReader): IntegerRangeSelection;
+  }
+
+  export namespace IntegerRangeSelection {
+    export type AsObject = {
+      start?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+      grid?: GetDocumentsRequest.IntegerRangeSelection.Grid.AsObject,
+    }
+
+    export class Grid extends jspb.Message {
+      getRange(): string;
+      setRange(value: string): void;
+
+      getStep(): string;
+      setStep(value: string): void;
+
+      getPhase(): string;
+      setPhase(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Grid.AsObject;
+      static toObject(includeInstance: boolean, msg: Grid): Grid.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Grid, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Grid;
+      static deserializeBinaryFromReader(message: Grid, reader: jspb.BinaryReader): Grid;
+    }
+
+    export namespace Grid {
+      export type AsObject = {
+        range: string,
+        step: string,
+        phase: string,
+      }
+    }
+  }
+
   export class WhereClause extends jspb.Message {
     getField(): string;
     setField(value: string): void;
@@ -4633,6 +4689,11 @@ export namespace GetDocumentsRequest {
     getTimeRange(): GetDocumentsRequest.TimeRangeSelection | undefined;
     setTimeRange(value?: GetDocumentsRequest.TimeRangeSelection): void;
 
+    hasIntegerRange(): boolean;
+    clearIntegerRange(): void;
+    getIntegerRange(): GetDocumentsRequest.IntegerRangeSelection | undefined;
+    setIntegerRange(value?: GetDocumentsRequest.IntegerRangeSelection): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WhereClause.AsObject;
     static toObject(includeInstance: boolean, msg: WhereClause): WhereClause.AsObject;
@@ -4649,6 +4710,7 @@ export namespace GetDocumentsRequest {
       operator: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap],
       value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
       timeRange?: GetDocumentsRequest.TimeRangeSelection.AsObject,
+      integerRange?: GetDocumentsRequest.IntegerRangeSelection.AsObject,
     }
   }
 
@@ -5114,6 +5176,7 @@ export namespace GetDocumentsRequest {
     IN: 9;
     STARTS_WITH: 10;
     IN_TIME_RANGE: 11;
+    IN_INTEGER_RANGE: 12;
   }
 
   export const WhereOperator: WhereOperatorMap;

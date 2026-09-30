@@ -41,9 +41,9 @@ pub const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 = INDEX_ONLY_ROW_COMMITMENT_
 /// `hash_double(owner ‖ (name ‖ raw index bytes)* ‖ [$createdAt bytes])`
 /// over the document's PRESENT properties in sorted-name order. A required
 /// property must be present (an absence there is an internal error); an
-/// optional property — a skipIfAbsent index's trigger, the only kind of
-/// optional property the parser admits — simply contributes nothing when
-/// absent, its name included.
+/// optional property — a skip property of a skipIfAbsent index, the only
+/// kind of optional property the parser admits — simply contributes nothing
+/// when absent, its name included.
 ///
 /// This is what binds the independently stored index projections of one
 /// document back into one logical row: a delete recomputes the commitment
@@ -54,7 +54,7 @@ pub const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 = INDEX_ONLY_ROW_COMMITMENT_
 /// document's projections" from "several documents' projections that
 /// happen to coexist". Committing the exact present-set extends that to
 /// absence games: a delete carrying a different absence pattern than the
-/// create (dropping the trigger, or inventing one) hashes differently and
+/// create (dropping a skip property, or inventing one) hashes differently and
 /// fails every probe, so a skipped index can neither be force-pruned nor
 /// left with an orphan entry.
 ///
@@ -141,7 +141,7 @@ pub fn index_only_row_commitment_with_preimage_size(
                      parser requires them and the transitions carry them",
                 )));
             }
-            // An optional property (a skipIfAbsent trigger) contributes
+            // An optional property (a skipIfAbsent skip property) contributes
             // nothing when absent — not even its name — so the commitment
             // pins the exact present-set.
             continue;

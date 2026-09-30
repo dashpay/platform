@@ -3,6 +3,8 @@ use crate::error::Error;
 use crate::execution::types::block_state_info;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Methods;
 use crate::metrics::HistogramTiming;
+#[cfg(debug_assertions)]
+use crate::perf::PhaseTimer;
 use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Methods};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -54,7 +56,7 @@ where
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         #[cfg(debug_assertions)]
-        let mut phases = crate::perf::PhaseTimer::new("run_block_proposal");
+        let mut phases = PhaseTimer::new("run_block_proposal");
 
         // Epoch information is always calculated with the last committed platform version
         // even if we are switching to a new version in this block.

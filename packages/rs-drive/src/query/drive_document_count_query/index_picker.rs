@@ -6,8 +6,8 @@
 
 use super::super::conditions::WhereClause;
 use super::DriveDocumentCountQuery;
-use crate::query::index_admissible_for_resolved_time_range;
 use crate::query::ResolvedTimeRange;
+use crate::query::{index_admissible_for_query, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -48,12 +48,16 @@ impl DriveDocumentCountQuery<'_> {
     /// produced by `IN_TIME_RANGE` resolution (see
     /// [`crate::query::resolve_time_range_bucket_clause`]); it gates which
     /// indexes are candidates at all — see
-    /// [`index_admissible_for_resolved_time_range`].
+    /// [`index_admissible_for_resolved_time_range`](crate::query::index_admissible_for_resolved_time_range).
     pub fn find_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
         resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
+        // A skip index serves only a query binding every skip property
+        // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
+        // above a deep one.
+        let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
         if Self::has_unsupported_operator(where_clauses) {
             return None;
         }
@@ -78,7 +82,7 @@ impl DriveDocumentCountQuery<'_> {
             // every document unless the query pins a single bucket, and only
             // a resolution-produced equality does that. Conversely a raw
             // clause must never bind to bucket keys.
-            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
             if !index.countable.is_countable() {
@@ -109,7 +113,7 @@ impl DriveDocumentCountQuery<'_> {
         // form: a clause on the LAST property with an earlier one free is
         // not a prefix and reads nothing meaningful.
         for index in indexes.values() {
-            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
             if !index.range_countable || !index.countable.is_countable() {
@@ -152,7 +156,7 @@ impl DriveDocumentCountQuery<'_> {
         // refuses to return. Pins landing ABOVE the shallowest `at`
         // level stay rejected — those levels are plain trees.
         for index in indexes.values() {
-            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
             if !index.countable.is_countable() {
@@ -214,6 +218,10 @@ impl DriveDocumentCountQuery<'_> {
         where_clauses: &[WhereClause],
         resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
+        // A skip index serves only a query binding every skip property
+        // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
+        // above a deep one.
+        let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
         let range_clauses: Vec<&WhereClause> = where_clauses
             .iter()
             .filter(|wc| Self::is_range_operator(wc.operator))
@@ -268,7 +276,7 @@ impl DriveDocumentCountQuery<'_> {
             // indexes store one entry per containing bucket, so only a query
             // pinned to a single bucket by a resolution-produced equality may
             // walk them, and raw clauses may never bind to bucket keys.
-            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
             if !index.range_countable || !index.countable.is_countable() {

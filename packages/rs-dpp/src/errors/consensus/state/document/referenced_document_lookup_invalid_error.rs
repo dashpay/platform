@@ -7,12 +7,12 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-/// A `refersTo` lookup into a document type of another contract cannot resolve
-/// there: the named index is missing or not unique, its keys do not cover the
-/// index exactly, or a source holds a different kind of value than its index
-/// property. Reported at contract registration and update; a lookup into the
-/// declaring contract's own document type is refused by the contract parse
-/// instead.
+/// A `refersTo` `findBy` into a document type of another contract cannot
+/// resolve there: no unique index is over exactly the properties it names, or
+/// a source holds a different kind of value than the property it fills, among
+/// the other rules of a `findBy`. Reported at contract registration and
+/// update; a `findBy` into the declaring contract's own document type is
+/// refused by the contract parse instead.
 #[derive(
     Error,
     Debug,
@@ -26,7 +26,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("invalid refersTo lookup through index {index} declared at {path}: {reason}")]
+#[error("invalid refersTo findBy ({find_by}) declared at {path}: {reason}")]
 #[platform_serialize(unversioned)]
 pub struct ReferencedDocumentLookupInvalidError {
     /*
@@ -35,15 +35,15 @@ pub struct ReferencedDocumentLookupInvalidError {
 
     */
     path: String,
-    index: String,
+    find_by: String,
     reason: String,
 }
 
 impl ReferencedDocumentLookupInvalidError {
-    pub fn new(path: String, index: String, reason: String) -> Self {
+    pub fn new(path: String, find_by: String, reason: String) -> Self {
         Self {
             path,
-            index,
+            find_by,
             reason,
         }
     }
@@ -53,9 +53,9 @@ impl ReferencedDocumentLookupInvalidError {
         &self.path
     }
 
-    /// The index the lookup names.
-    pub fn index(&self) -> &str {
-        &self.index
+    /// The properties the `findBy` names, joined with ", ".
+    pub fn find_by(&self) -> &str {
+        &self.find_by
     }
 
     pub fn reason(&self) -> &str {

@@ -129,10 +129,11 @@ impl<C> Platform<C> {
                     .iter()
                     .flat_map(|sub| sub.where_clauses.iter()),
             )
-            .any(conversions::is_time_range_clause)
+            .any(conversions::is_window_selection_clause)
         {
             return Ok(unsupported(
-                "a composite request supports no time-range (IN_TIME_RANGE) clauses",
+                "a composite request supports no window selection (IN_TIME_RANGE or \
+                 IN_INTEGER_RANGE) clauses",
             ));
         }
 
@@ -523,6 +524,7 @@ mod tests {
                     value: Some(ProtoDocumentFieldValue {
                         variant: Some(document_field_value::Variant::Text("dash".to_string())),
                     }),
+                    integer_range: None,
                     time_range: None,
                 },
             ],
