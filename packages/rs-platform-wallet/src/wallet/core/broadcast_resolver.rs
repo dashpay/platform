@@ -64,6 +64,7 @@
 //! from a caller that may hold its own locks.
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::mem;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
@@ -78,6 +79,7 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
+use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, RwLock};
 use tokio::task::{self, AbortHandle, JoinError, JoinHandle, JoinSet};
 use tokio::time::{timeout_at, Instant};
@@ -98,6 +100,11 @@ pub(crate) const SLOW_INTERVAL: u32 = 10;
 /// rewind), are catch-up: the scan itself settles most roots, so a
 /// height-driven pass waits for it.
 pub(crate) const CATCH_UP_STEP: u32 = 3;
+
+/// Blocks a root a probe found mined may stay unseen by the wallet before it
+/// is asked again: the block a probe saw can be reorged out, or come from a
+/// node on a stale fork, and the wallet's height never goes back for that.
+pub(crate) const MINED_GRACE: u32 = 6;
 
 /// One unsettled transaction of the wallet, merged across the accounts that
 /// record it.
@@ -368,8 +375,13 @@ impl ProbeSchedule {
 /// A root's final verdict: nothing is left to ask.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Final {
-    Dead { reason: String },
-    Mined,
+    Dead {
+        reason: String,
+    },
+    /// Found in a block by a probe at height `at`, before the wallet saw it.
+    Mined {
+        at: u32,
+    },
 }
 
 /// Whether two verdicts say the same thing to the host. Accepted and Mined
@@ -437,10 +449,10 @@ pub(crate) struct ResolverState {
 impl ResolverState {
     /// Drop everything kept for `wallet_id`; a clear for every send the host
     /// had a verdict for.
-    fn forget_wallet(&mut self, wallet_id: &WalletId) -> Vec<Outgoing> {
+    fn forget_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) -> Vec<Outgoing> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
-        self.clear_where(|wallet, _| wallet == wallet_id, None, "removed")
+        self.clear_where(|wallet, _| wallet == wallet_id, None, trigger)
     }
 
     /// Drop everything; a clear for every published send.
@@ -615,15 +627,18 @@ impl ResolverState {
         }
         // A block a probe saw but the wallet never did may be one the replay
         // drops: roots found mined are asked again.
-        self.finished
-            .retain(|(wallet, _), result| wallet != wallet_id || *result != Final::Mined);
+        self.finished.retain(|(wallet, _), result| {
+            wallet != wallet_id || !matches!(result, Final::Mined { .. })
+        });
     }
 
     /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
     fn mined(&self, wallet_id: &WalletId) -> HashSet<Txid> {
         self.finished
             .iter()
-            .filter(|((wallet, _), result)| wallet == wallet_id && **result == Final::Mined)
+            .filter(|((wallet, _), result)| {
+                wallet == wallet_id && matches!(result, Final::Mined { .. })
+            })
             .map(|((_, txid), _)| *txid)
             .collect()
     }
@@ -702,6 +717,12 @@ pub(crate) fn begin_pass(
     ));
     events.extend(state.clear_orphaned_dead(wallet_id, Some(height), "settled-or-left"));
 
+    // A root found mined that the wallet still has not seen in a block well
+    // after the probe: the block may be gone — ask again.
+    state.finished.retain(|(wallet, _), result| {
+        *wallet != wallet_id
+            || !matches!(result, Final::Mined { at } if height > at.saturating_add(MINED_GRACE))
+    });
     let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
     let roots = graph.roots();
@@ -779,11 +800,14 @@ pub(crate) fn record_probe(
     views: &[OutgoingView],
     root: &DueRoot,
     verdict: &ProbeVerdict,
+    record_final: bool,
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
     let key = (wallet_id, root.txid);
+    // `record_final` is off for a probe sent before a rewind: its answer is
+    // still told, but it does not end the root's probing across the replay.
     match verdict {
-        ProbeVerdict::Dead { reason } => {
+        ProbeVerdict::Dead { reason } if record_final => {
             state.finished.insert(
                 key,
                 Final::Dead {
@@ -791,10 +815,10 @@ pub(crate) fn record_probe(
                 },
             );
         }
-        ProbeVerdict::Mined => {
-            state.finished.insert(key, Final::Mined);
+        ProbeVerdict::Mined if record_final => {
+            state.finished.insert(key, Final::Mined { at: height });
         }
-        ProbeVerdict::Accepted | ProbeVerdict::Unresolved { .. } => {}
+        _ => {}
     }
     let trigger = trigger_of(root.forced);
     if matches!(verdict, ProbeVerdict::Dead { .. }) {
@@ -823,13 +847,24 @@ pub(crate) fn record_probe(
 
 /// The lowest height at which a root of the wallet can be due, if nothing new
 /// happens to it: a root without a schedule yet (the child of one just found
-/// mined) is due at once; `u32::MAX` when every root has a final verdict
-/// (nothing left to probe) or there are none.
+/// mined) is due at once; a root a probe found mined, once its grace is up
+/// (see [`MINED_GRACE`]); `u32::MAX` when every root is Dead or there are
+/// none (nothing left to probe).
 pub(crate) fn next_pass_height(
     state: &ResolverState,
     wallet_id: WalletId,
     views: &[OutgoingView],
 ) -> u32 {
+    let mined_expiry = state
+        .finished
+        .iter()
+        .filter_map(|((wallet, _), result)| match result {
+            Final::Mined { at } if *wallet == wallet_id => {
+                Some(at.saturating_add(MINED_GRACE).saturating_add(1))
+            }
+            _ => None,
+        })
+        .filter(|_| !views.is_empty());
     let mined = state.mined(&wallet_id);
     ChainGraph::new(views, &mined)
         .roots()
@@ -837,6 +872,7 @@ pub(crate) fn next_pass_height(
         .map(|view| (wallet_id, view.txid))
         .filter(|key| !state.finished.contains_key(key))
         .map(|key| state.schedules.get(&key).map_or(0, ProbeSchedule::next_due))
+        .chain(mined_expiry)
         .min()
         .unwrap_or(u32::MAX)
 }
@@ -1380,21 +1416,21 @@ impl Actor {
             Command::WalletAdded(wallet_id) => {
                 // A fresh start: whatever was kept under this id (a same-id
                 // wallet whose removal never reached the resolver) is stale.
-                if let Some(run) = self.wallets.remove(&wallet_id).and_then(|entry| entry.run) {
-                    run.abort.abort();
-                }
+                self.drop_wallet(&wallet_id, "re-registered");
                 self.wallets.insert(wallet_id, WalletEntry::default());
-                let events = self.state.forget_wallet(&wallet_id);
-                deliver(&self.sink, events);
             }
-            Command::WalletRemoved(wallet_id) => {
-                if let Some(run) = self.wallets.remove(&wallet_id).and_then(|entry| entry.run) {
-                    run.abort.abort();
-                }
-                let events = self.state.forget_wallet(&wallet_id);
-                deliver(&self.sink, events);
-            }
+            Command::WalletRemoved(wallet_id) => self.drop_wallet(&wallet_id, "removed"),
         }
+    }
+
+    /// Drop the wallet's entry, stop its pass and forget its state, the host
+    /// told to clear what it showed (logged with `trigger`).
+    fn drop_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) {
+        if let Some(run) = self.wallets.remove(wallet_id).and_then(|entry| entry.run) {
+            run.abort.abort();
+        }
+        let events = self.state.forget_wallet(wallet_id, trigger);
+        deliver(&self.sink, events);
     }
 
     /// Start the wallet's pending pass unless one is already running.
@@ -1484,7 +1520,7 @@ impl Actor {
                         // Idle, not re-read every block: a same-id wallet's
                         // events or an Uncertain wake it.
                         entry.wait_until = Some(u32::MAX);
-                        let events = self.state.forget_wallet(&wallet_id);
+                        let events = self.state.forget_wallet(&wallet_id, "gone");
                         deliver(&self.sink, events);
                         self.end_run(wallet_id);
                     }
@@ -1592,6 +1628,7 @@ impl Actor {
                     &probing.views,
                     &root,
                     &verdict,
+                    current.marks,
                 );
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
@@ -1724,13 +1761,13 @@ impl BroadcastResolver {
         if self.started.load(Ordering::Acquire) {
             return;
         }
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        let Ok(runtime) = Handle::try_current() else {
             return; // queued; started by the first command sent from a runtime
         };
         let mut slot = self.actor.lock().unwrap_or_else(PoisonError::into_inner);
         if matches!(*slot, ActorSlot::NotStarted(..)) {
             if let ActorSlot::NotStarted(actor, receiver) =
-                std::mem::replace(&mut *slot, ActorSlot::Closed)
+                mem::replace(&mut *slot, ActorSlot::Closed)
             {
                 let (stop, stopped) = oneshot::channel();
                 *slot = ActorSlot::Running(runtime.spawn(actor.run(receiver, stopped)), stop);
@@ -1793,7 +1830,7 @@ async fn stop_slot(
     let Ok(_one_at_a_time) = timeout_at(deadline, stopping.lock()).await else {
         return WorkerStatus::Timeout;
     };
-    let slot = std::mem::replace(
+    let slot = mem::replace(
         &mut *actor.lock().unwrap_or_else(PoisonError::into_inner),
         ActorSlot::Closed,
     );
@@ -2207,7 +2244,7 @@ mod tests {
         }
 
         fn forget_wallet(&mut self, wallet_id: &WalletId) {
-            let events = self.state.forget_wallet(wallet_id);
+            let events = self.state.forget_wallet(wallet_id, "removed");
             self.push(events);
         }
 
@@ -2260,7 +2297,15 @@ mod tests {
             );
             let verdict = probe.probe(&root.transaction).await;
             let mut guard = state.lock().expect("state");
-            let events = record_probe(&mut guard.state, wallet_id, height, views, &root, &verdict);
+            let events = record_probe(
+                &mut guard.state,
+                wallet_id,
+                height,
+                views,
+                &root,
+                &verdict,
+                true,
+            );
             guard.push(events);
         }
         let guard = state.lock().expect("state");
@@ -4092,10 +4137,57 @@ mod tests {
         rig.follow(wallet(), 100).await;
         assert_eq!(
             rig.actor.state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined)
+            Some(&Final::Mined { at: 101 })
         );
 
         rig.height(wallet(), 50).await;
+
+        assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
+    }
+
+    /// A root a probe found mined that the wallet still has not seen in a block
+    /// MINED_GRACE blocks later is asked again.
+    #[tokio::test]
+    async fn should_ask_again_about_a_probe_found_mined_root_the_wallet_never_saw() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined)]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await; // found mined at 101
+        for height in 102..=101 + MINED_GRACE {
+            rig.height(wallet(), height).await;
+        }
+        assert_eq!(probe.probed().len(), 1);
+
+        // Past the grace, the wallet — waiting for exactly that height — asks
+        // again.
+        rig.height(wallet(), 102 + MINED_GRACE).await;
+
+        assert_eq!(probe.probed().len(), 2);
+    }
+
+    /// A probe sent before a rewind answers Mined after it: the answer is told
+    /// but does not end the root's probing across the replay.
+    #[tokio::test]
+    async fn should_not_record_a_final_verdict_from_a_probe_sent_before_a_rewind() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Mined,
+        )])))
+        .await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // root 1's probe is out
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 50,
+        });
+        rig.settle().await;
 
         assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
     }
