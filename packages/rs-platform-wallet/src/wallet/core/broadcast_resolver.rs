@@ -34,7 +34,9 @@
 //! of that transaction's chain), then on each advance of the wallet's synced
 //! height that follows the tip — steps of more than [`CATCH_UP_STEP`] blocks,
 //! steps back (a rescan) and the first step after launch are catch-up and
-//! skipped, along with passes queued before them — every block
+//! skipped: passes queued before them probe only what an `Uncertain` result
+//! forced (and still read the records, for the clears, while the host holds
+//! verdicts for the wallet) — every block
 //! for [`EVERY_BLOCK_WINDOW`] blocks, counted from the first height-driven
 //! pass that sees the root while the wallet follows the tip (a forced pass
 //! does not start it), and every [`SLOW_INTERVAL`]
@@ -419,9 +421,16 @@ pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     finished: HashMap<(WalletId, Txid), Final>,
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
+    /// How many sends of each wallet have a published verdict.
+    published_per_wallet: HashMap<WalletId, usize>,
 }
 
 impl ResolverState {
+    /// The host holds a verdict for some send of `wallet_id`.
+    fn has_published(&self, wallet_id: &WalletId) -> bool {
+        self.published_per_wallet.contains_key(wallet_id)
+    }
+
     /// Drop everything kept for `wallet_id`; a clear for every send the host
     /// had a verdict for.
     fn forget_wallet(&mut self, wallet_id: &WalletId) -> Vec<Outgoing> {
@@ -453,6 +462,14 @@ impl ResolverState {
         cleared.sort();
         self.published
             .retain(|(wallet, txid), _| !drop(wallet, txid));
+        for (wallet_id, _) in &cleared {
+            if let Some(count) = self.published_per_wallet.get_mut(wallet_id) {
+                *count -= 1;
+                if *count == 0 {
+                    self.published_per_wallet.remove(wallet_id);
+                }
+            }
+        }
         cleared
             .into_iter()
             .map(|(wallet_id, txid)| Outgoing {
@@ -478,8 +495,8 @@ impl ResolverState {
             }
             Some(previous) => !same_for_host(previous, verdict),
         };
-        if changed {
-            self.published.insert(key, verdict.clone());
+        if changed && self.published.insert(key, verdict.clone()).is_none() {
+            *self.published_per_wallet.entry(key.0).or_insert(0) += 1;
         }
         changed
     }
@@ -913,6 +930,10 @@ struct PendingPass {
     /// results asked for it, or a catch-up overtook it — probes only the
     /// roots those results forced and starts no windows.
     anchor_at: Option<u32>,
+    /// Queued by a catch-up while the host holds verdicts for the wallet: it
+    /// runs for the clears (sends settled in the scanned blocks) even with
+    /// nothing to probe.
+    clears: bool,
 }
 
 /// A pass in flight: reading the wallet, then probing its due roots one at
@@ -1088,41 +1109,45 @@ impl Actor {
                 let entry = self.entry(wallet_id);
                 let previous = entry.height.replace(height);
                 if is_catch_up_step(previous, height) {
-                    // Behind the tip: passes queued or running from before keep
-                    // only what an `Uncertain` result forced — the scan
-                    // settles most roots — and start no windows.
-                    if let Some(pending) = entry.pending.as_mut() {
-                        pending.anchor_at = None;
-                        if pending.forced.is_empty() {
-                            entry.pending = None;
-                        }
-                    }
-                    // With verdicts out the pass runs on, for the clears.
-                    let has_verdicts = self
-                        .state
-                        .published
-                        .keys()
-                        .any(|(wallet, _)| *wallet == wallet_id);
-                    let Some(run) = self
-                        .wallets
-                        .get_mut(&wallet_id)
-                        .and_then(|entry| entry.run.as_mut())
-                    else {
+                    // Behind the tip: passes queued or running from before are
+                    // confined to what an `Uncertain` result forced — the scan
+                    // settles most roots — and start no windows. While the host
+                    // holds verdicts for the wallet, a pass still reads the
+                    // records, for the clears of sends the scan settles.
+                    let has_verdicts = self.state.has_published(&wallet_id);
+                    let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                         return;
                     };
-                    run.anchor_at = None;
-                    if !has_verdicts {
-                        run.walk.store(false, Ordering::SeqCst);
+                    if let Some(pending) = entry.pending.as_mut() {
+                        pending.anchor_at = None;
+                        pending.clears |= has_verdicts;
+                        if pending.forced.is_empty() && !pending.clears {
+                            entry.pending = None;
+                        }
+                    } else if has_verdicts && enabled {
+                        entry.pending = Some(PendingPass {
+                            height,
+                            clears: true,
+                            ..PendingPass::default()
+                        });
                     }
-                    if let Some(probing) = run.probing.as_mut() {
-                        probing.due.retain(|root| root.forced);
+                    if let Some(run) = entry.run.as_mut() {
+                        run.anchor_at = None;
+                        if !has_verdicts {
+                            run.walk.store(false, Ordering::SeqCst);
+                        }
+                        if let Some(probing) = run.probing.as_mut() {
+                            probing.due.retain(|root| root.forced);
+                        }
+                        // Still reading, with nothing forced and nothing to
+                        // clear: stop its walk over the records now.
+                        if run.probing.is_none() && !run.has_forced && !has_verdicts {
+                            run.abort.abort();
+                            self.end_run(wallet_id);
+                            return;
+                        }
                     }
-                    // Still reading, with nothing forced and nothing to clear:
-                    // stop its walk over the records now.
-                    if run.probing.is_none() && !run.has_forced && !has_verdicts {
-                        run.abort.abort();
-                        self.end_run(wallet_id);
-                    }
+                    self.start(wallet_id);
                     return;
                 }
                 // While a pass runs, its end decides the wait: queue the height
@@ -1206,7 +1231,11 @@ impl Actor {
         };
         let anchor_at = pending.anchor_at;
         let has_forced = !pending.forced.is_empty();
-        let walk = Arc::new(AtomicBool::new(anchor_at.is_some()));
+        // Walk the records if the pass may probe by schedule or has verdicts
+        // to clear; a pass confined to forced roots with none held skips it.
+        let walk = Arc::new(AtomicBool::new(
+            anchor_at.is_some() || pending.clears || self.state.has_published(&wallet_id),
+        ));
         self.next_run += 1;
         let run = self.next_run;
         let source = Arc::clone(&self.source);
@@ -1412,7 +1441,7 @@ impl Actor {
         };
         entry.run = None;
         if let (Some(pending), Some(until)) = (&entry.pending, entry.wait_until) {
-            if pending.forced.is_empty() && pending.height < until {
+            if pending.forced.is_empty() && !pending.clears && pending.height < until {
                 entry.pending = None;
             }
         }
@@ -2359,6 +2388,28 @@ mod tests {
         walks: StdMutex<Vec<WalletId>>,
         /// The synced height each wallet's reads report.
         synced: StdMutex<HashMap<WalletId, u32>>,
+        /// Reads wait while set, so a test can hold a pass in its read.
+        paused: StdMutex<bool>,
+        resume: tokio::sync::Notify,
+    }
+
+    impl FakeSource {
+        async fn wait_if_paused(&self) {
+            loop {
+                let resumed = self.resume.notified();
+                if !*self.paused.lock().expect("paused") {
+                    return;
+                }
+                resumed.await;
+            }
+        }
+
+        fn pause(&self, paused: bool) {
+            *self.paused.lock().expect("paused") = paused;
+            if !paused {
+                self.resume.notify_waiters();
+            }
+        }
     }
 
     #[async_trait]
@@ -2379,6 +2430,7 @@ mod tests {
             walk: &AtomicBool,
             forced: HashSet<Txid>,
         ) -> Option<Option<WalletRead>> {
+            self.wait_if_paused().await;
             let views = self.views.lock().expect("views").get(&wallet_id)?.clone();
             let forced = forced_held(walk.load(Ordering::SeqCst), forced, |txid| {
                 views.iter().any(|view| view.txid == *txid)
@@ -2708,15 +2760,17 @@ mod tests {
     /// during it that no root is due at.
     #[tokio::test]
     async fn should_drop_a_queued_height_when_a_forced_read_finds_nothing() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        // Idle with no verdicts out: nothing to probe, nothing to clear.
+        rig.views(wallet(), Vec::new());
         rig.follow(wallet(), 100).await;
         let walks = rig.walks();
 
         // An `Uncertain` for a txid the wallet no longer holds by read time.
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.actor.handle(Command::Uncertain(txid(1)));
         let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
-        rig.views(wallet(), vec![send(3, &[outpoint(93, 0)])]);
+        rig.views(wallet(), Vec::new());
         rig.actor.joined(listed);
         rig.handle(Command::Height {
             wallet_id: wallet(),
@@ -3133,7 +3187,10 @@ mod tests {
         // No verdict published: nothing for the pass to clear.
         rig.views(wallet(), Vec::new());
         rig.follow(wallet(), 100).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(9, &[outpoint(99, 0)])],
+        );
         rig.send(Command::Seen {
             wallet_id: wallet(),
             touched: true,
@@ -3141,21 +3198,22 @@ mod tests {
         .await;
         let walks = rig.walks();
 
+        // A height pass holds in its read; an `Uncertain` result and the next
+        // height queue behind it.
+        rig.source.pause(true);
         rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 102,
         });
+        rig.actor.handle(Command::Uncertain(txid(9)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.actor.joined(listed);
         rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 103,
         });
-        rig.actor
-            .wallets
-            .get_mut(&wallet())
-            .and_then(|entry| entry.pending.as_mut())
-            .expect("queued")
-            .forced
-            .insert(txid(9));
+        // The forced txid leaves the wallet; then a catch-up.
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 140,
@@ -3167,8 +3225,56 @@ mod tests {
             .expect("the forced pass");
         assert_eq!(run.anchor_at, None);
         assert!(!run.walk.load(Ordering::SeqCst));
+        rig.source.pause(false);
         rig.settle().await;
         assert_eq!(rig.walks(), walks, "txid 9 is not held: no walk");
+    }
+
+    /// A catch-up on a wallet whose host holds verdicts reads the records for
+    /// the clears even when no pass was queued or running: a send settled in
+    /// the scanned blocks stops showing its verdict during the scan.
+    #[tokio::test]
+    async fn should_clear_verdicts_during_a_catch_up_with_no_pass_queued() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
+        rig.views(wallet(), Vec::new()); // settled in the blocks being scanned
+
+        rig.height(wallet(), 140).await; // catch-up; idle, nothing queued
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+    }
+
+    /// A queued pass overtaken by a catch-up is kept while verdicts are out,
+    /// and clears what the scan settled.
+    #[tokio::test]
+    async fn should_keep_a_queued_pass_for_the_clears_through_a_catch_up() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.sent();
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        // The running pass has read the records from before the scan and is
+        // probing; only the queued one can see the send settle.
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 103,
+        });
+        rig.views(wallet(), Vec::new()); // settled in the scan
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 140,
+        });
+        rig.settle().await;
+
+        assert!(rig.sent().contains(&ResolverEvent::Cleared(txid(1))));
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
