@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "latest_protocol_version": 14,
+  "latest_protocol_version": 17,
   "element_kinds": [
     {
       "name": "Item",
@@ -1850,6 +1850,47 @@
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
                 "description": "What is left to pay for votes on this poll.",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "prefunded_balances.for_readiness",
+            "key": {
+              "type": "fixed",
+              "hex": "81",
+              "label": "ForReadiness",
+              "constant": "PREFUNDED_BALANCES_FOR_READINESS"
+            },
+            "kinds": [
+              "SumTree"
+            ],
+            "since": 17,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
+            "book": "drive/compilation-readiness.md",
+            "description": "Balances that pay for compilation readiness rounds. The key is provisional.",
+            "children": [
+              {
+                "id": "prefunded_balances.for_readiness.fund",
+                "key": {
+                  "type": "dynamic",
+                  "name": "fund_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "hash32",
+                  "description": "A double sha256 of a domain tag and the round id"
+                },
+                "kinds": [
+                  "SumItem"
+                ],
+                "value": "credits",
+                "since": 17,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
+                "description": "What is left of one round's funding, the cleanup reserve included.",
                 "children": []
               }
             ]
@@ -4702,6 +4743,303 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "votes.readiness",
+            "key": {
+              "type": "fixed",
+              "hex": "72",
+              "label": "Readiness",
+              "constant": "READINESS_TREE_KEY",
+              "ascii": true
+            },
+            "kinds": [
+              "Tree"
+            ],
+            "since": 17,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+            "book": "drive/compilation-readiness.md",
+            "description": "Readiness rounds: a contract's executable bundle activates once enough evonodes report that they have prepared it. The keys are provisional.",
+            "children": [
+              {
+                "id": "votes.readiness.contracts",
+                "key": {
+                  "type": "fixed",
+                  "hex": "00",
+                  "label": "Contracts",
+                  "constant": "READINESS_CONTRACTS_TREE_KEY"
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 17,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "The contracts holding a readiness round.",
+                "children": [
+                  {
+                    "id": "votes.readiness.contracts.contract",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "contract_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "identifier32",
+                      "description": "The data contract id"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 17,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "Created with the contract's first round. Stays while a retired round still waits for its cleanup.",
+                    "children": [
+                      {
+                        "id": "votes.readiness.contracts.contract.current_round",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "63",
+                          "label": "CurrentRound",
+                          "constant": "READINESS_CURRENT_ROUND_POINTER_KEY",
+                          "ascii": true
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "round_id (32 bytes)",
+                        "since": 17,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "The contract's current round. Replacing a round swaps the pointer; cancelling or activating it deletes it.",
+                        "children": []
+                      },
+                      {
+                        "id": "votes.readiness.contracts.contract.round",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "round_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "hash32",
+                          "description": "The round id, a double sha256 of the network, the contract, the version, the bundle digest and the height it was accepted at"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "since": 17,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "One round, normally only the current one. A retired round stays here, unreachable through the pointer, until its cleanup.",
+                        "children": [
+                          {
+                            "id": "votes.readiness.contracts.contract.round.record",
+                            "key": {
+                              "type": "fixed",
+                              "hex": "00",
+                              "label": "Record",
+                              "constant": "READINESS_ROUND_RECORD_KEY"
+                            },
+                            "kinds": [
+                              "Item"
+                            ],
+                            "value": "serialized ReadinessRound",
+                            "since": 17,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "The bundle, the status, the last evaluation mark and the fund of the round.",
+                            "children": []
+                          },
+                          {
+                            "id": "votes.readiness.contracts.contract.round.reports",
+                            "key": {
+                              "type": "fixed",
+                              "hex": "01",
+                              "label": "Reports",
+                              "constant": "READINESS_ROUND_REPORTS_TREE_KEY"
+                            },
+                            "kinds": [
+                              "CountTree"
+                            ],
+                            "since": 17,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "The accepted reports; the count is the raw number of distinct reporters.",
+                            "children": [
+                              {
+                                "id": "votes.readiness.contracts.contract.round.reports.report",
+                                "key": {
+                                  "type": "dynamic",
+                                  "name": "pro_tx_hash",
+                                  "matcher": {
+                                    "type": "len",
+                                    "len": 32
+                                  },
+                                  "encoding": "identifier32",
+                                  "description": "The reporting evonode's pro tx hash"
+                                },
+                                "kinds": [
+                                  "Item"
+                                ],
+                                "value": "serialized ReadinessReportRecord",
+                                "since": 17,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                                "description": "One evonode's report that it prepared the bundle.",
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "votes.readiness.contracts.contract.round.scan_cursor",
+                            "key": {
+                              "type": "fixed",
+                              "hex": "02",
+                              "label": "ScanCursor",
+                              "constant": "READINESS_ROUND_SCAN_CURSOR_KEY"
+                            },
+                            "kinds": [
+                              "Item"
+                            ],
+                            "value": "serialized ReadinessScanCursor",
+                            "since": 17,
+                            "presence": "lazy",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "Where a walk over the reports that did not finish in one block continues. Absent when no walk is open.",
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "votes.readiness.deadlines",
+                "key": {
+                  "type": "fixed",
+                  "hex": "01",
+                  "label": "Deadlines",
+                  "constant": "READINESS_DEADLINES_TREE_KEY"
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 17,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "Crossed rounds by the time they activate, so each block can activate the ones that are due.",
+                "children": [
+                  {
+                    "id": "votes.readiness.deadlines.deadline",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "deadline_ms",
+                      "matcher": {
+                        "type": "len",
+                        "len": 8
+                      },
+                      "encoding": "u64_be",
+                      "description": "The activation deadline in milliseconds, u64 big endian with the sign bit flipped"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 17,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "The rounds activating at this time. Removed with its last entry.",
+                    "children": [
+                      {
+                        "id": "votes.readiness.deadlines.deadline.entry",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "contract_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "identifier32",
+                          "description": "The data contract id"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "round_id (32 bytes)",
+                        "since": 17,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "The round the contract activates at this time. Stale, and dropped without activation, once it is no longer the contract's current round.",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "votes.readiness.evaluation_cursor",
+                "key": {
+                  "type": "fixed",
+                  "hex": "02",
+                  "label": "EvaluationCursor",
+                  "constant": "READINESS_EVALUATION_CURSOR_KEY"
+                },
+                "kinds": [
+                  "Item"
+                ],
+                "value": "contract_id (32 bytes)",
+                "since": 17,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "The last contract the block event evaluated, so the next block continues after it.",
+                "children": []
+              },
+              {
+                "id": "votes.readiness.retired_rounds",
+                "key": {
+                  "type": "fixed",
+                  "hex": "03",
+                  "label": "RetiredRounds",
+                  "constant": "READINESS_RETIRED_ROUNDS_TREE_KEY"
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 17,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "Rounds replaced, cancelled or activated, waiting for the bounded cleanup that deletes their trees.",
+                "children": [
+                  {
+                    "id": "votes.readiness.retired_rounds.retired_round",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "round_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "hash32",
+                      "description": "The round id, a double sha256 of the network, the contract, the version, the bundle digest and the height it was accepted at"
+                    },
+                    "kinds": [
+                      "Item"
+                    ],
+                    "value": "contract_id (32 bytes)",
+                    "since": 17,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "One retired round and the contract its tree is under.",
+                    "children": []
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
@@ -5206,7 +5544,7 @@
   },
   "layer_shapes": {
     "contract_groups": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "00",
         "right": {
@@ -5215,7 +5553,7 @@
       }
     },
     "contract_groups.groups.group": {
-      "origin": "fixture contract_groups_and_bound_keys@14",
+      "origin": "fixture contract_groups_and_bound_keys@17",
       "tree": {
         "hex": "02",
         "left": {
@@ -5230,7 +5568,7 @@
       }
     },
     "contract_groups.members.contract": {
-      "origin": "fixture contract_groups_and_bound_keys@14",
+      "origin": "fixture contract_groups_and_bound_keys@17",
       "tree": {
         "hex": "01",
         "left": {
@@ -5242,7 +5580,7 @@
       }
     },
     "contracts.contract": {
-      "origin": "fixture contracts_with_documents@14",
+      "origin": "fixture contracts_with_documents@17",
       "tree": {
         "hex": "01",
         "left": {
@@ -5254,7 +5592,7 @@
       }
     },
     "contracts.contract.other": {
-      "origin": "fixture moderated_contract@14",
+      "origin": "fixture moderated_contract@17",
       "tree": {
         "hex": "80",
         "left": {
@@ -5272,7 +5610,7 @@
       }
     },
     "group_actions.contract.group": {
-      "origin": "fixture tokens_and_group_actions@14",
+      "origin": "fixture tokens_and_group_actions@17",
       "tree": {
         "hex": "4d",
         "left": {
@@ -5284,7 +5622,7 @@
       }
     },
     "group_actions.contract.group.active.action": {
-      "origin": "fixture tokens_and_group_actions@14",
+      "origin": "fixture tokens_and_group_actions@17",
       "tree": {
         "hex": "53",
         "left": {
@@ -5293,7 +5631,7 @@
       }
     },
     "group_actions.contract.group.closed.action": {
-      "origin": "fixture tokens_and_group_actions@14",
+      "origin": "fixture tokens_and_group_actions@17",
       "tree": {
         "hex": "53",
         "left": {
@@ -5302,7 +5640,7 @@
       }
     },
     "identities.identity": {
-      "origin": "fixture contract_groups_and_bound_keys@14",
+      "origin": "fixture contract_groups_and_bound_keys@17",
       "tree": {
         "hex": "80",
         "left": {
@@ -5327,7 +5665,7 @@
       "states": [
         {
           "state": "created",
-          "origin": "fixture identities@14",
+          "origin": "fixture identities@17",
           "tree": {
             "hex": "80",
             "left": {
@@ -5346,7 +5684,7 @@
         },
         {
           "state": "used_with_a_contract",
-          "origin": "fixture identities@14",
+          "origin": "fixture identities@17",
           "tree": {
             "hex": "80",
             "left": {
@@ -5368,7 +5706,7 @@
         },
         {
           "state": "budgeted_key_and_contract",
-          "origin": "fixture contract_groups_and_bound_keys@14",
+          "origin": "fixture contract_groups_and_bound_keys@17",
           "tree": {
             "hex": "80",
             "left": {
@@ -5394,7 +5732,7 @@
       ]
     },
     "identities.identity.contract_info.bound": {
-      "origin": "fixture contract_groups_and_bound_keys@14",
+      "origin": "fixture contract_groups_and_bound_keys@17",
       "tree": {
         "hex": "01",
         "left": {
@@ -5403,7 +5741,7 @@
       }
     },
     "identities.identity.key_references": {
-      "origin": "fixture identities@14",
+      "origin": "fixture identities@17",
       "tree": {
         "hex": "03",
         "left": {
@@ -5415,7 +5753,7 @@
       }
     },
     "identities.identity.key_references.authentication": {
-      "origin": "fixture identities@14",
+      "origin": "fixture identities@17",
       "tree": {
         "hex": "02",
         "left": {
@@ -5430,7 +5768,7 @@
       }
     },
     "misc": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "45",
         "left": {
@@ -5442,7 +5780,7 @@
       }
     },
     "pools.epoch": {
-      "origin": "fixture current_epoch@14",
+      "origin": "fixture current_epoch@17",
       "tree": {
         "hex": "6d",
         "left": {
@@ -5470,14 +5808,14 @@
       "states": [
         {
           "state": "future",
-          "origin": "fixture current_epoch@14",
+          "origin": "fixture current_epoch@17",
           "tree": {
             "hex": "73"
           }
         },
         {
           "state": "running",
-          "origin": "fixture current_epoch@14",
+          "origin": "fixture current_epoch@17",
           "tree": {
             "hex": "6d",
             "left": {
@@ -5505,7 +5843,7 @@
         },
         {
           "state": "paid",
-          "origin": "fixture paid_epoch@14",
+          "origin": "fixture paid_epoch@17",
           "tree": {
             "hex": "74",
             "left": {
@@ -5528,19 +5866,22 @@
       ]
     },
     "prefunded_balances": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "80",
         "left": {
           "hex": "40"
         },
         "right": {
-          "hex": "c0"
+          "hex": "81",
+          "right": {
+            "hex": "c0"
+          }
         }
       }
     },
     "root": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "40",
         "left": {
@@ -5597,7 +5938,7 @@
       }
     },
     "saved_block_transactions": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "65",
         "left": {
@@ -5609,7 +5950,7 @@
       }
     },
     "shielded_balances.main_pool": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "80",
         "left": {
@@ -5627,7 +5968,7 @@
       }
     },
     "tokens": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "80",
         "left": {
@@ -5648,7 +5989,7 @@
       }
     },
     "tokens.distributions": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "80",
         "left": {
@@ -5663,7 +6004,7 @@
       }
     },
     "tokens.distributions.perpetual.token": {
-      "origin": "fixture token_distributions_unclaimed@14",
+      "origin": "fixture token_distributions_unclaimed@17",
       "tree": {
         "hex": "c0",
         "left": {
@@ -5672,7 +6013,7 @@
       }
     },
     "tokens.distributions.timed": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "80",
         "left": {
@@ -5684,7 +6025,7 @@
       }
     },
     "versions": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "01",
         "left": {
@@ -5693,19 +6034,22 @@
       }
     },
     "votes": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
-        "hex": "64",
+        "hex": "65",
         "left": {
-          "hex": "63"
+          "hex": "64",
+          "left": {
+            "hex": "63"
+          }
         },
         "right": {
-          "hex": "65"
+          "hex": "72"
         }
       }
     },
     "votes.contested_resource": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "70",
         "left": {
@@ -5714,7 +6058,7 @@
       }
     },
     "votes.contested_resource.active_polls.contract.document_type": {
-      "origin": "fixture contested_documents@14",
+      "origin": "fixture contested_documents@17",
       "tree": {
         "hex": "01",
         "left": {
@@ -5723,7 +6067,7 @@
       }
     },
     "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender": {
-      "origin": "fixture contested_documents@14",
+      "origin": "fixture contested_documents@17",
       "tree": {
         "hex": "01",
         "left": {
@@ -5731,8 +6075,32 @@
         }
       }
     },
+    "votes.readiness": {
+      "origin": "genesis@17",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "03"
+        }
+      }
+    },
+    "votes.readiness.contracts.contract.round": {
+      "origin": "fixture readiness_rounds@17",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "02"
+        }
+      }
+    },
     "withdrawals": {
-      "origin": "genesis@14",
+      "origin": "genesis@17",
       "tree": {
         "hex": "03",
         "left": {

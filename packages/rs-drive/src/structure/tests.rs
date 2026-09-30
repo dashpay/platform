@@ -119,7 +119,13 @@ fn should_record_a_contract_layer_with_its_documents_on_top() {
     // fixture. Documents are read most and sit at the root of the layer; the
     // contract itself and everything else hang below.
     let contract = &json["layer_shapes"]["contracts.contract"];
-    assert_eq!(contract["origin"], "fixture contracts_with_documents@14");
+    assert_eq!(
+        contract["origin"],
+        format!(
+            "fixture contracts_with_documents@{}",
+            PlatformVersion::latest().protocol_version
+        )
+    );
     assert_eq!(contract["tree"]["hex"], "01");
     assert_eq!(contract["tree"]["left"]["hex"], "00");
     assert_eq!(contract["tree"]["right"]["hex"], "02");
@@ -291,7 +297,9 @@ mod fixtures {
         DataContractOwnedResolvedInfo, DocumentAndContractInfo, OwnedDocumentInfo,
     };
     use crate::util::storage_flags::StorageFlags;
+    use crate::drive::votes::readiness::ReadinessRoundFunding;
     use crate::util::test_helpers::setup::setup_document;
+    use crate::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
     use crate::util::test_helpers::setup_contract;
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
@@ -355,6 +363,10 @@ mod fixtures {
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use dpp::voting::readiness::payer::ReadinessPayer;
+    use dpp::voting::readiness::report_record::ReadinessReportRecord;
+    use dpp::voting::readiness::round::{ReadinessRound, ReadinessRoundOpening};
+    use dpp::voting::readiness::scan_cursor::ReadinessScanCursor;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -1649,6 +1661,148 @@ mod fixtures {
         conformance_of(&drive, "expiring_documents", run);
     }
 
+    /// Compilation readiness rounds: a replaced round waiting for its cleanup beside the
+    /// current one with a paged walk open, two rounds crossed with the same deadline, a
+    /// cancelled round whose contract lost its pointer, the fairness cursor, and one fund per
+    /// round.
+    fn readiness_rounds(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let mut rng = StdRng::seed_from_u64(17);
+        let payer =
+            create_test_identity_with_rng(&drive, [0x50; 32], &mut rng, None, platform_version)
+                .expect("expected the payer identity")
+                .id();
+        drive
+            .add_to_identity_balance(
+                payer.to_buffer(),
+                1_000_000_000,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to fund the payer");
+        let funding = ReadinessRoundFunding {
+            initial_funding: 20_000_000,
+            cleanup_reserve: 1_000_000,
+        };
+        let block = |height: u64| BlockInfo {
+            time_ms: 1_000_000,
+            height,
+            core_height: 100,
+            epoch: Epoch::new(0).expect("expected epoch 0"),
+        };
+        let open = |contract_id: [u8; 32], height: u64| {
+            let (round, operations) = drive
+                .open_readiness_round_operations(
+                    ReadinessRoundOpening {
+                        contract_id: Identifier::from(contract_id),
+                        version: 1,
+                        bundle_digest: [0xD1; 32],
+                        preparation_profile: 1,
+                        accepted_at_ms: 1_000_000,
+                        accepted_at_height: height,
+                        payer: ReadinessPayer::Identity(payer),
+                    },
+                    funding,
+                    &block(height),
+                    &mut None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to open a round");
+            apply_operations(&drive, operations);
+            round
+        };
+        let report = |round: &ReadinessRound, pro_tx_hash: [u8; 32]| {
+            let record =
+                ReadinessReportRecord::new(round.accepted_at_height() + 1, 1, platform_version)
+                    .expect("expected a report record");
+            let (inserted, operations) = drive
+                .insert_readiness_report_operations(
+                    round.contract_id().to_buffer(),
+                    round.round_id(),
+                    pro_tx_hash,
+                    &record,
+                    &mut None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to insert a report");
+            assert!(inserted);
+            apply_operations(&drive, operations);
+        };
+
+        // A round replaced by a later bundle, both holding reports; the walk over the
+        // current round's reports is paged across blocks
+        let replaced = open([0x51; 32], 1);
+        report(&replaced, [0x61; 32]);
+        report(&replaced, [0x62; 32]);
+        let current = open([0x51; 32], 2);
+        report(&current, [0x61; 32]);
+        report(&current, [0x62; 32]);
+        let cursor =
+            ReadinessScanCursor::new(100, 2, platform_version).expect("expected a scan cursor");
+        apply_operations(
+            &drive,
+            drive
+                .store_readiness_scan_cursor_operations(
+                    [0x51; 32],
+                    current.round_id(),
+                    &cursor,
+                    &mut None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to store the scan cursor"),
+        );
+
+        // Two rounds crossing at the same time, so they share a deadline
+        for (contract_id, height) in [([0x52; 32], 3), ([0x53; 32], 4)] {
+            let mut round = open(contract_id, height);
+            let (_, operations) = drive
+                .record_readiness_crossing_operations(
+                    &mut round,
+                    2_000_000,
+                    120_000,
+                    3_600_000,
+                    &mut None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to record the crossing");
+            apply_operations(&drive, operations);
+        }
+
+        // A cancelled round: the contract keeps its tree, without a pointer, until cleanup
+        open([0x54; 32], 5);
+        let (_, operations) = drive
+            .cancel_readiness_round_operations(
+                [0x54; 32],
+                1_000_000,
+                &block(6),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected to cancel the round");
+        apply_operations(&drive, operations);
+
+        apply_operations(
+            &drive,
+            drive
+                .store_readiness_evaluation_cursor_operations(
+                    Some([0x52; 32]),
+                    &mut None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to store the evaluation cursor"),
+        );
+        conformance_of(&drive, "readiness_rounds", run);
+    }
+
     /// Runs every fixture
     pub(super) fn run_all() -> FixtureRun {
         let mut run = FixtureRun::default();
@@ -1666,6 +1820,7 @@ mod fixtures {
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
+        readiness_rounds(&mut run);
         run
     }
 
