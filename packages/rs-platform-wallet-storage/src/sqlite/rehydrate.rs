@@ -4,15 +4,16 @@
 //! the manager consumes the carried snapshot directly, so no wrong-seed check
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use dashcore::OutPoint;
+use dashcore::ephemerealdata::instant_lock::InstantLock;
+use dashcore::{OutPoint, Txid};
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
-use key_wallet::transaction_checking::WalletTransactionChecker;
+use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -426,10 +427,14 @@ pub fn apply_persisted_core_state(
 ///
 /// Unconfirmed (mempool / InstantSend) spends are replayed too: without them a
 /// redelivered funding transaction would re-credit an output they reserve.
+/// `instant_locks` are the persisted InstantSend locks: a lock that arrived
+/// after its transaction was stored never rewrote the stored record, so the
+/// replay upgrades that record's mempool context itself.
 pub(crate) fn restore_recorded_transactions(
     wallet_info: &mut ManagedWalletInfo,
     wallet: &mut Wallet,
     records: Vec<TransactionRecord>,
+    instant_locks: &BTreeMap<Txid, InstantLock>,
 ) {
     // Where the load projection parked each unspent outpoint; its keys are
     // the outputs persistence still considers unspent.
@@ -454,8 +459,17 @@ pub(crate) fn restore_recorded_transactions(
     let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
     let completed = poll_ready(async {
         for record in replay {
+            // The lock set already holds this txid (load marked the restored
+            // UTXOs), so a later lock event is deduplicated: the InstantSend
+            // context, and the conflict sweep it runs, must come from here.
+            let context = match (record.context, instant_locks.get(&record.txid)) {
+                (TransactionContext::Mempool, Some(lock)) => {
+                    TransactionContext::InstantSend(lock.clone())
+                }
+                (context, _) => context,
+            };
             wallet_info
-                .check_core_transaction(&record.transaction, record.context, wallet, true, false)
+                .check_core_transaction(&record.transaction, context, wallet, true, false)
                 .await;
         }
     })
@@ -524,37 +538,66 @@ fn poll_ready<F: std::future::Future>(future: F) -> Option<F::Output> {
     }
 }
 
-/// Order records as the chain would deliver them: confirmed by block position,
-/// then unconfirmed ones with every in-set parent ahead of its children.
+/// Order records as the chain would deliver them: every in-set parent ahead of
+/// its children, otherwise confirmed by block position, then unconfirmed.
+///
+/// Dependencies span both partitions: a parent's stored record can still say
+/// mempool after it confirmed (a height-only confirmation never rewrites an
+/// existing record), while its child's record is already confirmed.
 fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
-    let (mut ordered, mut pending): (Vec<_>, Vec<_>) = records
-        .into_iter()
-        .partition(|record| record.block_info().is_some());
-    ordered.sort_by_key(|record| {
-        record
-            .block_info()
-            .map(|block| (block.height(), block.position()))
+    let mut records = records;
+    records.sort_by_key(|record| {
+        let block = record.block_info();
+        (
+            block.is_none(),
+            block.map(|block| (block.height(), block.position())),
+            record.txid,
+        )
     });
-    // Deterministic start; parents are then pulled forward in rounds.
-    pending.sort_by_key(|record| record.txid);
-    while !pending.is_empty() {
-        let waiting: HashSet<_> = pending.iter().map(|record| record.txid).collect();
-        let (ready, blocked): (Vec<_>, Vec<_>) = pending.into_iter().partition(|record| {
-            record.transaction.input.iter().all(|input| {
-                input.previous_output.txid == record.txid
-                    || !waiting.contains(&input.previous_output.txid)
-            })
-        });
-        if ready.is_empty() {
-            // Unreachable for real transactions (txids cannot form a cycle);
-            // keep the rest rather than drop a reservation.
-            ordered.extend(blocked);
-            break;
+    let index: HashMap<Txid, usize> = records
+        .iter()
+        .enumerate()
+        .map(|(position, record)| (record.txid, position))
+        .collect();
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); records.len()];
+    let mut waiting_on: Vec<usize> = vec![0; records.len()];
+    for (child, record) in records.iter().enumerate() {
+        let parents: BTreeSet<usize> = record
+            .transaction
+            .input
+            .iter()
+            .filter_map(|input| index.get(&input.previous_output.txid).copied())
+            .filter(|parent| *parent != child)
+            .collect();
+        waiting_on[child] = parents.len();
+        for parent in parents {
+            children[parent].push(child);
         }
-        ordered.extend(ready);
-        pending = blocked;
     }
-    ordered
+    // Sorted positions, so the smallest ready one is always next in chain order.
+    let mut ready: BTreeSet<usize> = (0..records.len())
+        .filter(|position| waiting_on[*position] == 0)
+        .collect();
+    let mut emitted = vec![false; records.len()];
+    let mut order = Vec::with_capacity(records.len());
+    while let Some(position) = ready.pop_first() {
+        emitted[position] = true;
+        order.push(position);
+        for &child in &children[position] {
+            waiting_on[child] -= 1;
+            if waiting_on[child] == 0 {
+                ready.insert(child);
+            }
+        }
+    }
+    // Unreachable for real transactions (txids cannot form a cycle); keep the
+    // rest in chain order rather than drop a reservation.
+    order.extend((0..records.len()).filter(|position| !emitted[*position]));
+    let mut slots: Vec<Option<TransactionRecord>> = records.into_iter().map(Some).collect();
+    order
+        .into_iter()
+        .filter_map(|position| slots[position].take())
+        .collect()
 }
 
 /// Account identity of a funds account, stable across replay mutations.
@@ -3363,9 +3406,9 @@ mod tests {
         }
     }
 
-    /// Same-height records without a block position replay in stored order;
-    /// an output the load projection still parks as unspent must end up
-    /// excluded whichever of funding and spend replays first.
+    /// Same-height records without a block position: an output the load
+    /// projection still parks as unspent must end up excluded whichever of
+    /// funding and spend is stored first.
     #[tokio::test]
     async fn should_exclude_spent_output_for_either_same_height_replay_order() {
         use dashcore::hashes::Hash;
@@ -3463,7 +3506,7 @@ mod tests {
                     },
                 );
             }
-            restore_recorded_transactions(&mut restored, &mut wallet, records);
+            restore_recorded_transactions(&mut restored, &mut wallet, records, &Default::default());
 
             let coins = &restored.accounts.standard_bip44_accounts[&0].utxos;
             assert!(!coins.contains_key(&spent), "spend_first={spend_first}");
@@ -3474,5 +3517,252 @@ mod tests {
                 "spend_first={spend_first}"
             );
         }
+    }
+
+    /// A lock that arrived after its transaction was stored lives only in
+    /// `core_instant_locks`; the stored record still says mempool. Replay must
+    /// restore the InstantSend context and run its conflict sweep, since the
+    /// already-marked lock deduplicates any later lock event.
+    #[tokio::test]
+    async fn should_replay_mempool_record_with_persisted_lock_as_instant_send() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn, TxOut};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let mut wallet =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let address = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let funding = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([21; 32]), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: 100_000,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let spend = |value| Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(funding.txid(), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value,
+                script_pubkey: dashcore::ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        };
+        let block = TransactionContext::InBlock(BlockInfo::new(
+            100,
+            BlockHash::from_byte_array([8; 32]),
+            100,
+        ));
+        let mut records = info
+            .check_core_transaction(&funding, block, &mut wallet, true, true)
+            .await
+            .new_records;
+        // Both double spends as stored: unconfirmed, recorded independently.
+        let (mut winner, mut loser) = (spend(99_000), spend(98_000));
+        for tx in [&winner, &loser] {
+            let mut scratch = info.clone();
+            records.extend(
+                scratch
+                    .check_core_transaction(
+                        tx,
+                        TransactionContext::Mempool,
+                        &mut wallet,
+                        true,
+                        true,
+                    )
+                    .await
+                    .new_records,
+            );
+        }
+        assert_eq!(records.len(), 3);
+        // Unconfirmed siblings replay by txid: lock the later one so the
+        // loser is already recorded when the winner's sweep runs.
+        if winner.txid() < loser.txid() {
+            std::mem::swap(&mut winner, &mut loser);
+        }
+        let lock = InstantLock {
+            inputs: vec![OutPoint::new(funding.txid(), 0)],
+            txid: winner.txid(),
+            ..Default::default()
+        };
+        let locks: BTreeMap<Txid, InstantLock> = [(winner.txid(), lock)].into_iter().collect();
+
+        let record_of = |txid: Txid| records.iter().find(|r| r.txid == txid).unwrap().clone();
+
+        // Alone, the locked spend comes back InstantSend.
+        let mut alone = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let pair = vec![record_of(funding.txid()), record_of(winner.txid())];
+        restore_recorded_transactions(&mut alone, &mut wallet, pair, &locks);
+        assert!(
+            alone.accounts.standard_bip44_accounts[&0]
+                .transactions()
+                .get(&winner.txid())
+                .is_some_and(|record| matches!(record.context, TransactionContext::InstantSend(_))),
+            "the locked record must come back InstantSend, not mempool"
+        );
+
+        // Replayed after a conflicting spend, its lock sweeps that spend.
+        let mut contested = ManagedWalletInfo::from_wallet(&wallet, 0);
+        restore_recorded_transactions(&mut contested, &mut wallet, records.clone(), &locks);
+        assert!(
+            !contested.accounts.standard_bip44_accounts[&0]
+                .transactions()
+                .contains_key(&loser.txid()),
+            "the lock's conflict sweep must drop the competing spend"
+        );
+    }
+
+    /// A record spending `parents` (output 0 of each); `value` keeps txids distinct.
+    fn replay_record(
+        parents: &[Txid],
+        value: u64,
+        context: TransactionContext,
+    ) -> TransactionRecord {
+        use dashcore::{Transaction, TxIn, TxOut};
+        use key_wallet::account::StandardAccountType;
+        use key_wallet::managed_account::transaction_record::TransactionDirection;
+        use key_wallet::transaction_checking::TransactionType;
+
+        let transaction = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: parents
+                .iter()
+                .map(|parent| TxIn {
+                    previous_output: OutPoint::new(*parent, 0),
+                    ..Default::default()
+                })
+                .collect(),
+            output: vec![TxOut {
+                value,
+                script_pubkey: dashcore::ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            transaction,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            context,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    fn in_block(height: u32, position: Option<u32>) -> TransactionContext {
+        use dashcore::hashes::Hash;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let block = BlockInfo::new(height, dashcore::BlockHash::all_zeros(), height);
+        TransactionContext::InBlock(position.map_or(block, |p| block.with_position(p)))
+    }
+
+    fn replayed_txids(records: Vec<TransactionRecord>) -> Vec<Txid> {
+        replay_order(records).into_iter().map(|r| r.txid).collect()
+    }
+
+    /// An unconfirmed child whose txid sorts ahead of its parent's still
+    /// replays after it, so its input reserves the parent's output.
+    #[test]
+    fn should_replay_unconfirmed_parent_before_its_child() {
+        use dashcore::hashes::Hash;
+
+        let parent = replay_record(
+            &[Txid::from_byte_array([1; 32])],
+            1_000,
+            TransactionContext::Mempool,
+        );
+        let child = (0..)
+            .map(|value| replay_record(&[parent.txid], value, TransactionContext::Mempool))
+            .find(|child| child.txid < parent.txid)
+            .unwrap();
+        let expected = vec![parent.txid, child.txid];
+
+        assert_eq!(replayed_txids(vec![child, parent]), expected);
+    }
+
+    /// A parent whose stored record is still mempool replays ahead of a child
+    /// already recorded as confirmed.
+    #[test]
+    fn should_replay_mempool_parent_before_its_confirmed_child() {
+        use dashcore::hashes::Hash;
+
+        let parent = replay_record(
+            &[Txid::from_byte_array([2; 32])],
+            1_000,
+            TransactionContext::Mempool,
+        );
+        let child = replay_record(&[parent.txid], 900, in_block(50, Some(3)));
+        let unrelated = replay_record(&[Txid::from_byte_array([3; 32])], 700, in_block(40, None));
+        let expected = vec![unrelated.txid, parent.txid, child.txid];
+
+        assert_eq!(replayed_txids(vec![child, unrelated, parent]), expected);
+    }
+
+    /// Independent records follow chain order: height, then in-block
+    /// position, then unconfirmed.
+    #[test]
+    fn should_order_independent_records_by_height_then_block_position() {
+        use dashcore::hashes::Hash;
+
+        let funding = |marker| [Txid::from_byte_array([marker; 32])];
+        let pending = replay_record(&funding(4), 1, TransactionContext::Mempool);
+        let late_second = replay_record(&funding(5), 2, in_block(10, Some(2)));
+        let late_first = replay_record(&funding(6), 3, in_block(10, Some(1)));
+        let early = replay_record(&funding(7), 4, in_block(9, Some(5)));
+        let expected = vec![early.txid, late_first.txid, late_second.txid, pending.txid];
+
+        assert_eq!(
+            replayed_txids(vec![pending, late_second, late_first, early]),
+            expected
+        );
+    }
+
+    /// Records that name each other as parents (impossible for real txids)
+    /// still all replay, after everything that is ready.
+    #[test]
+    fn should_keep_every_record_of_a_dependency_cycle() {
+        use dashcore::hashes::Hash;
+
+        let (a, b) = (
+            Txid::from_byte_array([0xAA; 32]),
+            Txid::from_byte_array([0xBB; 32]),
+        );
+        let mut first = replay_record(&[b], 1, TransactionContext::Mempool);
+        first.txid = a;
+        let mut second = replay_record(&[a], 2, TransactionContext::Mempool);
+        second.txid = b;
+        let ready = replay_record(
+            &[Txid::from_byte_array([8; 32])],
+            3,
+            TransactionContext::Mempool,
+        );
+        let expected = vec![ready.txid, a, b];
+
+        assert_eq!(replayed_txids(vec![second, first, ready]), expected);
     }
 }

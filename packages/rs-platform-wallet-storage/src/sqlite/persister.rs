@@ -1851,7 +1851,12 @@ fn load_one_wallet(
             })?;
     }
     let mut wallet = wallet;
-    restore_recorded_transactions(&mut wallet_info, &mut wallet, core_state.records);
+    restore_recorded_transactions(
+        &mut wallet_info,
+        &mut wallet,
+        core_state.records,
+        &core_state.instant_locks_for_non_final_records,
+    );
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
