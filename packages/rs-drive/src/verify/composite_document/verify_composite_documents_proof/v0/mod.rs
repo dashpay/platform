@@ -30,7 +30,10 @@ impl DriveDocumentQuery<'_> {
         // verification — succinctness off, so the sub-query branches'
         // extra coverage is tolerated), decoded into candidate documents.
         // Candidates only reconstruct the merged query; the full pass
-        // below is the authority.
+        // below is the authority. Each component is read exactly as it
+        // is built, its limit a per-instance cap on its root query: that
+        // is the form the merged proof was budgeted in, and a global
+        // limit would truncate an ordered page's index level differently.
         let page_path_query = self.page_path_query(platform_version)?;
         let direction = page_path_query.query.query.left_to_right;
         let (_, page_trios) = GroveDb::verify_subset_query(proof, &page_path_query, grove_version)?;

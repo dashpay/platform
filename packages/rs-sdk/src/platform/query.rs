@@ -156,9 +156,18 @@ impl_wire_query!(
     proto::GetContestedResourceVoteStateRequest,
     proto::GetContestedResourceVotersForIdentityRequest,
     proto::GetContestedResourcesRequest,
+    proto::GetContractDocumentRemovalsRequest,
+    proto::GetContractFeePotsRequest,
+    proto::GetContractGroupInfoRequest,
+    proto::GetContractGroupMembersRequest,
+    proto::GetContractGroupsForContractRequest,
+    proto::GetContractModerationEntriesRequest,
+    proto::GetContractModerationStatusRequest,
     proto::GetCurrentQuorumsInfoRequest,
     proto::GetDataContractHistoryRequest,
+    proto::GetDataContractsLatestVersionsRequest,
     proto::GetDataContractRequest,
+    proto::GetDataContractsByRangeRequest,
     proto::GetDataContractsRequest,
     proto::GetDocumentHistoryRequest,
     proto::GetDocumentsRequest,
@@ -179,6 +188,7 @@ impl_wire_query!(
     proto::GetIdentityByNonUniquePublicKeyHashRequest,
     proto::GetIdentityByPublicKeyHashRequest,
     proto::GetIdentityContractNonceRequest,
+    proto::GetIdentityKeysRemainingBudgetsRequest,
     proto::GetIdentityKeysRequest,
     proto::GetIdentityNonceRequest,
     proto::GetIdentityRequest,
@@ -492,11 +502,11 @@ impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
                     .to_string(),
             ));
         }
-        // Fallible: a drive query carrying time-range resolution provenance
-        // has no faithful `DocumentQuery` form (the resolved bucket equality
-        // would demote to a raw-timestamp predicate) and is refused — build
-        // a `DocumentQuery` with `with_time_range` / `with_time_range_grid`
-        // for time-range selections instead.
+        // Fallible: a drive query carrying window resolution provenance has
+        // no faithful `DocumentQuery` form (the resolved window equality
+        // would demote to a raw-value predicate) and is refused — build a
+        // `DocumentQuery` with `with_time_range` / `with_time_range_grid` or
+        // `with_integer_range` / `with_integer_range_grid` instead.
         let q: DocumentQuery = self.try_into()?;
         Ok(q)
     }

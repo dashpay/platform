@@ -14,7 +14,7 @@ pub(crate) fn now_ms() -> u64 {
 
 /// Current wall-clock time in seconds since the Unix epoch.
 ///
-/// Used to timestamp receive-address reservations for age-based reclamation.
+/// Pre-epoch reads return `0`, which upstream never expires.
 pub(crate) fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

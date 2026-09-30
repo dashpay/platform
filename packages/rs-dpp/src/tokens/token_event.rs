@@ -10,12 +10,16 @@ use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
+#[cfg(feature = "serde-conversion")]
+use crate::serialization::json::safe_integer::{json_safe_option_encrypted_note, json_safe_u64};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -58,7 +62,17 @@ pub type FrozenIdentifier = Identifier;
 /// involved identities, and amounts. It is **externally versioned** and marked as `unversioned` in platform serialization,
 /// meaning each variant is self-contained without requiring version dispatching logic.
 #[derive(
-    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
+    Debug,
+    PartialEq,
+    PartialOrd,
+    Clone,
+    Eq,
+    Encode,
+    Decode,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    PlatformSerialize,
+    DecodeUntrusted,
 )]
 // Custom `Serialize` / `Deserialize` below — `TokenEvent` is a flat enum
 // with all-tuple variants. Internal tagging requires struct variants or
@@ -176,15 +190,13 @@ impl serde::Serialize for TokenEvent {
         struct SafeU64<'a>(&'a u64);
         impl<'a> serde::Serialize for SafeU64<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_u64::serialize(self.0, s)
+                json_safe_u64::serialize(self.0, s)
             }
         }
         struct SafeOptEncNote<'a>(&'a Option<(u32, u32, Vec<u8>)>);
         impl<'a> serde::Serialize for SafeOptEncNote<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_option_encrypted_note::serialize(
-                    self.0, s,
-                )
+                json_safe_option_encrypted_note::serialize(self.0, s)
             }
         }
 
@@ -819,6 +831,9 @@ impl TokenEvent {
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
                         TokenDistributionResolvedRecipient::Evonode(identifier),
                     ) => (2, identifier, 1),
+                    TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(identifier) => {
+                        (1, identifier, 2)
+                    }
                 };
 
                 let mut properties = BTreeMap::from([
@@ -875,6 +890,8 @@ impl TokenEvent {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 

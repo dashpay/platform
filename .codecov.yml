@@ -1,11 +1,12 @@
 codecov:
   require_ci_to_pass: true
 
-# The rust-strategy and rust-shielded suites run only on push/nightly (PRs
-# skip them for speed); carryforward makes codecov reuse the base commit's
-# coverage for a flag when a PR run doesn't upload it, so PR reports don't
-# show a spurious project-coverage drop for tests that intentionally didn't
-# run.
+# Coverage is collected by the nightly run of tests.yml only (23:00 UTC on
+# the dev branches); pull request and post-merge push runs execute the same
+# tests uninstrumented and upload nothing. Every nightly uploads all three
+# flags; carryforward only matters when one phase fails and its report is
+# missing, so a single broken phase doesn't read as a coverage drop for the
+# whole suite.
 flags:
   rust:
     carryforward: true
@@ -52,6 +53,8 @@ ignore:
   - "packages/data-contracts/src/**"
   - "packages/dpns-contract/src/**"
   - "packages/keyword-search-contract/src/**"
+  - "packages/app-connect-contract/src/**"
+  - "packages/moderation-charters-contract/src/**"
   - "packages/masternode-reward-shares-contract/src/**"
   - "packages/token-history-contract/src/**"
   - "packages/wallet-utils-contract/src/**"
@@ -108,11 +111,6 @@ ignore:
   - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/**/v1_methods.rs"
   # Platform wallet — requires Core wallet integration, not unit-testable
   - "packages/rs-platform-wallet/src/**"
-  # Platform wallet storage — its tests run in the wallet fast-path
-  # workflow (tests-rs-wallet.yml), which intentionally omits coverage
-  # upload, so codecov never receives data for this crate on
-  # wallet-scoped PRs and patch status would fail spuriously
-  - "packages/rs-platform-wallet-storage/**"
   # Proof-verifier response types and unproved handling
   - "packages/rs-drive-proof-verifier/src/types.rs"
   - "packages/rs-drive-proof-verifier/src/unproved.rs"
@@ -158,20 +156,20 @@ ignore:
   # Versioned dispatch methods — pure version routing with no logic
   - "packages/rs-dpp/src/data_contract/document_type/methods/versioned_methods.rs"
 
+# Statuses attach to the nightly commit only (no PR ever uploads), so they
+# are informational: a nightly dip shows on the Codecov commit page without
+# painting the branch tip red. Patch coverage has no meaningful base without
+# PR uploads, and PR comments have nothing to attach to.
 coverage:
   status:
     project:
       default:
         target: auto
         threshold: 2%
-    patch:
-      default:
-        target: 50%
+        informational: true
+    patch: off
 
-comment:
-  layout: "condensed_header, diff, components, condensed_files"
-  behavior: default
-  require_changes: true
+comment: false
 
 component_management:
   individual_components:

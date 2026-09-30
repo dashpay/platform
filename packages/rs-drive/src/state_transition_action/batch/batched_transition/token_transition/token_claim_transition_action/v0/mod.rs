@@ -104,6 +104,9 @@ impl TokenClaimTransitionActionAccessorsV0 for TokenClaimTransitionActionV0 {
                 TokenDistributionRecipient::Identity(*identifier)
             }
             TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
+            TokenDistributionInfo::OncePerIdentity(_, identifier) => {
+                TokenDistributionRecipient::Identity(*identifier)
+            }
         }
     }
 

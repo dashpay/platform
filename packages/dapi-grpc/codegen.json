@@ -1,0 +1,31 @@
+{
+  "recipe_repository": "dashpay/dash-selfhosted-image",
+  "recipe_revision": "e49e8bc9977f5f961a76ba1d1f7673c72173679f",
+  "recipe_files": {
+    "build.py": "17e260ff1e79e416d9addd7da32a7a04e10d7d4db07e3d919e34dac7e471dd49",
+    "CMakeLists.txt": "814bf56f8efd9d8ddd91e64201050ad8397071a03e21b59d6fbd83f365d137e4",
+    "lock.json": "f67f983d739633cf4632e9b30786a7928f1d526df969c4d4acea8804295232cc"
+  },
+  "toolchain": {
+    "schema": 1,
+    "versions": {
+      "protobuf": "3.18.1",
+      "grpc": "1.46.3",
+      "grpc_java": "1.42.1"
+    },
+    "sources": [
+      {
+        "url": "https://github.com/protocolbuffers/protobuf/releases/download/v3.18.1/protobuf-cpp-3.18.1.tar.gz",
+        "sha256": "6ee35eda3f79e49608d2ace8d866313fdec539d8bb14c6c54e8d2a16fa4e6780"
+      },
+      {
+        "url": "https://github.com/grpc/grpc/archive/refs/tags/v1.46.3.tar.gz",
+        "sha256": "d6cbf22cb5007af71b61c6be316a79397469c58c82a942552a62e708bce60964"
+      },
+      {
+        "url": "https://github.com/grpc/grpc-java/archive/refs/tags/v1.42.1.tar.gz",
+        "sha256": "33775a1ad05974bbba6ff97801cd9b326485b21fab91b08a4e1bc53e500e6326"
+      }
+    ]
+  }
+}

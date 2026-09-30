@@ -138,6 +138,9 @@ export default function setupLocalPresetTaskFactory(
                 });
                 config.set('core.rpc.users', rpcUsers);
 
+                config.set('core.tor.enabled', ctx.enableTor !== false);
+                config.set('core.tor.control.password', generateRandomString(12));
+
                 config.set('externalIp', hostDockerInternalIp);
 
                 const subnet = config.get('docker.network.subnet')

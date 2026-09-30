@@ -1,6 +1,7 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::RwLock;
@@ -117,22 +118,45 @@ pub struct SpvRuntime {
     /// Cancel token for the `run()` task when it was spawned via
     /// [`spawn_in_background`]. [`stop`] fires this token and joins
     /// on the client shutdown.
-    background_cancel: StdMutex<Option<CancellationToken>>,
-    /// JoinHandle for the background task spawned by [`spawn_in_background`].
-    /// [`stop`] joins it with a 15s timeout and aborts if it stalls.
-    task: StdMutex<Option<JoinHandle<()>>>,
+    background_cancel: Mutex<Option<CancellationToken>>,
     /// Per-field overrides for the devnet genesis header pre-seeded
     /// into SPV storage on [`start`]. Empty = use the `dashcore`
     /// built-in (the standard / porter devnet genesis). Only consulted
     /// when the client config's network is [`Network::Devnet`].
-    devnet_genesis: StdMutex<DevnetGenesisOverride>,
+    devnet_genesis: Mutex<DevnetGenesisOverride>,
     /// Optional terminal sync height. `None` (the default) syncs to
     /// chain tip exactly as before. `Some(h)` makes [`run`] halt once
     /// the confirmed filter height reaches `h`. See
     /// [`set_terminal_height`](Self::set_terminal_height).
-    terminal_height: StdMutex<Option<u32>>,
+    terminal_height: Mutex<Option<u32>>,
+    task: Mutex<Option<JoinHandle<()>>>,
+    /// Stops currently running. A stop takes the run-loop handle out of
+    /// `task` before joining it, so an empty `task` does not mean the old run
+    /// loop has exited; `start` refuses while this is non-zero.
+    stops_in_progress: AtomicUsize,
+    /// Serializes [`stop`](Self::stop): a stop running alongside another
+    /// would find no client and an empty `task` while the first is still
+    /// joining the run loop, and report success early.
+    stop_serial: tokio::sync::Mutex<()>,
     peer_tracker: Arc<PeerTracker>,
 }
+
+/// Counts one running [`SpvRuntime::stop`] for as long as it lives.
+struct StopInProgress<'a>(&'a AtomicUsize);
+
+impl<'a> StopInProgress<'a> {
+    fn begin(count: &'a AtomicUsize) -> Self {
+        count.fetch_add(1, Ordering::SeqCst);
+        Self(count)
+    }
+}
+
+impl Drop for StopInProgress<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// Classify a failure from the SPV acceptance-check path
 /// ([`SpvRuntime::broadcast_transaction_and_wait`]).
 ///
@@ -168,10 +192,12 @@ impl SpvRuntime {
             wallet_manager,
             client: RwLock::new(None),
             last_config: RwLock::new(None),
-            background_cancel: StdMutex::new(None),
-            task: StdMutex::new(None),
-            devnet_genesis: StdMutex::new(DevnetGenesisOverride::default()),
-            terminal_height: StdMutex::new(None),
+            background_cancel: Mutex::new(None),
+            devnet_genesis: Mutex::new(DevnetGenesisOverride::default()),
+            terminal_height: Mutex::new(None),
+            task: Mutex::new(None),
+            stops_in_progress: AtomicUsize::new(0),
+            stop_serial: tokio::sync::Mutex::new(()),
             peer_tracker: Arc::new(PeerTracker::default()),
         }
     }
@@ -211,7 +237,17 @@ impl SpvRuntime {
                 return Err(PlatformWalletError::SpvAlreadyRunning);
             }
         }
+        self.ensure_no_live_run_loop()?;
+        self.start_client(config).await
+    }
 
+    /// Build the client and install it, without the run-loop liveness check.
+    ///
+    /// [`start`](Self::start) runs that check first. [`spawn_in_background`](Self::spawn_in_background)
+    /// runs it before spawning and then calls this from inside the spawned
+    /// task, whose own handle is already parked in `task` and would otherwise
+    /// make the check refuse the start.
+    async fn start_client(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
@@ -288,6 +324,38 @@ impl SpvRuntime {
             "pre-seeded devnet genesis header into SPV storage"
         );
         Ok(())
+    }
+
+    /// Refuse a start while the run loop of an earlier stop may still be live.
+    ///
+    /// A stop that is still joining the run loop has already taken it out of
+    /// `task`; when that loop exits, `run` clears the client, which would be
+    /// the one started now. [`stop`](Self::stop) also re-parks a run loop that
+    /// survived its abort, and [`spawn_run_loop`](Self::spawn_run_loop) keeps a
+    /// parked loop instead of spawning one, so a client started over it would
+    /// never sync. A parked loop that has exited since is dropped and the
+    /// start goes ahead.
+    fn ensure_no_live_run_loop(&self) -> Result<(), PlatformWalletError> {
+        // Lock `task` before reading the counter. A stop counts itself before
+        // it takes the handle under this lock, so a start either still sees
+        // the handle or already sees the stop.
+        let mut task = self.task.lock().expect("spv task mutex poisoned");
+        if self.stops_in_progress.load(Ordering::SeqCst) > 0 {
+            return Err(PlatformWalletError::SpvError(
+                "an SPV stop is still in progress; wait for it before starting SPV".to_string(),
+            ));
+        }
+        match task.as_ref() {
+            Some(handle) if !handle.is_finished() => Err(PlatformWalletError::SpvError(
+                "the previous SPV run loop has not exited yet; stop SPV again before starting it"
+                    .to_string(),
+            )),
+            Some(_) => {
+                *task = None;
+                Ok(())
+            }
+            None => Ok(()),
+        }
     }
 
     /// Check whether the SPV client has been started.
@@ -503,8 +571,8 @@ impl SpvRuntime {
 
     /// Stop SPV sync gracefully. Unlocks the data dir safely.
     ///
-    /// **Every phase is bounded** — `stop` runs on the path
-    /// [`PlatformWalletManager::shutdown`](crate::manager::PlatformWalletManager::shutdown)
+    /// **Every phase after taking the client is bounded** — `stop` runs on the
+    /// path [`PlatformWalletManager::shutdown`](crate::manager::PlatformWalletManager::shutdown)
     /// and therefore the FFI's `destroy` must return through, so a wedged
     /// host callback has to surface as an error rather than hang teardown:
     /// the client stop is capped at [`SPV_CLIENT_STOP_BUDGET`], the run-loop
@@ -513,8 +581,15 @@ impl SpvRuntime {
     /// not detached, so a teardown retry re-joins it — and the error return
     /// keeps it out of a clean shutdown verdict.
     ///
-    /// Idempotent: a second call finds no client and re-joins whatever the
-    /// first call re-parked.
+    /// Taking the client is not bounded: it waits for the client's read
+    /// guards, and [`broadcast_transaction_and_wait`](Self::broadcast_transaction_and_wait)
+    /// holds one for its whole acceptance wait (the caller's timeout). That
+    /// keeps a broadcast on a live client and the data directory free once
+    /// `stop` returns, at the cost of a stop waiting for the broadcast.
+    ///
+    /// Idempotent. Stops run one at a time: a second call waits for the one
+    /// in flight, then finds no client and re-joins whatever that one
+    /// re-parked, so it never reports success while the old run loop is live.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
         if let Some(token) = self
             .background_cancel
@@ -525,30 +600,10 @@ impl SpvRuntime {
             token.cancel();
         }
 
-        let taken = {
-            let mut client = self.client.write().await;
-            client.take()
-        };
+        let _stopping = StopInProgress::begin(&self.stops_in_progress);
+        let _serial = self.stop_serial.lock().await;
 
-        let stop_result = match taken {
-            Some(c) => match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, c.stop()).await {
-                Ok(result) => result.map_err(|e| PlatformWalletError::SpvError(e.to_string())),
-                Err(_) => {
-                    // The client is dropped with the timed-out future. The
-                    // data-dir lock may outlive this call, which is strictly
-                    // better than never returning from `destroy`.
-                    tracing::warn!(
-                        "SPV client stop did not complete within {:?}; abandoning it",
-                        SPV_CLIENT_STOP_BUDGET
-                    );
-                    Err(PlatformWalletError::SpvError(format!(
-                        "SPV client stop did not complete within {SPV_CLIENT_STOP_BUDGET:?}"
-                    )))
-                }
-            },
-            None => Ok(()),
-        };
-        self.peer_tracker.clear();
+        let stop_result = self.stop_client().await;
 
         let handle = self.task.lock().expect("spv task mutex poisoned").take();
         let join_result = match handle {
@@ -574,13 +629,51 @@ impl SpvRuntime {
         stop_result.and(join_result)
     }
 
+    /// Take the client out and stop it within [`SPV_CLIENT_STOP_BUDGET`],
+    /// then clear the peer snapshot. Does not touch the run-loop handle.
+    ///
+    /// Shared by [`stop`](Self::stop) and the cancel arm of
+    /// [`spawn_in_background`](Self::spawn_in_background); the latter runs
+    /// inside the task `stop` joins, so it must neither join that task nor
+    /// wait on `stop_serial` (an outer `stop` holding it would then wait for
+    /// the join to time out).
+    async fn stop_client(&self) -> Result<(), PlatformWalletError> {
+        let taken = {
+            let mut client = self.client.write().await;
+            client.take()
+        };
+
+        let stop_result = match taken {
+            Some(c) => match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, c.stop()).await {
+                Ok(result) => result.map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+                Err(_) => {
+                    // The client is dropped with the timed-out future. The
+                    // data-dir lock may outlive this call, which is strictly
+                    // better than never returning from `destroy`.
+                    tracing::warn!(
+                        "SPV client stop did not complete within {:?}; abandoning it",
+                        SPV_CLIENT_STOP_BUDGET
+                    );
+                    Err(PlatformWalletError::SpvError(format!(
+                        "SPV client stop did not complete within {SPV_CLIENT_STOP_BUDGET:?}"
+                    )))
+                }
+            },
+            None => Ok(()),
+        };
+        self.peer_tracker.clear();
+        stop_result
+    }
+
     /// Spawn a background task that **starts** the SPV client with
     /// `config` and then drives its sync loop, returning immediately.
     ///
     /// The cancel token is stashed internally; calling [`stop`] (or
     /// [`cancel_background`]) fires it so the spawned task observes
-    /// shutdown. Replacing an already-running background task cancels
-    /// the previous one first.
+    /// shutdown. A previous background task's token is fired first, but
+    /// the call is ignored (with a warning) while that task's run loop is
+    /// still live or a [`stop`] is in progress — the same refusal as
+    /// [`start`](Self::start).
     ///
     /// Unlike [`spawn_run_loop`](Self::spawn_run_loop), this folds
     /// [`start`](Self::start) into the spawned task. Callers that need
@@ -593,16 +686,26 @@ impl SpvRuntime {
         if let Some(prev) = cancel_guard.take() {
             prev.cancel();
         }
-        let cancel = CancellationToken::new();
-        *cancel_guard = Some(cancel.clone());
         drop(cancel_guard);
+
+        // Same refusal as `start`, checked here because the spawned task's
+        // own handle is parked in `task` by the time it calls `start_client`.
+        if let Err(e) = self.ensure_no_live_run_loop() {
+            tracing::warn!(error = %e, "spawn_in_background refused; ignoring");
+            return;
+        }
+        let cancel = CancellationToken::new();
+        *self.background_cancel.lock().expect("bg_cancel poisoned") = Some(cancel.clone());
 
         let this = Arc::clone(self);
         let run_this = Arc::clone(&this);
         let handle = tokio::spawn(async move {
             tokio::select! {
                 res = async move {
-                    run_this.start(config).await?;
+                    if run_this.client.read().await.is_some() {
+                        return Err(PlatformWalletError::SpvAlreadyRunning);
+                    }
+                    run_this.start_client(config).await?;
                     run_this.run().await
                 } => {
                     if let Err(e) = res {
@@ -611,7 +714,7 @@ impl SpvRuntime {
                 }
                 _ = cancel.cancelled() => {
                     tracing::info!("SpvRuntime background cancel fired; stopping client");
-                    if let Err(e) = this.stop().await {
+                    if let Err(e) = this.stop_client().await {
                         tracing::warn!("SpvRuntime cancel stop error: {}", e);
                     }
                 }
@@ -818,6 +921,35 @@ impl SpvRuntime {
         let bh = block_headers.read().await;
         let tip = BlockHeaderStorage::get_tip(&*bh).await?;
         Some(tip.header().time)
+    }
+
+    /// Hash of the stored header at `height`.
+    ///
+    /// Returns `None` if the SPV client isn't running or the header store
+    /// does not hold that height (below the sync start, above the tip, or
+    /// unreadable).
+    pub(crate) async fn header_hash_at(
+        &self,
+        height: u32,
+    ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
+        use crate::wallet::asset_lock::sync::locate::HeaderLookup;
+        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
+
+        let client_guard = self.client.read().await;
+        let Some(client) = client_guard.as_ref() else {
+            return HeaderLookup::Unreadable("SPV client not running".to_string());
+        };
+        let storage_arc = client.storage();
+        let storage = storage_arc.lock().await;
+        let block_headers = StorageManager::block_headers(&*storage);
+        drop(storage);
+        let bh = block_headers.read().await;
+        match BlockHeaderStorage::get_header(&*bh, height).await {
+            Ok(Some(header)) => HeaderLookup::Found(*header.hash()),
+            // The store is readable and the chain has nothing there.
+            Ok(None) => HeaderLookup::Absent,
+            Err(e) => HeaderLookup::Unreadable(e.to_string()),
+        }
     }
 
     /// Clear all persisted SPV storage (headers, filters, state).
@@ -1085,8 +1217,177 @@ mod tests {
 
     use super::{classify_spv_send_error, SpvRuntime};
     use crate::broadcaster::BroadcastError;
+    use crate::error::PlatformWalletError;
     use crate::events::PlatformEventManager;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
+    use dash_spv::ClientConfig;
+
+    fn unstarted_runtime() -> SpvRuntime {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])))
+    }
+
+    /// A stop that could not join its run loop leaves it parked. A start
+    /// issued while that loop is live must fail instead of starting a client
+    /// that `spawn_run_loop` would give no run loop.
+    #[tokio::test]
+    async fn should_refuse_a_start_while_a_parked_run_loop_is_live() {
+        let runtime = unstarted_runtime();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let parked = tokio::spawn(async move {
+            let _ = release_rx.await;
+        });
+        *runtime.task.lock().expect("spv task mutex poisoned") = Some(parked);
+
+        let result = runtime.start(ClientConfig::default()).await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::SpvError(_))),
+            "a start over a live parked run loop must fail, got {result:?}"
+        );
+        assert!(!runtime.is_started(), "no client may be started");
+        assert!(
+            runtime
+                .task
+                .lock()
+                .expect("spv task mutex poisoned")
+                .is_some(),
+            "the live run loop must stay parked for a later stop to join"
+        );
+        let _ = release_tx.send(());
+    }
+
+    /// A stop that is joining the run loop has taken it out of `task`. A start
+    /// in that window must fail: when the old loop exits, `run` clears the
+    /// client, which would be the newly started one.
+    #[tokio::test]
+    async fn should_refuse_a_start_while_a_stop_is_joining_the_run_loop() {
+        let runtime = Arc::new(unstarted_runtime());
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let run_loop = tokio::spawn(async move {
+            let _ = release_rx.await;
+        });
+        *runtime.task.lock().expect("spv task mutex poisoned") = Some(run_loop);
+
+        let stopping = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move { runtime.stop().await })
+        };
+        // The stop takes the handle out of `task` before it joins it.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while runtime
+                .task
+                .lock()
+                .expect("spv task mutex poisoned")
+                .is_some()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the stop should take the run-loop handle promptly");
+
+        let result = runtime.start(ClientConfig::default()).await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::SpvError(_))),
+            "a start during a stop must fail, got {result:?}"
+        );
+        assert!(!runtime.is_started(), "no client may be started");
+
+        release_tx
+            .send(())
+            .expect("the run loop is still waiting to be released");
+        stopping
+            .await
+            .expect("the stop task completes")
+            .expect("the released run loop exits cleanly");
+        assert!(
+            runtime.ensure_no_live_run_loop().is_ok(),
+            "a finished stop must not block the next start"
+        );
+    }
+
+    /// A second stop issued while the first is still joining the run loop
+    /// must not report success before that loop has exited.
+    #[tokio::test]
+    async fn should_not_finish_a_second_stop_while_the_first_is_joining() {
+        let runtime = Arc::new(unstarted_runtime());
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let run_loop = tokio::spawn(async move {
+            let _ = release_rx.await;
+        });
+        *runtime.task.lock().expect("spv task mutex poisoned") = Some(run_loop);
+
+        let first = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move { runtime.stop().await })
+        };
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while runtime
+                .task
+                .lock()
+                .expect("spv task mutex poisoned")
+                .is_some()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the first stop should take the run-loop handle promptly");
+
+        let second = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move { runtime.stop().await })
+        };
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !second.is_finished(),
+            "a second stop must wait while the first is still joining the run loop"
+        );
+
+        release_tx
+            .send(())
+            .expect("the run loop is still waiting to be released");
+        first
+            .await
+            .expect("the first stop task completes")
+            .expect("the released run loop exits cleanly");
+        second
+            .await
+            .expect("the second stop task completes")
+            .expect("the second stop finds nothing left to stop");
+    }
+
+    /// Once the parked run loop has exited, the next start drops it and
+    /// goes ahead.
+    #[tokio::test]
+    async fn should_drop_a_parked_run_loop_that_has_exited() {
+        let runtime = unstarted_runtime();
+        let exited = tokio::spawn(async {});
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !exited.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("an empty task should finish promptly");
+        *runtime.task.lock().expect("spv task mutex poisoned") = Some(exited);
+
+        assert!(runtime.ensure_no_live_run_loop().is_ok());
+        assert!(
+            runtime
+                .task
+                .lock()
+                .expect("spv task mutex poisoned")
+                .is_none(),
+            "an exited run loop must be dropped"
+        );
+    }
 
     /// A minimal valid transaction — the unstarted-client arm never
     /// inspects it.

@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -17,6 +17,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
     Encode,
     Decode,
     Default,
+    DecodeUntrusted,
 )]
 pub enum StateTransitionType {
     #[default]
@@ -41,6 +42,11 @@ pub enum StateTransitionType {
     ShieldFromAssetLock = 18,
     ShieldedWithdrawal = 19,
     IdentityCreateFromShieldedPool = 20,
+    ShieldFromIdentity = 21,
+    IdentityTopUpFromShieldedPool = 22,
+    IdentityKeyLimitsUpdate = 23,
+    ContractUserModeration = 24,
+    ContractFeeClaim = 25,
 }
 
 impl std::fmt::Display for StateTransitionType {
@@ -123,6 +129,23 @@ mod tests {
                 StateTransitionType::IdentityCreateFromShieldedPool,
                 "IdentityCreateFromShieldedPool",
             ),
+            (
+                StateTransitionType::ShieldFromIdentity,
+                "ShieldFromIdentity",
+            ),
+            (
+                StateTransitionType::IdentityTopUpFromShieldedPool,
+                "IdentityTopUpFromShieldedPool",
+            ),
+            (
+                StateTransitionType::IdentityKeyLimitsUpdate,
+                "IdentityKeyLimitsUpdate",
+            ),
+            (
+                StateTransitionType::ContractUserModeration,
+                "ContractUserModeration",
+            ),
+            (StateTransitionType::ContractFeeClaim, "ContractFeeClaim"),
         ];
         for (variant, expected) in cases {
             assert_eq!(
@@ -158,6 +181,11 @@ mod tests {
             (18, StateTransitionType::ShieldFromAssetLock),
             (19, StateTransitionType::ShieldedWithdrawal),
             (20, StateTransitionType::IdentityCreateFromShieldedPool),
+            (21, StateTransitionType::ShieldFromIdentity),
+            (22, StateTransitionType::IdentityTopUpFromShieldedPool),
+            (23, StateTransitionType::IdentityKeyLimitsUpdate),
+            (24, StateTransitionType::ContractUserModeration),
+            (25, StateTransitionType::ContractFeeClaim),
         ];
         for (val, expected) in pairs {
             let result = StateTransitionType::try_from(val).unwrap();
@@ -167,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_invalid() {
-        assert!(StateTransitionType::try_from(21u8).is_err());
+        assert!(StateTransitionType::try_from(26u8).is_err());
         assert!(StateTransitionType::try_from(255u8).is_err());
     }
 
@@ -195,6 +223,11 @@ mod tests {
             StateTransitionType::ShieldFromAssetLock,
             StateTransitionType::ShieldedWithdrawal,
             StateTransitionType::IdentityCreateFromShieldedPool,
+            StateTransitionType::ShieldFromIdentity,
+            StateTransitionType::IdentityTopUpFromShieldedPool,
+            StateTransitionType::IdentityKeyLimitsUpdate,
+            StateTransitionType::ContractUserModeration,
+            StateTransitionType::ContractFeeClaim,
         ];
         for variant in all_variants {
             let val: u8 = variant.into();

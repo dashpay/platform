@@ -50,7 +50,6 @@
 
 use std::collections::BTreeMap;
 
-use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
@@ -63,13 +62,14 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
 
 use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
+use crate::BlockTime;
 
 use super::*;
 
@@ -465,7 +465,7 @@ impl IdentityWallet {
         // same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
         let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            identity.top_up_identity_with_signer(
+            identity.top_up_identity_with_signer_with_metadata(
                 &self.sdk,
                 proof.clone(),
                 &path,
@@ -488,7 +488,7 @@ impl IdentityWallet {
                     .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
-                    identity.top_up_identity_with_signer(
+                    identity.top_up_identity_with_signer_with_metadata(
                         &self.sdk,
                         chain_proof.clone(),
                         &path,
@@ -501,7 +501,7 @@ impl IdentityWallet {
             }
             Err(e) => (Err(e), proof.clone()),
         };
-        let new_balance = self
+        let (mut new_balance, metadata) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(
                 submit_result,
@@ -527,18 +527,11 @@ impl IdentityWallet {
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => {
                     if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                        let prev_balance = managed.identity.balance();
-                        managed.identity.set_balance(new_balance);
-                        if let Err(source) =
-                            self.persister.store(managed.snapshot_changeset().into())
-                        {
-                            managed.identity.set_balance(prev_balance);
-                            return Err(PlatformWalletError::PersistedAfterOnChainSuccess {
-                                identity: *identity_id,
-                                op: "top_up",
-                                source,
-                            });
-                        }
+                        new_balance = managed.persist_confirmed_balance(
+                            new_balance,
+                            BlockTime::from(metadata),
+                            &self.persister,
+                        );
                     }
                 }
                 None => {

@@ -8,9 +8,34 @@ use crate::state_transition_action::system::bump_identity_nonce_action::{
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 
 impl BumpIdentityNonceAction {
+    /// from borrowed shield from identity transition (the paid penalty for a failed
+    /// Orchard proof: the identity nonce is consumed and the fees are charged)
+    pub fn from_borrowed_shield_from_identity_transition(
+        value: &ShieldFromIdentityTransition,
+    ) -> Self {
+        match value {
+            ShieldFromIdentityTransition::V0(v0) => {
+                BumpIdentityNonceActionV0::from_borrowed_shield_from_identity(v0).into()
+            }
+        }
+    }
+
+    /// from borrowed identity key limits update (the paid penalty for a refused update)
+    pub fn from_borrowed_identity_key_limits_update_transition(
+        value: &IdentityKeyLimitsUpdateTransition,
+    ) -> Self {
+        match value {
+            IdentityKeyLimitsUpdateTransition::V0(v0) => {
+                BumpIdentityNonceActionV0::from_borrowed_identity_key_limits_update(v0).into()
+            }
+        }
+    }
+
     /// from identity update
     pub fn from_identity_update_transition(value: IdentityUpdateTransition) -> Self {
         match value {
@@ -55,6 +80,9 @@ impl BumpIdentityNonceAction {
             DataContractCreateTransition::V0(v0) => {
                 BumpIdentityNonceActionV0::from_contract_create(v0).into()
             }
+            DataContractCreateTransition::V1(v1) => {
+                BumpIdentityNonceActionV0::from_contract_create_v1(v1).into()
+            }
         }
     }
 
@@ -66,6 +94,9 @@ impl BumpIdentityNonceAction {
             DataContractCreateTransition::V0(v0) => {
                 BumpIdentityNonceActionV0::from_borrowed_contract_create(v0).into()
             }
+            DataContractCreateTransition::V1(v1) => {
+                BumpIdentityNonceActionV0::from_borrowed_contract_create_v1(v1).into()
+            }
         }
     }
 
@@ -74,6 +105,9 @@ impl BumpIdentityNonceAction {
         match value {
             DataContractCreateTransitionAction::V0(v0) => {
                 BumpIdentityNonceActionV0::from_contract_create_action(v0).into()
+            }
+            DataContractCreateTransitionAction::V1(v1) => {
+                BumpIdentityNonceActionV0::from_contract_create_action_v1(v1).into()
             }
         }
     }
@@ -85,6 +119,9 @@ impl BumpIdentityNonceAction {
         match value {
             DataContractCreateTransitionAction::V0(v0) => {
                 BumpIdentityNonceActionV0::from_borrowed_contract_create_action(v0).into()
+            }
+            DataContractCreateTransitionAction::V1(v1) => {
+                BumpIdentityNonceActionV0::from_borrowed_contract_create_action_v1(v1).into()
             }
         }
     }

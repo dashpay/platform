@@ -3,12 +3,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::property::{DocumentProperty, GeneratedFrom};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostSettersV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
@@ -43,6 +46,30 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
     /// The transient fields on the document type
     pub(in crate::data_contract) transient_fields: BTreeSet<String>,
+    /// The top-level properties frozen at document creation on a mutable
+    /// document type (`immutable` keyword, protocol version 14): a replace
+    /// that changes, adds or removes any of them is rejected. Always empty
+    /// when `documents_mutable` is false, where every property is already
+    /// immutable.
+    pub(in crate::data_contract) immutable_fields: BTreeSet<String>,
+    /// The subset of `immutable_fields` a replace may still set while the
+    /// stored document has no value for them (`immutableAllowSetting`
+    /// keyword, protocol version 14). Once present they are frozen like the
+    /// rest of the list. Every entry is also in `immutable_fields`.
+    pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
+    /// The dotted paths of the properties that declare `distinctFrom`
+    /// (protocol version 14), in schema order, so a document write finds
+    /// them without walking every property. Empty on every pre-PV14 contract.
+    pub(in crate::data_contract) distinct_from_fields: Vec<String>,
+    /// The dotted path of every property that declares `generatedFrom`
+    /// (protocol version 14) with its declaration, in schema order, so a
+    /// document write finds them without walking every property. Empty on
+    /// every pre-PV14 contract.
+    pub(in crate::data_contract) generated_from_fields: Vec<(String, GeneratedFrom)>,
+    /// On an indexOnly type, the top-level properties stored in every entry's
+    /// value after the row commitment (the `entryPayload` keyword), in name
+    /// order. Empty on every other type and on every pre-PV14 contract.
+    pub(in crate::data_contract) entry_payload: BTreeSet<String>,
     /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Should transfers of documents of this type be recorded in the document
@@ -109,9 +136,95 @@ pub struct DocumentTypeV2 {
     /// indexed, `$ownerId` recoverable from at least one index, immutable /
     /// non-transferable / no history, and per-index terminal typing.
     pub(in crate::data_contract) index_only: bool,
+    /// The fixed fees in credits this document type charges for actions on its documents
+    /// (`actionFees` keyword, protocol version 14), `None` when it declares none. Fixed when
+    /// the document type is published: a contract update cannot add, change or remove them.
+    pub(in crate::data_contract) action_fees: Option<DocumentActionFees>,
+    /// When true, the contract's moderators may delete documents of this type
+    /// with a `ContractUserModeration` transition (`moderatorAbilities.delete`,
+    /// protocol version 14), whatever `documents_can_be_deleted` says about the
+    /// documents' own owners. The parser (`apply_moderator_abilities`) only
+    /// admits it on a contract that declares moderation, and refuses it on a
+    /// type that keeps history, is indexOnly, restricts document creation or has
+    /// a contested index.
+    pub(in crate::data_contract) documents_can_be_deleted_by_moderators: bool,
+    /// For how many seconds after a document's last modification the moderators
+    /// may still delete it (`moderatorAbilities.deleteWithin`, protocol version
+    /// 14). `None` means no limit. Only ever `Some` beside
+    /// `documents_can_be_deleted_by_moderators`, on a type that requires the
+    /// clock: `$updatedAt`, or `$createdAt` when its documents never change
+    /// (`apply_moderator_abilities`).
+    pub(in crate::data_contract) documents_can_be_deleted_by_moderators_for: Option<u32>,
+    /// Whether a moderator's deletion of a document of this type leaves a removal record under
+    /// the contract (`moderatorAbilities.deleteKeepsRecord`, protocol version 14, `true` when
+    /// left out). Only ever `true` beside `documents_can_be_deleted_by_moderators`: a type
+    /// whose documents moderators can not delete keeps no records. Without records a deletion
+    /// can not be restored, and the type has no removal records tree.
+    pub(in crate::data_contract) moderator_deletions_keep_records: bool,
+    /// Whether the owner of a document of this type a moderator deletes is refunded its
+    /// storage (`moderatorAbilities.deleteRefundsOwner`, protocol version 14, `false` when left
+    /// out, the owner then forfeiting it). Only ever `true` beside
+    /// `documents_can_be_deleted_by_moderators`.
+    pub(in crate::data_contract) moderator_deletions_refund_owner: bool,
+    /// The top-level properties only the contract's moderators write
+    /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
+    /// changes them with a `ContractUserModeration` transition, and a document's
+    /// owner sets, changes or removes them in a create or a replace only when it
+    /// moderates the contract. Empty on types that list none. The parser
+    /// (`apply_moderator_abilities`) only admits properties that are declared,
+    /// optional, stored, not immutable, not references, not generated nor read by
+    /// a generated property, and not in a contested index, on a contract that
+    /// declares moderation and a type that is not indexOnly. A type listing any
+    /// keeps a `$revision` on its documents, even when their owners can not
+    /// replace them, so a moderator's change can be stored and an owner's replace
+    /// built on an earlier revision is refused.
+    pub(in crate::data_contract) moderator_changeable_fields: BTreeSet<String>,
+    /// The `refersTo` declaration whose value is the document's `$ownerId`,
+    /// the writer (`ownerRefersTo` keyword, protocol version 14), `None` when
+    /// the type declares none. Checked with the writer's id as the value, as a
+    /// property reference is checked with the property's value. Only an
+    /// `identity` or a `permanentDocument` lookup target, and only on a type
+    /// whose documents can be neither transferred nor traded, which the parser
+    /// (`parse_owner_reference` and generation 3) enforces.
+    pub(in crate::data_contract) owner_reference: Option<DocumentPropertyReferenceTarget>,
+    /// The `refersTo` declaration whose value is the document's `$creatorId`,
+    /// its creator (`creatorRefersTo` keyword, protocol version 14), `None`
+    /// when the type declares none. The counterpart of
+    /// [`Self::owner_reference`] for a type whose documents can change owner:
+    /// the same two targets, only on a type that records creator ids (a
+    /// transferable or tradeable type of a format-1 contract), where the
+    /// creator never changes.
+    pub(in crate::data_contract) creator_reference: Option<DocumentPropertyReferenceTarget>,
+    /// The rules every created or replaced document must meet, by name, in the
+    /// order they are checked (`propertyConstraints` keyword, protocol version
+    /// 14): each a condition on the document's properties, a comparison of two
+    /// integer expressions (which may read a `countOf` or `sumOf` total of a
+    /// type of the contract), of a string or an identifier property with
+    /// constants or with another property of its kind, an `in` or `notIn` list
+    /// of values, a `startsWith` or `endsWith`, a `contains`, a `present` or
+    /// `absent` test, or an `anyOf`, `allOf`, `not`, `ifThen` or `ifThenElse` of
+    /// conditions. Empty on document types that declare none. The parser
+    /// (`apply_property_constraints`) holds every property an operand reads to
+    /// be an integer or a boolean, every property compared with strings or
+    /// identifiers to be of that kind, every property a size measures or a
+    /// `contains` looks in to be of the type it reads, every system time or
+    /// height a rule reads to be one the type records, and every property a
+    /// rule reads to be neither transient nor inside a transient object.
+    pub(in crate::data_contract) property_constraints: BTreeMap<String, PropertyConstraint>,
+    /// How many seconds after its creation (`$createdAt`) the platform deletes each
+    /// document of the type (`ttl` keyword, protocol version 14), `None` when the
+    /// documents live until someone deletes them. The parser (`apply_documents_ttl`)
+    /// requires `$createdAt` and refuses it on a type that keeps history, is indexOnly or
+    /// has a contested index; the references that may point at such a type treat it as
+    /// deletable.
+    pub(in crate::data_contract) documents_ttl_seconds: Option<u32>,
 }
 
-impl DocumentTypeBasicMethods for DocumentTypeV2 {}
+impl DocumentTypeBasicMethods for DocumentTypeV2 {
+    fn has_moderator_changeable_fields(&self) -> bool {
+        !self.moderator_changeable_fields.is_empty()
+    }
+}
 
 impl DocumentTypeV0Methods for DocumentTypeV2 {}
 
@@ -141,8 +254,33 @@ impl crate::data_contract::document_type::accessors::DocumentTypeV1Setters for D
     }
 }
 
+/// The dotted paths of the properties that declare `distinctFrom`, in the
+/// flattened map's (schema) order.
+fn distinct_from_fields_of(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> Vec<String> {
+    flattened_properties
+        .iter()
+        .filter(|(_, property)| property.distinct_from.is_some())
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
+/// The properties that declare `generatedFrom`, with their declarations, in the
+/// flattened map's (schema) order.
+fn generated_from_fields_of(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> Vec<(String, GeneratedFrom)> {
+    flattened_properties
+        .iter()
+        .filter_map(|(path, property)| Some((path.clone(), property.generated_from.clone()?)))
+        .collect()
+}
+
 impl From<DocumentTypeV0> for DocumentTypeV2 {
     fn from(value: DocumentTypeV0) -> Self {
+        let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
+        let generated_from_fields = generated_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -154,6 +292,11 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             binary_paths: value.binary_paths,
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
+            immutable_fields: BTreeSet::new(),
+            immutable_fields_allow_setting: BTreeSet::new(),
+            distinct_from_fields,
+            generated_from_fields,
+            entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
             documents_keep_purchase_history: value.documents_keep_purchase_history,
@@ -177,12 +320,24 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_summable: None,
             range_summable: false,
             index_only: false,
+            action_fees: None,
+            documents_can_be_deleted_by_moderators: false,
+            documents_can_be_deleted_by_moderators_for: None,
+            moderator_deletions_keep_records: false,
+            moderator_deletions_refund_owner: false,
+            moderator_changeable_fields: BTreeSet::new(),
+            owner_reference: None,
+            creator_reference: None,
+            property_constraints: BTreeMap::new(),
+            documents_ttl_seconds: None,
         }
     }
 }
 
 impl From<DocumentTypeV1> for DocumentTypeV2 {
     fn from(value: DocumentTypeV1) -> Self {
+        let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
+        let generated_from_fields = generated_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -194,6 +349,11 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             binary_paths: value.binary_paths,
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
+            immutable_fields: BTreeSet::new(),
+            immutable_fields_allow_setting: BTreeSet::new(),
+            distinct_from_fields,
+            generated_from_fields,
+            entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
             documents_keep_purchase_history: value.documents_keep_purchase_history,
@@ -217,6 +377,16 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_summable: None,
             range_summable: false,
             index_only: false,
+            action_fees: None,
+            documents_can_be_deleted_by_moderators: false,
+            documents_can_be_deleted_by_moderators_for: None,
+            moderator_deletions_keep_records: false,
+            moderator_deletions_refund_owner: false,
+            moderator_changeable_fields: BTreeSet::new(),
+            owner_reference: None,
+            creator_reference: None,
+            property_constraints: BTreeMap::new(),
+            documents_ttl_seconds: None,
         }
     }
 }

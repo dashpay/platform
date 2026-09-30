@@ -1,6 +1,11 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
+
+use super::signing_key::AvailableSigningKey;
+
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
+
 
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
@@ -131,12 +136,17 @@ impl IdentityWallet {
     /// `IdentityManager`. The caller supplies the `Identity`, the
     /// signing key, and a `Signer` directly.
     ///
+    /// `contest_fund` is the most the registration pays into the contest a contested name
+    /// joins (the fund to join doubles once a contest holds 250 contenders and again for every
+    /// 50 more); `None` states the fund to join read just before the domain is submitted.
+    ///
     /// Returns the full domain name (e.g. "alice.dash").
     pub async fn register_name_with_signer<S: Signer<IdentityPublicKey>>(
         &self,
         identity: Identity,
         name: &str,
         identity_public_key: IdentityPublicKey,
+        contest_fund: Option<Credits>,
         signer: S,
     ) -> Result<String, dash_sdk::Error> {
         use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
@@ -147,6 +157,7 @@ impl IdentityWallet {
             identity_public_key,
             signer,
             preorder_callback: None,
+            contest_fund,
         };
 
         let result = self.sdk.register_dpns_name(input).await?;
@@ -160,6 +171,9 @@ impl IdentityWallet {
     ///
     /// * `identity_id` - The identity to register the name for.
     /// * `name` - The desired username label (e.g., "alice").
+    /// * `contest_fund` - The most the registration pays into the contest a
+    ///   contested name joins; `None` states the fund to join read just
+    ///   before the domain is submitted.
     /// * `signer` - External `Signer<IdentityPublicKey>` for the
     ///   document state-transition signature — the architecturally
     ///   correct path per `swift-sdk/CLAUDE.md`.
@@ -177,6 +191,7 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
         name: &str,
+        contest_fund: Option<Credits>,
         signer: &S,
     ) -> Result<String, PlatformWalletError>
     where
@@ -206,6 +221,7 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            drop(wm);
             // DPNS name registration writes a document state transition,
             // which DPP requires to be signed by a HIGH-or-stricter
             // authentication key. MASTER is intentionally excluded —
@@ -214,12 +230,13 @@ impl IdentityWallet {
             // rejected by the protocol on document-side state
             // transitions.
             let key = identity
-                .get_first_public_key_matching(
+                .available_signing_key(
+                    signer,
                     Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
+                    &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
                     false,
-                )
+                )?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
                         "No HIGH or CRITICAL authentication key found on identity \
@@ -241,6 +258,7 @@ impl IdentityWallet {
             // over ownership / wrap in an Arc per call.
             signer: SignerRef(signer),
             preorder_callback: None,
+            contest_fund,
         };
 
         let result = self.sdk.register_dpns_name(input).await.map_err(|e| {

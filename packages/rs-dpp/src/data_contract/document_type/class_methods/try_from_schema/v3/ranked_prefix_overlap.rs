@@ -283,9 +283,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -309,6 +311,7 @@ mod tests {
             range_seconds: 3_600,
             step_seconds: 3_600,
             phase_seconds: 0,
+            ttl_seconds: None,
         }
     }
 

@@ -18,10 +18,14 @@ pub mod identity_scan_state;
 pub mod merge;
 pub mod persistence_capabilities;
 pub mod platform_address_sync_start_state;
+#[cfg(any(feature = "bls", feature = "eddsa"))]
+pub mod provider_key_account;
 #[cfg(feature = "serde")]
 pub mod serde_adapters;
 #[cfg(feature = "shielded")]
 pub mod shielded_changeset;
+#[cfg(not(feature = "shielded"))]
+pub mod shielded_changeset_disabled;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync_start_state;
 pub mod traits;
@@ -49,6 +53,8 @@ pub use persistence_capabilities::{PersistenceCapabilities, PERSISTENCE_CAPABILI
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
 #[cfg(feature = "shielded")]
 pub use shielded_changeset::ShieldedChangeSet;
+#[cfg(not(feature = "shielded"))]
+pub use shielded_changeset_disabled::ShieldedChangeSet;
 #[cfg(feature = "shielded")]
 pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 pub use traits::{

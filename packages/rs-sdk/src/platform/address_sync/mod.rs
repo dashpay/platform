@@ -1181,7 +1181,7 @@ fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error>
         .with_limit::<{ 256 * 1024 * 1024 }>();
 
     let (grovedb_proof, _): (drive::grovedb::operations::proof::GroveDBProof, usize) =
-        dpp::bincode::decode_from_slice(&proof.grovedb_proof, config).map_err(|e| {
+        dpp::bincode::decode_from_slice_untrusted(&proof.grovedb_proof, config).map_err(|e| {
             Error::Protocol(dpp::ProtocolError::DecodingError(format!(
                 "Failed to decode GroveDB proof: {}",
                 e

@@ -1,7 +1,7 @@
 mod from_document;
 pub mod v0_methods;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[cfg(feature = "value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -47,7 +47,7 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 // `json_safe_fields`:
 // - Auto-injects `crate::serialization::serde_bytes` on `entropy: [u8; 32]`
 //   → base64 string in JSON HR, raw bytes in non-HR.
@@ -91,10 +91,15 @@ pub struct DocumentCreateTransitionV0 {
             with = "crate::serialization::json::safe_integer::json_safe_option_string_u64_tuple"
         )
     )]
-    /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
-    /// aside that will be used by voters to vote)
-    /// This is a map of index names to the amount we want to prefund them for
-    /// Since index conflict resolution is not a common feature most often nothing should be added here.
+    /// The fund a contested document puts into the contest it opens or joins, which pays the
+    /// masternode votes that decide it: the name of the contested index, and an amount in credits.
+    /// `None` for a document that joins no contest, which is most documents.
+    ///
+    /// From protocol version 14 the amount is the most the contender is willing to pay. It is
+    /// charged the fund to join the contest (the contest's fund, doubled once the contest holds
+    /// 250 contenders and again for every 50 more), what it stated beyond that stays with it, and
+    /// one stating less is refused. The identity must hold the amount it states. Before 14 the
+    /// amount is exactly the contest's fund, and is what the contender pays.
     pub prefunded_voting_balance: Option<(String, Credits)>,
 }
 
@@ -130,6 +135,7 @@ impl<'de> Deserialize<'de> for DocumentCreateTransitionV0 {
             "$type",
             "$dataContractId",
             "$tokenPaymentInfo",
+            "$actionFeeAgreement",
         ];
 
         let mut map: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;
@@ -301,7 +307,12 @@ impl DocumentFromCreateTransitionV0 for Document {
     where
         Self: Sized,
     {
-        let DocumentCreateTransitionV0 { base, data, .. } = v0;
+        let DocumentCreateTransitionV0 { base, mut data, .. } = v0;
+
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
+        document_type.fill_generated_properties(&mut data, platform_version)?;
 
         let requires_created_at = document_type
             .required_fields()
@@ -389,6 +400,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -416,7 +429,11 @@ impl DocumentFromCreateTransitionV0 for Document {
             .required_fields()
             .contains(document::property_names::CREATED_AT);
 
-        let properties = data.clone();
+        let mut properties = data.clone();
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
+        document_type.fill_generated_properties(&mut properties, platform_version)?;
 
         let creator_id = if document_type.should_use_creator_id(
             contract.system_version_type(),
@@ -500,6 +517,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

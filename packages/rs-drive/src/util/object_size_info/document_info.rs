@@ -68,6 +68,31 @@ pub trait DocumentInfoV0Methods {
     fn get_document_id_as_slice(&self) -> Option<&[u8]>;
 }
 
+impl DocumentInfo<'_> {
+    /// The same document without storage flags: how the document of a type declaring a
+    /// `ttl` is written, since such a document refunds nothing. A worst-case size passes
+    /// through unchanged.
+    pub fn without_storage_flags(self) -> Self {
+        match self {
+            DocumentInfo::DocumentOwnedInfo((document, _)) => {
+                DocumentInfo::DocumentOwnedInfo((document, None))
+            }
+            DocumentInfo::DocumentRefInfo((document, _)) => {
+                DocumentInfo::DocumentRefInfo((document, None))
+            }
+            DocumentInfo::DocumentRefAndSerialization((document, serialization, _)) => {
+                DocumentInfo::DocumentRefAndSerialization((document, serialization, None))
+            }
+            DocumentInfo::DocumentAndSerialization((document, serialization, _)) => {
+                DocumentInfo::DocumentAndSerialization((document, serialization, None))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(size) => {
+                DocumentInfo::DocumentEstimatedAverageSize(size)
+            }
+        }
+    }
+}
+
 impl DocumentInfoV0Methods for DocumentInfo<'_> {
     /// Returns true if self is a document with serialization.
     fn is_document_and_serialization(&self) -> bool {
@@ -115,8 +140,8 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         match key_path {
-            "$ownerId" | "$id" | "$creatorId" => Ok(DEFAULT_HASH_SIZE_U16),
-            "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(U64_SIZE_U16),
+            "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => Ok(DEFAULT_HASH_SIZE_U16),
+            "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => Ok(U64_SIZE_U16),
             "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
                 Ok(U64_SIZE_U16)
             }
@@ -184,13 +209,15 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                     DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
                 ))?;
                 match key_path {
-                    "$ownerId" | "$id" | "$creatorId" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
-                        unique_id: document_type
-                            .unique_id_for_document_field(index_level, base_event)
-                            .to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U8,
-                    }))),
-                    "$createdAt" | "$updatedAt" | "$transferredAt" => {
+                    "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
+                        Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                            unique_id: document_type
+                                .unique_id_for_document_field(index_level, base_event)
+                                .to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        })))
+                    }
+                    "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
                         Ok(Some(KeySize(KeyInfo::MaxKeySize {
                             unique_id: document_type
                                 .unique_id_for_document_field(index_level, base_event)
@@ -319,6 +346,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 

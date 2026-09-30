@@ -1,0 +1,27 @@
+{
+  "$formatVersion": "1",
+  "id": "6Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVe",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "body": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 63
+        },
+        "code": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 32
+        }
+      },
+      "required": ["body"],
+      "transient": ["code"],
+      "additionalProperties": false
+    }
+  }
+}

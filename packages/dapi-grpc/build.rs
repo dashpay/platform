@@ -86,10 +86,19 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 56] = [
+    const VERSIONED_REQUESTS: [&str; 66] = [
+        "GetContractModerationStatusRequest",
+        "GetContractModerationEntriesRequest",
+        "GetContractDocumentRemovalsRequest",
+        "GetContractFeePotsRequest",
+        "GetContractGroupInfoRequest",
+        "GetContractGroupMembersRequest",
+        "GetContractGroupsForContractRequest",
         "GetDataContractHistoryRequest",
+        "GetDataContractsLatestVersionsRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
+        "GetDataContractsByRangeRequest",
         "GetDocumentHistoryRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
@@ -97,6 +106,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentitiesBalancesRequest",
         "GetIdentityNonceRequest",
         "GetIdentityContractNonceRequest",
+        "GetIdentityKeysRemainingBudgetsRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
         "GetIdentityByNonUniquePublicKeyHashRequest",
@@ -157,8 +167,16 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 54] = [
+    const VERSIONED_RESPONSES: [&str; 63] = [
+        "GetContractModerationStatusResponse",
+        "GetContractModerationEntriesResponse",
+        "GetContractDocumentRemovalsResponse",
+        "GetContractFeePotsResponse",
+        "GetContractGroupInfoResponse",
+        "GetContractGroupMembersResponse",
+        "GetContractGroupsForContractResponse",
         "GetDataContractHistoryResponse",
+        "GetDataContractsLatestVersionsResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
         "GetDocumentHistoryResponse",
@@ -170,6 +188,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityBalanceResponse",
         "GetIdentityNonceResponse",
         "GetIdentityContractNonceResponse",
+        "GetIdentityKeysRemainingBudgetsResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
@@ -346,6 +365,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         // vectors captured while the operand still rode `value` carry no
         // `time_range` key.
         .field_attribute("GetDocumentsRequest.WhereClause.time_range", SERDE_DEFAULT)
+        .field_attribute(
+            "GetDocumentsRequest.WhereClause.integer_range",
+            SERDE_DEFAULT,
+        )
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)

@@ -1,0 +1,8 @@
+# Generated from dashpay/stale_prs_are_bad policies/platform.json; do not edit by hand.
+#
+# Review routing for this repository is controlled by PR Hygiene:
+#   https://github.com/dashpay/stale_prs_are_bad/blob/master/policies/platform.json
+#
+# This file has no rules on purpose. Reviewers are requested by the policy
+# once the bots have reported and the author has self-reviewed, not by
+# GitHub the moment a pull request is opened.

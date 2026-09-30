@@ -1,43 +1,65 @@
-//! Per-area SQLite writers + readers.
+//! Per-area SQLite writers + readers, one submodule per table or cluster.
 //!
-//! Each submodule owns one table or a small cluster (e.g. `accounts`
-//! owns the registration + address-pool tables). Writers take a
-//! `&rusqlite::Transaction` and an already resolved sub-changeset;
-//! readers take `&rusqlite::Connection`.
-//!
-//! Encoding policy: scalars that fan out to per-row indexes go into
-//! typed SQLite columns (heights, hashes, outpoints, flags). The
-//! `_blob` columns carry the full sub-changeset entry encoded with
-//! `bincode::serde::encode_to_vec` against the serde-derived types in
-//! `platform-wallet` — see [`blob::encode`] / [`blob::decode`].
-//! Schema evolution is gated by the refinery migration version on
-//! the database; individual blobs have no inline revision tag.
+//! Encoding policy: scalars that fan out to per-row indexes go into typed
+//! columns (heights, hashes, outpoints, flags); `_blob` columns carry the
+//! full sub-changeset entry via [`blob::encode`] / [`blob::decode`]. Schema
+//! evolution is gated by the refinery migration version — blobs carry no
+//! inline revision tag.
 
 pub mod accounts;
 pub mod asset_locks;
 pub mod blob;
 pub mod contacts;
+pub mod core_pool;
 pub mod core_state;
 pub mod dashpay;
 pub mod dpns_name_states;
 pub mod identities;
 pub mod identity_keys;
+pub mod identity_scan_states;
 pub mod invitations;
 pub mod pending_contact_crypto;
 pub mod platform_addrs;
+#[cfg(feature = "shielded")]
+pub mod shielded_viewing_keys;
 pub mod token_balances;
 pub mod tracked_masternodes;
-pub mod wallet_meta;
+pub mod versions;
+pub mod wallets;
 
-/// Defensive check that every `identity_id` in `touched` exists in
-/// `identities` and belongs to `wallet_id` (or has NULL wallet_id when
-/// scope is the all-zero sentinel). Used by identity-owned writers
-/// (`dashpay`, `token_balances`) to reject mis-attributed callers; the
-/// check runs in every build.
+/// Map a `WalletId` to a nullable `wallet_id` column: the all-zero
+/// sentinel becomes NULL, the storage spelling of "owned by no wallet".
 ///
-/// Returns [`WalletStorageError::WalletIdMismatch`] for the first
-/// offending row found. Rows that don't exist in `identities` aren't
-/// flagged here — the FK on the child table will reject the write.
+/// Shared by `identities` and `identity_keys` so both spell the unowned
+/// scope the same way — a raw `wallet_id.as_slice()` would store 32 zero
+/// bytes, a value that looks like a wallet id, satisfies nothing, and
+/// silently fails to match the NULL the readers and guards look for.
+pub(crate) fn wallet_id_to_param(
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+) -> Option<&[u8]> {
+    if wallet_id.iter().all(|b| *b == 0) {
+        None
+    } else {
+        Some(wallet_id.as_slice())
+    }
+}
+
+pub(crate) fn id32(
+    column: &'static str,
+    bytes: &[u8],
+) -> Result<[u8; 32], crate::sqlite::error::WalletStorageError> {
+    <[u8; 32]>::try_from(bytes).map_err(|_| {
+        crate::sqlite::error::WalletStorageError::InvalidWalletIdLength {
+            column,
+            actual: bytes.len(),
+        }
+    })
+}
+
+/// Reject any `identity_id` in `touched` whose `identities` row does not
+/// belong to `wallet_id` (NULL wallet_id matches the all-zero sentinel),
+/// returning [`WalletStorageError::WalletIdMismatch`] on the first offender.
+/// Absent rows are left to the child-table FK.
 pub(crate) fn assert_identities_belong_to_wallet(
     tx: &rusqlite::Transaction<'_>,
     wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
@@ -52,15 +74,11 @@ pub(crate) fn assert_identities_belong_to_wallet(
             .query_row(rusqlite::params![identity_id.as_slice()], |row| row.get(0))
             .optional()?;
         let Some(found_wallet_id) = row else {
-            // Row absent — FK on the child table will reject the
-            // upcoming write with a clearer error than guessing.
+            // Row absent — let the child-table FK reject the write.
             continue;
         };
-        // INTENTIONAL: the `Some(found)` arms below zero-pad a stored
-        // wallet_id whose width is not 32 into the diagnostic `found` field.
-        // This is diagnostic-only and cosmetic — a malformed stored width
-        // already triggers a mismatch error; reporting it zero-padded carries
-        // no security impact, so a typed length error is not warranted.
+        // INTENTIONAL: arms below zero-pad a non-32-byte stored wallet_id into
+        // the diagnostic `found` field — cosmetic only, a mismatch still errors.
         match (scope_is_sentinel, found_wallet_id) {
             (true, None) => {} // sentinel scope matches NULL parenting
             (true, Some(found)) => {
@@ -94,4 +112,22 @@ pub(crate) fn assert_identities_belong_to_wallet(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::id32;
+    use crate::sqlite::error::WalletStorageError;
+
+    #[test]
+    fn id32_reports_column_and_actual_length() {
+        let error = id32("example.owner_id", &[0u8; 7]).unwrap_err();
+        assert!(matches!(
+            error,
+            WalletStorageError::InvalidWalletIdLength {
+                column: "example.owner_id",
+                actual: 7
+            }
+        ));
+    }
 }

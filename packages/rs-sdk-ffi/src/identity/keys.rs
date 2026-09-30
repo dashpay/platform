@@ -4,6 +4,7 @@ use crate::types::{IdentityHandle, IdentityPublicKeyHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dash_sdk::dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dash_sdk::dpp::prelude::Identity;
 
@@ -68,6 +69,13 @@ pub unsafe extern "C" fn dash_sdk_identity_get_signing_key_for_transition(
         }
     };
 
+    // A key whose expiry has passed the wall clock cannot sign any more (the block time
+    // trails the wall clock by seconds at most).
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or_default();
+
     // Search for keys matching the requirements, preferring lower security levels
     for security_level in required_security_levels.iter() {
         for purpose in required_purposes.iter() {
@@ -78,12 +86,19 @@ pub unsafe extern "C" fn dash_sdk_identity_get_signing_key_for_transition(
                     key.purpose() == *purpose
                         && key.security_level() == *security_level
                         && key.disabled_at().is_none() // Only consider enabled keys
+                        && !key.is_expired_at(now_ms)
                 })
                 .collect();
 
             if !matching_keys.is_empty() {
-                // Return the first matching key found
-                let key = matching_keys[0].clone();
+                // A key without limits first: a key with a budget or an expiry is an
+                // application key, taken only when nothing else qualifies.
+                let key = matching_keys
+                    .iter()
+                    .find(|key| !key.has_limits())
+                    .copied()
+                    .unwrap_or(matching_keys[0])
+                    .clone();
                 let handle = Box::into_raw(Box::new(key)) as *mut IdentityPublicKeyHandle;
                 return DashSDKResult::success(handle as *mut std::os::raw::c_void);
             }

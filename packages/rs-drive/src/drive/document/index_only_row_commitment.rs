@@ -3,11 +3,13 @@
 //! document back into one logical row.
 
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::drive::document::encode_index_only_entry_payload_value;
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::drive::DriveError;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -23,13 +25,25 @@ use dpp::version::PlatformVersion;
 /// commitment below.
 pub const INDEX_ONLY_ROW_COMMITMENT_SIZE: u32 = 32;
 
+/// The value size fee estimation claims for one indexOnly entry item: the
+/// commitment plus 32 bytes of padding, because the estimation layers
+/// under-count each entry's chain (the serialized item envelope: enum tag,
+/// length prefix, flags option; plus the per-entry share of parent-tree
+/// aggregate bytes) and estimation must UPPER-bound the applied fee. The
+/// padding is per entry, so it scales with a time-range index's bucket
+/// fan-out. Sum-bearing entries add the 10-byte sum-item worst case on top.
+/// One definition for the entry-insert terminal, the preallocated-tree
+/// estimate and the delete-side commitment-probe estimate, so the three
+/// cannot drift.
+pub const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 = INDEX_ONLY_ROW_COMMITMENT_SIZE + 32;
+
 /// The **row commitment** stored as every indexOnly terminal item's payload:
 /// `hash_double(owner ‖ (name ‖ raw index bytes)* ‖ [$createdAt bytes])`
 /// over the document's PRESENT properties in sorted-name order. A required
 /// property must be present (an absence there is an internal error); an
-/// optional property — a skipIfAbsent index's trigger, the only kind of
-/// optional property the parser admits — simply contributes nothing when
-/// absent, its name included.
+/// optional property — a skip property of a skipIfAbsent index, the only
+/// kind of optional property the parser admits — simply contributes nothing
+/// when absent, its name included.
 ///
 /// This is what binds the independently stored index projections of one
 /// document back into one logical row: a delete recomputes the commitment
@@ -40,7 +54,7 @@ pub const INDEX_ONLY_ROW_COMMITMENT_SIZE: u32 = 32;
 /// document's projections" from "several documents' projections that
 /// happen to coexist". Committing the exact present-set extends that to
 /// absence games: a delete carrying a different absence pattern than the
-/// create (dropping the trigger, or inventing one) hashes differently and
+/// create (dropping a skip property, or inventing one) hashes differently and
 /// fails every probe, so a skipped index can neither be force-pruned nor
 /// left with an orphan entry.
 ///
@@ -87,13 +101,37 @@ pub fn index_only_row_commitment_with_preimage_size(
     property_names.sort();
 
     for property_name in property_names {
-        let Some(raw) = document.get_raw_for_document_type(
-            property_name,
-            document_type,
-            owner_id,
-            platform_version,
-        )?
-        else {
+        // An entry payload property is a value, not a key: it is committed
+        // through the payload encoding, which carries no 255-byte key cap
+        // (the parser bounds it by the field value limit instead).
+        let raw = if document_type
+            .entry_payload()
+            .contains(property_name.as_str())
+        {
+            match document.properties().get(property_name.as_str()) {
+                Some(value) => {
+                    let property = document_type
+                        .flattened_properties()
+                        .get(property_name)
+                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "an entryPayload property must be a property of its document type",
+                        )))?;
+                    Some(encode_index_only_entry_payload_value(
+                        &property.property_type,
+                        value,
+                    )?)
+                }
+                None => None,
+            }
+        } else {
+            document.get_raw_for_document_type(
+                property_name,
+                document_type,
+                owner_id,
+                platform_version,
+            )?
+        };
+        let Some(raw) = raw else {
             if document_type
                 .required_fields()
                 .contains(property_name.as_str())
@@ -103,7 +141,7 @@ pub fn index_only_row_commitment_with_preimage_size(
                      parser requires them and the transitions carry them",
                 )));
             }
-            // An optional property (a skipIfAbsent trigger) contributes
+            // An optional property (a skipIfAbsent skip property) contributes
             // nothing when absent — not even its name — so the commitment
             // pins the exact present-set.
             continue;

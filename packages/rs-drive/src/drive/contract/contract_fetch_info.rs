@@ -24,13 +24,22 @@ pub struct DataContractFetchInfo {
     /// These are the operations that are used to fetch a contract
     /// This is only used on epoch change
     pub(crate) cost: OperationCost,
-    /// The fee is updated every epoch based on operation costs
-    /// Except if protocol version has changed in which case all the cache is cleared
-    pub fee: Option<FeeResult>,
+    /// The fee of the read that built this entry, when it was built with an epoch, which a cache
+    /// hit bills again. A read's fee depends only on the fee schedule, and from protocol
+    /// version 14 the contract cache is cleared on the first block of every protocol change,
+    /// the only time the schedule can change. Entries are cached with and without a fee, so
+    /// callers bill the fee `Drive::get_contract_with_fetch_info_and_fee` returns, never this.
+    pub(crate) fee: Option<FeeResult>,
 }
 
 #[cfg(feature = "fixtures-and-mocks")]
 impl DataContractFetchInfo {
+    /// This should ONLY be used for tests: whether this entry carries the fee of the read that
+    /// built it. Never bill it.
+    pub fn has_fee_for_tests(&self) -> bool {
+        self.fee.is_some()
+    }
+
     /// This should ONLY be used for tests
     pub fn dpns_contract_fixture(protocol_version: u32) -> Self {
         let dpns = get_dpns_data_contract_fixture(None, 0, protocol_version);
@@ -72,6 +81,25 @@ impl DataContractFetchInfo {
 
         let contract = load_system_data_contract(
             data_contracts::SystemDataContract::Withdrawals,
+            platform_version,
+        )
+        .expect("to load system data contract");
+
+        DataContractFetchInfo {
+            contract,
+            storage_flags: None,
+            cost: OperationCost::with_seek_count(1), //Just so there's a cost
+            fee: Some(FeeResult::new_from_processing_fee(30000)),
+        }
+    }
+
+    /// This should ONLY be used for tests
+    pub fn moderation_charters_contract_fixture(protocol_version: u32) -> Self {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected to get version");
+
+        let contract = load_system_data_contract(
+            data_contracts::SystemDataContract::ModerationCharters,
             platform_version,
         )
         .expect("to load system data contract");

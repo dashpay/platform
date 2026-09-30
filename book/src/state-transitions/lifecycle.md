@@ -46,6 +46,15 @@ pub enum StateTransition {
     AddressFundsTransfer(AddressFundsTransferTransition),
     AddressFundingFromAssetLock(AddressFundingFromAssetLockTransition),
     AddressCreditWithdrawal(AddressCreditWithdrawalTransition),
+    Shield(ShieldTransition),
+    ShieldedTransfer(ShieldedTransferTransition),
+    Unshield(UnshieldTransition),
+    ShieldFromAssetLock(ShieldFromAssetLockTransition),
+    ShieldedWithdrawal(ShieldedWithdrawalTransition),
+    IdentityCreateFromShieldedPool(IdentityCreateFromShieldedPoolTransition),
+    ShieldFromIdentity(ShieldFromIdentityTransition),
+    IdentityTopUpFromShieldedPool(IdentityTopUpFromShieldedPoolTransition),
+    IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition),
 }
 ```
 
@@ -62,6 +71,7 @@ These variants fall into natural groups:
 - `IdentityUpdate` -- Add or disable public keys on an identity
 - `IdentityCreditWithdrawal` -- Withdraw credits back to the core chain
 - `IdentityCreditTransfer` -- Transfer credits between identities
+- `IdentityKeyLimitsUpdate` -- Raise the budget or extend the expiry of one of the identity's keys
 
 **Data contracts and documents:**
 - `DataContractCreate` -- Register a new data contract (schema)
@@ -75,6 +85,11 @@ These variants fall into natural groups:
 - `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`,
   `AddressFundingFromAssetLock`, `AddressCreditWithdrawal` -- Operations that use
   platform addresses instead of (or in addition to) identity-based authentication
+
+**Shielded pool:**
+- `Shield`, `ShieldedTransfer`, `Unshield`, `ShieldFromAssetLock`, `ShieldedWithdrawal`,
+  `IdentityCreateFromShieldedPool`, `ShieldFromIdentity`, `IdentityTopUpFromShieldedPool` --
+  Operations that move credits into, inside, and out of the shielded pool
 
 Each variant has its own numeric discriminant, defined in
 `packages/rs-dpp/src/state_transition/state_transition_types.rs`:
@@ -97,6 +112,15 @@ pub enum StateTransitionType {
     AddressFundsTransfer = 12,
     AddressFundingFromAssetLock = 13,
     AddressCreditWithdrawal = 14,
+    Shield = 15,
+    ShieldedTransfer = 16,
+    Unshield = 17,
+    ShieldFromAssetLock = 18,
+    ShieldedWithdrawal = 19,
+    IdentityCreateFromShieldedPool = 20,
+    ShieldFromIdentity = 21,
+    IdentityTopUpFromShieldedPool = 22,
+    IdentityKeyLimitsUpdate = 23,
 }
 ```
 

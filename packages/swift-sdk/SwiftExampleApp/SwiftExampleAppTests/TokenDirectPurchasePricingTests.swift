@@ -74,6 +74,44 @@ final class TokenDirectPurchasePricingTests: XCTestCase {
         XCTAssertEqual(parse(single("\(big)")), .singlePrice(big))
     }
 
+    /// DPP writes a `u64` above the JavaScript safe-integer ceiling
+    /// (2^53 - 1) as a decimal STRING, not a number. Reading only numbers
+    /// returned nil here, which the form reports as "not for direct sale":
+    /// an expensive token looked unpurchasable.
+    func test_singlePriceEncodedAsString_parses() {
+        let big: UInt64 = 9_007_199_254_740_992  // 2^53, one past the ceiling
+        XCTAssertEqual(parse(single("\"\(big)\"")), .singlePrice(big))
+        XCTAssertEqual(parse(single("\"100\"")), .singlePrice(100))
+        XCTAssertEqual(parse(single("\"\(UInt64.max)\"")), .singlePrice(UInt64.max))
+    }
+
+    /// The same for a tier schedule, where either half of a tier can cross
+    /// the ceiling on its own.
+    func test_setPricesTiersEncodedAsStrings_parse() {
+        let bigAmount: UInt64 = 9_007_199_254_740_992
+        let bigPrice: UInt64 = 18_014_398_509_481_984  // 2^54
+        let json = #"{"\#(tokenId)":{"type":"set_prices","prices":"#
+            + #"[{"amount":1,"price":"\#(bigPrice)"},"#
+            + #"{"amount":"\#(bigAmount)","price":50}]}}"#
+        XCTAssertEqual(
+            parse(json),
+            .setPrices([
+                .init(amount: 1, price: bigPrice),
+                .init(amount: bigAmount, price: 50),
+            ])
+        )
+    }
+
+    /// A string that is not a plain decimal is still no price, rather than
+    /// being coerced into one.
+    func test_unparseableStringPrice_meansNoPrice() {
+        XCTAssertNil(parse(single("\"\"")))
+        XCTAssertNil(parse(single("\"-1\"")))
+        XCTAssertNil(parse(single("\"1.5\"")))
+        XCTAssertNil(parse(single("\"free\"")))
+        XCTAssertNil(parse(single("true")))
+    }
+
     // MARK: - Cost resolution
 
     func test_singlePrice_costIsPriceTimesAmount() {

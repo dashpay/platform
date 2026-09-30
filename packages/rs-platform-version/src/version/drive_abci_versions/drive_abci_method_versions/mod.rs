@@ -139,6 +139,9 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub update_checkpoints: OptionalFeatureVersion,
     pub record_shielded_pool_anchor: OptionalFeatureVersion,
     pub prune_shielded_pool_anchors: OptionalFeatureVersion,
+    /// Deletes documents whose type declares a `ttl` once it has passed, after the block's
+    /// state transitions. `None` before protocol version 14, where the keyword does not parse.
+    pub expire_documents: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -168,6 +171,10 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     /// limit's daily maximum; exists from protocol version 14.
     pub record_credit_inflows_for_withdrawals: OptionalFeatureVersion,
     pub record_total_credits_history_for_withdrawals: OptionalFeatureVersion,
+    /// Whether the next block has withdrawal work waiting (queued transactions to sign or expired
+    /// documents to re-queue); drives the `propose_next_block_immediately` hint to Tenderdash.
+    /// Not consensus: it never touches the state or the app hash.
+    pub has_pending_withdrawal_work: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

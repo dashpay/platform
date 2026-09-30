@@ -1,8 +1,12 @@
-use bincode::{Decode, Encode};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, Default, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -17,10 +21,10 @@ pub enum YesNoAbstainVoteChoice {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for YesNoAbstainVoteChoice {}
+impl JsonConvertible for YesNoAbstainVoteChoice {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for YesNoAbstainVoteChoice {}
+impl ValueConvertible for YesNoAbstainVoteChoice {}
 
 #[cfg(all(
     test,

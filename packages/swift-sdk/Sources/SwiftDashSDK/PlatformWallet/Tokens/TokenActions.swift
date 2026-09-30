@@ -10,6 +10,8 @@ import DashSDKFFI
 public enum TokenDistributionType: UInt8, Equatable, CaseIterable, Sendable {
     case preProgrammed = 0
     case perpetual = 1
+    /// A fixed amount every identity may claim exactly once.
+    case oncePerIdentity = 2
 }
 
 // MARK: - Group action mode

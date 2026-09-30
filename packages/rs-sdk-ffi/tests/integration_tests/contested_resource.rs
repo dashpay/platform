@@ -41,6 +41,7 @@ fn test_contested_resource_identity_votes() {
 
 /// Test fetching contested resources
 #[test]
+#[ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]
 fn test_contested_resources() {
     setup_logs();
 
@@ -84,6 +85,7 @@ fn test_contested_resources() {
 
 /// Test fetching vote state for a contested resource
 #[test]
+#[ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]
 fn test_contested_resource_vote_state() {
     setup_logs();
 
@@ -135,6 +137,7 @@ fn test_contested_resource_vote_state() {
 
 /// Test fetching voters for a specific identity in a contested resource
 #[test]
+#[ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]
 fn test_contested_resource_voters_for_identity() {
     setup_logs();
 
@@ -189,6 +192,7 @@ fn test_contested_resource_voters_for_identity() {
 
 /// Test complex contested resource vote state query
 #[test]
+#[ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]
 fn test_contested_resource_vote_state_complex() {
     setup_logs();
 

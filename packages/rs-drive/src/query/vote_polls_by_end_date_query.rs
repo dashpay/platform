@@ -1,3 +1,5 @@
+#[cfg(feature = "server")]
+use crate::drive::votes::paths::vote_contested_resource_end_date_queries_at_time_tree_path_vec;
 use crate::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
@@ -13,14 +15,14 @@ use crate::query::Query;
 #[cfg(feature = "server")]
 use crate::util::common::encode::decode_u64;
 use crate::util::common::encode::encode_u64;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
 use dpp::fee::Credits;
 use dpp::prelude::{TimestampIncluded, TimestampMillis};
 #[cfg(feature = "server")]
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 #[cfg(feature = "server")]
 use dpp::voting::vote_polls::VotePoll;
 #[cfg(feature = "server")]
@@ -34,7 +36,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone, Encode, Decode)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode, DecodeUntrusted)]
 pub struct VotePollsByEndDateDriveQuery {
     /// What is the start time we are asking for
     pub start_time: Option<(TimestampMillis, TimestampIncluded)>,
@@ -145,7 +147,7 @@ impl VotePollsByEndDateDriveQuery {
                         let timestamp = decode_u64(last_path_component)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
-                        let vote_poll = VotePoll::deserialize_from_bytes(
+                        let vote_poll = VotePoll::deserialize_from_bytes_trusted(
                             &contested_document_resource_vote_poll_bytes,
                         )?;
                         Ok((timestamp, vote_poll))
@@ -204,12 +206,53 @@ impl VotePollsByEndDateDriveQuery {
                         // Extract the bytes from the element
                         let vote_poll_bytes = element.into_item_bytes().map_err(Error::from)?;
                         // Deserialize the bytes into a VotePoll
-                        let vote_poll = VotePoll::deserialize_from_bytes(&vote_poll_bytes)?;
+                        let vote_poll = VotePoll::deserialize_from_bytes_trusted(&vote_poll_bytes)?;
                         Ok(vote_poll)
                     })
                     .collect::<Result<Vec<_>, Error>>()?;
                 Ok(vote_polls)
             }
+        }
+    }
+
+    #[cfg(feature = "server")]
+    /// Executes a query with no proof for the keys listed at one end time: the unique ids of the
+    /// vote polls ending then, at most `limit` of them, or all of them when `limit` is `None`.
+    /// An end time with no tree lists none.
+    pub fn execute_no_proof_keys_for_single_end_time(
+        end_time: TimestampMillis,
+        limit: Option<u16>,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let mut query = Query::new();
+        query.insert_all();
+        let path_query = PathQuery::new(
+            vote_contested_resource_end_date_queries_at_time_tree_path_vec(end_time),
+            SizedQuery::new(query, limit, None),
+        );
+        let query_result = drive.grove_get_raw_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryKeyElementPairResultType,
+            drive_operations,
+            &platform_version.drive,
+        );
+        match query_result {
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
+                Ok(vec![])
+            }
+            Err(e) => Err(e),
+            Ok((query_result_elements, _)) => Ok(query_result_elements.to_keys()),
         }
     }
 
@@ -389,7 +432,7 @@ impl VotePollsByEndDateDriveQuery {
                         let timestamp = decode_u64(last_path_component)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
-                        let vote_poll = VotePoll::deserialize_from_bytes(
+                        let vote_poll = VotePoll::deserialize_from_bytes_trusted(
                             &contested_document_resource_vote_poll_bytes,
                         )?;
                         Ok((timestamp, vote_poll))

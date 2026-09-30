@@ -24,6 +24,7 @@ import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -4529,6 +4530,184 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("contactRequest", key.contractBoundsDocumentType)
     }
 
+    /** A wallet, one account and one identity: what `onLoadWalletList` needs to restore keys. */
+    private suspend fun seedWalletWithIdentity(identityId: ByteArray) {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        seedIdentity(identityId)
+    }
+
+    @Test
+    fun shouldRestoreContractGroupBoundKeyAsKindThree() = runTest {
+        // Kind 3 (ContractGroup) carries the contract group id and no document
+        // type. The id and docType columns alone read back as kind 1, so the
+        // stored kind has to survive the round trip.
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val contractGroupId = ByteArray(32) { 33 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId = walletId,
+            identityId = identityId,
+            keyId = 5,
+            purpose = 0,
+            securityLevel = 2,
+            keyType = 0,
+            readOnly = false,
+            disabledAtIsSome = false,
+            disabledAt = 0,
+            publicKeyData = ByteArray(33) { 7 },
+            publicKeyHash = ByteArray(20),
+            walletIdIsSome = true,
+            keyWalletId = walletId,
+            derivationIndicesIsSome = false,
+            identityIndex = 0,
+            keyIndex = 0,
+            contractBoundsKind = 3,
+            contractBoundsId = contractGroupId,
+            contractBoundsDocumentType = null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 5)
+        assertNotNull(row)
+        assertEquals(3, row!!.contractBoundsKind)
+        assertNull(row.contractBoundsDocumentTypeName)
+
+        val key = handler.onLoadWalletList()[0].identities[0].keys.single()
+        assertEquals(5, key.keyId)
+        assertEquals(3.toByte(), key.contractBoundsKind)
+        assertTrue(contractGroupId.contentEquals(key.contractBoundsId))
+        assertNull(key.contractBoundsDocumentType)
+    }
+
+    @Test
+    fun shouldStoreTheContractBoundsKindTheNativeRowCarries() = runTest {
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val boundsId = ByteArray(32) { 21 }
+
+        // (keyId = kind, docType): one key per kind the native side emits.
+        val rows = listOf(0 to null, 1 to null, 2 to "contactRequest", 3 to null)
+        handler.onChangesetBegin(walletId)
+        for ((kind, docType) in rows) {
+            handler.onPersistIdentityKeyUpsert(
+                walletId = walletId,
+                identityId = identityId,
+                keyId = kind,
+                purpose = 0,
+                securityLevel = 2,
+                keyType = 0,
+                readOnly = false,
+                disabledAtIsSome = false,
+                disabledAt = 0,
+                publicKeyData = ByteArray(33) { (kind + 7).toByte() },
+                publicKeyHash = ByteArray(20),
+                walletIdIsSome = true,
+                keyWalletId = walletId,
+                derivationIndicesIsSome = false,
+                identityIndex = 0,
+                keyIndex = 0,
+                contractBoundsKind = kind.toByte(),
+                contractBoundsId = if (kind == 0) ByteArray(32) else boundsId,
+                contractBoundsDocumentType = docType,
+            )
+        }
+        handler.onChangesetEnd(walletId, success = true)
+
+        for ((kind, _) in rows) {
+            val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), kind)
+            assertEquals(kind, row!!.contractBoundsKind)
+        }
+        val keys = handler.onLoadWalletList()[0].identities[0].keys
+        assertEquals(listOf(0, 1, 2, 3), keys.map { it.contractBoundsKind.toInt() })
+        assertEquals(0, keys[0].contractBoundsId.size)
+        (1..3).forEach { assertTrue(boundsId.contentEquals(keys[it].contractBoundsId)) }
+        assertEquals(
+            listOf(null, null, "contactRequest", null),
+            keys.map { it.contractBoundsDocumentType },
+        )
+    }
+
+    @Test
+    fun shouldInferContractBoundsKindForLegacyRowsWithNoStoredKind() = runTest {
+        // Rows written before schema 13 have a NULL kind: the restore keeps
+        // inferring it from the blob and the document type name.
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val boundsId = ByteArray(32) { 21 }
+
+        fun legacyRow(keyId: Int, bounds: ByteArray?, docType: String?) = PublicKeyEntity(
+            keyId = keyId,
+            purpose = "1",
+            securityLevel = "3",
+            keyType = "0",
+            publicKeyData = ByteArray(33) { (keyId + 7).toByte() },
+            contractBoundsData = bounds?.let { contractBoundsIdToJson(it) },
+            contractBoundsDocumentTypeName = docType,
+            contractBoundsKind = null,
+            identityId = identityId.toBase58String(),
+            identityIdData = identityId,
+        )
+        db.publicKeyDao().insert(legacyRow(0, null, null))
+        db.publicKeyDao().insert(legacyRow(1, boundsId, null))
+        db.publicKeyDao().insert(legacyRow(2, boundsId, "contactRequest"))
+
+        val keys = handler.onLoadWalletList()[0].identities[0].keys
+        assertEquals(listOf(0, 1, 2), keys.map { it.contractBoundsKind.toInt() })
+        assertEquals(0, keys[0].contractBoundsId.size)
+        assertTrue(boundsId.contentEquals(keys[1].contractBoundsId))
+        assertTrue(boundsId.contentEquals(keys[2].contractBoundsId))
+        assertEquals(
+            listOf(null, null, "contactRequest"),
+            keys.map { it.contractBoundsDocumentType },
+        )
+    }
+
+    @Test
+    fun shouldRestoreUnknownOrZeroStoredKindsAsUnboundedAndDemoteKindTwoWithoutADocType() = runTest {
+        // The stored kind decides. A kind this build does not know (a
+        // variant a later build persisted) or a stored 0 next to a stale
+        // blob restores unbounded, the fallback the Swift restore path
+        // applies too, instead of asserting a SingleContract bound the key
+        // never had. A stored kind 2 whose document type is missing or
+        // empty demotes to 1, as the Rust loader does.
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val boundsId = ByteArray(32) { 21 }
+
+        fun row(keyId: Int, docType: String?, kind: Int) = PublicKeyEntity(
+            keyId = keyId,
+            purpose = "0",
+            securityLevel = "2",
+            keyType = "0",
+            publicKeyData = ByteArray(33) { (keyId + 7).toByte() },
+            contractBoundsData = contractBoundsIdToJson(boundsId),
+            contractBoundsDocumentTypeName = docType,
+            contractBoundsKind = kind,
+            identityId = identityId.toBase58String(),
+            identityIdData = identityId,
+        )
+        db.publicKeyDao().insert(row(0, docType = null, kind = 0))
+        db.publicKeyDao().insert(row(1, docType = null, kind = 4))
+        db.publicKeyDao().insert(row(2, docType = "", kind = 2))
+        db.publicKeyDao().insert(row(3, docType = null, kind = 2))
+        db.publicKeyDao().insert(row(4, docType = "contactRequest", kind = 2))
+
+        val keys = handler.onLoadWalletList()[0].identities[0].keys
+        assertEquals(listOf(0, 0, 1, 1, 2), keys.map { it.contractBoundsKind.toInt() })
+        assertEquals(0, keys[0].contractBoundsId.size)
+        assertEquals(0, keys[1].contractBoundsId.size)
+        (2..4).forEach { assertTrue(boundsId.contentEquals(keys[it].contractBoundsId)) }
+        assertEquals(
+            listOf(null, null, null, null, "contactRequest"),
+            keys.map { it.contractBoundsDocumentType },
+        )
+    }
+
     // ── DashPay contacts: upsert metadata, ignore delta, restore ──────
 
     /** Persist one incoming contact row for [senderId] owned by [ownerId]. */
@@ -5419,9 +5598,8 @@ class PlatformWalletPersistenceHandlerTest {
     /** Hex prev-txids the restore hands back for [wallet], sorted. */
     private fun restoredUtxoTxids(wallet: ByteArray): List<String> {
         val entry = handler.onLoadWalletList().firstOrNull { it.walletId.contentEquals(wallet) }
-        // `guardedLoad` degrades to an empty array, which Rust reads as a
-        // fresh coinless device — name that failure rather than letting it
-        // surface as a NoSuchElementException.
+        // Name a missing wallet rather than letting it surface as a
+        // NoSuchElementException from the mapping below.
         assertNotNull("the restore must still carry this wallet", entry)
         return entry!!.utxos.map { it.prevTxid.toHex() }.sorted()
     }
@@ -5503,25 +5681,14 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     /**
-     * Failure policy for the finality lookup the guard depends on.
-     *
-     * `onLoadWalletList` runs under `guardedLoad(emptyArray())` and the
-     * Android load surface is array-only — there is no error result — so
-     * an escaping read failure returns a SUCCESSFUL EMPTY restore, which
-     * Rust reads as a fresh, coinless device for EVERY wallet. The lookup
-     * must therefore contain its own failure: drop the one candidate it
-     * could not answer for (never healing it, since nothing was proven)
-     * and leave every unrelated wallet and TXO restoring normally.
-     *
-     * The fault is injected at the single prepared statement, not at the
-     * table, because the table is read by two other restore builders
-     * whose own failure modes are out of this guard's hands.
+     * Rebuild the fixture on a database whose statements starting with
+     * [failingSqlPrefix] can be faulted mid-test. The helper factory is
+     * fixed when the database is built, so this replaces the shared
+     * fixture rather than decorating it. The injector comes back
+     * disarmed — arm it once the seed data is in.
      */
-    @Test
-    fun aFailingFinalizedLockLookupDropsOnlyItsOwnCandidate() = runTest {
-        // The helper factory is fixed when the database is built, so the
-        // shared fixture is replaced with one that can be faulted.
-        val faults = SingleStatementFaultInjector("SELECT MAX(statusRaw) FROM asset_locks")
+    private fun useFaultedDatabase(failingSqlPrefix: String): SingleStatementFaultInjector {
+        val faults = SingleStatementFaultInjector(failingSqlPrefix)
         db.close()
         db = Room.inMemoryDatabaseBuilder(
             ApplicationProvider.getApplicationContext<Context>(),
@@ -5531,6 +5698,82 @@ class PlatformWalletPersistenceHandlerTest {
             .openHelperFactory(faults)
             .build()
         handler = newHandler()
+        return faults
+    }
+
+    // ── Load failure policy ───────────────────────────────────────────
+    //
+    // The load slots are array-shaped, so a load reports failure the only
+    // way it can: by throwing. The JNI trampoline turns the pending
+    // exception into a non-zero FFI load code, reaching the host as
+    // `PersisterLoadFatal` (50). Degrading to an empty array would instead
+    // report a SUCCESSFUL restore of nothing, which Rust reads as a fresh
+    // device — a store fault masquerading as data loss. Swift parity:
+    // `loadWalletList` returns `errored = true`.
+
+    @Test
+    fun aFailingWalletFetchFailsTheLoadRatherThanRestoringNothing() = runTest {
+        val faults = useFaultedDatabase("SELECT * FROM wallets")
+        seedRestorableWallet(walletId, "yLoadFailFunder", ByteArray(32) { 81 }, 34)
+
+        // Control: the wallet restores while the fetch is readable, so the
+        // failure below is the injected fault and not the fixture.
+        assertEquals(1, handler.onLoadWalletList().size)
+
+        faults.armed = true
+        assertThrows(
+            "a failed wallet fetch must fail the load; an empty restore would " +
+                "report every persisted wallet as absent",
+            SQLiteException::class.java,
+        ) { handler.onLoadWalletList() }
+    }
+
+    @Test
+    fun aFailingShieldedNoteFetchFailsTheLoad() = runTest {
+        val faults = useFaultedDatabase("SELECT * FROM shielded_notes")
+        handler.onChangesetBegin(walletId)
+        handler.onPersistShieldedNote(
+            walletId = walletId,
+            noteWalletId = walletId,
+            accountIndex = 0,
+            position = 3,
+            cmx = ByteArray(32) { 82 },
+            nullifier = ByteArray(32) { 83 },
+            blockHeight = 50,
+            isSpent = 0,
+            value = 100_000,
+            noteData = ByteArray(115) { 84 },
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Control, as above.
+        assertEquals(1, handler.onLoadShieldedNotes().size)
+
+        faults.armed = true
+        assertThrows(
+            "a failed shielded-note fetch must fail the load; an empty restore " +
+                "would report the persisted notes as absent",
+            SQLiteException::class.java,
+        ) { handler.onLoadShieldedNotes() }
+    }
+
+    /**
+     * Failure policy for the finality lookup the guard depends on.
+     *
+     * An unreadable asset-lock table cannot answer whether the output is
+     * gone. Withholding the one candidate it could not judge would
+     * under-report the wallet's funds — the same apparent data loss an
+     * empty restore produces, just quieter — so the read failure fails
+     * the whole load and the host retries. Swift parity:
+     * `finalizedAssetLockFundingTxids` bails with `errored = true`.
+     *
+     * The fault is injected at the single prepared statement, not at the
+     * table, because the table is read by two other restore builders
+     * whose own failure modes are out of this guard's hands.
+     */
+    @Test
+    fun aFailingFinalizedLockLookupFailsTheLoad() = runTest {
+        val faults = useFaultedDatabase("SELECT MAX(statusRaw) FROM asset_locks")
 
         val fundingTxid = ByteArray(32) { 71 }
         val lockTxid = ByteArray(32) { 72 }
@@ -5538,7 +5781,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId, "yLockFunderThrow", fundingTxid, lockTxid, 32,
         )
         seedConsumedAssetLockRow(walletId, lockTxid, vout = 0)
-        // Sentinel 1: an ordinary unspent output on the SAME wallet, with
+        // Sentinel: an ordinary unspent output on the same wallet, with
         // no spender at all, so it never reaches the lookup.
         val sentinelTxid = ByteArray(32) { 73 }
         handler.onChangesetBegin(walletId)
@@ -5548,15 +5791,10 @@ class PlatformWalletPersistenceHandlerTest {
         )
         handler.onChangesetEnd(walletId, success = true)
 
-        // Sentinel 2: an unrelated wallet with its own restorable output.
-        val otherWallet = ByteArray(32) { 74 }
-        val otherTxid = ByteArray(32) { 75 }
-        seedRestorableWallet(otherWallet, "yOtherFunder", otherTxid, 33)
-
-        // Readable lookup: the guard excludes the consumed output and
-        // keeps both sentinels.
+        // Control: with the lookup readable the load succeeds, excludes
+        // the consumed output and keeps the sentinel — so the failure
+        // below is the injected fault, not the fixture.
         assertEquals(listOf(sentinelTxid.toHex()), restoredUtxoTxids(walletId))
-        assertEquals(listOf(otherTxid.toHex()), restoredUtxoTxids(otherWallet))
         assertTrue(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent)
 
         // Re-stale the healed row so the unreadable pass faces the same
@@ -5566,16 +5804,11 @@ class PlatformWalletPersistenceHandlerTest {
         )
         faults.armed = true
 
-        assertEquals(
-            "only the unanswerable candidate is dropped; the unrelated output survives",
-            listOf(sentinelTxid.toHex()),
-            restoredUtxoTxids(walletId),
-        )
-        assertEquals(
-            "and so does the unrelated wallet's — one bad lookup cannot empty the restore",
-            listOf(otherTxid.toHex()),
-            restoredUtxoTxids(otherWallet),
-        )
+        assertThrows(
+            "an unanswerable finality lookup must fail the load, not silently " +
+                "withhold the output it could not judge",
+            SQLiteException::class.java,
+        ) { handler.onLoadWalletList() }
         assertFalse(
             "an unanswerable lookup proves nothing, so it must not heal the flag",
             db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent,

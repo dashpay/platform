@@ -94,7 +94,9 @@ where
 ```
 
 The `FullAbciApplication` struct wires everything together. It holds a reference
-to `Platform`, a GroveDB transaction, and the current block execution context:
+to `Platform`, a GroveDB transaction, the current block execution context, and
+the withdrawal transactions of every proposal accepted at the current height,
+which vote extensions are verified against:
 
 ```rust
 // From packages/rs-drive-abci/src/abci/app/full.rs
@@ -102,6 +104,7 @@ pub struct FullAbciApplication<'a, C> {
     pub platform: &'a Platform<C>,
     pub transaction: RwLock<Option<Transaction<'a>>>,
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    pub unsigned_withdrawal_txs_by_round: RwLock<UnsignedWithdrawalTxsByRound>,
 }
 ```
 
@@ -227,6 +230,18 @@ let result = app.commit_transaction(platform_version);
 
 After commit, the block height counter is updated and, if needed, a GroveDB
 checkpoint is created for crash recovery.
+
+The finalize response also carries a proposer hint,
+`propose_next_block_immediately` (Tenderdash 1.8.0, ABCI 1.4.0). Drive sets it
+when the block leaves
+withdrawal work for the next block: untied withdrawal transactions waiting in
+the queue to be signed. Tenderdash then proposes round 0 of the next height without waiting
+for transactions or the empty-block interval, so a withdrawal is signed one
+block after it was pooled instead of one interval later. The hint is local to
+the node and never part of consensus: it is read from the same GroveDB
+transaction the block committed, but it does not change the state or the app
+hash. See `has_pending_withdrawal_work` under
+`packages/rs-drive-abci/src/execution/platform_events/withdrawals/`.
 
 ## Inside run_block_proposal
 

@@ -22,6 +22,7 @@ use crate::version::v11::PLATFORM_V11;
 use crate::version::v12::PLATFORM_V12;
 use crate::version::v13::PLATFORM_V13;
 use crate::version::v14::PLATFORM_V14;
+use crate::version::v15::PLATFORM_V15;
 use crate::version::v2::PLATFORM_V2;
 use crate::version::v3::PLATFORM_V3;
 use crate::version::v4::PLATFORM_V4;
@@ -61,6 +62,7 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V12,
     PLATFORM_V13,
     PLATFORM_V14,
+    PLATFORM_V15,
 ];
 
 #[cfg(feature = "mock-versions")]
@@ -69,7 +71,7 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V14;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V15;
 
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 
@@ -293,5 +295,33 @@ mod shielded_pool_gating_tests {
         );
         // Cleanup mechanics likewise unchanged.
         assert_eq!(stp13.cleanup_recent_block_storage_address_balances, Some(0));
+    }
+}
+
+#[cfg(test)]
+mod token_math_gating_tests {
+    use super::*;
+
+    // The token-reward evaluator switches from platform-libm `f64` math (v0, architecture
+    // dependent on musl) to the pinned `libm` crate (v1) at v14. Both architectures must switch
+    // at the same height, so the gate is a token feature version, not a binary default.
+    #[test]
+    fn distribution_function_evaluate_deterministic_math_gated_to_v14() {
+        let v13 = PlatformVersion::get(13).expect("protocol version 13 must exist");
+        let v14 = PlatformVersion::get(14).expect("protocol version 14 must exist");
+        assert_eq!(
+            v13.dpp
+                .token_versions
+                .distribution_function_evaluate_version,
+            0,
+            "v13 must keep the legacy platform-libm evaluator so old blocks replay unchanged"
+        );
+        assert_eq!(
+            v14.dpp
+                .token_versions
+                .distribution_function_evaluate_version,
+            1,
+            "v14 must use the deterministic libm-crate evaluator"
+        );
     }
 }

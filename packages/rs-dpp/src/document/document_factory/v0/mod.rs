@@ -311,7 +311,7 @@ impl DocumentFactoryV0 {
     //     &self,
     //     buffer: impl AsRef<[u8]>,
     // ) -> Result<ExtendedDocument, ProtocolError> {
-    //     let document = <ExtendedDocument as PlatformDeserializable>::deserialize(buffer.as_ref())
+    //     let document = <ExtendedDocument as PlatformDeserializableUntrusted>::deserialize(buffer.as_ref())
     //         .map_err(|e| {
     //             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
     //                 SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
@@ -622,6 +622,8 @@ mod test {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         };
         let document = Document::V0(document_v0);
 
@@ -738,6 +740,8 @@ mod test {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let mut nonce_counter = BTreeMap::new();

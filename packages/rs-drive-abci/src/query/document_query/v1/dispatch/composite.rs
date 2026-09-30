@@ -129,10 +129,11 @@ impl<C> Platform<C> {
                     .iter()
                     .flat_map(|sub| sub.where_clauses.iter()),
             )
-            .any(conversions::is_time_range_clause)
+            .any(conversions::is_window_selection_clause)
         {
             return Ok(unsupported(
-                "a composite request supports no time-range (IN_TIME_RANGE) clauses",
+                "a composite request supports no window selection (IN_TIME_RANGE or \
+                 IN_INTEGER_RANGE) clauses",
             ));
         }
 
@@ -339,7 +340,12 @@ impl<C> Platform<C> {
             };
             let page_documents = serialize_all(&outcome.result.page_documents, None)?;
             let mut sub_results = Vec::with_capacity(composite.sub_queries.len());
-            for (sub, result) in composite.sub_queries.iter().zip(outcome.result.sub_results) {
+            for ((sub, result), missing_ids) in composite
+                .sub_queries
+                .iter()
+                .zip(outcome.result.sub_results)
+                .zip(outcome.result.sub_result_missing_ids)
+            {
                 let result = match result {
                     SubQueryResult::Documents(documents) => {
                         composite_documents::sub_query_result::Result::Documents(Documents {
@@ -354,6 +360,7 @@ impl<C> Platform<C> {
                 };
                 sub_results.push(composite_documents::SubQueryResult {
                     result: Some(result),
+                    missing_ids: missing_ids.iter().map(|id| id.to_vec()).collect(),
                 });
             }
             GetDocumentsResponseV1 {
@@ -517,6 +524,7 @@ mod tests {
                     value: Some(ProtoDocumentFieldValue {
                         variant: Some(document_field_value::Variant::Text("dash".to_string())),
                     }),
+                    integer_range: None,
                     time_range: None,
                 },
             ],
