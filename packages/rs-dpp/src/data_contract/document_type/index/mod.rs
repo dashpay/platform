@@ -128,8 +128,10 @@ pub const PREALLOCATED: &str = "preallocated";
 /// Index-level keyword letting the index's entries **outlive a delete of
 /// their document**: a delete removes the document's entries in every other
 /// index and leaves this one's to expire with their window, and a create
-/// whose entry here already exists (left by an earlier document with the
-/// same values) keeps it rather than being refused as a duplicate. A value
+/// whose entry here already exists (left by a deleted document with the same
+/// key) writes over it rather than being refused as a duplicate. The index's
+/// key must hold the key of an index a delete clears, so no two documents in
+/// state share an entry. A value
 /// only such indexes use (`$createdAt`, when only they involve it) is then
 /// neither carried by a delete nor part of the row commitment. Only allowed
 /// on a `timeRange` index with a `ttl` of an indexOnly document type, so a
@@ -794,7 +796,7 @@ pub struct Index {
     pub preallocated: bool,
     /// Whether the index's entries outlive a delete of their document (see
     /// [`OUTLIVES_DELETE`]): a delete leaves them to expire with their
-    /// window, and a create keeps an entry already there.
+    /// window, and a create writes over an entry already there.
     //
     // `serde(default)`: added after the struct's serde shape was in the wild
     // (see the note on `countable` above), so pre-existing JSON must still

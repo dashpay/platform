@@ -4142,10 +4142,10 @@ pub(super) fn apply_index_only(
         // `outlivesDelete` leaves the index's entries behind when their
         // document is deleted, so they must expire on their own: only a
         // `timeRange` index with a `ttl` qualifies, whose windows are dropped
-        // whole once past it. A kept entry stands for the first document
-        // that wrote it, which a later one with the same key cannot change:
-        // an entry holding an amount (a sum) or payload values would keep
-        // the first document's.
+        // whole once past it. A deleted document's entries keep what it
+        // wrote until a later document with the same key writes over them,
+        // in the windows the two share only: an amount (a sum) or payload
+        // values would then mix two documents' across the windows.
         if index.outlives_delete {
             if index
                 .time_range
@@ -4163,16 +4163,52 @@ pub(super) fn apply_index_only(
             if index.summable.is_some() {
                 return Err(structure_error(format!(
                     "index \"{}\" on indexOnly document type \"{}\" declares \
-                     `outlivesDelete` together with a sum: a create keeps an entry already \
-                     there, which holds the amount of the document that wrote it",
+                     `outlivesDelete` together with a sum: a deleted document's entries keep \
+                     its amount until a later document writes over them in the windows the \
+                     two share, mixing two documents' amounts across the windows",
                     index_name, name,
                 )));
             }
             if !document_type.entry_payload.is_empty() {
                 return Err(structure_error(format!(
                     "index \"{}\" on indexOnly document type \"{}\" declares \
-                     `outlivesDelete` on a type with `entryPayload`: a create keeps an entry \
-                     already there, which holds the payload of the document that wrote it",
+                     `outlivesDelete` on a type with `entryPayload`: a deleted document's \
+                     entries keep its payload until a later document writes over them in the \
+                     windows the two share, mixing two documents' payloads across the windows",
+                    index_name, name,
+                )));
+            }
+            // A create writes over an entry already standing here, so two
+            // documents in state must never share one: the index's key
+            // (every property but `$createdAt`, and its terminal) must hold
+            // the whole key of an index a delete clears and that skips no
+            // document, whose entry the create probes as a duplicate. The
+            // entry then stands for no other live document than the one
+            // writing it.
+            let key: BTreeSet<&str> = index
+                .properties
+                .iter()
+                .map(|property| property.name.as_str())
+                .chain(index.terminal_components().iter().map(String::as_str))
+                .filter(|name| *name != CREATED_AT)
+                .collect();
+            let keyed_by_a_cleared_index = document_type.indices.values().any(|other| {
+                !other.outlives_delete
+                    && !other.skip_if_absent
+                    && other
+                        .properties
+                        .iter()
+                        .map(|property| property.name.as_str())
+                        .chain(other.terminal_components().iter().map(String::as_str))
+                        .all(|name| key.contains(name))
+            });
+            if !keyed_by_a_cleared_index {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" declares \
+                     `outlivesDelete`, but its key (its properties but $createdAt, and its \
+                     terminal) holds the whole key of no index that a delete clears and that \
+                     skips no document: two documents in state could then share one of its \
+                     entries, which a create writes over",
                     index_name, name,
                 )));
             }

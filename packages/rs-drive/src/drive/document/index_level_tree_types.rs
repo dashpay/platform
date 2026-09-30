@@ -477,7 +477,9 @@ pub(crate) fn level_reaches_entry(
 /// they leave the entries of an index that outlives the delete, and never
 /// read the values only such an index is keyed by (a delete does not carry
 /// them). A level no such index passes through is answered by
-/// [`level_reaches_entry`], every level of a document type without one.
+/// [`level_reaches_entry`], every level of a document type without one, and a
+/// level only such indexes pass through by its stamps alone; only a level both
+/// kinds share is walked.
 #[cfg(feature = "server")]
 pub(crate) fn level_removes_entry(
     level: &IndexLevel,
@@ -485,6 +487,10 @@ pub(crate) fn level_removes_entry(
 ) -> Result<bool, Error> {
     if !level.outlives_delete_at_or_below() {
         return level_reaches_entry(level, document_info);
+    }
+    // Only indexes whose entries outlive the delete pass here
+    if !level.cleared_on_delete_at_or_below() {
+        return Ok(false);
     }
     if let Some(index_type) = level.has_index_with_type() {
         if !index_type.outlives_delete

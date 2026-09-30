@@ -11,13 +11,14 @@ use super::index_only_e2e_tests::{
     assert_grovedb_is_consistent, build_like, delete_like, insert_like, platform_version,
     read_grove_element,
 };
+use crate::drive::document::layout::{document_type_layout, LayoutNode, LayoutNote};
 use crate::drive::Drive;
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::Index;
+use dpp::data_contract::document_type::{index_only_row_commits_created_at, Index};
 use dpp::document::{Document, DocumentV0Setters};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_json_value;
@@ -33,6 +34,12 @@ const T_LATER_MS: u64 = T_MS + 60_000;
 /// The yappr-likes `like` type with a daily `byTrendPost` window over
 /// `$createdAt`, kept for seven days, which outlives deletes when `outlives`.
 fn setup_trending_likes(outlives: bool) -> (Drive, DataContract) {
+    setup_trending_likes_with(outlives, false)
+}
+
+/// [`setup_trending_likes`], with a `byPostTime` index a delete clears keyed
+/// by `$createdAt` too when `timed`: the rows then commit to their timestamp.
+fn setup_trending_likes_with(outlives: bool, timed: bool) -> (Drive, DataContract) {
     let pv = platform_version();
     let mut schema = json_document_to_json_value(
         "tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json",
@@ -55,6 +62,16 @@ fn setup_trending_likes(outlives: bool) -> (Drive, DataContract) {
             "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
             "outlivesDelete": outlives,
         }));
+    if timed {
+        like["indices"]
+            .as_array_mut()
+            .expect("like indices")
+            .push(json!({
+                "name": "byPostTime",
+                "properties": [{ "postId": "asc" }, { "$createdAt": "asc" }],
+                "terminal": "$ownerId",
+            }));
+    }
     let contract = DataContract::try_from_platform_versioned(
         serde_json::from_value(schema).expect("contract serialization format"),
         true,
@@ -136,19 +153,16 @@ fn member_count(drive: &Drive, path: &[Vec<u8>]) -> u64 {
 #[test]
 fn should_leave_outliving_entries_on_delete_and_keep_them_on_a_like_again() {
     let (drive, contract) = setup_trending_likes(true);
-    assert!(
-        !dpp::data_contract::document_type::index_only_row_commits_created_at(
-            contract
-                .document_type_for_name("like")
-                .expect("like doctype exists")
-                .required_fields(),
-            contract
-                .document_type_for_name("like")
-                .expect("like doctype exists")
-                .indexes()
-                .values(),
-        )
-    );
+    assert!(!index_only_row_commits_created_at(
+        contract
+            .document_type_for_name("like")
+            .expect("like doctype exists")
+            .required_fields(),
+        contract
+            .document_type_for_name("like")
+            .expect("like doctype exists")
+            .index_structure(),
+    ));
 
     let like = like_at(&contract, T_MS, 1);
     insert_like(&drive, &contract, &like, true).expect("insert like");
@@ -158,7 +172,9 @@ fn should_leave_outliving_entries_on_delete_and_keep_them_on_a_like_again() {
         .iter()
         .all(|(_, element)| element.is_some()));
 
-    // The delete carries no `$createdAt`: the row does not commit to it
+    // The delete carries no `$createdAt`: the row does not commit to it, and
+    // a delete carrying one is refused
+    assert!(delete_like(&drive, &contract, like.clone(), true).is_err());
     let mut unlike = like.clone();
     unlike.set_created_at(None);
     let estimated = delete_like(&drive, &contract, unlike.clone(), false).expect("estimate");
@@ -248,7 +264,6 @@ fn should_clear_a_window_that_does_not_outlive_deletes() {
 /// them.
 #[test]
 fn should_note_the_outliving_window_in_the_layout() {
-    use crate::drive::document::layout::{document_type_layout, LayoutNode, LayoutNote};
     fn noted<'a>(node: &'a LayoutNode, found: &mut Vec<&'a [String]>) {
         if node.notes.contains(&LayoutNote::OutlivesDelete) {
             found.push(&node.indexes);
@@ -268,4 +283,40 @@ fn should_note_the_outliving_window_in_the_layout() {
     let mut found = Vec::new();
     noted(&layout.root, &mut found);
     assert_eq!(found, vec![&["byTrendPost".to_string()][..]]);
+}
+
+/// When the rows commit to their timestamp (an index a delete clears is keyed
+/// by it), a like again writes its own commitment over the entry the deleted
+/// like left, and the liker still counts once.
+#[test]
+fn should_write_the_live_row_over_an_entry_a_deleted_one_left() {
+    let (drive, contract) = setup_trending_likes_with(true, true);
+    let like = like_at(&contract, T_MS, 1);
+    insert_like(&drive, &contract, &like, true).expect("insert like");
+    let trend_before = entries(&drive, &contract, "byTrendPost", &like);
+    // The row commits to its timestamp, so the delete carries it
+    delete_like(&drive, &contract, like.clone(), true).expect("unlike");
+    assert_eq!(
+        entries(&drive, &contract, "byTrendPost", &like),
+        trend_before
+    );
+
+    let like_again = like_at(&contract, T_LATER_MS, 2);
+    let estimated = insert_like(&drive, &contract, &like_again, false).expect("estimate");
+    let actual = insert_like(&drive, &contract, &like_again, true).expect("like again");
+    assert!(
+        estimated.storage_fee >= actual.storage_fee
+            && estimated.processing_fee >= actual.processing_fee,
+        "the estimate {estimated:?} must upper-bound the create {actual:?}"
+    );
+    let trend_after = entries(&drive, &contract, "byTrendPost", &like_again);
+    assert_ne!(
+        trend_after, trend_before,
+        "the entry now carries the live like's commitment"
+    );
+    for (path, element) in &trend_after {
+        assert!(element.is_some());
+        assert_eq!(member_count(&drive, path), 1, "the liker counts once");
+    }
+    assert_grovedb_is_consistent(&drive);
 }
