@@ -168,9 +168,7 @@ pub(crate) fn collect_views(info: &PlatformWalletInfo) -> Vec<OutgoingView> {
             .values()
             .map(move |record| RecordFacts {
                 txid: record.txid,
-                settled: record.is_confirmed()
-                    || matches!(record.context, TransactionContext::InstantSend(_))
-                    || account.transaction_is_finalized(&record.txid),
+                settled: is_settled(record) || account.transaction_is_finalized(&record.txid),
                 own: !record.input_details.is_empty(),
                 transaction: &record.transaction,
             })
@@ -748,8 +746,8 @@ pub(crate) struct WalletRead {
 
 /// An `Uncertain` result is queued for every wallet; only one holding the
 /// transaction acts on it. `None`: nothing to do for this wallet — the pass
-/// need not `walk` the records (it is confined to forced roots and has no
-/// verdicts to clear) and the wallet holds none of `forced`.
+/// need not `walk` the records (it is confined to forced roots) and the
+/// wallet holds none of `forced`.
 fn forced_held(
     walk: bool,
     forced: HashSet<Txid>,
@@ -943,9 +941,15 @@ struct Run {
     /// It carries txids an `Uncertain` result forced.
     has_forced: bool,
     /// Whether the read walks the records even when none of the forced txids
-    /// is held: shared with the read job, and cleared by a catch-up when the
-    /// pass has nothing left to do there — no anchor, no verdicts to clear.
+    /// is held (`anchor_at.is_some()`): shared with the read job, cleared by a
+    /// catch-up.
     walk: Arc<AtomicBool>,
+    /// Txids a wallet event settled or removed during the run: the run's
+    /// views are older than that, so it neither probes nor publishes them.
+    settled: HashSet<Txid>,
+    /// A step back (a rewind for a rescan) arrived during the run: it runs at
+    /// this height, not at the one it was queued at.
+    rewound_to: Option<u32>,
     abort: AbortHandle,
     probing: Option<Probing>,
 }
@@ -1117,8 +1121,15 @@ impl Actor {
                     };
                     run.anchor_at = None;
                     run.walk.store(false, Ordering::SeqCst);
+                    let rewind = previous.is_some_and(|previous| height < previous);
+                    if rewind {
+                        run.rewound_to = Some(height);
+                    }
                     if let Some(probing) = run.probing.as_mut() {
                         probing.due.retain(|root| root.forced);
+                        if rewind {
+                            probing.height = probing.height.min(height);
+                        }
                     }
                     // Still reading, with nothing forced: nothing it could
                     // probe — stop its walk over the records now.
@@ -1141,7 +1152,16 @@ impl Actor {
                 self.start(wallet_id);
             }
             Command::Settled { wallet_id, txids } => {
-                self.entry(wallet_id);
+                let entry = self.entry(wallet_id);
+                // A pass under way read the wallet before this: it must not
+                // probe these again or publish a verdict for them afterwards.
+                if let Some(run) = entry.run.as_mut() {
+                    run.settled.extend(txids.iter().copied());
+                    if let Some(probing) = run.probing.as_mut() {
+                        probing.due.retain(|root| !txids.contains(&root.txid));
+                        probing.views.retain(|view| !txids.contains(&view.txid));
+                    }
+                }
                 let events = self.state.clear_where(
                     |wallet, txid| *wallet == wallet_id && txids.contains(txid),
                     None,
@@ -1242,6 +1262,8 @@ impl Actor {
             anchor_at,
             has_forced,
             walk,
+            settled: HashSet::new(),
+            rewound_to: None,
             abort,
             probing: None,
         });
@@ -1302,10 +1324,16 @@ impl Actor {
                     Some(Some(read)) => {
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
-                        let height = height.max(read.synced_height);
                         let Some(current) = entry.run.as_mut() else {
                             return; // matched by id above
                         };
+                        let height = current
+                            .rewound_to
+                            .unwrap_or_else(|| height.max(read.synced_height));
+                        // What settled since the read is not the pass's any more.
+                        let mut read = read;
+                        read.views
+                            .retain(|view| !current.settled.contains(&view.txid));
                         // The wallet is not where this pass was queued: far
                         // ahead (a catch-up whose height step has not arrived
                         // yet) or behind (a rewind for a rescan). Either way a
@@ -1368,6 +1396,15 @@ impl Actor {
                         "broadcast probe: a probe result with no root in flight"
                     );
                     self.end_run(wallet_id);
+                    return;
+                };
+                if current.settled.contains(&root.txid) {
+                    // Settled while its probe was out: the event already
+                    // cleared it; the answer is moot.
+                    self.probe_next(wallet_id);
+                    return;
+                }
+                let Some(probing) = current.probing.as_ref() else {
                     return;
                 };
                 let events = record_probe(
@@ -1637,7 +1674,13 @@ fn is_settled(record: &TransactionRecord) -> bool {
 impl EventHandler for BroadcastResolver {
     fn on_wallet_event(&self, event: &WalletEvent) {
         let wallet_id = event.wallet_id();
-        let settled = settled_or_gone(event);
+        // While probing is off nothing is published, so there is nothing to
+        // clear (turning it off cleared everything).
+        let settled = if self.is_enabled() {
+            settled_or_gone(event)
+        } else {
+            HashSet::new()
+        };
         if !settled.is_empty() {
             self.send(Command::Settled {
                 wallet_id,
@@ -1681,7 +1724,11 @@ mod tests {
     use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, TxIn};
     use key_wallet::account::AccountType;
-    use key_wallet::managed_account::transaction_record::TransactionRecord;
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
+    use key_wallet::transaction_checking::BlockInfo;
     use key_wallet::WalletCoreBalance;
 
     use super::*;
@@ -3325,6 +3372,115 @@ mod tests {
             rig.actor.state.schedules[&(wallet(), txid(1))].last_probe,
             Some(50)
         );
+    }
+
+    /// A send settled while its probe was out: the event clears it, and the
+    /// probe's late answer publishes nothing for it again.
+    #[tokio::test]
+    async fn should_not_republish_a_send_settled_while_its_probe_was_out() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.sent();
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // its probe is out now
+        rig.handle(Command::Settled {
+            wallet_id: wallet(),
+            txids: HashSet::from([txid(1)]),
+        });
+        rig.settle().await;
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+    }
+
+    /// A step back while a forced pass is reading runs that pass at the
+    /// replayed height, not at the one it was queued at.
+    #[tokio::test]
+    async fn should_run_a_reading_pass_at_the_height_of_a_rewind() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.source.pause(true);
+        rig.actor.handle(Command::Uncertain(txid(1)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.actor.joined(listed); // the forced pass is reading, queued at 101
+
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 50);
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 50,
+        });
+        rig.source.pause(false);
+        rig.settle().await;
+
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(1))].last_probe,
+            Some(50)
+        );
+    }
+
+    fn record(n: u8, context: TransactionContext) -> TransactionRecord {
+        TransactionRecord::new(
+            tx(n, &[outpoint(90, 0)]),
+            AccountType::CoinJoin { index: 0 },
+            context,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    fn in_block() -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0))
+    }
+
+    /// Block and new-transaction events name only the records that are
+    /// settled; a mempool record is not.
+    #[test]
+    fn should_read_settled_records_from_block_and_transaction_events() {
+        let block = WalletEvent::BlockProcessed {
+            wallet_id: wallet(),
+            height: 100,
+            chain_lock: None,
+            inserted: vec![
+                record(1, in_block()),
+                record(2, TransactionContext::Mempool),
+            ],
+            updated: vec![record(3, in_block())],
+            matured: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        let detected = |context| WalletEvent::TransactionDetected {
+            wallet_id: wallet(),
+            record: Box::new(record(4, context)),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        let txid_of = |n: u8| tx(n, &[outpoint(90, 0)]).txid();
+
+        assert_eq!(
+            settled_or_gone(&block),
+            HashSet::from([txid_of(1), txid_of(3)])
+        );
+        assert_eq!(
+            settled_or_gone(&detected(in_block())),
+            HashSet::from([txid_of(4)])
+        );
+        assert!(settled_or_gone(&detected(TransactionContext::Mempool)).is_empty());
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
