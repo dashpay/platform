@@ -3702,6 +3702,183 @@ mod contact_watch_only_projection_tests {
         );
     }
 
+    /// Platform credits an asset lock moves into the wallet's own
+    /// keys account (`AssetLockPayload.credit_outputs`, mirrored by the
+    /// OP_RETURN output's value).
+    const LOCK_CREDIT: u64 = 60_000_000;
+    const LOCK_FEE: u64 = 1_000;
+
+    /// The credit an asset lock spending [`our_input`] burns: everything
+    /// but the fee when there is no change, else [`LOCK_CREDIT`].
+    fn lock_credit(change: bool) -> u64 {
+        if change {
+            LOCK_CREDIT
+        } else {
+            FUNDING - LOCK_FEE
+        }
+    }
+
+    /// An asset lock spending [`our_input`]: output 0 burns
+    /// [`lock_credit`] into the OP_RETURN, output 1 (when `change`) is
+    /// our change, and the rest is the fee.
+    fn asset_lock_tx(change: bool) -> Transaction {
+        let mut tx = tx_with(&[]);
+        tx.version = 3;
+        tx.output.push(TxOut {
+            value: lock_credit(change),
+            script_pubkey: ScriptBuf::new_op_return(&[]),
+        });
+        if change {
+            tx.output.push(TxOut {
+                value: FUNDING - LOCK_CREDIT - LOCK_FEE,
+                script_pubkey: our_change_address().script_pubkey(),
+            });
+        }
+        tx
+    }
+
+    /// The two per-account records upstream emits for an asset lock:
+    /// the funding account's slice (classified by upstream
+    /// `record_transaction`: `Unspendable` OP_RETURN, `Change` output,
+    /// `Outgoing` when nothing of ours comes back) and the keys
+    /// account's thin marker (`Internal`, no details, `+credit` net).
+    fn asset_lock_slices(change: bool) -> (TransactionRecord, TransactionRecord) {
+        let tx = asset_lock_tx(change);
+        let mut outputs = vec![OutputDetail {
+            index: 0,
+            role: OutputRole::Unspendable,
+            address: None,
+            value: lock_credit(change),
+        }];
+        let (direction, change_value) = if change {
+            let value = FUNDING - LOCK_CREDIT - LOCK_FEE;
+            outputs.push(output(1, OutputRole::Change, &our_change_address(), value));
+            (TransactionDirection::Internal, value)
+        } else {
+            (TransactionDirection::Outgoing, 0)
+        };
+        let funding = record_with(
+            &tx,
+            bip44_account_0(),
+            in_block(1_000),
+            TransactionType::AssetLock,
+            direction,
+            vec![our_input()],
+            outputs,
+            change_value as i64 - FUNDING as i64,
+        );
+        let keys = record_with(
+            &tx,
+            AccountType::AssetLockAddressTopUp,
+            in_block(1_000),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            Vec::new(),
+            Vec::new(),
+            lock_credit(change) as i64,
+        );
+        (funding, keys)
+    }
+
+    /// The wallet's Core balance drops by the locked credit plus the fee
+    /// — the credit leaves Core for the wallet's own Platform keys, so
+    /// the move is `Internal` and the net is `-(credit + fee)`, with or
+    /// without change. The keys account's `+credit` marker net counts
+    /// Platform credits, not Core funds, and must not be summed in (it
+    /// made the live row read `-fee` while every repair path wrote
+    /// `-(credit + fee)`).
+    #[tokio::test]
+    async fn should_project_asset_lock_as_internal_net_of_credit_and_fee() {
+        for change in [false, true] {
+            let (funding, keys) = asset_lock_slices(change);
+            let cs =
+                build_core_changeset(&test_manager(), &block_processed(vec![funding, keys])).await;
+
+            assert_eq!(cs.records.len(), 1, "change={change}");
+            let row = &cs.records[0];
+            assert_eq!(
+                row.direction,
+                TransactionDirection::Internal,
+                "change={change}"
+            );
+            assert_eq!(
+                row.net_amount,
+                -((lock_credit(change) + LOCK_FEE) as i64),
+                "change={change}"
+            );
+            assert_eq!(row.account_type, bip44_account_0(), "change={change}");
+        }
+    }
+
+    /// A funding slice that never meets the keys marker (the keys
+    /// account did not match, or its slice lands in another round) is
+    /// projected with the same wallet rule — not left on upstream's
+    /// account-local `Outgoing`.
+    #[tokio::test]
+    async fn should_project_a_lone_asset_lock_funding_slice_as_internal() {
+        for change in [false, true] {
+            let (funding, _) = asset_lock_slices(change);
+            let cs = build_core_changeset(&test_manager(), &block_processed(vec![funding])).await;
+
+            assert_eq!(cs.records.len(), 1, "change={change}");
+            assert_eq!(
+                cs.records[0].direction,
+                TransactionDirection::Internal,
+                "change={change}"
+            );
+            assert_eq!(
+                cs.records[0].net_amount,
+                -((lock_credit(change) + LOCK_FEE) as i64),
+                "change={change}"
+            );
+        }
+    }
+
+    /// The keys account's marker alone carries no Core accounting
+    /// evidence, so the projection leaves upstream's verdict alone.
+    #[tokio::test]
+    async fn should_keep_a_lone_keys_marker_as_upstream_emitted_it() {
+        let (_, keys) = asset_lock_slices(false);
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![keys])).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].direction, TransactionDirection::Internal);
+        assert_eq!(cs.records[0].net_amount, lock_credit(false) as i64);
+    }
+
+    /// An asset lock that also pays someone else is a real outgoing
+    /// payment; the asset-lock exception covers only the burn.
+    #[tokio::test]
+    async fn should_project_asset_lock_paying_an_external_output_as_outgoing() {
+        let (mut funding, keys) = asset_lock_slices(true);
+        let paid = 5_000_000;
+        let mut tx = funding.transaction.clone();
+        tx.output[1].value -= paid;
+        tx.output.push(TxOut {
+            value: paid,
+            script_pubkey: contact_address().script_pubkey(),
+        });
+        funding.transaction = tx.clone();
+        funding.txid = tx.txid();
+        funding.output_details[1].value -= paid;
+        funding.net_amount -= paid as i64;
+        funding
+            .output_details
+            .push(output(2, OutputRole::Sent, &contact_address(), paid));
+        let mut keys = keys;
+        keys.transaction = tx.clone();
+        keys.txid = tx.txid();
+
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![funding, keys])).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
+        assert_eq!(
+            cs.records[0].net_amount,
+            -((LOCK_CREDIT + LOCK_FEE + paid) as i64)
+        );
+    }
+
     /// A fold lands at the group's FIRST position even when the funding
     /// record (the metadata source) appears later — unrelated records
     /// between the slices must not move ahead of the folded transaction.

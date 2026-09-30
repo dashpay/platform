@@ -18,6 +18,7 @@ use dashcore::Txid;
 use dashcore::{Network, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 // Only the `#[cfg(test)]` CoinJoin fixture needs the trait (for
 // `next_address_with_info` on a non-standard account); gate it to match so a
 // `test-utils`-only build does not flag it unused.
@@ -32,6 +33,7 @@ use tokio::sync::RwLock;
 
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::changeset::changeset::fold_same_txid_records;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -173,6 +175,13 @@ impl ExtendedPubKeySigner for WalletSigner {
     }
 }
 
+/// Runs the live projection's per-txid fold and wallet-level accounting
+/// over upstream per-account records, so downstream crates can pin their
+/// own accounting (the SQLite repair) against the live path.
+pub fn fold_wallet_records(records: &mut Vec<TransactionRecord>) {
+    fold_same_txid_records(records);
+}
+
 /// Builds a testnet wallet manager whose `account_type`/index-0 account
 /// holds a single spendable UTXO (10_000_000 duffs) — the whole balance
 /// rides on that one input, so a leaked reservation strands it. Returns
@@ -283,9 +292,7 @@ pub(crate) fn observed_spend_event(
     tx: &Transaction,
 ) -> key_wallet_manager::WalletEvent {
     use dashcore::Address as DashAddress;
-    use key_wallet::managed_account::transaction_record::{
-        InputDetail, TransactionDirection, TransactionRecord,
-    };
+    use key_wallet::managed_account::transaction_record::{InputDetail, TransactionDirection};
     use key_wallet::transaction_checking::transaction_router::TransactionType;
 
     let record = TransactionRecord::new(
