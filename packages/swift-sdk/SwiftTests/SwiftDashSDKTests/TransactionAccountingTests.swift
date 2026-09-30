@@ -64,6 +64,12 @@ final class TransactionAccountingTests: XCTestCase {
         }
     }
 
+    func testShouldFormatSignedDuffsWithoutTrappingOnInt64Min() {
+        XCTAssertEqual(PersistentTransaction.format(duffs: 150_000_000), "+1.50000000 DASH")
+        XCTAssertEqual(PersistentTransaction.format(duffs: -100), "-0.00000100 DASH")
+        XCTAssertTrue(PersistentTransaction.format(duffs: .min).hasPrefix("-92233720368."))
+    }
+
     func testShouldRejectOverflowInsteadOfWrappingHistory() {
         XCTAssertNil(PersistentTransaction.reconciledAccounting(
             inputs: [input(UInt64.max)], ownedOutputAmounts: [], allOutputsOwned: false, previousDirection: 0, isAssetLock: false

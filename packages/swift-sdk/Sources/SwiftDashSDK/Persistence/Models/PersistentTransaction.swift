@@ -238,8 +238,7 @@ public final class PersistentTransaction {
                     && seen.insert($0.outpoint).inserted
             }
         }
-        let wallets = Set((inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
-            .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
+        let wallets = owningWalletIds
         let hasUnownedTxos = (inputs + outputs).contains { !PlatformWalletPersistenceHandler.isWalletOwnedTxo($0) }
         // Unresolved inputs make any amount provisional, the stored one included.
         guard pendingInputs.isEmpty else { return nil }
@@ -255,9 +254,7 @@ public final class PersistentTransaction {
 
     /// Direction relative to one wallet for transactions shared by multiple local wallets.
     public func direction(for walletId: Data) -> UInt32 {
-        let wallets = Set((inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
-            .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
-        guard wallets.count > 1, direction != CoreDirectionCode.coinJoin,
+        guard owningWalletIds.count > 1, direction != CoreDirectionCode.coinJoin,
               typedKind != .coinJoin, !isAssetLock else { return direction }
         let spendsOurs = inputs.contains {
             PlatformWalletPersistenceHandler.isWalletOwnedTxo($0)
@@ -269,7 +266,33 @@ public final class PersistentTransaction {
     /// Format the wallet's Core value movement in DASH.
     public func formattedAmount(for walletId: Data) -> String {
         guard let amount = netAmount(for: walletId) else { return "Amount unavailable" }
-        return String(format: "%@%.8f DASH", amount >= 0 ? "+" : "-", Double(amount.magnitude) / 100_000_000)
+        return Self.format(duffs: amount)
+    }
+
+    /// Net amount for `walletId`, or the stored scalar when no wallet scope is given.
+    public func displayNetAmount(for walletId: Data?) -> Int64? {
+        walletId.map { netAmount(for: $0) } ?? netAmount
+    }
+
+    /// `CoreDirectionCode` for `walletId`, or the stored direction when no wallet scope is given.
+    public func displayDirectionCode(for walletId: Data?) -> UInt32 {
+        walletId.map { direction(for: $0) } ?? direction
+    }
+
+    /// Formatted amount for `walletId`, or the stored scalar's when no wallet scope is given.
+    public func displayFormattedAmount(for walletId: Data?) -> String {
+        walletId.map { formattedAmount(for: $0) } ?? formattedAmount
+    }
+
+    /// Signed DASH text for a duff amount; `magnitude` cannot trap on `Int64.min`.
+    static func format(duffs: Int64) -> String {
+        String(format: "%@%.8f DASH", duffs >= 0 ? "+" : "-", Double(duffs.magnitude) / 100_000_000)
+    }
+
+    /// Local wallets owning at least one of this transaction's TXOs.
+    private var owningWalletIds: Set<Data> {
+        Set((inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
+            .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
     }
 
     static func reconciledAccounting(
@@ -303,10 +326,10 @@ public final class PersistentTransaction {
 
     public var directionName: String {
         switch direction {
-        case 0: return "Incoming"
-        case 1: return "Outgoing"
-        case 2: return "Internal"
-        case 3: return "CoinJoin"
+        case CoreDirectionCode.incoming: return "Incoming"
+        case CoreDirectionCode.outgoing: return "Outgoing"
+        case CoreDirectionCode.internalTransfer: return "Internal"
+        case CoreDirectionCode.coinJoin: return "CoinJoin"
         default: return "Unknown"
         }
     }
@@ -410,10 +433,17 @@ public final class PersistentTransaction {
     }
 
     public var formattedAmount: String {
-        let dash = Double(abs(netAmount)) / 100_000_000.0
-        let sign = netAmount >= 0 ? "+" : "-"
-        return String(format: "%@%.8f DASH", sign, dash)
+        Self.format(duffs: netAmount)
     }
+}
+
+/// Wire values of `PersistentTransaction.direction`, matching `directionName`
+/// and the FFI's `TransactionDirection` discriminants.
+public enum CoreDirectionCode {
+    public static let incoming: UInt32 = 0
+    public static let outgoing: UInt32 = 1
+    public static let internalTransfer: UInt32 = 2
+    public static let coinJoin: UInt32 = 3
 }
 
 /// Typed mirror of Rust's
@@ -429,15 +459,6 @@ public final class PersistentTransaction {
 /// "pre-feature / not-populated" sentinel and is NOT a case in this
 /// enum — `TransactionTypeKind(rawValue: 0xFF)` returns `nil`, which
 /// the accessors treat as "unknown" so no branch fires falsely.
-/// Wire values of `PersistentTransaction.direction`, matching `directionName`
-/// and the FFI's `TransactionDirection` discriminants.
-enum CoreDirectionCode {
-    static let incoming: UInt32 = 0
-    static let outgoing: UInt32 = 1
-    static let internalTransfer: UInt32 = 2
-    static let coinJoin: UInt32 = 3
-}
-
 public enum TransactionTypeKind: UInt8 {
     case standard = 0
     case coinJoin = 1

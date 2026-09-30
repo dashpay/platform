@@ -6,8 +6,8 @@ struct TransactionDetailView: View {
     var walletId: Data? = nil
     /// `nil` while this wallet's amount is unresolved — the same state the
     /// amount label shows as "Amount unavailable", so fee and amount agree.
-    private var netAmount: Int64? { walletId.map { transaction.netAmount(for: $0) } ?? transaction.netAmount }
-    private var direction: UInt32 { walletId.map { transaction.direction(for: $0) } ?? transaction.direction }
+    private var netAmount: Int64? { transaction.displayNetAmount(for: walletId) }
+    private var direction: UInt32 { transaction.displayDirectionCode(for: walletId) }
     /// Asset-lock payload funding amount, excluding the Core transaction fee.
     var assetLockAmountDuffs: Int64? = nil
     @Environment(\.dismiss) private var dismiss
@@ -25,7 +25,7 @@ struct TransactionDetailView: View {
         if transaction.isProviderSpecial && netAmount == 0 {
             return nil
         }
-        return walletId.map { transaction.formattedAmount(for: $0) } ?? transaction.formattedAmount
+        return transaction.displayFormattedAmount(for: walletId)
     }
 
     private var typeDescription: String {
@@ -36,11 +36,11 @@ struct TransactionDetailView: View {
             return transaction.displayDirection
         }
         switch direction {
-        case 0:
+        case CoreDirectionCode.incoming:
             return "Received"
-        case 1:
+        case CoreDirectionCode.outgoing:
             return "Sent"
-        case 3:
+        case CoreDirectionCode.coinJoin:
             return "CoinJoin"
         default:
             return "Self-Transfer"
@@ -51,14 +51,7 @@ struct TransactionDetailView: View {
         if transaction.isAssetLock { return "lock.fill" }
         if transaction.isAssetUnlock { return "lock.open.fill" }
         if transaction.isProviderSpecial { return "server.rack" }
-        switch direction {
-        case 0:
-            return "arrow.down.circle.fill"
-        case 1:
-            return "arrow.up.circle.fill"
-        default:
-            return "arrow.triangle.2.circlepath"
-        }
+        return TransactionDirectionStyle.icon(for: direction)
     }
 
     private var typeColor: Color {
@@ -68,14 +61,7 @@ struct TransactionDetailView: View {
         if transaction.isProviderSpecial {
             return .orange
         }
-        switch direction {
-        case 0:
-            return .green
-        case 1:
-            return .red
-        default:
-            return .blue
-        }
+        return TransactionDirectionStyle.color(for: direction)
     }
 
     private var isConfirmed: Bool {

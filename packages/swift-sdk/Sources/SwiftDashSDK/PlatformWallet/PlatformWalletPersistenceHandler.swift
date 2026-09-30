@@ -3432,6 +3432,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // Display-only accounting: a failure here must not fail the
                 // round, and is reported under its own event, not save_failed.
                 // Recomputed values that did land are consistent on their own.
+                // TODO(test-round-accounting-failure): cover this catch with a
+                // FetchFaultInjector test; pinning which read faults needs a Swift run.
                 do {
                     try reconcileTransactionAccounting(Array(accountingDirty.values))
                 } catch {
@@ -6857,7 +6859,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let spendingWallets = Set(inputs.compactMap { Self.resolvedWalletId(of: $0) })
             for (index, output) in decoded.outputs.enumerated() {
                 // OP_RETURN burns (including asset locks) are not spendable Core outputs.
-                if output.scriptPubkey.first == 0x6a { continue }
+                if output.isOpReturn { continue }
                 var belongs = ownedVouts.contains(UInt32(index))
                 if !belongs, let address = output.address {
                     let descriptor = FetchDescriptor<PersistentCoreAddress>(predicate: #Predicate { $0.address == address })

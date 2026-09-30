@@ -217,6 +217,31 @@ struct TransactionListView: View {
     }
 }
 
+// MARK: - Direction Style
+
+/// Direction icon and colour shared by the transaction list and detail views.
+enum TransactionDirectionStyle {
+    static func icon(for direction: UInt32) -> String {
+        switch direction {
+        case CoreDirectionCode.incoming: return "arrow.down.circle.fill"
+        case CoreDirectionCode.outgoing: return "arrow.up.circle.fill"
+        case CoreDirectionCode.internalTransfer: return "arrow.triangle.2.circlepath"
+        case CoreDirectionCode.coinJoin: return "shuffle.circle.fill"
+        default: return "questionmark.circle"
+        }
+    }
+
+    /// Internal transfers share the outgoing colour: they still pay a fee.
+    static func color(for direction: UInt32) -> Color {
+        switch direction {
+        case CoreDirectionCode.incoming: return .green
+        case CoreDirectionCode.outgoing, CoreDirectionCode.internalTransfer: return .red
+        case CoreDirectionCode.coinJoin: return .blue
+        default: return .secondary
+        }
+    }
+}
+
 // MARK: - Transaction Row View
 
 struct TransactionRowView: View {
@@ -224,8 +249,8 @@ struct TransactionRowView: View {
     var walletId: Data? = nil
     /// `nil` while this wallet's amount is unresolved — the same state the
     /// amount label shows as "Amount unavailable", so fee and amount agree.
-    private var netAmount: Int64? { walletId.map { transaction.netAmount(for: $0) } ?? transaction.netAmount }
-    private var direction: UInt32 { walletId.map { transaction.direction(for: $0) } ?? transaction.direction }
+    private var netAmount: Int64? { transaction.displayNetAmount(for: walletId) }
+    private var direction: UInt32 { transaction.displayDirectionCode(for: walletId) }
     /// Asset-lock payload funding amount, excluding the Core transaction fee.
     var assetLockAmountDuffs: Int64? = nil
     /// The DashPay payment this tx belongs to, if any — joined by `txid` in
@@ -255,14 +280,7 @@ struct TransactionRowView: View {
         // `Internal` — the wallet just sees its own owner/voting/payout
         // keys in the payload — so the self-transfer arrows would lie.
         if transaction.isProviderSpecial { return "server.rack" }
-        // direction: 0=incoming, 1=outgoing, 2=internal, 3=coinJoin
-        switch direction {
-        case 0: return "arrow.down.circle.fill"
-        case 1: return "arrow.up.circle.fill"
-        case 2: return "arrow.triangle.2.circlepath"
-        case 3: return "shuffle.circle.fill"
-        default: return "questionmark.circle"
-        }
+        return TransactionDirectionStyle.icon(for: direction)
     }
 
     private var typeColor: Color {
@@ -280,12 +298,7 @@ struct TransactionRowView: View {
         if transaction.isProviderSpecial {
             return .orange
         }
-        switch direction {
-        case 0: return .green
-        case 1, 2: return .red
-        case 3: return .blue
-        default: return .secondary
-        }
+        return TransactionDirectionStyle.color(for: direction)
     }
 
     /// Primary label: the contact context for a DashPay payment, else the
@@ -436,6 +449,6 @@ struct TransactionRowView: View {
         if transaction.isProviderSpecial && netAmount == 0 {
             return transaction.providerSpecialName ?? transaction.transactionType
         }
-        return walletId.map { transaction.formattedAmount(for: $0) } ?? transaction.formattedAmount
+        return transaction.displayFormattedAmount(for: walletId)
     }
 }
