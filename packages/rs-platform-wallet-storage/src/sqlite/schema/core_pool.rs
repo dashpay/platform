@@ -16,12 +16,13 @@ use rusqlite::{params, Connection, Transaction};
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
 
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::accounts;
 use crate::sqlite::schema::blob;
+use crate::sqlite::util::safe_cast::{i64_to_u32, i64_to_u64};
 
 /// Stored `pool_type` discriminant. Kept in the primary key so an External
 /// and an Internal pool never collide at the same `address_index`.
@@ -481,6 +482,188 @@ pub fn load_used_addresses_with_ctx(
         ));
     }
     Ok(out)
+}
+
+/// Restore every persisted Core pool, including handed-out and pre-derived keys.
+pub(crate) fn restore_pools(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    wallet_info: &mut key_wallet::wallet::ManagedWalletInfo,
+    ctx: &LoadCtx,
+) -> Result<(), WalletStorageError> {
+    for mut account in wallet_info.accounts.all_accounts_mut() {
+        let account_type = account.managed_account_type().to_account_type();
+        let label = accounts::account_type_db_label(&account_type);
+        let (user, friend) = accounts::account_dashpay_ids(&account_type);
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            let mut stmt = conn.prepare(
+                "SELECT address_index, length(script), script, length(public_key), public_key, \
+                 key_type, used, reserved_at FROM core_address_pool \
+                 WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+                   AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+                   AND pool_type = ?7 ORDER BY address_index",
+            )?;
+            let mut rows = stmt.query(params![
+                wallet_id.as_slice(),
+                label,
+                i64::from(accounts::account_index(&account_type)),
+                i64::from(accounts::account_key_class(&account_type)),
+                user.as_slice(),
+                friend.as_slice(),
+                pool_type_to_i64(pool.pool_type)
+            ])?;
+            while let Some(row) = rows.next()? {
+                let index = i64_to_u32("core_address_pool.address_index", row.get(0)?)?;
+                blob::check_size(row.get(1)?)?;
+                let script = dashcore::ScriptBuf::from_bytes(row.get(2)?);
+                let address = match dashcore::Address::from_script(&script, pool.network) {
+                    Ok(address) => address,
+                    Err(source) => {
+                        // Earlier readers already account for used and typed platform rows.
+                        if row.get::<_, bool>(6)?
+                            || (account_type
+                                == key_wallet::account::AccountType::ProviderPlatformKeys
+                                && (row.get::<_, Option<i64>>(3)?.is_some()
+                                    || row.get::<_, Option<i64>>(5)?.is_some()))
+                        {
+                            continue;
+                        }
+                        ctx.tolerate_at(
+                            LoadSite::UndecodableAddressScript,
+                            SiteCoords {
+                                wallet_id: Some(*wallet_id),
+                                account_type: &account_type,
+                                affected: 1,
+                                detail: Some(&pool.pool_type),
+                            },
+                            WalletStorageError::from(source),
+                        )?;
+                        continue;
+                    }
+                };
+                let key_len: Option<i64> = row.get(3)?;
+                let key_type: Option<i64> = row.get(5)?;
+                let public_key = match (key_len, key_type) {
+                    (None, None) => None,
+                    (Some(len), Some(kind)) => {
+                        let expected_kind = match account_type {
+                            key_wallet::account::AccountType::ProviderOperatorKeys => KEY_TYPE_BLS,
+                            key_wallet::account::AccountType::ProviderPlatformKeys => {
+                                KEY_TYPE_EDDSA
+                            }
+                            _ => KEY_TYPE_ECDSA,
+                        };
+                        if kind != expected_kind {
+                            return Err(WalletStorageError::blob_decode(
+                                "core pool key type does not match its account",
+                            ));
+                        }
+                        let expected = match kind {
+                            KEY_TYPE_ECDSA => ECDSA_PUBLIC_KEY_LEN,
+                            KEY_TYPE_EDDSA => EDDSA_PUBLIC_KEY_LEN,
+                            KEY_TYPE_BLS => BLS_PUBLIC_KEY_LEN,
+                            _ => {
+                                return Err(WalletStorageError::blob_decode(
+                                    "core_address_pool.key_type is outside 0..=2",
+                                ))
+                            }
+                        };
+                        blob::check_fixed_width(
+                            len,
+                            expected,
+                            "core_address_pool.public_key has the wrong length for key_type",
+                        )?;
+                        let bytes = row.get(4)?;
+                        Some(match kind {
+                            KEY_TYPE_ECDSA => PublicKeyType::ECDSA(bytes),
+                            KEY_TYPE_EDDSA => PublicKeyType::EdDSA(bytes),
+                            _ => PublicKeyType::BLS(bytes),
+                        })
+                    }
+                    _ => {
+                        return Err(WalletStorageError::blob_decode(
+                            "core_address_pool.public_key and key_type nullability differ",
+                        ))
+                    }
+                };
+                let used: bool = row.get(6)?;
+                let reserved: Option<i64> = row.get(7)?;
+                let reserved = reserved
+                    .map(|at| i64_to_u64("core_address_pool.reserved_at", at))
+                    .transpose()?;
+                let child = if pool.pool_type == AddressPoolType::AbsentHardened {
+                    key_wallet::bip32::ChildNumber::from_hardened_idx(index)
+                } else {
+                    key_wallet::bip32::ChildNumber::from_normal_idx(index)
+                }
+                .map_err(|source| WalletStorageError::AccountRecordInvalid {
+                    e: key_wallet::error::Error::Bip32(source),
+                })?;
+                let mut path = pool.base_path.clone();
+                path.push(child);
+                let previous = pool.addresses.get(&index);
+                if previous.is_some_and(|info| {
+                    info.address != address
+                        || public_key
+                            .as_ref()
+                            .zip(info.public_key.as_ref())
+                            .is_some_and(|(a, b)| a != b)
+                }) {
+                    return Err(WalletStorageError::blob_decode(
+                        "core pool row conflicts with its derived address or key",
+                    ));
+                }
+                if pool
+                    .address_index
+                    .get(&address)
+                    .is_some_and(|other| *other != index)
+                {
+                    return Err(WalletStorageError::blob_decode(
+                        "core pool address has multiple derivation indices",
+                    ));
+                }
+                // Chain-derived usage takes precedence over an older pool snapshot.
+                let used = used || previous.is_some_and(|info| info.is_used());
+                let state = if used {
+                    AddressState::Used
+                } else if let Some(at) = reserved {
+                    AddressState::Reserved { at }
+                } else {
+                    AddressState::Available
+                };
+                let info = key_wallet::AddressInfo {
+                    address,
+                    script_pubkey: script,
+                    public_key: public_key
+                        .or_else(|| previous.and_then(|info| info.public_key.clone())),
+                    index,
+                    path,
+                    state,
+                    tx_count: previous.map_or(0, |info| info.tx_count),
+                    total_received: previous.map_or(0, |info| info.total_received),
+                    total_sent: previous.map_or(0, |info| info.total_sent),
+                    balance: previous.map_or(0, |info| info.balance),
+                    label: previous.and_then(|info| info.label.clone()),
+                    metadata: previous.map_or_else(Default::default, |info| info.metadata.clone()),
+                };
+                if let Some(previous) = pool.addresses.remove(&index) {
+                    pool.address_index.remove(&previous.address);
+                    pool.script_pubkey_index.remove(&previous.script_pubkey);
+                }
+                pool.address_index.insert(info.address.clone(), index);
+                pool.script_pubkey_index
+                    .insert(info.script_pubkey.clone(), index);
+                pool.addresses.insert(index, info);
+                pool.highest_generated =
+                    Some(pool.highest_generated.map_or(index, |old| old.max(index)));
+                if used {
+                    pool.used_indices.insert(index);
+                }
+                pool.highest_used = pool.used_indices.iter().max().copied();
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

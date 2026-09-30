@@ -10,6 +10,7 @@ use crate::sqlite::error::WalletStorageError;
 use refinery_core::error::WrapMigrationError;
 
 mod legacy_v008;
+mod legacy_v019;
 
 // Generates a `migrations` module with `runner()`; path is relative to
 // the crate root.
@@ -78,7 +79,7 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
             } else if query == self.pool_sql {
                 legacy_v008::convert_pools(&self.tx)?;
             } else if query == self.history_sql {
-                super::schema::core_history::migrate(&self.tx)?;
+                legacy_v019::repair_history(&self.tx)?;
             }
             count += 1;
         }

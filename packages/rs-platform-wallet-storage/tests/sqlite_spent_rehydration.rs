@@ -45,6 +45,13 @@ struct Fixture {
 
 impl Fixture {
     async fn new(spend_context: TransactionContext) -> Self {
+        Self::with_funding(block(100), spend_context).await
+    }
+
+    async fn with_funding(
+        funding_context: TransactionContext,
+        spend_context: TransactionContext,
+    ) -> Self {
         let mut wallet =
             Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
@@ -91,7 +98,7 @@ impl Fixture {
             special_transaction_payload: None,
         };
         let funding_result = info
-            .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+            .check_core_transaction(&funding, funding_context, &mut wallet, true, true)
             .await;
         let coins: Vec<_> = info.accounts.standard_bip44_accounts[&0]
             .utxos
@@ -170,6 +177,19 @@ impl Fixture {
         assert_eq!(selection.selected[0].outpoint, self.available);
     }
 
+    fn assert_spent_stored(&self, expected: bool) {
+        let spent: bool = self
+            .persister
+            .lock_conn_for_test()
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE substr(outpoint, 2, 32) = ?1 AND value = 100000",
+                [self.spent.txid.as_byte_array().as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(spent, expected, "stored spent flag of the reserved input");
+    }
+
     async fn redeliver(&self, wallet: &mut Wallet, info: &mut ManagedWalletInfo) {
         let result = info
             .check_core_transaction(&self.funding, block(100), wallet, true, true)
@@ -235,9 +255,23 @@ async fn should_reconcile_stale_unspent_projection_against_confirmed_history() {
 #[tokio::test]
 async fn should_not_release_inputs_reserved_by_unconfirmed_spend() {
     let fixture = Fixture::new(TransactionContext::Mempool).await;
-    let (_, info) = fixture.load();
+    let (mut wallet, mut info) = fixture.load();
     fixture.assert_spent_excluded(&info);
     assert!(!info.observed_spent_outpoints().contains_key(&fixture.spent));
+    fixture.redeliver(&mut wallet, &mut info).await;
+    fixture.assert_spent_stored(true);
+}
+
+#[tokio::test]
+async fn should_keep_unconfirmed_funding_reserved_when_it_confirms_after_reload() {
+    let fixture =
+        Fixture::with_funding(TransactionContext::Mempool, TransactionContext::Mempool).await;
+    let (mut wallet, mut info) = fixture.load();
+    assert!(!info.accounts.standard_bip44_accounts[&0]
+        .utxos
+        .contains_key(&fixture.spent));
+    fixture.redeliver(&mut wallet, &mut info).await;
+    fixture.assert_spent_stored(true);
 }
 
 #[tokio::test]

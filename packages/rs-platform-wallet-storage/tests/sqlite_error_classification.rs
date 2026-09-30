@@ -351,7 +351,6 @@ fn samples() -> Vec<WalletStorageError> {
             highest_used: Some(u32::MAX - 5),
             gap_limit: 20,
         },
-        WalletStorageError::CoreHistoryReplay(dash_async::AsyncError::Generic("test".into())),
         WalletStorageError::DatabasePathIsSymlink {
             path: PathBuf::from("/tmp/wallet.db"),
         },
@@ -494,7 +493,6 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::EmptyPoolAddressScript { .. } => {
                 (false, "empty_pool_address_script")
             }
-            WalletStorageError::CoreHistoryReplay(_) => (false, "core_history_replay"),
             WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
         }
     }
