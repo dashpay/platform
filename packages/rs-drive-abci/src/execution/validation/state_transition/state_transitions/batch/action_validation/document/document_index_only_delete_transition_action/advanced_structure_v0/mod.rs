@@ -87,7 +87,7 @@ impl DocumentIndexOnlyDeleteTransitionActionStructureValidationV0
         // outlive the delete involve it; then the delete carries none.
         let requires_created_at = index_only_row_commits_created_at(
             document_type.required_fields(),
-            document_type.indexes().values(),
+            document_type.index_structure(),
         );
         match (requires_created_at, carried_created_at) {
             (true, None) => {

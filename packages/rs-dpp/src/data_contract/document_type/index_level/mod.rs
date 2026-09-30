@@ -12,6 +12,7 @@ use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
 use crate::data_contract::document_type::Index;
+use crate::document::property_names::CREATED_AT;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
@@ -129,7 +130,7 @@ pub struct IndexLevelTypeInfo {
     /// document ([`Index::outlives_delete`], see
     /// [`crate::data_contract::document_type::index::OUTLIVES_DELETE`]): the
     /// delete walker leaves them to expire with their window, and the insert
-    /// walker keeps an entry already there instead of writing it again.
+    /// walker writes over an entry already there.
     /// Carried here for the same reason as `preallocated`. `false` on every
     /// pre-PV14 contract (the grammar rejects the keyword below meta-schema
     /// v3).
@@ -235,6 +236,18 @@ pub struct IndexLevel {
     /// level that is stamped. Never set on a contract without such an index,
     /// so every historical index level derives bit-identically.
     outlives_delete_at_or_below: bool,
+    /// Whether an index whose entries a delete clears (not
+    /// [`Index::outlives_delete`]) passes through or ends at this level. With
+    /// [`Self::outlives_delete_at_or_below`] it tells a delete walker in one
+    /// read whether a stamped level holds anything it removes.
+    cleared_on_delete_at_or_below: bool,
+    /// On the root level: whether every index involving `$createdAt` outlives
+    /// a delete, and at least one does. Then no index a delete clears is keyed
+    /// by the timestamp (see
+    /// [`crate::data_contract::document_type::index_only_row_commits_created_at`]).
+    /// `false` on every other level, and on every contract without such an
+    /// index.
+    created_at_indexed_only_by_outliving: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -290,6 +303,18 @@ impl IndexLevel {
     /// at this level — see the field docs on [`IndexLevel`].
     pub fn outlives_delete_at_or_below(&self) -> bool {
         self.outlives_delete_at_or_below
+    }
+
+    /// Whether an index whose entries a delete clears passes through or ends
+    /// at this level — see the field docs on [`IndexLevel`].
+    pub fn cleared_on_delete_at_or_below(&self) -> bool {
+        self.cleared_on_delete_at_or_below
+    }
+
+    /// On the root level: whether only indexes whose entries outlive a
+    /// delete involve `$createdAt` — see the field docs on [`IndexLevel`].
+    pub fn created_at_indexed_only_by_outliving(&self) -> bool {
+        self.created_at_indexed_only_by_outliving
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -399,13 +424,24 @@ impl IndexLevel {
             count_exempt_branch: false,
             skip_at_or_below: false,
             outlives_delete_at_or_below: false,
+            cleared_on_delete_at_or_below: false,
+            created_at_indexed_only_by_outliving: false,
             level_identifier: 0,
         };
 
         let mut counter: u64 = 0;
+        let mut created_at_in_outliving = false;
+        let mut created_at_in_cleared = false;
 
         for index_to_borrow in indices {
             let index = index_to_borrow.borrow();
+            if index.involves(CREATED_AT) {
+                if index.outlives_delete {
+                    created_at_in_outliving = true;
+                } else {
+                    created_at_in_cleared = true;
+                }
+            }
             // The positions of the properties hosting prefix-level Count
             // rankings, when the index declares any. The parser guarantees
             // each name resolves to a non-terminal property; the lookups
@@ -445,6 +481,8 @@ impl IndexLevel {
                                 count_exempt_branch: false,
                                 skip_at_or_below: false,
                                 outlives_delete_at_or_below: false,
+                                cleared_on_delete_at_or_below: false,
+                                created_at_indexed_only_by_outliving: false,
                             }
                         });
                 if flat_level.has_index_with_type.is_some() {
@@ -487,6 +525,8 @@ impl IndexLevel {
                             count_exempt_branch: false,
                             skip_at_or_below: false,
                             outlives_delete_at_or_below: false,
+                            cleared_on_delete_at_or_below: false,
+                            created_at_indexed_only_by_outliving: false,
                         }
                     });
 
@@ -495,6 +535,8 @@ impl IndexLevel {
                 }
                 if index.outlives_delete {
                     current_level.outlives_delete_at_or_below = true;
+                } else {
+                    current_level.cleared_on_delete_at_or_below = true;
                 }
 
                 if position == 0 {
@@ -555,6 +597,8 @@ impl IndexLevel {
         // every index set without an `at` ranking (no level is stamped
         // grouping or propagating), which is every pre-PV14 contract.
         Self::stamp_count_exempt_branches(&mut index_level);
+        index_level.created_at_indexed_only_by_outliving =
+            created_at_in_outliving && !created_at_in_cleared;
 
         Ok(index_level)
     }

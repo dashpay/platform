@@ -218,7 +218,7 @@ A delete of an index-only document carries its values and removes the entries th
 ```
 
 - **A delete carries no `$createdAt`** when every index involving it outlives deletes: the rows commit to no timestamp, and a delete that carries one is refused (`InvalidDocumentTransitionActionError`). An unlike needs only the like's other values, which any device knows.
-- **A create keeps an entry already there.** When the same owner writes the same values again while an earlier document's entry still stands in a window, that entry already stands for them: it is kept, not counted twice, and the create is not refused as a duplicate. Only the index's other entries decide whether a create is a duplicate.
+- **A create writes over an entry already there.** When the same owner writes the same values again while a deleted document's entry still stands in a window, the create writes its own entry over it: the owner counts once, and the create is not refused as a duplicate. Only the index's other entries decide whether a create is a duplicate.
 - **A deleted document keeps counting in the window** until the window moves past it. On a trending window, an unliked like still counts there for up to the window's `range`.
 - **The executed-transition proof** runs against an index that does not outlive deletes, so a delete still proves the document gone.
 
@@ -227,6 +227,7 @@ Rules at registration:
 - Only on an `indexOnly` type, on an index with a `timeRange` carrying a `ttl`, so the entries a delete leaves expire.
 - Not with a sum (`summable`), and not on a type with `entryPayload`: a kept entry holds the amount or payload of the document that wrote it.
 - Every schema property must also sit in an index that neither skips nor outlives deletes, which a delete checks.
+- The index's key (its properties but `$createdAt`, and its terminal) must hold the whole key of an index a delete clears and that skips nothing, so no two documents in state share one of its entries. `[$createdAt, postId] → $ownerId` holds `byPost`'s `[postId] → $ownerId`; `[$createdAt] → $ownerId` holds no such key and is refused.
 - The proof index may not outlive deletes.
 
 ## See also
