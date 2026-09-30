@@ -12,6 +12,7 @@ use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, Transaction};
 
+use super::accounts::DASHPAY_EXTERNAL_LABEL;
 use super::{blob, core_state, wallets};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::LoadCtx;
@@ -75,7 +76,8 @@ pub(super) fn index_record(
     record: &TransactionRecord,
 ) -> Result<(), WalletStorageError> {
     let mut stmt = tx.prepare_cached(
-        "INSERT OR IGNORE INTO core_transaction_inputs (wallet_id, txid, outpoint) VALUES (?1, ?2, ?3)",
+        "INSERT OR IGNORE INTO core_transaction_inputs (wallet_id, txid, outpoint) \
+         VALUES (?1, ?2, ?3)",
     )?;
     for input in &record.transaction.input {
         stmt.execute(params![
@@ -137,7 +139,10 @@ fn owned_output(
     outpoint: &OutPoint,
     network: dashcore::Network,
 ) -> Result<Option<(u64, Address)>, WalletStorageError> {
-    let mut stmt = tx.prepare_cached("SELECT value, length(script), script FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0")?;
+    let mut stmt = tx.prepare_cached(
+        "SELECT value, length(script), script FROM core_utxos \
+         WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+    )?;
     let mut rows = stmt.query(params![
         wallet_id.as_slice(),
         blob::encode_outpoint(outpoint)?
@@ -162,8 +167,12 @@ pub(crate) fn contact_only_script(
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
     Ok(conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) AND NOT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
-        params![wallet_id.as_slice(), script], |r| r.get(0))?)
+        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
+         AND NOT EXISTS(SELECT 1 FROM core_address_pool \
+             WHERE wallet_id = ?1 AND script = ?2 AND account_type != ?3)",
+        params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL],
+        |r| r.get(0),
+    )?)
 }
 
 fn repair_record(

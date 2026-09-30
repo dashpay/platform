@@ -18,6 +18,7 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
+use crate::sqlite::schema::core_history;
 use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
@@ -94,7 +95,7 @@ pub fn apply(
                 record_blob = excluded.record_blob",
         )?;
         for incoming in &cs.records {
-            let record = super::core_history::preserve_known_details(tx, wallet_id, incoming)?;
+            let record = core_history::preserve_known_details(tx, wallet_id, incoming)?;
             let block_info = record.block_info();
             let height = block_info.map(|b| i64::from(b.height()));
             let block_hash = block_info.map(|b| AsRef::<[u8]>::as_ref(&b.block_hash()).to_vec());
@@ -110,7 +111,7 @@ pub fn apply(
                 finalized,
                 payload,
             ])?;
-            super::core_history::index_record(tx, wallet_id, &record)?;
+            core_history::index_record(tx, wallet_id, &record)?;
         }
     }
     // `addresses_derived` is intentionally NOT persisted here — the pool
@@ -247,7 +248,7 @@ pub fn apply(
         if heights_advanced {
             collect_finalized_tombstones(tx, wallet_id)?;
         }
-        super::core_history::apply(tx, wallet_id, cs)?;
+        core_history::apply(tx, wallet_id, cs)?;
         return Ok(());
     }
 
@@ -411,7 +412,7 @@ pub fn apply(
     if heights_advanced {
         collect_finalized_tombstones(tx, wallet_id)?;
     }
-    super::core_history::apply(tx, wallet_id, cs)?;
+    core_history::apply(tx, wallet_id, cs)?;
     Ok(())
 }
 
@@ -1009,7 +1010,7 @@ pub fn load_state(
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
             // A contact's watch-only output is never ours to spend, whatever
             // an older build recorded; the fallback would make it spendable.
-            if super::core_history::contact_only_script(conn, wallet_id, script.as_bytes())? {
+            if core_history::contact_only_script(conn, wallet_id, script.as_bytes())? {
                 continue;
             }
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
@@ -1597,7 +1598,12 @@ mod tests {
             ],
         )
         .unwrap();
-        tx.execute_batch("DROP TABLE IF EXISTS core_transaction_inputs; DROP TABLE IF EXISTS core_transaction_record_originals; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
+        tx.execute_batch(
+            "DROP TABLE IF EXISTS core_transaction_inputs; \
+             DROP TABLE IF EXISTS core_transaction_record_originals; \
+             DELETE FROM refinery_schema_history WHERE version >= 19;",
+        )
+        .unwrap();
         tx.commit().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let repaired = get_tx_record(&conn, &wallet_id, &spending.txid, &LoadCtx::strict())
@@ -1646,7 +1652,11 @@ mod tests {
     fn v018_with_corrupt_record(height: Option<i64>) -> (Connection, [u8; 32]) {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
-        conn.execute_batch("DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
+        conn.execute_batch(
+            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+             DELETE FROM refinery_schema_history WHERE version >= 19;",
+        )
+        .unwrap();
         let wallet_id = [0xADu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 100)",
@@ -1654,12 +1664,14 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, 500, 500)",
+            "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) \
+             VALUES (?1, 500, 500)",
             params![&wallet_id[..]],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, ?3, 0, ?4)",
+            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
+             VALUES (?1, ?2, ?3, 0, ?4)",
             params![&wallet_id[..], &[0u8; 32][..], height, &[0xffu8][..]],
         )
         .unwrap();
@@ -1699,8 +1711,13 @@ mod tests {
             TransactionContext::InBlock(BlockInfo::new(160, BlockHash::all_zeros(), 1)),
         );
         conn.execute(
-            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, 160, 1, ?3)",
-            params![&wallet_id[..], AsRef::<[u8]>::as_ref(&kept.txid), blob::encode(&kept).unwrap()],
+            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
+             VALUES (?1, ?2, 160, 1, ?3)",
+            params![
+                &wallet_id[..],
+                AsRef::<[u8]>::as_ref(&kept.txid),
+                blob::encode(&kept).unwrap()
+            ],
         )
         .unwrap();
         crate::sqlite::migrations::run(&mut conn)
@@ -1715,7 +1732,8 @@ mod tests {
         assert_eq!(rows, vec![AsRef::<[u8]>::as_ref(&kept.txid).to_vec()]);
         let (last_processed, synced): (i64, i64) = conn
             .query_row(
-                "SELECT last_processed_height, synced_height FROM core_sync_state WHERE wallet_id = ?1",
+                "SELECT last_processed_height, synced_height FROM core_sync_state \
+                 WHERE wallet_id = ?1",
                 params![&wallet_id[..]],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -1750,8 +1768,13 @@ mod tests {
         .unwrap();
         let record = transaction_record(Txid::all_zeros(), TransactionContext::Mempool);
         conn.execute(
-            "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
-            params![&wallet_id[..], AsRef::<[u8]>::as_ref(&record.txid), &[0xffu8][..]],
+            "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) \
+             VALUES (?1, ?2, 0, ?3)",
+            params![
+                &wallet_id[..],
+                AsRef::<[u8]>::as_ref(&record.txid),
+                &[0xffu8][..]
+            ],
         )
         .unwrap();
         let tx = conn.transaction().unwrap();
@@ -1771,7 +1794,6 @@ mod tests {
 
     #[test]
     fn should_mark_observed_spent_and_doomed_outputs_spent() {
-        use platform_wallet::changeset::changeset::UtxoCreditVerdict;
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0xAEu8; 32];
@@ -1810,7 +1832,6 @@ mod tests {
 
     #[test]
     fn should_keep_prior_spent_flag_for_uncredited_outputs() {
-        use platform_wallet::changeset::changeset::UtxoCreditVerdict;
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0xA8u8; 32];
@@ -1885,7 +1906,13 @@ mod tests {
         }];
         record.net_amount = output.value() as i64;
         output.outpoint.txid = record.txid;
-        conn.execute("INSERT INTO core_address_pool (wallet_id, account_type, account_index, pool_type, address_index, script) VALUES (?1, 'dashpay_external', 0, 0, 0, ?2)", params![&wallet_id[..], output.txout.script_pubkey.as_bytes()]).unwrap();
+        conn.execute(
+            "INSERT INTO core_address_pool \
+             (wallet_id, account_type, account_index, pool_type, address_index, script) \
+             VALUES (?1, 'dashpay_external', 0, 0, 0, ?2)",
+            params![&wallet_id[..], output.txout.script_pubkey.as_bytes()],
+        )
+        .unwrap();
         let tx = conn.transaction().unwrap();
         apply(
             &tx,
@@ -1965,13 +1992,15 @@ mod tests {
         let wallet_id = [0xB2u8; 32];
         let (contact, own) = stage_contact_only_utxo(&conn, &wallet_id);
         conn.execute_batch(
-            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; DELETE FROM refinery_schema_history WHERE version >= 19;",
+            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+             DELETE FROM refinery_schema_history WHERE version >= 19;",
         )
         .unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let unspent_rows = |outpoint: &OutPoint| -> i64 {
             conn.query_row(
-                "SELECT count(*) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 0",
+                "SELECT count(*) FROM core_utxos \
+                 WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 0",
                 params![&wallet_id[..], blob::encode_outpoint(outpoint).unwrap()],
                 |r| r.get(0),
             )

@@ -11,6 +11,7 @@ use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -557,9 +558,7 @@ fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
 }
 
 /// Account identity of a funds account, stable across replay mutations.
-fn funds_account_type(
-    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
-) -> AccountType {
+fn funds_account_type(account: &ManagedCoreFundsAccount) -> AccountType {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     account.managed_account_type().to_account_type()
 }
@@ -599,9 +598,7 @@ fn route_to_funds_account(
 /// to pick one account among funding accounts that share a numeric index
 /// (Standard BIP44/BIP32 and CoinJoin can all sit at index 0; DashPay accounts
 /// all carry index 0 and differ only by the identity pair).
-fn owning_account_of(
-    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
-) -> OwningAccount {
+fn owning_account_of(account: &ManagedCoreFundsAccount) -> OwningAccount {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     let at = account.managed_account_type().to_account_type();
     let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(&at);
@@ -677,7 +674,7 @@ const MAX_NORMAL_CHILD_INDEX: u32 = (1u32 << 31) - 1;
 ///
 /// Never touches key material — the xpub is the keyless account public key.
 fn extend_pools_for_restored_addresses(
-    account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
+    account: &mut ManagedCoreFundsAccount,
     manifest: &[AccountRegistrationEntry],
     restored_addresses: &[key_wallet::Address],
     wallet_id: [u8; 32],

@@ -21,6 +21,7 @@ use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
     apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+    restore_recorded_transactions,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
@@ -1850,11 +1851,7 @@ fn load_one_wallet(
             })?;
     }
     let mut wallet = wallet;
-    super::rehydrate::restore_recorded_transactions(
-        &mut wallet_info,
-        &mut wallet,
-        core_state.records,
-    );
+    restore_recorded_transactions(&mut wallet_info, &mut wallet, core_state.records);
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
