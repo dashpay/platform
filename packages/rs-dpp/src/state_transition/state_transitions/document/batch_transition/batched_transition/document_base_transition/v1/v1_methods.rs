@@ -7,9 +7,6 @@ use platform_value::Identifier;
 /// A trait that contains getter and setter methods for `DocumentBaseTransitionV0`
 pub trait DocumentBaseTransitionV1Methods: DocumentBaseTransitionV0Methods {
     /// Returns the token payment info.
-    fn token_payment_info(&self) -> Option<TokenPaymentInfo>;
-
-    /// Returns the token payment info.
     fn token_payment_info_ref(&self) -> &Option<TokenPaymentInfo>;
 
     /// Sets the token payment info.
@@ -20,12 +17,6 @@ pub trait DocumentBaseTransitionV1Methods: DocumentBaseTransitionV0Methods {
 }
 
 impl DocumentBaseTransitionV1Methods for DocumentBaseTransitionV1 {
-    fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
-        // Cloned rather than copied because the payment info gained a variant that owns its
-        // data. Same value either way, so nothing a released protocol version reads changes.
-        self.token_payment_info.clone()
-    }
-
     fn token_payment_info_ref(&self) -> &Option<TokenPaymentInfo> {
         &self.token_payment_info
     }
