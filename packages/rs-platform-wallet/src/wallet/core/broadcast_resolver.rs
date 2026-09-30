@@ -495,6 +495,16 @@ impl ResolverState {
         }
     }
 
+    /// Start the every-block window of every root of `wallet_id` at `height`
+    /// at the latest.
+    fn restart_windows(&mut self, wallet_id: &WalletId, height: u32) {
+        for ((wallet, _), schedule) in self.schedules.iter_mut() {
+            if wallet == wallet_id {
+                schedule.first_seen = schedule.first_seen.max(height);
+            }
+        }
+    }
+
     /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
     fn mined(&self, wallet_id: &WalletId) -> HashSet<Txid> {
         self.finished
@@ -512,17 +522,14 @@ pub(crate) fn is_catch_up_step(previous: Option<u32>, height: u32) -> bool {
     previous.is_none_or(|previous| height.saturating_sub(previous) > CATCH_UP_STEP)
 }
 
-/// A root chosen for a probe, with what its verdict will be published to —
-/// worked out once, from the pass's graph.
+/// A root chosen for a probe.
 #[derive(Debug, Clone)]
 pub(crate) struct DueRoot {
     pub txid: Txid,
-    pub transaction: Transaction,
+    /// Shared with the probe job: sent as is, never changed.
+    pub transaction: Arc<Transaction>,
     /// The root is the wallet's own send.
     pub own: bool,
-    /// The wallet's own sends in the root's chain, itself included if own —
-    /// what a Dead verdict is published to.
-    pub chain_own: BTreeSet<Txid>,
     /// An `Uncertain` result forced it (for the log; it may also be due by
     /// its schedule).
     pub forced: bool,
@@ -566,11 +573,12 @@ pub(crate) fn begin_pass(
     state
         .finished
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
-    // Cleared because the send settled or left the wallet.
+    // Cleared because the send is no longer an unsettled own send: it
+    // settled, or left the wallet — not a statement that it settled.
     events.extend(state.clear_where(
         |wallet, txid| *wallet == wallet_id && !own_present.contains(txid),
         Some(height),
-        "settled",
+        "settled-or-left",
     ));
 
     let mined = state.mined(&wallet_id);
@@ -604,9 +612,8 @@ pub(crate) fn begin_pass(
         if forced || schedule.is_due(height) {
             due.push_back(DueRoot {
                 txid: view.txid,
-                transaction: view.transaction.clone(),
+                transaction: Arc::new(view.transaction.clone()),
                 own: graph.is_own(&view.txid),
-                chain_own: graph.own_in_chain(&view.txid),
                 forced,
             });
         }
@@ -633,11 +640,13 @@ pub(crate) fn withdraw_send(state: &mut ResolverState, wallet_id: WalletId, root
 
 /// Record one root's probe result: a final verdict ends its probing, and the
 /// verdict goes to the wallet's own sends — the root when it is one, and,
-/// when it is dead, every own send built on it.
+/// when it is dead, every own send built on it (the pass's `views`, walked
+/// only then: Dead is terminal and rare).
 pub(crate) fn record_probe(
     state: &mut ResolverState,
     wallet_id: WalletId,
     height: u32,
+    views: &[OutgoingView],
     root: &DueRoot,
     verdict: &ProbeVerdict,
 ) -> Vec<Outgoing> {
@@ -658,7 +667,7 @@ pub(crate) fn record_probe(
         ProbeVerdict::Accepted | ProbeVerdict::Unresolved { .. } => {}
     }
     let sends: BTreeSet<Txid> = if matches!(verdict, ProbeVerdict::Dead { .. }) {
-        root.chain_own.clone()
+        ChainGraph::new(views, &state.mined(&wallet_id)).own_in_chain(&root.txid)
     } else if root.own {
         BTreeSet::from([root.txid])
     } else {
@@ -919,6 +928,8 @@ struct Probing {
 struct WalletEntry {
     /// Last synced height reported, for telling catch-up from following.
     height: Option<u32>,
+    /// The last height step followed the tip (was not catch-up).
+    following: bool,
     /// Height advances below this are skipped — no walk over the wallet's
     /// records while no root can be due. `u32::MAX` when nothing is left to
     /// probe (idle). Reset by anything that may have left new work — which
@@ -948,8 +959,7 @@ struct Actor {
     jobs: JoinSet<JobDone>,
     /// Which run each read or probe job belongs to, so a job that panicked
     /// can end its run instead of leaving the wallet stuck behind it.
-    /// A probe job also names its root, whose send time a panic withdraws.
-    job_runs: HashMap<task::Id, (WalletId, u64, Option<Txid>)>,
+    job_runs: HashMap<task::Id, (WalletId, u64)>,
 }
 
 impl Actor {
@@ -1013,21 +1023,26 @@ impl Actor {
                 // for an `Uncertain` result belongs to no run: wake every
                 // wallet instead.
                 match owner {
-                    Some((wallet_id, run, root)) => {
+                    Some((wallet_id, run)) => {
                         // Only the wallet's current run: a stale panic (its run
-                        // was dropped) must not undo a newer run's send.
-                        let current = self.wallets.get(&wallet_id).is_some_and(|entry| {
-                            entry.run.as_ref().is_some_and(|current| current.id == run)
-                        });
-                        if current {
-                            if let Some(root) = root {
-                                withdraw_send(&mut self.state, wallet_id, root);
-                            }
-                            if let Some(entry) = self.wallets.get_mut(&wallet_id) {
-                                entry.wait_until = None;
-                            }
-                            self.end_run(wallet_id);
+                        // was dropped) must not undo a newer run's send. The
+                        // root whose probe panicked is the one in flight.
+                        let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                            return;
+                        };
+                        let Some(current) = entry.run.as_mut().filter(|current| current.id == run)
+                        else {
+                            return;
+                        };
+                        let in_flight = current
+                            .probing
+                            .as_mut()
+                            .and_then(|probing| probing.in_flight.take());
+                        entry.wait_until = None;
+                        if let Some(root) = in_flight {
+                            withdraw_send(&mut self.state, wallet_id, root.txid);
                         }
+                        self.end_run(wallet_id);
                     }
                     None => {
                         for entry in self.wallets.values_mut() {
@@ -1052,11 +1067,24 @@ impl Actor {
                 let enabled = self.enabled;
                 let entry = self.entry(wallet_id);
                 let previous = entry.height.replace(height);
+                let catch_up = is_catch_up_step(previous, height);
+                // Back to following the tip: roots first seen while the wallet
+                // was behind (a forced pass right after launch counts heights
+                // from the stored tip) get their every-block window from here.
+                let caught_up = !catch_up && !entry.following;
+                entry.following = !catch_up;
+                if caught_up {
+                    entry.wait_until = None;
+                    self.state.restart_windows(&wallet_id, height);
+                }
+                let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                    return;
+                };
                 // While a pass runs, its end decides the wait: queue the height
                 // and let `probe_next` drop it if no root turns out due.
                 if !enabled
+                    || catch_up
                     || (entry.run.is_none() && entry.wait_until.is_some_and(|until| height < until))
-                    || is_catch_up_step(previous, height)
                 {
                     return;
                 }
@@ -1146,7 +1174,7 @@ impl Actor {
                 read,
             }
         });
-        self.job_runs.insert(abort.id(), (wallet_id, run, None));
+        self.job_runs.insert(abort.id(), (wallet_id, run));
         entry.run = Some(Run {
             id: run,
             seq: entry.seq,
@@ -1249,10 +1277,24 @@ impl Actor {
                     return;
                 };
                 let Some(root) = probing.in_flight.take() else {
+                    // Cannot happen: a probe job is spawned only with its root
+                    // in flight. Fail safe — end the run rather than leave it
+                    // blocking every later pass for the wallet.
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "broadcast probe: a probe result with no root in flight"
+                    );
+                    self.end_run(wallet_id);
                     return;
                 };
-                let events =
-                    record_probe(&mut self.state, wallet_id, probing.height, &root, &verdict);
+                let events = record_probe(
+                    &mut self.state,
+                    wallet_id,
+                    probing.height,
+                    &probing.views,
+                    &root,
+                    &verdict,
+                );
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
@@ -1273,7 +1315,7 @@ impl Actor {
         if let Some(root) = probing.due.pop_front() {
             let probe = Arc::clone(&self.probe);
             let id = run.id;
-            let transaction = root.transaction.clone();
+            let transaction = Arc::clone(&root.transaction);
             run.abort = self.jobs.spawn(async move {
                 let verdict = probe.probe(&transaction).await;
                 JobDone::Probed {
@@ -1282,8 +1324,7 @@ impl Actor {
                     verdict,
                 }
             });
-            self.job_runs
-                .insert(run.abort.id(), (wallet_id, id, Some(root.txid)));
+            self.job_runs.insert(run.abort.id(), (wallet_id, id));
             mark_sent(&mut self.state, wallet_id, root.txid, probing.height);
             probing.in_flight = Some(root);
             return;
@@ -1839,7 +1880,7 @@ mod tests {
             );
             let verdict = probe.probe(&root.transaction).await;
             let mut guard = state.lock().expect("state");
-            let events = record_probe(&mut guard.state, wallet_id, height, &root, &verdict);
+            let events = record_probe(&mut guard.state, wallet_id, height, views, &root, &verdict);
             guard.push(events);
         }
         let guard = state.lock().expect("state");
@@ -2554,6 +2595,155 @@ mod tests {
         rig.send(Command::Uncertain(txid(1))).await;
 
         assert_eq!(probe.probed(), vec![txid(1), txid(1)]);
+    }
+
+    /// A run whose read finds nothing to do still drops a height queued
+    /// during it that no root is due at.
+    #[tokio::test]
+    async fn should_drop_a_queued_height_when_a_forced_read_finds_nothing() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        let walks = rig.walks();
+
+        // An `Uncertain` for a txid the wallet no longer holds by read time.
+        rig.actor.handle(Command::Uncertain(txid(1)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.views(wallet(), vec![send(3, &[outpoint(93, 0)])]);
+        rig.actor.joined(listed);
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        rig.settle().await;
+
+        assert_eq!(rig.walks(), walks, "idle: neither pass walked the records");
+    }
+
+    /// A wallet waiting for nothing (idle) is forced by an `Uncertain` result;
+    /// a height that arrives while that pass runs is kept, so the new root
+    /// gets its next-block probe.
+    #[tokio::test]
+    async fn should_keep_a_height_that_arrives_during_a_forced_pass() {
+        let probe = Arc::new(ScriptedProbe::new(&[
+            (txid(1), dead()),
+            (txid(2), unresolved()),
+        ]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.height(wallet(), 102).await;
+        assert_eq!(probe.probed(), vec![txid(1)], "idle after the dead root");
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+        );
+
+        rig.actor.handle(Command::Uncertain(txid(2)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.actor.joined(listed);
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 103,
+        });
+        rig.settle().await;
+
+        assert_eq!(probe.probed(), vec![txid(1), txid(2), txid(2)]);
+    }
+
+    /// A run that ends early (a probe panicked) leaves the roots it never sent
+    /// due at once, so the next pass probes them.
+    #[test]
+    fn should_keep_due_the_roots_a_run_never_sent() {
+        let mut state = ResolverState::default();
+        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])];
+        let start = begin_pass(&mut state, wallet(), 100, &views, &HashSet::new());
+        let planned: Vec<Txid> = start.due.iter().map(|root| root.txid).collect();
+        assert_eq!(planned.len(), 2);
+
+        // Only the first root goes out before the run ends.
+        mark_sent(&mut state, wallet(), planned[0], 100);
+        let again = begin_pass(&mut state, wallet(), 100, &views, &HashSet::new());
+
+        assert_eq!(
+            again.due.iter().map(|root| root.txid).collect::<Vec<_>>(),
+            vec![planned[1]]
+        );
+    }
+
+    /// A probe that never produced a verdict (its job panicked) is withdrawn:
+    /// the root is due again at once, not after the slow interval.
+    #[test]
+    fn should_make_a_root_due_at_once_when_its_probe_is_withdrawn() {
+        let mut state = ResolverState::default();
+        let views = [send(1, &[outpoint(90, 0)])];
+        begin_pass(&mut state, wallet(), 100, &views, &HashSet::new());
+        mark_sent(&mut state, wallet(), txid(1), 100);
+        assert!(!state.schedules[&(wallet(), txid(1))].is_due(100));
+
+        withdraw_send(&mut state, wallet(), txid(1));
+
+        assert!(state.schedules[&(wallet(), txid(1))].is_due(100));
+    }
+
+    /// Two stops at once: the second waits for the first and never reports
+    /// the task gone while it still runs.
+    #[tokio::test]
+    async fn should_not_report_a_running_task_as_not_running_to_a_concurrent_stop() {
+        let (stop, _stopped) = oneshot::channel();
+        let handle = tokio::spawn(tokio::time::sleep(Duration::from_millis(200)));
+        let slot = Mutex::new(ActorSlot::Running(handle, stop));
+        let stopping = AsyncMutex::new(());
+        let started = Instant::now();
+
+        let (first, second) = tokio::join!(
+            stop_slot(&slot, &stopping, Duration::from_secs(5)),
+            stop_slot(&slot, &stopping, Duration::from_secs(5)),
+        );
+
+        assert_eq!(first, WorkerStatus::Ok);
+        assert_eq!(second, WorkerStatus::NotRunning);
+        assert!(
+            started.elapsed() >= Duration::from_millis(150),
+            "waited for the task"
+        );
+    }
+
+    /// A stop that runs out of budget keeps the task without aborting it: a
+    /// retried stop waits for it to end and reports it clean.
+    #[tokio::test]
+    async fn should_report_a_task_that_outlived_a_stop_clean_on_retry() {
+        let (stop, _stopped) = oneshot::channel();
+        let handle = tokio::spawn(tokio::time::sleep(Duration::from_millis(300)));
+        let slot = Mutex::new(ActorSlot::Running(handle, stop));
+        let stopping = AsyncMutex::new(());
+
+        let first = stop_slot(&slot, &stopping, Duration::from_millis(20)).await;
+        let second = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
+        let third = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
+
+        assert_eq!(first, WorkerStatus::Timeout);
+        assert_eq!(second, WorkerStatus::Ok);
+        assert_eq!(third, WorkerStatus::NotRunning);
+    }
+
+    /// An `Uncertain` result right after launch runs a pass at the stale stored
+    /// tip; once the wallet follows the tip again, the root still gets its
+    /// every-block window.
+    #[tokio::test]
+    async fn should_give_a_root_forced_before_the_first_height_its_every_block_window() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Uncertain(txid(1))).await;
+        assert_eq!(probe.probed().len(), 1, "forced at the stored tip (0 here)");
+
+        rig.follow(wallet(), 500).await;
+        for height in 502..=505 {
+            rig.height(wallet(), height).await;
+        }
+
+        assert_eq!(probe.probed().len(), 6, "every block from 501 to 505");
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
