@@ -28,6 +28,19 @@ impl Drive {
     /// day (right after it started being recorded); the daily withdrawal limit then falls back
     /// to its bootstrap rule rather than to a younger total, so the lag cannot be skipped by
     /// inflating the total before or at activation.
+    ///
+    /// # Parameters
+    ///
+    /// * `time_ms`: The time to look a day back from, usually the block time.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(RecordedTotalCredits))` with the entry's block time and total, `Ok(None)`
+    ///   when no entry is at least a day old.
+    /// * `Err(Error)` when the method version is unknown or not active, the read fails, or the
+    ///   entry found is malformed.
     pub fn fetch_total_credits_in_platform_a_day_ago(
         &self,
         time_ms: TimestampMillis,

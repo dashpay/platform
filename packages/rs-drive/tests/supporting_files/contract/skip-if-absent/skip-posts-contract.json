@@ -1,0 +1,110 @@
+{
+  "$formatVersion": "0",
+  "id": "9f2Lqx2VWjtk2vDk1sGgZwGSVvUu3c8TZkXcBVM5Cm3H",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHashtagLanguageTime",
+          "properties": [{ "hashtag": "asc" }, { "language": "asc" }, { "$createdAt": "asc" }],
+          "skipIfAbsent": ["hashtag"]
+        },
+        {
+          "name": "byDayHashtag",
+          "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400 },
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byLanguage",
+          "properties": [{ "language": "asc" }]
+        },
+        {
+          "name": "bySlug",
+          "properties": [{ "slug": "asc" }],
+          "unique": true,
+          "skipIfAbsent": true
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "maxLength": 61,
+          "position": 0
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 8,
+          "position": 1
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 2
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 3
+        }
+      },
+      "required": ["text", "$createdAt"],
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwnerTag",
+          "properties": [{ "$ownerId": "asc" }, { "tag": "asc" }],
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byOwnerTopic",
+          "properties": [{ "$ownerId": "asc" }, { "topic": "asc" }],
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byDayTag",
+          "properties": [{ "$createdAt": "asc" }, { "tag": "asc" }],
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byDayTopic",
+          "properties": [{ "$createdAt": "asc" }, { "topic": "asc" }],
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
+          "skipIfAbsent": true
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 0
+        },
+        "topic": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 1
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 2
+        }
+      },
+      "required": ["text", "$createdAt"],
+      "additionalProperties": false
+    }
+  }
+}

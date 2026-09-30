@@ -1,5 +1,9 @@
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::errors::DataContractError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
@@ -169,12 +173,29 @@ impl TypedArrayProperty {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<u16, ProtocolError> {
+        let element_bytes = self.item_type.min_byte_size(platform_version)?;
+        Ok(self.min_encoded_size_of_elements(element_bytes))
+    }
+
+    /// [`Self::min_encoded_size`] with the element sized by
+    /// [`DocumentPropertyType::saturating_min_byte_size`], so a string element
+    /// of 16384 or more characters counts as `u16::MAX` bytes instead of
+    /// failing with an overflow.
+    pub fn saturating_min_encoded_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<u16, ProtocolError> {
+        let element_bytes = self.item_type.saturating_min_byte_size(platform_version)?;
+        Ok(self.min_encoded_size_of_elements(element_bytes))
+    }
+
+    fn min_encoded_size_of_elements(&self, element_bytes: Option<u16>) -> u16 {
         let min_items = self.min_items.unwrap_or(0);
-        let element_bytes = self.item_type.min_byte_size(platform_version)?.unwrap_or(0);
+        let element_bytes = element_bytes.unwrap_or(0);
         let size = (min_items.required_space() as u64).saturating_add(
             u64::from(min_items).saturating_mul(self.element_encoded_size(element_bytes)),
         );
-        Ok(u16::try_from(size).unwrap_or(u16::MAX))
+        u16::try_from(size).unwrap_or(u16::MAX)
     }
 
     /// The most bytes the array encodes to: the varint count of `maxItems`
@@ -185,14 +206,31 @@ impl TypedArrayProperty {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<u16, ProtocolError> {
-        let element_bytes = match self.item_type.max_byte_size(platform_version)? {
+        let element_bytes = self.item_type.max_byte_size(platform_version)?;
+        Ok(self.max_encoded_size_of_elements(element_bytes))
+    }
+
+    /// [`Self::max_encoded_size`] with the element sized by
+    /// [`DocumentPropertyType::saturating_max_byte_size`], so a string element
+    /// of 16384 or more characters makes the array `u16::MAX` bytes instead of
+    /// failing with an overflow.
+    pub fn saturating_max_encoded_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<u16, ProtocolError> {
+        let element_bytes = self.item_type.saturating_max_byte_size(platform_version)?;
+        Ok(self.max_encoded_size_of_elements(element_bytes))
+    }
+
+    fn max_encoded_size_of_elements(&self, element_bytes: Option<u16>) -> u16 {
+        let element_bytes = match element_bytes {
             Some(element_bytes) if element_bytes < u16::MAX => element_bytes,
-            _ => return Ok(u16::MAX),
+            _ => return u16::MAX,
         };
         let size = (self.max_items.required_space() as u64).saturating_add(
             u64::from(self.max_items).saturating_mul(self.element_encoded_size(element_bytes)),
         );
-        Ok(u16::try_from(size).unwrap_or(u16::MAX))
+        u16::try_from(size).unwrap_or(u16::MAX)
     }
 
     /// Encodes a list: the varint element count, then each element exactly as
@@ -1184,10 +1222,10 @@ mod tests {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ArrayItemType {}
+impl JsonConvertible for ArrayItemType {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ArrayItemType {}
+impl ValueConvertible for ArrayItemType {}
 
 #[cfg(all(
     test,

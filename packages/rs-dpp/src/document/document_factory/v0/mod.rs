@@ -622,6 +622,8 @@ mod test {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         };
         let document = Document::V0(document_v0);
 
@@ -738,6 +740,8 @@ mod test {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let mut nonce_counter = BTreeMap::new();

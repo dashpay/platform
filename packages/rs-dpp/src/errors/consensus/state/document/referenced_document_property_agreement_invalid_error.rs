@@ -20,7 +20,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("invalid propertyAgreement pair {referring_property} -> {referenced_property} declared at {path}: {reason}")]
+#[error("invalid refersTo where entry {referenced_property}: {referring_property} declared at {path}: {reason}")]
 #[platform_serialize(unversioned)]
 pub struct ReferencedDocumentPropertyAgreementInvalidError {
     /*

@@ -26,6 +26,7 @@ pub mod v2;
 #[cfg(feature = "validation")]
 pub(crate) mod validator;
 
+use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
@@ -82,6 +83,10 @@ pub(crate) mod property_names {
     /// v3+ (protocol version 14). See `parse_action_fees_keyword` in
     /// `try_from_schema::common`.
     pub const ACTION_FEES: &str = "actionFees";
+    /// Doctype-level object of token costs, one per document action (`create`,
+    /// `replace`, `delete`, `transfer`, `update_price`, `purchase`). Meta-schema
+    /// v0+ (protocol version 9). See `parse_token_costs` in `try_from_schema::common`.
+    pub const TOKEN_COST: &str = "tokenCost";
     /// Doctype-level array naming the [`IMMUTABLE`] properties a replace may
     /// still set when the stored document has no value for them. Once set
     /// they are frozen like the rest of the list. Every entry must also be in
@@ -99,6 +104,9 @@ pub(crate) mod property_names {
     pub const MAX_ITEMS: &str = "maxItems";
     pub const ITEMS: &str = "items";
     pub const UNIQUE_ITEMS: &str = "uniqueItems";
+    pub const MIN_PROPERTIES: &str = "minProperties";
+    pub const MAX_PROPERTIES: &str = "maxProperties";
+    pub const CONTAINS: &str = "contains";
     pub const MIN_LENGTH: &str = "minLength";
     pub const MAX_LENGTH: &str = "maxLength";
     pub const BYTE_ARRAY: &str = "byteArray";
@@ -116,9 +124,14 @@ pub(crate) mod property_names {
     /// transferable or tradeable one). Meta-schema v3+ (protocol version 14).
     /// See `parse_doctype_reference` in `try_from_schema`.
     pub const CREATOR_REFERS_TO: &str = "creatorRefersTo";
-    /// Doctype-level object of named rules, each a comparison of two integer
-    /// expressions over the document's integer properties that every created or
-    /// replaced document must meet. Meta-schema v3+ (protocol version 14). See
+    /// Doctype-level object of named rules, each a condition on the document's
+    /// properties (a comparison of two integer expressions, which may read a
+    /// `countOf` or `sumOf` total of a type of the contract, of a string or an
+    /// identifier property with constants or with another property of its
+    /// kind, an `in` or `notIn` list of values, a `startsWith` or `endsWith`,
+    /// a `contains`, a `present` or `absent` test, or an `anyOf`, `allOf`,
+    /// `not`, `ifThen` or `ifThenElse` of conditions) that every created or replaced
+    /// document must meet. Meta-schema v3+ (protocol version 14). See
     /// `parse_property_constraints` in `property_constraints`.
     pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";
     pub const DISTINCT_FROM: &str = "distinctFrom";
@@ -129,19 +142,36 @@ pub(crate) mod property_names {
     /// the value names (`"$ownerId"`, the writer). Takes the place of
     /// [`KEY_ID_PROPERTY`]; a declaration carries one or the other.
     pub const IDENTITY_PROPERTY: &str = "identityProperty";
-    pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
-    /// `refersTo` on a document reference: the unique index of the referenced
-    /// document type the referenced document is found through, and the key.
-    /// Meta-schema v3+ (protocol version 14).
-    pub const LOOKUP: &str = "lookup";
-    /// `lookup`: the name of the referenced document type's unique index.
-    pub const LOOKUP_INDEX: &str = "index";
-    /// `lookup`: every index property mapped to its referring-side source.
-    pub const LOOKUP_KEYS: &str = "keys";
-    /// `refersTo: listElement`: the typed array of identifiers, on the
-    /// referenced document type, the value must be an element of.
-    /// Meta-schema v3+ (protocol version 14).
+    /// `refersTo` on a document reference: how the referenced document is
+    /// found when the value is not its id, properties of the referenced
+    /// document type (exactly those of one of its unique indexes) mapped to
+    /// where each value comes from on the referring side. Meta-schema v3+
+    /// (protocol version 14).
+    pub const FIND_BY: &str = "findBy";
+    /// `refersTo` on a document reference: what the referenced document must
+    /// hold once found, properties of the referenced document type mapped to
+    /// the referring-side value each must equal. Meta-schema v3+ (protocol
+    /// version 14).
+    pub const WHERE: &str = "where";
+    /// `refersTo` beside a `findBy` with a computed key: how many blocks
+    /// before the referring document's create the document the key finds
+    /// must have been created.
+    pub const MINIMUM_AGE_BLOCKS: &str = "minimumAgeBlocks";
+    /// `refersTo` beside a `findBy` with a computed key: whether the create
+    /// deletes the document the key finds.
+    pub const CONSUME: &str = "consume";
+    /// `refersTo: permanentDocument` found by its `$id` from a property: the
+    /// typed array of identifiers, on the referenced document, the value must
+    /// be an element of. Meta-schema v3+ (protocol version 14).
     pub const IN_LIST: &str = "inList";
+    /// Keywords a protocol version 14 beta spelled a document reference with,
+    /// refused on every parse so a contract written with them never loads with
+    /// another meaning: `lookup` ([`FIND_BY`]), `propertyAgreement`
+    /// ([`WHERE`], keyed the other way) and the `listElement` type (a
+    /// `permanentDocument` with [`IN_LIST`]).
+    pub const REPLACED_LOOKUP: &str = "lookup";
+    pub const REPLACED_PROPERTY_AGREEMENT: &str = "propertyAgreement";
+    pub const REPLACED_LIST_ELEMENT: &str = "listElement";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
@@ -169,6 +199,16 @@ pub(crate) mod property_names {
     /// Meta-schema v3+ (protocol version 14). See `apply_max_bytes` in
     /// `try_from_schema`.
     pub const MAX_BYTES: &str = "maxBytes";
+    /// Property-level object on a string property: the [`FUNCTION`] the platform
+    /// generates the value with and its [`PARAMS`], other properties of the same
+    /// document. Meta-schema v3+ (protocol version 14). See
+    /// `apply_generated_from` in `try_from_schema`.
+    pub const GENERATED_FROM: &str = "generatedFrom";
+    /// `generatedFrom`: the function name, one of `SystemFunction::ALL`.
+    pub const FUNCTION: &str = "function";
+    /// `generatedFrom`: the parameters, dotted paths of properties of the same
+    /// document type.
+    pub const PARAMS: &str = "params";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";
@@ -216,21 +256,49 @@ pub(crate) mod property_names {
     /// Meta-schema v3+ (protocol version 14). See `apply_index_only` in
     /// `try_from_schema::common`.
     pub const ENTRY_PAYLOAD: &str = "entryPayload";
-    /// Doctype-level flag letting the contract's moderators (its owner and the
-    /// identities its moderation config appoints) delete documents of this type
-    /// with a `ContractUserModeration` transition, whatever `canBeDeleted` says
-    /// about the documents' own owners. Meta-schema v3+ (protocol version 14).
-    /// See `apply_can_be_deleted_by_moderators` in `try_from_schema::common`
-    /// for what the flag requires of the type and of the contract.
-    pub const CAN_BE_DELETED_BY_MODERATORS: &str = "canBeDeletedByModerators";
-    /// Doctype-level limit on `canBeDeletedByModerators`: for how many seconds
-    /// after a document's last modification (`$updatedAt`, or `$createdAt` on a
-    /// type whose documents never change and carry no `$updatedAt`) the moderators may
-    /// still delete it. Past that the document is settled and no moderator can
-    /// remove it; a replace moves `$updatedAt` and opens the window again.
-    /// Absent means no limit. Meta-schema v3+ (protocol version 14). See
-    /// `apply_can_be_deleted_by_moderators_for` in `try_from_schema::common`.
-    pub const CAN_BE_DELETED_BY_MODERATORS_FOR: &str = "canBeDeletedByModeratorsFor";
+    /// Doctype-level object saying what the contract's moderators (its owner and the
+    /// identities its moderation config appoints, or its seated team) may do to documents of
+    /// this type with a `ContractUserModeration` transition, whatever `canBeDeleted` and
+    /// `documentsMutable` say about the documents' own owners: delete them (`delete`, within
+    /// `deleteWithin` seconds of their last modification when given, leaving a removal record
+    /// unless `deleteKeepsRecord` is false, and refunding the owner when `deleteRefundsOwner`
+    /// is true), and write the fields `changeFields` lists, which nobody else writes. Meta-schema v3+ (protocol version
+    /// 14). See [`moderator_abilities`] for its keys, and `apply_moderator_abilities` in
+    /// `try_from_schema::common` for what each requires of the type and of the contract.
+    pub const MODERATOR_ABILITIES: &str = "moderatorAbilities";
+
+    /// The keys of the `moderatorAbilities` object.
+    pub mod moderator_abilities {
+        /// When true, the moderators may delete documents of the type, leaving a removal
+        /// record under the contract.
+        pub const DELETE: &str = "delete";
+        /// For how many seconds after a document's last modification (`$updatedAt`, or
+        /// `$createdAt` on a type whose documents never change and carry no `$updatedAt`) the
+        /// moderators may still delete it. Past that the document is settled and no moderator
+        /// can remove it; a replace moves `$updatedAt` and opens the window again. Absent
+        /// means no limit. Needs `delete: true`.
+        pub const DELETE_WITHIN: &str = "deleteWithin";
+        /// Whether a moderator's deletion leaves a removal record under the contract, which is
+        /// what a restore brings the document back from. Default `true`. Needs `delete: true`.
+        pub const DELETE_KEEPS_RECORD: &str = "deleteKeepsRecord";
+        /// Whether the owner of a document a moderator deletes is refunded its storage, as an
+        /// owner deleting it themselves is. Default `false`: the owner forfeits it. Needs
+        /// `delete: true`.
+        pub const DELETE_REFUNDS_OWNER: &str = "deleteRefundsOwner";
+        /// The top-level properties only the moderators write: a document's owner can
+        /// neither set them when creating it nor change them when replacing it, unless the
+        /// owner moderates the contract.
+        pub const CHANGE_FIELDS: &str = "changeFields";
+    }
+    /// Doctype-level time to live, in seconds: the platform deletes each document of the
+    /// type once `$createdAt` plus this many seconds has passed, whoever owns it and
+    /// whatever `canBeDeleted` says; from then on it can no longer be changed or restored by a
+    /// moderator. Its documents are stored without storage flags, pay
+    /// for the time they live instead of perpetual storage, and refund nothing. Requires
+    /// `$createdAt` in `required`; refused with `documentsKeepHistory`, `indexOnly` and a
+    /// contested index, and fixed when the document type is created. Meta-schema v3+
+    /// (protocol version 14). See `apply_documents_ttl` in `try_from_schema::common`.
+    pub const TTL: &str = "ttl";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -301,9 +369,17 @@ impl DocumentTypeRef<'_> {
     }
 }
 
-impl DocumentTypeBasicMethods for DocumentType {}
+impl DocumentTypeBasicMethods for DocumentType {
+    fn has_moderator_changeable_fields(&self) -> bool {
+        !self.moderator_changeable_fields().is_empty()
+    }
+}
 
-impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {}
+impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {
+    fn has_moderator_changeable_fields(&self) -> bool {
+        !self.moderator_changeable_fields().is_empty()
+    }
+}
 
 impl DocumentTypeV0Methods for DocumentType {}
 

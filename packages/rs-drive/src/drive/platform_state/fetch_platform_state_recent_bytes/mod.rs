@@ -8,6 +8,16 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Fetches the per-block part of the platform state, if one was ever written.
+    ///
+    /// # Parameters
+    ///
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(Vec<u8>))` with the stored bytes, `Ok(None)` when none were ever written.
+    /// * `Err(Error)` when the method version is unknown or the auxiliary read fails.
     pub fn fetch_platform_state_recent_bytes(
         &self,
         transaction: TransactionArg,

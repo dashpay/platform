@@ -1,5 +1,6 @@
 //! Document creation operations
 
+use crate::document::helpers::{build_document_from_properties, parse_document_properties_json};
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKResultDataType, DocumentHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
@@ -110,25 +111,9 @@ pub unsafe extern "C" fn dash_sdk_document_create(
     };
 
     // Parse properties JSON
-    let properties_value: serde_json::Value = match serde_json::from_str(properties_str) {
-        Ok(v) => v,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Invalid properties JSON: {}", e),
-            ))
-        }
-    };
-
-    // Convert JSON to platform Value - handle hex strings for byte arrays
-    let mut properties = match serde_json::from_value::<BTreeMap<String, Value>>(properties_value) {
-        Ok(map) => map,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Failed to convert properties: {}", e),
-            ))
-        }
+    let properties = match parse_document_properties_json(properties_str) {
+        Ok(properties) => properties,
+        Err(error) => return DashSDKResult::error(error),
     };
 
     let result: Result<(Document, [u8; 32]), FFIError> = wrapper.runtime.block_on(async {
@@ -173,21 +158,15 @@ pub unsafe extern "C" fn dash_sdk_document_create(
             .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
 
         // Sanitize document properties (convert hex/base64 to bytes, base58 to identifiers, etc.)
-        use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-        document_type_ref.sanitize_document_properties(&mut properties);
-        eprintln!("📝 [DOCUMENT CREATE] Sanitized document properties");
-
-        // Create document with entropy - this will generate the document ID internally
-        let document = document_type_ref
-            .create_document_from_data(
-                properties.into(),
-                owner_id,
-                0, // block_height - will be set by platform
-                0, // core_block_height - will be set by platform
-                entropy,
-                platform_version,
-            )
-            .map_err(|e| FFIError::InternalError(format!("Failed to create document: {}", e)))?;
+        // and create the document with entropy - this will generate the document ID internally
+        let document = build_document_from_properties(
+            document_type_ref.as_ref(),
+            properties,
+            owner_id,
+            entropy,
+            platform_version,
+        )
+        .map_err(|e| FFIError::InternalError(format!("Failed to create document: {}", e)))?;
 
         Ok((document, entropy))
     });
@@ -356,6 +335,8 @@ pub unsafe extern "C" fn dash_sdk_document_make_handle(
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     });
 
     // Box and return as handle

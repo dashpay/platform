@@ -10,7 +10,7 @@ use key_wallet::managed_account::transaction_record::{
 use key_wallet::transaction_checking::{TransactionContext, TransactionType};
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
-use rusqlite::{params, Transaction};
+use rusqlite::{params, Connection, Transaction};
 
 use super::{blob, core_state, wallets};
 use crate::sqlite::error::WalletStorageError;
@@ -148,12 +148,13 @@ fn owned_output(
     Ok(Some((value, address)))
 }
 
-fn contact_only_script(
-    tx: &Transaction<'_>,
+/// Whether `script` is tracked only by a contact's watch-only (DashPay external) chain.
+pub(crate) fn contact_only_script(
+    conn: &Connection,
     wallet_id: &WalletId,
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
-    Ok(tx.query_row(
+    Ok(conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) AND NOT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
         params![wallet_id.as_slice(), script], |r| r.get(0))?)
 }

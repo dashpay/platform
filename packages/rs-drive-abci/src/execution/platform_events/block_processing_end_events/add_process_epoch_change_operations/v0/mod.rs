@@ -260,6 +260,7 @@ mod tests {
                 storage_fee: 1000000000,
                 processing_fee: 10000,
                 refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 10000)]),
+                ..Default::default()
             }
             .into();
 

@@ -1007,6 +1007,11 @@ pub fn load_state(
             let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
             let height = transaction_heights.get(&outpoint.txid).copied().flatten();
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
+            // A contact's watch-only output is never ours to spend, whatever
+            // an older build recorded; the fallback would make it spendable.
+            if super::core_history::contact_only_script(conn, wallet_id, script.as_bytes())? {
+                continue;
+            }
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
                 utxo_accounts.insert(outpoint, owner);
             }
@@ -1704,6 +1709,100 @@ mod tests {
             .unwrap();
         assert_eq!(repaired.net_amount, 0);
         assert_eq!(repaired.output_details[0].role, OutputRole::Sent);
+    }
+
+    /// Store one contact-only unspent row (a pre-fix build persisted the
+    /// contact's coins) next to one of our own. Returns both outpoints.
+    fn stage_contact_only_utxo(conn: &Connection, wallet_id: &[u8; 32]) -> (OutPoint, OutPoint) {
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let contact = sample_utxo(Txid::from_byte_array([0x51; 32]), 100, true);
+        let mut own = sample_utxo(Txid::from_byte_array([0x52; 32]), 100, true);
+        own.address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([0x24u8; 20])),
+        );
+        own.txout.script_pubkey = own.address.script_pubkey();
+        conn.execute(
+            "INSERT INTO core_address_pool (wallet_id, account_type, account_index, pool_type, address_index, script) \
+             VALUES (?1, 'dashpay_external', 0, 0, 0, ?2)",
+            params![&wallet_id[..], contact.txout.script_pubkey.as_bytes()],
+        )
+        .unwrap();
+        let (contact_outpoint, own_outpoint) = (contact.outpoint, own.outpoint);
+        let tx = conn.unchecked_transaction().unwrap();
+        apply(
+            &tx,
+            wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![contact, own],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        (contact_outpoint, own_outpoint)
+    }
+
+    #[test]
+    fn should_not_load_contact_only_outputs_as_spendable() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xB1u8; 32];
+        let (contact, own) = stage_contact_only_utxo(&conn, &wallet_id);
+        let (cs, owners) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        let loaded: Vec<_> = cs.new_utxos.iter().map(|u| u.outpoint).collect();
+        assert_eq!(loaded, vec![own], "a contact's coin is not ours to spend");
+        assert!(!owners.contains_key(&contact));
+    }
+
+    #[test]
+    fn should_keep_contact_only_rows_but_exclude_them_after_history_migration() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xB2u8; 32];
+        let (contact, own) = stage_contact_only_utxo(&conn, &wallet_id);
+        conn.execute_batch(
+            "DROP TABLE core_transaction_inputs; DELETE FROM refinery_schema_history WHERE version >= 19;",
+        )
+        .unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let unspent_rows = |outpoint: &OutPoint| -> i64 {
+            conn.query_row(
+                "SELECT count(*) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 0",
+                params![&wallet_id[..], blob::encode_outpoint(outpoint).unwrap()],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            unspent_rows(&contact),
+            1,
+            "V019 must not destroy stored rows"
+        );
+        assert_eq!(unspent_rows(&own), 1);
+        let (cs, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        let loaded: Vec<_> = cs.new_utxos.iter().map(|u| u.outpoint).collect();
+        assert_eq!(
+            loaded,
+            vec![own],
+            "the kept row still never becomes spendable"
+        );
     }
 
     #[test]

@@ -43,6 +43,8 @@ pub unsafe fn convert_state_transition_creation_options(
             Some(options.base_feature_version)
         },
         action_fee_agreement: None,
+        // A token transition joins no contest, so `options.contest_fund` is not read
+        contest_fund: None,
     })
 }
 

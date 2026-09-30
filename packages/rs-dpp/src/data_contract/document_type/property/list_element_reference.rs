@@ -1,7 +1,6 @@
-//! The `listElement` target of a `refersTo` declaration: the value must be an
-//! element of a typed array of identifiers held by a document that agrees
-//! with the referring document, found by the `propertyAgreement` pair whose
-//! referenced side is `$id`.
+//! A `refersTo` naming a list the value must be in, `inList`: the value must be
+//! an element of a typed array of identifiers held by a document found by its
+//! `$id`, which `findBy` reads from another property of the referring document.
 //!
 //! Declared on an identifier property, or on the `items` of a typed array of
 //! identifiers, where every element must be one, alone or as a leaf of a
@@ -9,31 +8,33 @@
 //!
 //! ```json
 //! "refersTo": {
-//!   "type": "listElement",
+//!   "type": "permanentDocument",
 //!   "documentType": "electedCharter",
-//!   "propertyAgreement": { "electedCharterId": "$id" },
+//!   "findBy": { "$id": "electedCharterId" },
 //!   "inList": "members"
 //! }
 //! ```
 //!
 //! reads: the value must be one of the `members` of the `electedCharter`
 //! document whose `$id` this document's `electedCharterId` holds. It is a
-//! document reference like `permanentDocument`, with the same `contractId`,
-//! `documentType` and `propertyAgreement` and the same checks on them, except
-//! that the value is not the document's id: the document is the one the `$id`
-//! pair names, any other pair is an ordinary agreement checked against it, and
-//! the value must be in its list. The referenced document can never be deleted
-//! and its list never changes (the type is immutable or lists the property
-//! under `immutable`), so a value accepted once stays an element for good. The
-//! rules live here so the two places that check a declaration against its
-//! referenced document type (the contract parse for a type of the same
-//! contract, the registration state validation for a type of another
-//! contract) cannot drift.
+//! `permanentDocument` reference, with the same `contractId`, `documentType` and
+//! `where` and the same checks on them, except that the value is not the
+//! document's id: the document is the one the `findBy` `$id` names, any `where`
+//! entry is checked against it, and the value must be in its list. The
+//! referenced document can never be deleted and its list never changes (the
+//! type is immutable or lists the property under `immutable`), so a value
+//! accepted once stays an element for good. The parsed model holds the `$id`
+//! entry among the `where` comparisons, `{property: "$id"}`. The rules live here
+//! so the two places that check a declaration against its referenced document
+//! type (the contract parse for a type of the same contract, the registration
+//! state validation for a type of another contract) cannot drift.
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property::reference_lookup::schema_property_is_fixed_once_written;
-use crate::data_contract::document_type::property::{is_transient, DocumentPropertyType};
+use crate::data_contract::document_type::property::{
+    is_transient, top_level_property, DocumentPropertyType,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::property_names::ID;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -42,7 +43,7 @@ use platform_value::{Identifier, Value};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// A `refersTo: listElement` declaration: the value (or each element of a
+/// A `refersTo` with `inList`: the value (or each element of a
 /// typed array) must be an element of the typed array `in_list` of the
 /// `document_type_name` document the `$id` pair of `property_agreement`
 /// names.
@@ -65,9 +66,9 @@ pub struct ListElementReference {
 }
 
 impl ListElementReference {
-    /// The referring side of the `$id` pair: the identifier property of the
-    /// declaring type whose value is the id of the document the list is read
-    /// from. `None` only for a declaration the parser never produces.
+    /// The property `findBy` reads the `$id` from: the identifier property of
+    /// the declaring type whose value is the id of the document the list is
+    /// read from. `None` only for a declaration the parser never produces.
     pub fn document_id_property(&self) -> Option<&str> {
         self.property_agreement
             .iter()
@@ -77,7 +78,7 @@ impl ListElementReference {
 
     /// Why the referring side of this declaration, on a property of
     /// `declaring`, cannot name the document holding the list; `None` when
-    /// it can. The `$id` pair's referring side must be an identifier property
+    /// it can. The property `findBy` reads the `$id` from must be an identifier property
     /// of the declaring type (a schema property, not the writer: no document
     /// has the writer's id; not a typed array: one document holds the list),
     /// and it must be stored (it and every object around it not transient),
@@ -91,21 +92,21 @@ impl ListElementReference {
     pub fn referring_side_error(&self, declaring: DocumentTypeRef) -> Option<String> {
         let Some(document_id_property) = self.document_id_property() else {
             return Some(
-                "propertyAgreement must hold exactly one pair with $id on the referenced side, \
+                "findBy must be exactly { \"$id\": <the property holding the document's id> }, \
                  naming the property whose value is the id of the document holding the list"
                     .to_string(),
             );
         };
         if document_id_property.starts_with('$') {
             return Some(format!(
-                "the $id pair reads \"{document_id_property}\": it must read an identifier \
+                "findBy $id reads \"{document_id_property}\": it must read an identifier \
                  property of the referring document type, which holds the id of the document \
                  holding the list"
             ));
         }
         let Some(property) = declaring.flattened_properties().get(document_id_property) else {
             return Some(format!(
-                "the $id pair reads \"{document_id_property}\", which is not a property of the \
+                "findBy $id reads \"{document_id_property}\", which is not a property of the \
                  referring document type"
             ));
         };
@@ -114,19 +115,19 @@ impl ListElementReference {
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
         ) {
             return Some(format!(
-                "the $id pair reads \"{document_id_property}\", which is not an identifier \
+                "findBy $id reads \"{document_id_property}\", which is not an identifier \
                  property"
             ));
         }
         if is_transient(declaring, document_id_property) {
             return Some(format!(
-                "the $id pair reads \"{document_id_property}\", which is transient: the stored \
+                "findBy $id reads \"{document_id_property}\", which is transient: the stored \
                  document must name the document whose list the value was checked against"
             ));
         }
         // A reference of its own must agree that the value is the id of a
         // document of the list's type in the list's contract: anything else
-        // (an identity, a lookup key part, a list element, another type or
+        // (an identity, a findBy key part, a list element, another type or
         // contract, an expression) holds a value no such document has, and
         // every write setting the list element would be refused
         if let DocumentPropertyType::IdentifierWithReference(target) = &property.property_type {
@@ -138,7 +139,7 @@ impl ListElementReference {
             });
             if !names_the_list_document {
                 return Some(format!(
-                    "the $id pair reads \"{document_id_property}\", whose refersTo is not a \
+                    "findBy $id reads \"{document_id_property}\", whose refersTo is not a \
                      reference by id to \"{}\" in the list's contract: its value could never be \
                      the id of the document holding the list",
                     self.document_type_name
@@ -153,14 +154,13 @@ impl ListElementReference {
     /// must be a stored typed array of identifiers of it (it and every object
     /// around it not transient), and the list must be fixed once a document
     /// is written (see `schema_property_is_fixed_once_written`, the rule a
-    /// lookup's key parts are judged by), so a value accepted once stays an
+    /// findBy's key parts are judged by), so a value accepted once stays an
     /// element.
     pub fn referenced_side_error(&self, referenced: DocumentTypeRef) -> Option<String> {
         let referenced_name = referenced.name();
         let list = &self.in_list;
-        if referenced.documents_can_be_deleted()
-            || referenced.documents_can_be_deleted_by_moderators()
-        {
+        // Deleted by anyone: its owner, the moderators, or the platform when a `ttl` passes.
+        if referenced.documents_can_disappear() {
             return Some(format!(
                 "documents of \"{referenced_name}\" can be deleted: the list must be held by a \
                  document that never is"
@@ -187,11 +187,26 @@ impl ListElementReference {
             ));
         }
         if !schema_property_is_fixed_once_written(referenced, list) {
-            let top_level = list.split('.').next().unwrap_or(list);
+            let top_level = top_level_property(list);
+            // A field only moderators write is never fixed, whatever the type says
+            let (who, hint) = if referenced.moderator_changeable_fields().contains(top_level) {
+                (
+                    "the contract's moderators",
+                    format!(
+                        "\"{top_level}\" is a field only moderators write, which nothing can \
+                         fix: hold the list in another property"
+                    ),
+                )
+            } else {
+                (
+                    "a replace",
+                    format!("make the type immutable or list \"{top_level}\" under `immutable`"),
+                )
+            };
             return Some(format!(
-                "\"{list}\" of \"{referenced_name}\" can be changed by a replace: the list must \
-                 be fixed once the document is written, so a value accepted as an element stays \
-                 one (make the type immutable or list \"{top_level}\" under `immutable`)"
+                "\"{list}\" of \"{referenced_name}\" can be changed by {who}: the list must be \
+                 fixed once the document is written, so a value accepted as an element stays one \
+                 ({hint})"
             ));
         }
         None
