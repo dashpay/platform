@@ -31394,6 +31394,7 @@ $root.org = (function() {
                              * @property {Uint8Array|null} [proposerId] ContractTeamAction proposerId
                              * @property {number|Long|null} [proposedAt] ContractTeamAction proposedAt
                              * @property {org.dash.platform.dapi.v0.GetContractTeamActionsResponse.IDeleteSettledDocument|null} [deleteSettledDocument] ContractTeamAction deleteSettledDocument
+                             * @property {number|null} [approvalCount] ContractTeamAction approvalCount
                              */
 
                             /**
@@ -31443,6 +31444,14 @@ $root.org = (function() {
                              */
                             ContractTeamAction.prototype.deleteSettledDocument = null;
 
+                            /**
+                             * ContractTeamAction approvalCount.
+                             * @member {number} approvalCount
+                             * @memberof org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction
+                             * @instance
+                             */
+                            ContractTeamAction.prototype.approvalCount = 0;
+
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
@@ -31489,6 +31498,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.proposedAt);
                                 if (message.deleteSettledDocument != null && Object.hasOwnProperty.call(message, "deleteSettledDocument"))
                                     $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.encode(message.deleteSettledDocument, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.approvalCount != null && Object.hasOwnProperty.call(message, "approvalCount"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.approvalCount);
                                 return writer;
                             };
 
@@ -31534,6 +31545,9 @@ $root.org = (function() {
                                         break;
                                     case 4:
                                         message.deleteSettledDocument = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.approvalCount = reader.uint32();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -31588,6 +31602,9 @@ $root.org = (function() {
                                             return "deleteSettledDocument." + error;
                                     }
                                 }
+                                if (message.approvalCount != null && message.hasOwnProperty("approvalCount"))
+                                    if (!$util.isInteger(message.approvalCount))
+                                        return "approvalCount: integer expected";
                                 return null;
                             };
 
@@ -31627,6 +31644,8 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.deleteSettledDocument: object expected");
                                     message.deleteSettledDocument = $root.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.fromObject(object.deleteSettledDocument);
                                 }
+                                if (object.approvalCount != null)
+                                    message.approvalCount = object.approvalCount >>> 0;
                                 return message;
                             };
 
@@ -31663,6 +31682,7 @@ $root.org = (function() {
                                         object.proposedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.proposedAt = options.longs === String ? "0" : 0;
+                                    object.approvalCount = 0;
                                 }
                                 if (message.actionId != null && message.hasOwnProperty("actionId"))
                                     object.actionId = options.bytes === String ? $util.base64.encode(message.actionId, 0, message.actionId.length) : options.bytes === Array ? Array.prototype.slice.call(message.actionId) : message.actionId;
@@ -31678,6 +31698,8 @@ $root.org = (function() {
                                     if (options.oneofs)
                                         object.event = "deleteSettledDocument";
                                 }
+                                if (message.approvalCount != null && message.hasOwnProperty("approvalCount"))
+                                    object.approvalCount = message.approvalCount;
                                 return object;
                             };
 

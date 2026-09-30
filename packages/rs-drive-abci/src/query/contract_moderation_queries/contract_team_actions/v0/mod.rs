@@ -147,10 +147,12 @@ mod tests {
         }
     }
 
+    /// A proposal as the page returns it: the proposer's approval is its one approval.
     fn entry(seed: u8) -> ContractTeamActionEntry {
         ContractTeamActionEntry {
             action_id: Identifier::from([seed; 32]),
             action: settled_deletion_proposal(seed),
+            approval_count: 1,
         }
     }
 

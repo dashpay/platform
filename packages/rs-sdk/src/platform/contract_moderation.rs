@@ -478,6 +478,7 @@ mod tests {
                     reason: ContractModerationReason::from_text("spam"),
                 },
             },
+            approval_count: u32::from(seed),
         }
     }
 

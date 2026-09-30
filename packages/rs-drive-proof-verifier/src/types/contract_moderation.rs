@@ -612,6 +612,7 @@ pub fn team_actions_from_response(
                         reason: reason_from_response(deletion.reason)?,
                     },
                 },
+                approval_count: action.approval_count,
             })
         })
         .collect::<Result<Vec<ContractTeamActionEntry>, Error>>()?;
@@ -1380,6 +1381,7 @@ mod tests {
                     }),
                 },
             )),
+            approval_count: u32::from(seed),
         }
     }
 
@@ -1387,6 +1389,7 @@ mod tests {
         ContractTeamActionEntry {
             action_id: id(seed + 0x10),
             action: team_action(seed),
+            approval_count: u32::from(seed),
         }
     }
 

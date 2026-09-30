@@ -3869,6 +3869,7 @@ typedef GPB_ENUM(GetContractTeamActionsResponse_ContractTeamAction_FieldNumber) 
   GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_ProposerId = 2,
   GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_ProposedAt = 3,
   GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_DeleteSettledDocument = 4,
+  GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_ApprovalCount = 5,
 };
 
 typedef GPB_ENUM(GetContractTeamActionsResponse_ContractTeamAction_Event_OneOfCase) {
@@ -3895,6 +3896,9 @@ GPB_FINAL @interface GetContractTeamActionsResponse_ContractTeamAction : GPBMess
 
 /** What it does */
 @property(nonatomic, readwrite, strong, null_resettable) GetContractTeamActionsResponse_DeleteSettledDocument *deleteSettledDocument;
+
+/** How many approvals it holds, the proposer's among them; an active */
+@property(nonatomic, readwrite) uint32_t approvalCount;
 
 @end
 

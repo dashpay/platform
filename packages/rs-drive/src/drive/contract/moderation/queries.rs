@@ -156,8 +156,9 @@ impl Drive {
     }
 
     /// The query for a page of a contract's team actions, active or closed: each action's info
-    /// (`I`), in action id order, from the start the query gives. The limit is the page's, so
-    /// the prover and the verifier bound the proof alike.
+    /// (`I`) and its approvals tree (`S`), whose sum is how many approvals it holds, in action id
+    /// order, from the start the query gives. Every action holds both, so the limit is twice the
+    /// page's, and the prover and the verifier bound the proof alike.
     pub fn contract_team_actions_query(
         contract_id: [u8; 32],
         actions_query: &ContractTeamActionsQuery,
@@ -172,12 +173,17 @@ impl Drive {
                 query.insert_item(QueryItem::RangeAfter(action_id.to_vec()..))
             }
         }
-        query.set_subquery_key(CONTRACT_TEAM_ACTION_INFO_KEY.to_vec());
+        let mut action_query = Query::new_with_direction(true);
+        action_query.insert_keys(vec![
+            CONTRACT_TEAM_ACTION_INFO_KEY.to_vec(),
+            CONTRACT_TEAM_ACTION_SIGNERS_KEY.to_vec(),
+        ]);
+        query.set_subquery(action_query);
         PathQuery {
             path: contract_team_action_status_path_vec(&contract_id, actions_query.status),
             query: SizedQuery {
                 query,
-                limit: Some(actions_query.limit),
+                limit: Some(actions_query.limit.saturating_mul(2)),
                 offset: None,
             },
         }

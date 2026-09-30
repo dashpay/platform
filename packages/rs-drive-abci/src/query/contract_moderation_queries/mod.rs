@@ -139,6 +139,7 @@ pub(super) fn team_action_to_response(entry: ContractTeamActionEntry) -> Contrac
                 reason: Some(reason_to_response(reason)),
             },
         )),
+        approval_count: entry.approval_count,
     }
 }
 

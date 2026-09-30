@@ -304,8 +304,10 @@ export class ContractsFacade {
   /**
    * One page of the actions an elected contract's seated moderation team votes on, `active`
    * (still gathering approvals) or `closed` (their approvals met the rule and they ran), in
-   * action id order. Pass a page's `nextStartAtActionId` as the next query's
-   * `startAtActionId`; a page without one (it holds fewer actions than the limit) is the last.
+   * action id order, each with its `approvalCount`. Pass a page's `nextStartAtActionId` as the
+   * next query's `startAtActionId`; a page without one (it holds fewer actions than the limit)
+   * is the last. An active action's `approvalCount` may still count members who left the team,
+   * so compare it with `moderationCharters.team` before showing progress.
    */
   async teamActions(query: wasm.ContractTeamActionsQuery): Promise<wasm.ContractTeamActionsPage> {
     const w = await this.sdk.getWasmSdkConnected();

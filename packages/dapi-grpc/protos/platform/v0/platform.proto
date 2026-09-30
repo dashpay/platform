@@ -963,6 +963,10 @@ message GetContractTeamActionsResponse {
     oneof event {
       DeleteSettledDocument delete_settled_document = 4; // What it does
     }
+    uint32 approval_count =
+        5; // How many approvals it holds, the proposer's among them; an active
+           // action's may still count members who left the team, dropped only
+           // when an approval reads the team
   }
 
   message ContractTeamActions {

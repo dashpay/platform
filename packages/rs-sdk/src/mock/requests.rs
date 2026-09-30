@@ -572,11 +572,11 @@ impl MockResponse for ContractDocumentRemovals {
 impl MockResponse for ContractTeamActions {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         // An action has a bincode encoding of its own; the action id is the key it is stored
-        // under.
-        let actions: Vec<(Identifier, ContractTeamAction)> = self
+        // under, and the approval count the sum of its approvals.
+        let actions: Vec<(Identifier, ContractTeamAction, u32)> = self
             .actions()
             .iter()
-            .map(|entry| (entry.action_id, entry.action.clone()))
+            .map(|entry| (entry.action_id, entry.action.clone(), entry.approval_count))
             .collect();
         bincode::encode_to_vec(actions, BINCODE_CONFIG).expect("encode ContractTeamActions")
     }
@@ -585,12 +585,18 @@ impl MockResponse for ContractTeamActions {
     where
         Self: Sized,
     {
-        let (actions, _): (Vec<(Identifier, ContractTeamAction)>, _) =
+        let (actions, _): (Vec<(Identifier, ContractTeamAction, u32)>, _) =
             bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode ContractTeamActions");
         ContractTeamActions(
             actions
                 .into_iter()
-                .map(|(action_id, action)| ContractTeamActionEntry { action_id, action })
+                .map(
+                    |(action_id, action, approval_count)| ContractTeamActionEntry {
+                        action_id,
+                        action,
+                        approval_count,
+                    },
+                )
                 .collect(),
         )
     }

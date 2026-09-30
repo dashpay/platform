@@ -30,17 +30,13 @@ impl Drive {
             &mut vec![],
             &platform_version.drive,
         )?;
-        results
-            .to_path_key_elements()
-            .into_iter()
-            .map(|(path, _, element)| {
-                ContractTeamActionEntry::from_path_element(&path, &element).map_err(|description| {
-                    Error::Drive(DriveError::CorruptedDriveState(format!(
-                        "contract {} team action is malformed: {}",
-                        contract_id, description
-                    )))
-                })
-            })
-            .collect()
+        ContractTeamActionEntry::from_path_key_elements(results.to_path_key_elements()).map_err(
+            |description| {
+                Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "contract {} team action is malformed: {}",
+                    contract_id, description
+                )))
+            },
+        )
     }
 }

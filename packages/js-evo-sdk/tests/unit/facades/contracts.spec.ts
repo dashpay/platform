@@ -508,6 +508,7 @@ describe('ContractsFacade', () => {
         documentRevision: BigInt(2),
         reason: settledReason,
       },
+      approvalCount: 2,
     };
 
     it('should forward moderatorDeleteSettledDocument() to contractDeleteSettledDocument() and return the team action it opened', async function run() {

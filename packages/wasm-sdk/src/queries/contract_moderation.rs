@@ -276,6 +276,13 @@ export interface ContractTeamActionEntry {
   proposedAt: bigint;
   /** What it does once approved. */
   event: ContractTeamActionEvent;
+  /**
+   * How many approvals it holds, the proposer's among them: an active action's so far, a closed
+   * one's that counted when it ran. An active action's may still count members who left the
+   * team, whose approvals are dropped only when an approval reads the team, so compare it with
+   * the team from `getModerationTeam` before showing progress.
+   */
+  approvalCount: number;
 }
 
 /**
@@ -892,6 +899,11 @@ fn team_action_to_js(entry: &ContractTeamActionEntry) -> Result<JsValue, WasmSdk
         }
     }
     set(&js_entry, "event", event.into())?;
+    set(
+        &js_entry,
+        "approvalCount",
+        JsValue::from(entry.approval_count),
+    )?;
     Ok(js_entry.into())
 }
 
@@ -1532,6 +1544,7 @@ mod wasm_tests {
                     reason: ContractModerationReason::from_text("doxxing"),
                 },
             },
+            approval_count: u32::from(seed),
         }
     }
 
@@ -1568,6 +1581,7 @@ mod wasm_tests {
             get(&first, "proposedAt").js_typeof().as_string().as_deref(),
             Some("bigint")
         );
+        assert_eq!(get(&first, "approvalCount").as_f64(), Some(1.0));
         let event = get(&first, "event");
         assert_eq!(
             get(&event, "type").as_string().as_deref(),

@@ -36803,7 +36803,8 @@ proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActio
     actionId: msg.getActionId_asB64(),
     proposerId: msg.getProposerId_asB64(),
     proposedAt: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    deleteSettledDocument: (f = msg.getDeleteSettledDocument()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.toObject(includeInstance, f)
+    deleteSettledDocument: (f = msg.getDeleteSettledDocument()) && proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.toObject(includeInstance, f),
+    approvalCount: jspb.Message.getFieldWithDefault(msg, 5, 0)
   };
 
   if (includeInstance) {
@@ -36856,6 +36857,10 @@ proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActio
       var value = new proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.deserializeBinaryFromReader);
       msg.setDeleteSettledDocument(value);
+      break;
+    case 5:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setApprovalCount(value);
       break;
     default:
       reader.skipField();
@@ -36913,6 +36918,13 @@ proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActio
       4,
       f,
       proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.DeleteSettledDocument.serializeBinaryToWriter
+    );
+  }
+  f = message.getApprovalCount();
+  if (f !== 0) {
+    writer.writeUint32(
+      5,
+      f
     );
   }
 };
@@ -37054,6 +37066,24 @@ proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamActio
  */
 proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.hasDeleteSettledDocument = function() {
   return jspb.Message.getField(this, 4) != null;
+};
+
+
+/**
+ * optional uint32 approval_count = 5;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.getApprovalCount = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractTeamActionsResponse.ContractTeamAction.prototype.setApprovalCount = function(value) {
+  return jspb.Message.setProto3IntField(this, 5, value);
 };
 
 

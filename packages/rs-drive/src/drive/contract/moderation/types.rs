@@ -1,4 +1,7 @@
 use crate::drive::constants::ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE;
+use crate::drive::contract::paths::{
+    CONTRACT_TEAM_ACTION_INFO_KEY, CONTRACT_TEAM_ACTION_SIGNERS_KEY,
+};
 use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationDocument,
     ContractModerationList, ContractModerationReason, ContractSuspension, ContractTeamAction,
@@ -570,6 +573,10 @@ pub struct ContractTeamActionEntry {
     pub action_id: Identifier,
     /// Who proposed it, when, and what it does.
     pub action: ContractTeamAction,
+    /// How many approvals it holds, the proposer's among them: an active action's so far, a
+    /// closed one's that counted when it ran. An active action's may still count members who
+    /// left the team: their approvals are dropped only when an approval reads the team.
+    pub approval_count: u32,
 }
 
 /// What one member's signature writes of a team action: see
@@ -717,21 +724,57 @@ pub fn decode_contract_team_action(value: &[u8]) -> Result<ContractTeamAction, S
 }
 
 impl ContractTeamActionEntry {
-    /// Decodes one team action as a query returns it: the action's info item (`I`), under the
-    /// path whose last segment is the action id.
-    pub fn from_path_element(path: &[Vec<u8>], element: &Element) -> Result<Self, String> {
-        let key = path
-            .last()
-            .ok_or_else(|| "team action path is empty".to_string())?;
-        let action_id = Identifier::from_bytes(key)
-            .map_err(|_| format!("team action key is not an action id: {:?}", key))?;
-        let Element::Item(value, _) = element else {
-            return Err("team action is not an item".to_string());
-        };
-        Ok(Self {
-            action_id,
-            action: decode_contract_team_action(value)?,
-        })
+    /// Decodes a page of team actions as `Drive::contract_team_actions_query` returns it: for
+    /// each action, in action id order, its info item (`I`) and then its approvals sum tree
+    /// (`S`), both under the path whose last segment is the action id. Each approval is a sum
+    /// item of 1, so the tree's sum is how many the action holds.
+    pub fn from_path_key_elements(
+        results: impl IntoIterator<Item = (Vec<Vec<u8>>, Vec<u8>, Element)>,
+    ) -> Result<Vec<Self>, String> {
+        let mut results = results.into_iter();
+        let mut entries = vec![];
+        while let Some((path, key, info)) = results.next() {
+            let action_id = path
+                .last()
+                .and_then(|key| Identifier::from_bytes(key).ok())
+                .ok_or_else(|| format!("team action path {:?} does not end in an id", path))?;
+            if key != CONTRACT_TEAM_ACTION_INFO_KEY {
+                return Err(format!(
+                    "team action {} lists {:?} before its info",
+                    action_id, key
+                ));
+            }
+            let Element::Item(value, _) = info else {
+                return Err(format!("team action {} info is not an item", action_id));
+            };
+            let Some((approvals_path, approvals_key, approvals)) = results.next() else {
+                return Err(format!("team action {} has no approvals tree", action_id));
+            };
+            if approvals_path != path || approvals_key != CONTRACT_TEAM_ACTION_SIGNERS_KEY {
+                return Err(format!(
+                    "team action {} is not followed by its approvals tree",
+                    action_id
+                ));
+            }
+            let Element::SumTree(_, approvals_sum, _) = approvals else {
+                return Err(format!(
+                    "team action {} approvals are not a sum tree",
+                    action_id
+                ));
+            };
+            let approval_count = u32::try_from(approvals_sum).map_err(|_| {
+                format!(
+                    "team action {} holds {} approvals",
+                    action_id, approvals_sum
+                )
+            })?;
+            entries.push(Self {
+                action_id,
+                action: decode_contract_team_action(&value)?,
+                approval_count,
+            });
+        }
+        Ok(entries)
     }
 }
 
@@ -1314,17 +1357,47 @@ mod tests {
             b"M".to_vec(),
             vec![4; 32],
         ];
+        let info = Element::new_item(encode_contract_team_action(&action));
+        let approvals = Element::new_sum_tree_with_flags_and_sum_value(None, 3, None);
         assert_eq!(
-            ContractTeamActionEntry::from_path_element(
-                &path,
-                &Element::new_item(encode_contract_team_action(&action))
-            )
+            ContractTeamActionEntry::from_path_key_elements([
+                (path.clone(), b"I".to_vec(), info.clone()),
+                (path.clone(), b"S".to_vec(), approvals.clone()),
+            ])
             .expect("entry"),
-            ContractTeamActionEntry {
+            vec![ContractTeamActionEntry {
                 action_id: Identifier::from([4; 32]),
                 action,
-            }
+                approval_count: 3,
+            }]
         );
+
+        // Each action's info is followed by its approvals tree, and nothing else
+        ContractTeamActionEntry::from_path_key_elements([(
+            path.clone(),
+            b"I".to_vec(),
+            info.clone(),
+        )])
+        .expect_err("no approvals tree");
+        ContractTeamActionEntry::from_path_key_elements([
+            (path.clone(), b"S".to_vec(), approvals.clone()),
+            (path.clone(), b"I".to_vec(), info.clone()),
+        ])
+        .expect_err("approvals before the info");
+        ContractTeamActionEntry::from_path_key_elements([
+            (path.clone(), b"I".to_vec(), info.clone()),
+            (path.clone(), b"S".to_vec(), Element::empty_tree()),
+        ])
+        .expect_err("approvals not a sum tree");
+        ContractTeamActionEntry::from_path_key_elements([
+            (path.clone(), b"I".to_vec(), info),
+            (
+                path,
+                b"S".to_vec(),
+                Element::new_sum_tree_with_flags_and_sum_value(None, -1, None),
+            ),
+        ])
+        .expect_err("a negative count");
     }
 
     #[test]

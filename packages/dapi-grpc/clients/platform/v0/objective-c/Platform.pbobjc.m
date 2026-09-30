@@ -8267,9 +8267,11 @@ typedef struct GetContractTeamActionsResponse_DeleteSettledDocument__storage_ {
 @dynamic proposerId;
 @dynamic proposedAt;
 @dynamic deleteSettledDocument;
+@dynamic approvalCount;
 
 typedef struct GetContractTeamActionsResponse_ContractTeamAction__storage_ {
   uint32_t _has_storage_[2];
+  uint32_t approvalCount;
   NSData *actionId;
   NSData *proposerId;
   GetContractTeamActionsResponse_DeleteSettledDocument *deleteSettledDocument;
@@ -8317,6 +8319,15 @@ typedef struct GetContractTeamActionsResponse_ContractTeamAction__storage_ {
         .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_ContractTeamAction__storage_, deleteSettledDocument),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "approvalCount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_ApprovalCount,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_ContractTeamAction__storage_, approvalCount),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =

@@ -3746,6 +3746,9 @@ export namespace GetContractTeamActionsResponse {
     getDeleteSettledDocument(): GetContractTeamActionsResponse.DeleteSettledDocument | undefined;
     setDeleteSettledDocument(value?: GetContractTeamActionsResponse.DeleteSettledDocument): void;
 
+    getApprovalCount(): number;
+    setApprovalCount(value: number): void;
+
     getEventCase(): ContractTeamAction.EventCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractTeamAction.AsObject;
@@ -3763,6 +3766,7 @@ export namespace GetContractTeamActionsResponse {
       proposerId: Uint8Array | string,
       proposedAt: number,
       deleteSettledDocument?: GetContractTeamActionsResponse.DeleteSettledDocument.AsObject,
+      approvalCount: number,
     }
 
     export enum EventCase {

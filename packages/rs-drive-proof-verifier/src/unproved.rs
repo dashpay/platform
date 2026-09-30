@@ -2008,6 +2008,7 @@ mod contract_moderation_tests {
                     }),
                 },
             )),
+            approval_count: u32::from(seed),
         }
     }
 
