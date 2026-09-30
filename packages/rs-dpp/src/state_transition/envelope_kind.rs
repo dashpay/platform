@@ -259,9 +259,9 @@ impl StateTransition {
     /// active in that version.
     ///
     /// This is the entry point of the code paths that admit the larger contract-code envelopes
-    /// (`decode_raw_state_transitions` v2, `getProofs` v1, the client factories). Two things
-    /// differ from `deserialize_from_bytes_untrusted_exact_in_version`, which every older path
-    /// keeps calling unchanged:
+    /// (`decode_raw_state_transitions` v2 and `getProofs` v1). Two things differ from
+    /// `deserialize_from_bytes_untrusted_exact_in_version`, which every older path keeps
+    /// calling unchanged:
     ///
     /// * the budget is [`StateTransition::family_decode_budget`] of the peeked kind, so a
     ///   contract-code envelope decodes under the bounded budget of the tables and every other
