@@ -101,11 +101,6 @@ pub(crate) const SLOW_INTERVAL: u32 = 10;
 /// height-driven pass waits for it.
 pub(crate) const CATCH_UP_STEP: u32 = 3;
 
-/// Blocks a root a probe found mined may stay unseen by the wallet before it
-/// is asked again: the block a probe saw can be reorged out, or come from a
-/// node on a stale fork, and the wallet's height never goes back for that.
-pub(crate) const MINED_GRACE: u32 = 6;
-
 /// One unsettled transaction of the wallet, merged across the accounts that
 /// record it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -378,10 +373,8 @@ enum Final {
     Dead {
         reason: String,
     },
-    /// Found in a block by a probe at height `at`, before the wallet saw it.
-    Mined {
-        at: u32,
-    },
+    /// Found in a block by a probe (two nodes), before the wallet saw it.
+    Mined,
 }
 
 /// Whether two verdicts say the same thing to the host. Accepted and Mined
@@ -625,20 +618,17 @@ impl ResolverState {
                 *schedule = ProbeSchedule::default();
             }
         }
-        // A block a probe saw but the wallet never did may be one the replay
-        // drops: roots found mined are asked again.
-        self.finished.retain(|(wallet, _), result| {
-            wallet != wallet_id || !matches!(result, Final::Mined { .. })
-        });
+        // The replay may drop a block a probe saw: roots found mined are
+        // asked again, and so are roots found dead — one may have become a
+        // root only because its parent counted as mined.
+        self.finished.retain(|(wallet, _), _| wallet != wallet_id);
     }
 
     /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
     fn mined(&self, wallet_id: &WalletId) -> HashSet<Txid> {
         self.finished
             .iter()
-            .filter(|((wallet, _), result)| {
-                wallet == wallet_id && matches!(result, Final::Mined { .. })
-            })
+            .filter(|((wallet, _), result)| wallet == wallet_id && matches!(result, Final::Mined))
             .map(|((_, txid), _)| *txid)
             .collect()
     }
@@ -717,12 +707,6 @@ pub(crate) fn begin_pass(
     ));
     events.extend(state.clear_orphaned_dead(wallet_id, Some(height), "settled-or-left"));
 
-    // A root found mined that the wallet still has not seen in a block well
-    // after the probe: the block may be gone — ask again.
-    state.finished.retain(|(wallet, _), result| {
-        *wallet != wallet_id
-            || !matches!(result, Final::Mined { at } if height > at.saturating_add(MINED_GRACE))
-    });
     let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
     let roots = graph.roots();
@@ -816,12 +800,14 @@ pub(crate) fn record_probe(
             );
         }
         ProbeVerdict::Mined if record_final => {
-            state.finished.insert(key, Final::Mined { at: height });
+            state.finished.insert(key, Final::Mined);
         }
         _ => {}
     }
     let trigger = trigger_of(root.forced);
-    if matches!(verdict, ProbeVerdict::Dead { .. }) {
+    // Spread a Dead down the chain only when it is recorded: a Dead the chain
+    // inherits needs a root known dead to hang on (see `dead_from`).
+    if matches!(verdict, ProbeVerdict::Dead { .. }) && record_final {
         let sends = ChainGraph::new(views, &state.mined(&wallet_id)).own_in_chain(&root.txid);
         state.publish_dead(
             wallet_id,
@@ -847,24 +833,13 @@ pub(crate) fn record_probe(
 
 /// The lowest height at which a root of the wallet can be due, if nothing new
 /// happens to it: a root without a schedule yet (the child of one just found
-/// mined) is due at once; a root a probe found mined, once its grace is up
-/// (see [`MINED_GRACE`]); `u32::MAX` when every root is Dead or there are
-/// none (nothing left to probe).
+/// mined) is due at once; `u32::MAX` when every root has a final verdict
+/// (nothing left to probe) or there are none.
 pub(crate) fn next_pass_height(
     state: &ResolverState,
     wallet_id: WalletId,
     views: &[OutgoingView],
 ) -> u32 {
-    let mined_expiry = state
-        .finished
-        .iter()
-        .filter_map(|((wallet, _), result)| match result {
-            Final::Mined { at } if *wallet == wallet_id => {
-                Some(at.saturating_add(MINED_GRACE).saturating_add(1))
-            }
-            _ => None,
-        })
-        .filter(|_| !views.is_empty());
     let mined = state.mined(&wallet_id);
     ChainGraph::new(views, &mined)
         .roots()
@@ -872,7 +847,6 @@ pub(crate) fn next_pass_height(
         .map(|view| (wallet_id, view.txid))
         .filter(|key| !state.finished.contains_key(key))
         .map(|key| state.schedules.get(&key).map_or(0, ProbeSchedule::next_due))
-        .chain(mined_expiry)
         .min()
         .unwrap_or(u32::MAX)
 }
@@ -1962,6 +1936,8 @@ mod tests {
     use key_wallet::transaction_checking::transaction_router::TransactionType;
     use key_wallet::transaction_checking::BlockInfo;
     use key_wallet::WalletCoreBalance;
+    use tokio::sync::Notify;
+    use tokio::time::{sleep, timeout};
 
     use super::*;
 
@@ -2699,7 +2675,7 @@ mod tests {
         synced: StdMutex<HashMap<WalletId, u32>>,
         /// Reads wait while set, so a test can hold a pass in its read.
         paused: StdMutex<bool>,
-        resume: tokio::sync::Notify,
+        resume: Notify,
     }
 
     impl FakeSource {
@@ -3181,7 +3157,7 @@ mod tests {
     #[tokio::test]
     async fn should_not_report_a_running_task_as_not_running_to_a_concurrent_stop() {
         let (stop, _stopped) = oneshot::channel();
-        let handle = tokio::spawn(tokio::time::sleep(Duration::from_millis(200)));
+        let handle = tokio::spawn(sleep(Duration::from_millis(200)));
         let slot = Mutex::new(ActorSlot::Running(handle, stop));
         let stopping = AsyncMutex::new(());
         let started = Instant::now();
@@ -3204,7 +3180,7 @@ mod tests {
     #[tokio::test]
     async fn should_report_a_task_that_outlived_a_stop_clean_on_retry() {
         let (stop, _stopped) = oneshot::channel();
-        let handle = tokio::spawn(tokio::time::sleep(Duration::from_millis(300)));
+        let handle = tokio::spawn(sleep(Duration::from_millis(300)));
         let slot = Mutex::new(ActorSlot::Running(handle, stop));
         let stopping = AsyncMutex::new(());
 
@@ -3989,7 +3965,7 @@ mod tests {
         });
         let read = rig.actor.jobs.join_next_with_id().await.expect("read");
         rig.actor.joined(read); // root 1's probe spawned
-        tokio::task::yield_now().await; // ...and finished, not yet handled
+        task::yield_now().await; // ...and finished, not yet handled
 
         rig.handle(Command::Settled {
             wallet_id: wallet(),
@@ -4137,32 +4113,12 @@ mod tests {
         rig.follow(wallet(), 100).await;
         assert_eq!(
             rig.actor.state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined { at: 101 })
+            Some(&Final::Mined)
         );
 
         rig.height(wallet(), 50).await;
 
         assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
-    }
-
-    /// A root a probe found mined that the wallet still has not seen in a block
-    /// MINED_GRACE blocks later is asked again.
-    #[tokio::test]
-    async fn should_ask_again_about_a_probe_found_mined_root_the_wallet_never_saw() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined)]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await; // found mined at 101
-        for height in 102..=101 + MINED_GRACE {
-            rig.height(wallet(), height).await;
-        }
-        assert_eq!(probe.probed().len(), 1);
-
-        // Past the grace, the wallet — waiting for exactly that height — asks
-        // again.
-        rig.height(wallet(), 102 + MINED_GRACE).await;
-
-        assert_eq!(probe.probed().len(), 2);
     }
 
     /// A probe sent before a rewind answers Mined after it: the answer is told
@@ -4190,6 +4146,33 @@ mod tests {
         rig.settle().await;
 
         assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
+    }
+
+    /// A probe sent before a rewind answers Dead after it: the root itself is
+    /// told, the sends built on it are not — nothing records the root dead for
+    /// their inherited Dead to hang on.
+    #[tokio::test]
+    async fn should_publish_a_pre_rewind_dead_to_the_root_only() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
+        );
+        rig.height(wallet(), 100).await;
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // root 1's probe is out
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 50,
+        });
+        rig.settle().await;
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
@@ -4311,11 +4294,11 @@ mod tests {
         for command in [Command::SetEnabled(true), Command::Uncertain(txid(1))] {
             commands.send(command).expect("send");
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        sleep(Duration::from_millis(50)).await;
 
         stop.send(()).expect("stop");
 
-        tokio::time::timeout(Duration::from_secs(5), task)
+        timeout(Duration::from_secs(5), task)
             .await
             .expect("stopped in time")
             .expect("no panic");

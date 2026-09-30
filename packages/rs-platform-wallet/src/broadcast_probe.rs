@@ -111,8 +111,8 @@ pub enum ProbeVerdict {
     /// A node holds the transaction in its mempool. Not settlement: it can
     /// still expire or lose to a conflict, so the resolver keeps asking.
     Accepted,
-    /// A node has the transaction in a block. Final — there is nothing left to
-    /// ask, even if this wallet has not seen that block yet.
+    /// Two different nodes have the transaction in a block. Final — there is
+    /// nothing left to ask, even if this wallet has not seen that block yet.
     Mined,
     /// Two different nodes refused it for a reason in [`DEAD_REASONS`]
     /// (missing or spent inputs, or a conflict with an InstantSend-locked
@@ -158,6 +158,13 @@ const MAX_LOOKUPS_PER_PROBE: usize = 4;
 /// opinion is one more request.
 const DEAD_QUORUM: usize = 2;
 
+/// How many *distinct* nodes must report a transaction in a block before it
+/// counts as mined — final, never asked about again, its children probed in
+/// its place. One node on a stale fork, or one whose block is about to be
+/// reorged out, would otherwise settle it on false evidence. A single such
+/// answer still shows the transaction exists: it counts as accepted.
+const MINED_QUORUM: usize = 2;
+
 /// Resubmits a transaction whose broadcast outcome is unknown and turns the
 /// nodes' answers into a verdict.
 ///
@@ -180,6 +187,7 @@ pub(crate) async fn probe_with(
 ) -> ProbeVerdict {
     let mut dead_nodes: HashSet<String> = HashSet::new();
     let mut dead_reason: Option<String> = None;
+    let mut mined = MinedEvidence::default();
     let mut last_other = String::from("no submission was answered");
 
     for _ in 0..MAX_SUBMISSIONS_PER_PROBE {
@@ -192,7 +200,11 @@ pub(crate) async fn probe_with(
         );
         match verdict {
             NodeVerdict::Accepted => return ProbeVerdict::Accepted,
-            NodeVerdict::Mined => return ProbeVerdict::Mined,
+            NodeVerdict::Mined => {
+                if mined.add(node) {
+                    return ProbeVerdict::Mined;
+                }
+            }
             NodeVerdict::Dead { reason } => {
                 // A dead verdict from an unidentified node cannot count
                 // towards the quorum — it might be the node we already heard.
@@ -205,6 +217,7 @@ pub(crate) async fn probe_with(
                         submitter,
                         &transaction.txid(),
                         dead_reason.unwrap_or_default(),
+                        mined,
                     )
                     .await;
                 }
@@ -215,6 +228,9 @@ pub(crate) async fn probe_with(
         }
     }
 
+    if mined.seen {
+        return ProbeVerdict::Accepted;
+    }
     ProbeVerdict::Unresolved {
         reason: match dead_reason {
             Some(reason) => format!(
@@ -226,11 +242,36 @@ pub(crate) async fn probe_with(
     }
 }
 
+/// Nodes that reported the transaction in a block, by submission or lookup.
+#[derive(Default)]
+struct MinedEvidence {
+    nodes: HashSet<String>,
+    /// Any node said so, identified or not: the transaction exists.
+    seen: bool,
+}
+
+impl MinedEvidence {
+    /// Count one report; whether the quorum is reached. An unidentified node
+    /// cannot count — it might be one already heard.
+    fn add(&mut self, node: Option<String>) -> bool {
+        self.seen = true;
+        if let Some(node) = node {
+            self.nodes.insert(node);
+        }
+        self.nodes.len() >= MINED_QUORUM
+    }
+}
+
 /// A rejection for missing or spent inputs is also what a *mined* transaction
 /// whose outputs are all spent gets (see the module docs). Ask nodes whether
 /// they know the txid: one that does settles it as accepted; only
 /// [`DEAD_QUORUM`] distinct nodes not knowing it confirm the dead verdict.
-async fn confirm_dead(submitter: &dyn NodeSubmitter, txid: &Txid, reason: String) -> ProbeVerdict {
+async fn confirm_dead(
+    submitter: &dyn NodeSubmitter,
+    txid: &Txid,
+    reason: String,
+    mut mined: MinedEvidence,
+) -> ProbeVerdict {
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
     for _ in 0..MAX_LOOKUPS_PER_PROBE {
@@ -242,7 +283,11 @@ async fn confirm_dead(submitter: &dyn NodeSubmitter, txid: &Txid, reason: String
             "broadcast probe: txid lookup answered"
         );
         match answer {
-            LookupAnswer::Known { mined: true } => return ProbeVerdict::Mined,
+            LookupAnswer::Known { mined: true } => {
+                if mined.add(node) {
+                    return ProbeVerdict::Mined;
+                }
+            }
             LookupAnswer::Known { mined: false } => return ProbeVerdict::Accepted,
             LookupAnswer::NotFound => {
                 if let Some(node) = node {
@@ -254,6 +299,9 @@ async fn confirm_dead(submitter: &dyn NodeSubmitter, txid: &Txid, reason: String
             }
             LookupAnswer::Unknown { reason } => last_unknown = reason,
         }
+    }
+    if mined.seen {
+        return ProbeVerdict::Accepted;
     }
     ProbeVerdict::Unresolved {
         reason: format!(
@@ -628,14 +676,38 @@ mod tests {
     async fn should_report_mined_for_a_refused_transaction_a_node_has_in_a_block() {
         let nodes = ScriptedNodes::with_lookups(
             vec![(Some("a"), dead()), (Some("b"), dead())],
-            vec![(Some("c"), LookupAnswer::Known { mined: true })],
+            vec![
+                (Some("c"), LookupAnswer::Known { mined: true }),
+                (Some("d"), LookupAnswer::Known { mined: true }),
+            ],
         );
 
         assert_eq!(
             probe_with(&nodes, &transaction()).await,
             ProbeVerdict::Mined
         );
-        assert_eq!(nodes.lookups_made(), 1);
+        assert_eq!(nodes.lookups_made(), 2);
+    }
+
+    /// One node on a stale fork (or with a block about to be reorged out)
+    /// must not settle a transaction as mined: two distinct nodes must.
+    #[tokio::test]
+    async fn should_report_mined_only_when_two_distinct_nodes_have_it_in_a_block() {
+        let two = ScriptedNodes::new(vec![
+            (Some("a"), NodeVerdict::Mined),
+            (Some("b"), NodeVerdict::Mined),
+        ]);
+        let same_twice = ScriptedNodes::new(vec![
+            (Some("a"), NodeVerdict::Mined),
+            (Some("a"), NodeVerdict::Mined),
+        ]);
+
+        assert_eq!(probe_with(&two, &transaction()).await, ProbeVerdict::Mined);
+        assert_eq!(
+            probe_with(&same_twice, &transaction()).await,
+            ProbeVerdict::Accepted,
+            "one node's word: it exists, not that it is final"
+        );
     }
 
     #[tokio::test]
