@@ -1,8 +1,10 @@
 use crate::drive::votes::readiness::ReadinessRoundFunding;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::util::batch::DriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::voting::readiness::report_record::ReadinessReportRecord;
@@ -49,6 +51,45 @@ pub enum ReadinessOperationType {
         /// The reports to delete
         pro_tx_hashes: Vec<[u8; 32]>,
     },
+}
+
+impl ReadinessOperationType {
+    /// Whether the operation can retire a round: an opening retires the contract's previous
+    /// round when there is one, a cancellation always does.
+    fn can_retire_a_round(&self) -> bool {
+        matches!(
+            self,
+            ReadinessOperationType::OpenRound { .. } | ReadinessOperationType::CancelRound { .. }
+        )
+    }
+}
+
+/// Refuses a batch holding more than one operation that can retire a readiness round.
+///
+/// A retirement credits its cleanup reserve to the epoch's processing pool as an absolute
+/// rewrite of the pool item computed from the value read before the batch applies, so a
+/// second retirement in the same batch would overwrite the first credit instead of adding to
+/// it. Callers schedule one retirement per batch; this keeps a batch that breaks the rule
+/// from losing credits.
+pub(crate) fn verify_at_most_one_readiness_retirement(
+    operations: &[DriveOperation],
+) -> Result<(), Error> {
+    let retirements = operations
+        .iter()
+        .filter(|operation| {
+            matches!(
+                operation,
+                DriveOperation::ReadinessOperation(readiness_operation)
+                    if readiness_operation.can_retire_a_round()
+            )
+        })
+        .count();
+    if retirements > 1 {
+        return Err(Error::Drive(DriveError::NotSupported(
+            "one readiness round retirement per batch",
+        )));
+    }
+    Ok(())
 }
 
 impl DriveLowLevelOperationConverter for ReadinessOperationType {

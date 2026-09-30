@@ -1724,6 +1724,71 @@ mod retirement {
     }
 
     #[test]
+    fn should_refuse_two_retirements_in_one_batch_and_credit_both_when_batched_apart() {
+        let (drive, payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let first = [1u8; 32];
+        let second = [2u8; 32];
+        open_round(&drive, first, payer, 10, None);
+        open_round(&drive, second, payer, 10, None);
+        let block_info = block_info(1_100_000, 11, 100);
+        let cancel = |contract_id| {
+            DriveOperation::ReadinessOperation(ReadinessOperationType::CancelRound {
+                contract_id,
+                cleanup_reserve: CLEANUP_RESERVE,
+            })
+        };
+
+        // Both retirements would rewrite the pool from the same read, so one credit would be
+        // lost; the batch is refused whether estimated, applied or converted.
+        for apply in [false, true] {
+            let result = drive.apply_drive_operations(
+                vec![cancel(first), cancel(second)],
+                apply,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            );
+            assert!(
+                matches!(result, Err(Error::Drive(DriveError::NotSupported(_)))),
+                "{result:?}"
+            );
+        }
+        let result = drive.convert_drive_operations_to_grove_operations(
+            vec![cancel(first), cancel(second)],
+            &block_info,
+            None,
+            platform_version,
+        );
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::NotSupported(_)))),
+            "{result:?}"
+        );
+        for contract_id in [first, second] {
+            assert!(drive
+                .fetch_readiness_round(contract_id, None, platform_version)
+                .expect("fetch")
+                .is_some());
+        }
+
+        // One retirement per batch credits every reserve.
+        for contract_id in [first, second] {
+            drive
+                .apply_drive_operations(
+                    vec![cancel(contract_id)],
+                    true,
+                    &block_info,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("cancel");
+        }
+        assert_eq!(pool_credits(&drive, None), 2 * CLEANUP_RESERVE);
+    }
+
+    #[test]
     fn should_activate_a_crossed_round_and_refuse_a_pending_or_stale_one() {
         let (drive, payer) = setup();
         let platform_version = PlatformVersion::latest();

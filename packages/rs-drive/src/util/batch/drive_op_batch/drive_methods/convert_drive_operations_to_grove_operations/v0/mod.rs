@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::batch::drive_op_batch::readiness::verify_at_most_one_readiness_retirement;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use dpp::block::block_info::BlockInfo;
@@ -44,6 +45,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
+        verify_at_most_one_readiness_retirement(&drive_batch_operations)?;
         self.prepare_drive_operations_time_range_ttl(
             &drive_batch_operations,
             block_info,

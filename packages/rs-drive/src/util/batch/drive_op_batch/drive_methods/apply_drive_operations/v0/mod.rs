@@ -8,6 +8,8 @@ use dpp::fee::fee_result::FeeResult;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use crate::util::batch::drive_op_batch::readiness::verify_at_most_one_readiness_retirement;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
@@ -47,6 +49,7 @@ impl Drive {
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
+        verify_at_most_one_readiness_retirement(&operations)?;
         // With no caller transaction, TTL preparation (direct drainage
         // writes), conversion reads, and the batch apply would each commit
         // on their own, so a conversion error after preparation would leave
