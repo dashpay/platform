@@ -59,7 +59,9 @@ impl<C> Platform<C> {
         let mut batch = GroveDbOpBatch::new();
         Drive::add_readiness_structure_operations(&mut batch);
         for operation in batch {
-            let GroveOp::InsertOrReplace { element } = operation.op else {
+            let (GroveOp::InsertOrReplace { element }
+            | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element }) = operation.op
+            else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "the readiness structure helper emits only inserts",
                 )));
