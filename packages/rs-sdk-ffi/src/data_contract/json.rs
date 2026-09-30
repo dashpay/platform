@@ -20,8 +20,9 @@ use dash_sdk::platform::DataContract;
 ///
 /// The envelope generation (`$formatVersion`) is chosen from the supplied
 /// version's tables, and the nested `config` block keeps the generation the
-/// contract carries; a pre-v11 contract loaded from state still renders a
-/// V0 configuration inside a V1 envelope.
+/// contract carries; a contract registered with a V0 configuration (the
+/// default through protocol version 8, refused from 10) still renders it
+/// inside a V1 envelope.
 pub(crate) fn contract_json_value(
     contract: &DataContract,
     platform_version: &PlatformVersion,

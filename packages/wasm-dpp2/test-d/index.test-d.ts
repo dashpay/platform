@@ -43,6 +43,12 @@ type V2Shape = Shape<Flat<DataContractConfigV2>>;
 type V1Shape = Shape<Flat<DataContractConfigV1>>;
 type V0Shape = Shape<Flat<DataContractConfigV0>>;
 type FlagsShape = Shape<Flat<DataContractConfigLike>>;
+// The JSON import widens every `$formatVersion` to `string`, so the corpus
+// cannot tell the compiler which generation owns a key. The `Omit` lists
+// below are where that ownership is stated: a key added to the corpus for V2
+// alone fails the V1 and V0 checks until it is listed here, on purpose. The
+// exact per-generation key lists are pinned in rs-dpp by
+// `should_pin_the_v0_v1_and_v2_config_key_sets`.
 export type V2MirrorsCorpus = Check<Equal<V2Shape, Omit<CorpusShape, 'moderation'>>>;
 export type V1MirrorsCorpus = Check<Equal<V1Shape, Omit<CorpusShape, 'moderation'>>>;
 export type V0MirrorsCorpus = Check<Equal<V0Shape, Omit<CorpusShape, 'moderation' | 'sizedIntegerTypes'>>>;

@@ -146,8 +146,9 @@ export interface DataContractConfigFlags {
 }
 
 /**
- * DataContract configuration, format version 0: the generation contracts
- * registered before protocol version 11 carry. Mirrors the rs-dpp
+ * DataContract configuration, format version 0: the default generation
+ * through protocol version 8, admitted for new and updated contracts until
+ * protocol version 9 and refused from 10. Mirrors the rs-dpp
  * `DataContractConfig::V0` wire shape one to one.
  */
 export interface DataContractConfigV0 extends DataContractConfigFlags {
@@ -155,8 +156,9 @@ export interface DataContractConfigV0 extends DataContractConfigFlags {
 }
 
 /**
- * DataContract configuration, format version 1: the current generation.
- * Adds `sizedIntegerTypes` to the V0 fields.
+ * DataContract configuration, format version 1: the default generation from
+ * protocol version 9 through 13, still admitted after V2 becomes the default
+ * at 14. Adds `sizedIntegerTypes` to the V0 fields.
  */
 export interface DataContractConfigV1 extends DataContractConfigFlags {
     $formatVersion: '1';
@@ -244,8 +246,8 @@ export interface ContractModerationConfig {
 }
 
 /**
- * DataContract configuration, format version 2: the generation every
- * contract registered from protocol version 14 carries, moderated or not.
+ * DataContract configuration, format version 2: the default generation
+ * from protocol version 14, moderated or not.
  * Adds the optional `moderation` declaration to the V1 fields; it is absent
  * for an unmoderated contract.
  */
