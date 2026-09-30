@@ -618,6 +618,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
             wallets
         });
+        self.broadcast_resolver.wallet_added(&wallet_id);
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
