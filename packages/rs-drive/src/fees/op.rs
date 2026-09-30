@@ -1,4 +1,5 @@
 use crate::util::batch::GroveDbOpBatch;
+use grovedb_costs::storage_cost::removal::with_basic_sectioned_removal_addition_version;
 use grovedb_costs::storage_cost::removal::Identifier;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
     BasicStorageRemoval, NoStorageRemoval, SectionedStorageRemoval,
@@ -14,6 +15,7 @@ use grovedb::element::IndexAxis;
 use grovedb::element::MaxReferenceHop;
 use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags, TreeType};
 use grovedb_costs::OperationCost;
+use grovedb_version::version::GroveVersion;
 
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -565,7 +567,25 @@ impl LowLevelDriveOperation {
     /// owner. Owners then merge by carrier key, and one key attributed to two
     /// different owners, within an input or across inputs, is reported and
     /// never resolved by picking one.
+    ///
+    /// GroveDB selects how a basic removal folds into a sectioned one through
+    /// a thread-local that it sets only inside its own apply and delete
+    /// calls, so the fold here is scoped to `grove_version`'s arithmetic
+    /// rather than to whatever the thread last used.
     pub fn combine_cost_operations_with_refund_owners(
+        operations: &[LowLevelDriveOperation],
+        grove_version: &GroveVersion,
+    ) -> Result<(OperationCost, RefundOwnersByIdentifier), Error> {
+        with_basic_sectioned_removal_addition_version(
+            grove_version
+                .grovedb_versions
+                .storage_costs
+                .add_basic_storage_removal_to_sectioned_storage_removal,
+            || Self::fold_cost_operations_with_refund_owners(operations),
+        )
+    }
+
+    fn fold_cost_operations_with_refund_owners(
         operations: &[LowLevelDriveOperation],
     ) -> Result<(OperationCost, RefundOwnersByIdentifier), Error> {
         let mut cost = OperationCost::default();
@@ -2088,12 +2108,14 @@ mod tests {
     use super::*;
     use dpp::identifier::Identifier;
     use grovedb_costs::storage_cost::removal::{
-        StorageRemovalPerEpochByIdentifier, StorageRemovedBytes,
+        StorageRemovalPerEpochByIdentifier, StorageRemovedBytes, UNKNOWN_EPOCH,
     };
     use grovedb_costs::storage_cost::StorageCost;
+    use grovedb_version::version::v1::GROVE_V1;
     use intmap::IntMap;
     use platform_version::version::fee::storage::FeeStorageVersion;
     use platform_version::version::fee::FeeVersion;
+    use platform_version::version::PlatformVersion;
 
     /// Helper to get the canonical fee version used across these tests.
     fn fee_version() -> &'static FeeVersion {
@@ -2547,6 +2569,10 @@ mod tests {
         assert_eq!(combined, cost, "only the plain cost is folded");
     }
 
+    fn grove_version() -> &'static GroveVersion {
+        &PlatformVersion::latest().drive.grove_version
+    }
+
     fn sectioned_cost(entries: &[([u8; 32], u32)]) -> OperationCost {
         let mut removal = StorageRemovalPerEpochByIdentifier::new();
         for (key, bytes) in entries {
@@ -2591,8 +2617,11 @@ mod tests {
         ];
 
         let (combined, owners) =
-            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations)
-                .expect("should combine");
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(
+                &operations,
+                grove_version(),
+            )
+            .expect("should combine");
 
         assert_eq!(combined.seek_count, 3);
         let SectionedStorageRemoval(removal) = &combined.storage_cost.removed_bytes else {
@@ -2641,9 +2670,11 @@ mod tests {
             )]),
         }];
 
-        let (_, owners) =
-            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations)
-                .expect("should combine");
+        let (_, owners) = LowLevelDriveOperation::combine_cost_operations_with_refund_owners(
+            &operations,
+            grove_version(),
+        )
+        .expect("should combine");
 
         assert!(owners.is_empty());
     }
@@ -2667,8 +2698,10 @@ mod tests {
             },
         ];
 
-        let result =
-            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations);
+        let result = LowLevelDriveOperation::combine_cost_operations_with_refund_owners(
+            &operations,
+            grove_version(),
+        );
 
         assert!(matches!(
             result,
@@ -2693,7 +2726,10 @@ mod tests {
             },
         ];
         assert!(matches!(
-            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&plain_then_typed),
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(
+                &plain_then_typed,
+                grove_version()
+            ),
             Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
         ));
 
@@ -2712,9 +2748,66 @@ mod tests {
             },
         ];
         assert!(matches!(
-            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&typed_conflict),
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(
+                &typed_conflict,
+                grove_version()
+            ),
             Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
         ));
+    }
+
+    /// GroveDB sets its removal arithmetic only inside its own calls, so a
+    /// fold outside one would otherwise run under whatever the thread holds
+    /// (the legacy default drops the system section when a basic removal
+    /// meets a sectioned one). The aggregate follows the grove version it is
+    /// given, in both operand orders, whatever the ambient selector is.
+    #[test]
+    fn should_fold_basic_and_sectioned_removals_under_the_given_grove_version() {
+        let bucket = RefundOwner::ContractBucket {
+            contract_id: Identifier::from([1u8; 32]),
+            position: 0,
+        };
+        let basic = || {
+            CalculatedCostOperation(OperationCost {
+                storage_cost: StorageCost {
+                    removed_bytes: StorageRemovedBytes::BasicStorageRemoval(10),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+        };
+        let typed = || CalculatedCostOperationWithRefundOwners {
+            cost: sectioned_cost(&[(SYSTEM_REFUND_CARRIER_KEY, 5), (bucket.removal_key(), 40)]),
+            refund_owners: BTreeMap::from([(bucket.removal_key(), bucket)]),
+        };
+        let removal_of = |operations: &[LowLevelDriveOperation], grove_version: &GroveVersion| {
+            // an ambient legacy selector must not leak into the fold
+            with_basic_sectioned_removal_addition_version(0, || {
+                LowLevelDriveOperation::combine_cost_operations_with_refund_owners(
+                    operations,
+                    grove_version,
+                )
+            })
+            .expect("should combine")
+            .0
+            .storage_cost
+            .removed_bytes
+        };
+        let expected_system = IntMap::from_iter([(0u16, 5u32), (UNKNOWN_EPOCH, 10)]);
+
+        for operations in [vec![basic(), typed()], vec![typed(), basic()]] {
+            let SectionedStorageRemoval(removal) = removal_of(&operations, grove_version()) else {
+                panic!("sectioned removals stay sectioned");
+            };
+            assert_eq!(removal[&SYSTEM_REFUND_CARRIER_KEY], expected_system);
+            assert_eq!(removal[&bucket.removal_key()].get(0u16), Some(&40));
+        }
+
+        // the historical arithmetic is still what an older grove version gets
+        let SectionedStorageRemoval(legacy) = removal_of(&[basic(), typed()], &GROVE_V1) else {
+            panic!("sectioned removals stay sectioned");
+        };
+        assert!(!legacy.contains_key(&SYSTEM_REFUND_CARRIER_KEY));
     }
 
     // ---------------------------------------------------------------
