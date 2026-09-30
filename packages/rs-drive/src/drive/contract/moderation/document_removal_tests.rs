@@ -2,8 +2,8 @@
 //! the reads and proofs over them, and the storage refund a moderated deletion forfeits.
 
 use crate::drive::contract::moderation::types::{
-    document_removal_encoded_size, ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
-    ContractDocumentRemovalsSelection,
+    document_removal_encoded_size, estimated_document_removal_kept_fields_size,
+    ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
 };
 use crate::drive::contract::paths::{
     contract_document_removals_path, contract_other_path, CONTRACT_BANLIST_KEY,
@@ -27,14 +27,14 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
-    ContractModerationReason, ContractModerators,
+    encode_kept_fields, ContractDocumentRemoval, ContractDocumentRestoration,
+    ContractModerationConfig, ContractModerationReason, ContractModerators,
 };
 use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
-use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
@@ -637,6 +637,184 @@ fn should_estimate_a_record_at_no_less_than_it_costs() {
         );
         // The moderator pays for the reason byte for byte.
         assert!(applied.storage_fee > 0);
+    }
+}
+
+/// The fixture contract with a `post` type whose moderators' removal records keep its long
+/// text, an object of tags and a note, and its creation time
+fn contract_keeping_fields() -> DataContract {
+    let mut contract = contract_with(true, false, &[]);
+    contract
+        .set_document_schema(
+            POST,
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 1000, "position": 0 },
+                    "meta": {
+                        "type": "object",
+                        "position": 1,
+                        "properties": {
+                            "tags": {
+                                "type": "array",
+                                "items": { "type": "string", "maxLength": 20 },
+                                "maxItems": 5,
+                                "position": 0,
+                            },
+                            "note": { "type": "string", "maxLength": 200, "position": 1 },
+                        },
+                        "additionalProperties": false,
+                    },
+                },
+                "required": ["text", "$createdAt"],
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": ["$createdAt", "meta", "text"],
+                },
+            }),
+            true,
+            &mut vec![],
+            PlatformVersion::latest(),
+        )
+        .expect("expected to add the post type keeping fields");
+    contract
+}
+
+#[test]
+fn should_estimate_records_keeping_fields_at_no_less_than_they_cost() {
+    // Records that keep values, a text as long as the type admits and a whole object among
+    // them, written into a tree other records already fill: the estimate of a fresh record and
+    // of a restore's replacement is no lower than what applying costs, storage and processing
+    // alike, whether the record keeps the most or nothing but its creation time.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_keeping_fields();
+    insert(&drive, &contract);
+    let document_type = contract
+        .document_type_for_name(POST)
+        .expect("expected the post type");
+    let estimated_kept_fields_size =
+        estimated_document_removal_kept_fields_size(document_type, platform_version)
+            .expect("expected an estimate");
+    let kept = |text_length: usize, with_meta: bool| {
+        let mut properties =
+            BTreeMap::from([("text".to_string(), Value::Text("x".repeat(text_length)))]);
+        if with_meta {
+            properties.insert(
+                "meta".to_string(),
+                Value::Map(vec![
+                    (
+                        Value::Text("tags".to_string()),
+                        Value::Array(vec![Value::Text("t".repeat(20)); 5]),
+                    ),
+                    (
+                        Value::Text("note".to_string()),
+                        Value::Text("n".repeat(200)),
+                    ),
+                ]),
+            );
+        }
+        let document = Document::V0(DocumentV0 {
+            id: identity(1),
+            owner_id: identity(2),
+            properties,
+            created_at: Some(1_700_000_000_000),
+            ..Default::default()
+        });
+        encode_kept_fields(&document, document_type).expect("expected to encode")
+    };
+    let keeping = |document_id: Identifier, removal: ContractDocumentRemoval| {
+        let moderator_id = removal.moderator_id;
+        ContractModerationOperation(ContractModerationOperationType::AddDocumentRemoval {
+            contract_id: contract.id(),
+            document_type_name: POST.to_string(),
+            document_id,
+            removal: Box::new(removal),
+            replaced_record_size: None,
+            estimated_kept_fields_size,
+            moderator_id,
+        })
+    };
+
+    // A tree other records already fill, keeping the most and the least
+    for seed in 10u8..40 {
+        let kept_fields = if seed % 2 == 0 {
+            kept(1_000, true)
+        } else {
+            kept(0, false)
+        };
+        apply(
+            &drive,
+            vec![keeping(
+                identity(seed),
+                ContractDocumentRemoval {
+                    kept_fields,
+                    ..removal(1, 2, "spam", u64::from(seed))
+                },
+            )],
+            true,
+        );
+    }
+
+    for (seed, kept_fields) in [(100, kept(1_000, true)), (101, kept(0, false))] {
+        let removal = ContractDocumentRemoval {
+            kept_fields,
+            ..removal(1, 2, "spam", 50)
+        };
+        let operations = || vec![keeping(identity(seed), removal.clone())];
+        let estimated = apply(&drive, operations(), false);
+        let applied = apply(&drive, operations(), true);
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "a fresh record: estimated storage {} < applied {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "a fresh record: estimated processing {} < applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
+
+        // Its restore: the replacement adds the restoration, and is priced by what it adds
+        let restored = ContractDocumentRemoval {
+            restoration: Some(ContractDocumentRestoration {
+                moderator_id: identity(3),
+                restored_at: 60,
+            }),
+            ..removal.clone()
+        };
+        let replaced_record_size =
+            document_removal_encoded_size(&removal).expect("expected a size") as u32;
+        let operations = || {
+            vec![ContractModerationOperation(
+                ContractModerationOperationType::AddDocumentRemoval {
+                    contract_id: contract.id(),
+                    document_type_name: POST.to_string(),
+                    document_id: identity(seed),
+                    removal: Box::new(restored.clone()),
+                    replaced_record_size: Some(replaced_record_size),
+                    estimated_kept_fields_size,
+                    moderator_id: identity(3),
+                },
+            )]
+        };
+        let estimated = apply(&drive, operations(), false);
+        let applied = apply(&drive, operations(), true);
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "a restore: estimated storage {} < applied {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "a restore: estimated processing {} < applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
     }
 }
 

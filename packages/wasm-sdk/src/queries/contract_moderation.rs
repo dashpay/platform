@@ -970,27 +970,49 @@ mod wasm_tests {
     /// path is the record's
     #[wasm_bindgen_test]
     fn should_keep_a_nested_proto_member_its_own() {
-        let kept_fields = BTreeMap::from([(
-            "meta".to_string(),
+        let proto_object = || {
             Value::Map(vec![(
                 Value::Text("__proto__".to_string()),
                 Value::Map(vec![(Value::Text("admin".to_string()), Value::Bool(true))]),
-            )]),
-        )]);
+            )])
+        };
+        let kept_fields = BTreeMap::from([
+            ("meta".to_string(), proto_object()),
+            (
+                "list".to_string(),
+                Value::Array(vec![
+                    proto_object(),
+                    Value::Map(vec![(
+                        Value::Text("__proto__".to_string()),
+                        Value::Text("a scalar".to_string()),
+                    )]),
+                ]),
+            ),
+        ]);
         let kept = kept_fields_to_js(&kept_fields).expect("expected the kept fields");
+        let own = |object: &JsValue| {
+            js_sys::Object::get_own_property_descriptor(
+                object.unchecked_ref(),
+                &JsValue::from_str("__proto__"),
+            )
+        };
         let meta = get(&kept, "meta");
-        let own = js_sys::Object::get_own_property_descriptor(
-            meta.unchecked_ref(),
-            &JsValue::from_str("__proto__"),
-        );
-        assert_eq!(get(&get(&own, "value"), "admin"), JsValue::TRUE);
+        assert_eq!(get(&get(&own(&meta), "value"), "admin"), JsValue::TRUE);
         // Not the object's prototype: nothing is inherited through it
         assert_eq!(get(&meta, "admin"), JsValue::UNDEFINED);
+        // Inside an array too, object-valued or scalar
+        let list = Array::from(&get(&kept, "list"));
+        assert_eq!(
+            get(&get(&own(&list.get(0)), "value"), "admin"),
+            JsValue::TRUE
+        );
+        assert_eq!(get(&list.get(0), "admin"), JsValue::UNDEFINED);
+        assert_eq!(
+            get(&own(&list.get(1)), "value").as_string().as_deref(),
+            Some("a scalar")
+        );
     }
 
-    /// The JSON form a proof response gives keeps a `__proto__` path, and writes an integer
-    /// past what a JavaScript number holds as a string instead of throwing; a proof result's
-    /// JSON carries the record's bytes as stored
     #[wasm_bindgen_test]
     fn should_keep_kept_fields_whole_in_their_json_form() {
         let kept_fields = BTreeMap::from([
