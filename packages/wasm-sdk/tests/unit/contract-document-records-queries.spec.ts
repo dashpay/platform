@@ -35,7 +35,7 @@ describe('contract document records queries', () => {
     ['Uint8Arrays', (id) => new sdk.Identifier(id).toBytes()],
   ];
 
-  for (const [form, as] of forms) {
+  forms.forEach(([form, as]) => {
     it(`should accept ${form} in a settled deletions query`, async () => {
       const error = await rejectionOf(client.getContractSettledDeletions({
         contractId: as(contractId),
@@ -55,7 +55,7 @@ describe('contract document records queries', () => {
       } as never));
       expect(error.message).to.match(pairRefused);
     });
-  }
+  });
 
   it('should refuse a document id that is not an identifier, naming the query', async () => {
     const error = await rejectionOf(client.getContractSettledDeletions({
