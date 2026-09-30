@@ -34,7 +34,9 @@
 //! of that transaction's chain), then on each advance of the wallet's synced
 //! height that follows the tip — steps of more than [`CATCH_UP_STEP`] blocks,
 //! and the first step after launch, are catch-up and skipped — every block
-//! for [`EVERY_BLOCK_WINDOW`] blocks and every [`SLOW_INTERVAL`] blocks after.
+//! for [`EVERY_BLOCK_WINDOW`] blocks, counted from the first pass that sees
+//! the root while the wallet follows the tip, and every [`SLOW_INTERVAL`]
+//! blocks after. Each Uncertain report adds one immediate probe.
 //! Between passes a wallet waits for the height at which its next root is due;
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
@@ -92,7 +94,8 @@ pub(crate) struct OutgoingView {
     /// The transaction spends at least one of this wallet's coins, i.e. the
     /// wallet signed it.
     pub spends_own_coins: bool,
-    pub transaction: Transaction,
+    /// Shared with the passes and probe jobs that send it; never changed.
+    pub transaction: Arc<Transaction>,
 }
 
 impl OutgoingView {
@@ -140,7 +143,7 @@ pub(crate) fn merge_records<'a>(
         .map(|(txid, (own, transaction))| OutgoingView {
             txid,
             spends_own_coins: own,
-            transaction: transaction.clone(),
+            transaction: Arc::new(transaction.clone()),
         })
         .collect()
 }
@@ -301,23 +304,40 @@ fn ambiguous_roots(views: &[OutgoingView]) -> Vec<&OutgoingView> {
 /// When a root is next due for a probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProbeSchedule {
-    first_seen: u32,
+    /// Where the every-block window starts: the first pass that saw the root
+    /// while the wallet followed the tip. `None` while it has only been seen
+    /// behind the tip (a forced pass right after launch, at the stored tip):
+    /// probed every block until anchored.
+    first_seen: Option<u32>,
     last_probe: Option<u32>,
 }
 
 impl ProbeSchedule {
-    pub(crate) fn new(first_seen: u32) -> Self {
+    /// A schedule seen first at `height`, anchored there when the wallet
+    /// `following` the tip.
+    pub(crate) fn new(height: u32, following: bool) -> Self {
         Self {
-            first_seen,
+            first_seen: following.then_some(height),
             last_probe: None,
         }
+    }
+
+    /// Start the window here if it has not started — once, at the first pass
+    /// that follows the tip.
+    fn anchor(&mut self, height: u32) {
+        self.first_seen.get_or_insert(height);
+    }
+
+    fn in_window(&self, height: u32) -> bool {
+        self.first_seen
+            .is_none_or(|first| height.saturating_sub(first) < EVERY_BLOCK_WINDOW)
     }
 
     pub(crate) fn is_due(&self, height: u32) -> bool {
         match self.last_probe {
             None => true,
             Some(last) if height <= last => false,
-            Some(_) if height.saturating_sub(self.first_seen) < EVERY_BLOCK_WINDOW => true,
+            Some(_) if self.in_window(height) => true,
             Some(last) => height - last >= SLOW_INTERVAL,
         }
     }
@@ -335,11 +355,7 @@ impl ProbeSchedule {
     pub(crate) fn next_due(&self) -> u32 {
         match self.last_probe {
             None => 0,
-            Some(last)
-                if last.saturating_add(1).saturating_sub(self.first_seen) < EVERY_BLOCK_WINDOW =>
-            {
-                last.saturating_add(1)
-            }
+            Some(last) if self.in_window(last.saturating_add(1)) => last.saturating_add(1),
             Some(last) => last.saturating_add(SLOW_INTERVAL),
         }
     }
@@ -495,16 +511,6 @@ impl ResolverState {
         }
     }
 
-    /// Start the every-block window of every root of `wallet_id` at `height`
-    /// at the latest.
-    fn restart_windows(&mut self, wallet_id: &WalletId, height: u32) {
-        for ((wallet, _), schedule) in self.schedules.iter_mut() {
-            if wallet == wallet_id {
-                schedule.first_seen = schedule.first_seen.max(height);
-            }
-        }
-    }
-
     /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
     fn mined(&self, wallet_id: &WalletId) -> HashSet<Txid> {
         self.finished
@@ -550,13 +556,16 @@ pub(crate) struct PassStart {
 /// it `Uncertain`) are due regardless of their schedule — even if one went
 /// out at this height already: a repeat probe is cheaper than bookkeeping
 /// that tells the two apart. A root found mined counts as settled when
-/// picking roots, so its children are probed next.
+/// picking roots, so its children are probed next. A root's every-block
+/// window starts at the first pass made while the wallet is `following` the
+/// tip; one seen only behind it is probed every block until then.
 pub(crate) fn begin_pass(
     state: &mut ResolverState,
     wallet_id: WalletId,
     height: u32,
     views: &[OutgoingView],
     forced: &HashSet<Txid>,
+    following: bool,
 ) -> PassStart {
     let mut events = Vec::new();
     // What the wallet itself still holds unsettled — what state is kept for.
@@ -607,12 +616,15 @@ pub(crate) fn begin_pass(
         let schedule = state
             .schedules
             .entry(key)
-            .or_insert_with(|| ProbeSchedule::new(height));
+            .or_insert_with(|| ProbeSchedule::new(height, following));
+        if following {
+            schedule.anchor(height);
+        }
         let forced = forced_roots.contains(&view.txid);
         if forced || schedule.is_due(height) {
             due.push_back(DueRoot {
                 txid: view.txid,
-                transaction: Arc::new(view.transaction.clone()),
+                transaction: Arc::clone(&view.transaction),
                 own: graph.is_own(&view.txid),
                 forced,
             });
@@ -1068,18 +1080,7 @@ impl Actor {
                 let entry = self.entry(wallet_id);
                 let previous = entry.height.replace(height);
                 let catch_up = is_catch_up_step(previous, height);
-                // Back to following the tip: roots first seen while the wallet
-                // was behind (a forced pass right after launch counts heights
-                // from the stored tip) get their every-block window from here.
-                let caught_up = !catch_up && !entry.following;
                 entry.following = !catch_up;
-                if caught_up {
-                    entry.wait_until = None;
-                    self.state.restart_windows(&wallet_id, height);
-                }
-                let Some(entry) = self.wallets.get_mut(&wallet_id) else {
-                    return;
-                };
                 // While a pass runs, its end decides the wait: queue the height
                 // and let `probe_next` drop it if no root turns out due.
                 if !enabled
@@ -1238,14 +1239,19 @@ impl Actor {
                     Some(None) => self.end_run(wallet_id),
                     Some(Some(read)) => {
                         // A request queued before any height was reported
-                        // carries 0; the wallet's own synced height is better.
-                        let height = height.max(read.synced_height);
+                        // carries 0; the wallet's own synced height, or one
+                        // reported while this read ran, is better.
+                        let height = height
+                            .max(read.synced_height)
+                            .max(entry.height.unwrap_or(0));
+                        let following = entry.following;
                         let start = begin_pass(
                             &mut self.state,
                             wallet_id,
                             height,
                             &read.views,
                             &read.forced,
+                            following,
                         );
                         if let Some(current) = entry.run.as_mut() {
                             current.probing = Some(Probing {
@@ -1267,19 +1273,26 @@ impl Actor {
                 run,
                 verdict,
             } => {
-                let Some(probing) = self
+                let Some(current) = self
                     .wallets
                     .get_mut(&wallet_id)
                     .and_then(|entry| entry.run.as_mut())
                     .filter(|current| current.id == run)
-                    .and_then(|current| current.probing.as_mut())
                 else {
+                    return; // a dropped run's result
+                };
+                // Cannot happen: a probe job is spawned only by a probing run
+                // with its root in flight. Fail safe — end the run rather than
+                // leave it blocking every later pass for the wallet.
+                let Some(probing) = current.probing.as_mut() else {
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "broadcast probe: a probe result for a run that is not probing"
+                    );
+                    self.end_run(wallet_id);
                     return;
                 };
                 let Some(root) = probing.in_flight.take() else {
-                    // Cannot happen: a probe job is spawned only with its root
-                    // in flight. Fail safe — end the run rather than leave it
-                    // blocking every later pass for the wallet.
                     tracing::error!(
                         wallet_id = %hex::encode(wallet_id),
                         "broadcast probe: a probe result with no root in flight"
@@ -1599,7 +1612,7 @@ mod tests {
         OutgoingView {
             txid: txid(n),
             spends_own_coins: true,
-            transaction: tx(n, inputs),
+            transaction: Arc::new(tx(n, inputs)),
         }
     }
 
@@ -1715,12 +1728,12 @@ mod tests {
 
     #[test]
     fn should_be_due_immediately_when_never_probed() {
-        assert!(ProbeSchedule::new(100).is_due(100));
+        assert!(ProbeSchedule::new(100, true).is_due(100));
     }
 
     #[test]
     fn should_probe_at_most_once_per_block() {
-        let mut s = ProbeSchedule::new(100);
+        let mut s = ProbeSchedule::new(100, true);
         s.probed_at(100);
         assert!(!s.is_due(100));
         assert!(s.is_due(101));
@@ -1729,7 +1742,7 @@ mod tests {
     #[test]
     fn should_slow_down_after_the_every_block_window() {
         let first = 100;
-        let mut s = ProbeSchedule::new(first);
+        let mut s = ProbeSchedule::new(first, true);
         let late = first + EVERY_BLOCK_WINDOW;
         s.probed_at(late);
         for height in late + 1..late + SLOW_INTERVAL {
@@ -1742,7 +1755,7 @@ mod tests {
     #[test]
     fn should_agree_on_the_next_due_height_with_is_due() {
         let first = 100;
-        let mut schedule = ProbeSchedule::new(first);
+        let mut schedule = ProbeSchedule::new(first, true);
         for probed in [
             first,
             first + 5,
@@ -1866,7 +1879,7 @@ mod tests {
     ) -> u32 {
         let due = {
             let mut guard = state.lock().expect("state");
-            let start = begin_pass(&mut guard.state, wallet_id, height, views, forced);
+            let start = begin_pass(&mut guard.state, wallet_id, height, views, forced, true);
             guard.push(start.events);
             start.due
         };
@@ -2642,6 +2655,9 @@ mod tests {
         rig.actor.handle(Command::Uncertain(txid(2)));
         let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
         rig.actor.joined(listed);
+        // The forced pass has read the wallet; its probe of root 2 is out.
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read);
         rig.actor.handle(Command::Height {
             wallet_id: wallet(),
             height: 103,
@@ -2657,13 +2673,13 @@ mod tests {
     fn should_keep_due_the_roots_a_run_never_sent() {
         let mut state = ResolverState::default();
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])];
-        let start = begin_pass(&mut state, wallet(), 100, &views, &HashSet::new());
+        let start = begin_pass(&mut state, wallet(), 100, &views, &HashSet::new(), true);
         let planned: Vec<Txid> = start.due.iter().map(|root| root.txid).collect();
         assert_eq!(planned.len(), 2);
 
         // Only the first root goes out before the run ends.
         mark_sent(&mut state, wallet(), planned[0], 100);
-        let again = begin_pass(&mut state, wallet(), 100, &views, &HashSet::new());
+        let again = begin_pass(&mut state, wallet(), 100, &views, &HashSet::new(), true);
 
         assert_eq!(
             again.due.iter().map(|root| root.txid).collect::<Vec<_>>(),
@@ -2677,7 +2693,7 @@ mod tests {
     fn should_make_a_root_due_at_once_when_its_probe_is_withdrawn() {
         let mut state = ResolverState::default();
         let views = [send(1, &[outpoint(90, 0)])];
-        begin_pass(&mut state, wallet(), 100, &views, &HashSet::new());
+        begin_pass(&mut state, wallet(), 100, &views, &HashSet::new(), true);
         mark_sent(&mut state, wallet(), txid(1), 100);
         assert!(!state.schedules[&(wallet(), txid(1))].is_due(100));
 
@@ -2744,6 +2760,57 @@ mod tests {
         }
 
         assert_eq!(probe.probed().len(), 6, "every block from 501 to 505");
+    }
+
+    /// A return to following the tip does not restart the every-block window
+    /// of a root already past it.
+    #[tokio::test]
+    async fn should_not_restart_the_window_of_a_root_past_it_after_a_catch_up() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        let past = 101 + EVERY_BLOCK_WINDOW + SLOW_INTERVAL;
+        for height in 102..=past {
+            rig.height(wallet(), height).await;
+        }
+        let before = probe.probed().len();
+
+        // Away for a while, then following again.
+        rig.height(wallet(), past + 10).await;
+        for height in past + 11..=past + 14 {
+            rig.height(wallet(), height).await;
+        }
+
+        assert!(
+            probe.probed().len() <= before + 1,
+            "slow cadence kept: at most one probe in four blocks"
+        );
+    }
+
+    /// A forced read whose result is joined only after the wallet follows the
+    /// tip again anchors the root at the tip, not at the stale stored height.
+    #[tokio::test]
+    async fn should_anchor_a_root_read_before_the_wallet_followed_at_the_tip() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.actor.handle(Command::Uncertain(txid(1)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.actor.joined(listed);
+        for height in [500, 501] {
+            rig.actor.handle(Command::Height {
+                wallet_id: wallet(),
+                height,
+            });
+        }
+        rig.settle().await;
+        for height in 502..=505 {
+            rig.height(wallet(), height).await;
+        }
+
+        assert!(probe.probed().len() >= 5, "every block from 501 to 505");
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
