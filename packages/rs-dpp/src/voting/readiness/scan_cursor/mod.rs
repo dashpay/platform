@@ -126,6 +126,9 @@ impl ReadinessScanCursor {
 
     /// Advances the cursor past a page that examined `examined` reports ending at
     /// `last_pro_tx_hash`, of which `eligible` were eligible and `pruned` were pruned.
+    ///
+    /// Eligible and pruned reports are distinct reports of the page, so a page classifying
+    /// more reports than it examined is refused and the cursor is left unchanged.
     pub fn advance(
         &mut self,
         last_pro_tx_hash: [u8; 32],
@@ -133,6 +136,11 @@ impl ReadinessScanCursor {
         eligible: u32,
         pruned: u32,
     ) -> Result<(), ProtocolError> {
+        if u64::from(eligible) + u64::from(pruned) > u64::from(examined) {
+            return Err(ProtocolError::CorruptedCodeExecution(
+                "a readiness scan page classified more reports than it examined".to_string(),
+            ));
+        }
         match self {
             ReadinessScanCursor::V0(cursor) => {
                 // Every total is checked before any field moves, so an overflow leaves the
@@ -203,18 +211,21 @@ mod tests {
     }
 
     #[test]
-    fn should_leave_the_cursor_unchanged_when_a_later_count_overflows() {
+    fn should_refuse_a_page_classifying_more_reports_than_it_examined() {
         let platform_version = PlatformVersion::latest();
         let mut cursor = ReadinessScanCursor::new(1, 1, platform_version).expect("cursor");
-        cursor.advance([1u8; 32], 10, 5, u32::MAX).expect("advance");
+        cursor.advance([1u8; 32], 10, 5, 5).expect("advance");
         let before = cursor.clone();
-        assert!(matches!(
-            cursor.advance([2u8; 32], 3, 2, 1),
-            Err(ProtocolError::Overflow(_))
-        ));
-        assert_eq!(cursor, before);
+        for (eligible, pruned) in [(3, 1), (0, 4), (u32::MAX, u32::MAX)] {
+            assert!(matches!(
+                cursor.advance([2u8; 32], 3, eligible, pruned),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+            assert_eq!(cursor, before);
+        }
         assert_eq!(cursor.next_pro_tx_hash(), Some([1u8; 32]));
         assert_eq!(cursor.examined_so_far(), 10);
         assert_eq!(cursor.eligible_so_far(), 5);
+        assert_eq!(cursor.pruned_so_far(), 5);
     }
 }

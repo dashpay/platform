@@ -478,7 +478,7 @@ mod tests {
         let mut cursor =
             ReadinessScanCursor::new(u32::MAX, u32::MAX, platform_version).expect("cursor");
         cursor
-            .advance([0xFFu8; 32], u32::MAX, u32::MAX, u32::MAX)
+            .advance([0xFFu8; 32], u32::MAX, u32::MAX / 2 + 1, u32::MAX / 2)
             .expect("advance");
         let cursor_size = cursor.serialize_to_bytes().expect("cursor bytes").len();
         assert_eq!(cursor_size, 59);

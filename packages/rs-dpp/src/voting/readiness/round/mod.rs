@@ -241,13 +241,19 @@ impl ReadinessRound {
     /// `crossing_ms + clamp(crossing_ms - accepted_at_ms, min_wait_ms, max_wait_ms)`.
     ///
     /// The subtraction saturates (the acceptance is always earlier than the crossing) and the
-    /// addition is checked. Returns the deadline.
+    /// addition is checked. Returns the deadline. A round crosses once: a crossed round is
+    /// refused and keeps its deadline.
     pub fn record_crossing(
         &mut self,
         crossing_ms: u64,
         min_wait_ms: u64,
         max_wait_ms: u64,
     ) -> Result<u64, ProtocolError> {
+        if !self.is_pending() {
+            return Err(ProtocolError::CorruptedCodeExecution(
+                "recording a crossing on a readiness round that already crossed".to_string(),
+            ));
+        }
         if min_wait_ms > max_wait_ms {
             return Err(ProtocolError::CorruptedCodeExecution(
                 "readiness wait bounds are inverted".to_string(),
@@ -365,6 +371,23 @@ mod tests {
                 .expect("crossing");
             assert_eq!(deadline, crossing_ms + expected_wait, "elapsed {elapsed}");
         }
+    }
+
+    #[test]
+    fn should_refuse_a_second_crossing_and_keep_the_first_deadline() {
+        let platform_version = PlatformVersion::latest();
+        let mut round =
+            ReadinessRound::new(0xBD6B0CBF, opening(), platform_version).expect("round");
+        let deadline = round
+            .record_crossing(1_600_000, 120_000, 3_600_000)
+            .expect("crossing");
+        let crossed = round.clone();
+        assert!(matches!(
+            round.record_crossing(2_000_000, 120_000, 3_600_000),
+            Err(ProtocolError::CorruptedCodeExecution(_))
+        ));
+        assert_eq!(round, crossed);
+        assert_eq!(round.deadline_ms(), Some(deadline));
     }
 
     #[test]
