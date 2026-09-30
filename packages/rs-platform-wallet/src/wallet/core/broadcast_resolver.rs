@@ -45,8 +45,7 @@
 //! Between passes a wallet waits for the height at which its next root is due;
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
-//! InstantSend-locked transaction, a block or chainlock that changed records, a
-//! sweep) or an `Uncertain` result for one of its transactions wakes it. `Dead` and `Mined` end
+//! InstantSend-locked transaction, a block that changed records, a sweep) or an `Uncertain` result for one of its transactions wakes it. `Dead` and `Mined` end
 //! the probing of a root; `Accepted` does not — a mempool is not settlement.
 //! Probes run only while the SPV client delivers blocks, i.e. while the app is
 //! in the foreground.
@@ -423,21 +422,10 @@ pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     finished: HashMap<(WalletId, Txid), Final>,
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
-    /// Transactions a wallet event reported settled or gone, with the
-    /// `clock` at which it did. A read that started before that is older than
-    /// the event: it leaves them out and nothing is published for them. A read
-    /// that started after it drops the tombstone — whatever it lists now (a
-    /// reorg can bring a mined send back) is current.
-    settled: HashMap<(WalletId, Txid), u64>,
-    /// Advanced by every settle; runs note it when their read starts.
-    clock: u64,
     /// Own sends published Dead because dead roots they are built on are:
     /// those roots. Their Dead is withdrawn once none of them is known dead
     /// any more (settled, left, or forgotten).
     dead_from: HashMap<(WalletId, Txid), BTreeSet<Txid>>,
-    /// Bumped per wallet by a rewind that restarts its schedules: a pass that
-    /// started before does not mark its probes into the new ones.
-    restarts: HashMap<WalletId, u64>,
 }
 
 impl ResolverState {
@@ -446,7 +434,6 @@ impl ResolverState {
     fn forget_wallet(&mut self, wallet_id: &WalletId) -> Vec<Outgoing> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
-        self.settled.retain(|(wallet, _), _| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, "removed")
     }
 
@@ -454,30 +441,16 @@ impl ResolverState {
     fn forget_all(&mut self) -> Vec<Outgoing> {
         self.schedules.clear();
         self.finished.clear();
-        self.settled.clear();
         self.clear_where(|_, _| true, None, "disabled")
     }
 
     /// A wallet event reported `txids` settled or gone: forget them and clear
-    /// their verdicts — and the Dead any send inherited from one of them. A
-    /// txid is tombstoned if the resolver tracks it, or if `read_in_flight`
-    /// (that read may list any of them); others need nothing.
-    fn settle(
-        &mut self,
-        wallet_id: WalletId,
-        txids: &HashSet<Txid>,
-        read_in_flight: bool,
-    ) -> Vec<Outgoing> {
-        self.clock += 1;
+    /// their verdicts — and the Dead any send inherited from one of them.
+    fn settle(&mut self, wallet_id: WalletId, txids: &HashSet<Txid>) -> Vec<Outgoing> {
         for txid in txids {
             let key = (wallet_id, *txid);
-            let tracked = self.schedules.remove(&key).is_some()
-                | self.finished.remove(&key).is_some()
-                | self.published.contains_key(&key)
-                | self.dead_from.contains_key(&key);
-            if tracked || read_in_flight {
-                self.settled.insert(key, self.clock);
-            }
+            self.schedules.remove(&key);
+            self.finished.remove(&key);
         }
         let mut events = self.clear_where(
             |wallet, txid| *wallet == wallet_id && txids.contains(txid),
@@ -545,7 +518,7 @@ impl ResolverState {
         out: &mut Vec<Outgoing>,
     ) {
         for send in &sends {
-            if *send != root && !self.settled.contains_key(&(wallet_id, *send)) {
+            if *send != root {
                 self.dead_from
                     .entry((wallet_id, *send))
                     .or_default()
@@ -588,9 +561,6 @@ impl ResolverState {
     /// Unresolved never replaces a decided verdict (Accepted, Mined, Dead) —
     /// one probe that only met transport errors says nothing new.
     fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict) -> bool {
-        if self.settled.contains_key(&key) {
-            return false;
-        }
         let changed = match self.published.get(&key) {
             None => true,
             Some(previous)
@@ -637,28 +607,6 @@ impl ResolverState {
                 *schedule = ProbeSchedule::default();
             }
         }
-        *self.restarts.entry(*wallet_id).or_insert(0) += 1;
-    }
-
-    fn restarts(&self, wallet_id: &WalletId) -> u64 {
-        self.restarts.get(wallet_id).copied().unwrap_or(0)
-    }
-
-    /// Admit a read that started at `since` (the clock then): drop the
-    /// wallet's tombstones it is newer than, and leave out what the rest
-    /// still cover.
-    fn admit(
-        &mut self,
-        wallet_id: WalletId,
-        since: u64,
-        views: Vec<OutgoingView>,
-    ) -> Vec<OutgoingView> {
-        self.settled
-            .retain(|(wallet, _), at| *wallet != wallet_id || *at > since);
-        views
-            .into_iter()
-            .filter(|view| !self.settled.contains_key(&(wallet_id, view.txid)))
-            .collect()
     }
 
     /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
@@ -823,10 +771,6 @@ pub(crate) fn record_probe(
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
     let key = (wallet_id, root.txid);
-    // Settled or gone while its probe was out: the answer is moot.
-    if state.settled.contains_key(&key) {
-        return events;
-    }
     match verdict {
         ProbeVerdict::Dead { reason } => {
             state.finished.insert(
@@ -1102,11 +1046,14 @@ struct PendingPass {
 /// (probing off, wallet removed) is ignored.
 struct Run {
     id: u64,
-    /// The settle clock when its read started (see [`ResolverState::admit`]).
-    since: u64,
-    /// The wallet's schedule restarts when it started: after a rewind it
-    /// marks no probes into the restarted schedules.
-    restarts: u64,
+    /// Txids a wallet event settled or removed while the run was under way:
+    /// its read is older than that, so it neither probes them nor publishes
+    /// anything for them. Gone with the run — a later read is current, a
+    /// send a reorg brings back included.
+    settled: HashSet<Txid>,
+    /// Cleared by a rewind: the wallet's schedules were restarted, and this
+    /// run, older than that, marks no probes into them.
+    marks: bool,
     /// The wallet's command count when the run started.
     seq: u64,
     /// Something touched the wallet during the run: its read may be stale, so
@@ -1274,16 +1221,18 @@ impl Actor {
                 let enabled = self.enabled;
                 let entry = self.entry(wallet_id);
                 let previous = entry.height.replace(height);
-                if previous.is_some_and(|previous| height < previous) {
+                let rewound = previous.is_some_and(|previous| height < previous);
+                if rewound {
+                    // The wait was worked out from the schedules restarted below.
+                    entry.wait_until = None;
+                    if let Some(run) = entry.run.as_mut() {
+                        run.marks = false;
+                    }
                     self.state.restart_schedules(&wallet_id);
                 }
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                if previous.is_some_and(|previous| height < previous) {
-                    // The wait was worked out from the schedules just restarted.
-                    entry.wait_until = None;
-                }
                 if is_catch_up_step(previous, height) {
                     // Behind the tip: passes queued or running from before are
                     // confined to what an `Uncertain` result forced — the scan
@@ -1327,14 +1276,16 @@ impl Actor {
             }
             Command::Settled { wallet_id, txids } => {
                 let entry = self.entry(wallet_id);
-                // A pass under way read the wallet before this: it does not
-                // probe these any more (and publishes nothing for them — the
-                // tombstones `settle` leaves see to that).
-                if let Some(probing) = entry.run.as_mut().and_then(|run| run.probing.as_mut()) {
-                    probing.due.retain(|root| !txids.contains(&root.txid));
+                // A pass under way read the wallet before this: it neither
+                // probes these any more nor publishes anything for them.
+                if let Some(run) = entry.run.as_mut() {
+                    run.settled.extend(txids.iter().copied());
+                    if let Some(probing) = run.probing.as_mut() {
+                        probing.due.retain(|root| !txids.contains(&root.txid));
+                        probing.views.retain(|view| !txids.contains(&view.txid));
+                    }
                 }
-                let read_in_flight = entry.run.as_ref().is_some_and(|run| run.probing.is_none());
-                let events = self.state.settle(wallet_id, &txids, read_in_flight);
+                let events = self.state.settle(wallet_id, &txids);
                 deliver(&self.sink, events);
             }
             Command::Seen { wallet_id, touched } => {
@@ -1425,8 +1376,8 @@ impl Actor {
         self.job_runs.insert(abort.id(), (wallet_id, run));
         entry.run = Some(Run {
             id: run,
-            since: self.state.clock,
-            restarts: self.state.restarts(&wallet_id),
+            settled: HashSet::new(),
+            marks: true,
             seq: entry.seq,
             woken: false,
             anchor_at,
@@ -1506,7 +1457,13 @@ impl Actor {
                         }) {
                             current.anchor_at = None;
                         }
-                        let views = self.state.admit(wallet_id, current.since, read.views);
+                        // What an event settled since the read began is not
+                        // the pass's any more.
+                        let views: Vec<OutgoingView> = read
+                            .views
+                            .into_iter()
+                            .filter(|view| !current.settled.contains(&view.txid))
+                            .collect();
                         let start = begin_pass(
                             &mut self.state,
                             wallet_id,
@@ -1561,6 +1518,15 @@ impl Actor {
                     self.end_run(wallet_id);
                     return;
                 };
+                if current.settled.contains(&root.txid) {
+                    // Settled or gone while its probe was out: moot.
+                    self.probe_next(wallet_id);
+                    return;
+                }
+                let Some(probing) = current.probing.as_ref() else {
+                    self.end_run(wallet_id);
+                    return;
+                };
                 let events = record_probe(
                     &mut self.state,
                     wallet_id,
@@ -1599,7 +1565,7 @@ impl Actor {
                 }
             });
             self.job_runs.insert(run.abort.id(), (wallet_id, id));
-            if run.restarts == self.state.restarts(&wallet_id) {
+            if run.marks {
                 mark_sent(&mut self.state, wallet_id, root.txid, probing.height);
             }
             probing.in_flight = Some(root);
@@ -3729,21 +3695,34 @@ mod tests {
         );
     }
 
-    /// A settle for something the resolver never tracked, with no read in
-    /// flight, leaves no tombstone behind.
+    /// A send settled while a pass is already probing — here the child of a
+    /// root whose probe is out — gets no Dead from that root's late answer.
     #[tokio::test]
-    async fn should_not_tombstone_untracked_txids_with_no_read_in_flight() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), Vec::new());
-        rig.follow(wallet(), 100).await;
-
-        rig.send(Command::Settled {
+    async fn should_not_spread_a_dead_to_a_send_settled_during_probing() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(
+            wallet(),
+            vec![incoming(1, &[outpoint(80, 0)]), send(2, &[outpoint(1, 0)])],
+        );
+        rig.height(wallet(), 100).await;
+        rig.handle(Command::Height {
             wallet_id: wallet(),
-            txids: HashSet::from([txid(77)]),
-        })
-        .await;
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // root 1's probe is out
 
-        assert!(rig.actor.state.settled.is_empty());
+        rig.handle(Command::Settled {
+            wallet_id: wallet(),
+            txids: HashSet::from([txid(2)]),
+        });
+        rig.settle().await;
+
+        assert!(
+            !rig.sent()
+                .contains(&ResolverEvent::Verdict(txid(2), dead())),
+            "send 2 settled before the answer came"
+        );
     }
 
     /// A pass that started before a rewind does not mark its probe into the
@@ -3975,8 +3954,9 @@ mod tests {
         }
     }
 
-    /// A chainlock arrives about once per block for every wallet; only one that
-    /// locked something, or a block that changed records, may leave work.
+    /// Only a block that changed records (or a new, locked or swept
+    /// transaction) may leave work; a chain lock — about one per block for
+    /// every wallet — only promotes what its block reported.
     #[test]
     fn should_wake_only_on_events_that_touched_records() {
         let block = |inserted: Vec<TransactionRecord>| WalletEvent::BlockProcessed {
