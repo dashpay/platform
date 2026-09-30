@@ -128,7 +128,9 @@ impl ReadinessScanCursor {
     /// `last_pro_tx_hash`, of which `eligible` were eligible and `pruned` were pruned.
     ///
     /// Eligible and pruned reports are distinct reports of the page, so a page classifying
-    /// more reports than it examined is refused and the cursor is left unchanged.
+    /// more reports than it examined is refused, and pages follow report key order, so a page
+    /// ending at or before the previous position is refused; either way the cursor is left
+    /// unchanged. Restarting the walk takes a new cursor.
     pub fn advance(
         &mut self,
         last_pro_tx_hash: [u8; 32],
@@ -143,6 +145,16 @@ impl ReadinessScanCursor {
         }
         match self {
             ReadinessScanCursor::V0(cursor) => {
+                // The next page starts strictly after the position, so a repeated or rewound
+                // page would count its reports again.
+                if cursor
+                    .next_pro_tx_hash
+                    .is_some_and(|previous| last_pro_tx_hash <= previous)
+                {
+                    return Err(ProtocolError::CorruptedCodeExecution(
+                        "a readiness scan page must end after the previous page".to_string(),
+                    ));
+                }
                 // Every total is checked before any field moves, so an overflow leaves the
                 // position and the counts describing the same progress.
                 let examined_so_far = cursor
@@ -227,5 +239,23 @@ mod tests {
         assert_eq!(cursor.examined_so_far(), 10);
         assert_eq!(cursor.eligible_so_far(), 5);
         assert_eq!(cursor.pruned_so_far(), 5);
+    }
+
+    #[test]
+    fn should_refuse_a_page_that_repeats_or_rewinds_the_position() {
+        let platform_version = PlatformVersion::latest();
+        let mut cursor = ReadinessScanCursor::new(1, 1, platform_version).expect("cursor");
+        cursor.advance([2u8; 32], 1, 1, 0).expect("advance");
+        let before = cursor.clone();
+        for last_pro_tx_hash in [[2u8; 32], [1u8; 32]] {
+            assert!(matches!(
+                cursor.advance(last_pro_tx_hash, 1, 1, 0),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+            assert_eq!(cursor, before);
+        }
+        cursor.advance([3u8; 32], 1, 1, 0).expect("advance");
+        assert_eq!(cursor.next_pro_tx_hash(), Some([3u8; 32]));
+        assert_eq!(cursor.eligible_so_far(), 2);
     }
 }
