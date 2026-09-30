@@ -15,6 +15,18 @@ but not an asset id, and the value balance the circuit proves is a single number
 in one pool would let a spend of token A create a note of token B. A token therefore gets its
 own pool, and each pool is a copy of the credit pool's layout rooted under the token.
 
+One pool per token is what makes the arrangement safe, and it is also what it costs. A shielded
+pool hides a spend among the other notes in the same pool, so splitting the pools splits that
+crowd with them: a token's anonymity set is its own holders, not everyone on Platform who uses a
+shielded pool. A pool that holds one note hides nothing — the spend of that note names the shield
+that created it. Because `minimum_token_pool_notes_for_outgoing` defaults to 0, a new pool is
+spendable from its first note, and that is where it is weakest rather than where it is strongest.
+
+So the flag isolates a token's balances; on its own it does not make that token's transfers
+anonymous. An issuer turning it on is choosing a pool whose privacy grows with its use, and can
+require a floor of notes before tokens may leave it — see [Configuration](#configuration) for the
+threshold and [Validation](#validation) for when it is read.
+
 ## Storage layout
 
 The credit shielded pool lives at `[ShieldedBalances(52)]/"M"`. Token pools live under the
