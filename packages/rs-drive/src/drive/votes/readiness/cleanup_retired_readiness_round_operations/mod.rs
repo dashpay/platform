@@ -32,7 +32,8 @@ impl Drive {
     /// * `contract_id` - Its contract.
     /// * `max_deletes` - The most reports this step may delete.
     /// * `estimated_costs_only_with_layer_info` - `Some` to estimate instead of read state; an
-    ///   estimate prices `max_deletes` deletes plus the fixed tail.
+    ///   estimate prices `max_deletes` report reads, deletes and merk path walks plus the fixed
+    ///   tail, which bounds any applied step of that size.
     /// * `transaction` - The current transaction.
     /// * `platform_version` - The platform version to use.
     ///

@@ -6,10 +6,13 @@ use crate::drive::votes::paths::{
     READINESS_ROUND_RECORD_KEY, READINESS_ROUND_REPORTS_TREE_KEY, READINESS_ROUND_SCAN_CURSOR_KEY,
 };
 use crate::drive::votes::readiness::cleanup_retired_readiness_round_operations::ReadinessCleanupOutcome;
+use crate::drive::votes::readiness::estimation_costs::ESTIMATED_READINESS_REPORT_RECORD_SIZE;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::fees::op::LowLevelDriveOperation::{CalculatedCostOperation, GroveOperation};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
 use dpp::version::PlatformVersion;
@@ -18,8 +21,10 @@ use grovedb::batch::SubelementsDeletionBehavior;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{
-    EstimatedLayerInformation, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg, TreeType,
+    EstimatedLayerInformation, GroveDb, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg,
+    TreeType,
 };
+use grovedb_costs::CostContext;
 use std::collections::HashMap;
 
 impl Drive {
@@ -45,16 +50,51 @@ impl Drive {
             )?;
             // An estimate prices the worst step: `max_deletes` report deletes plus the
             // fixed tail that removes the round, so it is at or above any applied step.
-            let reports_path = KeyInfoPath::from_known_owned_path(
-                readiness_round_reports_tree_path_vec(contract_id, round_id),
-            );
+            let reports_path_vec = readiness_round_reports_tree_path_vec(contract_id, round_id);
+            let reports_path = KeyInfoPath::from_known_owned_path(reports_path_vec.clone());
+            let reports_layer = estimated_costs_only_with_layer_info
+                .get(&reports_path)
+                .cloned()
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "the readiness estimation describes the reports tree",
+                )))?;
+            let read_report = DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::CountTree,
+                query_target: QueryTargetValue(ESTIMATED_READINESS_REPORT_RECORD_SIZE),
+            };
             for index in 0..max_deletes {
+                // The applied step reads each report twice before the batch: once through
+                // the bounded query and once to build its delete.
+                for _ in 0..2 {
+                    self.grove_get_raw_optional(
+                        reports_path_vec.as_slice().into(),
+                        &[0u8; 32],
+                        read_report,
+                        transaction,
+                        &mut drive_operations,
+                        &platform_version.drive,
+                    )?;
+                }
+                let key = KeyInfo::MaxKeySize {
+                    unique_id: index.to_be_bytes().to_vec(),
+                    max_size: DEFAULT_HASH_SIZE_U32 as u8,
+                };
+                // The batch estimate charges the propagation of a layer once, while the merk
+                // walks and rehashes the path of every deleted key: price that walk per key.
+                // The applied step deletes the lowest keys, whose shared ancestors it rewrites
+                // once, so this is an upper bound (about ten times a 512-delete step); its
+                // margin also covers the step's handful of fixed reads.
+                let CostContext { value, cost } = GroveDb::average_case_merk_delete_element(
+                    &key,
+                    &reports_layer,
+                    true,
+                    &platform_version.drive.grove_version,
+                );
+                value?;
+                drive_operations.push(CalculatedCostOperation(cost));
                 drive_operations.push(GroveOperation(QualifiedGroveDbOp::delete_estimated_op(
                     reports_path.clone(),
-                    KeyInfo::MaxKeySize {
-                        unique_id: index.to_be_bytes().to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U32 as u8,
-                    },
+                    key,
                 )));
             }
             Self::add_readiness_cleanup_tail_estimated_operations(

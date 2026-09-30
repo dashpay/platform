@@ -1883,11 +1883,9 @@ mod cleanup {
             .expect("cancel");
         apply(&drive, operations, None, platform_version);
 
-        // The estimation branch prices `max_deletes` deletes plus the fixed tail and grows
-        // with `max_deletes`. It is a dry run of the step's shape, not a bound on the applied
-        // cost: the average-case model charges tree propagation once per layer per batch,
-        // while a real merk loads the path of every deleted key. Nothing compares the two;
-        // the block event applies the step as bounded work paid by the flat cleanup reserve.
+        // The estimation branch prices `max_deletes` report reads, deletes and path walks
+        // plus the fixed tail, so it grows with `max_deletes` and bounds every applied step
+        // of that size, full or final.
         let estimate_for = |max_deletes: u16| {
             let mut estimated_layer_info = Some(HashMap::new());
             let (outcome, estimated_operations) = drive
@@ -1919,6 +1917,13 @@ mod cleanup {
             let (outcome, fee) = cleanup_step(&drive, old.round_id(), contract_id, 512);
             steps += 1;
             assert!(fee.processing_fee > 0);
+            assert!(
+                estimate_large.processing_fee >= fee.processing_fee,
+                "step {steps}: estimated {} < applied {}",
+                estimate_large.processing_fee,
+                fee.processing_fee
+            );
+            assert!(estimate_large.storage_fee >= fee.storage_fee);
             if let Some(previous) = previous_fee.as_ref() {
                 if !outcome.finished {
                     // Full steps delete the same number of reports and cost about the same.
