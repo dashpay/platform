@@ -240,15 +240,13 @@ impl SeatedModerationCharter {
             })
     }
 
-    /// The most members the team can hold: its leader, the members the charter elected and the
-    /// additions the target allows (`max_added_moderators`), whether each seat is filled now or
-    /// not. A member the leader removed still holds a seat here, which the leader can fill again
-    /// by deleting the removal.
+    /// The most members the team can hold ([`ElectedCharter::seats`]): its leader, the members
+    /// the charter elected and the additions the target allows (`max_added_moderators`),
+    /// whether each seat is filled now or not. A member the leader removed still holds a seat
+    /// here, which the leader can fill again by deleting the removal. The SDKs count seats with
+    /// the same function.
     pub(crate) fn team_bound(&self, max_added_moderators: u16) -> u16 {
-        u16::try_from(self.charter.members.len())
-            .unwrap_or(u16::MAX)
-            .saturating_add(max_added_moderators)
-            .saturating_add(1)
+        self.charter.seats(max_added_moderators)
     }
 
     /// The active members of the team besides the leader ([`ElectedCharter::active_members`]):

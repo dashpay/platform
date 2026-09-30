@@ -137,6 +137,32 @@ impl ModerationTeamWasm {
             .collect()
     }
 
+    /// The members the charter's election seated, in declared order, removed since or not: each
+    /// holds a seat. Compare with `members`, the team as it is now.
+    #[wasm_bindgen(getter = electedMembers, unchecked_return_type = "Identifier[]")]
+    pub fn elected_members(&self) -> Array {
+        self.0
+            .charter
+            .members
+            .iter()
+            .map(|id| JsValue::from(IdentifierWasm::from(*id)))
+            .collect()
+    }
+
+    /// The most members the team can hold, given the target contract's elected declaration's
+    /// `maxAddedModerators`: the leader, the members the charter elected (a removed one keeps
+    /// its seat) and the additions allowed, filled or not, as consensus counts them. A
+    /// `moderatorAbilities.deleteSettled` rule asking for more approvals needs every seat's, so
+    /// a settled deletion needs `Math.min(approvals, seats)`. An active team action's
+    /// `approvalCount` may still include members no longer in `members`.
+    #[wasm_bindgen(js_name = "seats")]
+    pub fn seats(
+        &self,
+        #[wasm_bindgen(js_name = "maxAddedModerators")] max_added_moderators: u16,
+    ) -> u16 {
+        self.0.seats(max_added_moderators)
+    }
+
     /// Whether `identityId` is on the team: the leader or an active member.
     #[wasm_bindgen(js_name = "contains")]
     pub fn contains(
