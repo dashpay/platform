@@ -16,6 +16,7 @@ use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
+use crate::util::batch::drive_op_batch::readiness::verify_at_most_one_readiness_retirement;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use std::collections::HashMap;
 
@@ -77,6 +78,7 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
+        verify_at_most_one_readiness_retirement(&operations)?;
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
         let operations = DriveOperation::merge_balance_writes(operations)?;
         if operations.is_empty() {
