@@ -1414,7 +1414,9 @@ mod tests {
             )
             .await
         });
-        entered.notified().await;
+        tokio::time::timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .expect("the first broadcast reaches the blocked handler");
 
         let mut second_client = client.clone();
         let status = tokio::time::timeout(
@@ -1436,20 +1438,25 @@ mod tests {
 
         gate.add_permits(2);
         assert_eq!(
-            first
+            tokio::time::timeout(Duration::from_secs(5), first)
                 .await
+                .expect("the first broadcast finishes once its handler is released")
                 .expect("the first call task")
                 .expect("the first broadcast completes"),
             family_cap as u64
         );
         let mut third_client = client.clone();
         assert_eq!(
-            call_unary(
-                &mut third_client,
-                TRANSACTION_PATH,
-                vec![0x5Au8; family_cap]
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                call_unary(
+                    &mut third_client,
+                    TRANSACTION_PATH,
+                    vec![0x5Au8; family_cap]
+                ),
             )
             .await
+            .expect("the third broadcast is answered")
             .expect("the finished call gave its slot back"),
             family_cap as u64
         );
