@@ -6952,7 +6952,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let addresses = try modelFetcher.fetch(FetchDescriptor<PersistentCoreAddress>(), in: backgroundContext)
                 try reconcileTransactionAccounting(
                     transactions,
-                    txos: Dictionary(uniqueKeysWithValues: txos.map { ($0.outpoint, $0) }),
+                    // Never trap on a duplicate outpoint; a live row wins over a deleted one.
+                    txos: Dictionary(txos.map { ($0.outpoint, $0) }, uniquingKeysWith: { kept, other in
+                        kept.isDeleted ? other : kept
+                    }),
                     addresses: Dictionary(addresses.map { ($0.address, $0) }, uniquingKeysWith: { first, _ in first })
                 )
                 try backgroundContext.save()
