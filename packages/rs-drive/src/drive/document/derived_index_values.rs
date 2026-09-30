@@ -16,6 +16,8 @@
 //! (`moderatedDocument`, `$ownerId` only). So a later read finds the value the entry was
 //! written under.
 
+use crate::drive::contract::moderation::types::estimated_document_removal_value_size;
+use crate::drive::contract::paths::contract_document_type_removals_path;
 use crate::drive::document::cost::value_of;
 use crate::drive::document::paths::{
     contract_documents_keeping_history_primary_key_path_for_document_id,
@@ -41,7 +43,7 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, TransactionArg, TreeType};
 use std::collections::BTreeMap;
 
 impl Drive {
@@ -166,8 +168,10 @@ impl Drive {
     ///
     /// A referenced document a moderator removed is read from its removal record, which keeps
     /// its owner, the one field a `moderatedDocument` reference may derive. When `estimate` is
-    /// true nothing is read: the reads are priced by their worst case, and every value is
-    /// `Value::Null`.
+    /// true nothing is read: the reads are priced by their worst case (the removal record's
+    /// read too, and the hop to a current version keeping history), and every value is one of
+    /// the field's type and typical size, which keys the document on the layout a real value
+    /// writes.
     ///
     /// A referenced document that is neither in state nor removed on the record is corrupted
     /// state: the reference was validated when the document was written, and its target can
@@ -293,6 +297,7 @@ impl Drive {
             self.add_referenced_document_read_estimation(
                 contract,
                 referenced_type,
+                derived.kind,
                 drive_operations,
                 platform_version,
             )?;
@@ -370,18 +375,19 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut referenced_types: BTreeMap<&str, &str> = BTreeMap::new();
+        let mut referenced_types: BTreeMap<&str, (&str, DocumentReferenceKind)> = BTreeMap::new();
         for derived in document_type.derived_index_properties().values() {
             referenced_types.insert(
                 derived.reference_property.as_str(),
-                derived.referenced_document_type_name.as_str(),
+                (derived.referenced_document_type_name.as_str(), derived.kind),
             );
         }
-        for referenced_type_name in referenced_types.into_values() {
+        for (referenced_type_name, kind) in referenced_types.into_values() {
             let referenced_type = contract.document_type_for_name(referenced_type_name)?;
             self.add_referenced_document_read_estimation(
                 contract,
                 referenced_type,
+                kind,
                 drive_operations,
                 platform_version,
             )?;
@@ -389,31 +395,78 @@ impl Drive {
         Ok(())
     }
 
-    /// The worst-case cost of reading one document of `referenced_type`.
+    /// The worst-case cost of the reads [`Self::read_referenced_values`] makes for one
+    /// document of `referenced_type`, reached through a reference of `kind`, without reading:
+    /// the document, through the reference to its current version on a type keeping history,
+    /// and, through a `moderatedDocument` reference, the removal record read when a moderator
+    /// removed the document.
     fn add_referenced_document_read_estimation(
         &self,
         contract: &DataContract,
         referenced_type: DocumentTypeRef,
+        kind: DocumentReferenceKind,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let path = contract_documents_primary_key_path(
-            contract.id_ref().as_bytes(),
-            referenced_type.name(),
-        );
-        self.grove_get_raw_optional(
-            (&path).into(),
-            &[0; 32],
-            DirectQueryType::StatelessDirectQuery {
-                in_tree_type: referenced_type.primary_key_tree_type(platform_version)?,
-                query_target: QueryTargetValue(
-                    referenced_type.estimated_size(platform_version)? as u32
-                ),
-            },
-            None,
-            drive_operations,
-            &platform_version.drive,
-        )?;
+        let document_size = referenced_type.estimated_size(platform_version)? as u32;
+        if referenced_type.documents_keep_history() {
+            let path = contract_documents_keeping_history_primary_key_path_for_document_id(
+                contract.id_ref().as_bytes(),
+                referenced_type.name(),
+                &[0; 32],
+            );
+            // The `0` is a reference to the current version, loaded in one hop
+            let in_tree_type = if referenced_type.documents_summable().is_some() {
+                TreeType::SumTree
+            } else {
+                TreeType::NormalTree
+            };
+            self.grove_get(
+                (&path).into(),
+                &[0],
+                QueryType::StatelessQuery {
+                    in_tree_type,
+                    query_target: QueryTargetValue(document_size),
+                    estimated_reference_sizes: vec![document_size],
+                },
+                None,
+                drive_operations,
+                &platform_version.drive,
+            )?;
+        } else {
+            let path = contract_documents_primary_key_path(
+                contract.id_ref().as_bytes(),
+                referenced_type.name(),
+            );
+            self.grove_get_raw_optional(
+                (&path).into(),
+                &[0; 32],
+                DirectQueryType::StatelessDirectQuery {
+                    in_tree_type: referenced_type.primary_key_tree_type(platform_version)?,
+                    query_target: QueryTargetValue(document_size),
+                },
+                None,
+                drive_operations,
+                &platform_version.drive,
+            )?;
+        }
+        if kind == DocumentReferenceKind::Moderated {
+            let path = contract_document_type_removals_path(
+                contract.id_ref().as_bytes(),
+                referenced_type.name(),
+            );
+            self.grove_get_raw_optional(
+                (&path).into(),
+                &[0; 32],
+                DirectQueryType::StatelessDirectQuery {
+                    in_tree_type: TreeType::NormalTree,
+                    query_target: QueryTargetValue(estimated_document_removal_value_size()),
+                },
+                None,
+                drive_operations,
+                &platform_version.drive,
+            )?;
+        }
         Ok(())
     }
 }
@@ -707,7 +760,8 @@ mod tests {
         );
     }
 
-    /// A post keeping its history is read through the reference to its current version.
+    /// A post keeping its history is read through the reference to its current version, and a
+    /// dry run prices that hop without reading.
     #[test]
     fn should_read_a_referenced_document_keeping_history() {
         let contract = contract_with(
@@ -717,6 +771,7 @@ mod tests {
         );
         let drive = setup(&contract);
         add(&drive, &contract, "post", &post(), true);
+        add(&drive, &contract, "reply", &reply(2), false);
         add(&drive, &contract, "reply", &reply(2), true);
         assert_eq!(
             replies_on(&drive, &contract, "rust"),
