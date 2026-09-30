@@ -355,11 +355,20 @@ fn should_refuse_a_field_a_moderated_posts_removal_record_does_not_keep() {
         ),
         "is not kept by a moderator's removal",
     );
+    // The refusal gives no advice an update could not follow: the list is fixed with the type
+    assert_refused(
+        parse(
+            moderated_post(),
+            reply(moderated_reference(), "postId.hashtag", Value::Null),
+            true,
+        ),
+        "a list fixed when the type is registered, which no update changes",
+    );
     // Never its creator, which no record keeps
     assert_refused(
         parse(
-            merged(
-                moderated_post_keeping(platform_value!(["hashtag"]), Value::Null),
+            moderated_post_keeping(
+                platform_value!(["hashtag"]),
                 platform_value!({ "transferable": 1 }),
             ),
             reply(moderated_reference(), "postId.$creatorId", Value::Null),
@@ -367,6 +376,78 @@ fn should_refuse_a_field_a_moderated_posts_removal_record_does_not_keep() {
         ),
         "never its creator",
     );
+}
+
+#[test]
+fn should_refuse_a_moderated_posts_field_no_index_can_key_before_asking_it_to_be_kept() {
+    // `text` is longer than an index key can hold: keeping it would not make it a key, so
+    // that is what the refusal says
+    let error = parse(
+        moderated_post(),
+        reply(moderated_reference(), "postId.text", Value::Null),
+        true,
+    )
+    .expect_err("the contract should be refused");
+    assert!(error.to_string().contains("maxLength"), "got {error}");
+    assert!(!error.to_string().contains("is not kept"), "got {error}");
+}
+
+/// Protocol versions 9 to 13 select the whole-contract parse that resolves derived index
+/// properties too, but no parser generation before 3, and so no protocol version before 14,
+/// declares one: a name reading through an identifier is an unknown property there, refused
+/// as it always was, and a contract otherwise parses with none.
+#[test]
+fn should_declare_no_derived_index_property_before_protocol_version_14() {
+    let platform_version = PlatformVersion::get(13).expect("platform version 13 exists");
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available");
+    let post = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeleted": false,
+        "properties": {
+            "hashtag": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
+        },
+        "required": ["hashtag"],
+        "additionalProperties": false,
+    });
+    let reply_indexed_by = |index_property: &str| {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "indices": [{ "name": "byPost", "properties": [{ index_property: "asc" }] }],
+            "properties": { "postId": identifier(0, None) },
+            "required": ["postId"],
+            "additionalProperties": false,
+        })
+    };
+    let parse_at_13 = |reply: Value| {
+        DocumentType::create_document_types_from_document_schemas(
+            Identifier::new(CONTRACT_ID),
+            1,
+            config.version(),
+            BTreeMap::from([
+                ("post".to_string(), post.clone()),
+                ("reply".to_string(), reply),
+            ]),
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+    };
+
+    let document_types =
+        parse_at_13(reply_indexed_by("postId")).expect("the contract should parse at 13");
+    assert!(document_types
+        .values()
+        .all(|document_type| document_type.derived_index_properties().is_empty()));
+
+    parse_at_13(reply_indexed_by("postId.hashtag"))
+        .expect_err("a name through an identifier is no property before 14");
 }
 
 #[test]

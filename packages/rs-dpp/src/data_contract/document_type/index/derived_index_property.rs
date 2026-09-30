@@ -161,6 +161,14 @@ pub(crate) fn parse_derived_index_property_name(
             DerivedIndexField::OwnerId,
             Some(DocumentPropertyType::Identifier),
         ),
+        "$creatorId" if kind == DocumentReferenceKind::Moderated => {
+            return DerivedIndexPropertyName::Refused(format!(
+                "\"{reference_property}\" is a moderatedDocument reference, whose document a \
+                 moderator's removal replaces with a record keeping its owner and the fields \
+                 its type lists under `moderatorAbilities.deleteKeepsFields`, never its \
+                 creator: through it a derived index property reads $ownerId or a kept field"
+            ))
+        }
         "$creatorId" => (
             DerivedIndexField::CreatorId,
             Some(DocumentPropertyType::Identifier),
@@ -177,18 +185,10 @@ pub(crate) fn parse_derived_index_property_name(
                  the referenced document, not {system}"
             ))
         }
+        // Through a moderatedDocument reference, whether the removal record keeps it is
+        // judged where the referenced type is in hand (`resolve_derived_index_properties`).
         path => (DerivedIndexField::Property(path.to_string()), None),
     };
-    // Whether the record keeps a schema property is judged where the referenced
-    // type is in hand (`resolve_derived_index_properties`)
-    if kind == DocumentReferenceKind::Moderated && field == DerivedIndexField::CreatorId {
-        return DerivedIndexPropertyName::Refused(format!(
-            "\"{reference_property}\" is a moderatedDocument reference, whose document a \
-             moderator's removal replaces with a record keeping its owner and the fields its \
-             type lists under `moderatorAbilities.deleteKeepsFields`, never its creator: \
-             through it a derived index property reads $ownerId or a kept field"
-        ));
-    }
     DerivedIndexPropertyName::Derived(Box::new(DerivedIndexProperty {
         reference_property: reference_property.to_string(),
         referenced_document_type_name: declaration.document_type_name.to_string(),

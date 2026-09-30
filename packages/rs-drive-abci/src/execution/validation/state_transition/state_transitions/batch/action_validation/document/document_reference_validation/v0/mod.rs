@@ -13,16 +13,14 @@ use dpp::data_contract::document_type::accessors::{
 };
 use dpp::data_contract::document_type::reference_lookup::owner_can_change;
 use dpp::data_contract::document_type::{
-    is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
+    is_path_listed, is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceKind,
     DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, ListElementReference,
     PropertyReference,
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
-use dpp::data_contract::config::moderation::{
-    is_kept_path, kept_value_at, ContractDocumentRemoval,
-};
+use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use dpp::document::{Document, DocumentV0Getters};
@@ -1603,7 +1601,7 @@ fn validate_pairs_against_removal(
                 removal.document_owner_id.to_buffer(),
             ))),
             ID => Some(Cow::Owned(Value::Identifier(document_id.to_buffer()))),
-            property if !is_kept_path(kept_paths, property) => {
+            property if !is_path_listed(kept_paths, property) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentRemovedError::new(
                         document_id,
@@ -1618,7 +1616,9 @@ fn validate_pairs_against_removal(
                     Some(kept_values) => kept_values,
                     None => kept_values.insert(removal.kept_values(referenced_document_type)?),
                 };
-                kept_value_at(kept_paths, kept_values, property).map(Cow::Owned)
+                kept_value_at(kept_paths, kept_values, property)
+                    .flatten()
+                    .map(Cow::Owned)
             }
         };
         // As against a document in state: the writer for `$ownerId`, a
@@ -1868,11 +1868,7 @@ fn kept_value_changed_fields<'a>(
     held.then_some(changed)
 }
 
+/// Whether the write changed the property at `path`, or an object around it.
 fn is_changed_field(changed_fields: &BTreeSet<String>, path: &str) -> bool {
-    changed_fields.iter().any(|field| {
-        path == field
-            || path
-                .strip_prefix(field.as_str())
-                .is_some_and(|rest| rest.starts_with('.'))
-    })
+    is_path_listed(changed_fields, path)
 }

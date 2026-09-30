@@ -34,9 +34,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{DirectQueryType, QueryType};
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::moderation::{
-    is_kept_path, kept_value_at, ContractDocumentRemoval,
-};
+use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
@@ -518,10 +516,6 @@ fn removed_document_value(
     };
     let referenced_type =
         contract.document_type_for_name(&derived.referenced_document_type_name)?;
-    let kept_paths = referenced_type.moderator_deletion_kept_fields();
-    if !is_kept_path(kept_paths, path) {
-        return Err(not_kept());
-    }
     let kept_values = match kept_values {
         Some(kept_values) => kept_values,
         None => kept_values.insert(removal.kept_values(referenced_type).map_err(|error| {
@@ -532,7 +526,14 @@ fn removed_document_value(
             )))
         })?),
     };
-    Ok(kept_value_at(kept_paths, kept_values, path).unwrap_or(Value::Null))
+    match kept_value_at(
+        referenced_type.moderator_deletion_kept_fields(),
+        kept_values,
+        path,
+    ) {
+        Some(value) => Ok(value.unwrap_or(Value::Null)),
+        None => Err(not_kept()),
+    }
 }
 
 /// The id `document` holds in `reference_property`, `None` when it holds none.

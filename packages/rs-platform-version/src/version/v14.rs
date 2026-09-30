@@ -1737,8 +1737,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     type recording it, or a stored schema property fixed once written and indexable;
 ///     through `moderatedDocument`, `$ownerId` or a schema property the referenced type keeps
 ///     under `moderatorAbilities.deleteKeepsFields` (a kept path or one inside a kept object,
-///     `is_kept_path`); not `$id`; not in a unique or contested index, as a `timeRange` or
-///     `integerRange` source or a `skipIfAbsent` property; not on an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
+///     `is_path_listed`, checked in every build); not `$id`; not in a unique or contested
+///     index, as a `timeRange` or `integerRange` source or a `skipIfAbsent` property; not on
+///     an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
 ///     document stores, is refused on an index whose derived properties the query does not fix
 ///     with `==`. Every step is inert without a derived index property, which only generation 3
 ///     declares.
