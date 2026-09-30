@@ -49,6 +49,10 @@ impl Drive {
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
+        // In-place edit of a shipped generation (protocol versions 1 to 13): the guard refuses only
+        // batches holding a readiness operation or readiness fund write, which nothing builds
+        // below protocol version 17 and whose own methods are inactive there, so every batch
+        // these versions replay passes unchanged.
         refuse_conflicting_readiness_writes(&operations)?;
         // With no caller transaction, TTL preparation (direct drainage
         // writes), conversion reads, and the batch apply would each commit

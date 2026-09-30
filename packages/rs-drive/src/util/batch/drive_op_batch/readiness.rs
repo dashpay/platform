@@ -91,7 +91,9 @@ impl ReadinessOperationType {
 ///   write and no readiness fund write: it settles the payers and funds of both rounds with absolute
 ///   writes, and the payer it refunds is only known once the round is read;
 /// * each readiness fund is written at most once, since a deduction's reserve check reads the
-///   committed balance too.
+///   committed balance too;
+/// * a round settlement or readiness fund write shares its batch with no raw GroveDB
+///   operation: the guard cannot tell which balances a raw write touches.
 pub(crate) fn refuse_conflicting_readiness_writes(
     operations: &[DriveOperation],
 ) -> Result<(), Error> {
@@ -110,6 +112,16 @@ pub(crate) fn refuse_conflicting_readiness_writes(
             "one readiness round retirement per batch",
         )));
     }
+    let writes_readiness_balances = retirements > 0
+        || operations.iter().any(|operation| {
+            matches!(
+                operation,
+                DriveOperation::PrefundedSpecializedBalanceOperation(
+                    PrefundedSpecializedBalanceOperationType::CreateNewReadinessFund { .. }
+                        | PrefundedSpecializedBalanceOperationType::DeductFromReadinessFund { .. },
+                )
+            )
+        });
     let mut funds_written = BTreeSet::new();
     for operation in operations {
         match operation {
@@ -133,6 +145,13 @@ pub(crate) fn refuse_conflicting_readiness_writes(
             ) if retirements > 0 => {
                 return Err(Error::Drive(DriveError::NotSupported(
                     "a readiness round settlement is the only identity balance write of its batch",
+                )));
+            }
+            DriveOperation::GroveDBOperation(_) | DriveOperation::GroveDBOpBatch(_)
+                if writes_readiness_balances =>
+            {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "a readiness round settlement or fund write shares its batch with no raw GroveDB operation",
                 )));
             }
             _ => {}

@@ -78,6 +78,9 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
+        // Selected from protocol version 14, which is unreleased; the guard refuses only
+        // batches holding a readiness operation or readiness fund write, which nothing builds
+        // below protocol version 17 and whose own methods are inactive there.
         refuse_conflicting_readiness_writes(&operations)?;
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
         let operations = DriveOperation::merge_balance_writes(operations)?;

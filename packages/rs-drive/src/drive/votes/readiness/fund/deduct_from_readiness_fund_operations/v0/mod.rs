@@ -1,19 +1,14 @@
-use crate::drive::prefunded_specialized_balances::{
-    prefunded_specialized_balances_for_readiness_path,
-    prefunded_specialized_balances_for_readiness_path_vec,
-};
+use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_readiness_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::grove_operations::DirectQueryType;
-use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
@@ -37,37 +32,26 @@ impl Drive {
             )?;
         }
 
-        let direct_query_type = if estimated_costs_only_with_layer_info.is_none() {
-            DirectQueryType::StatefulDirectQuery
-        } else {
-            DirectQueryType::StatelessDirectQuery {
-                in_tree_type: TreeType::SumTree,
-                query_target: QueryTargetValue(8),
-            }
-        };
-
-        let path = prefunded_specialized_balances_for_readiness_path();
-        let previous_credits = match self.grove_get_raw_value_u64_from_encoded_var_vec(
-            (&path).into(),
-            fund_id.as_slice(),
-            direct_query_type,
+        // The checked read: a stored fund must be a nonnegative sum item.
+        let fetched = self.fetch_readiness_fund_operations(
+            fund_id.to_buffer(),
+            estimated_costs_only_with_layer_info.is_none(),
             transaction,
             &mut drive_operations,
-            &platform_version.drive,
-        )? {
-            None => {
-                if estimated_costs_only_with_layer_info.is_none() {
-                    return Err(Error::Drive(
-                        DriveError::PrefundedSpecializedBalanceDoesNotExist(format!(
-                            "trying to deduct from a readiness fund {} that does not exist",
-                            fund_id
-                        )),
-                    ));
-                } else {
-                    i64::MAX as u64
-                }
-            }
-            Some(value) => value,
+            platform_version,
+        )?;
+        let previous_credits = if estimated_costs_only_with_layer_info.is_some() {
+            // Priced without state; the widest balance lets any deduction through.
+            i64::MAX as u64
+        } else {
+            fetched.ok_or_else(|| {
+                Error::Drive(DriveError::PrefundedSpecializedBalanceDoesNotExist(
+                    format!(
+                        "trying to deduct from a readiness fund {} that does not exist",
+                        fund_id
+                    ),
+                ))
+            })?
         };
         let spendable = previous_credits.saturating_sub(reserve);
         if amount > spendable {

@@ -1,19 +1,14 @@
-use crate::drive::prefunded_specialized_balances::{
-    prefunded_specialized_balances_for_readiness_path,
-    prefunded_specialized_balances_for_readiness_path_vec,
-};
+use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_readiness_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::grove_operations::DirectQueryType;
-use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
@@ -35,23 +30,14 @@ impl Drive {
                 platform_version,
             )?;
         }
-        let direct_query_type = if estimated_costs_only_with_layer_info.is_none() {
-            DirectQueryType::StatefulDirectQuery
-        } else {
-            DirectQueryType::StatelessDirectQuery {
-                in_tree_type: TreeType::SumTree,
-                query_target: QueryTargetValue(8),
-            }
-        };
-
-        let path = prefunded_specialized_balances_for_readiness_path();
-        let previous_credits = match self.grove_get_raw_value_u64_from_encoded_var_vec(
-            (&path).into(),
-            fund_id.as_slice(),
-            direct_query_type,
+        // The checked read: a stored fund must be a nonnegative sum item. An estimate prices
+        // the read without state and sees an empty fund.
+        let previous_credits = match self.fetch_readiness_fund_operations(
+            fund_id.to_buffer(),
+            estimated_costs_only_with_layer_info.is_none(),
             transaction,
             &mut drive_operations,
-            &platform_version.drive,
+            platform_version,
         )? {
             None => {
                 if estimated_costs_only_with_layer_info.is_none() {

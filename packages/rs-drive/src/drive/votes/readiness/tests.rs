@@ -2,8 +2,8 @@
 //! platform version.
 
 use crate::drive::prefunded_specialized_balances::{
-    prefunded_specialized_balances_path, PREFUNDED_BALANCES_FOR_READINESS,
-    PREFUNDED_BALANCES_FOR_VOTING,
+    prefunded_specialized_balances_for_readiness_path, prefunded_specialized_balances_path,
+    PREFUNDED_BALANCES_FOR_READINESS, PREFUNDED_BALANCES_FOR_VOTING,
 };
 use crate::drive::votes::paths::{
     readiness_contract_tree_path, readiness_deadline_tree_path_vec,
@@ -14,7 +14,7 @@ use crate::drive::votes::paths::{
 use crate::drive::votes::readiness::{
     ReadinessCleanupOutcome, ReadinessRoundFunding, RetiredReadinessRound,
 };
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
@@ -22,7 +22,8 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::{
     IdentityOperationType, PrefundedSpecializedBalanceOperationType, ReadinessOperationType,
 };
-use crate::util::batch::DriveOperation;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use crate::util::common::encode::encode_u64;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use crate::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
@@ -38,7 +39,7 @@ use dpp::voting::readiness::payer::ReadinessPayer;
 use dpp::voting::readiness::report_record::ReadinessReportRecord;
 use dpp::voting::readiness::round::{ReadinessEvaluation, ReadinessRound, ReadinessRoundOpening};
 use dpp::voting::readiness::scan_cursor::ReadinessScanCursor;
-use grovedb::batch::KeyInfoPath;
+use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -371,6 +372,76 @@ mod genesis {
         );
     }
 
+    /// The readiness batch guard is edited into the shipped apply and convert generation 0; a
+    /// batch without readiness writes, raw GroveDB writes included, applies as before.
+    #[test]
+    fn should_apply_raw_and_balance_writes_in_one_batch_at_protocol_version_13_as_before() {
+        let platform_version = PlatformVersion::get(13).expect("v13");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let block_info = BlockInfo::default();
+        let mut rng = StdRng::seed_from_u64(13);
+        let identity_id =
+            create_test_identity_with_rng(&drive, [0xABu8; 32], &mut rng, None, platform_version)
+                .expect("identity")
+                .id()
+                .to_buffer();
+        let balance_before = drive
+            .fetch_identity_balance(identity_id, None, platform_version)
+            .expect("fetch balance")
+            .expect("balance");
+        let operations = || {
+            vec![
+                DriveOperation::GroveDBOperation(QualifiedGroveDbOp::insert_or_replace_op(
+                    vec![vec![RootTree::Misc as u8]],
+                    b"readiness-guard-probe".to_vec(),
+                    Element::new_item(vec![1]),
+                )),
+                DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+                    identity_id,
+                    added_balance: 5,
+                }),
+            ]
+        };
+
+        drive
+            .convert_drive_operations_to_grove_operations(
+                operations(),
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("convert");
+        drive
+            .apply_drive_operations(
+                operations(),
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("apply");
+        assert_eq!(
+            drive
+                .fetch_identity_balance(identity_id, None, platform_version)
+                .expect("fetch balance"),
+            Some(balance_before + 5)
+        );
+        assert_eq!(
+            drive
+                .grove
+                .get(
+                    &[&[RootTree::Misc as u8][..]],
+                    b"readiness-guard-probe",
+                    None,
+                    &platform_version.drive.grove_version
+                )
+                .unwrap()
+                .expect("probe"),
+            Element::new_item(vec![1])
+        );
+    }
+
     #[test]
     fn should_report_the_readiness_methods_inactive_at_protocol_version_14() {
         let platform_version = PlatformVersion::get(14).expect("v14");
@@ -553,6 +624,69 @@ mod funds {
                 DriveError::PrefundedSpecializedBalanceDoesNotExist(_)
             ))
         ));
+    }
+
+    #[test]
+    fn should_refuse_to_add_deduct_or_empty_a_negative_or_mistyped_stored_fund() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+        for (fund_byte, stored) in [
+            (0xE1u8, Element::new_sum_item(-1)),
+            (0xE2u8, Element::new_item(vec![5])),
+            (0xE3u8, Element::empty_sum_tree()),
+        ] {
+            let fund_id = Identifier::from([fund_byte; 32]);
+            drive
+                .grove
+                .insert(
+                    &prefunded_specialized_balances_for_readiness_path(),
+                    fund_id.as_slice(),
+                    stored,
+                    None,
+                    None,
+                    grove_version,
+                )
+                .unwrap()
+                .expect("store a corrupted fund");
+            let refused = |result: Result<(), Error>| {
+                assert!(
+                    matches!(
+                        result,
+                        Err(Error::Drive(DriveError::CorruptedElementType(_)))
+                    ),
+                    "{result:?}"
+                );
+            };
+            refused(
+                drive
+                    .add_readiness_fund_operations(fund_id, 1, &mut None, None, platform_version)
+                    .map(|_| ()),
+            );
+            refused(
+                drive
+                    .deduct_from_readiness_fund_operations(
+                        fund_id,
+                        1,
+                        0,
+                        &mut None,
+                        None,
+                        platform_version,
+                    )
+                    .map(|_| ()),
+            );
+            refused(
+                drive
+                    .empty_readiness_fund_operations(
+                        fund_id,
+                        true,
+                        &mut None,
+                        None,
+                        platform_version,
+                    )
+                    .map(|_| ()),
+            );
+        }
     }
 
     #[test]
@@ -2125,6 +2259,76 @@ mod retirement {
             payer_balance(&drive, payer, None),
             balance_before - 3_000_000 - INITIAL_FUNDING
         );
+    }
+
+    #[test]
+    fn should_refuse_a_raw_grovedb_write_beside_a_round_settlement_or_fund_write() {
+        let (drive, payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = [1u8; 32];
+        let block_info = block_info(1_000_000, 10, 100);
+        let balance_before = payer_balance(&drive, payer, None);
+        // The same debit a typed operation would make, handed over as raw GroveDB writes.
+        let raw_debit = LowLevelDriveOperation::grovedb_operations_consume(
+            drive
+                .remove_from_identity_balance_operations(
+                    payer.to_buffer(),
+                    3_000_000,
+                    &mut None,
+                    None,
+                    platform_version,
+                )
+                .expect("debit operations"),
+        );
+        assert!(!raw_debit.is_empty());
+        let open = || {
+            DriveOperation::ReadinessOperation(ReadinessOperationType::OpenRound {
+                opening: opening(contract_id, payer, 10),
+                funding: FUNDING,
+            })
+        };
+        let fund = || {
+            DriveOperation::PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::CreateNewReadinessFund {
+                    fund_id: Identifier::from([0xF5u8; 32]),
+                    add_balance: 1,
+                },
+            )
+        };
+        let raw_operations = || {
+            raw_debit
+                .iter()
+                .cloned()
+                .map(DriveOperation::GroveDBOperation)
+                .collect::<Vec<_>>()
+        };
+        let raw_batch =
+            || DriveOperation::GroveDBOpBatch(GroveDbOpBatch::from_operations(raw_debit.clone()));
+
+        let readiness_writes: [&dyn Fn() -> DriveOperation<'static>; 2] = [&open, &fund];
+        for readiness_write in readiness_writes {
+            assert_batch_refused(
+                &drive,
+                || {
+                    let mut operations = vec![readiness_write()];
+                    operations.extend(raw_operations());
+                    operations
+                },
+                &block_info,
+            );
+            assert_batch_refused(
+                &drive,
+                || {
+                    let mut operations = raw_operations();
+                    operations.push(readiness_write());
+                    operations
+                },
+                &block_info,
+            );
+            assert_batch_refused(&drive, || vec![readiness_write(), raw_batch()], &block_info);
+            assert_batch_refused(&drive, || vec![raw_batch(), readiness_write()], &block_info);
+        }
+        assert_eq!(payer_balance(&drive, payer, None), balance_before);
     }
 
     #[test]

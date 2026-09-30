@@ -45,6 +45,10 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
+        // In-place edit of a shipped generation (every protocol version): the guard refuses only
+        // batches holding a readiness operation or readiness fund write, which nothing builds
+        // below protocol version 17 and whose own methods are inactive there, so every batch
+        // these versions replay passes unchanged.
         refuse_conflicting_readiness_writes(&drive_batch_operations)?;
         self.prepare_drive_operations_time_range_ttl(
             &drive_batch_operations,
