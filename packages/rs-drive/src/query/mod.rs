@@ -135,8 +135,12 @@ use {
 #[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 #[cfg(feature = "server")]
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::document::DocumentV0Getters;
 #[cfg(feature = "server")]
 pub use grovedb::{
     query_result_type::{QueryResultElements, QueryResultType},
@@ -3093,6 +3097,13 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<(Document, bool)>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        let starts_at_document = match starts_at_document {
+            Some((document, included)) => Some((
+                self.cursor_with_derived_values(document, platform_version)?,
+                included,
+            )),
+            None => None,
+        };
         match platform_version
             .drive
             .methods
@@ -3116,6 +3127,45 @@ impl<'a> DriveDocumentQuery<'a> {
                 received: version,
             })),
         }
+    }
+
+    /// A startAt or startAfter cursor places the page by the values the document it names
+    /// holds for the index's properties, read off the stored document (by the server, and by
+    /// a verifier from the proof), which holds no derived index property's value (protocol
+    /// version 14: read from the document a reference points at). So a query paging with a
+    /// cursor may only go through an index whose derived properties it fixes with `==`: the
+    /// cursor document is given those values from the query itself, as the page it places
+    /// holds them. Any other such query is refused. A cursor of a type without derived index
+    /// properties passes through unchanged, which is every cursor before protocol version 14.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn cursor_with_derived_values(
+        &self,
+        mut document: Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, Error> {
+        let derived_index_properties = self.document_type.derived_index_properties();
+        if derived_index_properties.is_empty() {
+            return Ok(document);
+        }
+        let index = self.find_best_index(platform_version)?;
+        for property in &index.properties {
+            if !derived_index_properties.contains_key(&property.name) {
+                continue;
+            }
+            let Some(clause) = self.internal_clauses.equal_clauses.get(&property.name) else {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "a startAt or startAfter cursor is placed by the values the document it \
+                     names stores, and the index {} reads \"{}\" from the document a reference \
+                     points at instead: fix \"{}\" with == to page with a cursor, or page by a \
+                     range on another property of the index",
+                    index.name, property.name, property.name
+                ))));
+            };
+            document
+                .properties_mut()
+                .insert(property.name.clone(), clause.value.clone());
+        }
+        Ok(document)
     }
 
     #[cfg(feature = "server")]

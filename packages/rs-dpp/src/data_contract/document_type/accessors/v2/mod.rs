@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
+use crate::data_contract::document_type::index::DerivedIndexProperty;
 use crate::data_contract::document_type::property::{
     DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
@@ -106,12 +107,13 @@ pub trait DocumentTypeV2Getters {
     /// answer holds for good.
     fn document_reference_kind(&self) -> DocumentReferenceKind;
 
-    /// The top-level properties frozen at document creation on a mutable
-    /// document type (the `immutable` keyword, protocol version 14). A
-    /// replace that changes, adds or removes any of them is rejected with
-    /// `DocumentImmutablePropertyChangedError`. Empty on document types
-    /// that predate the keyword and on types whose documents are not
-    /// mutable, where every property is already immutable.
+    /// The top-level properties the `immutable` keyword (protocol version 14)
+    /// lists by name on a mutable document type: frozen at document creation.
+    /// A replace that changes, adds or removes any of them is rejected with
+    /// `DocumentImmutablePropertyChangedError`. Empty on document types that
+    /// predate the keyword and on types whose documents are not mutable, where
+    /// every property is already immutable. The properties it lists with a
+    /// condition are [`Self::immutable_field_conditions`].
     fn immutable_fields(&self) -> &BTreeSet<String>;
 
     /// The dotted paths of the properties that declare `distinctFrom`
@@ -125,13 +127,14 @@ pub trait DocumentTypeV2Getters {
     /// keyword.
     fn generated_from_fields(&self) -> &[(String, GeneratedFrom)];
 
-    /// The subset of [`Self::immutable_fields`] a replace may still set while
-    /// the stored document has no value for them (the
-    /// `immutableAllowSetting` keyword, protocol version 14). Once present
-    /// they are frozen like the rest of the list. Always a subset of
-    /// [`Self::immutable_fields`]; empty on document types that predate the
-    /// keyword.
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String>;
+    /// The top-level properties the `immutable` keyword lists with a
+    /// condition, each with it: a replace that changes, adds or removes one
+    /// while its condition holds is rejected with
+    /// `DocumentImmutablePropertyChangedError`. The condition is judged on the
+    /// document the replace writes, reading the stored one through `$old.`.
+    /// Disjoint from [`Self::immutable_fields`]; empty on document types that
+    /// predate the keyword.
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint>;
 
     /// The fixed fees in credits this document type charges for actions on its documents
     /// (the `actionFees` keyword, protocol version 14). `None` on document types that
@@ -158,6 +161,12 @@ pub trait DocumentTypeV2Getters {
     /// 14). Empty on document types that declare none and on those that predate
     /// the keyword.
     fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint>;
+
+    /// The index properties whose values are read from the document a
+    /// reference of the type points at (`"<reference property>.<field>"`,
+    /// protocol version 14), by their names in the indexes. Empty on document
+    /// types that declare none and on those that predate them.
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

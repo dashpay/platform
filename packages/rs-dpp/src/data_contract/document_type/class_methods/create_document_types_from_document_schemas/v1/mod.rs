@@ -4,7 +4,9 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
-use crate::data_contract::document_type::class_methods::try_from_schema::validate_property_constraint_aggregates;
+use crate::data_contract::document_type::class_methods::try_from_schema::{
+    resolve_derived_index_properties, validate_property_constraint_aggregates,
+};
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
     DocumentType,
@@ -88,6 +90,19 @@ impl DocumentType {
         // `apply_property_reference: Some(_)`, which no version before 14 does (their
         // meta-schemas refuse `refersTo` and their parser ignores it), so the loop below
         // finds no requirement to check there and the output is unchanged.
+        // Protocol version 14 and later: a derived index property reading a schema property of
+        // another document type of this contract takes that property's type, which a document
+        // type's parse can not see. On every parse, since Drive encodes the keys of a contract
+        // read back from state by it; under full validation it also judges the field read.
+        // Inert before 14: only parser generation 3 declares a derived index property.
+        resolve_derived_index_properties(
+            &mut contract_document_types,
+            data_contract_system_version,
+            contract_config_version,
+            full_validation,
+            platform_version,
+        )?;
+
         if !full_validation {
             return Ok(contract_document_types);
         }

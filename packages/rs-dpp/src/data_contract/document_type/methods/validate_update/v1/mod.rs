@@ -644,60 +644,60 @@ impl DocumentTypeRef<'_> {
         SimpleConsensusValidationResult::new()
     }
 
-    /// The `immutable` property list may only grow. Removing an entry would
-    /// let a later replace change a property that documents were created
-    /// under the promise of never changing; adding one only narrows what
-    /// future replaces may touch and invalidates no stored document (the
-    /// parser has already checked that every new entry names a top-level
-    /// property of the new type).
+    /// What `immutable` freezes may only tighten. The properties it lists
+    /// without a condition may only grow: removing one would let a later
+    /// replace change a property documents were created under the promise of
+    /// never changing, while adding one only narrows what future replaces may
+    /// touch and invalidates no stored document (the parser has already
+    /// checked that every new entry names a top-level property of the new
+    /// type). A property listed with a condition keeps it as it is, or loses
+    /// it to be listed without one, which freezes it whatever the condition
+    /// says. Whether one condition holds wherever another does can not be
+    /// told in general, so a changed condition is refused, as is a property
+    /// dropped from the list. A property the list did not hold may be added
+    /// with a condition, which only narrows what replaces may touch.
     ///
-    /// `immutableAllowSetting` may only shrink, with one exception: a
-    /// property that becomes immutable in this very update may arrive with
-    /// the allowance. Dropping an entry is a tightening (a still-absent
-    /// property can no longer be set). Adding one for a property that was
-    /// already immutable would relax a promise the documents were created
-    /// under, exactly like removing it from `immutable`.
-    ///
-    /// Judged here because both top-level keys are stripped from the schema
+    /// Judged here because the top-level key is stripped from the schema
     /// compatibility diff, exactly like `indices` and `required`.
     fn validate_immutable_fields_update(
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
-        let old_immutable = self.immutable_fields();
         let new_immutable = new_document_type.immutable_fields();
+        let new_conditions = new_document_type.immutable_field_conditions();
+        let refused = |message: String| {
+            SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(self.data_contract_id(), self.name(), message).into(),
+            )
+        };
 
-        for property in old_immutable {
+        for property in self.immutable_fields() {
             if !new_immutable.contains(property) {
-                return SimpleConsensusValidationResult::new_with_error(
-                    DocumentTypeUpdateError::new(
-                        self.data_contract_id(),
-                        self.name(),
-                        format!(
-                            "document type can not remove immutable property '{property}': the \
-                             immutable list may only grow"
-                        ),
-                    )
-                    .into(),
-                );
+                return refused(format!(
+                    "document type can not remove immutable property '{property}': the \
+                     properties immutable lists without a condition may only grow"
+                ));
             }
         }
 
-        let old_allow_setting = self.immutable_fields_allow_setting();
-        for property in new_document_type.immutable_fields_allow_setting() {
-            if !old_allow_setting.contains(property) && old_immutable.contains(property) {
-                return SimpleConsensusValidationResult::new_with_error(
-                    DocumentTypeUpdateError::new(
-                        self.data_contract_id(),
-                        self.name(),
-                        format!(
-                            "document type can not allow setting immutable property '{property}' \
-                             once it is already immutable: only a property that becomes \
-                             immutable in this update may be listed in immutableAllowSetting"
-                        ),
-                    )
-                    .into(),
-                );
+        for (property, condition) in self.immutable_field_conditions() {
+            if new_immutable.contains(property) {
+                continue;
+            }
+            match new_conditions.get(property) {
+                Some(new_condition) if new_condition == condition => {}
+                Some(_) => {
+                    return refused(format!(
+                        "document type can not change the condition under which immutable \
+                         property '{property}' is frozen: it may only be listed without one"
+                    ))
+                }
+                None => {
+                    return refused(format!(
+                        "document type can not remove immutable property '{property}': a \
+                         property listed with a condition may only be listed without one"
+                    ))
+                }
             }
         }
 
@@ -768,6 +768,7 @@ mod tests {
     use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::DocumentType;
+    use crate::validation::SimpleConsensusValidationResult;
     use assert_matches::assert_matches;
     use platform_value::{platform_value, Identifier, Value};
     use platform_version::version::PlatformVersion;
@@ -1425,7 +1426,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
                 if e.additional_message()
-                    == "document type can not remove immutable property 'b': the immutable list may only grow"
+                    == "document type can not remove immutable property 'b': the properties immutable lists without a condition may only grow"
         );
     }
 
@@ -1468,6 +1469,134 @@ mod tests {
             result.is_valid(),
             "an unchanged (reordered) immutable list must be accepted, got {:?}",
             result.errors
+        );
+    }
+
+    /// `doc_type_with_immutable` with a conditional entry freezing each
+    /// `(property, when)` of `conditions` after the plain `immutable` names.
+    fn doc_type_with_conditions(
+        immutable: &[&str],
+        conditions: &[(&str, Value)],
+        platform_version: &PlatformVersion,
+    ) -> DocumentType {
+        let entries = immutable
+            .iter()
+            .map(|property| Value::Text(property.to_string()))
+            .chain(conditions.iter().map(|(property, when)| {
+                platform_value!({ "property": property.to_string(), "when": when.clone() })
+            }))
+            .collect();
+        doc_type_with_immutable(Value::Array(entries), platform_version)
+    }
+
+    fn validate_conditions_update(
+        old: DocumentType,
+        new: DocumentType,
+    ) -> SimpleConsensusValidationResult {
+        old.as_ref()
+            .validate_update(new.as_ref(), 2, PlatformVersion::latest())
+            .expect("validate_update should not error")
+    }
+
+    fn present(path: &str) -> Value {
+        platform_value!({ "present": path })
+    }
+
+    fn update_error(result: &SimpleConsensusValidationResult) -> String {
+        match result.errors.as_slice() {
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))] => {
+                e.additional_message().to_string()
+            }
+            other => panic!("expected one DocumentTypeUpdateError, got {other:?}"),
+        }
+    }
+
+    // Each runs the whole v1 pipeline, so the accepted ones also pin that the
+    // compatibility differ ignores the conditional entries of `immutable`
+    // instead of hard-erroring on a shape it has no rule for.
+    #[test]
+    fn should_accept_keeping_or_adding_a_condition() {
+        let platform_version = PlatformVersion::latest();
+        let old =
+            || doc_type_with_conditions(&["a"], &[("b", present("$old.b"))], platform_version);
+
+        let result = validate_conditions_update(old(), old());
+        assert!(
+            result.is_valid(),
+            "an unchanged condition: {:?}",
+            result.errors
+        );
+
+        let result = validate_conditions_update(
+            old(),
+            doc_type_with_conditions(
+                &["a"],
+                &[("b", present("$old.b")), ("c", present("$old.c"))],
+                platform_version,
+            ),
+        );
+        assert!(
+            result.is_valid(),
+            "a property newly frozen by a condition: {:?}",
+            result.errors
+        );
+    }
+
+    /// Frozen whatever the condition says is tighter than any condition.
+    #[test]
+    fn should_accept_dropping_a_condition_to_list_the_property_without_one() {
+        let platform_version = PlatformVersion::latest();
+        let result = validate_conditions_update(
+            doc_type_with_conditions(&["a"], &[("b", present("$old.b"))], platform_version),
+            doc_type_with_conditions(&["a", "b"], &[], platform_version),
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    /// Whether one condition holds wherever another does can not be told in
+    /// general, so a changed condition is refused, tighter or not.
+    #[test]
+    fn should_reject_changing_a_condition() {
+        let platform_version = PlatformVersion::latest();
+        let result = validate_conditions_update(
+            doc_type_with_conditions(&[], &[("b", present("$old.b"))], platform_version),
+            doc_type_with_conditions(&[], &[("b", present("$old.c"))], platform_version),
+        );
+        assert_eq!(
+            update_error(&result),
+            "document type can not change the condition under which immutable property 'b' is \
+             frozen: it may only be listed without one"
+        );
+    }
+
+    #[test]
+    fn should_reject_removing_a_property_listed_with_a_condition() {
+        let platform_version = PlatformVersion::latest();
+        let result = validate_conditions_update(
+            doc_type_with_conditions(&["a"], &[("b", present("$old.b"))], platform_version),
+            doc_type_with_conditions(&["a"], &[], platform_version),
+        );
+        assert_eq!(
+            update_error(&result),
+            "document type can not remove immutable property 'b': a property listed with a \
+             condition may only be listed without one"
+        );
+    }
+
+    /// A property frozen at creation may not gain a condition, which would
+    /// free it while the condition does not hold; the property left the list
+    /// of those without one, which may only grow.
+    #[test]
+    fn should_reject_giving_an_immutable_property_a_condition() {
+        let platform_version = PlatformVersion::latest();
+        let result = validate_conditions_update(
+            doc_type_with_conditions(&["a", "b"], &[], platform_version),
+            doc_type_with_conditions(&["a"], &[("b", present("$old.b"))], platform_version),
+        );
+        assert_eq!(
+            update_error(&result),
+            "document type can not remove immutable property 'b': the properties immutable lists \
+             without a condition may only grow"
         );
     }
 
@@ -1765,132 +1894,6 @@ mod tests {
                 result.errors
             );
         }
-    }
-
-    /// Like `doc_type_with_immutable`, with an `immutableAllowSetting` list
-    /// as well.
-    fn doc_type_with_immutable_lists(
-        immutable: Value,
-        allow_setting: Value,
-        platform_version: &PlatformVersion,
-    ) -> DocumentType {
-        let schema = platform_value!({
-            "type": "object",
-            "documentsMutable": true,
-            "properties": {
-                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
-                "b": {"type": "string", "position": 1, "maxLength": 60_u32},
-                "c": {"type": "string", "position": 2, "maxLength": 60_u32},
-            },
-            "immutable": immutable,
-            "immutableAllowSetting": allow_setting,
-            "additionalProperties": false,
-        });
-        let config = DataContractConfig::default_for_version(platform_version)
-            .expect("should create a default config");
-        DocumentType::try_from_schema(
-            Identifier::new([1; 32]),
-            1,
-            config.version(),
-            "test",
-            schema,
-            None,
-            &BTreeMap::new(),
-            &config,
-            true,
-            &mut Vec::new(),
-            platform_version,
-        )
-        .expect("failed to create document type")
-    }
-
-    // Dropping an allow-setting entry only tightens: a still-absent property
-    // can no longer be set.
-    #[test]
-    fn should_accept_removing_an_allow_setting_entry() {
-        let platform_version = PlatformVersion::latest();
-
-        let old = doc_type_with_immutable_lists(
-            platform_value!(["a", "b"]),
-            platform_value!(["b"]),
-            platform_version,
-        );
-        let new = doc_type_with_immutable_lists(
-            platform_value!(["a", "b"]),
-            platform_value!([]),
-            platform_version,
-        );
-
-        let result = old
-            .as_ref()
-            .validate_update(new.as_ref(), 2, platform_version)
-            .expect("validate_update should not error");
-
-        assert!(
-            result.is_valid(),
-            "dropping an allow-setting entry must be accepted, got {:?}",
-            result.errors
-        );
-    }
-
-    // An already-immutable property cannot start allowing a set: that would
-    // relax the promise its documents were created under.
-    #[test]
-    fn should_reject_allowing_setting_of_an_already_immutable_property() {
-        let platform_version = PlatformVersion::latest();
-
-        let old = doc_type_with_immutable_lists(
-            platform_value!(["a", "b"]),
-            platform_value!([]),
-            platform_version,
-        );
-        let new = doc_type_with_immutable_lists(
-            platform_value!(["a", "b"]),
-            platform_value!(["b"]),
-            platform_version,
-        );
-
-        let result = old
-            .as_ref()
-            .validate_update(new.as_ref(), 2, platform_version)
-            .expect("validate_update should not error");
-
-        assert_matches!(
-            result.errors.as_slice(),
-            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
-                if e.additional_message().starts_with(
-                    "document type can not allow setting immutable property 'b' once it is already immutable"
-                )
-        );
-    }
-
-    // A property that becomes immutable in this update may arrive with the
-    // allowance: nothing was promised about it before.
-    #[test]
-    fn should_accept_a_newly_immutable_property_that_allows_setting() {
-        let platform_version = PlatformVersion::latest();
-
-        let old = doc_type_with_immutable_lists(
-            platform_value!(["a"]),
-            platform_value!([]),
-            platform_version,
-        );
-        let new = doc_type_with_immutable_lists(
-            platform_value!(["a", "c"]),
-            platform_value!(["c"]),
-            platform_version,
-        );
-
-        let result = old
-            .as_ref()
-            .validate_update(new.as_ref(), 2, platform_version)
-            .expect("validate_update should not error");
-
-        assert!(
-            result.is_valid(),
-            "a newly immutable property may allow setting, got {:?}",
-            result.errors
-        );
     }
 
     // The v0 regression this generation fixes: the outcome of adding an

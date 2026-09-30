@@ -2,13 +2,11 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
-use crate::serialization::{
-    js_value_to_platform_value, object_with_own_properties, platform_value_to_object,
-};
+use crate::serialization::{js_value_to_platform_value, platform_value_to_object};
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    try_from_options, try_from_options_optional, try_from_options_optional_with, try_to_bytes,
-    try_to_u16, try_to_u32, try_to_u64,
+    define_own_property, try_from_options, try_from_options_optional,
+    try_from_options_optional_with, try_to_bytes, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::data_contract::config::moderation::{
     ContractModerationDocument, ContractModerationReason, ContractWarning,
@@ -749,19 +747,19 @@ impl ContractUserModerationWasm {
         let Some((_, _, fields)) = self.0.action().changed_document() else {
             return Ok(JsValue::UNDEFINED);
         };
-        let fields = fields
-            .iter()
-            .map(|(name, value)| {
-                // A removal stays `null`: the conversion of a document's properties would read
-                // it as `undefined`, which says nothing about the field.
-                let value = match value {
-                    Value::Null => JsValue::NULL,
-                    value => platform_value_to_object(value)?,
-                };
-                Ok((name.as_str(), value))
-            })
-            .collect::<WasmDppResult<Vec<_>>>()?;
-        Ok(object_with_own_properties(fields)?.into())
+        let object = js_sys::Object::new();
+        for (name, value) in fields {
+            // A removal stays `null`: the conversion of a document's properties would read it as
+            // `undefined`, which says nothing about the field.
+            let value = match value {
+                Value::Null => JsValue::NULL,
+                value => platform_value_to_object(value)?,
+            };
+            // Defined as an own data property, so a field named like an inherited accessor
+            // (`__proto__`) is a field, not a call to the accessor
+            define_own_property(&object, name, value)?;
+        }
+        Ok(object.into())
     }
 
     /// For a suspend, the block time in milliseconds at which the suspension lapses

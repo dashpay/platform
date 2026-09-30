@@ -97,6 +97,7 @@ pub(crate) trait DocumentReferenceValidationV0 {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
+        derived_index_values: Option<&mut BTreeMap<String, Value>>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -191,6 +192,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
+        derived_index_values: Option<&mut BTreeMap<String, Value>>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -217,6 +219,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             platform,
             block_info,
             consumed_documents,
+            derived_index_values,
             transaction,
             execution_context,
             platform_version,
@@ -236,6 +239,7 @@ fn validate_document_type_references_v0(
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
+    derived_index_values: Option<&mut BTreeMap<String, Value>>,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
@@ -591,6 +595,31 @@ fn validate_document_type_references_v0(
         }
     }
 
+    // The values of the type's derived index properties (protocol version 14), from the
+    // documents this write's references fetched by id, for Drive to key a create by. A
+    // reference left out holds none; a document not fetched is left for Drive to read.
+    if let Some(derived_index_values) = derived_index_values {
+        for (name, derived) in document_type.derived_index_properties() {
+            let value = match document_data.get(&derived.reference_property) {
+                None | Some(Value::Null) => Value::Null,
+                Some(reference) => {
+                    let Ok(referenced_id) = reference.to_identifier() else {
+                        continue;
+                    };
+                    let Some(Some(referenced)) = fetched_documents
+                        .documents
+                        .get(&(contract.id(), referenced_id))
+                        .and_then(|by_type| by_type.get(&derived.referenced_document_type_name))
+                        .map(|fetched| fetched.document.as_ref())
+                    else {
+                        continue;
+                    };
+                    derived.field.value_in(referenced)?
+                }
+            };
+            derived_index_values.insert(name.clone(), value);
+        }
+    }
     Ok(SimpleConsensusValidationResult::new())
 }
 

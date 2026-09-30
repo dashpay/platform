@@ -21,6 +21,7 @@
 //! - [`platform_value_to_json`] - Human-readable format
 
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::utils::define_own_property;
 use dpp::platform_value;
 use js_sys::Object;
 use serde::Serialize;
@@ -152,13 +153,13 @@ pub(crate) fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsVa
         let keys = Object::keys(&obj);
         for i in 0..keys.length() {
             let key = keys.get(i);
-            if key.as_string().is_some() {
+            if let Some(key_str) = key.as_string() {
                 let prop_value = js_sys::Reflect::get(value, &key).map_err(|e| {
                     WasmDppError::serialization(format!("Failed to get property: {:?}", e))
                 })?;
                 let normalized = normalize_js_value_for_json(&prop_value)?;
                 // Defined, not set: a key named `__proto__` stays an own property
-                define_own_property(&new_obj, &key, &normalized)?;
+                define_own_property(&new_obj, &key_str, normalized)?;
             }
         }
         return Ok(new_obj.into());
@@ -227,9 +228,7 @@ fn normalize_map_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
         // Normalize the value - handle WASM objects, BigInt, nested Maps, etc.
         match normalize_js_value_for_json(&val) {
             Ok(normalized_val) => {
-                if let Err(e) =
-                    define_own_property(&new_obj, &JsValue::from_str(&key_str), &normalized_val)
-                {
+                if let Err(e) = define_own_property(&new_obj, &key_str, normalized_val) {
                     *error.borrow_mut() = Some(e);
                 }
             }
@@ -385,26 +384,6 @@ pub fn platform_value_to_object_with_base58_identifiers(
     platform_value_to_object(&identifier_values_to_base58(value))
 }
 
-/// Defines `name` on `object` as an own, enumerable, writable data property holding `value`,
-/// so a name like an inherited accessor (`__proto__`) is a property, not a call to the
-/// accessor, as `Reflect.set` or an assignment would make it.
-fn define_own_property(object: &Object, name: &JsValue, value: &JsValue) -> WasmDppResult<()> {
-    let descriptor = Object::new();
-    for (key, flag) in [
-        ("value", value.clone()),
-        ("writable", JsValue::TRUE),
-        ("enumerable", JsValue::TRUE),
-        ("configurable", JsValue::TRUE),
-    ] {
-        js_sys::Reflect::set(&descriptor, &JsValue::from_str(key), &flag).map_err(|_| {
-            WasmDppError::serialization(format!("failed to describe property {name:?}"))
-        })?;
-    }
-    js_sys::Reflect::define_property(object, name, &descriptor)
-        .map_err(|_| WasmDppError::serialization(format!("failed to set property {name:?}")))?;
-    Ok(())
-}
-
 /// A JS object holding each `(name, value)` as an own, enumerable data property, so a name like
 /// an inherited accessor (`__proto__`) is a property, not a call to the accessor: what the
 /// fields a document carries by name need, whatever the names are.
@@ -413,7 +392,7 @@ pub fn object_with_own_properties<K: AsRef<str>>(
 ) -> WasmDppResult<Object> {
     let object = Object::new();
     for (name, value) in entries {
-        define_own_property(&object, &JsValue::from_str(name.as_ref()), &value)?;
+        define_own_property(&object, name.as_ref(), value)?;
     }
     Ok(object)
 }

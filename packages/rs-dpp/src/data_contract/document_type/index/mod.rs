@@ -30,6 +30,7 @@ use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
 mod bucketing;
+mod derived_index_property;
 mod extract_contested_values;
 pub mod integer_range;
 #[cfg(test)]
@@ -39,6 +40,10 @@ pub mod random_index;
 pub mod time_range;
 
 pub use bucketing::IndexBucketing;
+pub(crate) use derived_index_property::{
+    parse_derived_index_property_name, DerivedIndexPropertyName,
+};
+pub use derived_index_property::{DerivedIndexField, DerivedIndexProperty};
 pub use extract_contested_values::contested_index_identifier;
 pub use integer_range::{IntegerRangeKeyType, IntegerRangeTransform};
 pub use preallocation::{PreallocatedKeySource, PreallocationBinding};

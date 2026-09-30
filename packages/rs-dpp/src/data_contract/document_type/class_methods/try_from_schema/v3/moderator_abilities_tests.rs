@@ -1012,6 +1012,20 @@ fn should_refuse_an_immutable_field() {
 }
 
 #[test]
+fn should_refuse_a_field_frozen_by_a_condition() {
+    assert_refused_naming(
+        parse_moderated(merged(
+            report_schema(platform_value!({ "changeFields": ["status"] })),
+            platform_value!({
+                "documentsMutable": true,
+                "immutable": [{ "property": "status", "when": { "present": "$old.status" } }]
+            }),
+        )),
+        &["status", "immutable` with a condition"],
+    );
+}
+
+#[test]
 fn should_refuse_a_field_holding_a_reference() {
     assert_refused_naming(
         parse_moderated(merged(
