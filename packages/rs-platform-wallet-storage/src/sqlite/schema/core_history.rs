@@ -29,6 +29,9 @@ pub(super) fn preserve_known_details(
         return Ok(merged);
     };
     if previous.transaction != incoming.transaction {
+        // TODO(precise-history-error-variants): body conflict, unknown network and
+        // net-amount overflow are reported as BlobDecode; add dedicated variants
+        // (with #[non_exhaustive]) in a breaking release.
         return Err(WalletStorageError::blob_decode(
             "same transaction id has different raw transaction bodies",
         ));
