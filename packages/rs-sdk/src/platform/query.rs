@@ -163,6 +163,8 @@ impl_wire_query!(
     proto::GetContractGroupsForContractRequest,
     proto::GetContractModerationEntriesRequest,
     proto::GetContractModerationStatusRequest,
+    proto::GetContractTeamActionSignersRequest,
+    proto::GetContractTeamActionsRequest,
     proto::GetCurrentQuorumsInfoRequest,
     proto::GetDataContractHistoryRequest,
     proto::GetDataContractsLatestVersionsRequest,

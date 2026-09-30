@@ -11,14 +11,13 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb_costs::storage_cost::removal::{StorageRemovedBytes, UNKNOWN_EPOCH};
-use intmap::IntMap;
+use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
 
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
@@ -40,10 +39,20 @@ impl Drive {
     ///
     /// Generation 1 (protocol version 14) is generation 0, and a batch that carries a storage
     /// refund forfeiture ([`DriveOperation::forfeits_storage_refunds`], a moderator's document
-    /// deletion) refunds nobody: the bytes it removes still leave the system, but whoever paid
-    /// for them gets nothing back, and the credits stay in the storage pools they were
-    /// distributed to. An estimate carries no refund to begin with, so `check_tx` sees the
-    /// same fee with or without the forfeiture.
+    /// deletion) refunds nobody for the storage its document operations remove: the document's
+    /// own bytes, and those of any index subtree the deletion empties, whoever paid for them
+    /// (an earlier author's document may have created it). The bytes still leave the system,
+    /// but nobody gets them back, and the credits stay in the storage pools they were
+    /// distributed to. When the batch also frees moderation storage someone is owed
+    /// ([`DriveOperation::refunds_moderation_storage`]: a restored removal record replaced,
+    /// which may shrink, or the approvals and the info of a team action its closing approval
+    /// moves), the document operations are applied as a GroveDB batch of their own, after the
+    /// rest and in the same transaction, and only that batch forfeits: the moderators who paid
+    /// for those keep their refunds. Otherwise nothing but the document operations frees bytes
+    /// (a fresh record or approval is an insert, the nonce and the counts keep their size), and
+    /// the batch is applied as one, forfeiting whole. An estimate carries no refund to begin
+    /// with and prices the batch as it is applied: one GroveDB batch, or two when a forfeiting
+    /// deletion also frees moderation storage.
     ///
     /// Every write of one identity balance, one contract fee pot or one prefunded specialized
     /// balance is also merged into one ([`DriveOperation::merge_balance_writes`]): each
@@ -86,11 +95,12 @@ impl Drive {
         let forfeits_storage_refunds = operations
             .iter()
             .any(DriveOperation::forfeits_storage_refunds);
-        let spared_storage_refunds: BTreeSet<[u8; 32]> = operations
-            .iter()
-            .filter_map(DriveOperation::spared_storage_refund)
-            .map(|identity| identity.to_buffer())
-            .collect();
+        // The document operations of a moderator's deletion go in a batch of their own only
+        // when something else in the batch may free bytes someone is owed.
+        let separates_forfeited_operations = forfeits_storage_refunds
+            && operations
+                .iter()
+                .any(DriveOperation::refunds_moderation_storage);
         // With no caller transaction, TTL preparation (direct drainage
         // writes), conversion reads, and the batch apply would each commit
         // on their own, so a conversion error after preparation would leave
@@ -115,6 +125,9 @@ impl Drive {
             Some(HashMap::new())
         };
 
+        // The document operations of a moderator's deletion, whose removals refund nobody
+        let mut forfeited_low_level_operations = vec![];
+
         let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 
         for drive_op in operations {
@@ -122,15 +135,20 @@ impl Drive {
                 finalize_tasks.extend(tasks);
             }
 
-            low_level_operations.append(
-                &mut drive_op.into_low_level_drive_operations_after_ttl_drain(
-                    self,
-                    &mut estimated_costs_only_with_layer_info,
-                    block_info,
-                    transaction,
-                    platform_version,
-                )?,
-            );
+            let forfeited = separates_forfeited_operations
+                && matches!(drive_op, DriveOperation::DocumentOperation(_));
+            let mut converted = drive_op.into_low_level_drive_operations_after_ttl_drain(
+                self,
+                &mut estimated_costs_only_with_layer_info,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
+            if forfeited {
+                forfeited_low_level_operations.append(&mut converted);
+            } else {
+                low_level_operations.append(&mut converted);
+            }
         }
 
         let repaid_identity_debt =
@@ -138,6 +156,12 @@ impl Drive {
 
         let mut cost_operations = vec![];
 
+        let forfeited_estimated_costs_only_with_layer_info =
+            if forfeited_low_level_operations.is_empty() {
+                None
+            } else {
+                Some(estimated_costs_only_with_layer_info.clone())
+            };
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -145,6 +169,23 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
+        if let Some(estimated_costs_only_with_layer_info) =
+            forfeited_estimated_costs_only_with_layer_info
+        {
+            let mut forfeited_cost_operations = vec![];
+            self.apply_batch_low_level_drive_operations(
+                estimated_costs_only_with_layer_info,
+                transaction,
+                forfeited_low_level_operations,
+                &mut forfeited_cost_operations,
+                &platform_version.drive,
+            )?;
+            forfeit_storage_refunds(&mut forfeited_cost_operations);
+            cost_operations.append(&mut forfeited_cost_operations);
+        } else if forfeits_storage_refunds {
+            // One batch, in which only the document operations free bytes: it forfeits whole.
+            forfeit_storage_refunds(&mut cost_operations);
+        }
         self.apply_repaid_identity_debt_to_processing_pool(
             repaid_identity_debt,
             &block_info.epoch,
@@ -153,10 +194,6 @@ impl Drive {
         )?;
         if let Some(owned_transaction) = owned_transaction {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
-        }
-
-        if forfeits_storage_refunds {
-            forfeit_storage_refunds(&mut cost_operations, &spared_storage_refunds);
         }
 
         // Execute drive operation callbacks after updating state. Nothing was written when
@@ -180,57 +217,20 @@ impl Drive {
     }
 }
 
-/// Turns every removal attributed to an identity other than the `spared` ones into a removal
-/// attributed to nobody: the same bytes leave the system (`FeeResult::removed_bytes_from_system`),
-/// and no refund is computed for them. A moderator's deletion removes the document, the nonce it
-/// bumps keeps its size, and a fresh removal record frees nothing; when it replaces the record
-/// of a deletion a moderator restored, the bytes the fresh record gives up are the record
-/// holder's, and the deletion spares that identity, refunded as for any replacement. With no
-/// spared identity among its removals, an operation's removal becomes a basic one, as before
-/// any identity was spared.
-fn forfeit_storage_refunds(
-    cost_operations: &mut [LowLevelDriveOperation],
-    spared: &BTreeSet<[u8; 32]>,
-) {
+/// Turns every removal attributed to an identity into a removal attributed to nobody: the same
+/// bytes leave the system (`FeeResult::removed_bytes_from_system`), and no refund is computed
+/// for them. Given the costs of a batch in which only a moderator's deletion's document
+/// operations free bytes: the document's, whoever paid for it, its owner or an earlier one, and
+/// those of any index subtree the deletion empties, whoever created it.
+fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
     for operation in cost_operations.iter_mut() {
         let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation else {
             continue;
         };
-        let StorageRemovedBytes::SectionedStorageRemoval(removals) =
-            &mut cost.storage_cost.removed_bytes
-        else {
-            continue;
-        };
-        if !removals.keys().any(|identity| spared.contains(identity)) {
+        if let StorageRemovedBytes::SectionedStorageRemoval(_) = &cost.storage_cost.removed_bytes {
             let removed_bytes = cost.storage_cost.removed_bytes.total_removed_bytes();
             cost.storage_cost.removed_bytes =
                 StorageRemovedBytes::BasicStorageRemoval(removed_bytes);
-            continue;
-        }
-        // The system identifier's removals are summed into the bytes removed from the system
-        // whatever their epoch, and refund nobody
-        let system = [0u8; 32];
-        let forfeited_identities: Vec<[u8; 32]> = removals
-            .keys()
-            .filter(|identity| !spared.contains(*identity) && **identity != system)
-            .copied()
-            .collect();
-        let mut forfeited_bytes = 0u32;
-        for identity in forfeited_identities {
-            if let Some(by_epoch) = removals.remove(&identity) {
-                forfeited_bytes = by_epoch
-                    .values()
-                    .fold(forfeited_bytes, |sum, bytes| sum.saturating_add(*bytes));
-            }
-        }
-        if forfeited_bytes > 0 {
-            let system_removals = removals.entry(system).or_insert_with(IntMap::new);
-            match system_removals.get_mut(UNKNOWN_EPOCH) {
-                Some(bytes) => *bytes = bytes.saturating_add(forfeited_bytes),
-                None => {
-                    system_removals.insert(UNKNOWN_EPOCH, forfeited_bytes);
-                }
-            }
         }
     }
 }
@@ -241,6 +241,7 @@ mod tests {
     use grovedb_costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
     use grovedb_costs::storage_cost::StorageCost;
     use grovedb_costs::OperationCost;
+    use intmap::IntMap;
 
     #[test]
     fn should_attribute_a_forfeited_removal_to_nobody() {
@@ -269,7 +270,7 @@ mod tests {
             }),
         ];
 
-        forfeit_storage_refunds(&mut cost_operations, &BTreeSet::new());
+        forfeit_storage_refunds(&mut cost_operations);
 
         let removed: Vec<&StorageRemovedBytes> = cost_operations
             .iter()
@@ -287,48 +288,5 @@ mod tests {
                 &StorageRemovedBytes::BasicStorageRemoval(9),
             ]
         );
-    }
-
-    #[test]
-    fn should_keep_the_refund_of_a_spared_identity() {
-        let per_epoch = |entries: &[(u16, u32)]| {
-            let mut per_epoch = IntMap::new();
-            for (epoch, bytes) in entries {
-                per_epoch.insert(*epoch, *bytes);
-            }
-            per_epoch
-        };
-        let mut removal = StorageRemovalPerEpochByIdentifier::default();
-        // The deleted document's owner, the moderator holding the replaced record, and bytes
-        // that were nobody's already
-        removal.insert([7; 32], per_epoch(&[(0, 40), (3, 2)]));
-        removal.insert([8; 32], per_epoch(&[(1, 30)]));
-        removal.insert([0; 32], per_epoch(&[(2, 5)]));
-        let mut cost_operations = vec![LowLevelDriveOperation::CalculatedCostOperation(
-            OperationCost {
-                storage_cost: StorageCost {
-                    added_bytes: 0,
-                    replaced_bytes: 0,
-                    removed_bytes: StorageRemovedBytes::SectionedStorageRemoval(removal),
-                },
-                ..Default::default()
-            },
-        )];
-
-        forfeit_storage_refunds(&mut cost_operations, &BTreeSet::from([[8; 32]]));
-
-        let LowLevelDriveOperation::CalculatedCostOperation(cost) = &cost_operations[0] else {
-            unreachable!("only calculated costs were given");
-        };
-        let StorageRemovedBytes::SectionedStorageRemoval(removals) =
-            &cost.storage_cost.removed_bytes
-        else {
-            panic!("the spared identity keeps a sectioned removal");
-        };
-        // The spared identity keeps its removal, per epoch; the owner's joins the system's
-        assert_eq!(removals.len(), 2);
-        assert_eq!(removals[&[8; 32]].get(1), Some(&30));
-        assert_eq!(removals[&[0; 32]].values().sum::<u32>(), 5 + 42);
-        assert_eq!(cost.storage_cost.removed_bytes.total_removed_bytes(), 77);
     }
 }

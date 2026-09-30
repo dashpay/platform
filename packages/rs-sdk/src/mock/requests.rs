@@ -30,7 +30,8 @@ use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
     ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
     ContractModerationEntry, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationReason, ContractWarning,
+    ContractModerationListStatuses, ContractModerationReason, ContractTeamAction,
+    ContractTeamActionEntry, ContractTeamActionSigners, ContractTeamActions, ContractWarning,
 };
 use drive_proof_verifier::types::contract_groups::{
     ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
@@ -565,6 +566,49 @@ impl MockResponse for ContractDocumentRemovals {
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode ContractDocumentRemovals");
         ContractDocumentRemovals(removals.into_iter().map(decode_removal_entry).collect())
+    }
+}
+
+impl MockResponse for ContractTeamActions {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // An action has a bincode encoding of its own; the action id is the key it is stored
+        // under.
+        let actions: Vec<(Identifier, ContractTeamAction)> = self
+            .actions()
+            .iter()
+            .map(|entry| (entry.action_id, entry.action.clone()))
+            .collect();
+        bincode::encode_to_vec(actions, BINCODE_CONFIG).expect("encode ContractTeamActions")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (actions, _): (Vec<(Identifier, ContractTeamAction)>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode ContractTeamActions");
+        ContractTeamActions(
+            actions
+                .into_iter()
+                .map(|(action_id, action)| ContractTeamActionEntry { action_id, action })
+                .collect(),
+        )
+    }
+}
+
+impl MockResponse for ContractTeamActionSigners {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self.signers(), BINCODE_CONFIG)
+            .expect("encode ContractTeamActionSigners")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (signers, _): (Vec<Identifier>, _) = bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode ContractTeamActionSigners");
+        ContractTeamActionSigners(signers)
     }
 }
 

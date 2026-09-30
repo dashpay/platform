@@ -23,8 +23,12 @@ impl Drive {
     /// It is replaced in place, as a suspension is, when a restore marks it restored and when
     /// a restored document is deleted again; two operations on one key would fail the batch.
     /// A replacement may change size, and its flags follow GroveDB's flag merge: a longer
-    /// record passes, with the refund of its removal, to the moderator that replaced it, who
-    /// pays for the added bytes; a shorter or an equally long one stays the first moderator's.
+    /// record passes to the moderator that replaced it, who pays for the bytes it adds; a
+    /// shorter one refunds the bytes it frees to the moderator the record named, and passes to
+    /// the one that replaced it only when written in the epoch the record was paid in, or once
+    /// the record spans epochs, a record paid in one epoch keeping its flags, and so its
+    /// earlier moderator, when shortened in a later one; an equally long one keeps the earlier
+    /// moderator's flags.
     ///
     /// An estimate prices a replacement as a fresh insert of what it adds to the record it
     /// replaces (`replaced_record_size`), so never less than the bytes it adds: GroveDB's

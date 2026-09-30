@@ -2,6 +2,7 @@ mod v0;
 mod v1;
 mod v2;
 
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -1042,6 +1043,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.moderator_settled_deletion(),
+        }
+    }
+
     fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentType::V0(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
@@ -1278,6 +1287,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.moderator_settled_deletion(),
+        }
+    }
+
     fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeRef::V0(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
@@ -1477,6 +1494,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_settled_deletion(),
         }
     }
 

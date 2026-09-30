@@ -298,6 +298,12 @@ pub(crate) mod property_names {
         /// owner deleting it themselves is. Default `false`: the owner forfeits it. Needs
         /// `delete: true`.
         pub const DELETE_REFUNDS_OWNER: &str = "deleteRefundsOwner";
+        /// Who must approve a moderator's deletion of a document once it is settled, past
+        /// `deleteWithin`: an object with `leader` (whether the seated team's leader must be
+        /// among the approvals, default `false`) and `approvals` (how many members of the team
+        /// must approve, the leader counted, default 1). See [`delete_settled`] for the keys.
+        /// Needs `deleteWithin` and a contract whose moderators are an elected team.
+        pub const DELETE_SETTLED: &str = "deleteSettled";
         /// The property paths whose values a moderator's removal record keeps, copied from
         /// the document as it was deleted: what of it stays public once it is gone (the
         /// hashtag of a removed post, say). Any declared, stored property at any depth, and
@@ -308,6 +314,14 @@ pub(crate) mod property_names {
         /// neither set them when creating it nor change them when replacing it, unless the
         /// owner moderates the contract.
         pub const CHANGE_FIELDS: &str = "changeFields";
+
+        /// The keys of the `deleteSettled` object.
+        pub mod delete_settled {
+            /// Whether the seated team's leader must be among the approvals.
+            pub const LEADER: &str = "leader";
+            /// How many members of the seated team must approve, the leader counted.
+            pub const APPROVALS: &str = "approvals";
+        }
     }
     /// Doctype-level time to live, in seconds: the platform deletes each document of the
     /// type once `$createdAt` plus this many seconds has passed, whoever owns it and

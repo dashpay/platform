@@ -838,7 +838,7 @@ pub(super) fn remove_post(
         ));
     }
     operations.push(DriveOperation::ContractModerationOperation(
-        ContractModerationOperationType::ForfeitStorageRefunds { spared: None },
+        ContractModerationOperationType::ForfeitStorageRefunds,
     ));
     drive
         .apply_drive_operations(

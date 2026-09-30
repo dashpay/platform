@@ -1676,7 +1676,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     moderation charters system contract is written in the new keywords;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
-///
 /// 64. **`refersTo: moderatedDocument`**: a third kind of document reference,
 ///     between `permanentDocument` and `deletableDocument` and disjoint from
 ///     both (`DocumentReferenceKind`, `DocumentTypeV2Getters::document_reference_kind`),
@@ -1765,7 +1764,55 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract update (document type update validation 1) a condition is
 ///     kept as it is or dropped for listing the property without one.
 ///
-/// 67. **A preallocated index may be bound through `moderatedDocument`**:
+/// 67. **A seated team deletes a settled document together**: past a type's
+///     `deleteWithin` window no moderator deletes a document alone (41116); the
+///     new `moderatorAbilities.deleteSettled: { leader, approvals }` (meta-schema
+///     v3, `DocumentTypeV2::moderator_settled_deletion`, fixed with the type,
+///     40212) lets the members of an elected contract's seated team delete it
+///     once `approvals` of them approve, the leader among them when `leader` is
+///     set. It needs `deleteWithin` and an elected declaration giving the team
+///     `deleteDocuments` on the type (10231, 10900), `approvals` from 1 to the
+///     members the declared team can hold (its leader,
+///     `SystemLimits::max_moderation_charter_elected_members` and the
+///     declaration's `maxAddedModerators`), the upper bound checked at
+///     registration only; a seated team whose charter elects fewer members,
+///     and so holds fewer than the rule asks for, must have all it can hold
+///     approve.
+///     `ContractUserModeration` gains two actions (appended), shaped like a
+///     token group's action: `DeleteSettledDocument` proposes the deletion, kept
+///     under the contract as a team action (other tree key `24`, `M` active and
+///     `X` closed, each `action id -> { I: the action, S: SumTree(member ->
+///     SumItem(1)) }`, created with the contract) by an id computed from the
+///     contract, the proposer, its nonce, the document and the reason,
+///     naming the document as it is (its last modification and `$revision`)
+///     and the reason; and
+///     `ApproveTeamAction { action_id }` approves it. Nothing lapses, but an
+///     approval of a document changed since (its `$revision` moved, a
+///     moderator's change of its fields included) is refused. Each approval is
+///     its own sum item, never rewritten; when the approvals given could meet
+///     the rule the team is read and the approvals of members who left are
+///     dropped, refunded to them, and the one whose counted approvals meet it
+///     deletes the document as `DeleteDocument` does, moves the action with the
+///     approvals that counted to the closed actions (refunding each), and counts
+///     toward the action share for every counted approver. The storage refund
+///     forfeiture of a moderator's deletion now takes the document operations
+///     alone (the document's bytes and any index subtree the deletion empties,
+///     whoever paid for them), applied as a GroveDB batch of their own when the
+///     batch also frees moderation storage someone is owed (a restored removal
+///     record replaced, approvals moved or dropped), which is refunded as ever.
+///     The proof is the signer's approval, active or closed
+///     (`VerifiedContractTeamActionSignature`, appended); the new
+///     `getContractTeamActions` and `getContractTeamActionSigners` queries read
+///     them. New errors, appended: `DocumentTypeNotDeletableOnceSettledError`
+///     (41204), `ContractModerationTeamNotSeatedError` (41205),
+///     `DocumentNotSettledError` (41206), `ContractTeamActionDoesNotExistError`
+///     (41207), `ContractTeamActionAlreadySignedError` (41208),
+///     `SettledDeletionNotRestorableError` (41209): a deletion the team approved
+///     is never restored, by the leader or any member,
+///     `ContractTeamActionAlreadyCompletedError` (41210) and
+///     `ContractTeamActionDocumentChangedError` (41211).
+///
+/// 68. **A preallocated index may be bound through `moderatedDocument`**:
 ///     `Index::preallocation_bindings`, in place, binds through a same-contract
 ///     `moderatedDocument` reference as through a `permanentDocument` one, and a
 ///     binding records its kind (`PreallocationBinding::kind`). Through a moderated
@@ -1849,7 +1896,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody unless its type sets `deleteRefundsOwner`, but the moderator holding a removal record it replaces; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

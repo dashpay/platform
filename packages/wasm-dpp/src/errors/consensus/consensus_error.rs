@@ -107,8 +107,12 @@ use dpp::consensus::basic::moderation_charter::{
 use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
-    ContractModerationAbilityNotGrantedError, ModerationCharterAddedModeratorLimitReachedError,
-    ModerationReasonNotListedError,
+    ContractModerationAbilityNotGrantedError, ContractModerationTeamNotSeatedError,
+    DocumentNotSettledError, DocumentTypeNotDeletableOnceSettledError,
+    ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
+    ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
+    ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    SettledDeletionNotRestorableError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
@@ -721,6 +725,30 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ModerationReasonNotListedError(e) => {
             generic_consensus_error!(ModerationReasonNotListedError, e).into()
+        }
+        StateError::DocumentTypeNotDeletableOnceSettledError(e) => {
+            generic_consensus_error!(DocumentTypeNotDeletableOnceSettledError, e).into()
+        }
+        StateError::ContractModerationTeamNotSeatedError(e) => {
+            generic_consensus_error!(ContractModerationTeamNotSeatedError, e).into()
+        }
+        StateError::DocumentNotSettledError(e) => {
+            generic_consensus_error!(DocumentNotSettledError, e).into()
+        }
+        StateError::ContractTeamActionDoesNotExistError(e) => {
+            generic_consensus_error!(ContractTeamActionDoesNotExistError, e).into()
+        }
+        StateError::ContractTeamActionAlreadySignedError(e) => {
+            generic_consensus_error!(ContractTeamActionAlreadySignedError, e).into()
+        }
+        StateError::SettledDeletionNotRestorableError(e) => {
+            generic_consensus_error!(SettledDeletionNotRestorableError, e).into()
+        }
+        StateError::ContractTeamActionAlreadyCompletedError(e) => {
+            generic_consensus_error!(ContractTeamActionAlreadyCompletedError, e).into()
+        }
+        StateError::ContractTeamActionDocumentChangedError(e) => {
+            generic_consensus_error!(ContractTeamActionDocumentChangedError, e).into()
         }
         StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
             generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()

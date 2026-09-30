@@ -1,11 +1,14 @@
 //! Contract moderation queries: one identity's status on a moderated contract, one page of a
-//! contract's banlist, suspension list or warning list, and the fee pots a contract's
+//! contract's banlist, suspension list or warning list, the records of the documents its
+//! moderators deleted, the actions its seated team votes on, and the fee pots a contract's
 //! document action fees collect in.
 
 mod contract_document_removals;
 mod contract_fee_pots;
 mod contract_moderation_entries;
 mod contract_moderation_status;
+mod contract_team_action_signers;
+mod contract_team_actions;
 
 use crate::error::query::QueryError;
 use crate::error::Error;
@@ -14,18 +17,25 @@ use dapi_grpc::platform::v0::get_contract_document_removals_response::{
     ContractDocumentRemoval as ContractDocumentRemovalProto,
     ContractDocumentRestoration as ContractDocumentRestorationProto,
 };
+use dapi_grpc::platform::v0::get_contract_team_actions_response::{
+    contract_team_action, ContractTeamAction as ContractTeamActionProto,
+    DeleteSettledDocument as DeleteSettledDocumentProto,
+};
 use dapi_grpc::platform::v0::ContractModerationDocument as ContractModerationDocumentProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
 use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
 use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::moderation::ContractTeamActionEvent;
 use dpp::data_contract::config::moderation::{
     ContractModerationList, ContractModerationReason, ContractWarning,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use drive::drive::contract::moderation::types::{
+    ContractDocumentRemovalEntry, ContractTeamActionEntry,
+};
 
 /// Parses a 32 byte identifier out of a request field, naming the field in the error.
 pub(super) fn identifier_from_request(
@@ -107,6 +117,31 @@ pub(super) fn removal_entry_to_response(
     }
 }
 
+/// A team action as the wire carries it.
+pub(super) fn team_action_to_response(entry: ContractTeamActionEntry) -> ContractTeamActionProto {
+    let ContractTeamActionEvent::DeleteSettledDocument {
+        document_type_name,
+        document_id,
+        document_last_modified_at,
+        document_revision,
+        reason,
+    } = entry.action.event;
+    ContractTeamActionProto {
+        action_id: entry.action_id.to_vec(),
+        proposer_id: entry.action.proposer_id.to_vec(),
+        proposed_at: entry.action.proposed_at,
+        event: Some(contract_team_action::Event::DeleteSettledDocument(
+            DeleteSettledDocumentProto {
+                document_type_name,
+                document_id: document_id.to_vec(),
+                document_last_modified_at,
+                document_revision,
+                reason: Some(reason_to_response(reason)),
+            },
+        )),
+    }
+}
+
 /// Warnings as the wire carries them, oldest first as stored.
 pub(super) fn warnings_to_response(warnings: Vec<ContractWarning>) -> Vec<ContractWarningProto> {
     warnings
@@ -149,6 +184,38 @@ impl<C> Platform<C> {
     }
 }
 
+impl<C> Platform<C> {
+    /// Nothing, or a query error when the contract does not exist or keeps no team actions:
+    /// only a contract with a document type that sets `moderatorAbilities.deleteSettled` has a
+    /// team actions tree, and a proof over a tree that does not exist could not be built.
+    pub(super) fn check_keeps_team_actions(
+        &self,
+        contract_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Result<(), QueryError>, Error> {
+        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
+            contract_id.to_buffer(),
+            false,
+            None,
+            platform_version,
+        )?
+        else {
+            return Ok(Err(QueryError::NotFound(format!(
+                "contract {} not found",
+                contract_id
+            ))));
+        };
+        if !contract_fetch_info.contract.keeps_team_actions() {
+            return Ok(Err(QueryError::InvalidArgument(format!(
+                "contract {} keeps no team actions: none of its document types lets a seated \
+                 team delete its settled documents",
+                contract_id
+            ))));
+        }
+        Ok(Ok(()))
+    }
+}
+
 #[cfg(test)]
 pub(super) mod tests {
     use crate::query::tests::store_data_contract;
@@ -160,10 +227,20 @@ pub(super) mod tests {
         ContractModerationConfig, ContractModerationList, ContractModerationReason,
         ContractModerators, ContractWarning,
     };
+    use dpp::data_contract::config::moderation::{
+        ContractTeamAction, ContractTeamActionEvent, ElectedModerators, InterimModerators,
+        ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+    };
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::identifier::Identifier;
+    use dpp::platform_value::platform_value;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
+    use drive::drive::contract::moderation::types::ContractTeamActionWrite;
+    use drive::drive::Drive;
+    use drive::util::batch::{ContractModerationOperationType, DriveOperation};
+    use std::collections::{BTreeMap, BTreeSet};
 
     pub const BANLIST: i32 = 1;
     pub const SUSPENSIONS: i32 = 2;
@@ -316,5 +393,106 @@ pub(super) mod tests {
         assert!(list_from_request(7, "list").is_err());
         // The proto3 default, an omitted field, is refused rather than read as the banlist.
         assert!(list_from_request(0, "list").is_err());
+    }
+
+    const SETTLED_POST: &str = "post";
+
+    /// A contract whose elected team deletes settled posts once its leader approves
+    pub fn contract_with_settled_posts() -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.set_config(contract.config().clone().with_moderation(Some(
+            ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                    join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                    vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                    challenge_cool_down: None,
+                    election_delay: None,
+                    max_added_moderators: 0,
+                    moderated_document_types: BTreeMap::from([(
+                        SETTLED_POST.to_string(),
+                        BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                    )]),
+                    interim: InterimModerators::ContractOwner,
+                    owner_protected: false,
+                })),
+                warnings: false,
+            },
+        )));
+        contract
+            .set_document_schema(
+                SETTLED_POST,
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    },
+                    "required": ["$updatedAt"],
+                    "additionalProperties": false,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": 86400,
+                        "deleteSettled": { "leader": true },
+                    },
+                }),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to add the post type");
+        contract
+    }
+
+    /// The proposal of the deletion of post `seed`
+    pub fn settled_deletion_proposal(seed: u8) -> ContractTeamAction {
+        ContractTeamAction {
+            proposer_id: Identifier::from([0x77; 32]),
+            proposed_at: 1_000 + seed as u64,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: SETTLED_POST.to_string(),
+                document_id: Identifier::from([seed; 32]),
+                document_last_modified_at: 10 + seed as u64,
+                // Every third one is of a type whose documents carry no revision.
+                document_revision: (!seed.is_multiple_of(3)).then_some(seed as u64),
+                reason: ContractModerationReason {
+                    code: Some(seed as u16),
+                    text: "doxxing".to_string(),
+                    documents: vec![],
+                    reason_document_id: None,
+                },
+            },
+        }
+    }
+
+    /// Proposes the deletion of post `seed` as action `seed`, closed at once when `closes`
+    pub fn propose_settled_deletion(
+        drive: &Drive,
+        contract: &DataContract,
+        seed: u8,
+        closes: bool,
+    ) {
+        drive
+            .apply_drive_operations(
+                vec![DriveOperation::ContractModerationOperation(
+                    ContractModerationOperationType::AddTeamActionSignature {
+                        contract_id: contract.id(),
+                        action_id: Identifier::from([seed; 32]),
+                        signer_id: Identifier::from([0x77; 32]),
+                        write: ContractTeamActionWrite::Propose {
+                            action: settled_deletion_proposal(seed),
+                            closes,
+                        },
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("expected to record the proposal");
     }
 }

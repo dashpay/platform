@@ -1,3 +1,4 @@
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::DerivedIndexProperty;
 use crate::data_contract::document_type::property::{
@@ -67,6 +68,12 @@ pub trait DocumentTypeV2Getters {
     /// forfeiting it, when left out, on a type whose documents moderators can not delete, and
     /// on those that predate the keyword.
     fn moderator_deletions_refund_owner(&self) -> bool;
+
+    /// Who must approve a moderator's deletion of a document of this type once it is settled,
+    /// past its `moderatorAbilities.deleteWithin` window (`moderatorAbilities.deleteSettled`,
+    /// protocol version 14). `None` when no moderator deletes a settled document, and on every
+    /// type that predates the keyword.
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule>;
 
     /// The property paths whose values a moderator's removal record of a document of this
     /// type keeps, copied from the document as it was deleted

@@ -1,7 +1,9 @@
 //! Contract moderation queries: one identity's status on a moderated contract
 //! (`getContractModerationStatus`), one page of a contract's banlist, suspension list or
-//! warning list (`getContractModerationEntries`) and the records of the documents its
-//! moderators deleted (`getContractDocumentRemovals`).
+//! warning list (`getContractModerationEntries`), the records of the documents its
+//! moderators deleted (`getContractDocumentRemovals`), and the actions its seated moderation
+//! team votes on (`getContractTeamActions`) with who approved each
+//! (`getContractTeamActionSigners`).
 
 use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
@@ -13,10 +15,13 @@ use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::contract_moderation::{
-    ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
-    ContractDocumentRemovalsPageQuery, ContractDocumentRemovalsSelection,
-    ContractModerationEntries, ContractModerationEntriesPageQuery, ContractModerationList,
-    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationStatusQuery,
+    default_contract_document_removals_limit, ContractDocumentRemoval,
+    ContractDocumentRemovalEntry, ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection, ContractModerationEntries,
+    ContractModerationEntriesPageQuery, ContractModerationList, ContractModerationListStatus,
+    ContractModerationListStatuses, ContractModerationStatusQuery, ContractTeamActionEntry,
+    ContractTeamActionEvent, ContractTeamActionSigners, ContractTeamActionSignersQuery,
+    ContractTeamActions, ContractTeamActionsPageQuery, GroupActionStatus,
 };
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use js_sys::Array;
@@ -24,8 +29,12 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::{moderation_reason_to_js, moderation_warnings_to_js};
+use wasm_dpp2::error::WasmDppError;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::serialization::conversions::kept_fields_to_js;
+use wasm_dpp2::utils::{
+    try_from_options_optional_with, try_from_options_with, try_to_array, try_to_string, try_to_u64,
+};
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_MODERATION_QUERY_TS: &'static str = r#"
@@ -188,6 +197,120 @@ export interface ContractDocumentRemovalsPage {
   removals: ContractDocumentRemovalEntry[];
   nextStartAfter?: string;
 }
+
+/**
+ * A team action's status: `active` while its approvals fall short of its rule, `closed` once
+ * they met it and the action ran.
+ */
+export type ContractTeamActionStatus = 'active' | 'closed';
+
+/**
+ * Query parameters for one page of the actions an elected contract's seated moderation team
+ * votes on (`getContractTeamActions`), active or closed, in action id order.
+ */
+export interface ContractTeamActionsQuery {
+  /** The elected contract. */
+  contractId: IdentifierLike;
+  /** Which actions to read: those still gathering approvals, or those that ran. */
+  status: ContractTeamActionStatus;
+  /**
+   * Start the page at this action; omit for the first page. Use the page's
+   * `nextStartAtActionId`.
+   */
+  startAtActionId?: IdentifierLike;
+  /**
+   * Whether the page includes the `startAtActionId` action itself. Refused without
+   * `startAtActionId`.
+   * @default false
+   */
+  startAtActionIdIncluded?: boolean;
+  /**
+   * Maximum number of actions to return, 1 to 100.
+   * @default 100
+   */
+  limit?: number | bigint;
+}
+
+/**
+ * What a team action does once its approvals meet its rule: today the deletion of a settled
+ * document, one last modified longer ago than its type's `moderatorAbilities.deleteWithin`
+ * window, which the type's `moderatorAbilities.deleteSettled` lets the seated team delete
+ * together.
+ */
+export interface ContractTeamActionDeleteSettledDocument {
+  type: 'deleteSettledDocument';
+  /** The document's type. */
+  documentTypeName: string;
+  /** The document. */
+  documentId: string;
+  /**
+   * The document's `$updatedAt` (or `$createdAt`) when proposed, in milliseconds: the
+   * approvals are of the document as it was then.
+   */
+  documentLastModifiedAt: bigint;
+  /**
+   * The document's `$revision` when proposed; absent on a type whose documents carry none.
+   * An approval of a document changed since, a moderator's change of its fields included, is
+   * refused.
+   */
+  documentRevision?: bigint;
+  /** Why, as the proposer gave it: stored with the removal record the deletion leaves. */
+  reason: ContractModerationReason;
+}
+
+/** What a team action does once approved. */
+export type ContractTeamActionEvent = ContractTeamActionDeleteSettledDocument;
+
+/**
+ * One action an elected contract's seated moderation team votes on: one member proposes it,
+ * which is its own approval, and the others approve it by its id until the approvals meet its
+ * rule, when it runs and closes. A proposal never lapses. Use `getContractTeamActionSigners`
+ * for who approved it.
+ */
+export interface ContractTeamActionEntry {
+  /** The action's id: what the other members approve it by. */
+  actionId: string;
+  /** The member of the seated team that proposed it. */
+  proposerId: string;
+  /** The time of the block of the proposal, in milliseconds. */
+  proposedAt: bigint;
+  /** What it does once approved. */
+  event: ContractTeamActionEvent;
+}
+
+/**
+ * One page of team actions, in action id order. `nextStartAtActionId` is the cursor of the
+ * next page and is absent when this page holds fewer actions than the limit, which makes it the
+ * last one.
+ */
+export interface ContractTeamActionsPage {
+  actions: ContractTeamActionEntry[];
+  nextStartAtActionId?: string;
+}
+
+/**
+ * Query parameters for who approved one of the actions an elected contract's seated moderation
+ * team votes on (`getContractTeamActionSigners`). The action is looked up among the actions of
+ * `status` alone: one that closed is no longer among the active ones.
+ */
+export interface ContractTeamActionSignersQuery {
+  /** The elected contract. */
+  contractId: IdentifierLike;
+  /** Whether the action is active or closed. */
+  status: ContractTeamActionStatus;
+  /** The action. */
+  actionId: IdentifierLike;
+}
+
+/**
+ * The members that approved a team action, the proposer among them unless it left the team
+ * and its approval was dropped, in identity id order; none when the contract holds no action
+ * of that id with the status asked. A closed action keeps the approvals that counted when it
+ * ran.
+ */
+export interface ContractTeamActionSigners {
+  signerIds: string[];
+}
 "#;
 
 #[wasm_bindgen]
@@ -200,6 +323,12 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ContractDocumentRemovalsQuery")]
     pub type ContractDocumentRemovalsQueryJs;
+
+    #[wasm_bindgen(typescript_type = "ContractTeamActionsQuery")]
+    pub type ContractTeamActionsQueryJs;
+
+    #[wasm_bindgen(typescript_type = "ContractTeamActionSignersQuery")]
+    pub type ContractTeamActionSignersQueryJs;
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -240,17 +369,137 @@ struct ContractModerationEntriesQueryInput {
     limit: Option<u32>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ContractDocumentRemovalsQueryInput {
+/// The query of the records a contract keeps per document of one type, by the ids named or as
+/// a page: the removal records.
+struct ContractDocumentRecordsQueryInput {
     contract_id: IdentifierWasm,
     document_type_name: String,
-    #[serde(default)]
     document_ids: Option<Vec<IdentifierWasm>>,
-    #[serde(default)]
     start_after: Option<IdentifierWasm>,
-    #[serde(default)]
     limit: Option<u32>,
+}
+
+impl ContractDocumentRecordsQueryInput {
+    /// Reads `query` field by field, each `IdentifierLike` on its own, so an `Identifier`
+    /// instance is taken as well as a base58 string or bytes: it does not survive the serde
+    /// conversion a whole-object deserialization goes through. `context` names the query in
+    /// the refusal of a malformed field.
+    fn from_js(query: JsValue, context: &'static str) -> Result<Self, WasmSdkError> {
+        let query = required_query(query)?;
+        let invalid = invalid_query_field(context);
+        let contract_id =
+            IdentifierWasm::try_from_options(&query, "contractId").map_err(&invalid)?;
+        let document_type_name = try_from_options_with(&query, "documentTypeName", |value| {
+            try_to_string(value, "documentTypeName")
+        })
+        .map_err(&invalid)?;
+        let document_ids = try_from_options_optional_with(&query, "documentIds", |value| {
+            try_to_array(value, "documentIds")?
+                .iter()
+                .map(|id| IdentifierWasm::try_from(&id))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(&invalid)?;
+        let start_after =
+            IdentifierWasm::try_from_optional_options(&query, "startAfter").map_err(&invalid)?;
+        let limit = optional_limit_from_js(&query).map_err(&invalid)?;
+        Ok(Self {
+            contract_id,
+            document_type_name,
+            document_ids,
+            start_after,
+            limit,
+        })
+    }
+
+    /// The contract, the document type, and which of its records to read: the `documentIds`
+    /// named, or else one page after `startAfter`, of `limit` records or of the page cap of
+    /// `platform_version` when it names none.
+    fn into_parts(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Identifier, String, ContractDocumentRemovalsSelection), WasmSdkError> {
+        let contract_id = Identifier::from(self.contract_id);
+        if let Some(document_ids) = self.document_ids {
+            // A read by ids is not paged: a cursor or a limit beside it is refused rather than
+            // dropped, or a caller expecting a page would read something else.
+            if self.start_after.is_some() || self.limit.is_some() {
+                return Err(WasmSdkError::invalid_argument(
+                    "`startAfter` and `limit` page through every record and are not valid beside `documentIds`",
+                ));
+            }
+            // No id named is not a page of every record either, and the node refuses it.
+            if document_ids.is_empty() {
+                return Err(WasmSdkError::invalid_argument(
+                    "`documentIds` must name at least one document",
+                ));
+            }
+            return Ok((
+                contract_id,
+                self.document_type_name,
+                ContractDocumentRemovalsSelection::DocumentIds(
+                    document_ids.into_iter().map(Identifier::from).collect(),
+                ),
+            ));
+        }
+        let limit = match self.limit {
+            None => default_contract_document_removals_limit(platform_version),
+            Some(limit) => u16::try_from(limit).map_err(|_| {
+                WasmSdkError::invalid_argument(format!(
+                    "limit {limit} exceeds maximum of {}",
+                    u16::MAX
+                ))
+            })?,
+        };
+        Ok((
+            contract_id,
+            self.document_type_name,
+            ContractDocumentRemovalsSelection::Page {
+                start_after: self.start_after.map(Identifier::from),
+                limit,
+            },
+        ))
+    }
+}
+
+/// A query's optional `limit`: a number, a numeric string or a BigInt, as the whole-object
+/// decoding took it.
+fn optional_limit_from_js(query: &JsValue) -> Result<Option<u32>, WasmDppError> {
+    try_from_options_optional_with(query, "limit", |value| {
+        let limit = try_to_u64(value, "limit")?;
+        u32::try_from(limit).map_err(|_| {
+            WasmDppError::invalid_argument(format!(
+                "'limit' {limit} exceeds maximum of {}",
+                u32::MAX
+            ))
+        })
+    })
+}
+
+/// The `status` a team actions or team action signers query names: `'active'` or `'closed'`.
+fn team_action_status_from_js(query: &JsValue) -> Result<GroupActionStatus, WasmDppError> {
+    let status = try_from_options_with(query, "status", |value| try_to_string(value, "status"))?;
+    match status.as_str() {
+        "active" => Ok(GroupActionStatus::ActionActive),
+        "closed" => Ok(GroupActionStatus::ActionClosed),
+        other => Err(WasmDppError::invalid_argument(format!(
+            "`status` must be 'active' or 'closed', got '{other}'"
+        ))),
+    }
+}
+
+/// How a malformed field of a query read field by field is refused: naming the query,
+/// `context`.
+fn invalid_query_field(context: &'static str) -> impl Fn(WasmDppError) -> WasmSdkError {
+    move |error| WasmSdkError::invalid_argument(format!("Invalid {context}: {error}"))
+}
+
+/// A query object that is there: an absent one is refused before any field is read.
+fn required_query(query: JsValue) -> Result<JsValue, WasmSdkError> {
+    if query.is_undefined() || query.is_null() {
+        return Err(WasmSdkError::invalid_argument("Query object is required"));
+    }
+    Ok(query)
 }
 
 impl WasmSdk {
@@ -320,51 +569,91 @@ fn parse_removals_query(
     query: ContractDocumentRemovalsQueryJs,
     platform_version: &PlatformVersion,
 ) -> Result<ContractDocumentRemovalsPageQuery, WasmSdkError> {
-    let input: ContractDocumentRemovalsQueryInput = deserialize_required_query(
-        query,
-        "Query object is required",
+    let input = ContractDocumentRecordsQueryInput::from_js(
+        query.into(),
         "contract document removals query",
     )?;
-    let contract_id = Identifier::from(input.contract_id);
-
-    if let Some(document_ids) = input.document_ids {
-        // A read by ids is not paged: a cursor or a limit beside it is refused rather than
-        // dropped, or a caller expecting a page would read something else.
-        if input.start_after.is_some() || input.limit.is_some() {
-            return Err(WasmSdkError::invalid_argument(
-                "`startAfter` and `limit` page through every record and are not valid beside `documentIds`",
-            ));
-        }
-        // No id named is not a page of every record either, and the node refuses it.
-        if document_ids.is_empty() {
-            return Err(WasmSdkError::invalid_argument(
-                "`documentIds` must name at least one document",
-            ));
-        }
-        return Ok(ContractDocumentRemovalsPageQuery::for_document_ids(
-            contract_id,
-            input.document_type_name,
-            document_ids.into_iter().map(Identifier::from).collect(),
-        ));
-    }
-
-    let mut page_query = ContractDocumentRemovalsPageQuery::new(
+    let (contract_id, document_type_name, selection) = input.into_parts(platform_version)?;
+    Ok(ContractDocumentRemovalsPageQuery {
         contract_id,
-        input.document_type_name,
-        platform_version,
-    );
-    if let Some(limit) = input.limit {
-        let limit = u16::try_from(limit).map_err(|_| {
-            WasmSdkError::invalid_argument(format!("limit {limit} exceeds maximum of {}", u16::MAX))
-        })?;
+        query: ContractDocumentRemovalsQuery {
+            document_type_name,
+            selection,
+        },
+    })
+}
+
+/// Reads a team actions query field by field, each `IdentifierLike` on its own as the records
+/// queries read theirs, and the status last: a query whose only fault is its status is refused
+/// after its identifiers and its limit were accepted, and before anything reaches the network,
+/// as is a limit outside 1 to the page cap of `platform_version`.
+fn parse_team_actions_query(
+    query: ContractTeamActionsQueryJs,
+    platform_version: &PlatformVersion,
+) -> Result<ContractTeamActionsPageQuery, WasmSdkError> {
+    let query = required_query(query.into())?;
+    let invalid = invalid_query_field("contract team actions query");
+    let contract_id = IdentifierWasm::try_from_options(&query, "contractId").map_err(&invalid)?;
+    let start_at_action_id =
+        IdentifierWasm::try_from_optional_options(&query, "startAtActionId").map_err(&invalid)?;
+    let start_at_action_id_included =
+        try_from_options_optional_with(&query, "startAtActionIdIncluded", |value| {
+            value.as_bool().ok_or_else(|| {
+                WasmDppError::invalid_argument("'startAtActionIdIncluded' must be a boolean")
+            })
+        })
+        .map_err(&invalid)?;
+    let limit = optional_limit_from_js(&query).map_err(&invalid)?;
+    let status = team_action_status_from_js(&query).map_err(&invalid)?;
+
+    let mut page_query =
+        ContractTeamActionsPageQuery::new(Identifier::from(contract_id), status, platform_version);
+    // Where the page starts: an inclusion flag without the action it starts at is refused
+    // rather than dropped, or a caller expecting a cursor would read the first page.
+    match (start_at_action_id, start_at_action_id_included) {
+        (Some(action_id), included) => {
+            page_query =
+                page_query.starting_at(Identifier::from(action_id), included.unwrap_or(false));
+        }
+        (None, Some(_)) => {
+            return Err(WasmSdkError::invalid_argument(
+                "`startAtActionIdIncluded` is only valid beside `startAtActionId`",
+            ));
+        }
+        (None, None) => {}
+    }
+    // The node refuses a page outside 1 to its cap, so it is refused here before anything is
+    // sent.
+    if let Some(limit) = limit {
+        let max_limit = default_contract_document_removals_limit(platform_version);
+        let limit = u16::try_from(limit)
+            .ok()
+            .filter(|limit| (1..=max_limit).contains(limit))
+            .ok_or_else(|| {
+                WasmSdkError::invalid_argument(format!(
+                    "`limit` must be between 1 and {max_limit}, got {limit}"
+                ))
+            })?;
         page_query = page_query.with_limit(limit);
     }
-    if let ContractDocumentRemovalsSelection::Page { start_after, .. } =
-        &mut page_query.query.selection
-    {
-        *start_after = input.start_after.map(Identifier::from);
-    }
     Ok(page_query)
+}
+
+/// Reads a team action signers query field by field, as [`parse_team_actions_query`] does, the
+/// status last.
+fn parse_team_action_signers_query(
+    query: ContractTeamActionSignersQueryJs,
+) -> Result<ContractTeamActionSignersQuery, WasmSdkError> {
+    let query = required_query(query.into())?;
+    let invalid = invalid_query_field("contract team action signers query");
+    let contract_id = IdentifierWasm::try_from_options(&query, "contractId").map_err(&invalid)?;
+    let action_id = IdentifierWasm::try_from_options(&query, "actionId").map_err(&invalid)?;
+    let status = team_action_status_from_js(&query).map_err(&invalid)?;
+    Ok(ContractTeamActionSignersQuery {
+        contract_id: Identifier::from(contract_id),
+        status,
+        action_id: Identifier::from(action_id),
+    })
 }
 
 /// Sets `lists`, and `banned`, `suspendedUntil` and `warnings` for the lists read, each with
@@ -553,6 +842,96 @@ fn removals_to_js(
     Ok(result.into())
 }
 
+/// One team action as the team actions query answers with it ([`ContractTeamActionEntry`]):
+/// identifiers as base58 strings, as the entries of a moderation list are, times and the
+/// revision as BigInts, and what it does under `event`, tagged by `type`.
+fn team_action_to_js(entry: &ContractTeamActionEntry) -> Result<JsValue, WasmSdkError> {
+    let set = |target: &js_sys::Object, key: &str, value: JsValue| {
+        js_sys::Reflect::set(target, &key.into(), &value)
+            .map(|_| ())
+            .map_err(|_| WasmSdkError::generic(format!("failed to set `{key}` on the team action")))
+    };
+    let id_to_js = |id: Identifier| JsValue::from_str(&IdentifierWasm::from(id).to_base58());
+    let js_entry = js_sys::Object::new();
+    set(&js_entry, "actionId", id_to_js(entry.action_id))?;
+    set(&js_entry, "proposerId", id_to_js(entry.action.proposer_id))?;
+    set(
+        &js_entry,
+        "proposedAt",
+        js_sys::BigInt::from(entry.action.proposed_at).into(),
+    )?;
+    let event = js_sys::Object::new();
+    match &entry.action.event {
+        ContractTeamActionEvent::DeleteSettledDocument {
+            document_type_name,
+            document_id,
+            document_last_modified_at,
+            document_revision,
+            reason,
+        } => {
+            set(&event, "type", JsValue::from_str("deleteSettledDocument"))?;
+            set(
+                &event,
+                "documentTypeName",
+                JsValue::from_str(document_type_name),
+            )?;
+            set(&event, "documentId", id_to_js(*document_id))?;
+            set(
+                &event,
+                "documentLastModifiedAt",
+                js_sys::BigInt::from(*document_last_modified_at).into(),
+            )?;
+            if let Some(revision) = document_revision {
+                set(
+                    &event,
+                    "documentRevision",
+                    js_sys::BigInt::from(*revision).into(),
+                )?;
+            }
+            set(&event, "reason", moderation_reason_to_js(reason))?;
+        }
+    }
+    set(&js_entry, "event", event.into())?;
+    Ok(js_entry.into())
+}
+
+fn team_actions_to_js(
+    page: ContractTeamActions,
+    query: &ContractTeamActionsPageQuery,
+) -> Result<JsValue, WasmSdkError> {
+    let result = js_sys::Object::new();
+    let set = |key: &str, value: JsValue| {
+        js_sys::Reflect::set(&result, &key.into(), &value)
+            .map_err(|_| WasmSdkError::generic(format!("failed to set `{key}` on the page")))
+    };
+    let actions = Array::new();
+    for entry in page.actions() {
+        actions.push(&team_action_to_js(entry)?);
+    }
+    set("actions", actions.into())?;
+    // A page shorter than the limit is the last one, so it carries no cursor.
+    if let Some((action_id, _)) = query.after(&page).and_then(|next| next.query.start_at) {
+        set(
+            "nextStartAtActionId",
+            JsValue::from_str(&IdentifierWasm::from(action_id).to_base58()),
+        )?;
+    }
+    Ok(result.into())
+}
+
+fn team_action_signers_to_js(signers: ContractTeamActionSigners) -> Result<JsValue, WasmSdkError> {
+    let result = js_sys::Object::new();
+    let signer_ids = signers
+        .signers()
+        .iter()
+        .map(|signer_id| JsValue::from_str(&IdentifierWasm::from(*signer_id).to_base58()))
+        .collect::<Array>();
+    js_sys::Reflect::set(&result, &"signerIds".into(), &signer_ids.into()).map_err(|_| {
+        WasmSdkError::generic("failed to set `signerIds` on the team action signers")
+    })?;
+    Ok(result.into())
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     /// One identity's status on a moderated contract: whether it is banned, until when it is
@@ -710,6 +1089,98 @@ impl WasmSdk {
             proof,
         ))
     }
+
+    /// One page of the actions an elected contract's seated moderation team votes on, active
+    /// (still gathering approvals) or closed (their approvals met the rule and they ran), in
+    /// action id order. Today every action is the deletion of a settled document
+    /// (`moderatorAbilities.deleteSettled`): a member proposes it with
+    /// `contractDeleteSettledDocument`, and the others approve it by its `actionId` with
+    /// `contractApproveTeamAction`. Pass a page's `nextStartAtActionId` as the next query's
+    /// `startAtActionId`; a page without one is the last.
+    ///
+    /// # Example
+    /// ```javascript
+    /// const { actions } = await sdk.getContractTeamActions({ contractId, status: 'active' });
+    /// for (const { actionId, event } of actions) console.log(actionId, event.documentId);
+    /// ```
+    #[wasm_bindgen(
+        js_name = "getContractTeamActions",
+        unchecked_return_type = "ContractTeamActionsPage"
+    )]
+    pub async fn get_contract_team_actions(
+        &self,
+        query: ContractTeamActionsQueryJs,
+    ) -> Result<JsValue, WasmSdkError> {
+        let query = parse_team_actions_query(query, self.inner_sdk().version())?;
+        let page = ContractTeamActions::fetch(self.as_ref(), query.clone())
+            .await?
+            .unwrap_or_default();
+        team_actions_to_js(page, &query)
+    }
+
+    /// One page of team actions together with its proof and metadata.
+    #[wasm_bindgen(
+        js_name = "getContractTeamActionsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<ContractTeamActionsPage>"
+    )]
+    pub async fn get_contract_team_actions_with_proof_info(
+        &self,
+        query: ContractTeamActionsQueryJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query = parse_team_actions_query(query, self.inner_sdk().version())?;
+        let (page, metadata, proof) =
+            ContractTeamActions::fetch_with_metadata_and_proof(self.as_ref(), query.clone(), None)
+                .await?;
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            team_actions_to_js(page.unwrap_or_default(), &query)?,
+            metadata,
+            proof,
+        ))
+    }
+
+    /// Who approved one of the actions an elected contract's seated moderation team votes on,
+    /// the proposer among them unless it left the team and its approval was dropped, in identity
+    /// id order: none when the contract holds no action of that id with the status asked. An
+    /// action that closed is read with `status: 'closed'`.
+    ///
+    /// # Example
+    /// ```javascript
+    /// const { signerIds } = await sdk.getContractTeamActionSigners({ contractId, status: 'active', actionId });
+    /// ```
+    #[wasm_bindgen(
+        js_name = "getContractTeamActionSigners",
+        unchecked_return_type = "ContractTeamActionSigners"
+    )]
+    pub async fn get_contract_team_action_signers(
+        &self,
+        query: ContractTeamActionSignersQueryJs,
+    ) -> Result<JsValue, WasmSdkError> {
+        let query = parse_team_action_signers_query(query)?;
+        let signers = ContractTeamActionSigners::fetch(self.as_ref(), query)
+            .await?
+            .unwrap_or_default();
+        team_action_signers_to_js(signers)
+    }
+
+    /// The approvals of a team action together with their proof and metadata.
+    #[wasm_bindgen(
+        js_name = "getContractTeamActionSignersWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<ContractTeamActionSigners>"
+    )]
+    pub async fn get_contract_team_action_signers_with_proof_info(
+        &self,
+        query: ContractTeamActionSignersQueryJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query = parse_team_action_signers_query(query)?;
+        let (signers, metadata, proof) =
+            ContractTeamActionSigners::fetch_with_metadata_and_proof(self.as_ref(), query, None)
+                .await?;
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            team_action_signers_to_js(signers.unwrap_or_default())?,
+            metadata,
+            proof,
+        ))
+    }
 }
 
 /// A removal record, and the check that a join reports it as a `JoinedDocumentRemoval`,
@@ -811,7 +1282,9 @@ mod wasm_tests {
     use dash_sdk::dpp::data_contract::document_type::DocumentType;
     use dash_sdk::dpp::document::{Document, DocumentV0};
     use dash_sdk::dpp::platform_value::{platform_value, Value};
-    use dash_sdk::platform::contract_moderation::ContractDocumentRemovalEntry;
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovalEntry, ContractTeamAction,
+    };
     use std::collections::BTreeMap;
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::wasm_bindgen_test;
@@ -1042,6 +1515,109 @@ mod wasm_tests {
         assert_eq!(
             get(&json, "keptFieldsBytes").as_string().as_deref(),
             Some("AQRkYXNo")
+        );
+    }
+
+    fn team_action_entry(seed: u8, document_revision: Option<u64>) -> ContractTeamActionEntry {
+        ContractTeamActionEntry {
+            action_id: Identifier::from([seed; 32]),
+            action: ContractTeamAction {
+                proposer_id: Identifier::from([seed.wrapping_add(1); 32]),
+                proposed_at: 1_800_000_000_000,
+                event: ContractTeamActionEvent::DeleteSettledDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: Identifier::from([seed.wrapping_add(2); 32]),
+                    document_last_modified_at: 1_700_000_000_000,
+                    document_revision,
+                    reason: ContractModerationReason::from_text("doxxing"),
+                },
+            },
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_answer_team_actions_with_their_event_and_the_cursor_of_a_full_page() {
+        let base58 = |id: Identifier| IdentifierWasm::from(id).to_base58();
+        let query = ContractTeamActionsPageQuery::new(
+            Identifier::from([8; 32]),
+            GroupActionStatus::ActionActive,
+            PlatformVersion::latest(),
+        )
+        .with_limit(2);
+        let page = team_actions_to_js(
+            ContractTeamActions(vec![
+                team_action_entry(1, Some(2)),
+                team_action_entry(3, None),
+            ]),
+            &query,
+        )
+        .expect("expected the page");
+
+        let actions = Array::from(&get(&page, "actions"));
+        assert_eq!(actions.length(), 2);
+        let first = actions.get(0);
+        assert_eq!(
+            get(&first, "actionId").as_string(),
+            Some(base58(Identifier::from([1; 32])))
+        );
+        assert_eq!(
+            get(&first, "proposerId").as_string(),
+            Some(base58(Identifier::from([2; 32])))
+        );
+        assert_eq!(
+            get(&first, "proposedAt").js_typeof().as_string().as_deref(),
+            Some("bigint")
+        );
+        let event = get(&first, "event");
+        assert_eq!(
+            get(&event, "type").as_string().as_deref(),
+            Some("deleteSettledDocument")
+        );
+        assert_eq!(
+            get(&event, "documentTypeName").as_string().as_deref(),
+            Some("post")
+        );
+        assert_eq!(
+            get(&event, "documentId").as_string(),
+            Some(base58(Identifier::from([3; 32])))
+        );
+        assert_eq!(get(&event, "documentRevision"), JsValue::from(2u64));
+        assert_eq!(
+            get(&get(&event, "reason"), "text").as_string().as_deref(),
+            Some("doxxing")
+        );
+        // A type whose documents carry no revision leaves it out
+        assert!(
+            !js_sys::Reflect::has(&get(&actions.get(1), "event"), &"documentRevision".into())
+                .expect("has() on a plain object")
+        );
+        // A full page carries the cursor of the next: its last action, excluded
+        assert_eq!(
+            get(&page, "nextStartAtActionId").as_string(),
+            Some(base58(Identifier::from([3; 32])))
+        );
+
+        // A short page is the last
+        let last = team_actions_to_js(
+            ContractTeamActions(vec![team_action_entry(1, Some(2))]),
+            &query,
+        )
+        .expect("expected the page");
+        assert!(!js_sys::Reflect::has(&last, &"nextStartAtActionId".into())
+            .expect("has() on a plain object"));
+    }
+
+    #[wasm_bindgen_test]
+    fn should_answer_team_action_signers_as_base58_ids() {
+        let signers = team_action_signers_to_js(ContractTeamActionSigners(vec![
+            Identifier::from([4; 32]),
+            Identifier::from([5; 32]),
+        ]))
+        .expect("expected the signers");
+        let signer_ids = Array::from(&get(&signers, "signerIds"));
+        assert_eq!(
+            signer_ids.get(1).as_string(),
+            Some(IdentifierWasm::from(Identifier::from([5; 32])).to_base58())
         );
     }
 }

@@ -224,9 +224,7 @@ pub(crate) mod tests {
                 estimated_kept_fields_size: 0,
                 moderator_id,
             }),
-            ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds {
-                spared: None,
-            }),
+            ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds),
         ];
         platform
             .drive

@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Where** | document type, in a contract whose config declares `moderation` |
-| **Value** | object with `delete` (boolean), `deleteWithin` (seconds), `deleteKeepsRecord` and `deleteRefundsOwner` (booleans), `deleteKeepsFields` (array of property paths), the last four only beside `delete: true`, and `changeFields` (array of top-level property names), at least one of them given |
+| **Value** | object with `delete` (boolean), `deleteWithin` (seconds), `deleteKeepsRecord` and `deleteRefundsOwner` (booleans), `deleteKeepsFields` (array of property paths), the last four only beside `delete: true`, `deleteSettled` (object, beside `deleteWithin`), and `changeFields` (array of top-level property names), at least one of them given |
 | **Default** | absent: the moderators can do nothing to documents of the type |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (`DocumentTypeUpdateError`, 40212): a type can neither gain, lose nor change it. A type the update adds may declare it. |
@@ -18,6 +18,7 @@ The keys:
 | `deleteWithin` | Limits `delete` to so many seconds after a document's last change. | [Deletion](deletion.md#moderatorabilitiesdeletewithin) |
 | `deleteKeepsRecord` | Whether a deletion leaves a removal record, and so can be restored. Default `true`. | [Deletion](deletion.md#moderatorabilitiesdeletekeepsrecord) |
 | `deleteRefundsOwner` | Whether the deleted document's owner is refunded its storage. Default `false`. | [Deletion](deletion.md#moderatorabilitiesdeleterefundsowner) |
+| `deleteSettled` | Past `deleteWithin`, the seated team of an elected contract deletes a document together: one member proposes, and so many approve, the leader among them only when the rule says so (`leader: true`). | [Deletion](deletion.md#moderatorabilitiesdeletesettled) |
 | `deleteKeepsFields` | The fields of a deleted document whose values stay public in its removal record, such as a post's hashtag. | [Deletion](deletion.md#moderatorabilitiesdeletekeepsfields) |
 | `changeFields` | The listed properties are written only by the moderators. | [below](#changefields) |
 
@@ -103,7 +104,7 @@ All refusals below are `InvalidContractStructure` (10231).
 
 ## See also
 
-- [Deletion](deletion.md), for `delete` and `deleteWithin`
+- [Deletion](deletion.md), for `delete`, `deleteWithin` and `deleteSettled`
 - [Contract Moderation](../data-model/contract-moderation.md#changing-document-fields), for the transition, the checks and the proof
 - [Mutability](mutability.md), for what a document's own owner may change
 - [Contract-Level Keys and config](contract-config.md), for `moderation`

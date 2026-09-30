@@ -543,6 +543,46 @@
              responseClass:[GetContractDocumentRemovalsResponse class]];
 }
 
+#pragma mark getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse)
+
+- (void)getContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractTeamActionsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractTeamActions"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractTeamActionsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractTeamActionsWithMessage:(GetContractTeamActionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractTeamActions"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractTeamActionsResponse class]];
+}
+
+#pragma mark getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse)
+
+- (void)getContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractTeamActionSignersWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractTeamActionSigners"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractTeamActionSignersResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractTeamActionSignersWithMessage:(GetContractTeamActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractTeamActionSigners"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractTeamActionSignersResponse class]];
+}
+
 #pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
 
 - (void)getContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler{
