@@ -218,8 +218,10 @@ impl Drive {
     }
 
     /// One record, read the way the transform of a moderation reads state: the operations of
-    /// the read are added to `drive_operations` for billing.
-    pub(super) fn fetch_contract_document_record_add_to_operations_v0<T: ContractDocumentRecord>(
+    /// the read are added to `drive_operations` for billing. Also how Drive reads the owner of
+    /// a removed document a derived index property reads through a `moderatedDocument`
+    /// reference.
+    pub(crate) fn fetch_contract_document_record_add_to_operations_v0<T: ContractDocumentRecord>(
         &self,
         contract_id: Identifier,
         document_type_name: &str,

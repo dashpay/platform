@@ -2315,6 +2315,13 @@ message GetDocumentsResponse {
       // `refersTo: permanentDocument` a missing document fails the
       // query instead.
       repeated bytes missing_outer_ids = 3;
+      // The join values whose outer document the contract's
+      // moderators removed, each with its removal record, in first
+      // appearance order. Only a join property declaring `refersTo:
+      // moderatedDocument` can report any; there a join value with
+      // neither a document nor a record fails the query.
+      repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+          removed_outer_documents = 4;
     }
 
     // A composite query's page and per-sub-query results, documents
@@ -2337,6 +2344,14 @@ message GetDocumentsResponse {
         // deleted since). Only a source property declaring
         // `refersTo: deletableDocument` can report any.
         repeated bytes missing_ids = 3;
+        // DOCUMENTS by-id join only: the derived ids whose document
+        // the contract's moderators removed, each with its removal
+        // record, in first appearance order. Only a source property
+        // declaring `refersTo: moderatedDocument` can report any; there
+        // a derived id with neither a document nor a record fails the
+        // query.
+        repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+            removed = 4;
       }
       repeated SubQueryResult sub_results = 2;
     }

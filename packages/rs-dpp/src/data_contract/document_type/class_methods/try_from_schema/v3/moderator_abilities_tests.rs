@@ -10,6 +10,7 @@ use crate::data_contract::config::moderation::{
 };
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::DocumentReferenceKind;
 use platform_value::platform_value;
 use std::collections::BTreeSet;
 
@@ -172,6 +173,60 @@ fn should_keep_delete_independent_of_can_be_deleted() {
         parse_moderated(post_schema(platform_value!({ "canBeDeleted": false }))).expect("parse");
     assert!(!document_type.documents_can_be_deleted());
     assert!(document_type.documents_can_be_deleted_by_moderators());
+}
+
+/// Which kind of document reference may target the type follows from what can make its
+/// documents leave state: a `moderatedDocument` reference takes a type whose documents leave
+/// it only through a moderator's recorded removal, and no other.
+#[test]
+fn should_admit_the_reference_kind_that_what_removes_its_documents_allows() {
+    let kind = |extra: Value| {
+        parse_moderated(post_schema(extra))
+            .expect("parse")
+            .document_reference_kind()
+    };
+    // Removed by moderators only, each removal on the record (the default)
+    assert_eq!(
+        kind(platform_value!({ "canBeDeleted": false })),
+        DocumentReferenceKind::Moderated
+    );
+    assert_eq!(
+        kind(platform_value!({
+            "canBeDeleted": false,
+            "moderatorAbilities": { "delete": true, "deleteKeepsRecord": true },
+        })),
+        DocumentReferenceKind::Moderated
+    );
+    // Deleted by its owner too
+    assert_eq!(
+        kind(platform_value!({ "canBeDeleted": true })),
+        DocumentReferenceKind::Deletable
+    );
+    // Removed without a record
+    assert_eq!(
+        kind(platform_value!({
+            "canBeDeleted": false,
+            "moderatorAbilities": { "delete": true, "deleteKeepsRecord": false },
+        })),
+        DocumentReferenceKind::Deletable
+    );
+    // Expiring as well
+    assert_eq!(
+        kind(platform_value!({
+            "canBeDeleted": false,
+            "ttl": 3600,
+            "required": ["$createdAt"],
+        })),
+        DocumentReferenceKind::Deletable
+    );
+    // Never leaving state
+    assert_eq!(
+        kind(platform_value!({
+            "canBeDeleted": false,
+            "moderatorAbilities": { "delete": false },
+        })),
+        DocumentReferenceKind::Permanent
+    );
 }
 
 #[test]
@@ -713,6 +768,20 @@ fn should_refuse_an_immutable_field() {
             platform_value!({ "documentsMutable": true, "immutable": ["status"] }),
         )),
         &["status", "immutable"],
+    );
+}
+
+#[test]
+fn should_refuse_a_field_frozen_by_a_condition() {
+    assert_refused_naming(
+        parse_moderated(merged(
+            report_schema(platform_value!({ "changeFields": ["status"] })),
+            platform_value!({
+                "documentsMutable": true,
+                "immutable": [{ "property": "status", "when": { "present": "$old.status" } }]
+            }),
+        )),
+        &["status", "immutable` with a condition"],
     );
 }
 

@@ -455,6 +455,31 @@ pub fn contract_document_removals_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
     contract_document_records_path_vec(contract_id, ContractDocumentRecords::Removals)
 }
 
+/// `[64, contract id, 2, 16, document type name]`: the removal records of one document type,
+/// keyed by document id.
+pub fn contract_document_type_removals_path<'a>(
+    contract_id: &'a [u8],
+    document_type_name: &'a str,
+) -> [&'a [u8]; 5] {
+    contract_document_type_records_path(
+        contract_id,
+        ContractDocumentRecords::Removals,
+        document_type_name,
+    )
+}
+
+/// `[64, contract id, 2, 16, document type name]`: the removal records of one document type.
+pub fn contract_document_type_removals_path_vec(
+    contract_id: &[u8],
+    document_type_name: &str,
+) -> Vec<Vec<u8>> {
+    contract_document_type_records_path_vec(
+        contract_id,
+        ContractDocumentRecords::Removals,
+        document_type_name,
+    )
+}
+
 /// `[64, contract id, 2, 24]`: the tree of the approvals of the contract's settled-document
 /// deletions, one subtree per document type that sets `moderatorAbilities.deleteSettled`.
 pub fn contract_settled_deletions_path(contract_id: &[u8]) -> [&[u8]; 4] {

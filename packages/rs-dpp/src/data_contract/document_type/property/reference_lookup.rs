@@ -335,9 +335,9 @@ impl DocumentReferenceLookup {
     /// created only, so nothing it reads may change afterwards: every property
     /// source must be fixed once written as well, the computed key's params
     /// follow [`LookupHashKey::referring_side_error`], and a property carrying
-    /// it must be fixed once written and set when the document is created (not
-    /// listed under `immutableAllowSetting`, which would let a replace set it
-    /// later unchecked), unless it is transient, never stored and read from
+    /// it must be fixed once written, so set when the document is created
+    /// (not listed under `immutable` with a condition, which could let a replace
+    /// set it later unchecked), unless it is transient, never stored and read from
     /// the create alone. On a property the reference's own value must fill
     /// the key exactly once, as a `"."` source or a param of the computed key,
     /// and on a string or byte array property, `reference_type` not an
@@ -407,16 +407,13 @@ impl DocumentReferenceLookup {
                 ));
             }
             if !is_transient(declaring, reference_path)
-                && (!schema_property_is_fixed_once_written(declaring, reference_path)
-                    || declaring
-                        .immutable_fields_allow_setting()
-                        .contains(reference_path.split('.').next().unwrap_or(reference_path)))
+                && !schema_property_is_fixed_once_written(declaring, reference_path)
             {
                 return Some(format!(
                     "\"{reference_path}\" carries a reference found by a computed key, which is \
                      checked when the document is created only, so the property must be fixed \
                      once written and set then (make the type immutable or list the property \
-                     under `immutable`, and not under `immutableAllowSetting`)"
+                     under `immutable` without a condition)"
                 ));
             }
         }
@@ -678,8 +675,8 @@ impl DocumentReferenceLookup {
     /// the document it found is the one it checks again. A schema property is
     /// fixed on a type whose documents are
     /// immutable or when its top-level property is listed under `immutable`
-    /// (an `immutableAllowSetting` entry can only be set on a document that
-    /// has no value for it, which no key could have found); `$ownerId` is
+    /// without a condition (one listed with a condition may change while it
+    /// does not hold); `$ownerId` is
     /// fixed unless documents can be transferred or traded; `$id`,
     /// `$creatorId` and the creation times never change; the update and
     /// transfer times change with the document. Every flag read here is
@@ -773,10 +770,11 @@ pub fn owner_can_change(document_type: DocumentTypeRef) -> bool {
 /// (`documentsMutable: false`), or the property's top-level property is listed
 /// under `immutable`, and in either case the contract's moderators do not
 /// write it (`moderatorAbilities.changeFields`, which the parser keeps apart
-/// from `immutable`). An `immutableAllowSetting` entry can only be set on a
-/// document that has no value for it yet, so a value read once stays. The
+/// from `immutable`). A property listed under `immutable` with a condition is
+/// not fixed: a replace may change it while its condition does not hold. The
 /// flags and the moderators' fields are immutable on contract update and the
-/// `immutable` list may only grow, so the answer holds for good. The one rule
+/// properties `immutable` lists without a condition may only grow, so the
+/// answer holds for good. The one rule
 /// both a lookup's key parts and a list element's list are judged by.
 pub(crate) fn schema_property_is_fixed_once_written(
     document_type: DocumentTypeRef,

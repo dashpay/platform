@@ -4,10 +4,10 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV2Getters, DocumentTypeV2Setters,
 };
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyReferenceTarget, GeneratedFrom,
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
 
 use platform_value::{Identifier, Value};
@@ -275,6 +275,20 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
             || self.documents_ttl_seconds.is_some()
     }
 
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        if !self.documents_can_disappear() {
+            DocumentReferenceKind::Permanent
+        } else if !self.documents_can_be_deleted
+            && self.documents_ttl_seconds.is_none()
+            && self.documents_can_be_deleted_by_moderators
+            && self.moderator_deletions_keep_records
+        {
+            DocumentReferenceKind::Moderated
+        } else {
+            DocumentReferenceKind::Deletable
+        }
+    }
+
     fn immutable_fields(&self) -> &BTreeSet<String> {
         &self.immutable_fields
     }
@@ -287,8 +301,8 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.generated_from_fields
     }
 
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
-        &self.immutable_fields_allow_setting
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.immutable_field_conditions
     }
 
     fn action_fees(&self) -> Option<&DocumentActionFees> {
@@ -305,6 +319,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
         &self.property_constraints
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        &self.derived_index_properties
     }
 }
 

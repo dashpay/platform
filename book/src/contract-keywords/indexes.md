@@ -85,6 +85,7 @@ What may be indexed:
 - **A property inside an object**, by its dotted path. DPNS indexes `records.identity`, the `identity` property of a domain's `records` object.
 - **System properties**: `$ownerId`, `$createdAt`, `$updatedAt`, `$transferredAt`, their `*BlockHeight` and `*CoreBlockHeight` variants, `$creatorId` on a type that records it, and `$moderatedAt` and `$moderatedBy` on a type that lists `moderatorAbilities.changeFields`, in a non-unique index, from protocol version 14 (see [System Properties](system-properties.md)). A timestamp or block height is only recorded when the type lists it in `required`; an index on one that is not required holds every document under null.
 - **Not `$id`**, which the document type's primary tree already indexes (`SystemPropertyIndexAlreadyPresentError`, 10208).
+- **A value of the document a reference points at**, from protocol version 14: `"<reference property>.<field>"`, such as `postId.$ownerId`, read from the referenced document and never stored. See [Values of Referenced Documents](derived-index-properties.md).
 
 What each indexed property must be, because its value becomes a GroveDB key of at most 255 bytes:
 
@@ -227,6 +228,7 @@ An index entry may carry more keywords, each with its own chapter:
 - [Time-Range Indexes](time-range.md): `timeRange` groups documents into time windows, for "trending this hour" queries.
 - [Integer-Range Indexes](integer-range.md): `integerRange` groups documents into windows of an integer property, for counts and rankings per price or score band.
 - [Index-Only Types](index-only.md): `terminal`, `preallocated` and `skipIfAbsent` shape the indexes of a type whose documents live only in their indexes.
+- [Values of Referenced Documents](derived-index-properties.md): an index property `"<reference property>.<field>"` holds a value of the document a reference points at, which the document does not store.
 
 ## See also
 

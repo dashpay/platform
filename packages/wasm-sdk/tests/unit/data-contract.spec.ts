@@ -560,7 +560,7 @@ describe('DataContract', () => {
   });
 
   /**
-   * Same arrangement for the `immutable` / `immutableAllowSetting` surface
+   * Same arrangement for the `immutable` surface
    * (protocol version 14): behaviour lives in wasm-dpp2's suite, this pins
    * the re-export.
    */

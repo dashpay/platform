@@ -6088,6 +6088,11 @@ export namespace GetDocumentsResponse {
       setMissingOuterIdsList(value: Array<Uint8Array | string>): void;
       addMissingOuterIds(value: Uint8Array | string, index?: number): Uint8Array | string;
 
+      clearRemovedOuterDocumentsList(): void;
+      getRemovedOuterDocumentsList(): Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval>;
+      setRemovedOuterDocumentsList(value: Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval>): void;
+      addRemovedOuterDocuments(value?: GetContractDocumentRemovalsResponse.ContractDocumentRemoval, index?: number): GetContractDocumentRemovalsResponse.ContractDocumentRemoval;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): ChainedDocuments.AsObject;
       static toObject(includeInstance: boolean, msg: ChainedDocuments): ChainedDocuments.AsObject;
@@ -6103,6 +6108,7 @@ export namespace GetDocumentsResponse {
         innerDocumentsList: Array<Uint8Array | string>,
         outerDocumentsList: Array<Uint8Array | string>,
         missingOuterIdsList: Array<Uint8Array | string>,
+        removedOuterDocumentsList: Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval.AsObject>,
       }
     }
 
@@ -6153,6 +6159,11 @@ export namespace GetDocumentsResponse {
         setMissingIdsList(value: Array<Uint8Array | string>): void;
         addMissingIds(value: Uint8Array | string, index?: number): Uint8Array | string;
 
+        clearRemovedList(): void;
+        getRemovedList(): Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval>;
+        setRemovedList(value: Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval>): void;
+        addRemoved(value?: GetContractDocumentRemovalsResponse.ContractDocumentRemoval, index?: number): GetContractDocumentRemovalsResponse.ContractDocumentRemoval;
+
         getResultCase(): SubQueryResult.ResultCase;
         serializeBinary(): Uint8Array;
         toObject(includeInstance?: boolean): SubQueryResult.AsObject;
@@ -6169,6 +6180,7 @@ export namespace GetDocumentsResponse {
           documents?: GetDocumentsResponse.GetDocumentsResponseV1.Documents.AsObject,
           counts?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.AsObject,
           missingIdsList: Array<Uint8Array | string>,
+          removedList: Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval.AsObject>,
         }
 
         export enum ResultCase {

@@ -75,6 +75,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod deletion_options;
+mod derived_index_properties;
+mod moderated_document_reference;
 mod moderator_fields;
 mod seated_team;
 
@@ -112,6 +114,7 @@ const INVALID_CONTRACT_STRUCTURE: u32 = 10231;
 const INVALID_CONTRACT_MODERATION_CONFIG: u32 = 10900;
 const DOCUMENT_TYPE_UPDATE: u32 = 40212;
 const REFERENCED_DOCUMENT_TYPE_DELETABLE: u32 = 40122;
+const REFERENCED_DOCUMENT_TYPE_MODERATED: u32 = 40144;
 
 pub(crate) const CRITICAL_KEY_ID: KeyID = 1;
 const DOCUMENT_TYPE: &str = "niceDocument";
@@ -2601,7 +2604,7 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
     assert_success(&setup.process(&delete, &transaction));
     assert!(setup.post_removal(post.id(), Some(&transaction)).is_some());
 
-    // And it can not be the target of a permanent reference: its documents can vanish.
+    // And it can not be the target of a permanent reference: its documents can leave state.
     let mut referring = setup.contract.clone();
     referring.increment_version();
     add_document_type(
@@ -2630,29 +2633,48 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
         REFERENCED_DOCUMENT_TYPE_DELETABLE,
     );
 
-    // A deletable reference is what points at it: deletable means by anyone, the moderators
-    // included, whatever `canBeDeleted` says about a post's own author.
+    // Its documents leave state only when a moderator deletes one, and every such deletion
+    // leaves a record (`deleteKeepsRecord` is true unless declared false), so a moderated
+    // reference is what points at it: resolving to the post, or to the record of its removal.
+    // The three kinds are disjoint, so a deletable reference, which promises no record, is
+    // refused as well.
     let bookmark_schema = referring
         .document_type_for_name("bookmark")
         .expect("expected the bookmark type")
         .schema()
         .clone();
-    let mut deletable_reference = bookmark_schema;
-    deletable_reference
-        .get_mut("properties")
-        .ok()
-        .flatten()
-        .and_then(|properties| properties.get_mut("postId").ok().flatten())
-        .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
-        .expect("expected the refersTo declaration")
-        .insert(
-            "type".to_string(),
-            Value::Text("deletableDocument".to_string()),
-        )
-        .expect("expected to set the reference kind");
+    let with_reference_kind = |kind: &str| {
+        let mut schema = bookmark_schema.clone();
+        schema
+            .get_mut("properties")
+            .ok()
+            .flatten()
+            .and_then(|properties| properties.get_mut("postId").ok().flatten())
+            .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
+            .expect("expected the refersTo declaration")
+            .insert("type".to_string(), Value::Text(kind.to_string()))
+            .expect("expected to set the reference kind");
+        schema
+    };
     let mut referring = setup.contract.clone();
     referring.increment_version();
-    add_document_type(&mut referring, "bookmark", deletable_reference);
+    add_document_type(
+        &mut referring,
+        "bookmark",
+        with_reference_kind("deletableDocument"),
+    );
+    let update = setup.contract_update(referring).await;
+    assert_paid_with_code(
+        &setup.process(&update, &transaction),
+        REFERENCED_DOCUMENT_TYPE_MODERATED,
+    );
+    let mut referring = setup.contract.clone();
+    referring.increment_version();
+    add_document_type(
+        &mut referring,
+        "bookmark",
+        with_reference_kind("moderatedDocument"),
+    );
     let update = setup.contract_update(referring.clone()).await;
     assert_success(&setup.process(&update, &transaction));
     setup.contract = referring;

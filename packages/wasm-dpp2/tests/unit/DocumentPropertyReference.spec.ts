@@ -774,6 +774,93 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
+  describe('moderatedDocument', () => {
+    /**
+     * A reply to a post only moderators take down, on the record, whose
+     * writer must be the post's author. Which types a moderated reference may
+     * name is checked against state at registration, so the parse here takes
+     * any `post`.
+     */
+    const moderatedSchemas = {
+      post: {
+        type: 'object',
+        canBeDeleted: false,
+        properties: { text: { type: 'string', maxLength: 50, position: 0 } },
+        additionalProperties: false,
+      },
+      reply: {
+        type: 'object',
+        properties: {
+          postId: identifierProperty(0, {
+            type: 'moderatedDocument',
+            documentType: 'post',
+            where: { $ownerId: '$ownerId' },
+          }),
+          body: { type: 'string', maxLength: 50, position: 1 },
+        },
+        required: ['postId'],
+        additionalProperties: false,
+      },
+    };
+
+    function buildModeratedContract(documentSchemas: object, fullValidation = true) {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(3),
+        schemas: documentSchemas,
+        definitions: null,
+        fullValidation,
+        platformVersion: new PlatformVersion(14),
+      });
+    }
+
+    function withPostIdRefersTo(refersTo: object) {
+      const replaced = structuredClone(moderatedSchemas);
+      (replaced.reply.properties.postId as { refersTo: object }).refersTo = refersTo;
+      return replaced;
+    }
+
+    it('should carry a moderatedDocument reference with its contractId, documentType and where', () => {
+      const contract = buildModeratedContract(moderatedSchemas);
+      const [postId] = contract.documentTypeReferences('reply') as Reference[];
+
+      expect(postId.path).to.equal('postId');
+      expect(postId.type).to.equal('moderatedDocument');
+      expect(postId.contractId!.toBase58()).to.equal(contract.id.toBase58());
+      expect(postId.documentType).to.equal('post');
+      expect(postId.where).to.deep.equal({ $ownerId: '$ownerId' });
+      expect(postId).to.not.have.property('findBy');
+      expect(postId).to.not.have.property('inList');
+    });
+
+    it('should refuse a moderatedDocument reference found otherwise than by its id', () => {
+      for (const refersTo of [
+        { type: 'moderatedDocument', documentType: 'post', findBy: { text: '.' } },
+        { anyOf: [{ type: 'identity' }, { type: 'moderatedDocument', documentType: 'post' }] },
+      ]) {
+        for (const fullValidation of [true, false]) {
+          expect(
+            () => buildModeratedContract(withPostIdRefersTo(refersTo), fullValidation),
+            `${JSON.stringify(refersTo)} (full validation ${fullValidation})`,
+          ).to.throw();
+        }
+      }
+    });
+
+    it('should refuse a writer gate a removal record can not answer', () => {
+      const refersTo = {
+        type: 'moderatedDocument',
+        documentType: 'post',
+        where: { $creatorId: '$ownerId' },
+      };
+      for (const fullValidation of [true, false]) {
+        expect(
+          () => buildModeratedContract(withPostIdRefersTo(refersTo), fullValidation),
+        ).to.throw(/compares the writer/);
+      }
+    });
+  });
+
   describe('ownerRefersTo and creatorRefersTo', () => {
     /**
      * A `resignation` may only be written by the owner of a join request for
@@ -940,6 +1027,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentLookupInvalid).to.equal(40137);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentListInvalid).to.equal(40138);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotModerated).to.equal(40143);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeModerated).to.equal(40144);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRemoved).to.equal(40145);
     });
 
     it('should resolve a code back to its name', () => {

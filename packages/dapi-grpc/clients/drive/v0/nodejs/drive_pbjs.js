@@ -48660,6 +48660,7 @@ $root.org = (function() {
                                  * @property {Array.<Uint8Array>|null} [innerDocuments] ChainedDocuments innerDocuments
                                  * @property {Array.<Uint8Array>|null} [outerDocuments] ChainedDocuments outerDocuments
                                  * @property {Array.<Uint8Array>|null} [missingOuterIds] ChainedDocuments missingOuterIds
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.IContractDocumentRemoval>|null} [removedOuterDocuments] ChainedDocuments removedOuterDocuments
                                  */
 
                                 /**
@@ -48674,6 +48675,7 @@ $root.org = (function() {
                                     this.innerDocuments = [];
                                     this.outerDocuments = [];
                                     this.missingOuterIds = [];
+                                    this.removedOuterDocuments = [];
                                     if (properties)
                                         for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                             if (properties[keys[i]] != null)
@@ -48703,6 +48705,14 @@ $root.org = (function() {
                                  * @instance
                                  */
                                 ChainedDocuments.prototype.missingOuterIds = $util.emptyArray;
+
+                                /**
+                                 * ChainedDocuments removedOuterDocuments.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.IContractDocumentRemoval>} removedOuterDocuments
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @instance
+                                 */
+                                ChainedDocuments.prototype.removedOuterDocuments = $util.emptyArray;
 
                                 /**
                                  * Creates a new ChainedDocuments instance using the specified properties.
@@ -48737,6 +48747,9 @@ $root.org = (function() {
                                     if (message.missingOuterIds != null && message.missingOuterIds.length)
                                         for (var i = 0; i < message.missingOuterIds.length; ++i)
                                             writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.missingOuterIds[i]);
+                                    if (message.removedOuterDocuments != null && message.removedOuterDocuments.length)
+                                        for (var i = 0; i < message.removedOuterDocuments.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.encode(message.removedOuterDocuments[i], writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                     return writer;
                                 };
 
@@ -48785,6 +48798,11 @@ $root.org = (function() {
                                             if (!(message.missingOuterIds && message.missingOuterIds.length))
                                                 message.missingOuterIds = [];
                                             message.missingOuterIds.push(reader.bytes());
+                                            break;
+                                        case 4:
+                                            if (!(message.removedOuterDocuments && message.removedOuterDocuments.length))
+                                                message.removedOuterDocuments = [];
+                                            message.removedOuterDocuments.push($root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.decode(reader, reader.uint32()));
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -48842,6 +48860,15 @@ $root.org = (function() {
                                             if (!(message.missingOuterIds[i] && typeof message.missingOuterIds[i].length === "number" || $util.isString(message.missingOuterIds[i])))
                                                 return "missingOuterIds: buffer[] expected";
                                     }
+                                    if (message.removedOuterDocuments != null && message.hasOwnProperty("removedOuterDocuments")) {
+                                        if (!Array.isArray(message.removedOuterDocuments))
+                                            return "removedOuterDocuments: array expected";
+                                        for (var i = 0; i < message.removedOuterDocuments.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.verify(message.removedOuterDocuments[i]);
+                                            if (error)
+                                                return "removedOuterDocuments." + error;
+                                        }
+                                    }
                                     return null;
                                 };
 
@@ -48887,6 +48914,16 @@ $root.org = (function() {
                                             else if (object.missingOuterIds[i].length >= 0)
                                                 message.missingOuterIds[i] = object.missingOuterIds[i];
                                     }
+                                    if (object.removedOuterDocuments) {
+                                        if (!Array.isArray(object.removedOuterDocuments))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.removedOuterDocuments: array expected");
+                                        message.removedOuterDocuments = [];
+                                        for (var i = 0; i < object.removedOuterDocuments.length; ++i) {
+                                            if (typeof object.removedOuterDocuments[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.removedOuterDocuments: object expected");
+                                            message.removedOuterDocuments[i] = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.fromObject(object.removedOuterDocuments[i]);
+                                        }
+                                    }
                                     return message;
                                 };
 
@@ -48907,6 +48944,7 @@ $root.org = (function() {
                                         object.innerDocuments = [];
                                         object.outerDocuments = [];
                                         object.missingOuterIds = [];
+                                        object.removedOuterDocuments = [];
                                     }
                                     if (message.innerDocuments && message.innerDocuments.length) {
                                         object.innerDocuments = [];
@@ -48922,6 +48960,11 @@ $root.org = (function() {
                                         object.missingOuterIds = [];
                                         for (var j = 0; j < message.missingOuterIds.length; ++j)
                                             object.missingOuterIds[j] = options.bytes === String ? $util.base64.encode(message.missingOuterIds[j], 0, message.missingOuterIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.missingOuterIds[j]) : message.missingOuterIds[j];
+                                    }
+                                    if (message.removedOuterDocuments && message.removedOuterDocuments.length) {
+                                        object.removedOuterDocuments = [];
+                                        for (var j = 0; j < message.removedOuterDocuments.length; ++j)
+                                            object.removedOuterDocuments[j] = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.toObject(message.removedOuterDocuments[j], options);
                                     }
                                     return object;
                                 };
@@ -49196,6 +49239,7 @@ $root.org = (function() {
                                      * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments|null} [documents] SubQueryResult documents
                                      * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntries|null} [counts] SubQueryResult counts
                                      * @property {Array.<Uint8Array>|null} [missingIds] SubQueryResult missingIds
+                                     * @property {Array.<org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.IContractDocumentRemoval>|null} [removed] SubQueryResult removed
                                      */
 
                                     /**
@@ -49208,6 +49252,7 @@ $root.org = (function() {
                                      */
                                     function SubQueryResult(properties) {
                                         this.missingIds = [];
+                                        this.removed = [];
                                         if (properties)
                                             for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                                 if (properties[keys[i]] != null)
@@ -49237,6 +49282,14 @@ $root.org = (function() {
                                      * @instance
                                      */
                                     SubQueryResult.prototype.missingIds = $util.emptyArray;
+
+                                    /**
+                                     * SubQueryResult removed.
+                                     * @member {Array.<org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.IContractDocumentRemoval>} removed
+                                     * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult
+                                     * @instance
+                                     */
+                                    SubQueryResult.prototype.removed = $util.emptyArray;
 
                                     // OneOf field names bound to virtual getters and setters
                                     var $oneOfFields;
@@ -49283,6 +49336,9 @@ $root.org = (function() {
                                         if (message.missingIds != null && message.missingIds.length)
                                             for (var i = 0; i < message.missingIds.length; ++i)
                                                 writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.missingIds[i]);
+                                        if (message.removed != null && message.removed.length)
+                                            for (var i = 0; i < message.removed.length; ++i)
+                                                $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.encode(message.removed[i], writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                         return writer;
                                     };
 
@@ -49327,6 +49383,11 @@ $root.org = (function() {
                                                 if (!(message.missingIds && message.missingIds.length))
                                                     message.missingIds = [];
                                                 message.missingIds.push(reader.bytes());
+                                                break;
+                                            case 4:
+                                                if (!(message.removed && message.removed.length))
+                                                    message.removed = [];
+                                                message.removed.push($root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.decode(reader, reader.uint32()));
                                                 break;
                                             default:
                                                 reader.skipType(tag & 7);
@@ -49389,6 +49450,15 @@ $root.org = (function() {
                                                 if (!(message.missingIds[i] && typeof message.missingIds[i].length === "number" || $util.isString(message.missingIds[i])))
                                                     return "missingIds: buffer[] expected";
                                         }
+                                        if (message.removed != null && message.hasOwnProperty("removed")) {
+                                            if (!Array.isArray(message.removed))
+                                                return "removed: array expected";
+                                            for (var i = 0; i < message.removed.length; ++i) {
+                                                var error = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.verify(message.removed[i]);
+                                                if (error)
+                                                    return "removed." + error;
+                                            }
+                                        }
                                         return null;
                                     };
 
@@ -49424,6 +49494,16 @@ $root.org = (function() {
                                                 else if (object.missingIds[i].length >= 0)
                                                     message.missingIds[i] = object.missingIds[i];
                                         }
+                                        if (object.removed) {
+                                            if (!Array.isArray(object.removed))
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.removed: array expected");
+                                            message.removed = [];
+                                            for (var i = 0; i < object.removed.length; ++i) {
+                                                if (typeof object.removed[i] !== "object")
+                                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.removed: object expected");
+                                                message.removed[i] = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.fromObject(object.removed[i]);
+                                            }
+                                        }
                                         return message;
                                     };
 
@@ -49440,8 +49520,10 @@ $root.org = (function() {
                                         if (!options)
                                             options = {};
                                         var object = {};
-                                        if (options.arrays || options.defaults)
+                                        if (options.arrays || options.defaults) {
                                             object.missingIds = [];
+                                            object.removed = [];
+                                        }
                                         if (message.documents != null && message.hasOwnProperty("documents")) {
                                             object.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.toObject(message.documents, options);
                                             if (options.oneofs)
@@ -49456,6 +49538,11 @@ $root.org = (function() {
                                             object.missingIds = [];
                                             for (var j = 0; j < message.missingIds.length; ++j)
                                                 object.missingIds[j] = options.bytes === String ? $util.base64.encode(message.missingIds[j], 0, message.missingIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.missingIds[j]) : message.missingIds[j];
+                                        }
+                                        if (message.removed && message.removed.length) {
+                                            object.removed = [];
+                                            for (var j = 0; j < message.removed.length; ++j)
+                                                object.removed[j] = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.toObject(message.removed[j], options);
                                         }
                                         return object;
                                     };

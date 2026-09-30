@@ -6550,6 +6550,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_Fi
   GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_InnerDocumentsArray = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_OuterDocumentsArray = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_MissingOuterIdsArray = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_RemovedOuterDocumentsArray = 4,
 };
 
 /**
@@ -6577,6 +6578,17 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocument
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *missingOuterIdsArray;
 /** The number of items in @c missingOuterIdsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger missingOuterIdsArray_Count;
+
+/**
+ * The join values whose outer document the contract's
+ * moderators removed, each with its removal record, in first
+ * appearance order. Only a join property declaring `refersTo:
+ * moderatedDocument` can report any; there a join value with
+ * neither a document nor a record fails the query.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetContractDocumentRemovalsResponse_ContractDocumentRemoval*> *removedOuterDocumentsArray;
+/** The number of items in @c removedOuterDocumentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger removedOuterDocumentsArray_Count;
 
 @end
 
@@ -6610,6 +6622,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_
   GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_Documents = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_Counts = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_MissingIdsArray = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_RemovedArray = 4,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_Result_OneOfCase) {
@@ -6644,6 +6657,18 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocume
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *missingIdsArray;
 /** The number of items in @c missingIdsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger missingIdsArray_Count;
+
+/**
+ * DOCUMENTS by-id join only: the derived ids whose document
+ * the contract's moderators removed, each with its removal
+ * record, in first appearance order. Only a source property
+ * declaring `refersTo: moderatedDocument` can report any; there
+ * a derived id with neither a document nor a record fails the
+ * query.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetContractDocumentRemovalsResponse_ContractDocumentRemoval*> *removedArray;
+/** The number of items in @c removedArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger removedArray_Count;
 
 @end
 

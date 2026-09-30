@@ -11,6 +11,10 @@ mod contract_settled_deletions;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use dapi_grpc::platform::v0::get_contract_document_removals_response::{
+    ContractDocumentRemoval as ContractDocumentRemovalProto,
+    ContractDocumentRestoration as ContractDocumentRestorationProto,
+};
 use dapi_grpc::platform::v0::ContractModerationDocument as ContractModerationDocumentProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
 use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
@@ -22,6 +26,7 @@ use dpp::data_contract::config::moderation::{
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 
 /// Parses a 32 byte identifier out of a request field, naming the field in the error.
 pub(super) fn identifier_from_request(
@@ -76,6 +81,27 @@ pub(super) fn reason_to_response(
             })
             .collect(),
         reason_document_id: reason.reason_document_id.map(|id| id.to_vec()),
+    }
+}
+
+/// A document removal record as the wire carries it: the one shape the removals query and a
+/// join through a `moderatedDocument` reference answer with.
+pub(super) fn removal_entry_to_response(
+    entry: ContractDocumentRemovalEntry,
+) -> ContractDocumentRemovalProto {
+    ContractDocumentRemovalProto {
+        document_id: entry.document_id.to_vec(),
+        document_owner_id: entry.removal.document_owner_id.to_vec(),
+        moderator_id: entry.removal.moderator_id.to_vec(),
+        removed_at: entry.removal.removed_at,
+        reason: Some(reason_to_response(entry.removal.reason)),
+        document_hash: entry.removal.document_hash.to_vec(),
+        restoration: entry.removal.restoration.map(|restoration| {
+            ContractDocumentRestorationProto {
+                moderator_id: restoration.moderator_id.to_vec(),
+                restored_at: restoration.restored_at,
+            }
+        }),
     }
 }
 

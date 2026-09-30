@@ -98,6 +98,12 @@ pub(crate) trait DocumentReferenceValidation {
     /// `minimumAgeBlocks`, and when the reference declares `consume` the document is pushed onto
     /// `consumed_documents` for the caller to delete with the create once it accepts it. A
     /// replace leaves it alone, since nothing it reads can have changed.
+    ///
+    /// When `derived_index_values` is given (a create, protocol version 14), an accepted write
+    /// records there the value of each derived index property of the document type, read from
+    /// the document its reference points at, which this validation fetched: Drive keys the
+    /// new document by them without reading those documents again. A value whose document it
+    /// did not fetch is left out, for Drive to read.
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,
@@ -109,6 +115,7 @@ pub(crate) trait DocumentReferenceValidation {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
+        derived_index_values: Option<&mut BTreeMap<String, Value>>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -161,6 +168,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
+        derived_index_values: Option<&mut BTreeMap<String, Value>>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -181,6 +189,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 platform,
                 block_info,
                 consumed_documents,
+                derived_index_values,
                 transaction,
                 execution_context,
                 platform_version,

@@ -52638,7 +52638,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Resu
  * @private {!Array<number>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.repeatedFields_ = [1,2,3];
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.repeatedFields_ = [1,2,3,4];
 
 
 
@@ -52673,7 +52673,9 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Chai
   var f, obj = {
     innerDocumentsList: msg.getInnerDocumentsList_asB64(),
     outerDocumentsList: msg.getOuterDocumentsList_asB64(),
-    missingOuterIdsList: msg.getMissingOuterIdsList_asB64()
+    missingOuterIdsList: msg.getMissingOuterIdsList_asB64(),
+    removedOuterDocumentsList: jspb.Message.toObjectList(msg.getRemovedOuterDocumentsList(),
+    proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.toObject, includeInstance)
   };
 
   if (includeInstance) {
@@ -52721,6 +52723,11 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Chai
     case 3:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.addMissingOuterIds(value);
+      break;
+    case 4:
+      var value = new proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.deserializeBinaryFromReader);
+      msg.addRemovedOuterDocuments(value);
       break;
     default:
       reader.skipField();
@@ -52770,6 +52777,14 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Chai
     writer.writeRepeatedBytes(
       3,
       f
+    );
+  }
+  f = message.getRemovedOuterDocumentsList();
+  if (f.length > 0) {
+    writer.writeRepeatedMessage(
+      4,
+      f,
+      proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.serializeBinaryToWriter
     );
   }
 };
@@ -52958,6 +52973,44 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Chai
 };
 
 
+/**
+ * repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval removed_outer_documents = 4;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval>}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.prototype.getRemovedOuterDocumentsList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval, 4));
+};
+
+
+/**
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.prototype.setRemovedOuterDocumentsList = function(value) {
+  return jspb.Message.setRepeatedWrapperField(this, 4, value);
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval=} opt_value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.prototype.addRemovedOuterDocuments = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 4, opt_value, proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.prototype.clearRemovedOuterDocumentsList = function() {
+  return this.setRemovedOuterDocumentsList([]);
+};
+
+
 
 /**
  * List of repeated fields within this message type.
@@ -53098,7 +53151,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Comp
  * @private {!Array<number>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.repeatedFields_ = [3];
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.repeatedFields_ = [3,4];
 
 /**
  * Oneof group definitions for this message. Each group defines the field
@@ -53159,7 +53212,9 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Comp
   var f, obj = {
     documents: (f = msg.getDocuments()) && proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.toObject(includeInstance, f),
     counts: (f = msg.getCounts()) && proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.toObject(includeInstance, f),
-    missingIdsList: msg.getMissingIdsList_asB64()
+    missingIdsList: msg.getMissingIdsList_asB64(),
+    removedList: jspb.Message.toObjectList(msg.getRemovedList(),
+    proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.toObject, includeInstance)
   };
 
   if (includeInstance) {
@@ -53209,6 +53264,11 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Comp
     case 3:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.addMissingIds(value);
+      break;
+    case 4:
+      var value = new proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.deserializeBinaryFromReader);
+      msg.addRemoved(value);
       break;
     default:
       reader.skipField();
@@ -53260,6 +53320,14 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Comp
     writer.writeRepeatedBytes(
       3,
       f
+    );
+  }
+  f = message.getRemovedList();
+  if (f.length > 0) {
+    writer.writeRepeatedMessage(
+      4,
+      f,
+      proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.serializeBinaryToWriter
     );
   }
 };
@@ -53397,6 +53465,44 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Comp
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.prototype.clearMissingIdsList = function() {
   return this.setMissingIdsList([]);
+};
+
+
+/**
+ * repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval removed = 4;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval>}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.prototype.getRemovedList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval, 4));
+};
+
+
+/**
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.prototype.setRemovedList = function(value) {
+  return jspb.Message.setRepeatedWrapperField(this, 4, value);
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval=} opt_value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.prototype.addRemoved = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 4, opt_value, proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.prototype.clearRemovedList = function() {
+  return this.setRemovedList([]);
 };
 
 

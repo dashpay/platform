@@ -2,7 +2,9 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
-use crate::query::contract_moderation_queries::{identifier_from_request, reason_to_response};
+use crate::query::contract_moderation_queries::{
+    identifier_from_request, removal_entry_to_response,
+};
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
@@ -10,9 +12,7 @@ use dapi_grpc::platform::v0::get_contract_document_removals_request::{
     DocumentIds, GetContractDocumentRemovalsRequestV0, Page,
 };
 use dapi_grpc::platform::v0::get_contract_document_removals_response::{
-    get_contract_document_removals_response_v0,
-    ContractDocumentRemoval as ContractDocumentRemovalProto, ContractDocumentRemovals,
-    ContractDocumentRestoration as ContractDocumentRestorationProto,
+    get_contract_document_removals_response_v0, ContractDocumentRemovals,
     GetContractDocumentRemovalsResponseV0,
 };
 use dpp::check_validation_result_with_data;
@@ -137,23 +137,7 @@ impl<C> Platform<C> {
                 result: Some(
                     get_contract_document_removals_response_v0::Result::Removals(
                         ContractDocumentRemovals {
-                            removals: entries
-                                .into_iter()
-                                .map(|entry| ContractDocumentRemovalProto {
-                                    document_id: entry.document_id.to_vec(),
-                                    document_owner_id: entry.removal.document_owner_id.to_vec(),
-                                    moderator_id: entry.removal.moderator_id.to_vec(),
-                                    removed_at: entry.removal.removed_at,
-                                    reason: Some(reason_to_response(entry.removal.reason)),
-                                    document_hash: entry.removal.document_hash.to_vec(),
-                                    restoration: entry.removal.restoration.map(|restoration| {
-                                        ContractDocumentRestorationProto {
-                                            moderator_id: restoration.moderator_id.to_vec(),
-                                            restored_at: restoration.restored_at,
-                                        }
-                                    }),
-                                })
-                                .collect(),
+                            removals: entries.into_iter().map(removal_entry_to_response).collect(),
                         },
                     ),
                 ),
@@ -169,6 +153,10 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::{setup_platform, store_data_contract};
+    use dapi_grpc::platform::v0::get_contract_document_removals_response::{
+        ContractDocumentRemoval as ContractDocumentRemovalProto,
+        ContractDocumentRestoration as ContractDocumentRestorationProto,
+    };
     use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;

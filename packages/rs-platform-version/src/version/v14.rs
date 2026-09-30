@@ -441,8 +441,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     that declares moderation may set `moderatorAbilities.delete` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps
 ///     history, is indexOnly or restricts creation; for references such a type
-///     is deletable, so a permanentDocument reference refuses it and a
-///     deletableDocument reference accepts it). A moderation declaration may then keep
+///     is no longer permanent, so a permanentDocument reference refuses it, and
+///     a moderatedDocument or a deletableDocument reference takes it, see 64). A
+///     moderation declaration may then keep
 ///     no list at all. `ContractUserModeration` gains the `DeleteDocument`
 ///     action: the owner or a moderator deletes a document of such a type,
 ///     except the owner's and the moderators' own, with a reason like a
@@ -753,9 +754,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     refuses an `immutable` property holding a `deletableDocument`
 ///     reference no replace could clear (a typed array of them, or a single
 ///     one inside an immutable object), which could never be replaced once
-///     a target is deleted, and a single top-level one that is also listed
-///     under `immutableAllowSetting`, which a replace could clear once its
-///     target is deleted and the next one set to another document. A changed
+///     a target is deleted, and a single top-level one frozen only under a
+///     condition (see 66), which a replace could clear once its target is
+///     deleted and a later one the condition leaves free set to another
+///     document. A changed
 ///     element `refersTo` is an incompatible schema change on update.
 ///
 /// 32. **Document references resolved through a unique index**: a
@@ -1663,7 +1665,92 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     moderation charters system contract is written in the new keywords;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
-/// 64. **A seated team deletes a settled document together**: past a type's
+/// 64. **`refersTo: moderatedDocument`**: a third kind of document reference,
+///     between `permanentDocument` and `deletableDocument` and disjoint from
+///     both (`DocumentReferenceKind`, `DocumentTypeV2Getters::document_reference_kind`),
+///     in place in meta-schema v3, parser generation 3 and the generation 0
+///     reference validators. Its target is a document type whose documents
+///     leave state only when the contract's moderators remove them, each
+///     removal on the record: `canBeDeleted: false`, no `ttl`, and
+///     `moderatorAbilities.delete` with `deleteKeepsRecord` not false. Such a
+///     type is no longer a `deletableDocument` target
+///     (`ReferencedDocumentTypeModeratedError`, 40144), and a
+///     `moderatedDocument` reference to any other type is refused
+///     (`ReferencedDocumentTypeNotModeratedError`, 40143), at registration
+///     and at write time. The id form only: no `findBy`, `inList` or operand
+///     of an expression. The document must exist when the reference is
+///     written; a replace re-validates it as a permanent one (the value or a
+///     property its `where` reads changed, or always for a writer gate), and a
+///     value the stored document held whose document a moderator removed
+///     resolves to the removal record, read and billed: a `where` pair asked
+///     about again compares the record's document owner for `$ownerId` and the
+///     id for `$id`, and refuses any other property
+///     (`ReferencedDocumentRemovedError`, 40145); a writer gate may compare
+///     only those two (parser, 10231), being asked about on every replace. A
+///     value is held when it is the stored document's at its path, compared
+///     through the stored values the replace action carries for a changed
+///     top-level property. The write-time kind check still lets a
+///     `deletableDocument` reference to a moderated type through, which a
+///     contract registered before this note may hold. Chained and composite joins
+///     through it prove, as one more component of the merged proof, the
+///     removal records of the joined ids beside their documents, and report
+///     each removed document by its record (`removed_outer_documents = 4` on
+///     `ChainedDocuments`, `removed = 4` on a composite `SubQueryResult`,
+///     additive); a joined id with neither a document nor a record is refused
+///     as a missing permanent target is. StateError discriminants 156-158.
+///
+/// 65. **An index may hold a value of the document a reference points at**: an
+///     index property `"<reference property>.<field>"` (`DerivedIndexProperty`,
+///     `DocumentTypeV2Getters::derived_index_properties`), such as a reply's
+///     `postId.$ownerId`, in place in parser generation 3 (`admit_derived_index_properties`,
+///     `apply_derived_index_properties`) and `create_document_types_from_document_schemas`
+///     1 (`resolve_derived_index_properties`, which gives a schema field its type on the
+///     referenced type on every parse). The document never stores the value: before Drive
+///     keys a document of such a type, on insert (`add_document` 1), update (`update_document`
+///     1, one read for both versions) and delete (`delete_read_document`, shared by owner and
+///     moderator deletes and `ttl` expiry), it reads the referenced document, billed with the
+///     write, or, for a `moderatedDocument` target a moderator removed, the owner its removal
+///     record keeps, and puts the values into the document's properties under the derived
+///     names, where `get_raw_for_document_type` 0 reads them (a missing one is refused, never
+///     keyed under null) and the serialization ignores them. A create reads nothing more: the
+///     document reference validation 0, given a map, records the values from the documents it
+///     fetched, and the create action carries them to Drive. A dry run keys the document
+///     under a value of each field's type. `serialize_value_for_key` 0,
+///     `deserialize_value_for_key` 0 and Drive's estimated key sizes take a derived name's type
+///     from the declaration. Registration (full validation, `InvalidContractStructure`)
+///     admits one only where the value can not change once written: a same-contract
+///     `permanentDocument` or `moderatedDocument` reference by id, on a reference property
+///     fixed once written; `$ownerId` of a type that can not change hands, `$creatorId` of a
+///     type recording it, or a stored schema property fixed once written and indexable;
+///     through `moderatedDocument`, `$ownerId` only; not `$id`; not in a unique or contested
+///     index, as a `timeRange` or `integerRange` source or a `skipIfAbsent` property; not on
+///     an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
+///     document stores, is refused on an index whose derived properties the query does not fix
+///     with `==`. Every step is inert without a derived index property, which only generation 3
+///     declares.
+///
+/// 66. **Properties frozen under a condition**: an `immutable` entry of
+///     meta-schema v3 and parser generation 3, in place, may be
+///     `{ "property", "when" }` beside a property name. The condition takes
+///     the grammar of a `propertyConstraints` rule, reads no `countOf` or
+///     `sumOf`, and is judged on the document the replace writes (its
+///     `$updatedAt` the replace's block time, so `$updatedAt - $createdAt`
+///     is the document's age), with the stored document's properties read
+///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), which only such a
+///     condition may read. Document replace state validation 1, extended in
+///     place, refuses a replace changing, adding or removing a property whose
+///     condition holds, or faults, with `DocumentImmutablePropertyChangedError`
+///     (40128); the stored properties are rebuilt from the written ones and
+///     `stored_changed_values`, and the replace action's `added_data_fields`
+///     is gone. `immutableAllowSetting`, which `{ "present": "$old.<p>" }`
+///     now says, is refused on every parse, naming its replacement. A
+///     conditional property is not fixed once written
+///     (`schema_property_is_fixed_once_written`), a `deletableDocument`
+///     reference by id may be listed only without a condition, and on
+///     contract update (document type update validation 1) a condition is
+///     kept as it is or dropped for listing the property without one.
+///
+/// 67. **A seated team deletes a settled document together**: past a type's
 ///     `deleteWithin` window no moderator deletes a document alone (41116); the
 ///     new `moderatorAbilities.deleteSettled: { leader, approvals }` (meta-schema
 ///     v3, `DocumentTypeV2::moderator_settled_deletion`, fixed with the type,
