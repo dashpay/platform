@@ -36,7 +36,7 @@ pub fn contract_credits_path(contract_id: &[u8; 32]) -> [&[u8]; 2] {
 }
 
 /// The path to the credit bucket sum tree of one contract as a vec.
-pub fn contract_credits_path_vec(contract_id: [u8; 32]) -> Vec<Vec<u8>> {
+pub fn contract_credits_path_vec(contract_id: &[u8; 32]) -> Vec<Vec<u8>> {
     vec![vec![RootTree::ContractCredits as u8], contract_id.to_vec()]
 }
 
@@ -62,7 +62,7 @@ mod tests {
         assert_eq!(path[0], &[RootTree::ContractCredits as u8][..]);
         assert_eq!(path[1], &contract_id[..]);
         assert_eq!(
-            contract_credits_path_vec(contract_id),
+            contract_credits_path_vec(&contract_id),
             path.iter().map(|part| part.to_vec()).collect::<Vec<_>>()
         );
     }
