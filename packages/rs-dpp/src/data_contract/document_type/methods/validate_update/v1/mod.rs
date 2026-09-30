@@ -357,8 +357,9 @@ impl DocumentTypeRef<'_> {
     /// others write, a type that is the target of a permanentDocument
     /// reference was admitted as one nobody can delete, and a field only
     /// moderators write starts absent on every document, so no stored one could
-    /// hold a value its owner set. A document type added by an update declares
-    /// the abilities freely.
+    /// hold a value its owner set, and which fields stay public in the record of
+    /// a moderator's deletion is what an author was told when writing. A
+    /// document type added by an update declares the abilities freely.
     fn validate_moderator_abilities_unchanged(
         &self,
         new_document_type: DocumentTypeRef,
@@ -383,6 +384,31 @@ impl DocumentTypeRef<'_> {
                         "document type can not change which fields only its moderators write: changing from {} to {}",
                         list(old_fields),
                         list(new_fields)
+                    ),
+                )
+                .into(),
+            );
+        }
+        let (old_kept, new_kept) = (
+            self.moderator_deletion_kept_fields(),
+            new_document_type.moderator_deletion_kept_fields(),
+        );
+        if old_kept != new_kept {
+            let list = |fields: &BTreeSet<String>| {
+                if fields.is_empty() {
+                    "none".to_string()
+                } else {
+                    fields.iter().cloned().collect::<Vec<_>>().join(", ")
+                }
+            };
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change which fields a moderator's removal record keeps: changing from {} to {}",
+                        list(old_kept),
+                        list(new_kept)
                     ),
                 )
                 .into(),
@@ -1057,6 +1083,91 @@ mod tests {
             .as_ref()
             .validate_update(
                 make_document_type(false, true).as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_return_invalid_result_when_the_fields_a_removal_record_keeps_are_changed() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        let make_document_type = |kept: &[&str]| {
+            let mut abilities = platform_value!({ "delete": true });
+            if !kept.is_empty() {
+                abilities
+                    .insert("deleteKeepsFields".to_string(), platform_value!(kept))
+                    .expect("expected to set the key");
+            }
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "post",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                        "hashtag": { "type": "string", "maxLength": 61, "position": 1 },
+                    },
+                    "additionalProperties": false,
+                    "moderatorAbilities": abilities,
+                }),
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+
+        // Which fields stay public once a moderator removes a document is what its author was
+        // told: neither more nor fewer, in either direction.
+        for (old, new, expected) in [
+            (
+                &[][..],
+                &["hashtag"][..],
+                "document type can not change which fields a moderator's removal record keeps: changing from none to hashtag",
+            ),
+            (
+                &["hashtag"][..],
+                &[][..],
+                "document type can not change which fields a moderator's removal record keeps: changing from hashtag to none",
+            ),
+            (
+                &["hashtag"][..],
+                &["hashtag", "text"][..],
+                "document type can not change which fields a moderator's removal record keeps: changing from hashtag to hashtag, text",
+            ),
+        ] {
+            let result = make_document_type(old)
+                .as_ref()
+                .validate_update(make_document_type(new).as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message() == expected
+            );
+        }
+
+        // Unchanged, it passes.
+        let result = make_document_type(&["hashtag"])
+            .as_ref()
+            .validate_update(
+                make_document_type(&["hashtag"]).as_ref(),
                 2,
                 platform_version,
             )

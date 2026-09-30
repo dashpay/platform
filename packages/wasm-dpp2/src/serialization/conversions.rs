@@ -388,6 +388,52 @@ pub fn platform_value_to_object_with_base58_identifiers(
     platform_value_to_object(&identifier_values_to_base58(value))
 }
 
+/// A JS object holding each `(name, value)` as an own, enumerable data property, so a name like
+/// an inherited accessor (`__proto__`) is a property, not a call to the accessor: what the
+/// fields a document carries by name need, whatever the names are.
+pub fn object_with_own_properties<'a>(
+    entries: impl IntoIterator<Item = (&'a str, JsValue)>,
+) -> WasmDppResult<js_sys::Object> {
+    let object = js_sys::Object::new();
+    for (name, value) in entries {
+        let descriptor = js_sys::Object::new();
+        for (key, flag) in [
+            ("value", value),
+            ("writable", JsValue::TRUE),
+            ("enumerable", JsValue::TRUE),
+            ("configurable", JsValue::TRUE),
+        ] {
+            js_sys::Reflect::set(&descriptor, &JsValue::from_str(key), &flag).map_err(|_| {
+                WasmDppError::serialization(format!("failed to describe property `{name}`"))
+            })?;
+        }
+        js_sys::Reflect::define_property(&object, &JsValue::from_str(name), &descriptor)
+            .map_err(|_| WasmDppError::serialization(format!("failed to set property `{name}`")))?;
+    }
+    Ok(object)
+}
+
+/// The values a moderator's removal record keeps of a document, by property path, as a JS
+/// object: each value as the document's `properties` show it (identifiers as base58 strings,
+/// other bytes as Uint8Arrays, large integers as bigints), or with `for_json` as its JSON form.
+pub fn kept_fields_to_js(
+    kept_fields: &std::collections::BTreeMap<String, platform_value::Value>,
+    for_json: bool,
+) -> WasmDppResult<JsValue> {
+    let entries = kept_fields
+        .iter()
+        .map(|(path, value)| {
+            let value = if for_json {
+                platform_value_to_json(value)?
+            } else {
+                platform_value_to_object_with_base58_identifiers(value)?
+            };
+            Ok((path.as_str(), value))
+        })
+        .collect::<WasmDppResult<Vec<_>>>()?;
+    Ok(object_with_own_properties(entries)?.into())
+}
+
 /// Recursively convert `Value::Identifier` values to base58 `Value::Text`.
 /// Map keys are left alone — [`stringify_map_keys_for_object`] already
 /// renders identifier keys as base58.

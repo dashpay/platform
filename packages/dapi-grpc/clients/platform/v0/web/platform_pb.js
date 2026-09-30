@@ -34375,7 +34375,8 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
     removedAt: jspb.Message.getFieldWithDefault(msg, 4, 0),
     reason: (f = msg.getReason()) && proto.org.dash.platform.dapi.v0.ContractModerationReason.toObject(includeInstance, f),
     documentHash: msg.getDocumentHash_asB64(),
-    restoration: (f = msg.getRestoration()) && proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.toObject(includeInstance, f)
+    restoration: (f = msg.getRestoration()) && proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.toObject(includeInstance, f),
+    keptFieldsMap: (f = msg.getKeptFieldsMap()) ? f.toObject(includeInstance, undefined) : []
   };
 
   if (includeInstance) {
@@ -34441,6 +34442,12 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
       var value = new proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.deserializeBinaryFromReader);
       msg.setRestoration(value);
+      break;
+    case 8:
+      var value = msg.getKeptFieldsMap();
+      reader.readMessage(value, function(message, reader) {
+        jspb.Map.deserializeBinary(message, reader, jspb.BinaryReader.prototype.readString, jspb.BinaryReader.prototype.readBytes, null, "", "");
+         });
       break;
     default:
       reader.skipField();
@@ -34521,6 +34528,10 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
       f,
       proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.serializeBinaryToWriter
     );
+  }
+  f = message.getKeptFieldsMap(true);
+  if (f && f.getLength() > 0) {
+    f.serializeBinary(8, writer, jspb.BinaryWriter.prototype.writeString, jspb.BinaryWriter.prototype.writeBytes);
   }
 };
 
@@ -34783,6 +34794,28 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
 proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.hasRestoration = function() {
   return jspb.Message.getField(this, 7) != null;
 };
+
+
+/**
+ * map<string, bytes> kept_fields = 8;
+ * @param {boolean=} opt_noLazyCreate Do not create the map if
+ * empty, instead returning `undefined`
+ * @return {!jspb.Map<string,!(string|Uint8Array)>}
+ */
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.getKeptFieldsMap = function(opt_noLazyCreate) {
+  return /** @type {!jspb.Map<string,!(string|Uint8Array)>} */ (
+      jspb.Message.getMapField(this, 8, opt_noLazyCreate,
+      null));
+};
+
+
+/**
+ * Clears values from the map. The map will be non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.clearKeptFieldsMap = function() {
+  this.getKeptFieldsMap().clear();
+  return this;};
 
 
 

@@ -1,6 +1,7 @@
 //! What a moderator's deletion leaves, as the document type says (protocol version 14): a
-//! removal record unless `moderatorAbilities.deleteKeepsRecord` is false, and the owner's
-//! storage refund only when `moderatorAbilities.deleteRefundsOwner` is true.
+//! removal record unless `moderatorAbilities.deleteKeepsRecord` is false, keeping the values
+//! `moderatorAbilities.deleteKeepsFields` lists, and the owner's storage refund only when
+//! `moderatorAbilities.deleteRefundsOwner` is true.
 
 use super::*;
 use drive::drive::contract::paths::contract_document_removals_path;
@@ -224,6 +225,180 @@ async fn should_keep_what_a_deletion_leaves_fixed_with_the_type() {
             .clone();
         schema
             .insert("moderatorAbilities".to_string(), abilities)
+            .expect("expected to change the keyword");
+        add_document_type(&mut changed, POST, schema);
+        let update = setup.contract_update(changed).await;
+        assert_paid_with_code(&setup.process(&update, &transaction), DOCUMENT_TYPE_UPDATE);
+    }
+}
+
+/// A contract whose moderators delete posts carrying a hashtag and an object of tags and a
+/// note, their records keeping `kept` (`moderatorAbilities.deleteKeepsFields`)
+async fn setup_keeping(kept: Value) -> Setup {
+    Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                        "hashtag": { "type": "string", "maxLength": 61, "position": 1 },
+                        "meta": {
+                            "type": "object",
+                            "position": 2,
+                            "properties": {
+                                "tags": {
+                                    "type": "array",
+                                    "items": { "type": "string", "maxLength": 20 },
+                                    "maxItems": 5,
+                                    "position": 0,
+                                },
+                                "note": { "type": "string", "maxLength": 20, "position": 1 },
+                            },
+                            "additionalProperties": false,
+                        },
+                    },
+                    "required": ["text", "$createdAt"],
+                    "moderatorAbilities": { "delete": true, "deleteKeepsFields": kept },
+                })),
+            )
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn should_keep_the_listed_fields_of_a_deleted_document_in_its_record() {
+    let setup = setup_keeping(platform_value!(["hashtag", "meta.tags", "$createdAt"])).await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.set("hashtag", platform_value!("dash"));
+            document.set(
+                "meta",
+                platform_value!({ "tags": ["privacy", "payments"], "note": "not kept" }),
+            );
+        })
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
+    setup.commit(transaction);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert!(setup.check_tx(&delete).is_empty());
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+    assert_eq!(setup.stored_document(POST, post.id(), None), None);
+
+    // The document is gone; what its type keeps public is in the record, copied as it was
+    // stored, nested values and the creation time included. The note, not listed, went with
+    // the document.
+    let removal = setup
+        .post_removal(post.id(), None)
+        .expect("expected the removal record");
+    assert_eq!(
+        removal.kept_fields,
+        BTreeMap::from([
+            (
+                "$createdAt".to_string(),
+                Value::U64(stored.created_at().expect("expected a creation time")),
+            ),
+            ("hashtag".to_string(), platform_value!("dash")),
+            (
+                "meta.tags".to_string(),
+                platform_value!(["privacy", "payments"])
+            ),
+        ])
+    );
+    // The proof of the deletion shows the same record, kept values included.
+    assert_eq!(setup.assert_removal_proved(&delete), removal);
+
+    // A restore brings the document back as it was; the record, marked restored, keeps what it
+    // kept.
+    let restore = setup
+        .moderate(
+            &setup.moderator,
+            restore_action(POST, setup.document_bytes(POST, &stored)),
+        )
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&restore, &transaction));
+    setup.commit(transaction);
+    let restored = setup
+        .post_removal(post.id(), None)
+        .expect("expected the removal record");
+    assert!(restored.is_restored());
+    assert_eq!(restored.kept_fields, removal.kept_fields);
+    assert_eq!(setup.assert_removal_proved(&restore), restored);
+}
+
+#[tokio::test]
+async fn should_leave_out_of_the_record_a_path_the_document_holds_no_value_at() {
+    let setup = setup_keeping(platform_value!(["hashtag", "meta.tags", "$createdAt"])).await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.properties_mut().remove("hashtag");
+            document.set("meta", platform_value!({ "note": "no tags" }));
+        })
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
+    setup.commit(transaction);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+
+    let removal = setup
+        .post_removal(post.id(), None)
+        .expect("expected the removal record");
+    assert_eq!(
+        removal.kept_fields,
+        BTreeMap::from([(
+            "$createdAt".to_string(),
+            Value::U64(stored.created_at().expect("expected a creation time")),
+        )])
+    );
+    assert_eq!(setup.assert_removal_proved(&delete), removal);
+}
+
+#[tokio::test]
+async fn should_keep_the_fields_a_record_keeps_fixed_with_the_type() {
+    let setup = setup_keeping(platform_value!(["hashtag"])).await;
+
+    for kept in [
+        platform_value!(["hashtag", "meta.tags"]),
+        platform_value!(["text"]),
+    ] {
+        let transaction = setup.platform.drive.grove.start_transaction();
+        let mut changed = setup.contract.clone();
+        changed.increment_version();
+        let mut schema = changed
+            .document_type_for_name(POST)
+            .expect("expected the post type")
+            .schema()
+            .clone();
+        schema
+            .insert(
+                "moderatorAbilities".to_string(),
+                platform_value!({ "delete": true, "deleteKeepsFields": kept }),
+            )
             .expect("expected to change the keyword");
         add_document_type(&mut changed, POST, schema);
         let update = setup.contract_update(changed).await;

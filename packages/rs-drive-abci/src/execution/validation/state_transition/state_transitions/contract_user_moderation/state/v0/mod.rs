@@ -34,8 +34,8 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
-    ContractModerationList, ContractModerationStatus, ModerationAbility,
+    kept_field_values, ContractDocumentRemoval, ContractDocumentRestoration,
+    ContractModerationConfig, ContractModerationList, ContractModerationStatus, ModerationAbility,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -560,6 +560,11 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
             removed_at: block_info.time_ms,
             document_hash,
             replaces_restored_record,
+            // What of the document stays public once it is gone, copied from it as stored
+            kept_fields: kept_field_values(
+                &document,
+                document_type.moderator_deletion_kept_fields(),
+            ),
         })
     } else {
         None

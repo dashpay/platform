@@ -1775,6 +1775,7 @@ mod contract_moderation_tests {
                 documents: vec![],
                 reason_document_id: None,
             }),
+            kept_fields: Default::default(),
         }
     }
 

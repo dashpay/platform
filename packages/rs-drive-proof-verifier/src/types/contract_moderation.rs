@@ -36,6 +36,8 @@ pub use drive::drive::contract::moderation::types::{
     ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
     ContractDocumentRemovalsSelection, ContractModerationEntriesQuery, ContractModerationEntry,
 };
+use drive::drive::contract::moderation::types::decode_kept_field_value;
+use std::collections::BTreeMap;
 
 /// The page size a request without a limit asks for, which is also the largest page a node
 /// returns: the platform version's `max_returned_elements`, the number the node reads too.
@@ -86,7 +88,7 @@ pub fn default_contract_document_removals_limit(platform_version: &PlatformVersi
 /// The records of the documents a contract's moderators deleted within one document type, in
 /// document id order. A page shorter than the limit is the last one; a read by ids holds only
 /// the ids that have a record.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ContractDocumentRemovals(pub Vec<ContractDocumentRemovalEntry>);
 
 impl ContractDocumentRemovals {
@@ -427,6 +429,18 @@ pub fn removals_from_response(
                             })
                         })
                         .transpose()?,
+                    kept_fields: removal
+                        .kept_fields
+                        .into_iter()
+                        .map(|(path, value)| {
+                            let value = decode_kept_field_value(&value).map_err(|error| {
+                                Error::ResponseDecodeError {
+                                    error: format!("removal kept field \"{path}\": {error}"),
+                                }
+                            })?;
+                            Ok::<_, Error>((path, value))
+                        })
+                        .collect::<Result<BTreeMap<_, _>, Error>>()?,
                 },
             })
         })
@@ -504,6 +518,8 @@ pub fn fee_pots_from_response(pots: ContractFeePotsProto) -> Result<ContractFeeP
 mod tests {
     use super::*;
     use dapi_grpc::platform::v0::get_contract_document_removals_response::ContractDocumentRestoration as ContractDocumentRestorationProto;
+    use dpp::platform_value::Value;
+    use drive::drive::contract::moderation::types::encode_kept_field_value;
 
     fn id(seed: u8) -> Identifier {
         Identifier::from([seed; 32])
@@ -902,6 +918,18 @@ mod tests {
                 moderator_id: id(0x78),
                 restored_at: 2_000 + u64::from(seed),
             }),
+            // Every odd record keeps fields of its document.
+            kept_fields: if seed.is_multiple_of(2) {
+                BTreeMap::new()
+            } else {
+                BTreeMap::from([
+                    ("hashtag".to_string(), Value::Text(format!("tag{seed}"))),
+                    (
+                        "meta.tags".to_string(),
+                        Value::Array(vec![Value::Identifier(id(seed).to_buffer())]),
+                    ),
+                ])
+            },
         }
     }
 
@@ -925,6 +953,16 @@ mod tests {
                     moderator_id: restoration.moderator_id.to_vec(),
                     restored_at: restoration.restored_at,
                 }),
+            kept_fields: removal
+                .kept_fields
+                .iter()
+                .map(|(path, value)| {
+                    (
+                        path.clone(),
+                        encode_kept_field_value(value).expect("expected to encode"),
+                    )
+                })
+                .collect(),
         }
     }
 
@@ -1067,6 +1105,26 @@ mod tests {
             let err = removals_from_response(vec![proto], &ids_query(&[1])).unwrap_err();
             assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
         }
+
+        // A kept value is one platform value, all of its bytes.
+        for spoiled in [vec![], vec![0xff; 3]] {
+            let mut proto = removal_proto(1);
+            proto.kept_fields.insert("hashtag".to_string(), spoiled);
+            let err = removals_from_response(vec![proto], &ids_query(&[1])).unwrap_err();
+            assert!(
+                matches!(&err, Error::ResponseDecodeError { error } if error.contains("\"hashtag\"")),
+                "got: {err:?}"
+            );
+        }
+        let mut proto = removal_proto(1);
+        let mut trailing = proto.kept_fields["hashtag"].clone();
+        trailing.push(0);
+        proto.kept_fields.insert("hashtag".to_string(), trailing);
+        let err = removals_from_response(vec![proto], &ids_query(&[1])).unwrap_err();
+        assert!(
+            matches!(&err, Error::ResponseDecodeError { error } if error.contains("after its value")),
+            "got: {err:?}"
+        );
 
         // And its document hash 32 bytes.
         let mut proto = removal_proto(1);

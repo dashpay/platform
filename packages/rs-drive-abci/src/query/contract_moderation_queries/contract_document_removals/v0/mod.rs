@@ -133,12 +133,15 @@ impl<C> Platform<C> {
                 .drive
                 .fetch_contract_document_removals(contract_id, &query, None, platform_version));
 
+            let removals = entries
+                .into_iter()
+                .map(removal_entry_to_response)
+                .collect::<Result<_, Error>>()?;
+
             GetContractDocumentRemovalsResponseV0 {
                 result: Some(
                     get_contract_document_removals_response_v0::Result::Removals(
-                        ContractDocumentRemovals {
-                            removals: entries.into_iter().map(removal_entry_to_response).collect(),
-                        },
+                        ContractDocumentRemovals { removals },
                     ),
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
@@ -167,10 +170,12 @@ mod tests {
     };
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::DataContract;
-    use dpp::platform_value::platform_value;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use drive::drive::contract::moderation::types::encode_kept_field_value;
     use drive::drive::Drive;
     use drive::util::batch::{ContractModerationOperationType, DriveOperation};
+    use std::collections::BTreeMap;
 
     const POST: &str = "post";
 
@@ -222,6 +227,23 @@ mod tests {
                 moderator_id: Identifier::from([0x78; 32]),
                 restored_at: 2_000 + seed as u64,
             }),
+            // Every odd record keeps fields of its document: the response carries them too, and
+            // each value keeps its type, nested ones included.
+            kept_fields: if seed.is_multiple_of(2) {
+                BTreeMap::new()
+            } else {
+                BTreeMap::from([
+                    ("$createdAt".to_string(), Value::U64(500 + seed as u64)),
+                    ("hashtag".to_string(), Value::Text(format!("tag{seed}"))),
+                    (
+                        "meta.tags".to_string(),
+                        Value::Array(vec![
+                            Value::Text("a".to_string()),
+                            Value::Identifier([seed; 32]),
+                        ]),
+                    ),
+                ])
+            },
         }
     }
 
@@ -294,6 +316,16 @@ mod tests {
                     moderator_id: restoration.moderator_id.to_vec(),
                     restored_at: restoration.restored_at,
                 }),
+            kept_fields: removal
+                .kept_fields
+                .iter()
+                .map(|(path, value)| {
+                    (
+                        path.clone(),
+                        encode_kept_field_value(value).expect("expected to encode"),
+                    )
+                })
+                .collect(),
         }
     }
 

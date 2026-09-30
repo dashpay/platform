@@ -3567,6 +3567,7 @@ typedef GPB_ENUM(GetContractDocumentRemovalsResponse_ContractDocumentRemoval_Fie
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_Reason = 5,
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_DocumentHash = 6,
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_Restoration = 7,
+  GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_KeptFields = 8,
 };
 
 GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRemoval : GPBMessage
@@ -3598,6 +3599,11 @@ GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRemoval
 @property(nonatomic, readwrite, strong, null_resettable) GetContractDocumentRemovalsResponse_ContractDocumentRestoration *restoration;
 /** Test to see if @c restoration has been set. */
 @property(nonatomic, readwrite) BOOL hasRestoration;
+
+/** again as it was; absent while the removal stands */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableDictionary<NSString*, NSData*> *keptFields;
+/** The number of items in @c keptFields without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger keptFields_Count;
 
 @end
 

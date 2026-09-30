@@ -3463,6 +3463,8 @@ export namespace GetContractDocumentRemovalsResponse {
     getRestoration(): GetContractDocumentRemovalsResponse.ContractDocumentRestoration | undefined;
     setRestoration(value?: GetContractDocumentRemovalsResponse.ContractDocumentRestoration): void;
 
+    getKeptFieldsMap(): jspb.Map<string, Uint8Array | string>;
+    clearKeptFieldsMap(): void;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractDocumentRemoval.AsObject;
     static toObject(includeInstance: boolean, msg: ContractDocumentRemoval): ContractDocumentRemoval.AsObject;
@@ -3482,6 +3484,7 @@ export namespace GetContractDocumentRemovalsResponse {
       reason?: ContractModerationReason.AsObject,
       documentHash: Uint8Array | string,
       restoration?: GetContractDocumentRemovalsResponse.ContractDocumentRestoration.AsObject,
+      keptFieldsMap: Array<[string, Uint8Array | string]>,
     }
   }
 

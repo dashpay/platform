@@ -243,7 +243,7 @@ impl<C> Platform<C> {
                 .removed_outer_documents
                 .into_iter()
                 .map(removal_entry_to_response)
-                .collect();
+                .collect::<Result<_, Error>>()?;
 
             GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Data(ResultData {
@@ -644,7 +644,7 @@ mod tests {
         assert!(chained.missing_outer_ids.is_empty());
         assert_eq!(
             chained.removed_outer_documents,
-            vec![removal_entry_to_response(entry.clone())]
+            vec![removal_entry_to_response(entry.clone()).expect("expected the record on the wire")]
         );
         let record = &chained.removed_outer_documents[0];
         assert_eq!(record.document_id, POST_B.to_vec());

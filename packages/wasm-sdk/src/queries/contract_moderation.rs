@@ -23,6 +23,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::{moderation_reason_to_js, moderation_warnings_to_js};
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::serialization::conversions::kept_fields_to_js;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_MODERATION_QUERY_TS: &'static str = r#"
@@ -166,6 +167,14 @@ export interface ContractDocumentRemovalEntry {
   restoredBy?: string;
   /** The time of the block that restored it, in milliseconds; absent while the removal stands. */
   restoredAt?: bigint;
+  /**
+   * The values the record keeps of the document, by the property path its type lists under
+   * `moderatorAbilities.deleteKeepsFields` (`hashtag`, `meta.tags`, `$createdAt`), copied from
+   * it as it was removed and shown as the document's `properties` show them: what of it stays
+   * public once it is gone. Empty when the type keeps none; a path the document held no value
+   * at is absent.
+   */
+  keptFields: Record<string, unknown>;
 }
 
 /**
@@ -450,12 +459,13 @@ fn entries_to_js(
     Ok(result.into())
 }
 
-/// Sets `documentOwnerId`, `moderatorId`, `reason`, `removedAt` and `documentHash` on
-/// `target`, and `restoredBy` and `restoredAt` when the document was restored. The removals
+/// Sets `documentOwnerId`, `moderatorId`, `reason`, `removedAt`, `documentHash` and
+/// `keptFields` on `target`, and `restoredBy` and `restoredAt` when the document was restored. The removals
 /// query and the result of a deletion or a restore carry the same record, so they share this.
 /// Each writes identifiers its own way, which `id_to_js` decides: base58 strings in a query
 /// answer, as the entries of a moderation list are, and `Identifier`s in the result of a
-/// transition. The hash is 64 hex characters either way.
+/// transition. The hash is 64 hex characters either way, and the kept values are shown as a
+/// document's `properties` show them.
 pub(crate) fn set_removal_fields(
     target: &js_sys::Object,
     removal: &ContractDocumentRemoval,
@@ -481,6 +491,10 @@ pub(crate) fn set_removal_fields(
             js_sys::BigInt::from(restoration.restored_at).into(),
         )?;
     }
+    set(
+        "keptFields",
+        kept_fields_to_js(&removal.kept_fields, false)?,
+    )?;
     Ok(())
 }
 
@@ -691,7 +705,9 @@ impl WasmSdk {
 pub(crate) mod joined_removal_tests {
     use super::*;
     use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
+    use dash_sdk::dpp::platform_value::Value;
     use js_sys::{Function, Reflect};
+    use std::collections::BTreeMap;
     use wasm_bindgen::JsCast;
 
     pub(crate) fn removal_entry() -> ContractDocumentRemovalEntry {
@@ -704,6 +720,10 @@ pub(crate) mod joined_removal_tests {
                 removed_at: 1_700_000_000_000,
                 document_hash: [0x5A; 32],
                 restoration: None,
+                kept_fields: BTreeMap::from([(
+                    "hashtag".to_string(),
+                    Value::Text("dash".to_string()),
+                )]),
             },
         }
     }
@@ -759,5 +779,110 @@ pub(crate) mod joined_removal_tests {
             Some("spam")
         );
         assert!(!Reflect::has(js, &"restoredBy".into()).expect("has() on a plain object"));
+        // What the record keeps of the document rides with it through the join
+        assert_eq!(
+            field(&field(js, "keptFields"), "hashtag")
+                .as_string()
+                .as_deref(),
+            Some("dash")
+        );
+    }
+}
+
+/// What a removal record keeps of its document, as JavaScript reads it: each path an own
+/// property, each value as the document's `properties` show it. Run on the wasm32 target with
+/// the runner command in `Cargo.toml`.
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
+    use dash_sdk::dpp::platform_value::Value;
+    use dash_sdk::platform::contract_moderation::ContractDocumentRemovalEntry;
+    use std::collections::BTreeMap;
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    fn get(target: &JsValue, key: &str) -> JsValue {
+        js_sys::Reflect::get(target, &JsValue::from_str(key)).expect("expected to read the key")
+    }
+
+    #[wasm_bindgen_test]
+    fn a_removal_carries_the_fields_it_keeps() {
+        let removal = ContractDocumentRemoval {
+            document_owner_id: Identifier::from([1; 32]),
+            moderator_id: Identifier::from([2; 32]),
+            reason: ContractModerationReason::from_text("spam"),
+            removed_at: 5,
+            document_hash: [3; 32],
+            restoration: None,
+            kept_fields: BTreeMap::from([
+                ("$createdAt".to_string(), Value::U64(4)),
+                ("__proto__".to_string(), Value::Text("a field".to_string())),
+                ("hashtag".to_string(), Value::Text("dash".to_string())),
+                (
+                    "meta.tags".to_string(),
+                    Value::Array(vec![
+                        Value::Text("a".to_string()),
+                        Value::Identifier([6; 32]),
+                    ]),
+                ),
+            ]),
+        };
+        let query = ContractDocumentRemovalsPageQuery::for_document_ids(
+            Identifier::from([8; 32]),
+            "post".to_string(),
+            vec![Identifier::from([9; 32])],
+        );
+        let page = removals_to_js(
+            ContractDocumentRemovals(vec![ContractDocumentRemovalEntry {
+                document_id: Identifier::from([9; 32]),
+                removal,
+            }]),
+            &query,
+        )
+        .expect("expected the page");
+        let entry = Array::from(&get(&page, "removals")).get(0);
+        let kept = get(&entry, "keptFields");
+
+        assert_eq!(get(&kept, "hashtag").as_string().as_deref(), Some("dash"));
+        assert_eq!(
+            get(&kept, "$createdAt").js_typeof().as_string().as_deref(),
+            Some("bigint")
+        );
+        // A path is a key, dots and all, and an identifier inside a value is base58, as in a
+        // document's `properties`.
+        let tags = Array::from(&get(&kept, "meta.tags"));
+        assert_eq!(tags.get(0).as_string().as_deref(), Some("a"));
+        assert_eq!(
+            tags.get(1).as_string(),
+            Some(IdentifierWasm::from(Identifier::from([6; 32])).to_base58())
+        );
+        // A path named like an inherited accessor is the record's own property.
+        let own = js_sys::Object::get_own_property_descriptor(
+            kept.unchecked_ref(),
+            &JsValue::from_str("__proto__"),
+        );
+        assert_eq!(get(&own, "value").as_string().as_deref(), Some("a field"));
+    }
+
+    #[wasm_bindgen_test]
+    fn a_removal_that_keeps_nothing_carries_an_empty_object() {
+        let query = ContractDocumentRemovalsPageQuery::for_document_ids(
+            Identifier::from([8; 32]),
+            "post".to_string(),
+            vec![Identifier::from([9; 32])],
+        );
+        let page = removals_to_js(
+            ContractDocumentRemovals(vec![ContractDocumentRemovalEntry {
+                document_id: Identifier::from([9; 32]),
+                removal: ContractDocumentRemoval::default(),
+            }]),
+            &query,
+        )
+        .expect("expected the page");
+        let entry = Array::from(&get(&page, "removals")).get(0);
+        let kept = get(&entry, "keptFields");
+        assert!(kept.is_object());
+        assert_eq!(js_sys::Object::keys(kept.unchecked_ref()).length(), 0);
     }
 }

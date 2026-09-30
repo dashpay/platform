@@ -185,6 +185,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             removed_at,
                             document_hash,
                             replaces_restored_record,
+                            kept_fields,
                         }) = record
                         {
                             operations.push(ContractModerationOperation(
@@ -199,6 +200,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                         removed_at,
                                         document_hash,
                                         restoration: None,
+                                        kept_fields,
                                     },
                                     replaces_existing: replaces_restored_record,
                                     moderator_id,

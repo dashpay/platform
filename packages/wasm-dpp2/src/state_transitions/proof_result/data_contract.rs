@@ -10,9 +10,11 @@ use crate::data_contract::{
 };
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::serialization::conversions::normalize_js_value_for_json;
+use crate::serialization::conversions::{kept_fields_to_js, normalize_js_value_for_json};
 use dpp::data_contract::config::moderation::{ContractModerationReason, ContractWarning};
+use dpp::platform_value::Value;
 use js_sys::{BigInt, Map};
+use std::collections::BTreeMap;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
@@ -337,8 +339,8 @@ impl_wasm_type_info!(VerifiedContractFeeClaimWasm, VerifiedContractFeeClaim);
 /// `VerifiedContractDocumentRemoval` proof-result wrapper: the record a moderator's document
 /// deletion left under the contract, as a deletion or a restore leaves it. After a deletion
 /// the document is gone and the record says whose it was, who removed it, why, when and what
-/// it was (its hash); after a restore the document is live again and the record also says who
-/// brought it back and when.
+/// it was (its hash), with the values of the fields its type keeps public; after a restore the
+/// document is live again and the record also says who brought it back and when.
 #[wasm_bindgen(js_name = "VerifiedContractDocumentRemoval")]
 #[derive(Clone)]
 pub struct VerifiedContractDocumentRemovalWasm {
@@ -369,6 +371,8 @@ pub struct VerifiedContractDocumentRemovalWasm {
     /// stands
     #[wasm_bindgen(js_name = "restoredAt")]
     pub restored_at: Option<u64>,
+    #[wasm_bindgen(skip)]
+    pub kept_fields: BTreeMap<String, Value>,
 }
 
 #[wasm_bindgen(js_class = VerifiedContractDocumentRemoval)]
@@ -384,6 +388,18 @@ impl VerifiedContractDocumentRemovalWasm {
     #[wasm_bindgen(getter = "documentHash")]
     pub fn document_hash(&self) -> String {
         hex::encode(self.document_hash)
+    }
+
+    /// The values the record keeps of the document, by the property path its type lists
+    /// under `moderatorAbilities.deleteKeepsFields`, as the document's `properties` show
+    /// them: what of it stays public once it is gone. Empty when the type keeps none; a path
+    /// the document held no value at is absent
+    #[wasm_bindgen(
+        getter = "keptFields",
+        unchecked_return_type = "Record<string, unknown>"
+    )]
+    pub fn kept_fields(&self) -> WasmDppResult<JsValue> {
+        kept_fields_to_js(&self.kept_fields, false)
     }
 
     #[wasm_bindgen(js_name = toObject)]
@@ -417,6 +433,7 @@ impl VerifiedContractDocumentRemovalWasm {
                     JsValue::from(js_sys::BigInt::from(restored_at))
                 }),
             ),
+            ("keptFields", kept_fields_to_js(&self.kept_fields, false)?),
         ]))
     }
 
@@ -461,6 +478,7 @@ impl VerifiedContractDocumentRemovalWasm {
                     JsValue::from_f64(restored_at as f64)
                 }),
             ),
+            ("keptFields", kept_fields_to_js(&self.kept_fields, true)?),
         ]))
     }
 }

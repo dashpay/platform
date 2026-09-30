@@ -882,6 +882,11 @@ message GetContractDocumentRemovalsResponse {
     ContractDocumentRestoration restoration =
         7; // Set once a moderator restored the document, which is then live
            // again as it was; absent while the removal stands
+    map<string, bytes> kept_fields =
+        8; // The values the record keeps of the document, by the property path
+           // its type lists under moderatorAbilities.deleteKeepsFields, each a
+           // platform value encoded with bincode (standard, big-endian), as the
+           // record stores it; a path the document held no value at is absent
   }
 
   message ContractDocumentRemovals {

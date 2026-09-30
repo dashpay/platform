@@ -149,6 +149,7 @@ fn removal(owner: u8, moderator: u8, text: &str, removed_at: u64) -> ContractDoc
         removed_at,
         document_hash: [removed_at as u8; 32],
         restoration: None,
+        kept_fields: Default::default(),
     }
 }
 
@@ -734,6 +735,7 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                     removed_at: 10,
                     document_hash: [0x43; 32],
                     restoration: None,
+                    kept_fields: Default::default(),
                 },
             ),
             forfeit(),
@@ -779,6 +781,7 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                 removed_at: 10,
                 document_hash: [0x43; 32],
                 restoration: None,
+                kept_fields: Default::default(),
             },
         }],
     );
@@ -834,6 +837,7 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
         removed_at: 10,
         document_hash: [0x44; 32],
         restoration: None,
+        kept_fields: Default::default(),
     };
     apply(
         &drive,

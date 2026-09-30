@@ -126,6 +126,12 @@ interface JoinedDocumentRemoval {
   restoredBy?: Identifier;
   /** The time of the block that restored it, in milliseconds; absent while the removal stands. */
   restoredAt?: bigint;
+  /**
+   * The values the record keeps of the document, by the property path its type lists under
+   * `moderatorAbilities.deleteKeepsFields`, shown as the document's `properties` show them.
+   * Empty when the type keeps none.
+   */
+  keptFields: Record<string, unknown>;
 }
 "#;
 

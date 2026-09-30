@@ -363,7 +363,10 @@ impl<C> Platform<C> {
                 sub_results.push(composite_documents::SubQueryResult {
                     result: Some(result),
                     missing_ids: missing_ids.iter().map(|id| id.to_vec()).collect(),
-                    removed: removed.into_iter().map(removal_entry_to_response).collect(),
+                    removed: removed
+                        .into_iter()
+                        .map(removal_entry_to_response)
+                        .collect::<Result<_, Error>>()?,
                 });
             }
             GetDocumentsResponseV1 {
@@ -806,7 +809,7 @@ mod tests {
         assert!(quoted.missing_ids.is_empty());
         assert_eq!(
             quoted.removed,
-            vec![removal_entry_to_response(entry.clone())]
+            vec![removal_entry_to_response(entry.clone()).expect("expected the record on the wire")]
         );
         let record = &quoted.removed[0];
         assert_eq!(record.document_id, POST_D.to_vec());

@@ -1481,7 +1481,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (41119) and the deletion is proved by the document's absence, which the
 ///     verifier learns from the contract. `deleteRefundsOwner` (default false)
 ///     says whether the owner is refunded its storage instead of forfeiting it
-///     (the batch then carries no `ForfeitStorageRefunds`). A listed property must be declared,
+///     (the batch then carries no `ForfeitStorageRefunds`). `deleteKeepsFields`
+///     lists property paths at any depth, and the timestamps and block heights
+///     the type requires, whose values the removal record keeps, copied from
+///     the document as it was deleted: what stays public once it is gone. It
+///     needs a record, and is fixed with the type. A record keeping any
+///     carries them behind bit 1 of its tag byte, each a bincode platform
+///     value, and a record keeping none is written as before; the removals
+///     response carries them as `kept_fields` (field 8). A listed property must be declared,
 ///     optional, stored, not immutable, neither a reference nor read by one,
 ///     neither generated nor a generation parameter, and in no contested index,
 ///     on a type that is not indexOnly; a type listing any keeps `$revision` even

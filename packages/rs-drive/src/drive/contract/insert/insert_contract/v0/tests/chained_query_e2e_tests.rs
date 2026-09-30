@@ -804,6 +804,7 @@ pub(super) fn removal_of(id: [u8; 32]) -> ContractDocumentRemoval {
         removed_at: 1_000 + id[0] as u64,
         document_hash: id,
         restoration: None,
+        kept_fields: Default::default(),
     }
 }
 

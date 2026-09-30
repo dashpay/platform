@@ -166,6 +166,13 @@ pub struct DocumentTypeV2 {
     /// out, the owner then forfeiting it). Only ever `true` beside
     /// `documents_can_be_deleted_by_moderators`.
     pub(in crate::data_contract) moderator_deletions_refund_owner: bool,
+    /// The property paths whose values a moderator's removal record keeps, copied from the
+    /// document as it was deleted (`moderatorAbilities.deleteKeepsFields`, protocol version
+    /// 14): what of the document stays public once it is gone. Empty on types that list none.
+    /// Only ever non-empty beside `moderator_deletions_keep_records`. The parser
+    /// (`apply_moderator_abilities`) only admits paths to declared, stored properties at any
+    /// depth and the timestamps and block heights the type requires.
+    pub(in crate::data_contract) moderator_deletion_kept_fields: BTreeSet<String>,
     /// The top-level properties only the contract's moderators write
     /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
     /// changes them with a `ContractUserModeration` transition, and a document's
@@ -325,6 +332,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_can_be_deleted_by_moderators_for: None,
             moderator_deletions_keep_records: false,
             moderator_deletions_refund_owner: false,
+            moderator_deletion_kept_fields: BTreeSet::new(),
             moderator_changeable_fields: BTreeSet::new(),
             owner_reference: None,
             creator_reference: None,
@@ -382,6 +390,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_can_be_deleted_by_moderators_for: None,
             moderator_deletions_keep_records: false,
             moderator_deletions_refund_owner: false,
+            moderator_deletion_kept_fields: BTreeSet::new(),
             moderator_changeable_fields: BTreeSet::new(),
             owner_reference: None,
             creator_reference: None,

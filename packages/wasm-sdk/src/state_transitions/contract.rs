@@ -385,6 +385,13 @@ export interface ContractDocumentRemovalResult {
   restoredBy?: Identifier;
   /** The time of the block that restored it, in milliseconds; absent while the removal stands */
   restoredAt?: bigint;
+  /**
+   * The values the record keeps of the document, by the property path its type lists under
+   * `moderatorAbilities.deleteKeepsFields`, shown as the document's `properties` show them:
+   * what of it stays public once it is gone. Empty when the type keeps none; a path the
+   * document held no value at is absent
+   */
+  keptFields: Record<string, unknown>;
 }
 
 /**

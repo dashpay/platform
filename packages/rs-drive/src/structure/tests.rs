@@ -721,6 +721,7 @@ mod fixtures {
                             removed_at: 1_000,
                             document_hash: [0x25; 32],
                             restoration: None,
+                            kept_fields: Default::default(),
                         },
                         replaces_existing: false,
                         moderator_id: contract.owner_id(),

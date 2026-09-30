@@ -40,7 +40,10 @@ use std::fmt;
 mod document_removal;
 pub mod elected;
 mod reason;
-pub use document_removal::{ContractDocumentRemoval, ContractDocumentRestoration};
+pub use document_removal::{
+    kept_field_values, ContractDocumentRemoval, ContractDocumentRestoration,
+    KEEPABLE_SYSTEM_PROPERTIES,
+};
 pub use elected::{
     ElectedModerators, InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
 };

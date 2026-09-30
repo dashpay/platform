@@ -5,8 +5,10 @@ use dpp::data_contract::config::moderation::{ContractDocumentRemoval, ContractWa
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
+use dpp::platform_value::Value;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// action v0
@@ -83,6 +85,9 @@ pub struct ContractDocumentRemovalRecordContext {
     /// whether the document has a removal record already, from a deletion a moderator
     /// restored: the fresh record then replaces it
     pub replaces_restored_record: bool,
+    /// the values the record keeps of the document, by the paths its type lists
+    /// (`moderatorAbilities.deleteKeepsFields`), read from the document as stored
+    pub kept_fields: BTreeMap<String, Value>,
 }
 
 /// What the validation of a document restore read and decoded, so that Drive puts the

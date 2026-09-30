@@ -418,6 +418,7 @@ pub fn convert_proof_result(
                 .restoration
                 .as_ref()
                 .map(|restoration| restoration.restored_at),
+            kept_fields: removal.kept_fields,
         }
         .into(),
     };

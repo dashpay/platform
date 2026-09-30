@@ -7,6 +7,7 @@ mod contract_fee_pots;
 mod contract_moderation_entries;
 mod contract_moderation_status;
 
+use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -25,7 +26,9 @@ use dpp::data_contract::config::moderation::{
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use drive::drive::contract::moderation::types::{
+    encode_kept_field_value, ContractDocumentRemovalEntry,
+};
 
 /// Parses a 32 byte identifier out of a request field, naming the field in the error.
 pub(super) fn identifier_from_request(
@@ -84,11 +87,27 @@ pub(super) fn reason_to_response(
 }
 
 /// A document removal record as the wire carries it: the one shape the removals query and a
-/// join through a `moderatedDocument` reference answer with.
+/// join through a `moderatedDocument` reference answer with. Each value the record keeps goes
+/// out as the record stores it.
 pub(super) fn removal_entry_to_response(
     entry: ContractDocumentRemovalEntry,
-) -> ContractDocumentRemovalProto {
-    ContractDocumentRemovalProto {
+) -> Result<ContractDocumentRemovalProto, Error> {
+    let kept_fields = entry
+        .removal
+        .kept_fields
+        .iter()
+        .map(|(path, value)| {
+            encode_kept_field_value(value)
+                .map(|value| (path.clone(), value))
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "a kept field value read from a removal record could not be encoded \
+                         again",
+                    ))
+                })
+        })
+        .collect::<Result<_, Error>>()?;
+    Ok(ContractDocumentRemovalProto {
         document_id: entry.document_id.to_vec(),
         document_owner_id: entry.removal.document_owner_id.to_vec(),
         moderator_id: entry.removal.moderator_id.to_vec(),
@@ -101,7 +120,8 @@ pub(super) fn removal_entry_to_response(
                 restored_at: restoration.restored_at,
             }
         }),
-    }
+        kept_fields,
+    })
 }
 
 /// Warnings as the wire carries them, oldest first as stored.
