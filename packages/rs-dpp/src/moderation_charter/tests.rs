@@ -171,6 +171,8 @@ fn should_seat_the_leader_the_elected_members_and_the_additions_allowed() {
     assert_eq!(charter.seats(15), 19);
     // The arithmetic saturates rather than wrapping
     assert_eq!(charter.seats(u16::MAX), u16::MAX);
+    // A holder of the count alone gets the same
+    assert_eq!(ElectedCharter::seats_for(3, 15), charter.seats(15));
 }
 
 #[test]

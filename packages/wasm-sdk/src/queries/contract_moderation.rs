@@ -6,7 +6,7 @@
 //! (`getContractTeamActionSigners`).
 
 use crate::error::WasmSdkError;
-use crate::queries::utils::deserialize_required_query;
+use crate::queries::utils::{deserialize_required_query, parse_contract_id};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -279,9 +279,11 @@ export interface ContractTeamActionEntry {
   event: ContractTeamActionEvent;
   /**
    * How many approvals it holds, the proposer's among them: an active action's so far, a closed
-   * one's that counted when it ran. An active action's may still count members who left the
-   * team, whose approvals are dropped only when an approval reads the team, so compare it with
-   * the team from `getModerationTeam` before showing progress.
+   * one's that counted when it ran. An active action's is an upper bound: the approval of a
+   * member who left the team is dropped only when a later approval reads the team, and is
+   * counted here until then. For the exact figure, read the action's `signerIds`
+   * (`getContractTeamActionSigners`) and keep those the team (`getModerationTeam`) `contains`:
+   * worth it only for an action whose count could meet its rule.
    */
   approvalCount: number;
 }
@@ -332,8 +334,9 @@ export interface ContractModerationActionCount {
  * How many counted moderation actions (a ban, a suspension, a warning or a document deletion)
  * each member of an elected contract's seated team signed since the moderators pot was last
  * paid out, which resets every count, in identity id order. A member that did not act since
- * has no count. A payout by actions shares that part of the pot in proportion to them: see
- * `getContractFeePots` for what the pot holds.
+ * has no count. The action share of a claim splits by them; what a claim pays each member
+ * also depends on the pot (`getContractFeePots`) and the team's `submittedCharter`
+ * (`rewardSplit`), whose leader and equal shares are paid first.
  */
 export interface ContractModerationActionCounts {
   counts: ContractModerationActionCount[];
@@ -1258,7 +1261,7 @@ impl WasmSdk {
         &self,
         #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> Result<JsValue, WasmSdkError> {
-        let contract_id = parse_moderated_contract_id(contract_id)?;
+        let contract_id = parse_contract_id(contract_id)?;
         let counts = ContractModerationActionCounts::fetch(self.as_ref(), contract_id)
             .await?
             .unwrap_or_default();
@@ -1275,7 +1278,7 @@ impl WasmSdk {
         &self,
         #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let contract_id = parse_moderated_contract_id(contract_id)?;
+        let contract_id = parse_contract_id(contract_id)?;
         let (counts, metadata, proof) =
             ContractModerationActionCounts::fetch_with_metadata_and_proof(
                 self.as_ref(),
@@ -1289,11 +1292,6 @@ impl WasmSdk {
             proof,
         ))
     }
-}
-
-fn parse_moderated_contract_id(id: IdentifierLikeJs) -> Result<Identifier, WasmSdkError> {
-    id.try_into()
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract id: {err}")))
 }
 
 /// A removal record, and the check that a join reports it as a `JoinedDocumentRemoval`,

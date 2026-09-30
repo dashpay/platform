@@ -12,10 +12,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let path_query = Self::contract_moderation_action_counts_query(
-            contract_id.to_buffer(),
-            platform_version,
-        );
+        let path_query =
+            Self::contract_moderation_action_counts_query(contract_id.to_buffer(), None);
         self.grove_get_proved_path_query(
             &path_query,
             transaction,

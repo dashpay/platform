@@ -588,8 +588,11 @@ pub struct ContractTeamActionEntry {
     /// Who proposed it, when, and what it does.
     pub action: ContractTeamAction,
     /// How many approvals it holds, the proposer's among them: an active action's so far, a
-    /// closed one's that counted when it ran. An active action's may still count members who
-    /// left the team: their approvals are dropped only when an approval reads the team.
+    /// closed one's that counted when it ran. An active action's is an upper bound: the
+    /// approval of a member who left the team is dropped only when a later approval reads the
+    /// team, and is counted here until then. The exact figure is the action's signers
+    /// (`getContractTeamActionSigners`) still on the team, worth reading only for an action
+    /// whose count could meet its rule.
     pub approval_count: u32,
 }
 

@@ -127,6 +127,9 @@ fn should_create_the_action_counts_tree_with_an_elected_contract_only() {
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
     let elected = elected_contract(&drive, platform_version);
     assert!(has_counts_tree(&drive, elected.id()));
+    assert!(drive
+        .contract_keeps_moderation_action_counts(elected.id(), None, platform_version)
+        .expect("expected to probe the counts tree"));
 
     let owned = contract_keeping(true, false, false, false);
     let mut owned_contract = owned;
@@ -141,6 +144,10 @@ fn should_create_the_action_counts_tree_with_an_elected_contract_only() {
         )
         .expect("expected to insert the contract");
     assert!(!has_counts_tree(&drive, owned_contract.id()));
+    // What an elected contract stored before the counts existed reads as, too
+    assert!(!drive
+        .contract_keeps_moderation_action_counts(owned_contract.id(), None, platform_version)
+        .expect("expected to probe the counts tree"));
 
     // A contract without the tree (an elected one stored before the counts existed reads the
     // same) has no counts rather than a failing read.
@@ -283,17 +290,10 @@ fn should_prove_the_action_counts_the_query_reads() {
     assert_eq!(prove_and_verify(&drive), expected);
     assert_eq!(
         drive
-            .fetch_contract_moderation_action_counts(
-                contract_id,
-                Drive::max_moderation_team_members(platform_version),
-                None,
-                platform_version,
-            )
+            .fetch_contract_moderation_action_counts(contract_id, u16::MAX, None, platform_version)
             .expect("expected to read the counts"),
         expected
     );
-    // The most members any team can hold: its leader, 15 elected and 15 added
-    assert_eq!(Drive::max_moderation_team_members(platform_version), 31);
 }
 
 /// The root key of the Merk at `path`/`key`, read from the tree element that points at it.

@@ -968,8 +968,9 @@ message GetContractTeamActionsResponse {
     }
     uint32 approval_count =
         5; // How many approvals it holds, the proposer's among them; an active
-           // action's may still count members who left the team, dropped only
-           // when an approval reads the team
+           // action's is an upper bound, counting a member who left the team
+           // until a later approval reads the team and drops it; the exact
+           // figure is its signers still on the team
   }
 
   message ContractTeamActions {

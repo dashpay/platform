@@ -156,23 +156,16 @@ impl Drive {
         Ok(())
     }
 
-    /// The most members any seated moderation team can hold: its leader, the members a charter
-    /// elects and those an elected declaration lets the leader add. A contract's moderation
-    /// action counts are never more: a count exists only for a member of the team, since every
-    /// settle of the moderators pot deletes them all and a change of the team settles first.
-    pub fn max_moderation_team_members(platform_version: &PlatformVersion) -> u16 {
-        let limits = &platform_version.system_limits;
-        1u16.saturating_add(limits.max_moderation_charter_elected_members)
-            .saturating_add(limits.max_contract_moderation_added_moderators)
-    }
-
-    /// The query for every moderation action count of an elected contract, in identity id
-    /// order, limited to the most members any team can hold
-    /// ([`Drive::max_moderation_team_members`]), so the prover and the verifier bound the proof
-    /// alike.
+    /// The query for the moderation action counts of an elected contract, in identity id
+    /// order: at most `limit` of them, or all when `None`. The proof reads them all, like the
+    /// approvals of a team action: a count exists only for a member of the seated team (every
+    /// settle of the moderators pot deletes them all, and a change of the team settles first),
+    /// so the tree never holds more than the team, bounded when its contract registered. A
+    /// limit from today's limits could cut a team registered under larger ones short, with a
+    /// proof that still verifies.
     pub fn contract_moderation_action_counts_query(
         contract_id: [u8; 32],
-        platform_version: &PlatformVersion,
+        limit: Option<u16>,
     ) -> PathQuery {
         let mut query = Query::new_with_direction(true);
         query.insert_item(QueryItem::RangeFull(RangeFull));
@@ -180,7 +173,7 @@ impl Drive {
             path: contract_moderation_action_counts_path_vec(&contract_id),
             query: SizedQuery {
                 query,
-                limit: Some(Self::max_moderation_team_members(platform_version)),
+                limit,
                 offset: None,
             },
         }
@@ -189,7 +182,9 @@ impl Drive {
     /// The query for a page of a contract's team actions, active or closed: each action's info
     /// (`I`) and its approvals tree (`S`), whose sum is how many approvals it holds, in action id
     /// order, from the start the query gives. Every action holds both, so the limit is twice the
-    /// page's, and the prover and the verifier bound the proof alike.
+    /// page's, and the prover and the verifier bound the proof alike. It read `I` alone before
+    /// it was given `S`, in place at method version 0: no release carried that shape (the query
+    /// is protocol version 14's, unreleased), so every released prover and verifier agree.
     pub fn contract_team_actions_query(
         contract_id: [u8; 32],
         actions_query: &ContractTeamActionsQuery,

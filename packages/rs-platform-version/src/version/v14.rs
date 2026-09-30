@@ -1217,7 +1217,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     but the four
 ///     new Drive method slots, `0` at every version. The counts are read with
 ///     the `getContractModerationActionCounts` query (an elected contract
-///     only), its proof limited to the most members any team can hold.
+///     only), whose proof reads the whole counts tree; it adds a fifth contract
+///     method slot (`prove_contract_moderation_action_counts`), a verify slot
+///     (`verify_contract_moderation_action_counts`) and the query's bounds
+///     (`contract_moderation_action_counts`), `0` at every version as well.
 ///
 /// 42. **Repaid identity debt reaches the processing fee pool**: an identity
 ///     whose fee the balance could not fully cover keeps the unpaid processing

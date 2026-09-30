@@ -15,10 +15,8 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Identifier, u32>), Error> {
-        let path_query = Self::contract_moderation_action_counts_query(
-            contract_id.to_buffer(),
-            platform_version,
-        );
+        let path_query =
+            Self::contract_moderation_action_counts_query(contract_id.to_buffer(), None);
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {

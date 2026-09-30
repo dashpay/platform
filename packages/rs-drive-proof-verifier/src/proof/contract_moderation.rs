@@ -373,6 +373,11 @@ mod tests {
         get_contract_fee_pots_response_v0::Result as FeePotsResult, GetContractFeePotsResponseV0,
         Version as FeePotsResponseVersion,
     };
+    use dapi_grpc::platform::v0::get_contract_moderation_action_counts_request::GetContractModerationActionCountsRequestV0;
+    use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::{
+        get_contract_moderation_action_counts_response_v0::Result as CountsResult,
+        GetContractModerationActionCountsResponseV0, Version as CountsResponseVersion,
+    };
     use dapi_grpc::platform::v0::get_contract_moderation_entries_request::GetContractModerationEntriesRequestV0;
     use dapi_grpc::platform::v0::get_contract_moderation_entries_response::{
         get_contract_moderation_entries_response_v0::Result as EntriesResult,
@@ -1036,6 +1041,68 @@ mod tests {
             signers_request(vec![1; 32], active, vec![2; 32]),
             signers_response(Some(SignersResult::Proof(Proof::default()))),
         );
+        assert!(
+            !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
+            "got: {err:?}"
+        );
+    }
+
+    fn counts_request(contract_id: Vec<u8>) -> GetContractModerationActionCountsRequest {
+        GetContractModerationActionCountsRequest {
+            version: Some(get_contract_moderation_action_counts_request::Version::V0(
+                GetContractModerationActionCountsRequestV0 {
+                    contract_id,
+                    prove: true,
+                },
+            )),
+        }
+    }
+
+    fn counts_response(result: Option<CountsResult>) -> GetContractModerationActionCountsResponse {
+        GetContractModerationActionCountsResponse {
+            version: Some(CountsResponseVersion::V0(
+                GetContractModerationActionCountsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        }
+    }
+
+    fn counts_error(
+        request: GetContractModerationActionCountsRequest,
+        response: GetContractModerationActionCountsResponse,
+    ) -> Error {
+        <ContractModerationActionCounts as FromProof<_>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err()
+    }
+
+    #[test]
+    fn should_check_the_request_and_the_proof_of_moderation_action_counts() {
+        let proof = || counts_response(Some(CountsResult::Proof(Proof::default())));
+        let err = counts_error(
+            GetContractModerationActionCountsRequest { version: None },
+            proof(),
+        );
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+
+        let err = counts_error(counts_request(vec![1; 5]), proof());
+        assert!(
+            matches!(&err, Error::RequestError { error } if error.contains("contract_id")),
+            "got: {err:?}"
+        );
+
+        let err = counts_error(counts_request(vec![1; 32]), counts_response(None));
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+
+        // A proof that does not verify fails in the proof check, past the request's
+        let err = counts_error(counts_request(vec![1; 32]), proof());
         assert!(
             !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
             "got: {err:?}"

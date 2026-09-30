@@ -306,8 +306,10 @@ export class ContractsFacade {
    * (still gathering approvals) or `closed` (their approvals met the rule and they ran), in
    * action id order, each with its `approvalCount`. Pass a page's `nextStartAtActionId` as the
    * next query's `startAtActionId`; a page without one (it holds fewer actions than the limit)
-   * is the last. An active action's `approvalCount` may still count members who left the team,
-   * so compare it with `moderationCharters.team` before showing progress.
+   * is the last. An active action's `approvalCount` is an upper bound: a member who left the
+   * team is counted until a later approval reads the team. For the exact figure, read the
+   * action's `teamActionSigners` and keep those `moderationCharters.team` `contains`: worth it
+   * only for an action whose count could meet its rule.
    */
   async teamActions(query: wasm.ContractTeamActionsQuery): Promise<wasm.ContractTeamActionsPage> {
     const w = await this.sdk.getWasmSdkConnected();
@@ -341,9 +343,10 @@ export class ContractsFacade {
   /**
    * How many counted moderation actions (bans, suspensions, warnings and document deletions)
    * each member of an elected contract's seated moderation team signed since the moderators pot
-   * was last paid out, which resets every count, in identity id order. A payout by actions
-   * shares that part of the pot in proportion to them: with `feePots` it previews what a claim
-   * would pay each member. Only an elected contract keeps counts; the node refuses any other.
+   * was last paid out, which resets every count, in identity id order: what the action share
+   * of a claim splits by. A preview of what a claim pays each member also needs `feePots` and
+   * the team's `submittedCharter` (its `rewardSplit`, whose leader and equal shares are paid
+   * first). Only an elected contract keeps counts; the node refuses any other.
    */
   async moderationActionCounts(contractId: wasm.IdentifierLike): Promise<wasm.ContractModerationActionCounts> {
     const w = await this.sdk.getWasmSdkConnected();

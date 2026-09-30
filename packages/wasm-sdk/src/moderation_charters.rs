@@ -142,8 +142,7 @@ impl ModerationTeamWasm {
     #[wasm_bindgen(getter = electedMembers, unchecked_return_type = "Identifier[]")]
     pub fn elected_members(&self) -> Array {
         self.0
-            .charter
-            .members
+            .elected_members
             .iter()
             .map(|id| JsValue::from(IdentifierWasm::from(*id)))
             .collect()
@@ -154,13 +153,25 @@ impl ModerationTeamWasm {
     /// its seat) and the additions allowed, filled or not, as consensus counts them. A
     /// `moderatorAbilities.deleteSettled` rule asking for more approvals needs every seat's, so
     /// a settled deletion needs `Math.min(approvals, seats)`. An active team action's
-    /// `approvalCount` may still include members no longer in `members`.
+    /// `approvalCount` is an upper bound: its `signerIds` that `contains` accepts are the
+    /// approvals that count.
+    /// A `maxAddedModerators` that is not an integer from 0 to 65535 is refused.
     #[wasm_bindgen(js_name = "seats")]
     pub fn seats(
         &self,
-        #[wasm_bindgen(js_name = "maxAddedModerators")] max_added_moderators: u16,
-    ) -> u16 {
-        self.0.seats(max_added_moderators)
+        #[wasm_bindgen(js_name = "maxAddedModerators")] max_added_moderators: f64,
+    ) -> Result<u16, WasmSdkError> {
+        // A number, not a u16 parameter: wasm-bindgen would wrap one out of range silently
+        if max_added_moderators.fract() != 0.0
+            || !(0.0..=f64::from(u16::MAX)).contains(&max_added_moderators)
+        {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "maxAddedModerators must be an integer from 0 to {}, got {}",
+                u16::MAX,
+                max_added_moderators
+            )));
+        }
+        Ok(self.0.seats(max_added_moderators as u16))
     }
 
     /// Whether `identityId` is on the team: the leader or an active member.

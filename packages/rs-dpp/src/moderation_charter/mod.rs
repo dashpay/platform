@@ -337,7 +337,13 @@ impl ElectedCharter {
     /// `moderatorAbilities.deleteSettled` rule asking for more approvals than this needs every
     /// seat's.
     pub fn seats(&self, max_added_moderators: u16) -> u16 {
-        u16::try_from(self.members.len())
+        Self::seats_for(self.members.len(), max_added_moderators)
+    }
+
+    /// [`ElectedCharter::seats`] of a charter that elected `elected_members` members, for a
+    /// holder of the count alone.
+    pub fn seats_for(elected_members: usize, max_added_moderators: u16) -> u16 {
+        u16::try_from(elected_members)
             .unwrap_or(u16::MAX)
             .saturating_add(max_added_moderators)
             .saturating_add(1)

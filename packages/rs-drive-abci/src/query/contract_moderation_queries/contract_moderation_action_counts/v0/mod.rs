@@ -12,7 +12,6 @@ use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -49,12 +48,12 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
-            // The same bound the proof carries: no team holds more members than this
+            // All of them, as the proof reads them: the tree holds at most the team
             let counts = check_validation_result_with_data!(self
                 .drive
                 .fetch_contract_moderation_action_counts(
                     contract_id,
-                    Drive::max_moderation_team_members(platform_version),
+                    u16::MAX,
                     None,
                     platform_version
                 ));
@@ -93,6 +92,7 @@ mod tests {
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identifier::Identifier;
+    use drive::drive::Drive;
     use drive::util::batch::{ContractModerationOperationType, DriveOperation};
     use std::collections::BTreeMap;
 
