@@ -1,27 +1,8 @@
-use crate::version::drive_versions::drive_address_funds_method_versions::v2::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V2;
-use crate::version::drive_versions::drive_contract_group_method_versions::v1::DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_contract_method_versions::v4::DRIVE_CONTRACT_METHOD_VERSIONS_V4;
-use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_document_method_versions::v4::DRIVE_DOCUMENT_METHOD_VERSIONS_V4;
-use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_group_method_versions::DriveShieldedMethodVersions;
-use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
-use crate::version::drive_versions::drive_state_transition_method_versions::v4::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4;
-use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
-use crate::version::drive_versions::drive_token_method_versions::v2::DRIVE_TOKEN_METHOD_VERSIONS_V2;
-use crate::version::drive_versions::drive_verify_method_versions::v3::DRIVE_VERIFY_METHOD_VERSIONS_V3;
-use crate::version::drive_versions::drive_vote_method_versions::v3::DRIVE_VOTE_METHOD_VERSIONS_V3;
+use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
-    DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
-    DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveFetchMethodVersions,
-    DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
-    DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
-    DrivePrefundedSpecializedMethodVersions, DriveProtocolUpgradeVersions,
-    DriveProveMethodVersions, DriveSavedBlockTransactionsMethodVersions,
-    DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveBalancesMethodVersions, DriveInitializationMethodVersions, DriveMethodVersions,
+    DriveVersion,
 };
-use grovedb_version::version::v4::GROVE_V4;
 
 /// Drive version 10.
 /// Introduced in protocol v17, the 5.0 protocol version, for the contract
@@ -40,120 +21,15 @@ use grovedb_version::version::v4::GROVE_V4;
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
-    structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {
             create_initial_state_structure: 5, // changed in v10: adds the contract credits root sum tree (v4 added the ContractGroups root tree)
         },
-        credit_pools: CREDIT_POOL_METHOD_VERSIONS_V1,
-        protocol_upgrade: DriveProtocolUpgradeVersions {
-            clear_version_information: 0,
-            fetch_versions_with_counter: 0,
-            fetch_proved_versions_with_counter: 0,
-            fetch_validator_version_votes: 0,
-            fetch_proved_validator_version_votes: 0,
-            remove_validators_proposed_app_versions: 0,
-            update_validator_proposed_app_version: 0,
-        },
-        prove: DriveProveMethodVersions {
-            prove_elements: 0,
-            prove_multiple_state_transition_results: 0,
-            prove_state_transition: 1, // changed in v9: a document batch proof carries the owner's balance (verify v1)
-        },
         balances: DriveBalancesMethodVersions {
-            add_to_system_credits: 0,
-            add_to_system_credits_operations: 0,
-            remove_from_system_credits: 0,
-            remove_from_system_credits_operations: 0,
             calculate_total_credits_balance: 3, // changed in v10: ContractCredits root tree adds a sixth term to the equation
+            ..DRIVE_VERSION_V9.methods.balances
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
-        vote: DRIVE_VOTE_METHOD_VERSIONS_V3, // changed in v9: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V4, // changed in v9: add_contract_to_storage v1 writes the contract version item beside the contract; update_contract v2 creates the distribution storage and mints the base supply of tokens added by an update
-        fees: DriveFeesMethodVersions { calculate_fee: 0 },
-        estimated_costs: DriveEstimatedCostsMethodVersions {
-            add_estimation_costs_for_levels_up_to_contract: 0,
-            add_estimation_costs_for_levels_up_to_contract_document_type_excluded: 0,
-            add_estimation_costs_for_contested_document_tree_levels_up_to_contract: 0,
-            add_estimation_costs_for_contested_document_tree_levels_up_to_contract_document_type_excluded: 0,
-        },
-        asset_lock: DriveAssetLockMethodVersions {
-            add_asset_lock_outpoint: 0,
-            add_estimation_costs_for_adding_asset_lock: 0,
-            fetch_asset_lock_outpoint_info: 0,
-        },
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V3, // changed in v9: a document batch proof carries the owner's balance (verify state transition v1)
-        identity: DRIVE_IDENTITY_METHOD_VERSIONS_V2, // changed in v9: v1 withdrawal-by-transaction-index query builder (structural, identical lowering)
-        token: DRIVE_TOKEN_METHOD_VERSIONS_V2, // changed in v9: add_pre_programmed_distributions v1 queues the release-time tree shared by a contract's tokens once; evonode_participation_rewards v1 pays an evonode's claim only through the epochs it read
-        platform_system: DrivePlatformSystemMethodVersions {
-            estimation_costs: DriveSystemEstimationCostsMethodVersions {
-                for_total_system_credits_update: 0,
-            },
-        },
-        operations: DriveOperationsMethodVersion {
-            rollback_transaction: 0,
-            drop_cache: 0,
-            commit_transaction: 0,
-            apply_partial_batch_low_level_drive_operations: 0,
-            apply_partial_batch_grovedb_operations: 0,
-            apply_batch_low_level_drive_operations: 1, // changed: coalesces bound current-key alias writes per batch
-            apply_batch_grovedb_operations: 0,
-        },
-        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4, // changed: document_from_action generation 1 stamps built documents with the contract version (create assigns, replace re-assigns; paired with document serialization format 3)
-        batch_operations: DriveBatchOperationsMethodVersion {
-            convert_drive_operations_to_grove_operations: 0,
-            apply_drive_operations: 1, // changed: a batch carrying a storage refund forfeiture (a moderator's document deletion) refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch is merged into one, a batch writing one token balance or supply twice is refused, and repaid identity debt goes to the processing fee pool
-        },
-        platform_state: DrivePlatformStateMethodVersions {
-            fetch_platform_state_bytes: 0,
-            store_platform_state_bytes: 0,
-            fetch_platform_state_recent_bytes: 0,
-            store_platform_state_recent_bytes: 0,
-            fetch_platform_state_entries_bytes: 0,
-            store_platform_state_entry_bytes: 0,
-            delete_platform_state_entry: 0,
-        },
-        fetch: DriveFetchMethodVersions { fetch_elements: 0 },
-        prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
-            fetch_single: 0,
-            prove_single: 0,
-            add_prefunded_specialized_balance: 0,
-            add_prefunded_specialized_balance_operations: 1,
-            deduct_from_prefunded_specialized_balance: 1,
-            deduct_from_prefunded_specialized_balance_operations: 0,
-            estimated_cost_for_prefunded_specialized_balance_update: 1, // changed: the prefunded balances layer holds three trees, the voting balances and the two contract fee pot trees
-            empty_prefunded_specialized_balance: 0,
-        },
-        group: DRIVE_GROUP_METHOD_VERSIONS_V1,
-        contract_group: DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1,
-        address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V2,
-        shielded: DriveShieldedMethodVersions {
-            insert_note: 0,
-            insert_nullifiers: 0,
-            update_total_balance: 0,
-            record_anchor_if_changed: 0,
-            prune_anchors: 0,
-            has_anchor: 0,
-            has_nullifier: 0,
-            read_total_balance: 0,
-            notes_count: 0,
-        },
-        saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
-            store_address_balances: 0,
-            fetch_address_balances: 0,
-            prove_compacted_address_balance_changes: 1,
-            compact_address_balances: 0,
-            cleanup_expired_address_balances: 0,
-            max_blocks_before_compaction: 64,
-            max_addresses_before_compaction: 2048,
-        },
+        ..DRIVE_VERSION_V9.methods
     },
-    grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
-    // changed in v9: GROVE_V4 activates the indexed-tree batch cleanup
-    // gates (overwrite inspection + delete-tree actual-type cleanup).
-    // Indexed trees only exist from protocol v14, so activating the
-    // stricter cleanup with them costs older versions nothing; staying
-    // on V3 would let a batch overwrite of a ranked index orphan its
-    // per-axis secondary storage.
-    grove_version: GROVE_V4,
+    ..DRIVE_VERSION_V9
 };

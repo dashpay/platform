@@ -20,6 +20,10 @@ pub const PROTOCOL_VERSION_17: ProtocolVersion = 17;
 /// The root key value is provisional (the allocation register leaves new root values
 /// unallocated) and is revised, if at all, before any network is asked to propose this
 /// version.
+///
+/// Unlike the fields it inherits, `drive` does not follow v16: when the real v15 or v16 arrives
+/// with a Drive change in a forward merge, that change must be reconciled into
+/// `DRIVE_VERSION_V10` by hand in the same merge.
 pub const PLATFORM_V17: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_17,
     drive: DRIVE_VERSION_V10, // changed: contract credits root sum tree at genesis, on upgrade and in credit conservation
