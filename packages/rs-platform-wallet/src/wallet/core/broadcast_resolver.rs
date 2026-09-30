@@ -781,20 +781,20 @@ pub(crate) fn record_probe(
     views: &[OutgoingView],
     root: &DueRoot,
     report: &ProbeReport,
-    record_final: bool,
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
     let key = (wallet_id, root.txid);
-    // `record_final` is off for a probe sent before a rewind: its answer
-    // belongs to the state the rewind dropped — neither recorded nor told.
-    if !record_final {
-        return events;
-    }
     // Nodes that saw it in a block, over every probe of this root: enough of
     // them make it mined whatever this probe's own verdict.
-    let seen = state.seen_in_block.entry(key).or_default();
-    seen.extend(report.in_block_by.iter().cloned());
-    let verdict = &if seen.len() >= MINED_QUORUM {
+    if !report.in_block_by.is_empty() {
+        state
+            .seen_in_block
+            .entry(key)
+            .or_default()
+            .extend(report.in_block_by.iter().cloned());
+    }
+    let seen = state.seen_in_block.get(&key).map_or(0, BTreeSet::len);
+    let verdict = &if seen >= MINED_QUORUM {
         ProbeVerdict::Mined
     } else {
         report.verdict.clone()
@@ -1087,18 +1087,15 @@ struct Run {
     /// probe is out is moot once gone from the views). Gone with the run — a
     /// later read is current, a send a reorg brings back included.
     settled: HashSet<Txid>,
-    /// Cleared by a rewind: the resolver forgot the wallet, and this run,
-    /// older than that, neither marks its probes nor tells or records their
-    /// answers.
-    marks: bool,
     /// Something touched the wallet during the run: its read may be stale, so
     /// the next height must not be skipped.
     woken: bool,
     /// Where this pass starts windows; `None` confines it to forced roots
     /// (see [`PendingPass::anchor_at`]).
     anchor_at: Option<u32>,
-    /// `Uncertain` results forced it.
-    has_forced: bool,
+    /// What `Uncertain` results forced it to probe: carried over to the next
+    /// pass when a rewind stops it.
+    forced: HashSet<Txid>,
     /// Whether the read walks the records even when none of the forced txids
     /// is held (`anchor_at.is_some()`): shared with the read job, cleared by a
     /// catch-up.
@@ -1266,13 +1263,17 @@ impl Actor {
                     // root found mined, a child that became a root only then —
                     // so it starts over: every verdict cleared, every root due
                     // at once, its window from the next following pass. A run
-                    // under way marks nothing into that.
+                    // under way rests on that state too: it is stopped, and what
+                    // `Uncertain` results forced it to probe goes to the next pass.
                     entry.wait_until = None;
-                    if let Some(run) = entry.run.as_mut() {
-                        run.marks = false;
-                        // Its answers would be discarded: send no more probes.
-                        if let Some(probing) = run.probing.as_mut() {
-                            probing.due.clear();
+                    if let Some(run) = entry.run.take() {
+                        run.abort.abort();
+                        if !run.forced.is_empty() {
+                            entry
+                                .pending
+                                .get_or_insert_with(PendingPass::default)
+                                .forced
+                                .extend(run.forced);
                         }
                     }
                     let events = self.state.forget_wallet(&wallet_id, "rewound");
@@ -1295,6 +1296,8 @@ impl Actor {
                         }
                     }
                     let Some(run) = entry.run.as_mut() else {
+                        // A rewind stopped the run: start what it carried.
+                        self.start(wallet_id);
                         return;
                     };
                     run.anchor_at = None;
@@ -1304,7 +1307,7 @@ impl Actor {
                     }
                     // Still reading, with nothing forced: nothing it could
                     // probe — stop its walk over the records now.
-                    if run.probing.is_none() && !run.has_forced {
+                    if run.probing.is_none() && run.forced.is_empty() {
                         run.abort.abort();
                         self.end_run(wallet_id);
                     }
@@ -1437,7 +1440,7 @@ impl Actor {
             return;
         };
         let anchor_at = pending.anchor_at;
-        let has_forced = !pending.forced.is_empty();
+        let forced = pending.forced.clone();
         // Walk the records if the pass may probe by schedule; one confined to
         // forced roots with none of them held has nothing to read for.
         let walk = Arc::new(AtomicBool::new(anchor_at.is_some()));
@@ -1458,10 +1461,9 @@ impl Actor {
         entry.run = Some(Run {
             id: run,
             settled: HashSet::new(),
-            marks: true,
             woken: false,
             anchor_at,
-            has_forced,
+            forced,
             walk,
             abort,
             probing: None,
@@ -1620,7 +1622,6 @@ impl Actor {
                     &probing.views,
                     &root,
                     &report,
-                    current.marks,
                 );
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
@@ -1645,7 +1646,7 @@ impl Actor {
             let transaction = Arc::clone(&root.transaction);
             let root_txid = root.txid;
             run.abort = self.jobs.spawn(async move {
-                let report = probe.probe_report(&transaction).await;
+                let report = probe.probe(&transaction).await;
                 JobDone::Probed {
                     wallet_id,
                     run: id,
@@ -1655,9 +1656,7 @@ impl Actor {
             });
             self.job_runs
                 .insert(run.abort.id(), (wallet_id, id, Some(root_txid)));
-            if run.marks {
-                mark_sent(&mut self.state, wallet_id, root.txid, probing.height);
-            }
+            mark_sent(&mut self.state, wallet_id, root.txid, probing.height);
             probing.in_flight = Some(root);
             return;
         }
@@ -2196,7 +2195,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for ScriptedProbe {
-        async fn probe(&self, transaction: &Transaction) -> ProbeVerdict {
+        async fn probe(&self, transaction: &Transaction) -> ProbeReport {
             let id = txid(transaction.lock_time as u8);
             self.probed.lock().expect("probed").push(id);
             self.answers
@@ -2205,6 +2204,7 @@ mod tests {
                 .unwrap_or(ProbeVerdict::Unresolved {
                     reason: "scripted".to_string(),
                 })
+                .into()
         }
     }
 
@@ -2289,17 +2289,9 @@ mod tests {
                 root.txid,
                 height,
             );
-            let report = probe.probe_report(&root.transaction).await;
+            let report = probe.probe(&root.transaction).await;
             let mut guard = state.lock().expect("state");
-            let events = record_probe(
-                &mut guard.state,
-                wallet_id,
-                height,
-                views,
-                &root,
-                &report,
-                true,
-            );
+            let events = record_probe(&mut guard.state, wallet_id, height, views, &root, &report);
             guard.push(events);
         }
         let guard = state.lock().expect("state");
@@ -3832,18 +3824,25 @@ mod tests {
         );
     }
 
-    /// A pass that started before a rewind does not mark its probe into the
-    /// restarted schedules.
+    /// A rewind stops a forced pass still reading; what was forced runs in
+    /// the pass after it, at the rewound height.
     #[tokio::test]
-    async fn should_not_mark_a_probe_from_before_a_rewind() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+    async fn should_carry_a_forced_probe_over_a_rewind() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
+        let before = probe.probed().len();
         rig.source.pause(true);
         rig.actor.handle(Command::Uncertain(txid(1)));
         let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
         rig.actor.joined(listed); // forced pass reading, queued at 101
 
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 50);
         rig.actor.handle(Command::Height {
             wallet_id: wallet(),
             height: 50,
@@ -3852,10 +3851,43 @@ mod tests {
         rig.settle().await;
 
         assert_eq!(
-            rig.actor.state.schedules[&(wallet(), txid(1))].last_probe,
-            None,
-            "the restarted schedule is untouched by the older pass"
+            probe.probed()[before..],
+            [txid(1)],
+            "probed once, after the rewind"
         );
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(1))].last_probe,
+            Some(50)
+        );
+    }
+
+    /// A rewind stops the pass probing: the probe out is dropped and the
+    /// roots still due are not sent.
+    #[tokio::test]
+    async fn should_stop_probing_on_a_rewind() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+        );
+        rig.height(wallet(), 100).await;
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // root 1's probe is out, root 2 due next
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 50,
+        });
+        rig.settle().await;
+
+        assert!(probe.probed().is_empty());
+        assert!(rig.actor.wallets[&wallet()].run.is_none());
+        assert!(rig.actor.state.schedules.is_empty());
     }
 
     /// A send built on two dead roots keeps its Dead while either is still
@@ -4145,8 +4177,8 @@ mod tests {
         assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
     }
 
-    /// A probe sent before a rewind answers Mined after it: the answer is told
-    /// but does not end the root's probing across the replay.
+    /// A probe sent before a rewind would answer Mined: the rewind stops it,
+    /// so nothing ends the root's probing across the replay.
     #[tokio::test]
     async fn should_not_record_a_final_verdict_from_a_probe_sent_before_a_rewind() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
@@ -4172,8 +4204,9 @@ mod tests {
         assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
     }
 
-    /// A probe sent before a rewind answers Dead after it: the answer belongs
-    /// to the state the rewind dropped — nothing is told or recorded.
+    /// A probe sent before a rewind would answer Dead: the answer belongs to
+    /// the state the rewind dropped — the rewind stops it, and nothing is told
+    /// or recorded.
     #[tokio::test]
     async fn should_neither_tell_nor_record_a_pre_rewind_answer() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
@@ -4207,11 +4240,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for OneNodeInBlockPerProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
-            unreachable!("the resolver asks for the report")
-        }
-
-        async fn probe_report(&self, _transaction: &Transaction) -> ProbeReport {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
             self.answers
                 .lock()
                 .expect("answers")
@@ -4274,7 +4303,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for PanicOnCall {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
             let call = {
                 let mut calls = self.calls.lock().expect("calls");
                 *calls += 1;
@@ -4283,7 +4312,7 @@ mod tests {
             if call == self.nth {
                 panic!("probe bug");
             }
-            ProbeVerdict::Accepted
+            ProbeVerdict::Accepted.into()
         }
     }
 
@@ -4322,7 +4351,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for PanickingProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
             panic!("probe bug");
         }
     }
@@ -4368,7 +4397,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for HangingProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
             std::future::pending().await
         }
     }
@@ -4403,9 +4432,9 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for SnapshotProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
             *self.seen.lock().expect("seen") = self.sink.0.lock().expect("sink").clone();
-            ProbeVerdict::Accepted
+            ProbeVerdict::Accepted.into()
         }
     }
 

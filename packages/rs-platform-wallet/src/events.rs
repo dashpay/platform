@@ -51,8 +51,9 @@ pub trait PlatformEventHandler: EventHandler {
     /// Fired when the verdict on an unconfirmed send of this wallet changes —
     /// the network was asked about the root of its chain. `Accepted` means a
     /// node holds the transaction in its mempool (or one has it in a block);
-    /// `Mined` that two distinct nodes have it in a block; `Dead` that the transaction, or a parent it spends, can
-    /// never be mined (two distinct nodes refused it, two do not know it, and
+    /// `Mined` that two distinct nodes have it in a block — in one probe or
+    /// over several of the same send; `Dead` that the transaction, or a
+    /// parent it spends, can never be mined (two distinct nodes refused it, two do not know it, and
     /// none of the nodes asked in that probe has it in a block);
     /// `Unresolved` that there is no verdict yet — the resolver asks again on
     /// a later block. Nothing in the wallet changes either way.

@@ -185,14 +185,8 @@ pub(crate) const MINED_QUORUM: usize = 2;
 /// it will not. It can never create a second payment.
 #[async_trait]
 pub trait AcceptanceProbe: Send + Sync + 'static {
-    async fn probe(&self, transaction: &Transaction) -> ProbeVerdict;
-
-    /// The verdict and what else the probe learned. The default calls
-    /// [`probe`](Self::probe) and learns nothing else — so an implementation
-    /// must not write `probe` in terms of this one without overriding it too.
-    async fn probe_report(&self, transaction: &Transaction) -> ProbeReport {
-        self.probe(transaction).await.into()
-    }
+    /// The verdict, and what else the probe learned.
+    async fn probe(&self, transaction: &Transaction) -> ProbeReport;
 }
 
 /// A probe's verdict, and the identified nodes that reported the transaction
@@ -255,9 +249,9 @@ pub(crate) async fn probe_with(
                 if let Some(node) = node {
                     dead_nodes.insert(node);
                 }
-                dead_reason.get_or_insert(reason);
+                let first_reason = dead_reason.get_or_insert(reason);
                 if dead_nodes.len() >= DEAD_QUORUM {
-                    let reason = dead_reason.unwrap_or_default();
+                    let reason = first_reason.clone();
                     return confirm_by_lookup(
                         submitter,
                         &transaction.txid(),
@@ -480,11 +474,7 @@ impl DapiAcceptanceProbe {
 
 #[async_trait]
 impl AcceptanceProbe for DapiAcceptanceProbe {
-    async fn probe(&self, transaction: &Transaction) -> ProbeVerdict {
-        probe_with(&self.submitter, transaction).await.verdict
-    }
-
-    async fn probe_report(&self, transaction: &Transaction) -> ProbeReport {
+    async fn probe(&self, transaction: &Transaction) -> ProbeReport {
         probe_with(&self.submitter, transaction).await
     }
 }
