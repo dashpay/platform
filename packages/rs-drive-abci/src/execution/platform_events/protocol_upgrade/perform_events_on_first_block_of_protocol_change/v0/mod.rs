@@ -895,7 +895,9 @@ mod tests {
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::Bytes32;
     use dpp::version::PlatformVersion;
+    use drive::drive::credit_pools::epochs::epoch_key_constants::KEY_PROTOCOL_VERSION;
     use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
+    use drive::drive::credit_pools::epochs::paths::EpochProposers;
     use drive::drive::credit_pools::pools_path;
     use drive::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
     use drive::drive::shielded::paths::{
@@ -3609,8 +3611,9 @@ mod tests {
     ///
     /// Both the root element itself and the (empty) subtree under it are
     /// compared, so a flag, a tree type or a stray child on either side fails
-    /// here. The named subtree is compared rather than the whole-DB root hash
-    /// for the reason given on `collect_subtree_diffs`.
+    /// here. The whole-DB root hashes are then compared too, after aligning the
+    /// one field that legitimately differs (see `collect_subtree_diffs`), so a
+    /// root layer that settles into a different shape fails as well.
     #[test]
     fn test_genesis_v17_and_upgrade_to_v17_build_identical_contract_credits_tree() {
         let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
@@ -3694,6 +3697,56 @@ mod tests {
             "CONSENSUS FORK: the [ContractCredits] subtree differs between a fresh genesis-v17 \
              node and an in-place-upgraded v17 node.\n{}",
             diffs.join("\n"),
+        );
+
+        // The root Merk's shape depends on insertion order, and the two paths
+        // insert key 100 at different points: genesis before
+        // SavedBlockTransactions and ContractGroups, the upgrade after every
+        // other root key. Once the genesis epoch's recorded protocol version,
+        // the one field that legitimately differs (see `collect_subtree_diffs`),
+        // is aligned, the whole-database root hashes must match, which pins the
+        // root layer's shape as well as every subtree.
+        let genesis_epoch = Epoch::new(0).expect("expected epoch 0");
+        let epoch_protocol_version_a = platform_a
+            .drive
+            .grove
+            .get(
+                &genesis_epoch.get_path(),
+                KEY_PROTOCOL_VERSION,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("genesis: the genesis epoch records its protocol version");
+        platform_b
+            .drive
+            .grove
+            .insert(
+                &genesis_epoch.get_path(),
+                KEY_PROTOCOL_VERSION,
+                epoch_protocol_version_a,
+                None,
+                Some(&txn_b),
+                grove_version,
+            )
+            .unwrap()
+            .expect("upgrade: align the genesis epoch's recorded protocol version");
+        let root_hash_a = platform_a
+            .drive
+            .grove
+            .root_hash(None, grove_version)
+            .unwrap()
+            .expect("genesis: root hash");
+        let root_hash_b = platform_b
+            .drive
+            .grove
+            .root_hash(Some(&txn_b), grove_version)
+            .unwrap()
+            .expect("upgrade: root hash");
+        assert_eq!(
+            root_hash_a, root_hash_b,
+            "the root hash of a fresh genesis-v17 node differs from an in-place-upgraded v17 \
+             node once the genesis epoch's recorded protocol version is aligned"
         );
     }
 

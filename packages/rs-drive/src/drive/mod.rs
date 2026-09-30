@@ -206,8 +206,10 @@ pub struct Drive {
 // code, and `packages/rs-drive/grovedb-structure.json` records this shape from a real GroveDB
 // (`layer_shapes.root`), so a test fails when the two drift apart. Keys added after genesis of
 // an earlier protocol version (ShieldedBalances 52, ContractGroups 124, ContractCredits 100)
-// are placed by AVL rebalancing at insertion time, so their exact depth depends on the
-// insertion order that the initialization and upgrade paths share.
+// are placed by AVL rebalancing at insertion time, so their exact depth depends on insertion
+// order, and genesis and the protocol upgrade insert them at different points. For
+// ContractCredits the v17 upgrade test compares the root hash of both paths, so a root shape
+// that differs between them fails there.
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
