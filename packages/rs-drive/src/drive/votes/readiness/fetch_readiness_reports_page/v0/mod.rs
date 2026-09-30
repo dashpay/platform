@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
 use dpp::voting::readiness::report_record::ReadinessReportRecord;
 use grovedb::query_result_type::QueryResultType;
@@ -64,7 +64,7 @@ impl Drive {
                 })?;
                 match element {
                     Element::Item(bytes, _) => {
-                        let record = ReadinessReportRecord::deserialize_from_bytes(&bytes)?;
+                        let record = ReadinessReportRecord::deserialize_from_bytes_trusted(&bytes)?;
                         Ok((pro_tx_hash, record))
                     }
                     _ => Err(Error::Drive(DriveError::CorruptedElementType(

@@ -11,7 +11,7 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::voting::verify_readiness_round::VerifiedReadinessRound;
 use crate::verify::RootHash;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::voting::readiness::round::ReadinessRound;
 use grovedb::{Element, GroveDb};
 use platform_version::version::PlatformVersion;
@@ -82,7 +82,7 @@ impl Drive {
             }
             match (key.as_slice(), maybe_element) {
                 ([READINESS_ROUND_RECORD_KEY], Some(Element::Item(bytes, _))) => {
-                    round = Some(ReadinessRound::deserialize_from_bytes(&bytes)?);
+                    round = Some(ReadinessRound::deserialize_from_bytes_untrusted(&bytes)?);
                 }
                 ([READINESS_ROUND_REPORTS_TREE_KEY], Some(Element::CountTree(_, count, _))) => {
                     raw_count = Some(count);

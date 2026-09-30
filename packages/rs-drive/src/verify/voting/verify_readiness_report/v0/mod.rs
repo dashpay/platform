@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::voting::readiness::report_record::ReadinessReportRecord;
 use grovedb::{Element, GroveDb};
 use platform_version::version::PlatformVersion;
@@ -52,9 +52,9 @@ impl Drive {
         }
         let record = match maybe_element {
             None => None,
-            Some(Element::Item(bytes, _)) => {
-                Some(ReadinessReportRecord::deserialize_from_bytes(&bytes)?)
-            }
+            Some(Element::Item(bytes, _)) => Some(
+                ReadinessReportRecord::deserialize_from_bytes_untrusted(&bytes)?,
+            ),
             Some(_) => {
                 return Err(Error::Proof(ProofError::CorruptedProof(
                     "readiness report was present but was not an item".to_string(),

@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use std::fmt;
 
@@ -8,7 +8,7 @@ use std::fmt;
 /// Only an identity can pay today. The contract bucket variant that the typed storage flags
 /// work introduces is appended when it lands; the enum is positional on the wire, so variants
 /// are only ever added at the end.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub enum ReadinessPayer {
     /// An identity funded the round; the refund is an identity balance credit.
     Identity(Identifier),

@@ -1,8 +1,8 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use std::fmt;
 
 /// Version 0 of an accepted compilation readiness report.
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, DecodeUntrusted)]
 pub struct ReadinessReportRecordV0 {
     /// The platform block height at which the report was accepted. Reports accepted in block
     /// `H` count from the readiness event of block `H + 1`, which runs before that block's

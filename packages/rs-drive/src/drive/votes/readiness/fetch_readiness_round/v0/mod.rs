@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
 use dpp::voting::readiness::round::ReadinessRound;
 use grovedb::{Element, TransactionArg};
@@ -122,9 +122,9 @@ impl Drive {
         };
         match element {
             None => Ok(None),
-            Some(Element::Item(bytes, _)) => {
-                Ok(Some(ReadinessRound::deserialize_from_bytes(&bytes)?))
-            }
+            Some(Element::Item(bytes, _)) => Ok(Some(
+                ReadinessRound::deserialize_from_bytes_trusted(&bytes)?,
+            )),
             Some(_) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "readiness round record was present but was not an item",
             ))),

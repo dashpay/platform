@@ -1,12 +1,12 @@
 use crate::voting::readiness::payer::ReadinessPayer;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use std::fmt;
 
 /// The membership view and raw report count a round was last judged against. A round whose
 /// mark differs from the block's view or raw count needs reconsideration; one whose mark
 /// matches is skipped at the cost of one record read.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Encode, Decode, DecodeUntrusted)]
 pub struct ReadinessEvaluation {
     /// The core height whose masternode list was the membership view.
     pub core_height: u32,
@@ -15,7 +15,7 @@ pub struct ReadinessEvaluation {
 }
 
 /// Where a round stands.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Encode, Decode, DecodeUntrusted)]
 pub enum ReadinessRoundStatus {
     /// Collecting reports; never expires on its own.
     Pending,
@@ -46,7 +46,7 @@ impl fmt::Display for ReadinessRoundStatus {
 }
 
 /// Version 0 of a compilation readiness round.
-#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
 pub struct ReadinessRoundV0 {
     /// The contract whose bundle is being prepared.
     pub contract_id: Identifier,

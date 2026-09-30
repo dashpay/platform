@@ -3,9 +3,11 @@ mod v0;
 use crate::util::hash::hash_double;
 use crate::voting::readiness::payer::ReadinessPayer;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::fmt;
@@ -19,7 +21,17 @@ pub const READINESS_FUND_ID_DOMAIN: &[u8] = b"dashvm-readiness-fund-v1";
 /// the evonodes sent for it, the last membership view it was judged against and, once it has
 /// crossed the threshold, its activation deadline.
 #[derive(
-    Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    From,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub enum ReadinessRound {
@@ -262,7 +274,9 @@ impl ReadinessRound {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{
+        PlatformDeserializableTrusted, PlatformDeserializableUntrusted, PlatformSerializable,
+    };
 
     fn opening() -> ReadinessRoundOpening {
         ReadinessRoundOpening {
@@ -281,8 +295,13 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let round = ReadinessRound::new(0xBD6B0CBF, opening(), platform_version).expect("round");
         let bytes = round.serialize_to_bytes().expect("serialize");
-        let restored = ReadinessRound::deserialize_from_bytes(&bytes).expect("deserialize");
+        let restored = ReadinessRound::deserialize_from_bytes_trusted(&bytes).expect("deserialize");
         assert_eq!(restored, round);
+        assert_eq!(
+            ReadinessRound::deserialize_from_bytes_untrusted(&bytes)
+                .expect("deserialize untrusted"),
+            restored
+        );
         assert!(restored.is_pending());
         assert_eq!(restored.deadline_ms(), None);
         assert_eq!(restored.last_evaluated(), None);
@@ -310,8 +329,13 @@ mod tests {
             .expect("crossing");
         assert_eq!(deadline, 1_600_000 + 600_000);
         let bytes = round.serialize_to_bytes().expect("serialize");
-        let restored = ReadinessRound::deserialize_from_bytes(&bytes).expect("deserialize");
+        let restored = ReadinessRound::deserialize_from_bytes_trusted(&bytes).expect("deserialize");
         assert_eq!(restored, round);
+        assert_eq!(
+            ReadinessRound::deserialize_from_bytes_untrusted(&bytes)
+                .expect("deserialize untrusted"),
+            restored
+        );
         assert!(!restored.is_pending());
         assert_eq!(restored.deadline_ms(), Some(2_200_000));
         assert_eq!(

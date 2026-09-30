@@ -1,9 +1,11 @@
 mod v0;
 
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_version::version::PlatformVersion;
 use std::fmt;
 pub use v0::ReadinessScanCursorV0;
@@ -14,7 +16,17 @@ pub use v0::ReadinessScanCursorV0;
 /// block whose view differs discards the cursor and restarts from the first report, so a
 /// crossing is only ever committed from a walk completed against one coherent view.
 #[derive(
-    Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    From,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub enum ReadinessScanCursor {
@@ -150,7 +162,9 @@ impl ReadinessScanCursor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{
+        PlatformDeserializableTrusted, PlatformDeserializableUntrusted, PlatformSerializable,
+    };
 
     #[test]
     fn should_round_trip_a_scan_cursor_through_serialization() {
@@ -158,8 +172,14 @@ mod tests {
         let mut cursor = ReadinessScanCursor::new(1_000, 400, platform_version).expect("cursor");
         cursor.advance([7u8; 32], 512, 500, 12).expect("advance");
         let bytes = cursor.serialize_to_bytes().expect("serialize");
-        let restored = ReadinessScanCursor::deserialize_from_bytes(&bytes).expect("deserialize");
+        let restored =
+            ReadinessScanCursor::deserialize_from_bytes_trusted(&bytes).expect("deserialize");
         assert_eq!(restored, cursor);
+        assert_eq!(
+            ReadinessScanCursor::deserialize_from_bytes_untrusted(&bytes)
+                .expect("deserialize untrusted"),
+            restored
+        );
         assert!(restored.is_bound_to(1_000, 400));
         assert!(!restored.is_bound_to(1_001, 400));
         assert!(!restored.is_bound_to(1_000, 399));

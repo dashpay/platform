@@ -1,9 +1,11 @@
 mod v0;
 
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_version::version::PlatformVersion;
 use std::fmt;
 pub use v0::ReadinessReportRecordV0;
@@ -12,7 +14,17 @@ pub use v0::ReadinessReportRecordV0;
 /// reporting evonode's pro tx hash. The count tree's own count is the raw distinct report
 /// count; the record carries what the block event needs to judge the report later.
 #[derive(
-    Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    From,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub enum ReadinessReportRecord {
@@ -72,15 +84,23 @@ impl ReadinessReportRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{
+        PlatformDeserializableTrusted, PlatformDeserializableUntrusted, PlatformSerializable,
+    };
 
     #[test]
     fn should_round_trip_a_report_record_through_serialization() {
         let platform_version = PlatformVersion::latest();
         let record = ReadinessReportRecord::new(42, 3, platform_version).expect("record");
         let bytes = record.serialize_to_bytes().expect("serialize");
-        let restored = ReadinessReportRecord::deserialize_from_bytes(&bytes).expect("deserialize");
+        let restored =
+            ReadinessReportRecord::deserialize_from_bytes_trusted(&bytes).expect("deserialize");
         assert_eq!(restored, record);
+        assert_eq!(
+            ReadinessReportRecord::deserialize_from_bytes_untrusted(&bytes)
+                .expect("deserialize untrusted"),
+            restored
+        );
         assert_eq!(restored.accepted_at_height(), 42);
         assert_eq!(restored.preparation_profile(), 3);
     }

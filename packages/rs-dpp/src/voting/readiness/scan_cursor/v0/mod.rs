@@ -1,8 +1,8 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use std::fmt;
 
 /// Version 0 of the persisted position of a paged eligibility walk.
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, DecodeUntrusted)]
 pub struct ReadinessScanCursorV0 {
     /// The core height whose masternode list is the membership view of the walk.
     pub core_height: u32,
