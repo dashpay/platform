@@ -25,8 +25,11 @@ use crate::data_contract::document_type::property::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceKind,
 };
 use crate::data_contract::document_type::DocumentProperty;
+use crate::document::{Document, DocumentV0Getters};
+use crate::ProtocolError;
 use indexmap::IndexMap;
-use platform_value::Identifier;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_value::{Identifier, Value};
 
 /// The field of the referenced document a derived index property reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,13 +44,22 @@ pub enum DerivedIndexField {
 }
 
 impl DerivedIndexField {
-    /// The field as the index property name spells it after the reference.
-    pub fn name(&self) -> &str {
-        match self {
-            DerivedIndexField::OwnerId => "$ownerId",
-            DerivedIndexField::CreatorId => "$creatorId",
-            DerivedIndexField::Property(path) => path,
-        }
+    /// The value this field holds on `referenced`, the document a reference points at:
+    /// `Value::Null` when it holds none. Shared by the reference validation of a create, which
+    /// has the document fetched already, and Drive, which reads it to key a document.
+    pub fn value_in(&self, referenced: &Document) -> Result<Value, ProtocolError> {
+        Ok(match self {
+            DerivedIndexField::OwnerId => Value::Identifier(referenced.owner_id().to_buffer()),
+            DerivedIndexField::CreatorId => referenced
+                .creator_id()
+                .map(|creator_id| Value::Identifier(creator_id.to_buffer()))
+                .unwrap_or(Value::Null),
+            DerivedIndexField::Property(path) => referenced
+                .properties()
+                .get_optional_at_path(path)?
+                .cloned()
+                .unwrap_or(Value::Null),
+        })
     }
 }
 

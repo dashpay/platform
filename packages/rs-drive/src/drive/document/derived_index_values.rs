@@ -16,6 +16,7 @@
 //! (`moderatedDocument`, `$ownerId` only). So a later read finds the value the entry was
 //! written under.
 
+use crate::drive::document::cost::value_of;
 use crate::drive::document::paths::{
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path,
@@ -38,7 +39,6 @@ use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
@@ -96,12 +96,14 @@ impl Drive {
         if document_type.derived_index_properties().is_empty() {
             return Ok(document_info);
         }
+        // A document may carry the values already: a create's, taken by its reference
+        // validation from the documents it fetched
         let complete = |document: &mut Document,
                         drive_operations: &mut Vec<LowLevelDriveOperation>|
          -> Result<(), Error> {
             let values = self.derived_index_values(
                 document,
-                None,
+                Some(document),
                 contract,
                 document_type,
                 estimate,
@@ -156,9 +158,11 @@ impl Drive {
     /// property's name: the field it names of the document its reference points at, read once
     /// per reference, `Value::Null` where that document has none or the reference is absent.
     ///
-    /// A reference `known` points at the same document through is not read again: its values
-    /// are taken from `known`, a completed version of the same document (the replaced
-    /// document's, which the parser holds to the same references).
+    /// A reference `known` points at the same document through is not read again when `known`
+    /// holds every value read through it: they are taken from `known`, a completed version of
+    /// the same document (the replaced document's, which the parser holds to the same
+    /// references), or the document itself (a create's, carrying the values its reference
+    /// validation took from the documents it fetched).
     ///
     /// A referenced document a moderator removed is read from its removal record, which keeps
     /// its owner, the one field a `moderatedDocument` reference may derive. When `estimate` is
@@ -218,10 +222,6 @@ impl Drive {
             let Some((_, first)) = derived_properties.first() else {
                 continue;
             };
-            let fields: Vec<(&String, &DerivedIndexField)> = derived_properties
-                .iter()
-                .map(|(name, derived)| (*name, &derived.field))
-                .collect();
             let read = match referenced_id {
                 None => ReferencedValues::None,
                 Some(referenced_id) => self.read_referenced_values(
@@ -234,32 +234,34 @@ impl Drive {
                     platform_version,
                 )?,
             };
-            for (name, field) in fields {
+            for (name, derived) in derived_properties {
                 let value =
                     match &read {
                         ReferencedValues::None => Value::Null,
-                        ReferencedValues::Document(referenced) => match field {
-                            DerivedIndexField::OwnerId => {
-                                Value::Identifier(referenced.owner_id().to_buffer())
-                            }
-                            DerivedIndexField::CreatorId => referenced
-                                .creator_id()
-                                .map(|creator_id| Value::Identifier(creator_id.to_buffer()))
-                                .unwrap_or(Value::Null),
-                            DerivedIndexField::Property(path) => referenced
-                                .properties()
-                                .get_optional_at_path(path)
-                                .map_err(|error| {
-                                    Error::Drive(DriveError::CorruptedDriveState(format!(
-                                        "document {} of {} can not be read at {path}: {error}",
-                                        referenced.id(),
-                                        first.referenced_document_type_name
-                                    )))
-                                })?
-                                .cloned()
-                                .unwrap_or(Value::Null),
-                        },
-                        ReferencedValues::RemovedOwner(owner_id) => match field {
+                        // A value of the field's type and typical size, so a dry run prices the
+                        // entry on the layout a real value writes
+                        ReferencedValues::Estimate => derived
+                            .property_type
+                            .as_ref()
+                            .map(|property_type| {
+                                let length = property_type
+                                    .middle_size(platform_version)
+                                    .map(u32::from)
+                                    .unwrap_or_default();
+                                value_of(property_type, length, platform_version)
+                            })
+                            .unwrap_or(Value::Null),
+                        ReferencedValues::Document(referenced) => {
+                            derived.field.value_in(referenced).map_err(|error| {
+                                Error::Drive(DriveError::CorruptedDriveState(format!(
+                                    "document {} of {} can not be read at {:?}: {error}",
+                                    referenced.id(),
+                                    derived.referenced_document_type_name,
+                                    derived.field
+                                )))
+                            })?
+                        }
+                        ReferencedValues::RemovedOwner(owner_id) => match derived.field {
                             DerivedIndexField::OwnerId => Value::Identifier(owner_id.to_buffer()),
                             _ => return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                                 "a moderatedDocument reference derives the referenced owner only",
@@ -294,7 +296,7 @@ impl Drive {
                 drive_operations,
                 platform_version,
             )?;
-            return Ok(ReferencedValues::None);
+            return Ok(ReferencedValues::Estimate);
         }
         let element = if referenced_type.documents_keep_history() {
             // The `0` of a document keeping history is a reference to its current version
@@ -417,9 +419,11 @@ impl Drive {
 }
 
 /// What a derived index property reads from: the referenced document, the owner the removal
-/// record of a removed one keeps, or nothing (an absent reference, or an estimate).
+/// record of a removed one keeps, nothing (an absent reference), or, in a dry run, a value of
+/// the field's type.
 enum ReferencedValues {
     None,
+    Estimate,
     Document(Box<Document>),
     RemovedOwner(Identifier),
 }
@@ -461,19 +465,33 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContractFactory;
-    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
     use dpp::platform_value::{platform_value, Identifier, Value};
     use dpp::prelude::DataContract;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     const OWNER: [u8; 32] = [7; 32];
+    const CREATOR: [u8; 32] = [8; 32];
     const POST: [u8; 32] = [1; 32];
+    const CREATED_AT: u64 = 1_700_000_000_000;
 
-    /// Posts nobody changes or deletes, and replies filed under their post's topic
-    fn contract() -> DataContract {
-        let schemas = platform_value!({
-            "post": {
+    /// Every top-level entry of `extra` in place of the one of `schema` with its key.
+    fn merged(mut schema: Value, extra: Value) -> Value {
+        if let (Value::Map(schema_map), Value::Map(extra_map)) = (&mut schema, extra) {
+            for (key, value) in extra_map {
+                schema_map.retain(|(existing, _)| existing != &key);
+                schema_map.push((key, value));
+            }
+        }
+        schema
+    }
+
+    /// Posts nobody changes or deletes, with `post_extra`, and replies indexed by `index`,
+    /// with `reply_extra`
+    fn contract_with(post_extra: Value, index: Value, reply_extra: Value) -> DataContract {
+        let post = merged(
+            platform_value!({
                 "type": "object",
                 "documentsMutable": false,
                 "canBeDeleted": false,
@@ -482,12 +500,15 @@ mod tests {
                 },
                 "required": ["topic"],
                 "additionalProperties": false
-            },
-            "reply": {
+            }),
+            post_extra,
+        );
+        let reply = merged(
+            platform_value!({
                 "type": "object",
                 "documentsMutable": false,
                 "canBeDeleted": true,
-                "indices": [{ "name": "byTopic", "properties": [{ "postId.topic": "asc" }] }],
+                "indices": [{ "name": "byDerived", "properties": index }],
                 "properties": {
                     "postId": {
                         "type": "array",
@@ -497,17 +518,45 @@ mod tests {
                         "contentMediaType": "application/x.dash.dpp.identifier",
                         "refersTo": { "type": "permanentDocument", "documentType": "post" },
                         "position": 0
-                    }
+                    },
+                    "status": { "type": "integer", "minimum": 0, "maximum": 9, "position": 1 }
                 },
                 "required": ["postId"],
                 "additionalProperties": false
-            }
-        });
+            }),
+            reply_extra,
+        );
+        let schemas = platform_value!({ "post": post, "reply": reply });
         DataContractFactory::new(PlatformVersion::latest().protocol_version)
             .expect("factory")
             .create_with_value_config(Identifier::from([202u8; 32]), 0, schemas, None, None)
             .expect("create contract")
             .data_contract_owned()
+    }
+
+    /// Replies filed under their post's topic
+    fn contract() -> DataContract {
+        contract_with(
+            Value::Null,
+            platform_value!([{ "postId.topic": "asc" }]),
+            Value::Null,
+        )
+    }
+
+    fn setup(contract: &DataContract) -> Drive {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .apply_contract(
+                contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+        drive
     }
 
     fn document(id: [u8; 32], properties: BTreeMap<String, Value>) -> Document {
@@ -517,6 +566,13 @@ mod tests {
             properties,
             ..Default::default()
         })
+    }
+
+    fn post() -> Document {
+        document(
+            POST,
+            BTreeMap::from([("topic".to_string(), Value::Text("rust".to_string()))]),
+        )
     }
 
     fn reply(id: u8) -> Document {
@@ -547,7 +603,10 @@ mod tests {
                     document_type: contract.document_type_for_name(type_name).expect("type"),
                 },
                 false,
-                BlockInfo::default(),
+                BlockInfo {
+                    time_ms: CREATED_AT,
+                    ..Default::default()
+                },
                 apply,
                 None,
                 PlatformVersion::latest(),
@@ -556,10 +615,14 @@ mod tests {
             .expect("add document");
     }
 
-    fn replies_on(drive: &Drive, contract: &DataContract, topic: &str) -> Vec<Identifier> {
+    fn replies_where(
+        drive: &Drive,
+        contract: &DataContract,
+        where_clause: Value,
+    ) -> Vec<Identifier> {
         let platform_version = PlatformVersion::latest();
         let query = DriveDocumentQuery::from_decomposed_values(
-            platform_value!([["postId.topic", "==", topic]]),
+            where_clause,
             None,
             Some(10),
             None,
@@ -580,29 +643,37 @@ mod tests {
             .collect()
     }
 
+    fn replies_on(drive: &Drive, contract: &DataContract, topic: &str) -> Vec<Identifier> {
+        replies_where(
+            drive,
+            contract,
+            platform_value!([["postId.topic", "==", topic]]),
+        )
+    }
+
+    fn delete_reply(drive: &Drive, contract: &DataContract, id: u8, apply: bool) {
+        drive
+            .delete_document_for_contract(
+                Identifier::from([id; 32]),
+                contract,
+                "reply",
+                BlockInfo::default(),
+                apply,
+                None,
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("delete document");
+    }
+
     /// A reply is keyed by its post's topic on insert and found by it, a dry run of an insert
     /// or a delete prices the post's read without reading it, and a delete finds the entry
     /// under the topic read again.
     #[test]
     fn should_key_a_reply_by_its_posts_topic_and_price_the_read_on_a_dry_run() {
-        let platform_version = PlatformVersion::latest();
         let contract = contract();
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("apply contract");
-        let post = document(
-            POST,
-            BTreeMap::from([("topic".to_string(), Value::Text("rust".to_string()))]),
-        );
-        add(&drive, &contract, "post", &post, true);
+        let drive = setup(&contract);
+        add(&drive, &contract, "post", &post(), true);
 
         // A dry run reads nothing, so it works before the reply exists
         add(&drive, &contract, "reply", &reply(2), false);
@@ -613,20 +684,156 @@ mod tests {
         );
         assert!(replies_on(&drive, &contract, "go").is_empty());
 
-        for apply in [false, true] {
-            drive
-                .delete_document_for_contract(
-                    Identifier::from([2; 32]),
-                    &contract,
-                    "reply",
-                    BlockInfo::default(),
-                    apply,
-                    None,
-                    platform_version,
-                    None,
-                )
-                .expect("delete document");
-        }
+        delete_reply(&drive, &contract, 2, false);
+        delete_reply(&drive, &contract, 2, true);
+        assert!(replies_on(&drive, &contract, "rust").is_empty());
+    }
+
+    /// A document carrying its derived values, as a create does from its reference
+    /// validation, is keyed by them without reading the referenced document: here there is
+    /// none to read, and a read would find the state corrupted.
+    #[test]
+    fn should_key_a_document_by_the_derived_values_it_carries() {
+        let contract = contract();
+        let drive = setup(&contract);
+        let mut reply = reply(2);
+        reply
+            .properties_mut()
+            .insert("postId.topic".to_string(), Value::Text("rust".to_string()));
+        add(&drive, &contract, "reply", &reply, true);
+        assert_eq!(
+            replies_on(&drive, &contract, "rust"),
+            vec![Identifier::from([2; 32])]
+        );
+    }
+
+    /// A post keeping its history is read through the reference to its current version.
+    #[test]
+    fn should_read_a_referenced_document_keeping_history() {
+        let contract = contract_with(
+            platform_value!({ "documentsKeepHistory": true }),
+            platform_value!([{ "postId.topic": "asc" }]),
+            Value::Null,
+        );
+        let drive = setup(&contract);
+        add(&drive, &contract, "post", &post(), true);
+        add(&drive, &contract, "reply", &reply(2), true);
+        assert_eq!(
+            replies_on(&drive, &contract, "rust"),
+            vec![Identifier::from([2; 32])]
+        );
+        delete_reply(&drive, &contract, 2, true);
+        assert!(replies_on(&drive, &contract, "rust").is_empty());
+    }
+
+    /// An update that changes a property of the reply's own in an index holding a derived
+    /// value moves the entry: the old one is found under the value read again.
+    #[test]
+    fn should_move_an_entry_when_the_replys_own_indexed_property_changes() {
+        let contract = contract_with(
+            Value::Null,
+            platform_value!([{ "postId.topic": "asc" }, { "status": "asc" }]),
+            platform_value!({ "documentsMutable": true, "immutable": ["postId"] }),
+        );
+        let drive = setup(&contract);
+        add(&drive, &contract, "post", &post(), true);
+        let mut reply = reply(2);
+        reply.set_revision(Some(1));
+        reply.set("status", Value::U8(1));
+        add(&drive, &contract, "reply", &reply, true);
+
+        reply.set_revision(Some(2));
+        reply.set("status", Value::U8(2));
+        drive
+            .update_document_for_contract(
+                &reply,
+                &contract,
+                contract.document_type_for_name("reply").expect("reply"),
+                Some(OWNER),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("update document");
+        let with_status = |status: u8| {
+            replies_where(
+                &drive,
+                &contract,
+                platform_value!([
+                    ["postId.topic", "==", "rust"],
+                    ["status", "==", Value::U8(status)]
+                ]),
+            )
+        };
+        assert_eq!(with_status(2), vec![Identifier::from([2; 32])]);
+        assert!(with_status(1).is_empty());
+    }
+
+    /// The creator of a post that can change hands is derived, not its owner.
+    #[test]
+    fn should_key_a_reply_by_its_posts_creator() {
+        let contract = contract_with(
+            platform_value!({ "transferable": 1 }),
+            platform_value!([{ "postId.$creatorId": "asc" }]),
+            Value::Null,
+        );
+        let drive = setup(&contract);
+        let mut post = post();
+        post.set_revision(Some(1));
+        post.set_creator_id(Some(Identifier::from(CREATOR)));
+        add(&drive, &contract, "post", &post, true);
+        add(&drive, &contract, "reply", &reply(2), true);
+        let by_creator = |creator: [u8; 32]| {
+            replies_where(
+                &drive,
+                &contract,
+                platform_value!([["postId.$creatorId", "==", Value::Identifier(creator)]]),
+            )
+        };
+        assert_eq!(by_creator(CREATOR), vec![Identifier::from([2; 32])]);
+        assert!(by_creator(OWNER).is_empty());
+    }
+
+    /// A reply whose `ttl` runs out is deleted by the expiry cleanup, which finds its entry
+    /// under the topic read again.
+    #[test]
+    fn should_remove_the_entry_of_a_reply_that_expires() {
+        let contract = contract_with(
+            Value::Null,
+            platform_value!([{ "postId.topic": "asc" }]),
+            platform_value!({ "ttl": 3600, "required": ["postId", "$createdAt"] }),
+        );
+        let drive = setup(&contract);
+        add(&drive, &contract, "post", &post(), true);
+        let mut reply = reply(2);
+        reply.set_created_at(Some(CREATED_AT));
+        add(&drive, &contract, "reply", &reply, true);
+        assert_eq!(
+            replies_on(&drive, &contract, "rust"),
+            vec![Identifier::from([2; 32])]
+        );
+
+        let transaction = drive.grove.start_transaction();
+        drive
+            .remove_expired_documents(
+                &BlockInfo {
+                    time_ms: CREATED_AT + 3_600_000 + 1,
+                    ..Default::default()
+                },
+                10,
+                u32::MAX,
+                Some(&transaction),
+                PlatformVersion::latest(),
+            )
+            .expect("the cleanup runs");
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("commits");
         assert!(replies_on(&drive, &contract, "rust").is_empty());
     }
 }

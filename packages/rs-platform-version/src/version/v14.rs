@@ -1712,7 +1712,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     write, or, for a `moderatedDocument` target a moderator removed, the owner its removal
 ///     record keeps, and puts the values into the document's properties under the derived
 ///     names, where `get_raw_for_document_type` 0 reads them (a missing one is refused, never
-///     keyed under null) and the serialization ignores them. `serialize_value_for_key` 0,
+///     keyed under null) and the serialization ignores them. A create reads nothing more: the
+///     document reference validation 0, given a map, records the values from the documents it
+///     fetched, and the create action carries them to Drive. A dry run keys the document
+///     under a value of each field's type. `serialize_value_for_key` 0,
 ///     `deserialize_value_for_key` 0 and Drive's estimated key sizes take a derived name's type
 ///     from the declaration. Registration (full validation, `InvalidContractStructure`)
 ///     admits one only where the value can not change once written: a same-contract

@@ -684,9 +684,12 @@ fn apply_derived_index_properties(
                 DerivedIndexPropertyName::Derived(derived) => derived,
             };
             if full_validation {
-                if let Some(reason) =
-                    derived_index_property_referring_side_error(document_type, index, &derived)
-                {
+                if let Some(reason) = derived_index_property_referring_side_error(
+                    document_type,
+                    index,
+                    &index_property.name,
+                    &derived,
+                ) {
                     return Err(refusal(reason));
                 }
             }
@@ -697,15 +700,16 @@ fn apply_derived_index_properties(
     Ok(())
 }
 
-/// Why the referring document type or `index` can not hold `derived`, or
-/// `None`: see [`apply_derived_index_properties`].
+/// Why the referring document type or `index` can not hold `derived`, which
+/// its property `index_property_name` declares, or `None`: see
+/// [`apply_derived_index_properties`].
 fn derived_index_property_referring_side_error(
     document_type: &DocumentTypeV2,
     index: &Index,
+    index_property_name: &str,
     derived: &DerivedIndexProperty,
 ) -> Option<String> {
     let reference_property = derived.reference_property.as_str();
-    let index_property_name = format!("{reference_property}.{}", derived.field.name());
     if document_type.index_only {
         return Some(
             "the type is indexOnly, whose index entries hold every value of its documents: \
@@ -749,7 +753,8 @@ fn derived_index_property_referring_side_error(
     }
     if index
         .skip_if_absent_properties
-        .contains(&index_property_name)
+        .iter()
+        .any(|skipped| skipped == index_property_name)
     {
         return Some(
             "skipIfAbsent reads whether the document holds a value, and a derived value is \

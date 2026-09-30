@@ -3,8 +3,11 @@
 //! registers and refuses, and what the parse of the whole contract resolves and refuses on the
 //! referenced side.
 
+use crate::block::block_info::BlockInfo;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
@@ -14,6 +17,9 @@ use crate::data_contract::document_type::methods::{
 use crate::data_contract::document_type::{
     DerivedIndexField, DocumentPropertyType, DocumentReferenceKind, DocumentType,
 };
+use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
+use crate::data_contract::schema::DataContractSchemaMethodsV0;
+use crate::data_contract::DataContract;
 use crate::ProtocolError;
 use platform_value::{platform_value, Identifier, Value};
 use platform_version::version::PlatformVersion;
@@ -516,4 +522,86 @@ fn should_leave_every_other_name_to_the_type_s_own_properties() {
         format!("{error:?}").contains("UndefinedIndexPropertyError"),
         "got {error:?}"
     );
+}
+
+fn contract_value(version: u32, document_schemas: Value) -> Value {
+    platform_value!({
+        "$formatVersion": "1",
+        "id": Value::Identifier(CONTRACT_ID),
+        "ownerId": Value::Identifier([8; 32]),
+        "version": version,
+        "documentSchemas": document_schemas,
+    })
+}
+
+/// A contract declaring a derived index property can be updated: the update re-parses the
+/// whole contract, resolves the derived property again, and passes the update rules.
+#[test]
+fn should_let_a_contract_declaring_a_derived_index_property_be_updated() {
+    let platform_version = PlatformVersion::latest();
+    let reply_schema = reply(permanent_reference(), "postId.hashtag", Value::Null);
+    let old = DataContract::from_value(
+        contract_value(
+            1,
+            platform_value!({ "post": post(Value::Null), "reply": reply_schema.clone() }),
+        ),
+        true,
+        platform_version,
+    )
+    .expect("the contract parses");
+    let new = DataContract::from_value(
+        contract_value(
+            2,
+            platform_value!({
+                "post": post(Value::Null),
+                "reply": reply_schema,
+                "note": {
+                    "type": "object",
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 63, "position": 0 },
+                    },
+                    "additionalProperties": false,
+                },
+            }),
+        ),
+        true,
+        platform_version,
+    )
+    .expect("the updated contract parses");
+    let result = old
+        .validate_update(&new, &BlockInfo::default(), platform_version)
+        .expect("the update is judged");
+    assert!(result.is_valid(), "{:?}", result.errors);
+    assert!(new
+        .document_type_for_name("reply")
+        .expect("the reply type")
+        .derived_index_property_type("postId.hashtag")
+        .is_some());
+}
+
+/// A contract built one document type at a time resolves a derived property's type as the
+/// parse of the whole contract does, whichever type is added first.
+#[test]
+fn should_resolve_a_derived_type_when_document_types_are_set_one_at_a_time() {
+    let platform_version = PlatformVersion::latest();
+    let mut contract = DataContract::from_value(
+        contract_value(1, platform_value!({ "post": post(Value::Null) })),
+        true,
+        platform_version,
+    )
+    .expect("the contract parses");
+    contract
+        .set_document_schema(
+            "reply",
+            reply(permanent_reference(), "postId.hashtag", Value::Null),
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("the reply type is added");
+    assert!(contract
+        .document_type_for_name("reply")
+        .expect("the reply type")
+        .derived_index_property_type("postId.hashtag")
+        .is_some());
 }

@@ -68,12 +68,12 @@ The name reads through a reference when its first segment names a top-level iden
 
 ## What Drive does
 
-- **Create.** The reference is validated as usual. Drive then reads the referenced document again and writes the entries under the values it holds. A referenced document that has no value for the field, or a reference left out, puts the document under null, as a missing property would.
-- **Replace, transfer, purchase, price update and a moderator's change of fields.** Drive reads the referenced document once, for both versions of the document, since neither can point elsewhere. An index whose values the change leaves alone is not touched.
+- **Create.** The reference is validated as usual, which reads the referenced document, and Drive writes the entries under the values it holds, without reading it again. A referenced document that has no value for the field, or a reference left out, puts the document under null, as a missing property would.
+- **Replace, transfer, purchase, price update and a moderator's change of fields.** Drive reads the referenced document once, for both versions of the document, since neither can point elsewhere. It reads it even when no index holding a derived value moves: every entry's reference is rewritten in place on an update, under the values it is filed by.
 - **Delete, a moderator's removal, and expiry by `ttl`.** Drive reads the referenced document to find the entries to remove.
 - **A removed referenced document.** Once a moderator removes a `moderatedDocument` target, Drive reads its owner from the removal record, which keeps it. A restored document is read again.
 
-Each read is billed as a processing fee with the write that makes it. A dry run prices the reads at their worst case and reads nothing.
+Each read is billed as a processing fee with the write that makes it. A dry run prices the reads at their worst case and reads nothing, pricing the entries under a value of the field's type and typical size.
 
 ## Rules at registration
 
@@ -94,6 +94,8 @@ A derived value must stay what it was when an entry was written, or Drive could 
 A query uses a derived property as any other index property: `==`, `in`, a range, `orderBy`. Its values encode as the field's type.
 
 A `startAt` or `startAfter` cursor places the page by the values the document it names stores, and a derived value is not among them. A query paging with a cursor must therefore fix every derived property of its index with `==`. Otherwise it is refused, and it can page by a range on another property of the index instead.
+
+A subscription to state transitions filters by the values a transition carries, and a derived value is not among them either, so a subscription filter can not name a derived property. Filter by the reference property instead (`postId`), or query the index.
 
 ## See also
 

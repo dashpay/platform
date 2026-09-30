@@ -1,5 +1,6 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::class_methods::resolve_derived_index_properties;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
@@ -60,6 +61,20 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
 
         self.document_types
             .insert(document_type.name().clone(), document_type);
+
+        // A derived index property reading a schema property of another document type takes
+        // its type from it (protocol version 14): the type added, or one reading from it, is
+        // resolved as the parse of the whole contract resolves it. The rules on what it reads
+        // are the whole contract's parse's to judge.
+        let data_contract_system_version = self.system_version_type();
+        let contract_config_version = self.config.version();
+        resolve_derived_index_properties(
+            &mut self.document_types,
+            data_contract_system_version,
+            contract_config_version,
+            false,
+            platform_version,
+        )?;
 
         Ok(())
     }

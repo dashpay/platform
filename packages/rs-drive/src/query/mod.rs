@@ -135,8 +135,12 @@ use {
 #[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 #[cfg(feature = "server")]
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::document::DocumentV0Getters;
 #[cfg(feature = "server")]
 pub use grovedb::{
     query_result_type::{QueryResultElements, QueryResultType},
@@ -3139,8 +3143,6 @@ impl<'a> DriveDocumentQuery<'a> {
         mut document: Document,
         platform_version: &PlatformVersion,
     ) -> Result<Document, Error> {
-        use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-        use dpp::document::DocumentV0Getters;
         let derived_index_properties = self.document_type.derived_index_properties();
         if derived_index_properties.is_empty() {
             return Ok(document);
