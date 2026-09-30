@@ -1,3 +1,4 @@
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -46,10 +47,30 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
             ));
         }
 
-        // Validate user defined properties
-
+        // Validate user defined properties. The rules read the writer, the times and
+        // heights the replace keeps (creation, last transfer) and the ones it sets (the
+        // update), as the stored document will hold them, and the `countOf` and `sumOf`
+        // totals the action read from state as they will be once it is stored.
+        let system = DocumentSystemValues {
+            owner_id: Some(owner_id),
+            created_at: self.created_at(),
+            updated_at: self.updated_at(),
+            transferred_at: self.transferred_at(),
+            created_at_block_height: self.created_at_block_height(),
+            updated_at_block_height: self.updated_at_block_height(),
+            transferred_at_block_height: self.transferred_at_block_height(),
+            created_at_core_block_height: self.created_at_core_block_height(),
+            updated_at_core_block_height: self.updated_at_core_block_height(),
+            transferred_at_core_block_height: self.transferred_at_core_block_height(),
+            aggregates: Some(self.property_constraint_aggregates().clone()),
+        };
         let result = data_contract
-            .validate_document_properties(document_type_name, self.data().into(), platform_version)
+            .validate_document_properties(
+                document_type_name,
+                self.data().into(),
+                &system,
+                platform_version,
+            )
             .map_err(Error::Protocol)?;
         if !result.is_valid() {
             return Ok(result);

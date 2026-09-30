@@ -19,6 +19,21 @@ impl Drive {
     /// Called when a contract registers a token whose distribution rules carry a
     /// once-per-identity distribution. The subtree starts empty; every claim inserts one item
     /// keyed by the claimant's identity id.
+    ///
+    /// # Parameters
+    ///
+    /// * `token_id`: The token whose claims subtree is created.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
+    /// * `batch_operations`: The operations accumulator the tree insert is appended to.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the insert of the empty claims subtree is appended to
+    ///   `batch_operations`.
+    /// * `Err(Error)` when the method version is unknown, the subtree already exists, or
+    ///   building the insert fails.
     pub fn add_once_per_identity_distribution(
         &self,
         token_id: [u8; 32],

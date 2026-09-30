@@ -39,6 +39,7 @@ pub const CREDIT_POOL_METHOD_VERSIONS_V1: DriveCreditPoolMethodVersions =
         },
         storage_fee_distribution_pool: DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
             get_storage_fees_from_distribution_pool: 0,
+            fetch_lifetime_storage_fee_pools: 0,
         },
         unpaid_epoch: DriveCreditPoolUnpaidEpochMethodVersions {
             get_unpaid_epoch_index: 0,

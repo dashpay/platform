@@ -8,9 +8,9 @@
 //! ```json
 //! "refersTo": {
 //!   "anyOf": [
-//!     { "type": "permanentDocument", "documentType": "addedModerator", "lookup": { ... } },
+//!     { "type": "permanentDocument", "documentType": "addedModerator", "findBy": { ... } },
 //!     { "allOf": [
-//!       { "type": "permanentDocument", "documentType": "joinRequest", "lookup": { ... } },
+//!       { "type": "permanentDocument", "documentType": "joinRequest", "findBy": { ... } },
 //!       { "type": "identity" }
 //!     ] }
 //!   ]
@@ -19,10 +19,11 @@
 //!
 //! reads: the value was added as a moderator, or it both asked to join and is
 //! an identity. Every leaf is an ordinary declaration with its own keys, and
-//! only `identity` and `permanentDocument` (by id or through a `lookup`) are
-//! allowed: both are existence checks against entities that can never be
-//! deleted, so an expression of them holds for good once it holds, like a
-//! single one of them. Consensus evaluates an expression when the referring
+//! only `identity`, `permanentDocument` (by id, by `findBy` or with `inList`)
+//! and `deletableDocument` found by `findBy` are allowed. The first two are
+//! existence checks against entities that can never be deleted, so an
+//! expression of them holds for good once it holds, like a single one of them;
+//! a `deletableDocument` leaf makes every replace ask again. Consensus evaluates an expression when the referring
 //! document is written: an `anyOf` checks its operands in declared order and
 //! stops at the first that holds, refusing with the error of the last when none
 //! does; an `allOf` checks them in declared order and stops at the first that
@@ -36,16 +37,16 @@ use bincode::{BorrowDecode, BorrowDecodeUntrusted, Decode, DecodeUntrusted, Enco
 use serde::Serialize;
 use std::cell::Cell;
 
-/// The `type` values a leaf of a reference expression may declare: existence
-/// checks against entities that are never deleted (`listElement` reads a
-/// list that never changes on a document that is never deleted, so it holds
-/// for good once it holds, as the other two do).
+/// The `type` values a leaf of a reference expression may declare on its own:
+/// existence checks against entities that are never deleted (a
+/// `permanentDocument` with `inList` reads a list that never changes on a
+/// document that is never deleted, so it holds for good once it holds, as the
+/// others do). A `deletableDocument` leaf is taken only with `findBy`.
 ///
 /// Read by `apply_property_reference` 0 (protocol version 14). Admitting
 /// another type once that version is released takes a new generation of the
 /// parser (and a new meta-schema), not an edit here.
-pub const COMBINABLE_REFERENCE_TARGET_TYPES: [&str; 3] =
-    ["identity", "permanentDocument", "listElement"];
+pub const COMBINABLE_REFERENCE_TARGET_TYPES: [&str; 2] = ["identity", "permanentDocument"];
 
 /// The deepest nesting of `anyOf` and `allOf` a decoder accepts. It only keeps
 /// crafted bytes from driving the decoder into unbounded recursion: the
@@ -180,8 +181,9 @@ mod tests {
             document_type_name: "addedModerator".to_string(),
             property_agreement: BTreeMap::new(),
             lookup: DocumentReferenceLookup {
-                index: "byModerator".to_string(),
                 keys: [("moderatorId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                minimum_age_blocks: None,
+                consume: false,
             },
         }
     }
@@ -330,10 +332,7 @@ mod tests {
                         "permanentDocument": {
                             "contract_id": null,
                             "document_type_name": "addedModerator",
-                            "lookup": {
-                                "index": "byModerator",
-                                "keys": { "moderatorId": "." }
-                            }
+                            "lookup": { "keys": { "moderatorId": "." } }
                         }
                     },
                     {
@@ -343,10 +342,7 @@ mod tests {
                                 "permanentDocument": {
                                     "contract_id": null,
                                     "document_type_name": "addedModerator",
-                                    "lookup": {
-                                        "index": "byModerator",
-                                        "keys": { "moderatorId": "." }
-                                    }
+                                    "lookup": { "keys": { "moderatorId": "." } }
                                 }
                             }
                         ]

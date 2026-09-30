@@ -250,10 +250,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         /// starts, so a stretch of unused indices cannot stop it.
         ///
         /// Unused stretches come from sends that consumed an address and then
-        /// failed to build; five gap limits (100 addresses at the DIP-15 gap of
-        /// 20) covers far more consecutive failures than a contact realistically
-        /// accumulates, and the walk still extends past it whenever a match
-        /// lands near the frontier.
+        /// failed to build; five gap limits (100 addresses at key-wallet's gap
+        /// of 20; DIP-15 recommends 10) covers far more consecutive failures
+        /// than a contact realistically accumulates, and the walk still
+        /// extends past it whenever a match lands near the frontier.
         const HISTORICAL_SEED_GAP_MULTIPLE: u32 = 5;
 
         /// The `(owner identity, contact identity)` pair every reconstructed

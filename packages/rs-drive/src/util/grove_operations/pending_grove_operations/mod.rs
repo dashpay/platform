@@ -36,7 +36,7 @@ pub(crate) fn pending_grove_operations(
         .iter()
         .filter_map(|operation| match operation {
             LowLevelDriveOperation::GroveOperation(grovedb_op)
-            | LowLevelDriveOperation::EphemeralGroveOperation(grovedb_op) => Some(grovedb_op),
+            | LowLevelDriveOperation::EphemeralGroveOperation(grovedb_op, _) => Some(grovedb_op),
             _ => None,
         })
 }

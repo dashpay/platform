@@ -13,6 +13,19 @@ impl Drive {
     ///
     /// Returns the root hash and the information, or `None` when the proof shows the group is
     /// absent.
+    ///
+    /// # Parameters
+    ///
+    /// * `proof`: The proof, as `prove_contract_group_info` produced it.
+    /// * `contract_group_id`: The group's id.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((RootHash, Option<ContractGroupInfo>))` with the proof's root hash and the group's
+    ///   information, `None` when the proof shows the group is absent.
+    /// * `Err(Error)` when the method version is unknown, the proof fails verification, or it
+    ///   holds anything but at most one info item that decodes.
     pub fn verify_contract_group_info(
         proof: &[u8],
         contract_group_id: Identifier,

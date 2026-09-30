@@ -18,6 +18,21 @@ impl Drive {
     /// member subtrees. Applies the operations when `apply` is true, otherwise only estimates.
     ///
     /// The caller must have checked that no group with this id exists.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_group_id`: The new group's id.
+    /// * `info`: The group's information, stored as its info item.
+    /// * `block_info`: The block being executed; its epoch prices the fee.
+    /// * `apply`: Whether to apply the operations or only estimate their cost.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(FeeResult)` with the fee of the operations, applied or estimated.
+    /// * `Err(Error)` when the method version is unknown, the group already exists, the info
+    ///   does not serialize, applying the batch fails, or the fee cannot be calculated.
     pub fn insert_contract_group(
         &self,
         contract_group_id: Identifier,
@@ -52,6 +67,21 @@ impl Drive {
 
     /// The low level operations registering a contract group. With layer information the
     /// operations are built for estimation only.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_group_id`: The new group's id.
+    /// * `info`: The group's information, stored as its info item.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<LowLevelDriveOperation>)` with the inserts of the group's tree, its info item
+    ///   and its three member subtrees.
+    /// * `Err(Error)` when the method version is unknown, the group already exists, the info
+    ///   does not serialize, or building an operation fails.
     pub fn insert_contract_group_operations(
         &self,
         contract_group_id: Identifier,

@@ -17,6 +17,17 @@ pub struct VoteResolutionFundFees {
     /// from protocol version 14; every earlier schedule carries the contested document
     /// amount here, so choosing between the two changes nothing before 14.
     pub moderation_vote_resolution_fund_required_amount: u64,
+    /// How many contenders a contest holds before the fund a contender joining it pays first
+    /// doubles: joining a contest holding fewer, a new one included, costs the contest's fund.
+    /// Read with `contested_document_contenders_per_fund_doubling`, by contested document
+    /// create state validation 2 only.
+    pub contested_document_contenders_before_fund_doubling: u16,
+    /// How many more contenders a contest holds for each further doubling of the fund a
+    /// contender joining it pays: joining a contest holding `n` contenders, at least
+    /// `contested_document_contenders_before_fund_doubling` (`b`), costs the contest's fund
+    /// times `2^(1 + (n - b) / this)`. 0 means the fund never doubles, what every schedule
+    /// before protocol version 14 carries.
+    pub contested_document_contenders_per_fund_doubling: u16,
 }
 
 /// The vote resolution fund fees exactly as every pre-1.4 release serialized them inside
@@ -43,6 +54,9 @@ impl From<VoteResolutionFundFeesFieldsBeforeVersion4> for VoteResolutionFundFees
             // amount wherever they could be reached before protocol version 14.
             moderation_vote_resolution_fund_required_amount: value
                 .contested_document_vote_resolution_fund_required_amount,
+            // Pre-4.2 tables predate the fund doubling with the contenders a contest holds
+            contested_document_contenders_before_fund_doubling: 0,
+            contested_document_contenders_per_fund_doubling: 0,
         }
     }
 }
@@ -60,6 +74,8 @@ mod tests {
             contested_document_vote_resolution_unlock_fund_required_amount: 2,
             contested_document_single_vote_cost: 3,
             moderation_vote_resolution_fund_required_amount: 4,
+            contested_document_contenders_before_fund_doubling: 5,
+            contested_document_contenders_per_fund_doubling: 6,
         };
 
         let version2 = VoteResolutionFundFees {
@@ -67,6 +83,8 @@ mod tests {
             contested_document_vote_resolution_unlock_fund_required_amount: 2,
             contested_document_single_vote_cost: 3,
             moderation_vote_resolution_fund_required_amount: 4,
+            contested_document_contenders_before_fund_doubling: 5,
+            contested_document_contenders_per_fund_doubling: 6,
         };
 
         // This assertion will check if all fields are considered in the equality comparison
