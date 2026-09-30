@@ -1,5 +1,6 @@
 use crate::data_contract::config::moderation::ContractModerationReason;
 use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -47,9 +48,10 @@ impl SettledDeletionRule {
 /// document type then document id, paid for by the moderators that approve, and never deleted.
 ///
 /// The approvals hold for the document as it was when the first was given, and for
-/// `SystemLimits::contract_settled_deletion_approval_window_ms` after it: a replace of the
-/// document, or the lapse, lets the next approval start afresh in its place, for its own
-/// reason. A moderator who has left the team no longer counts: every approval checks the others
+/// `SystemLimits::contract_settled_deletion_approval_window_ms` after it: any change of the
+/// document since (a replace, a price update, a transfer or a moderator's change of its
+/// fields, each of which moves its `$revision`), or the lapse, lets the next approval start
+/// afresh in its place, for its own reason. A moderator who has left the team no longer counts: every approval checks the others
 /// again and keeps only those still on it, and starts afresh when none is.
 #[derive(
     Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
@@ -62,6 +64,10 @@ pub struct ContractSettledDeletion {
     /// or `$createdAt` on a type that carries no `$updatedAt`. The approvals are of the document
     /// as it was then.
     pub document_last_modified_at: TimestampMillis,
+    /// The document's `$revision` when the first approval was given, `None` on a type whose
+    /// documents carry none. Every change of the document moves it, a moderator's change of
+    /// its fields included, which leaves `$updatedAt` alone.
+    pub document_revision: Option<Revision>,
     /// Why, as the first approval gave it and every later one repeated it.
     pub reason: ContractModerationReason,
     /// The members of the seated team that approved, in the order they did, each still on the
@@ -79,17 +85,20 @@ impl ContractSettledDeletion {
     }
 
     /// Whether a further approval adds to these at `block_time_ms`, for a document last
-    /// modified at `document_last_modified_at`, approvals lapsing `approval_window_ms` after
-    /// the first: they have not met the rule yet, are of the document as it is, and have not
-    /// lapsed. Otherwise the next approval starts afresh in their place.
+    /// modified at `document_last_modified_at` and at `document_revision`, approvals lapsing
+    /// `approval_window_ms` after the first: they have not met the rule yet, are of the
+    /// document as it is, and have not lapsed. Otherwise the next approval starts afresh in
+    /// their place.
     pub fn is_open_at(
         &self,
         block_time_ms: TimestampMillis,
         document_last_modified_at: TimestampMillis,
+        document_revision: Option<Revision>,
         approval_window_ms: u64,
     ) -> bool {
         !self.is_deleted()
             && self.document_last_modified_at == document_last_modified_at
+            && self.document_revision == document_revision
             && block_time_ms <= self.proposed_at.saturating_add(approval_window_ms)
     }
 }
@@ -143,23 +152,26 @@ mod tests {
     }
 
     #[test]
-    fn should_close_on_deletion_on_a_replace_and_after_the_window() {
+    fn should_close_on_deletion_on_a_change_and_after_the_window() {
         let approvals = ContractSettledDeletion {
             proposed_at: 1_000,
             document_last_modified_at: 10,
+            document_revision: Some(2),
             reason: ContractModerationReason::from_text("spam"),
             approvals: vec![Identifier::from([2; 32])],
             deleted_at: None,
         };
-        assert!(approvals.is_open_at(1_500, 10, 500));
+        assert!(approvals.is_open_at(1_500, 10, Some(2), 500));
         // The window's last millisecond still counts
-        assert!(!approvals.is_open_at(1_501, 10, 500));
+        assert!(!approvals.is_open_at(1_501, 10, Some(2), 500));
         // The document was replaced since
-        assert!(!approvals.is_open_at(1_200, 11, 500));
+        assert!(!approvals.is_open_at(1_200, 11, Some(3), 500));
+        // A moderator changed its fields since: a new revision, the same `$updatedAt`
+        assert!(!approvals.is_open_at(1_200, 10, Some(3), 500));
         let deleted = ContractSettledDeletion {
             deleted_at: Some(1_100),
             ..approvals
         };
-        assert!(!deleted.is_open_at(1_200, 10, 500));
+        assert!(!deleted.is_open_at(1_200, 10, Some(2), 500));
     }
 }

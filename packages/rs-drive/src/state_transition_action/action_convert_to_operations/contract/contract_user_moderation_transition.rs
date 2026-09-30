@@ -576,6 +576,7 @@ mod tests {
         let settled_deletion = dpp::data_contract::config::moderation::ContractSettledDeletion {
             proposed_at: 5,
             document_last_modified_at: 1,
+            document_revision: Some(1),
             reason: reason.clone(),
             approvals: vec![Identifier::from([0xAA; 32])],
             deleted_at: None,

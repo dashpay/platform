@@ -3135,7 +3135,7 @@
                               "EpochOwned"
                             ],
                             "flags_note": "The owner is the member of the seated team whose approval last changed the record's size: they pay for the bytes a longer record adds, and the bytes a shorter one frees are refunded to the member it named before. A rewrite of the same size keeps the earlier member. Nothing deletes it.",
-                            "value": "the block time of the first approval and the document's last modification then, each a u64 big endian, a tag byte (1: deleted) followed when deleted by the block time of the deletion as a u64 big endian, the count of approvals in one byte and each approver's id, then the reason as in a banlist entry",
+                            "value": "the block time of the first approval, the document's last modification and its revision then (0: none), each a u64 big endian, a tag byte (1: deleted) followed when deleted by the block time of the deletion as a u64 big endian, the count of approvals in one byte and each approver's id, then the reason as in a banlist entry",
                             "since": 14,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/contract/paths.rs",

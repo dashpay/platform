@@ -162,6 +162,7 @@ fn approvals(text: &str, approvers: &[u8], deleted_at: Option<u64>) -> ContractS
     ContractSettledDeletion {
         proposed_at: 1_000,
         document_last_modified_at: 10,
+        document_revision: Some(1),
         reason: ContractModerationReason {
             code: Some(7),
             text: text.to_string(),
@@ -424,6 +425,58 @@ fn should_refuse_a_read_of_approvals_out_of_bounds() {
     }
 }
 
+/// Writes `record` for `document_id` as an approval does, estimated then applied, and checks the
+/// estimate is no less than the cost, storage and total alike
+fn assert_estimated_at_no_less_than_it_costs(
+    drive: &Drive,
+    contract: &DataContract,
+    document_id: Identifier,
+    record: ContractSettledDeletion,
+    replaces_existing: bool,
+) {
+    let operations = || {
+        vec![write(
+            contract.id(),
+            document_id,
+            record.clone(),
+            replaces_existing,
+        )]
+    };
+    let estimated = apply(drive, operations(), false);
+    let applied = apply(drive, operations(), true);
+    let what = format!(
+        "{} approvals, a {}-byte reason, {}, {}",
+        record.approvals.len(),
+        record.reason.text.len(),
+        if record.deleted_at.is_some() {
+            "deleted"
+        } else {
+            "open"
+        },
+        if replaces_existing {
+            "replacing"
+        } else {
+            "fresh"
+        },
+    );
+    assert!(
+        applied.storage_fee > 0 || replaces_existing,
+        "{what}: the moderator pays for a fresh record"
+    );
+    assert!(
+        estimated.storage_fee >= applied.storage_fee,
+        "{what}: estimated storage {} < applied {}",
+        estimated.storage_fee,
+        applied.storage_fee
+    );
+    assert!(
+        estimated.total_base_fee() >= applied.total_base_fee(),
+        "{what}: estimated total {} < applied {}",
+        estimated.total_base_fee(),
+        applied.total_base_fee()
+    );
+}
+
 #[test]
 fn should_estimate_approvals_at_no_less_than_they_cost() {
     let platform_version = PlatformVersion::latest();
@@ -437,36 +490,51 @@ fn should_estimate_approvals_at_no_less_than_they_cost() {
     );
     let many: Vec<u8> = (1..=31).collect();
 
-    for (seed, text, approvers) in [
-        (1u8, "", &[1u8][..]),
-        (2, "spam", &[1, 2, 3][..]),
-        (3, longest.as_str(), many.as_slice()),
-    ] {
-        let operations = || {
-            vec![write(
-                contract.id(),
-                identity(0x40 + seed),
-                approvals(text, approvers, Some(5)),
-                false,
-            )]
-        };
-        let estimated = apply(&drive, operations(), false);
-        let applied = apply(&drive, operations(), true);
-        assert!(
-            applied.storage_fee > 0,
-            "the moderator pays for the approvals"
-        );
-        // The estimate is for a typical record; one far larger is priced by its own size.
-        if text.len() <= 128 && approvers.len() <= 3 {
-            assert!(
-                estimated.storage_fee >= applied.storage_fee,
-                "{} approvals, a {}-byte reason: estimated {} < applied {}",
-                approvers.len(),
-                text.len(),
-                estimated.storage_fee,
-                applied.storage_fee
+    // Every write the approvals of one document make, for a reason empty, typical and as long
+    // as allowed: the first approval, each later one growing the record up to as many members
+    // as a team holds, and the one that deletes adding its time; and on another document, a
+    // fresh, shorter record in place of approvals that lapsed, then the one that deletes.
+    for (seed, text) in [(1u8, ""), (2, "spam"), (3, longest.as_str())] {
+        let growing = identity(0x40 + seed);
+        for count in 1..=many.len() {
+            assert_estimated_at_no_less_than_it_costs(
+                &drive,
+                &contract,
+                growing,
+                approvals(text, &many[..count], None),
+                count > 1,
             );
         }
+        assert_estimated_at_no_less_than_it_costs(
+            &drive,
+            &contract,
+            growing,
+            approvals(text, &many, Some(5)),
+            true,
+        );
+
+        let lapsing = identity(0x50 + seed);
+        assert_estimated_at_no_less_than_it_costs(
+            &drive,
+            &contract,
+            lapsing,
+            approvals(text, &many[..3], None),
+            false,
+        );
+        assert_estimated_at_no_less_than_it_costs(
+            &drive,
+            &contract,
+            lapsing,
+            approvals("x", &many[3..4], None),
+            true,
+        );
+        assert_estimated_at_no_less_than_it_costs(
+            &drive,
+            &contract,
+            lapsing,
+            approvals("x", &many[3..5], Some(5)),
+            true,
+        );
     }
 }
 

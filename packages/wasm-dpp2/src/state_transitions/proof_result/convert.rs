@@ -433,6 +433,7 @@ pub fn convert_proof_result(
             document_id: document_id.into(),
             proposed_at: settled_deletion.proposed_at,
             document_last_modified_at: settled_deletion.document_last_modified_at,
+            document_revision: settled_deletion.document_revision,
             reason: settled_deletion.reason,
             approvals: settled_deletion
                 .approvals

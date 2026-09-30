@@ -492,6 +492,7 @@ describe('ContractsFacade', () => {
     const settledDeletion = {
       proposedAt: BigInt(1800000000000),
       documentLastModifiedAt: BigInt(1700000000000),
+      documentRevision: BigInt(2),
       reason: settledReason,
       approvals: [identityId],
     };

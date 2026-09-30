@@ -746,7 +746,16 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
     // there are. Approvals nobody on the team still stands behind are no approvals at all, so
     // a member who left can not hold the reason the others must repeat.
     let open = match existing {
-        Some(open) if open.is_open_at(block_info.time_ms, last_modified_at, approval_window_ms) => {
+        // Of the document as it is: its revision too, which a moderator's change of its fields
+        // moves while leaving `$updatedAt`, and so the settling time, alone.
+        Some(open)
+            if open.is_open_at(
+                block_info.time_ms,
+                last_modified_at,
+                document.revision(),
+                approval_window_ms,
+            ) =>
+        {
             // The signer is on the team (checked above), so approvals it is among stay open
             // whoever else left: its second one is refused before any seat is read, for the
             // reason it gives as a later approval's would be.
@@ -812,6 +821,7 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
             ContractSettledDeletion {
                 proposed_at: block_info.time_ms,
                 document_last_modified_at: last_modified_at,
+                document_revision: document.revision(),
                 reason: reason.clone(),
                 approvals: vec![moderator_id],
                 deleted_at: None,

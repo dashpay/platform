@@ -1768,7 +1768,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (appended): each approver sends it for the same reason, and the approvals
 ///     are kept under the contract (other tree key `24`, one subtree per such
 ///     type, created with it, the record never deleted), open until they delete
-///     the document, the document is edited, or they lapse
+///     the document, the document changes (the record keeps its `$revision`, which
+///     a moderator's change of its fields moves too), or they lapse
 ///     (`SystemLimits::contract_settled_deletion_approval_window_ms`, a week);
 ///     each approval drops earlier approvers no longer on the team (none left:
 ///     it starts afresh, for its own reason), and the one that meets the rule

@@ -201,8 +201,9 @@ pub(crate) fn structure() -> StructureNode {
                             .kind(ElementKind::Item)
                             .flags(&[FlagsKind::EpochOwned], SETTLED_DELETION_FLAGS)
                             .value(
-                                "the block time of the first approval and the document's \
-                                     last modification then, each a u64 big endian, a tag \
+                                "the block time of the first approval, the document's last \
+                                     modification and its revision then (0: none), each a \
+                                     u64 big endian, a tag \
                                      byte (1: deleted) followed when deleted by the block \
                                      time of the deletion as a u64 big endian, the count of \
                                      approvals in one byte and each approver's id, then the \

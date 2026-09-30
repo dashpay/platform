@@ -3736,6 +3736,11 @@ export namespace GetContractSettledDeletionsResponse {
     getDeletedAt(): number;
     setDeletedAt(value: number): void;
 
+    hasDocumentRevision(): boolean;
+    clearDocumentRevision(): void;
+    getDocumentRevision(): number;
+    setDocumentRevision(value: number): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractSettledDeletion.AsObject;
     static toObject(includeInstance: boolean, msg: ContractSettledDeletion): ContractSettledDeletion.AsObject;
@@ -3754,6 +3759,7 @@ export namespace GetContractSettledDeletionsResponse {
       reason?: ContractModerationReason.AsObject,
       approvalsList: Array<Uint8Array | string>,
       deletedAt: number,
+      documentRevision: number,
     }
   }
 

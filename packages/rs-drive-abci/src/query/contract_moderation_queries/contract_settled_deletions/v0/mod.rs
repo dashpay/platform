@@ -154,6 +154,7 @@ impl<C> Platform<C> {
                                         .map(|approver| approver.to_vec())
                                         .collect(),
                                     deleted_at: entry.settled_deletion.deleted_at,
+                                    document_revision: entry.settled_deletion.document_revision,
                                 })
                                 .collect(),
                         },
@@ -242,6 +243,8 @@ mod tests {
         ContractSettledDeletion {
             proposed_at: 1_000 + seed as u64,
             document_last_modified_at: 10 + seed as u64,
+            // Every third one is of a type whose documents carry no revision.
+            document_revision: (!seed.is_multiple_of(3)).then_some(seed as u64),
             reason: ContractModerationReason {
                 code: Some(seed as u16),
                 text: "doxxing".to_string(),
@@ -321,6 +324,7 @@ mod tests {
                 .map(|approver| approver.to_vec())
                 .collect(),
             deleted_at: approvals.deleted_at,
+            document_revision: approvals.document_revision,
         }
     }
 

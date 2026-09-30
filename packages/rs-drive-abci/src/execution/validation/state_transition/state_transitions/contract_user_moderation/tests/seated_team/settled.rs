@@ -586,3 +586,123 @@ async fn should_refuse_an_update_adding_a_type_that_deletes_settled_documents() 
         INVALID_CONTRACT_MODERATION_CONFIG,
     );
 }
+
+/// A moderator's change of a document's fields closes the approvals of its deletion: it moves
+/// the document's revision but not its `$updatedAt`, so the document stays settled, and the
+/// approvals given before are of the document as it was. The next approval starts afresh.
+#[tokio::test]
+async fn should_start_afresh_after_a_moderator_changes_the_fields_of_a_settled_document() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let (chronicle, create) = setup
+        .create_document_of_type_with(&setup.stranger, CHRONICLE, |document| {
+            document.properties_mut().remove("label");
+        })
+        .await;
+    team.process_and_commit(&create);
+    team.award();
+    let [joiner, _, _] = &team.joiners;
+    team.process_and_commit(&team.addition_of(joiner).await);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    // The member and the leader approve: one short of the rule's three.
+    for approver in [&team.member, &team.leader] {
+        let approval = setup
+            .moderate(approver, approve(CHRONICLE, chronicle.id(), "doxxing"))
+            .await;
+        assert_success(&setup.process_at(&approval, SETTLED_AT, &transaction));
+    }
+
+    // The leader labels the chronicle: a new revision, the same `$updatedAt`.
+    let label = setup
+        .moderate(
+            &team.leader,
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: CHRONICLE.to_string(),
+                document_id: chronicle.id(),
+                fields: BTreeMap::from([("label".to_string(), Value::Text("disputed".into()))]),
+                reason: ContractModerationReason::from_text("checked")
+                    .with_reason_document(LISTED_REASON),
+            },
+        )
+        .await;
+    assert_success(&setup.process_at(&label, SETTLED_AT + 1, &transaction));
+
+    // The third approval would have met the rule; it starts afresh instead, the chronicle still
+    // settled, and deletes nothing.
+    let third = setup
+        .moderate(joiner, approve(CHRONICLE, chronicle.id(), "doxxing"))
+        .await;
+    assert_success(&setup.process_at(&third, SETTLED_AT + 2, &transaction));
+    assert!(team.is_stored(CHRONICLE, chronicle.id(), &transaction));
+    let restarted = team
+        .settled_deletion(CHRONICLE, chronicle.id(), &transaction)
+        .expect("expected the approvals");
+    assert_eq!(restarted.approvals, vec![joiner.id()]);
+    assert_eq!(restarted.proposed_at, SETTLED_AT + 2);
+    assert_eq!(restarted.deleted_at, None);
+}
+
+/// The author's replace of a settled document closes the approvals of its deletion too: it
+/// moves `$updatedAt`, so the document is within its window again and no approval is taken
+/// until it settles anew, and then the next approval starts afresh.
+#[tokio::test]
+async fn should_start_afresh_after_the_author_replaces_a_settled_document() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let mut story = team.written_by(&setup.stranger, STORY).await;
+    team.award();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    for approver in [&team.member, &team.leader] {
+        let approval = setup
+            .moderate(approver, approve(STORY, story.id(), "doxxing"))
+            .await;
+        assert_success(&setup.process_at(&approval, SETTLED_AT, &transaction));
+    }
+
+    // The author rewrites the story: new content, within its window again.
+    let replaced_at = SETTLED_AT + 1;
+    story.set("text", "rewritten".into());
+    story
+        .increment_revision()
+        .expect("expected to bump the revision");
+    let replace = BatchTransition::new_document_replacement_transition_from_document(
+        story.clone(),
+        setup
+            .contract
+            .document_type_for_name(STORY)
+            .expect("expected the story type"),
+        &setup.stranger.key,
+        setup.stranger.contract_nonce(),
+        0,
+        None,
+        &setup.stranger.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the replacement");
+    assert_success(&setup.process_at(&replace, replaced_at, &transaction));
+    let too_soon = setup
+        .moderate(&team.member, approve(STORY, story.id(), "doxxing"))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&too_soon, replaced_at + 1, &transaction),
+        DOCUMENT_NOT_SETTLED,
+    );
+
+    // Once it settles anew, the leader's approval starts afresh rather than joining the two
+    // given before the rewrite.
+    let settled_again_at = replaced_at + SETTLING_WINDOW_SECONDS * 1_000 + 1;
+    let afresh = setup
+        .moderate(&team.leader, approve(STORY, story.id(), "doxxing"))
+        .await;
+    assert_success(&setup.process_at(&afresh, settled_again_at, &transaction));
+    let restarted = team
+        .settled_deletion(STORY, story.id(), &transaction)
+        .expect("expected the approvals");
+    assert_eq!(restarted.approvals, vec![team.leader.id()]);
+    assert_eq!(restarted.proposed_at, settled_again_at);
+    assert!(team.is_stored(STORY, story.id(), &transaction));
+}

@@ -36542,7 +36542,8 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
     documentLastModifiedAt: jspb.Message.getFieldWithDefault(msg, 3, 0),
     reason: (f = msg.getReason()) && proto.org.dash.platform.dapi.v0.ContractModerationReason.toObject(includeInstance, f),
     approvalsList: msg.getApprovalsList_asB64(),
-    deletedAt: jspb.Message.getFieldWithDefault(msg, 6, 0)
+    deletedAt: jspb.Message.getFieldWithDefault(msg, 6, 0),
+    documentRevision: jspb.Message.getFieldWithDefault(msg, 7, 0)
   };
 
   if (includeInstance) {
@@ -36603,6 +36604,10 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
     case 6:
       var value = /** @type {number} */ (reader.readUint64());
       msg.setDeletedAt(value);
+      break;
+    case 7:
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setDocumentRevision(value);
       break;
     default:
       reader.skipField();
@@ -36673,6 +36678,13 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
   if (f != null) {
     writer.writeUint64(
       6,
+      f
+    );
+  }
+  f = /** @type {number} */ (jspb.Message.getField(message, 7));
+  if (f != null) {
+    writer.writeUint64(
+      7,
       f
     );
   }
@@ -36888,6 +36900,42 @@ proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSett
  */
 proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.hasDeletedAt = function() {
   return jspb.Message.getField(this, 6) != null;
+};
+
+
+/**
+ * optional uint64 document_revision = 7;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.getDocumentRevision = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 7, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.setDocumentRevision = function(value) {
+  return jspb.Message.setField(this, 7, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.clearDocumentRevision = function() {
+  return jspb.Message.setField(this, 7, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion.prototype.hasDocumentRevision = function() {
+  return jspb.Message.getField(this, 7) != null;
 };
 
 

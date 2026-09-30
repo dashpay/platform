@@ -571,6 +571,7 @@ pub fn settled_deletions_from_response(
                 settled_deletion: ContractSettledDeletion {
                     proposed_at: settled_deletion.proposed_at,
                     document_last_modified_at: settled_deletion.document_last_modified_at,
+                    document_revision: settled_deletion.document_revision,
                     reason: reason_from_response(settled_deletion.reason)?,
                     approvals: settled_deletion
                         .approvals
@@ -1330,6 +1331,7 @@ mod tests {
         ContractSettledDeletion {
             proposed_at: 1_000 + u64::from(seed),
             document_last_modified_at: 500 + u64::from(seed),
+            document_revision: Some(u64::from(seed) + 1),
             reason: ContractModerationReason::from_text("doxxing"),
             approvals: vec![id(0x77), id(0x78)],
             // Every other record met the rule and deleted its document.
@@ -1355,6 +1357,7 @@ mod tests {
                 .map(|approver| approver.to_vec())
                 .collect(),
             deleted_at: settled_deletion.deleted_at,
+            document_revision: settled_deletion.document_revision,
         }
     }
 

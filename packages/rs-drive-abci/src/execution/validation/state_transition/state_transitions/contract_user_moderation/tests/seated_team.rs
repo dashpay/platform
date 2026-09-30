@@ -92,6 +92,9 @@ const STORY: &str = "story";
 /// A document type moderators delete for a minute after its last modification, and once
 /// settled when the seated team's leader approves.
 const MEMO: &str = "memo";
+/// A story whose `label` only moderators write, the team holding both the deletion and the
+/// change of fields on it.
+const CHRONICLE: &str = "chronicle";
 /// The window the stories and memos give their moderators.
 const SETTLING_WINDOW_SECONDS: u64 = 60;
 const DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE: u32 = 41124;
@@ -144,6 +147,13 @@ fn elected_posts(
                 (
                     MEMO.to_string(),
                     BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    CHRONICLE.to_string(),
+                    BTreeSet::from([
+                        ModerationAbility::DeleteDocuments,
+                        ModerationAbility::ChangeDocumentFields,
+                    ]),
                 ),
             ]),
             interim,
@@ -404,6 +414,24 @@ impl Team {
                         })),
                     )
                 }
+                add_document_type(
+                    c,
+                    CHRONICLE,
+                    post_schema_with(platform_value!({
+                        "properties": {
+                            "text": { "type": "string", "maxLength": 50, "position": 0 },
+                            "label": { "type": "string", "maxLength": 20, "position": 1 },
+                        },
+                        "moderatorAbilities": {
+                            "delete": true,
+                            "deleteWithin": SETTLING_WINDOW_SECONDS,
+                            "deleteSettled": { "leader": true, "approvals": 3 },
+                            "changeFields": ["label"],
+                        },
+                        "documentsMutable": true,
+                        "required": ["text", "$updatedAt"],
+                    })),
+                );
             },
         )
         .await;

@@ -943,6 +943,7 @@ mod fixtures {
                         settled_deletion: ContractSettledDeletion {
                             proposed_at: 1_000,
                             document_last_modified_at: 10,
+                            document_revision: Some(1),
                             reason: ContractModerationReason::from_text("doxxing"),
                             approvals: vec![Identifier::from([0x27; 32])],
                             deleted_at: None,

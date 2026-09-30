@@ -950,6 +950,10 @@ message GetContractSettledDeletionsResponse {
     optional uint64 deleted_at =
         6; // The time of the block whose approval met the rule and deleted the
            // document, in milliseconds; absent while the approvals fall short
+    optional uint64 document_revision =
+        7; // The document's $revision when the first approval was given, absent
+           // on a type whose documents carry none: any change of the document
+           // since, a moderator's change of its fields included, closes them
   }
 
   message ContractSettledDeletions {

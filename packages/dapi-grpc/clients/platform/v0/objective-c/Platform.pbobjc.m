@@ -8174,6 +8174,7 @@ void GetContractSettledDeletionsResponse_ClearVersionOneOfCase(GetContractSettle
 @dynamic hasReason, reason;
 @dynamic approvalsArray, approvalsArray_Count;
 @dynamic hasDeletedAt, deletedAt;
+@dynamic hasDocumentRevision, documentRevision;
 
 typedef struct GetContractSettledDeletionsResponse_ContractSettledDeletion__storage_ {
   uint32_t _has_storage_[1];
@@ -8183,6 +8184,7 @@ typedef struct GetContractSettledDeletionsResponse_ContractSettledDeletion__stor
   uint64_t proposedAt;
   uint64_t documentLastModifiedAt;
   uint64_t deletedAt;
+  uint64_t documentRevision;
 } GetContractSettledDeletionsResponse_ContractSettledDeletion__storage_;
 
 // This method is threadsafe because it is initially called
@@ -8242,6 +8244,15 @@ typedef struct GetContractSettledDeletionsResponse_ContractSettledDeletion__stor
         .number = GetContractSettledDeletionsResponse_ContractSettledDeletion_FieldNumber_DeletedAt,
         .hasIndex = 4,
         .offset = (uint32_t)offsetof(GetContractSettledDeletionsResponse_ContractSettledDeletion__storage_, deletedAt),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "documentRevision",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractSettledDeletionsResponse_ContractSettledDeletion_FieldNumber_DocumentRevision,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetContractSettledDeletionsResponse_ContractSettledDeletion__storage_, documentRevision),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt64,
       },

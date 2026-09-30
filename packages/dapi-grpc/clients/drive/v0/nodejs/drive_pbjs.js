@@ -31225,6 +31225,7 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [reason] ContractSettledDeletion reason
                              * @property {Array.<Uint8Array>|null} [approvals] ContractSettledDeletion approvals
                              * @property {number|Long|null} [deletedAt] ContractSettledDeletion deletedAt
+                             * @property {number|Long|null} [documentRevision] ContractSettledDeletion documentRevision
                              */
 
                             /**
@@ -31292,6 +31293,14 @@ $root.org = (function() {
                             ContractSettledDeletion.prototype.deletedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             /**
+                             * ContractSettledDeletion documentRevision.
+                             * @member {number|Long} documentRevision
+                             * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
+                             * @instance
+                             */
+                            ContractSettledDeletion.prototype.documentRevision = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
                              * Creates a new ContractSettledDeletion instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetContractSettledDeletionsResponse.ContractSettledDeletion
@@ -31328,6 +31337,8 @@ $root.org = (function() {
                                         writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.approvals[i]);
                                 if (message.deletedAt != null && Object.hasOwnProperty.call(message, "deletedAt"))
                                     writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.deletedAt);
+                                if (message.documentRevision != null && Object.hasOwnProperty.call(message, "documentRevision"))
+                                    writer.uint32(/* id 7, wireType 0 =*/56).uint64(message.documentRevision);
                                 return writer;
                             };
 
@@ -31381,6 +31392,9 @@ $root.org = (function() {
                                         break;
                                     case 6:
                                         message.deletedAt = reader.uint64();
+                                        break;
+                                    case 7:
+                                        message.documentRevision = reader.uint64();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -31441,6 +31455,9 @@ $root.org = (function() {
                                 if (message.deletedAt != null && message.hasOwnProperty("deletedAt"))
                                     if (!$util.isInteger(message.deletedAt) && !(message.deletedAt && $util.isInteger(message.deletedAt.low) && $util.isInteger(message.deletedAt.high)))
                                         return "deletedAt: integer|Long expected";
+                                if (message.documentRevision != null && message.hasOwnProperty("documentRevision"))
+                                    if (!$util.isInteger(message.documentRevision) && !(message.documentRevision && $util.isInteger(message.documentRevision.low) && $util.isInteger(message.documentRevision.high)))
+                                        return "documentRevision: integer|Long expected";
                                 return null;
                             };
 
@@ -31503,6 +31520,15 @@ $root.org = (function() {
                                         message.deletedAt = object.deletedAt;
                                     else if (typeof object.deletedAt === "object")
                                         message.deletedAt = new $util.LongBits(object.deletedAt.low >>> 0, object.deletedAt.high >>> 0).toNumber(true);
+                                if (object.documentRevision != null)
+                                    if ($util.Long)
+                                        (message.documentRevision = $util.Long.fromValue(object.documentRevision)).unsigned = true;
+                                    else if (typeof object.documentRevision === "string")
+                                        message.documentRevision = parseInt(object.documentRevision, 10);
+                                    else if (typeof object.documentRevision === "number")
+                                        message.documentRevision = object.documentRevision;
+                                    else if (typeof object.documentRevision === "object")
+                                        message.documentRevision = new $util.LongBits(object.documentRevision.low >>> 0, object.documentRevision.high >>> 0).toNumber(true);
                                 return message;
                             };
 
@@ -31545,6 +31571,11 @@ $root.org = (function() {
                                         object.deletedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.deletedAt = options.longs === String ? "0" : 0;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.documentRevision = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.documentRevision = options.longs === String ? "0" : 0;
                                 }
                                 if (message.documentId != null && message.hasOwnProperty("documentId"))
                                     object.documentId = options.bytes === String ? $util.base64.encode(message.documentId, 0, message.documentId.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentId) : message.documentId;
@@ -31570,6 +31601,11 @@ $root.org = (function() {
                                         object.deletedAt = options.longs === String ? String(message.deletedAt) : message.deletedAt;
                                     else
                                         object.deletedAt = options.longs === String ? $util.Long.prototype.toString.call(message.deletedAt) : options.longs === Number ? new $util.LongBits(message.deletedAt.low >>> 0, message.deletedAt.high >>> 0).toNumber(true) : message.deletedAt;
+                                if (message.documentRevision != null && message.hasOwnProperty("documentRevision"))
+                                    if (typeof message.documentRevision === "number")
+                                        object.documentRevision = options.longs === String ? String(message.documentRevision) : message.documentRevision;
+                                    else
+                                        object.documentRevision = options.longs === String ? $util.Long.prototype.toString.call(message.documentRevision) : options.longs === Number ? new $util.LongBits(message.documentRevision.low >>> 0, message.documentRevision.high >>> 0).toNumber(true) : message.documentRevision;
                                 return object;
                             };
 

@@ -25,7 +25,11 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::{moderation_reason_to_js, moderation_warnings_to_js};
+use wasm_dpp2::error::WasmDppError;
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::utils::{
+    try_from_options_optional_with, try_from_options_with, try_to_array, try_to_string, try_to_u32,
+};
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_MODERATION_QUERY_TS: &'static str = r#"
@@ -227,6 +231,12 @@ export interface ContractSettledDeletionEntry {
    * milliseconds: the approvals are of the document as it was then.
    */
   documentLastModifiedAt: bigint;
+  /**
+   * The document's `$revision` when the first approval was given; absent on a type whose
+   * documents carry none. Any change of the document since, a moderator's change of its
+   * fields included, closes the approvals.
+   */
+  documentRevision?: bigint;
   /** Why, as the first approval gave it and every later one repeated it. */
   reason: ContractModerationReason;
   /**
@@ -307,20 +317,53 @@ struct ContractModerationEntriesQueryInput {
 
 /// The query of the records a contract keeps per document of one type, by the ids named or as
 /// a page: the removal records and the settled deletion approvals are read alike.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct ContractDocumentRecordsQueryInput {
     contract_id: IdentifierWasm,
     document_type_name: String,
-    #[serde(default)]
     document_ids: Option<Vec<IdentifierWasm>>,
-    #[serde(default)]
     start_after: Option<IdentifierWasm>,
-    #[serde(default)]
     limit: Option<u32>,
 }
 
 impl ContractDocumentRecordsQueryInput {
+    /// Reads `query` field by field, each `IdentifierLike` on its own, so an `Identifier`
+    /// instance is taken as well as a base58 string or bytes: it does not survive the serde
+    /// conversion a whole-object deserialization goes through. `context` names the query in
+    /// the refusal of a malformed field.
+    fn from_js(query: JsValue, context: &str) -> Result<Self, WasmSdkError> {
+        if query.is_undefined() || query.is_null() {
+            return Err(WasmSdkError::invalid_argument("Query object is required"));
+        }
+        let invalid = |error: WasmDppError| {
+            WasmSdkError::invalid_argument(format!("Invalid {context}: {error}"))
+        };
+        let contract_id =
+            IdentifierWasm::try_from_options(&query, "contractId").map_err(invalid)?;
+        let document_type_name = try_from_options_with(&query, "documentTypeName", |value| {
+            try_to_string(value, "documentTypeName")
+        })
+        .map_err(invalid)?;
+        let document_ids = try_from_options_optional_with(&query, "documentIds", |value| {
+            try_to_array(value, "documentIds")?
+                .iter()
+                .map(|id| IdentifierWasm::try_from(&id))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(invalid)?;
+        let start_after =
+            IdentifierWasm::try_from_optional_options(&query, "startAfter").map_err(invalid)?;
+        let limit =
+            try_from_options_optional_with(&query, "limit", |value| try_to_u32(value, "limit"))
+                .map_err(invalid)?;
+        Ok(Self {
+            contract_id,
+            document_type_name,
+            document_ids,
+            start_after,
+            limit,
+        })
+    }
+
     /// The contract, the document type, and which of its records to read: the `documentIds`
     /// named, or else one page after `startAfter`, of `limit` records or of the page cap of
     /// `platform_version` when it names none.
@@ -438,9 +481,8 @@ fn parse_removals_query(
     query: ContractDocumentRemovalsQueryJs,
     platform_version: &PlatformVersion,
 ) -> Result<ContractDocumentRemovalsPageQuery, WasmSdkError> {
-    let input: ContractDocumentRecordsQueryInput = deserialize_required_query(
-        query,
-        "Query object is required",
+    let input = ContractDocumentRecordsQueryInput::from_js(
+        query.into(),
         "contract document removals query",
     )?;
     let (contract_id, document_type_name, selection) = input.into_parts(platform_version)?;
@@ -457,9 +499,8 @@ fn parse_settled_deletions_query(
     query: ContractSettledDeletionsQueryJs,
     platform_version: &PlatformVersion,
 ) -> Result<ContractSettledDeletionsPageQuery, WasmSdkError> {
-    let input: ContractDocumentRecordsQueryInput = deserialize_required_query(
-        query,
-        "Query object is required",
+    let input = ContractDocumentRecordsQueryInput::from_js(
+        query.into(),
         "contract settled deletions query",
     )?;
     let (contract_id, document_type_name, selection) = input.into_parts(platform_version)?;
@@ -649,8 +690,9 @@ fn removals_to_js(
     Ok(result.into())
 }
 
-/// Sets `proposedAt`, `documentLastModifiedAt`, `reason`, `approvals`, and `deletedAt` when the
-/// approvals deleted the document, on `target`. The settled deletions query and the result of
+/// Sets `proposedAt`, `documentLastModifiedAt`, `documentRevision` when the document carries
+/// one, `reason`, `approvals`, and `deletedAt` when the approvals deleted the document, on
+/// `target`. The settled deletions query and the result of
 /// an approval carry the same record, so they share this. Each writes identifiers its own way,
 /// which `id_to_js` decides: base58 strings in a query answer, and `Identifier`s in the result
 /// of a transition.
@@ -674,6 +716,9 @@ pub(crate) fn set_settled_deletion_fields(
         "documentLastModifiedAt",
         js_sys::BigInt::from(settled_deletion.document_last_modified_at).into(),
     )?;
+    if let Some(revision) = settled_deletion.document_revision {
+        set("documentRevision", js_sys::BigInt::from(revision).into())?;
+    }
     set("reason", moderation_reason_to_js(&settled_deletion.reason))?;
     set(
         "approvals",

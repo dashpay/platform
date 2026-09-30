@@ -443,6 +443,12 @@ export interface ContractSettledDeletionResult {
    * milliseconds: the approvals are of the document as it was then
    */
   documentLastModifiedAt: bigint;
+  /**
+   * The document's `$revision` when the first approval was given; absent on a type whose
+   * documents carry none. Any change of the document since, a moderator's change of its
+   * fields included, closes the approvals
+   */
+  documentRevision?: bigint;
   /** Why, as the first approval gave it and every later one repeated it */
   reason: ContractModerationReason;
   /** The members of the seated team that approved, in the order they did */

@@ -492,6 +492,10 @@ pub struct VerifiedContractSettledDeletionWasm {
     /// milliseconds: the approvals are of the document as it was then
     #[wasm_bindgen(js_name = "documentLastModifiedAt")]
     pub document_last_modified_at: u64,
+    /// The document's `$revision` when the first approval was given, undefined on a type whose
+    /// documents carry none: any change of the document since closes the approvals
+    #[wasm_bindgen(js_name = "documentRevision")]
+    pub document_revision: Option<u64>,
     #[wasm_bindgen(skip)]
     pub reason: ContractModerationReason,
     /// The members of the seated team that approved, in the order they did, each still on the
@@ -528,6 +532,13 @@ impl VerifiedContractSettledDeletionWasm {
             (
                 "documentLastModifiedAt",
                 JsValue::from(js_sys::BigInt::from(self.document_last_modified_at)),
+            ),
+            (
+                "documentRevision",
+                self.document_revision
+                    .map_or(JsValue::UNDEFINED, |revision| {
+                        JsValue::from(js_sys::BigInt::from(revision))
+                    }),
             ),
             ("reason", moderation_reason_to_js(&self.reason)),
             (
@@ -567,6 +578,13 @@ impl VerifiedContractSettledDeletionWasm {
             (
                 "documentLastModifiedAt",
                 JsValue::from_f64(self.document_last_modified_at as f64),
+            ),
+            (
+                "documentRevision",
+                self.document_revision
+                    .map_or(JsValue::UNDEFINED, |revision| {
+                        JsValue::from_f64(revision as f64)
+                    }),
             ),
             ("reason", moderation_reason_to_js(&self.reason)),
             (

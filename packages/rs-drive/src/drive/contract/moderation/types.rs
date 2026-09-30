@@ -429,10 +429,10 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
     })
 }
 
-/// The stored size of what an approval record starts with: the time of the first approval and
-/// the document's last modification then, each a u64, and the tag byte that says whether the
-/// deletion time follows.
-pub const CONTRACT_SETTLED_DELETION_FIXED_SIZE: usize = 8 + 8 + 1;
+/// The stored size of what an approval record starts with: the time of the first approval, the
+/// document's last modification and its revision then, each a u64, and the tag byte that says
+/// whether the deletion time follows.
+pub const CONTRACT_SETTLED_DELETION_FIXED_SIZE: usize = 8 + 8 + 8 + 1;
 
 const NOT_DELETED: u8 = 0;
 const DELETED: u8 = 1;
@@ -459,8 +459,9 @@ pub fn settled_deletion_encoded_size(settled_deletion: &ContractSettledDeletion)
         + reason_encoded_size(&settled_deletion.reason)
 }
 
-/// Encodes the approvals of the deletion of a settled document: the time of the first approval
-/// and the document's last modification then, each as eight big-endian bytes, a tag byte (`0`:
+/// Encodes the approvals of the deletion of a settled document: the time of the first approval,
+/// the document's last modification and its revision then (`0` for a document that carries
+/// none: revisions start at 1), each as eight big-endian bytes, a tag byte (`0`:
 /// not deleted, `1`: deleted) followed when deleted by the deletion time as eight big-endian
 /// bytes, the count of approvals in one byte and each approver's id, then the reason as in
 /// [`encode_ban`].
@@ -468,6 +469,12 @@ pub fn encode_settled_deletion(settled_deletion: &ContractSettledDeletion) -> Ve
     let mut value = Vec::with_capacity(settled_deletion_encoded_size(settled_deletion));
     value.extend_from_slice(&settled_deletion.proposed_at.to_be_bytes());
     value.extend_from_slice(&settled_deletion.document_last_modified_at.to_be_bytes());
+    value.extend_from_slice(
+        &settled_deletion
+            .document_revision
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
     match settled_deletion.deleted_at {
         None => value.push(NOT_DELETED),
         Some(deleted_at) => {
@@ -498,6 +505,7 @@ pub fn decode_settled_deletion(value: &[u8]) -> Result<ContractSettledDeletion, 
     };
     let (proposed_at, rest) = value.split_first_chunk::<8>().ok_or_else(cut_short)?;
     let (last_modified_at, rest) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
+    let (revision, rest) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
     let (tag, rest) = rest.split_first().ok_or_else(cut_short)?;
     let (deleted_at, rest) = match *tag {
         NOT_DELETED => (None, rest),
@@ -528,6 +536,7 @@ pub fn decode_settled_deletion(value: &[u8]) -> Result<ContractSettledDeletion, 
     Ok(ContractSettledDeletion {
         proposed_at: TimestampMillis::from_be_bytes(*proposed_at),
         document_last_modified_at: TimestampMillis::from_be_bytes(*last_modified_at),
+        document_revision: Some(u64::from_be_bytes(*revision)).filter(|revision| *revision != 0),
         reason: decode_reason(rest)?,
         approvals,
         deleted_at,
@@ -1095,6 +1104,7 @@ mod tests {
         let open = ContractSettledDeletion {
             proposed_at: 1_700_000_000_123,
             document_last_modified_at: 1_600_000_000_000,
+            document_revision: Some(4),
             reason: ContractModerationReason {
                 code: Some(3),
                 text: "doxxing".to_string(),
@@ -1107,13 +1117,26 @@ mod tests {
         let value = encode_settled_deletion(&open);
         assert_eq!(&value[..8], &1_700_000_000_123u64.to_be_bytes());
         assert_eq!(&value[8..16], &1_600_000_000_000u64.to_be_bytes());
-        assert_eq!(value[16], 0, "not deleted");
-        assert_eq!(value[17], 2, "two approvals");
-        assert_eq!(&value[18..50], &[1; 32]);
-        assert_eq!(&value[50..82], &[2; 32]);
-        assert_eq!(&value[82..], [&[1u8, 0, 3][..], b"doxxing"].concat());
+        assert_eq!(&value[16..24], &4u64.to_be_bytes());
+        assert_eq!(value[24], 0, "not deleted");
+        assert_eq!(value[25], 2, "two approvals");
+        assert_eq!(&value[26..58], &[1; 32]);
+        assert_eq!(&value[58..90], &[2; 32]);
+        assert_eq!(&value[90..], [&[1u8, 0, 3][..], b"doxxing"].concat());
         assert_eq!(value.len(), settled_deletion_encoded_size(&open));
         assert_eq!(decode_settled_deletion(&value).expect("decode"), open);
+
+        // A document that carries no revision: stored as 0, which no revision is.
+        let no_revision = ContractSettledDeletion {
+            document_revision: None,
+            ..open.clone()
+        };
+        let value = encode_settled_deletion(&no_revision);
+        assert_eq!(&value[16..24], &[0; 8]);
+        assert_eq!(
+            decode_settled_deletion(&value).expect("decode"),
+            no_revision
+        );
 
         // Deleted: the deletion time follows the tag, before the approvals.
         let deleted = ContractSettledDeletion {
@@ -1126,17 +1149,17 @@ mod tests {
             ..open.clone()
         };
         let value = encode_settled_deletion(&deleted);
-        assert_eq!(value[16], 1, "deleted");
-        assert_eq!(&value[17..25], &1_700_000_000_999u64.to_be_bytes());
-        assert_eq!(value[25], 3, "three approvals");
+        assert_eq!(value[24], 1, "deleted");
+        assert_eq!(&value[25..33], &1_700_000_000_999u64.to_be_bytes());
+        assert_eq!(value[33], 3, "three approvals");
         assert_eq!(value.len(), settled_deletion_encoded_size(&deleted));
         assert_eq!(decode_settled_deletion(&value).expect("decode"), deleted);
         assert!(
-            decode_settled_deletion(&value[..60]).is_err(),
+            decode_settled_deletion(&value[..68]).is_err(),
             "a record cut short inside its approvals is refused"
         );
         let mut unknown_tag = value.clone();
-        unknown_tag[16] = 2;
+        unknown_tag[24] = 2;
         assert!(decode_settled_deletion(&unknown_tag).is_err());
 
         let id = Identifier::from([9; 32]);
@@ -1155,14 +1178,15 @@ mod tests {
 
     #[test]
     fn should_refuse_a_malformed_settled_deletion() {
-        decode_settled_deletion(&[0; 16]).expect_err("cut short before the tag");
-        decode_settled_deletion(&[0; 17]).expect_err("cut short before the count");
-        decode_settled_deletion(&[0; 18]).expect_err("no reason");
-        let mut one_approval_missing = vec![0; 17];
+        decode_settled_deletion(&[0; 16]).expect_err("cut short before the revision");
+        decode_settled_deletion(&[0; 24]).expect_err("cut short before the tag");
+        decode_settled_deletion(&[0; 25]).expect_err("cut short before the count");
+        decode_settled_deletion(&[0; 26]).expect_err("no reason");
+        let mut one_approval_missing = vec![0; 25];
         one_approval_missing.push(1);
         one_approval_missing.extend_from_slice(&[7; 31]);
         decode_settled_deletion(&one_approval_missing).expect_err("approval cut short");
-        ContractSettledDeletionEntry::from_key_element(&[1, 2, 3], &Element::new_item(vec![0; 19]))
+        ContractSettledDeletionEntry::from_key_element(&[1, 2, 3], &Element::new_item(vec![0; 27]))
             .expect_err("key is not an id");
         ContractSettledDeletionEntry::from_key_element(&[4; 32], &Element::empty_tree())
             .expect_err("not an item");

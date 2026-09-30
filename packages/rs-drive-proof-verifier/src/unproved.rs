@@ -1949,6 +1949,7 @@ mod contract_moderation_tests {
             }),
             approvals: vec![vec![0x77; 32], vec![0x78; 32]],
             deleted_at: None,
+            document_revision: Some(2),
         }
     }
 

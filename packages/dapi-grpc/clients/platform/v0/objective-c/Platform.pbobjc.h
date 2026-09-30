@@ -3796,6 +3796,7 @@ typedef GPB_ENUM(GetContractSettledDeletionsResponse_ContractSettledDeletion_Fie
   GetContractSettledDeletionsResponse_ContractSettledDeletion_FieldNumber_Reason = 4,
   GetContractSettledDeletionsResponse_ContractSettledDeletion_FieldNumber_ApprovalsArray = 5,
   GetContractSettledDeletionsResponse_ContractSettledDeletion_FieldNumber_DeletedAt = 6,
+  GetContractSettledDeletionsResponse_ContractSettledDeletion_FieldNumber_DocumentRevision = 7,
 };
 
 /**
@@ -3827,6 +3828,10 @@ GPB_FINAL @interface GetContractSettledDeletionsResponse_ContractSettledDeletion
 @property(nonatomic, readwrite) uint64_t deletedAt;
 
 @property(nonatomic, readwrite) BOOL hasDeletedAt;
+/** document, in milliseconds; absent while the approvals fall short */
+@property(nonatomic, readwrite) uint64_t documentRevision;
+
+@property(nonatomic, readwrite) BOOL hasDocumentRevision;
 @end
 
 #pragma mark - GetContractSettledDeletionsResponse_ContractSettledDeletions
