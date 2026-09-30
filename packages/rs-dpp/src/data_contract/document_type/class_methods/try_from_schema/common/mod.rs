@@ -22,6 +22,10 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::index::{
+    parse_derived_index_property_name, DerivedIndexPropertyName,
+};
 use crate::data_contract::document_type::index::{
     Index, IndexGrammarAdmissions, IntegerRangeKeyType,
 };
@@ -250,6 +254,12 @@ pub(super) struct ParserGeneration {
     /// type; `apply_moderator_abilities` then refuses it on a type that keeps no such field,
     /// and in a unique index.
     pub admit_moderation_stamp_indexes: bool,
+    /// Whether an index may name a value of the document a reference of the type points at,
+    /// as `"<reference property>.<field>"`: a derived index property. Admitted here for every
+    /// name whose first segment is a top-level identifier carrying a `refersTo`;
+    /// `apply_derived_index_properties` then judges the reference and the index, and the
+    /// contract's parse the referenced field.
+    pub admit_derived_index_properties: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -1398,6 +1408,22 @@ fn validate_index_properties(
             return Ok(());
         }
 
+        // A value read through a reference, where the generation admits them: the reference,
+        // the index and the referenced field are judged once the whole type, and then the
+        // whole contract, is parsed
+        if ctx.generation.admit_derived_index_properties
+            && !matches!(
+                parse_derived_index_property_name(
+                    &index_property.name,
+                    flattened_document_properties,
+                    ctx.data_contract_id,
+                ),
+                DerivedIndexPropertyName::NotDerived
+            )
+        {
+            return Ok(());
+        }
+
         // Indexed property must be defined in user schema if it's not a system one
         if !DocumentType::system_properties_contains(
             ctx.data_contract_system_version,
@@ -1455,11 +1481,12 @@ fn validate_index_properties(
 }
 
 /// The shape checks a property must pass to be indexed, shared by the
-/// prefix positions of an index and an indexOnly index's terminal: the
-/// encoded value becomes a grovedb key, so arrays and objects are refused
-/// and byte arrays and strings must be bounded (grovedb caps keys at 255
-/// bytes; the string bound is in characters, each at most four bytes).
-fn check_indexable_property_shape(
+/// prefix positions of an index, an indexOnly index's terminal and the field
+/// a derived index property reads: the encoded value becomes a grovedb key, so
+/// arrays and objects are refused and byte arrays and strings must be bounded
+/// (grovedb caps keys at 255 bytes; the string bound is in characters, each at
+/// most four bytes).
+pub(super) fn check_indexable_property_shape(
     document_type_name: &str,
     index_name: &str,
     property_name: &str,

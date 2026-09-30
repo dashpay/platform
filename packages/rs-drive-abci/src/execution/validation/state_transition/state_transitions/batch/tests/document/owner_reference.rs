@@ -365,6 +365,7 @@ mod owner_reference_tests {
                     &BlockInfo::default(),
                     &mut Vec::new(),
                     None,
+                    None,
                     &mut execution_context,
                     platform_version,
                 )

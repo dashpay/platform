@@ -75,6 +75,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod deletion_options;
+mod derived_index_properties;
 mod moderated_document_reference;
 mod moderator_fields;
 mod seated_team;

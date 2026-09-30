@@ -147,6 +147,7 @@ mod tests {
             property_constraint_aggregates: Default::default(),
             moderated: false,
             consumed_documents: Vec::new(),
+            derived_index_values: None,
         })
     }
 
