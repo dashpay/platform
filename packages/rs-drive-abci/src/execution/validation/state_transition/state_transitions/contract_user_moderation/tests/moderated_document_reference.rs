@@ -505,3 +505,146 @@ async fn should_refuse_a_moderated_reference_to_any_other_document_type() {
     assert_success(&setup.process(&update, &transaction));
     setup.contract = referring;
 }
+
+/// A contract `stranger` registers with the identity nonce `identity_nonce`, whose `reply`
+/// type refers with a reference of `kind` to the posts of `posts_contract`, its writer's own
+/// (a writer gate, which every replace checks again)
+fn contract_replying_to(
+    setup: &Setup,
+    posts_contract: Identifier,
+    kind: &str,
+    identity_nonce: IdentityNonce,
+) -> DataContract {
+    let mut contract = get_data_contract_fixture(
+        Some(setup.stranger.id()),
+        identity_nonce,
+        PlatformVersion::latest().protocol_version,
+    )
+    .data_contract_owned();
+    let mut schema = reply_schema();
+    schema
+        .get_mut("properties")
+        .ok()
+        .flatten()
+        .and_then(|properties| properties.get_mut("postId").ok().flatten())
+        .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
+        .expect("expected the refersTo declaration")
+        .insert("contractId".to_string(), id_value(posts_contract))
+        .expect("expected to name the posts contract");
+    schema
+        .get_mut("properties")
+        .ok()
+        .flatten()
+        .and_then(|properties| properties.get_mut("postId").ok().flatten())
+        .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
+        .expect("expected the refersTo declaration")
+        .insert("type".to_string(), Value::Text(kind.to_string()))
+        .expect("expected to set the reference kind");
+    schema
+        .get_mut("properties")
+        .ok()
+        .flatten()
+        .and_then(|properties| properties.get_mut("postId").ok().flatten())
+        .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
+        .expect("expected the refersTo declaration")
+        .insert(
+            "where".to_string(),
+            platform_value!({ "$ownerId": "$ownerId" }),
+        )
+        .expect("expected to set the writer gate");
+    add_document_type(&mut contract, REPLY, schema);
+    contract
+}
+
+/// A moderated reference into another contract reads the removal record the referenced
+/// contract keeps: the kind is checked against that contract's type at registration, and a
+/// reply there keeps pointing at a post the other contract's moderators removed, its writer
+/// gate checked on every edit against the owner the record under the posts contract keeps.
+#[tokio::test]
+async fn should_keep_a_reference_into_another_contract_to_a_post_its_moderators_removed() {
+    let mut setup = setup().await;
+    let posts_contract = setup.contract.clone();
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create_post) = setup.create_document_of_type(&setup.stranger, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+
+    // The other contract's type admits a moderated reference alone
+    let identity_nonce = setup.stranger.identity_nonce();
+    let deletable = contract_replying_to(
+        &setup,
+        posts_contract.id(),
+        "deletableDocument",
+        identity_nonce,
+    );
+    let create = DataContractCreateTransition::new_from_data_contract(
+        deletable,
+        identity_nonce,
+        &setup.stranger.identity.clone().into_partial_identity_info(),
+        CRITICAL_KEY_ID,
+        &setup.stranger.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the contract create");
+    assert_paid_with_code(
+        &setup.process(&create, &transaction),
+        REFERENCED_DOCUMENT_TYPE_MODERATED,
+    );
+    let identity_nonce = setup.stranger.identity_nonce();
+    let replies_contract = contract_replying_to(
+        &setup,
+        posts_contract.id(),
+        "moderatedDocument",
+        identity_nonce,
+    );
+    let create = DataContractCreateTransition::new_from_data_contract(
+        replies_contract.clone(),
+        identity_nonce,
+        &setup.stranger.identity.clone().into_partial_identity_info(),
+        CRITICAL_KEY_ID,
+        &setup.stranger.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the contract create");
+    assert_success(&setup.process(&create, &transaction));
+    // The create sets the stranger's nonce for the contract to the identity nonce it used
+    setup.stranger.next_contract_nonce.set(identity_nonce + 1);
+
+    // Documents of the replies contract are written through it
+    setup.contract = replies_contract.clone();
+    let (mut reply, create_reply) = setup
+        .create_with(
+            &setup.stranger,
+            REPLY,
+            vec![("postId", id_value(post.id())), ("body", "first".into())],
+        )
+        .await;
+    assert_success(&setup.process(&create_reply, &transaction));
+
+    // The posts contract's moderator removes the post
+    setup.contract = posts_contract;
+    let remove = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&remove, &transaction));
+
+    // The record lives under the posts contract, which is where the reply's reference finds it
+    setup.contract = replies_contract;
+    reply.set("body", "an edit".into());
+    let edit = setup.replacement(&setup.stranger, REPLY, &mut reply).await;
+    assert_success(&setup.process(&edit, &transaction));
+    let (_, reply_to_removed) = setup
+        .create_with(
+            &setup.stranger,
+            REPLY,
+            vec![("postId", id_value(post.id())), ("body", "late".into())],
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&reply_to_removed, &transaction),
+        REFERENCED_ENTITY_NOT_FOUND,
+    );
+}
