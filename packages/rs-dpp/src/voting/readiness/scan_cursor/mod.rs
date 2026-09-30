@@ -123,19 +123,24 @@ impl ReadinessScanCursor {
     ) -> Result<(), ProtocolError> {
         match self {
             ReadinessScanCursor::V0(cursor) => {
-                cursor.next_pro_tx_hash = Some(last_pro_tx_hash);
-                cursor.examined_so_far = cursor
+                // Every total is checked before any field moves, so an overflow leaves the
+                // position and the counts describing the same progress.
+                let examined_so_far = cursor
                     .examined_so_far
                     .checked_add(examined)
                     .ok_or(ProtocolError::Overflow("readiness scan examined count"))?;
-                cursor.eligible_so_far = cursor
+                let eligible_so_far = cursor
                     .eligible_so_far
                     .checked_add(eligible)
                     .ok_or(ProtocolError::Overflow("readiness scan eligible count"))?;
-                cursor.pruned_so_far = cursor
+                let pruned_so_far = cursor
                     .pruned_so_far
                     .checked_add(pruned)
                     .ok_or(ProtocolError::Overflow("readiness scan pruned count"))?;
+                cursor.next_pro_tx_hash = Some(last_pro_tx_hash);
+                cursor.examined_so_far = examined_so_far;
+                cursor.eligible_so_far = eligible_so_far;
+                cursor.pruned_so_far = pruned_so_far;
                 Ok(())
             }
         }
@@ -169,9 +174,27 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let mut cursor = ReadinessScanCursor::new(1, 1, platform_version).expect("cursor");
         cursor.advance([1u8; 32], u32::MAX, 0, 0).expect("advance");
+        let before = cursor.clone();
         assert!(matches!(
             cursor.advance([2u8; 32], 1, 0, 0),
             Err(ProtocolError::Overflow(_))
         ));
+        assert_eq!(cursor, before);
+    }
+
+    #[test]
+    fn should_leave_the_cursor_unchanged_when_a_later_count_overflows() {
+        let platform_version = PlatformVersion::latest();
+        let mut cursor = ReadinessScanCursor::new(1, 1, platform_version).expect("cursor");
+        cursor.advance([1u8; 32], 10, 5, u32::MAX).expect("advance");
+        let before = cursor.clone();
+        assert!(matches!(
+            cursor.advance([2u8; 32], 3, 2, 1),
+            Err(ProtocolError::Overflow(_))
+        ));
+        assert_eq!(cursor, before);
+        assert_eq!(cursor.next_pro_tx_hash(), Some([1u8; 32]));
+        assert_eq!(cursor.examined_so_far(), 10);
+        assert_eq!(cursor.eligible_so_far(), 5);
     }
 }
