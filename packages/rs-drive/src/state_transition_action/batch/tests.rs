@@ -258,6 +258,7 @@ fn make_create_v0() -> DocumentCreateTransitionActionV0 {
         property_constraint_aggregates: Default::default(),
         moderated: false,
         consumed_documents: Vec::new(),
+        derived_index_values: None,
     }
 }
 
@@ -2963,6 +2964,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         property_constraint_aggregates: Default::default(),
         moderated: false,
         consumed_documents: Vec::new(),
+        derived_index_values: None,
     })
 }
 

@@ -142,26 +142,36 @@ pub(crate) mod property_names {
     /// the value names (`"$ownerId"`, the writer). Takes the place of
     /// [`KEY_ID_PROPERTY`]; a declaration carries one or the other.
     pub const IDENTITY_PROPERTY: &str = "identityProperty";
-    pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
-    /// `refersTo` on a document reference: the unique index of the referenced
-    /// document type the referenced document is found through, and the key.
-    /// Meta-schema v3+ (protocol version 14).
-    pub const LOOKUP: &str = "lookup";
-    /// `lookup`: the name of the referenced document type's unique index.
-    pub const LOOKUP_INDEX: &str = "index";
-    /// `lookup`: every index property mapped to its referring-side source.
-    pub const LOOKUP_KEYS: &str = "keys";
-    /// `refersTo` beside a `lookup` with a computed key: how many blocks
+    /// `refersTo` on a document reference: how the referenced document is
+    /// found when the value is not its id, properties of the referenced
+    /// document type (exactly those of one of its unique indexes) mapped to
+    /// where each value comes from on the referring side. Meta-schema v3+
+    /// (protocol version 14).
+    pub const FIND_BY: &str = "findBy";
+    /// `refersTo` on a document reference: what the referenced document must
+    /// hold once found, properties of the referenced document type mapped to
+    /// the referring-side value each must equal. Meta-schema v3+ (protocol
+    /// version 14).
+    pub const WHERE: &str = "where";
+    /// `refersTo` beside a `findBy` with a computed key: how many blocks
     /// before the referring document's create the document the key finds
     /// must have been created.
     pub const MINIMUM_AGE_BLOCKS: &str = "minimumAgeBlocks";
-    /// `refersTo` beside a `lookup` with a computed key: whether the create
+    /// `refersTo` beside a `findBy` with a computed key: whether the create
     /// deletes the document the key finds.
     pub const CONSUME: &str = "consume";
-    /// `refersTo: listElement`: the typed array of identifiers, on the
-    /// referenced document type, the value must be an element of.
-    /// Meta-schema v3+ (protocol version 14).
+    /// `refersTo: permanentDocument` found by its `$id` from a property: the
+    /// typed array of identifiers, on the referenced document, the value must
+    /// be an element of. Meta-schema v3+ (protocol version 14).
     pub const IN_LIST: &str = "inList";
+    /// Keywords a protocol version 14 beta spelled a document reference with,
+    /// refused on every parse so a contract written with them never loads with
+    /// another meaning: `lookup` ([`FIND_BY`]), `propertyAgreement`
+    /// ([`WHERE`], keyed the other way) and the `listElement` type (a
+    /// `permanentDocument` with [`IN_LIST`]).
+    pub const REPLACED_LOOKUP: &str = "lookup";
+    pub const REPLACED_PROPERTY_AGREEMENT: &str = "propertyAgreement";
+    pub const REPLACED_LIST_ELEMENT: &str = "listElement";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
@@ -363,11 +373,25 @@ impl DocumentTypeBasicMethods for DocumentType {
     fn has_moderator_changeable_fields(&self) -> bool {
         !self.moderator_changeable_fields().is_empty()
     }
+
+    fn derived_index_property_type(&self, name: &str) -> Option<&DocumentPropertyType> {
+        match self {
+            DocumentType::V0(_) | DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.derived_index_property_type(name),
+        }
+    }
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {
     fn has_moderator_changeable_fields(&self) -> bool {
         !self.moderator_changeable_fields().is_empty()
+    }
+
+    fn derived_index_property_type(&self, name: &str) -> Option<&DocumentPropertyType> {
+        match self {
+            DocumentTypeRef::V0(_) | DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.derived_index_property_type(name),
+        }
     }
 }
 

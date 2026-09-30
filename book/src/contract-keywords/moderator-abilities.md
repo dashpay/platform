@@ -94,11 +94,11 @@ All refusals below are `InvalidContractStructure` (10231).
   - optional: nobody but a moderator can set it, so it starts absent;
   - stored, so not `transient`;
   - not listed under `immutable`;
-  - neither a `refersTo` reference nor read by one: not the referring side of a `propertyAgreement`, not a lookup key's source, not the identity property of a key id reference;
+  - neither a `refersTo` reference nor read by one: not the referring value of a `where` entry, not a source `findBy` reads, not the identity property of a key id reference;
   - neither `generatedFrom` another property nor a parameter of one;
   - in no contested index.
 - A type that lists any keeps `$revision` on its documents, even when `documentsMutable` is `false`, because a moderator's change is stored as an update.
-- A `refersTo` lookup key, or a `listElement` reference's list, may not read a listed field of the type it refers to: such a field can change after the reference was checked.
+- A `refersTo` `findBy`, or the list an `inList` reference reads, may not read a listed field of the type it refers to: such a field can change after the reference was checked.
 
 ## See also
 

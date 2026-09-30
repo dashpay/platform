@@ -83,7 +83,7 @@ A `ttl` removes entries from this index only. The documents stay, and so do thei
 - A unique time-range index has `range` equal to `step` and `on` equal to `$createdAt`.
 - The index is not contested, does not set `nullSearchable: false`, and is not `preallocated`.
 - A ranking sits below the bucketed timestamp: a single-property time-range index cannot be ranked, and `rankedCountable.at` cannot name the timestamp. See [Ranked Indexes](ranked.md).
-- A `refersTo` lookup cannot resolve through a time-range index. See [Lookups](refers-to-lookup.md).
+- A `refersTo` `findBy` cannot resolve through a time-range index. See [findBy](refers-to-lookup.md).
 - On an [index-only type](index-only.md), only `$createdAt` can be bucketed, and a bucketed index cannot serve as the type's proof index.
 
 A broken rule is refused as `InvalidContractStructure` (10231), or by the meta-schema as `JsonSchemaError` (10101). Before protocol version 14 the keyword is unknown and refused.

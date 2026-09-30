@@ -112,7 +112,7 @@ All refusals below are `InvalidContractStructure` (10231).
 - Only on a type whose documents are mutable. On a type with `documentsMutable: false` every property is already frozen.
 - Every entry names a declared top-level property. System properties (`$ownerId`, `$createdAt` and the rest) are refused, since the platform manages them. Nested paths such as `meta.author` are refused: list the object that contains them.
 - No entry may be a `transient` property: it is never stored, so every replace that supplies it would count as a change.
-- An immutable property may not hold a `deletableDocument` reference that a replace could not clear once its target is gone: a typed array of them, one inside an object, or one found through a `lookup`. A single reference by id held directly by the property is allowed.
+- An immutable property may not hold a `deletableDocument` reference that a replace could not clear once its target is gone: a typed array of them, one inside an object, or one found by `findBy` whose key no function computes. A single reference by id held directly by the property is allowed.
 - On a type whose documents can be transferred or traded, an immutable property may not hold a `contract` reference whose `contractRequirements` has an `owner` requirement: after a change of owner the new owner could neither meet it nor repoint it.
 
 ### On update

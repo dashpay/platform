@@ -3,10 +3,10 @@ mod v1;
 mod v2;
 
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyReferenceTarget, GeneratedFrom,
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
 
@@ -953,6 +953,9 @@ static NO_MODERATOR_CHANGEABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
 /// What `property_constraints` returns for the generations that predate the
 /// keyword, for the same reason.
 static NO_PROPERTY_CONSTRAINTS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
+/// What `derived_index_properties` returns for the generations that predate
+/// them, for the same reason.
+static NO_DERIVED_INDEX_PROPERTIES: BTreeMap<String, DerivedIndexProperty> = BTreeMap::new();
 
 impl DocumentTypeV2Getters for DocumentType {
     fn documents_countable(&self) -> bool {
@@ -1060,6 +1063,21 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentType::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentType::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentType::V0(_) | DocumentType::V1(_) => DocumentReferenceKind::Permanent,
+            DocumentType::V2(v2) => v2.document_reference_kind(),
+        }
+    }
+
     fn distinct_from_fields(&self) -> &[String] {
         match self {
             DocumentType::V0(_) => &[],
@@ -1121,6 +1139,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentType::V1(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentType::V2(v2) => v2.property_constraints(),
+        }
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        match self {
+            DocumentType::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentType::V1(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentType::V2(v2) => v2.derived_index_properties(),
         }
     }
 }
@@ -1265,6 +1291,21 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentTypeRef::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeRef::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeRef::V0(_) | DocumentTypeRef::V1(_) => DocumentReferenceKind::Permanent,
+            DocumentTypeRef::V2(v2) => v2.document_reference_kind(),
+        }
+    }
+
     fn distinct_from_fields(&self) -> &[String] {
         match self {
             DocumentTypeRef::V0(_) => &[],
@@ -1326,6 +1367,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentTypeRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentTypeRef::V2(v2) => v2.property_constraints(),
+        }
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentTypeRef::V1(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentTypeRef::V2(v2) => v2.derived_index_properties(),
         }
     }
 }
@@ -1436,6 +1485,23 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
         }
     }
 
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentTypeMutRef::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeMutRef::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeMutRef::V0(_) | DocumentTypeMutRef::V1(_) => {
+                DocumentReferenceKind::Permanent
+            }
+            DocumentTypeMutRef::V2(v2) => v2.document_reference_kind(),
+        }
+    }
+
     fn distinct_from_fields(&self) -> &[String] {
         match self {
             DocumentTypeMutRef::V0(_) => &[],
@@ -1497,6 +1563,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentTypeMutRef::V2(v2) => v2.property_constraints(),
+        }
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentTypeMutRef::V1(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentTypeMutRef::V2(v2) => v2.derived_index_properties(),
         }
     }
 }

@@ -661,7 +661,12 @@ mod moderation_charters_tests {
             }) => {
                 assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
                 assert_eq!(max_items, 15);
-                assert_eq!(lookup.index, "bySubmittedCharter");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("bySubmittedCharter".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get(property_names::SUBMITTED_CHARTER_ID),
                     Some(&LookupKeySource::Property(
@@ -971,7 +976,12 @@ mod moderation_charters_tests {
                 },
             ) => {
                 assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
-                assert_eq!(lookup.index, "bySubmittedCharter");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("bySubmittedCharter".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get("$ownerId"),
                     Some(&LookupKeySource::ReferenceValue)
@@ -1080,7 +1090,12 @@ mod moderation_charters_tests {
                     Some(property_names::ELECTED_CHARTER_ID)
                 );
                 assert_eq!(document_type_name, ADDED_MODERATOR_DOCUMENT_TYPE_NAME);
-                assert_eq!(lookup.index, "byElectedCharterMember");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, ADDED_MODERATOR_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("byElectedCharterMember".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get(property_names::MEMBER_ID),
                     Some(&LookupKeySource::ReferenceValue)

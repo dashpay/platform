@@ -22,6 +22,10 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::index::{
+    parse_derived_index_property_name, DerivedIndexPropertyName,
+};
 use crate::data_contract::document_type::index::{
     Index, IndexGrammarAdmissions, IntegerRangeKeyType,
 };
@@ -250,6 +254,12 @@ pub(super) struct ParserGeneration {
     /// type; `apply_moderator_abilities` then refuses it on a type that keeps no such field,
     /// and in a unique index.
     pub admit_moderation_stamp_indexes: bool,
+    /// Whether an index may name a value of the document a reference of the type points at,
+    /// as `"<reference property>.<field>"`: a derived index property. Admitted here for every
+    /// name whose first segment is a top-level identifier carrying a `refersTo`;
+    /// `apply_derived_index_properties` then judges the reference and the index, and the
+    /// contract's parse the referenced field.
+    pub admit_derived_index_properties: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -1398,6 +1408,22 @@ fn validate_index_properties(
             return Ok(());
         }
 
+        // A value read through a reference, where the generation admits them: the reference,
+        // the index and the referenced field are judged once the whole type, and then the
+        // whole contract, is parsed
+        if ctx.generation.admit_derived_index_properties
+            && !matches!(
+                parse_derived_index_property_name(
+                    &index_property.name,
+                    flattened_document_properties,
+                    ctx.data_contract_id,
+                ),
+                DerivedIndexPropertyName::NotDerived
+            )
+        {
+            return Ok(());
+        }
+
         // Indexed property must be defined in user schema if it's not a system one
         if !DocumentType::system_properties_contains(
             ctx.data_contract_system_version,
@@ -1455,11 +1481,12 @@ fn validate_index_properties(
 }
 
 /// The shape checks a property must pass to be indexed, shared by the
-/// prefix positions of an index and an indexOnly index's terminal: the
-/// encoded value becomes a grovedb key, so arrays and objects are refused
-/// and byte arrays and strings must be bounded (grovedb caps keys at 255
-/// bytes; the string bound is in characters, each at most four bytes).
-fn check_indexable_property_shape(
+/// prefix positions of an index, an indexOnly index's terminal and the field
+/// a derived index property reads: the encoded value becomes a grovedb key, so
+/// arrays and objects are refused and byte arrays and strings must be bounded
+/// (grovedb caps keys at 255 bytes; the string bound is in characters, each at
+/// most four bytes).
+pub(super) fn check_indexable_property_shape(
     document_type_name: &str,
     index_name: &str,
     property_name: &str,
@@ -2332,8 +2359,8 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - stored, so not transient;
 /// - not listed under `immutable`, which would freeze what the moderators are
 ///   to change;
-/// - neither a reference nor read by one (a `propertyAgreement`, a lookup key,
-///   a key id): a reference is checked when the document is written by its
+/// - neither a reference nor read by one (a `where` value, a `findBy` source
+///   or function param, a key id): a reference is checked when the document is written by its
 ///   owner, and a moderator's change must leave every reference as it was
 ///   checked;
 /// - neither generated (`generatedFrom`) nor read by a generated property,
@@ -2586,8 +2613,8 @@ pub(super) fn apply_moderator_abilities(
 
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
-/// the referring side of every `propertyAgreement`, lookup key (a computed
-/// key's params included) and key id property, for every leaf of every reference expression, the
+/// the referring side of every `where`, `findBy` source (a function's params
+/// included) and key id property, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -2614,6 +2641,9 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                     property_agreement, ..
                 }
                 | DocumentPropertyReferenceTarget::DeletableDocument {
+                    property_agreement, ..
+                }
+                | DocumentPropertyReferenceTarget::ModeratedDocument {
                     property_agreement, ..
                 } => Some(property_agreement),
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup {
@@ -2682,8 +2712,8 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
 ///   its writer fetches the proof of its create, which proves it present.
 ///
 /// What may point at the type follows from `documents_can_disappear`: a `permanentDocument`
-/// or list element reference may not target it; a `deletableDocument` reference may, and so
-/// may a lookup, which names the kind of document it resolves to (`deletableDocument`).
+/// reference, one with `findBy` or `inList` included, may not target it; a `deletableDocument`
+/// reference may, one found by `findBy` included.
 ///
 /// The rules other than the bounds hold for every contract that could be stored (the keyword
 /// arrives with protocol version 14), so they are not skipped when a stored contract is
@@ -3714,8 +3744,8 @@ pub(super) fn apply_index_only(
                  be either a property with a same-contract permanentDocument `refersTo` \
                  declaration (the referring property — its value is the referenced \
                  document's $id; a deletableDocument declaration does not qualify, \
-                 since the trees would outlive a deleted target) or a key of that \
-                 declaration's `propertyAgreement` \
+                 since the trees would outlive a deleted target) or a referring value of \
+                 that declaration's `where` \
                  (consensus-equal to a referenced-document property, which may be the \
                  referenced document's $ownerId or $creatorId). The referring document's \
                  OWN system properties like $ownerId cannot be determined by the \

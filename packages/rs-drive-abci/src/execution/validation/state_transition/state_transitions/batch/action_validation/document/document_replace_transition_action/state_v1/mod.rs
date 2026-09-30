@@ -128,6 +128,7 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             block_info,
             // A replace consumes nothing: a lookup that could is judged on a create only
             &mut Vec::new(),
+            None,
             transaction,
             execution_context,
             platform_version,

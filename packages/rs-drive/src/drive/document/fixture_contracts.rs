@@ -12,9 +12,12 @@ use std::collections::BTreeSet;
 /// Contracts covering the index shapes Drive lays out: plain, unique and
 /// compound indexes, history, countable and summable types and indexes,
 /// ranked and chained indexes, time windows, indexOnly types with
-/// terminals, flat and preallocated indexes, and `skipIfAbsent` indexes
-/// skipping below their first property on indexOnly and stored types.
-pub(crate) const CONTRACTS: [&str; 21] = [
+/// terminals, flat and preallocated indexes, `skipIfAbsent` indexes
+/// skipping below their first property on indexOnly and stored types, and
+/// sibling indexes where one side misses a value beside a unique or a
+/// `nullSearchable: false` index (their null flags follow each index's own
+/// path).
+pub(crate) const CONTRACTS: [&str; 22] = [
     "tests/supporting_files/contract/family/family-contract.json",
     "tests/supporting_files/contract/family/family-contract-fields-optional.json",
     "tests/supporting_files/contract/family/family-contract-countable.json",
@@ -36,6 +39,7 @@ pub(crate) const CONTRACTS: [&str; 21] = [
     "tests/supporting_files/contract/grades/grades-compound-ranked-contract.json",
     "tests/supporting_files/contract/skip-if-absent/skip-likes-contract.json",
     "tests/supporting_files/contract/skip-if-absent/skip-posts-contract.json",
+    "tests/supporting_files/contract/sibling-nulls/sibling-nulls-contract.json",
 ];
 
 /// Leaves out the optional properties of the type's unique indexes, so a
@@ -65,6 +69,30 @@ pub(crate) fn leave_out_skip_properties(document: &mut Document, document_type: 
     for index in document_type.indexes().values() {
         for skip_property in &index.skip_if_absent_properties {
             document.properties_mut().remove(skip_property);
+        }
+    }
+}
+
+/// Leaves out the optional properties the type's indexes name: all of them,
+/// or with `alternate` every other one in name order, so the index-level
+/// walkers meet missing values beside present ones in sibling branches (a
+/// random document fills every optional property).
+pub(crate) fn leave_out_optional_indexed_values(
+    document: &mut Document,
+    document_type: DocumentTypeRef,
+    alternate: bool,
+) {
+    let required = document_type.required_fields();
+    let optional: BTreeSet<&String> = document_type
+        .indexes()
+        .values()
+        .flat_map(|index| &index.properties)
+        .map(|property| &property.name)
+        .filter(|name| !name.starts_with('$') && !required.contains(*name))
+        .collect();
+    for (position, name) in optional.into_iter().enumerate() {
+        if !alternate || position % 2 == 0 {
+            document.properties_mut().remove(name);
         }
     }
 }

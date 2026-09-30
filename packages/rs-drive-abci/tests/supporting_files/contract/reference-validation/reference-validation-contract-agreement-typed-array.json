@@ -40,7 +40,7 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
+            "where": {
               "tags": "tags"
             }
           }

@@ -231,7 +231,7 @@ mod tests {
             names(true)
         );
         assert_eq!(
-            listed("/$defs/agreementFunction/properties/function/enum"),
+            listed("/$defs/findByFunction/properties/function/enum"),
             names(false)
         );
     }

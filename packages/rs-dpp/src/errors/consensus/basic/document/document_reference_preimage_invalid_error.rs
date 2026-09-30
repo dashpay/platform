@@ -7,8 +7,8 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-/// A document being created cannot assemble the preimage of a `refersTo` lookup key it
-/// reveals, the `propertyAgreement` function pair
+/// A document being created cannot assemble the preimage of a `refersTo` key it
+/// reveals, the `findBy` function
 /// (`"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }`): a value
 /// a param reads is absent or of a kind a param cannot take, or a variable-length value holds
 /// the one-byte separator that follows it, so the preimage would not split back into its
@@ -30,7 +30,7 @@ use thiserror::Error;
     DecodeUntrusted,
 )]
 #[error(
-    "Document type \"{document_type_name}\" reference at \"{path}\" cannot reveal its lookup \
+    "Document type \"{document_type_name}\" reference at \"{path}\" cannot reveal its findBy \
      key: property \"{property}\": {reason}"
 )]
 #[platform_serialize(unversioned)]
@@ -41,7 +41,7 @@ pub struct DocumentReferencePreimageInvalidError {
 
     */
     document_type_name: String,
-    /// The reference declaring the lookup: a property path, `$ownerId` or `$creatorId`,
+    /// The reference declaring the `findBy`: a property path, `$ownerId` or `$creatorId`,
     /// followed by the leaf of a reference expression when it sits in one.
     path: String,
     /// The property whose value is at fault.

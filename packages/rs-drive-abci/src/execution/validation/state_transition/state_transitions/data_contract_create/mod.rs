@@ -5741,9 +5741,9 @@ mod tests {
 
         #[tokio::test]
         async fn should_register_contract_with_owner_references() {
-            // `ownerRefersTo` on three types: a lookup into a permanent type of
-            // the same contract, the same with a propertyAgreement whose
-            // referring side is the writer (`$ownerId`, the reference's own
+            // `ownerRefersTo` on three types: a findBy into a permanent type of
+            // the same contract, the same with a where entry whose
+            // referring value is the writer (`$ownerId`, the reference's own
             // value), and an identity target; `creatorRefersTo` on two
             // transferable types, a lookup and an identity target
             let result = run_contract_create(
@@ -5760,8 +5760,8 @@ mod tests {
         #[tokio::test]
         async fn should_register_contract_with_reference_expressions() {
             // `anyOf`s of two lookups on a property and on the elements of a
-            // typed array, of an identity and a document id, and of two lookups
-            // one of which carries a propertyAgreement, an `allOf`, and nested
+            // typed array, of an identity and a document id, and of two findBy
+            // leaves one of which carries a where, an `allOf`, and nested
             // expressions down to the depth limit: every leaf is checked as it
             // would be declared alone
             let result = run_contract_create(
@@ -5879,7 +5879,7 @@ mod tests {
         async fn should_register_contract_with_deletable_document_references() {
             // A deletableDocument reference targets a document type that
             // allows deletion (`draft`), which a permanentDocument one
-            // refuses; its propertyAgreement and writer gate declarations
+            // refuses; its where and writer gate declarations
             // are validated like a permanentDocument reference's
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc.json",
@@ -6543,7 +6543,7 @@ mod tests {
 
         #[tokio::test]
         async fn should_reject_an_owner_lookup_into_another_contract_at_its_owner_path() {
-            // `joinRequest` of the lookup contract has no `byMessage` index
+            // `joinRequest` of the lookup contract has no unique index over `message`
             let result = run_contract_create_with_foreign(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-foreign-lookup-invalid.json",
                 LOOKUP_CONTRACT_PATH,
@@ -6557,7 +6557,7 @@ mod tests {
                         StateError::ReferencedDocumentLookupInvalidError(e)
                     ),
                     ..
-                } if e.path() == "note.$ownerId" && e.index() == "byMessage"
+                } if e.path() == "note.$ownerId" && e.find_by() == "message"
             );
         }
 
@@ -6576,7 +6576,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn should_reject_a_lookup_naming_an_index_another_contract_does_not_have() {
+        async fn should_reject_find_by_naming_no_unique_index_another_contract_has() {
             // Only registration sees the other contract's indexes: the contract
             // parse cannot, so this is a state error
             let result = run_contract_create_with_foreign(
@@ -6593,8 +6593,8 @@ mod tests {
                     ),
                     ..
                 } if e.path() == "vote.voterId"
-                    && e.index() == "byMessage"
-                    && e.reason().contains("has no index named \"byMessage\"")
+                    && e.find_by() == "message"
+                    && e.reason().contains("has no unique index over exactly (message)")
             );
         }
 
@@ -6615,7 +6615,7 @@ mod tests {
                         DataContractError::InvalidContractStructure(message)
                     )),
                     ..
-                } if message.contains("index \"byCharter\" of \"ballot\" is not unique")
+                } if message.contains("index \"byCharter\" of \"ballot\" over (submittedCharterId) is not unique")
             );
         }
 
@@ -6681,7 +6681,7 @@ mod tests {
                     )),
                     ..
                 } if message.contains(
-                    "refersTo listElement: \"members\" of \"electedCharter\" can be changed by a replace"
+                    "refersTo inList: \"members\" of \"electedCharter\" can be changed by a replace"
                 )
             );
         }

@@ -4,7 +4,7 @@
 //! `dpp::data_contract::document_type::index::PREALLOCATED`) has a path that
 //! is a pure function of one same-contract refersTo-referenced document:
 //! every index property is either the referring property (its value is the
-//! referenced document's `$id`) or a `propertyAgreement` key
+//! referenced document's `$id`) or a `where` referring value
 //! (consensus-enforced equal to a referenced-document property at entry
 //! write time). So the moment the referenced document is inserted, every
 //! dynamic tree an entry referencing it will ever need — the per-value trees

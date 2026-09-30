@@ -184,7 +184,7 @@ describe('DataContract: typed arrays (v14)', () => {
               refersTo: {
                 type: 'permanentDocument',
                 documentType: 'reason',
-                propertyAgreement: { topic: 'topic' },
+                where: { topic: 'topic' },
               },
             },
             position: 0,
@@ -199,7 +199,7 @@ describe('DataContract: typed arrays (v14)', () => {
       type: string;
       contractId: { toBase58(): string };
       documentType: string;
-      propertyAgreement?: Record<string, string>;
+      where?: Record<string, string>;
     };
 
     it('should report the element reference on the typed array items', () => {
@@ -214,7 +214,7 @@ describe('DataContract: typed arrays (v14)', () => {
       expect(reasons.items.refersTo.type).to.equal('permanentDocument');
       expect(reasons.items.refersTo.contractId.toBase58()).to.equal(contract.id.toBase58());
       expect(reasons.items.refersTo.documentType).to.equal('reason');
-      expect(reasons.items.refersTo.propertyAgreement).to.deep.equal({ topic: 'topic' });
+      expect(reasons.items.refersTo.where).to.deep.equal({ topic: 'topic' });
     });
 
     it('should list the element reference among the references at its list path', () => {

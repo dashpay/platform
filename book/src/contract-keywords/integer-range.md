@@ -79,7 +79,7 @@ In the JavaScript SDK the selection is an `integerRange` entry of the query: `{ 
 - A ranking sits below the bucketed property: a single-property integer-range index cannot be ranked, and `rankedCountable.at` cannot name the bucketed property. See [Ranked Indexes](ranked.md).
 - `on` is not inside an object that is left out of `required`: a document could otherwise omit the object and fall in no window.
 - The grid-qualified level key (`on#range#step`, with `#phase` when non-zero) is at most 255 bytes.
-- A `refersTo` lookup cannot resolve through an integer-range index, and a [`propertyConstraints`](property-constraints.md) count or sum does not read one. See [Lookups](refers-to-lookup.md).
+- A `refersTo` `findBy` cannot resolve through an integer-range index, and a [`propertyConstraints`](property-constraints.md) count or sum does not read one. See [findBy](refers-to-lookup.md).
 - An [index-only type](index-only.md) cannot declare `integerRange`: its entries are keyed by the index's values and terminal, so two rows that differ only in the bucketed integer would claim the same entry in every window they share.
 
 A broken rule is refused as `InvalidContractStructure` (10231), or by the meta-schema as `JsonSchemaError` (10101). Before protocol version 14 the keyword is unknown and refused.

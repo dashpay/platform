@@ -1,3 +1,4 @@
+use crate::drive::document::derived_index_values::set_derived_index_values;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::util::batch::DriveOperation::{
@@ -56,11 +57,20 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                 // create has none and converts to exactly the operations it always did
                 let consumed_documents = self.consumed_documents().to_vec();
 
-                let document = Document::try_from_owned_create_transition_action(
+                // The values of the type's derived index properties (protocol version 14), which
+                // the reference validation took from the documents it fetched: Drive keys the
+                // document by them instead of reading those documents again. None on every
+                // create of an earlier version.
+                let derived_index_values = self.derived_index_values().cloned();
+
+                let mut document = Document::try_from_owned_create_transition_action(
                     self,
                     owner_id,
                     platform_version,
                 )?;
+                if let Some(values) = derived_index_values {
+                    set_derived_index_values(&mut document, values);
+                }
 
                 let storage_flags =
                     StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));

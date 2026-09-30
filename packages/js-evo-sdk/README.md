@@ -196,15 +196,16 @@ const contract = await sdk.contracts.fetch(contractId);
 
 for (const ref of contract.documentTypeReferences('note')) {
   // { path: 'author', type: 'identityPublicKey', keyIdProperty: 'authorKeyId' }
-  // A permanentDocument reference may additionally carry a write-time
-  // equality binding between the two documents' properties:
+  // A permanentDocument reference may additionally carry `where`, a
+  // write-time equality the referenced document must meet, keyed by the
+  // referenced document's property and valued by the referring one:
   // { path: 'postId', type: 'permanentDocument', contractId, documentType: 'post',
-  //   propertyAgreement: { hashtag: 'hashtag' } }
-  // The referenced side may also name the referenced document's `$ownerId`
-  // or `$creatorId`, e.g. `propertyAgreement: { authorId: '$ownerId' }`, and
-  // the referring side may be the writer's own `$ownerId`: a write gate such
-  // as `{ '$ownerId': '$ownerId' }` lets only the referenced document's
-  // current owner create or replace the referring document.
+  //   where: { hashtag: 'hashtag' } }
+  // The key may also name the referenced document's `$ownerId`, `$creatorId`
+  // or `$id`, e.g. `where: { '$ownerId': 'authorId' }`, and the value may be
+  // the writer's own `$ownerId`: a write gate such as
+  // `{ '$ownerId': '$ownerId' }` lets only the referenced document's current
+  // owner create or replace the referring document.
   console.log(ref.path, ref.type);
 }
 
@@ -214,16 +215,18 @@ contract.documentReferences;
 
 A typed array of identifiers may declare `refersTo` on its `items`, which every element then carries. Such a declaration is listed at the list path of its elements, `path: 'reasons[]'`, which is not a property path: read the list at `reasons` and treat each element as a reference. The same declaration is on the typed array's item, `contract.documentTypeTypedArrays('charter')[0].items.refersTo`. Consensus checks every element when the document is written, and a rejection names the failing element by its index, as in `reasons[2]` for the third.
 
-A document type may also declare `ownerRefersTo`, a reference whose value is the document's owner, the writer, instead of a property's value. It is listed first, at `path: '$ownerId'`, which is not a property path: the value it constrains is the document's `ownerId`. Its `type` is `identity` or a `permanentDocument` with a `lookup`, in which `'.'` is the writer:
+A document type may also declare `ownerRefersTo`, a reference whose value is the document's owner, the writer, instead of a property's value. It is listed first, at `path: '$ownerId'`, which is not a property path: the value it constrains is the document's `ownerId`. Its `type` is `identity`, a `permanentDocument` or `deletableDocument` with `findBy` (the properties of the referenced type's unique index that finds the document, each mapped to where its value comes from), or a `permanentDocument` with `inList`. In `findBy`, `'.'` is the writer:
 
 ```ts
-// { path: '$ownerId', type: 'permanentDocument', contractId, documentType: 'addedModerator',
-//   lookup: { index: 'byElectedCharterMember', keys: { electedCharterId: 'electedCharterId', memberId: '.' } } }
+// { path: '$ownerId', type: 'deletableDocument', contractId, documentType: 'addedModerator',
+//   findBy: { electedCharterId: 'electedCharterId', memberId: '.' } }
 ```
 
-reads: the writer must be the `memberId` of an `addedModerator` for the document's `electedCharterId`. Consensus checks it when a document is created and when a replace changes a property the lookup or a `propertyAgreement` reads, and a rejection names it `$ownerId`. Only a document type whose documents can be neither transferred nor traded may declare it, so the owner is always the writer that was checked. A transferable or tradeable type declares `creatorRefersTo` instead, listed first at `path: '$creatorId'`: the same declaration, whose value is the document's creator, which never changes, so a transfer or a purchase leaves it true.
+reads: the writer must be the `memberId` of an `addedModerator` for the document's `electedCharterId`, one that exists now. Consensus checks it when a document is created and when a replace changes a property its `findBy` or `where` reads (for a `deletableDocument` like this one, on every replace), and a rejection names it `$ownerId`. Only a document type whose documents can be neither transferred nor traded may declare it, so the owner is always the writer that was checked. A transferable or tradeable type declares `creatorRefersTo` instead, listed first at `path: '$creatorId'`: the same declaration, whose value is the document's creator, which never changes, so a transfer or a purchase leaves it true.
 
-A document reference comes in two strengths. `permanentDocument` requires the referenced document type to declare `canBeDeleted: false`, so a reference that was accepted keeps resolving. `deletableDocument` takes the same declaration (`contractId`, `documentType`, `propertyAgreement`) and is its disjoint counterpart: the referenced type must allow deletion (`ReferencedDocumentTypeNotDeletable`, 40131, otherwise). The referenced document must exist, and the agreement must hold, when the referring document is written, but it may be deleted afterwards. Nothing blocks that deletion and nothing cleans up after it, so a reader must expect such a reference to resolve to nothing. It can never start resolving to different content: a document id commits to the nonce of its create transition, so a deleted id can not be created again. A writer may not leave it that way: every replace of the referring document re-validates the reference, touched or not, so once the target is gone the replace has to repoint it at a document that exists or clear it (`ReferencedEntityNotFound` otherwise). A writer gate is then checked against the new target, never against a missing one. On an `immutable` property clearing is the only move, and the immutable check lets that one change through. The referring document can always be deleted. A property cannot switch between the two on a contract update, and `preallocated` indexes are only available through `permanentDocument`.
+A document reference comes in two strengths. `permanentDocument` requires the referenced document type to declare `canBeDeleted: false`, so a reference that was accepted keeps resolving. `deletableDocument` takes the same declaration (`contractId`, `documentType`, `findBy`, `where`) and is its disjoint counterpart: the referenced type must allow deletion (`ReferencedDocumentTypeNotDeletable`, 40131, otherwise). The referenced document must exist, and its `where` must hold, when the referring document is written, but it may be deleted afterwards. Nothing blocks that deletion and nothing cleans up after it, so a reader must expect such a reference to resolve to nothing. A writer may not leave it that way: every replace of the referring document re-validates the reference, touched or not, so once the target is gone the replace has to repoint it at a document that exists or clear it (`ReferencedEntityNotFound` otherwise). A writer gate is then checked against the new target, never against a missing one. On an `immutable` property clearing is the only move, and the immutable check lets that one change through. The referring document can always be deleted. By id it can never start resolving to different content: a document id commits to the nonce of its create transition, so a deleted id can not be created again. Found by `findBy`, it means a document with that key exists now: once the one it found is deleted, a later document with the same key may be found instead. A property cannot switch between the two on a contract update, and `preallocated` indexes are only available through `permanentDocument`.
+
+A third strength sits between them: `moderatedDocument`, for a document type whose documents leave state only when the contract's moderators remove them, each removal leaving a removal record (`canBeDeleted: false`, no `ttl`, and `moderatorAbilities.delete` keeping records, the default). The three are disjoint: such a type refuses a `deletableDocument` reference (`ReferencedDocumentTypeModerated`, 40144), and a `moderatedDocument` reference to any other type is refused (`ReferencedDocumentTypeNotModerated`, 40143). It takes `contractId`, `documentType` and `where`, by id only. The document must exist when the referring document is written. Once a moderator removes it, the reference is kept and resolves to the removal record: a replace re-validates it only as it would a `permanentDocument` reference, and a `where` entry it asks about again is checked against the record's owner and id, any other property refusing the replace (`ReferencedDocumentRemoved`, 40145). A new value, on a create or a repoint, must name a document in state.
 
 Declarations are only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports none even when its raw schema carries the keyword.
 
@@ -511,7 +514,7 @@ It follows protocol version 14 on; an earlier version is refused. A type whose d
 
 ## Chained queries (provable semi-join)
 
-A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents. For a `permanentDocument` join property a missing referenced document fails verification outright, since such a reference cannot dangle. For a `deletableDocument` join property a referenced document that was deleted since is proven absent: it has no entry in `outerDocuments` (so match the two halves by id, not by position) and its id is listed in `missingOuterIds`, in first-appearance order. The node still cannot pass an existing document off as deleted.
+A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents. For a `permanentDocument` join property a missing referenced document fails verification outright, since such a reference cannot dangle. For a `deletableDocument` join property a referenced document that was deleted since is proven absent: it has no entry in `outerDocuments` (so match the two halves by id, not by position) and its id is listed in `missingOuterIds`, in first-appearance order. For a `moderatedDocument` join property a referenced document a moderator removed has no entry in `outerDocuments` either, and is listed in `removedOuterDocuments` with its proven removal record (`documentId`, `documentOwnerId`, `moderatorId`, `reason`, `removedAt`, `documentHash`), in first-appearance order; one gone without a record fails verification. The node still cannot pass an existing document off as deleted, nor a removed one off as missing.
 
 ```ts
 // The posts I liked, newest page first by postId.
@@ -541,13 +544,13 @@ const next = await sdk.documents.chained({
 });
 ```
 
-The inner query must target an indexOnly document type and resolve to an index carrying `joinProperty`, and `joinProperty` must declare a same-contract `refersTo: permanentDocument` or `refersTo: deletableDocument` targeting `outerDocumentType`. `innerLimit` is required — it bounds the derived outer fetch, so there is no server-default fallback. There are no outer-side clauses by design; filter `outerDocuments` locally. `sdk.documents.chainedWithProof(...)` returns the same result with the metadata and proof envelope attached.
+The inner query must target an indexOnly document type and resolve to an index carrying `joinProperty`, and `joinProperty` must declare a same-contract `refersTo: permanentDocument`, `refersTo: moderatedDocument` or `refersTo: deletableDocument` targeting `outerDocumentType`. `innerLimit` is required — it bounds the derived outer fetch, so there is no server-default fallback. There are no outer-side clauses by design; filter `outerDocuments` locally. `sdk.documents.chainedWithProof(...)` returns the same result with the metadata and proof envelope attached.
 
 ## Composite queries (a page plus its sub-queries)
 
 A **composite query** answers a page and everything a UI needs to render it in ONE verified round trip: the page documents, plus one to ten sub-queries whose `IN` clause the node derives from the proven page (or from an earlier `documents` sub-query). The request never names the derived values. Four sub-query shapes exist:
 
-- a **by-id join** (`bind.field: '$id'`): the documents a page property refers to (the property must declare `refersTo: permanentDocument` or `refersTo: deletableDocument` targeting the sub-query's type; a missing document fails verification for the former; for the latter it is proven absent, left out of `documents` and listed in that sub-result's `missingIds`);
+- a **by-id join** (`bind.field: '$id'`): the documents a page property refers to (the property must declare `refersTo: permanentDocument`, `refersTo: moderatedDocument` or `refersTo: deletableDocument` targeting the sub-query's type; a missing document fails verification for the first; for the second a document a moderator removed is left out of `documents` and listed with its proven removal record in that sub-result's `removed`; for the third it is proven absent, left out of `documents` and listed in that sub-result's `missingIds`);
 - an **indexed lookup** (`bind.field` an indexed property or `$ownerId`): documents keyed by a page value, in this or any other contract, with a `limit` on the rows it returns in total unless the index already bounds them (a unique index, or an indexOnly terminal with every prefix fixed);
 - a **count** (`kind: 'counts'`): one count per page value from a `countable` index covering the fixed clauses plus the bound field;
 - a **sibling** (no `bind`): an independent documents query proven under the same root.

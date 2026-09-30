@@ -28,7 +28,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentReferenceErrorCodeWasm {
     /// The referenced identity, contract, token or document (permanent or
-    /// deletable) does not exist, or a `listElement` value is not an element
+    /// deletable) does not exist, or a value with `inList` is not an element
     /// of the list it must be in (or was set while the property finding the
     /// list's document was not).
     ReferencedEntityNotFound = 40120,
@@ -64,33 +64,51 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// meet what the reference's `keyRequirements` require of it: its
     /// purpose, or a binding to a document type of the declaring contract.
     ReferencedIdentityKeyRequirementNotMet = 40136,
-    /// A `refersTo` lookup into a document type of another contract cannot
-    /// resolve there, reported at contract registration: the named index is
-    /// missing or not unique, the keys do not cover it exactly, or a source
-    /// holds a different kind of value than its index property. (A lookup into
-    /// the declaring contract is refused by the contract parse instead.)
+    /// A `refersTo` `findBy` into a document type of another contract cannot
+    /// resolve there, reported at contract registration: no unique index is
+    /// over exactly the properties it names, or a source holds a different
+    /// kind of value than the property it fills. (A `findBy` into the
+    /// declaring contract is refused by the contract parse instead.)
     ReferencedDocumentLookupInvalid = 40137,
-    /// A `refersTo: listElement` whose list lives in a document type of
+    /// A `refersTo` with `inList` whose list lives in a document type of
     /// another contract cannot be served by it, reported at contract
     /// registration: that type's documents can be deleted, the list is not a
     /// stored typed array of identifiers of it, or a replace could change the
     /// list. (A list in the declaring contract is refused by the contract parse
     /// instead.)
     ReferencedDocumentListInvalid = 40138,
-    /// The document a `refersTo` lookup with a computed key found, the
-    /// commitment the create reveals, exists but does not meet the lookup's
+    /// The document a `refersTo` `findBy` function found, the commitment the
+    /// create reveals, exists but does not meet the reference's
     /// `minimumAgeBlocks`: it was created too recently, in the same block
     /// with a minimum of 1. Retry in a later block.
     ReferencedDocumentRequirementNotMet = 40142,
-    /// A create cannot reveal the preimage of a `refersTo` lookup with a
-    /// computed key: a value a param reads is absent, or a variable-length
+    /// The referenced document type's documents can leave state otherwise
+    /// than through a moderator's recorded removal. Only types declaring
+    /// `canBeDeleted: false`, no `ttl`, and `moderatorAbilities.delete`
+    /// keeping removal records may be the target of a `moderatedDocument`
+    /// reference.
+    ReferencedDocumentTypeNotModerated = 40143,
+    /// The referenced document type's documents leave state only through a
+    /// moderator's recorded removal: a `moderatedDocument` reference is the
+    /// one for it, not a `deletableDocument` one.
+    ReferencedDocumentTypeModerated = 40144,
+    /// A replace kept a `moderatedDocument` reference whose document the
+    /// contract's moderators removed, and had to check a `where` entry
+    /// against a property of it other than its id and owner, which its
+    /// removal record does not keep. Point the reference at a document in
+    /// state, or leave the properties `where` reads unchanged until the
+    /// document is restored.
+    ReferencedDocumentRemoved = 40145,
+    /// A create cannot reveal the preimage of a `refersTo` `findBy`
+    /// function: a value a param reads is absent, or a variable-length
     /// value holds the one-byte separator that follows it in the preimage.
     DocumentReferencePreimageInvalid = 10423,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142 or 10423.
+    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40145 or
+    /// 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -105,6 +123,9 @@ impl DocumentReferenceErrorCodeWasm {
             40137 => Some(Self::ReferencedDocumentLookupInvalid),
             40138 => Some(Self::ReferencedDocumentListInvalid),
             40142 => Some(Self::ReferencedDocumentRequirementNotMet),
+            40143 => Some(Self::ReferencedDocumentTypeNotModerated),
+            40144 => Some(Self::ReferencedDocumentTypeModerated),
+            40145 => Some(Self::ReferencedDocumentRemoved),
             10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
@@ -346,7 +367,8 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135-40138, 40142 and 10423.
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40145 and
+    /// 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
@@ -410,9 +432,12 @@ mod tests {
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
     use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+    use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
     use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+    use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+    use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
     use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
     use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -740,6 +765,37 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedDocumentRequirementNotMet,
+            ),
+            (
+                StateError::ReferencedDocumentTypeNotModeratedError(
+                    ReferencedDocumentTypeNotModeratedError::new(
+                        id(),
+                        "post".to_string(),
+                        "replyTo".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeNotModerated,
+            ),
+            (
+                StateError::ReferencedDocumentTypeModeratedError(
+                    ReferencedDocumentTypeModeratedError::new(
+                        id(),
+                        "post".to_string(),
+                        "replyTo".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeModerated,
+            ),
+            (
+                StateError::ReferencedDocumentRemovedError(ReferencedDocumentRemovedError::new(
+                    id(),
+                    "replyTo".to_string(),
+                    "threadId".to_string(),
+                ))
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRemoved,
             ),
             (
                 BasicError::DocumentReferencePreimageInvalidError(

@@ -30,6 +30,7 @@ use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
 mod bucketing;
+mod derived_index_property;
 mod extract_contested_values;
 pub mod integer_range;
 #[cfg(test)]
@@ -39,6 +40,10 @@ pub mod random_index;
 pub mod time_range;
 
 pub use bucketing::IndexBucketing;
+pub(crate) use derived_index_property::{
+    parse_derived_index_property_name, DerivedIndexPropertyName,
+};
+pub use derived_index_property::{DerivedIndexField, DerivedIndexProperty};
 pub use extract_contested_values::contested_index_identifier;
 pub use integer_range::{IntegerRangeKeyType, IntegerRangeTransform};
 pub use preallocation::{PreallocatedKeySource, PreallocationBinding};
@@ -110,8 +115,8 @@ pub const TERMINAL: &str = "terminal";
 /// one (an item insert into existing trees). Only meaningful when the whole
 /// index path is a pure function of the referenced document: every index
 /// property must be either the referring property itself (it equals the
-/// referenced document's `$id`) or a key of that property's `refersTo`
-/// `propertyAgreement` (consensus-enforced equal to a referenced-document
+/// referenced document's `$id`) or a referring value of that property's
+/// `refersTo` `where` (consensus-enforced equal to a referenced-document
 /// property, its `$ownerId` and `$creatorId` included). Only allowed on
 /// indexOnly document types with a same-contract
 /// `permanentDocument` reference; the doc-type-level validation rejects every

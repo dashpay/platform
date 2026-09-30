@@ -12,8 +12,6 @@ use dpp::document::property_names::CREATOR_ID;
 use dpp::errors::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
-use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
-use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
@@ -31,11 +29,12 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::document_reference_kind::document_reference_kind_mismatch;
 
 /// Whether two property types hold the same KIND of value for agreement
 /// purposes: sizes and other constraints may differ (both sides validated
 /// their own documents already). The rule is `DocumentPropertyType::value_kind`,
-/// shared with the key parts of a `refersTo` lookup.
+/// shared with the key parts of a `refersTo` `findBy`.
 fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
     a.value_kind() == b.value_kind()
 }
@@ -93,21 +92,24 @@ fn preallocated_index_keyed_by(
 /// Checks every reference declaration of the given contract that carries
 /// declaration content.
 ///
-/// `permanentDocument` and `deletableDocument`: the referenced contract must
-/// exist (the declaring contract itself when no contract id is named,
-/// including when it names its own id) and the referenced document type must
-/// exist in it; for `permanentDocument` that type must forbid deletion, for
-/// `deletableDocument` it must allow it.
-/// Every `propertyAgreement` pair is checked for both, and a `lookup` into
-/// another contract's document type is checked against that type's indexes
+/// `permanentDocument`, `moderatedDocument` and `deletableDocument`: the
+/// referenced contract must exist (the declaring contract itself when no
+/// contract id is named, including when it names its own id) and the
+/// referenced document type must exist in it and admit the declared kind (see
+/// [`document_reference_kind_mismatch`]): for `permanentDocument` its
+/// documents never leave state, for `moderatedDocument` they leave it only
+/// through a moderator's recorded removal, for `deletableDocument` in any
+/// other way.
+/// Every `where` entry is checked for all three, and a `findBy` into another
+/// contract's document type is checked against that type's indexes
 /// (one into the declaring contract was checked by the contract parse). Self
 /// references are checked against the in-flight contract, so a contract may
 /// reference its own document types on creation; foreign contract fetches are
 /// billed.
 ///
-/// `listElement`: a document reference like `permanentDocument` (same
-/// checks, the type must forbid deletion, `$id` admitted on the referenced
-/// side of a pair), plus, for a list in a document type of another contract,
+/// A `permanentDocument` with `inList`: the same checks (the type must forbid
+/// deletion, `$id` named by `findBy`), plus, for a list in a document type of
+/// another contract,
 /// that `inList` is a stored typed array of identifiers fixed once a document
 /// is written. One in the declaring contract was checked by the contract
 /// parse.
@@ -131,14 +133,14 @@ fn preallocated_index_keyed_by(
 ///
 /// A document type's `ownerRefersTo` or `creatorRefersTo` declaration, whose
 /// value is the writer or the creator, is checked as a single identifier
-/// reference's is, first; the parser only admits an `identity` or a
-/// `permanentDocument` lookup one, or an expression of them.
+/// reference's is, first; the parser only admits an `identity`, a document
+/// reference found by `findBy` or with `inList`, or an expression of them.
 ///
 /// Each leaf of a reference expression (`anyOf` / `allOf`) is checked exactly
 /// as the same target declared alone, in declared order, and every one of them
 /// must pass: an `anyOf` lets a WRITE satisfy one operand, but each leaf has to
-/// be a declaration that could hold. A `propertyAgreement` belongs to its own
-/// leaf and is checked against that leaf's document type only.
+/// be a declaration that could hold. A `where` belongs to its own leaf and is
+/// checked against that leaf's document type only.
 ///
 /// The error paths name the failing declaration as
 /// `documentTypeName.propertyPath`, an element declaration by its list
@@ -169,8 +171,8 @@ pub(super) fn validate_data_contract_references_v0(
         // `creatorRefersTo`, whose value is the document's `$ownerId` or
         // `$creatorId` and which is named by that path), then the properties'
         // own. Neither is ever a key reference: the parser only admits an
-        // identity or a permanentDocument lookup there, or an expression of
-        // them. Inert before protocol version 14: this module is only called
+        // identity or a document reference found by `findBy` or with `inList`
+        // there, or an expression of them. Inert before protocol version 14: this module is only called
         // from contract create and update state validation 1, selected from
         // it, and no parse before it sets an owner or creator reference.
         for (holder, reference) in document_type.as_ref().reference_declarations() {
@@ -278,9 +280,9 @@ pub(super) fn validate_data_contract_references_v0(
                     continue;
                 }
                 // A string or byte array property revealed into a computed
-                // lookup key is judged as an identifier's reference is: the
-                // referenced type, its permanence, the agreement and the
-                // lookup. Only the protocol version 14 parser produces one
+                // `findBy` key is judged as an identifier's reference is: the
+                // referenced type, its permanence, the `where` entries and the
+                // `findBy`. Only the protocol version 14 parser produces one
                 PropertyReference::Value(target) | PropertyReference::Revealed(target) => {
                     (target, declaration_path)
                 }
@@ -420,7 +422,7 @@ fn validate_reference_target_declaration_v0(
         contract_id,
         document_type_name,
         property_agreement,
-        permanent,
+        kind,
         lookup,
         in_list,
     }) = reference_target.as_any_document_reference()
@@ -490,42 +492,29 @@ fn validate_reference_target_declaration_v0(
         ));
     };
 
-    // The two document references are disjoint: a
-    // `permanentDocument` one demands a document type that forbids
-    // deletion, a `deletableDocument` one a document type that
-    // allows it, so the declaration always states which guarantee
-    // the reference carries. Deletable means by anyone: a document type moderators
-    // can delete from is deletable whatever its `canBeDeleted` says about a document's
-    // own owner, since a reference to it could dangle, and so is one whose documents the
-    // platform deletes when their `ttl` passes. None of the three can change on an update,
-    // so the answer holds for good.
-    let target_is_deletable = referenced_document_type.documents_can_disappear();
-    if permanent && target_is_deletable {
-        return Ok(SimpleConsensusValidationResult::new_with_error(
-            ReferencedDocumentTypeDeletableError::new(
-                effective_contract_id,
-                document_type_name.to_string(),
-                declaration_path,
-            )
-            .into(),
-        ));
-    }
-    if !permanent && !target_is_deletable {
-        return Ok(SimpleConsensusValidationResult::new_with_error(
-            ReferencedDocumentTypeNotDeletableError::new(
-                effective_contract_id,
-                document_type_name.to_string(),
-                declaration_path,
-            )
-            .into(),
-        ));
+    // The three document references are disjoint: a `permanentDocument` one demands a
+    // document type whose documents never leave state, a `moderatedDocument` one a type whose
+    // documents leave it only through a moderator's recorded removal, a `deletableDocument`
+    // one any other, so the declaration always states which guarantee the reference carries.
+    // A document type moderators can delete from is no longer permanent whatever its
+    // `canBeDeleted` says about a document's own owner, since a reference to it could dangle,
+    // and neither is one whose documents the platform deletes when their `ttl` passes. Nothing
+    // the kind reads can change on an update, so the answer holds for good.
+    if let Some(error) = document_reference_kind_mismatch(
+        kind,
+        referenced_document_type.document_reference_kind(),
+        effective_contract_id,
+        document_type_name,
+        &declaration_path,
+    ) {
+        return Ok(SimpleConsensusValidationResult::new_with_error(error));
     }
 
-    // A lookup, on a document reference of either kind, must
-    // resolve in the referenced document type: a unique index its keys
-    // cover exactly, filled from sources of the right kinds, with a key
-    // that stays with the document it found. The contract parse checks
-    // a lookup into the declaring contract under full validation, where
+    // A `findBy`, on a document reference of either kind, must resolve
+    // in the referenced document type: a unique index over exactly the
+    // properties it names, filled from sources of the right kinds, with a
+    // key that stays with the document it found. The contract parse checks
+    // a `findBy` into the declaring contract under full validation, where
     // it sees every document type; only here is another contract's
     // document type in hand.
     if let Some(lookup) = lookup {
@@ -538,9 +527,9 @@ fn validate_reference_target_declaration_v0(
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentLookupInvalidError::new(
                         declaration_path,
-                        lookup.index.clone(),
-                        "consume deletes the document the lookup finds with the create, so it \
-                         is only allowed beside a lookup into the declaring contract"
+                        lookup.find_by_names(),
+                        "consume deletes the document findBy finds with the create, so it is \
+                         only allowed beside a findBy into the declaring contract"
                             .to_string(),
                     )
                     .into(),
@@ -552,7 +541,7 @@ fn validate_reference_target_declaration_v0(
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentLookupInvalidError::new(
                         declaration_path,
-                        lookup.index.clone(),
+                        lookup.find_by_names(),
                         reason,
                     )
                     .into(),
@@ -583,7 +572,7 @@ fn validate_reference_target_declaration_v0(
         }
     }
 
-    // propertyAgreement declarations: both sides must exist, be
+    // `where` declarations: both sides must exist, be
     // plain values (not containers), and share one value kind — a
     // cross-kind equality could never be satisfied and would brick
     // every create of the declaring document type. The referenced
