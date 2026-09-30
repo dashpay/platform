@@ -11,6 +11,7 @@ use platform_wallet::manager::dpns_sync::{DpnsSyncPassSummary, WalletDpnsSyncOut
 #[cfg(feature = "shielded")]
 use platform_wallet::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use platform_wallet::{PlatformAddressSyncSummary, WalletSyncOutcome};
+use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 
 /// Current layout version of [`EventHandlerCallbacksExtension`].
@@ -326,8 +327,7 @@ impl PlatformEventHandler for FFIEventHandler {
             }
         };
         // A reason is a node's text: strip interior NULs rather than lose it.
-        let reason =
-            reason.and_then(|reason| std::ffi::CString::new(reason.replace('\0', "")).ok());
+        let reason = reason.and_then(|reason| CString::new(reason.replace('\0', "")).ok());
         let txid_bytes: &[u8] = txid.as_ref();
         unsafe {
             callback(

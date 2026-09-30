@@ -110,8 +110,7 @@ extension PlatformWalletManager {
     /// wallet follows the chain tip, every block for 24 blocks from when it
     /// first did so for that root, and every 10 blocks after — a return from
     /// the background does not restart the 24. It publishes each *change* of
-    /// verdict for the
-    /// wallet's own sends in `outgoingTransactionVerdicts` /
+    /// verdict for the wallet's own sends in `outgoingTransactionVerdicts` /
     /// `lastOutgoingTransactionProbe`. An entry is removed when its send
     /// settles or leaves the wallet, when its wallet is deleted, and every
     /// entry when probing is turned off; a removal does not mean the send
