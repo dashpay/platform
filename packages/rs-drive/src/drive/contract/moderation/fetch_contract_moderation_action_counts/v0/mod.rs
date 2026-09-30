@@ -1,4 +1,6 @@
-use crate::drive::contract::moderation::types::decode_moderation_action_count;
+use crate::drive::contract::moderation::types::{
+    decode_moderation_action_count, decode_moderation_action_count_entry,
+};
 use crate::drive::contract::paths::{
     contract_moderation_action_counts_path, contract_moderation_action_counts_path_vec,
 };
@@ -52,21 +54,12 @@ impl Drive {
             .to_key_elements()
             .into_iter()
             .map(|(key, element)| {
-                let malformed = |description: String| {
+                decode_moderation_action_count_entry(&key, &element).map_err(|description| {
                     Error::Drive(DriveError::CorruptedDriveState(format!(
                         "moderation action count of contract {} is malformed: {}",
                         contract_id, description
                     )))
-                };
-                let identity_id = Identifier::from_bytes(&key)
-                    .map_err(|_| malformed(format!("key {:?} is not an identity id", key)))?;
-                let Element::Item(value, _) = element else {
-                    return Err(malformed("not an item".to_string()));
-                };
-                Ok((
-                    identity_id,
-                    decode_moderation_action_count(&value).map_err(malformed)?,
-                ))
+                })
             })
             .collect()
     }

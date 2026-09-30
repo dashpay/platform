@@ -28,7 +28,7 @@ use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
-    ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
+    ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationActionCounts, ContractModerationEntries,
     ContractModerationEntry, ContractModerationListStatus,
     ContractModerationListStatuses, ContractModerationReason, ContractTeamAction,
     ContractTeamActionEntry, ContractTeamActionSigners, ContractTeamActions, ContractWarning,
@@ -615,6 +615,28 @@ impl MockResponse for ContractTeamActionSigners {
         let (signers, _): (Vec<Identifier>, _) = bincode::decode_from_slice(buf, BINCODE_CONFIG)
             .expect("decode ContractTeamActionSigners");
         ContractTeamActionSigners(signers)
+    }
+}
+
+impl MockResponse for ContractModerationActionCounts {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let counts: Vec<(Identifier, u32)> = self
+            .counts()
+            .iter()
+            .map(|(identity_id, count)| (*identity_id, *count))
+            .collect();
+        bincode::encode_to_vec(counts, BINCODE_CONFIG)
+            .expect("encode ContractModerationActionCounts")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (counts, _): (Vec<(Identifier, u32)>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractModerationActionCounts");
+        ContractModerationActionCounts(counts.into_iter().collect())
     }
 }
 

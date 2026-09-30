@@ -3,11 +3,12 @@ use crate::drive::contract::moderation::types::{
     ContractModerationEntriesQuery, ContractTeamActionsQuery,
 };
 use crate::drive::contract::paths::{
-    contract_document_type_removals_path_vec, contract_moderation_list_path_vec,
-    contract_team_action_path_vec, contract_team_action_signers_path_vec,
-    contract_team_action_status_path_vec, contract_team_actions_path_vec,
-    CONTRACT_TEAM_ACTION_INFO_KEY, CONTRACT_TEAM_ACTION_SIGNERS_KEY,
-    CONTRACT_TEAM_ACTIVE_ACTIONS_KEY, CONTRACT_TEAM_CLOSED_ACTIONS_KEY,
+    contract_document_type_removals_path_vec, contract_moderation_action_counts_path_vec,
+    contract_moderation_list_path_vec, contract_team_action_path_vec,
+    contract_team_action_signers_path_vec, contract_team_action_status_path_vec,
+    contract_team_actions_path_vec, CONTRACT_TEAM_ACTION_INFO_KEY,
+    CONTRACT_TEAM_ACTION_SIGNERS_KEY, CONTRACT_TEAM_ACTIVE_ACTIONS_KEY,
+    CONTRACT_TEAM_CLOSED_ACTIONS_KEY,
 };
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -153,6 +154,36 @@ impl Drive {
             }
         }
         Ok(())
+    }
+
+    /// The most members any seated moderation team can hold: its leader, the members a charter
+    /// elects and those an elected declaration lets the leader add. A contract's moderation
+    /// action counts are never more: a count exists only for a member of the team, since every
+    /// settle of the moderators pot deletes them all and a change of the team settles first.
+    pub fn max_moderation_team_members(platform_version: &PlatformVersion) -> u16 {
+        let limits = &platform_version.system_limits;
+        1u16.saturating_add(limits.max_moderation_charter_elected_members)
+            .saturating_add(limits.max_contract_moderation_added_moderators)
+    }
+
+    /// The query for every moderation action count of an elected contract, in identity id
+    /// order, limited to the most members any team can hold
+    /// ([`Drive::max_moderation_team_members`]), so the prover and the verifier bound the proof
+    /// alike.
+    pub fn contract_moderation_action_counts_query(
+        contract_id: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> PathQuery {
+        let mut query = Query::new_with_direction(true);
+        query.insert_item(QueryItem::RangeFull(RangeFull));
+        PathQuery {
+            path: contract_moderation_action_counts_path_vec(&contract_id),
+            query: SizedQuery {
+                query,
+                limit: Some(Self::max_moderation_team_members(platform_version)),
+                offset: None,
+            },
+        }
     }
 
     /// The query for a page of a contract's team actions, active or closed: each action's info

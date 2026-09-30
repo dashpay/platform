@@ -568,6 +568,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getContractDocumentRemovals",
                 "getContractTeamActions",
                 "getContractTeamActionSigners",
+                "getContractModerationActionCounts",
                 "getContractFeePots",
                 "getDataContracts",
                 "getDataContractsByRange",

@@ -339,6 +339,25 @@ export class ContractsFacade {
   }
 
   /**
+   * How many counted moderation actions (bans, suspensions, warnings and document deletions)
+   * each member of an elected contract's seated moderation team signed since the moderators pot
+   * was last paid out, which resets every count, in identity id order. A payout by actions
+   * shares that part of the pot in proportion to them: with `feePots` it previews what a claim
+   * would pay each member. Only an elected contract keeps counts; the node refuses any other.
+   */
+  async moderationActionCounts(contractId: wasm.IdentifierLike): Promise<wasm.ContractModerationActionCounts> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractModerationActionCounts(contractId);
+  }
+
+  async moderationActionCountsWithProof(
+    contractId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractModerationActionCounts>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractModerationActionCountsWithProofInfo(contractId);
+  }
+
+  /**
    * What the document action fees of a contract (the `actionFees` keyword, protocol version
    * 14) have collected for its owner and for its moderation team, and the last claim of each
    * pot: the epoch and the block time it was paid out in, and the identity that claimed it. A

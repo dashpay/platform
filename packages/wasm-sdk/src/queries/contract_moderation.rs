@@ -17,11 +17,12 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::contract_moderation::{
     default_contract_document_removals_limit, ContractDocumentRemoval,
     ContractDocumentRemovalEntry, ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
-    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection, ContractModerationEntries,
-    ContractModerationEntriesPageQuery, ContractModerationList, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationStatusQuery, ContractTeamActionEntry,
-    ContractTeamActionEvent, ContractTeamActionSigners, ContractTeamActionSignersQuery,
-    ContractTeamActions, ContractTeamActionsPageQuery, GroupActionStatus,
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+    ContractModerationActionCounts, ContractModerationEntries, ContractModerationEntriesPageQuery,
+    ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
+    ContractModerationStatusQuery, ContractTeamActionEntry, ContractTeamActionEvent,
+    ContractTeamActionSigners, ContractTeamActionSignersQuery, ContractTeamActions,
+    ContractTeamActionsPageQuery, GroupActionStatus,
 };
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use js_sys::Array;
@@ -30,7 +31,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::{moderation_reason_to_js, moderation_warnings_to_js};
 use wasm_dpp2::error::WasmDppError;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::serialization::conversions::kept_fields_to_js;
 use wasm_dpp2::utils::{
     try_from_options_optional_with, try_from_options_with, try_to_array, try_to_string, try_to_u64,
@@ -317,6 +318,25 @@ export interface ContractTeamActionSignersQuery {
  */
 export interface ContractTeamActionSigners {
   signerIds: string[];
+}
+
+/** How many counted moderation actions one member of a seated team signed since the last payout. */
+export interface ContractModerationActionCount {
+  /** The member, base58. */
+  identityId: string;
+  /** How many bans, suspensions, warnings and document deletions it signed. */
+  count: number;
+}
+
+/**
+ * How many counted moderation actions (a ban, a suspension, a warning or a document deletion)
+ * each member of an elected contract's seated team signed since the moderators pot was last
+ * paid out, which resets every count, in identity id order. A member that did not act since
+ * has no count. A payout by actions shares that part of the pot in proportion to them: see
+ * `getContractFeePots` for what the pot holds.
+ */
+export interface ContractModerationActionCounts {
+  counts: ContractModerationActionCount[];
 }
 "#;
 
@@ -931,6 +951,33 @@ fn team_actions_to_js(
     Ok(result.into())
 }
 
+fn moderation_action_counts_to_js(
+    counts: &ContractModerationActionCounts,
+) -> Result<JsValue, WasmSdkError> {
+    let entries = Array::new();
+    for (identity_id, count) in counts.counts() {
+        let entry = js_sys::Object::new();
+        let set = |key: &str, value: JsValue| {
+            js_sys::Reflect::set(&entry, &key.into(), &value)
+                .map(|_| ())
+                .map_err(|_| {
+                    WasmSdkError::generic(format!("failed to set `{key}` on a moderation count"))
+                })
+        };
+        set(
+            "identityId",
+            JsValue::from_str(&IdentifierWasm::from(*identity_id).to_base58()),
+        )?;
+        set("count", JsValue::from(*count))?;
+        entries.push(&entry);
+    }
+    let result = js_sys::Object::new();
+    js_sys::Reflect::set(&result, &"counts".into(), &entries.into()).map_err(|_| {
+        WasmSdkError::generic("failed to set `counts` on the moderation action counts")
+    })?;
+    Ok(result.into())
+}
+
 fn team_action_signers_to_js(signers: ContractTeamActionSigners) -> Result<JsValue, WasmSdkError> {
     let result = js_sys::Object::new();
     let signer_ids = signers
@@ -1193,6 +1240,60 @@ impl WasmSdk {
             proof,
         ))
     }
+
+    /// How many counted moderation actions (bans, suspensions, warnings and document deletions)
+    /// each member of an elected contract's seated team signed since the moderators pot was last
+    /// paid out, in identity id order: what a payout by actions shares that part of the pot by.
+    /// Only an elected contract keeps counts; the node refuses any other.
+    ///
+    /// # Example
+    /// ```javascript
+    /// const { counts } = await sdk.getContractModerationActionCounts(contractId);
+    /// ```
+    #[wasm_bindgen(
+        js_name = "getContractModerationActionCounts",
+        unchecked_return_type = "ContractModerationActionCounts"
+    )]
+    pub async fn get_contract_moderation_action_counts(
+        &self,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+    ) -> Result<JsValue, WasmSdkError> {
+        let contract_id = parse_moderated_contract_id(contract_id)?;
+        let counts = ContractModerationActionCounts::fetch(self.as_ref(), contract_id)
+            .await?
+            .unwrap_or_default();
+        moderation_action_counts_to_js(&counts)
+    }
+
+    /// The moderation action counts of an elected contract together with their proof and
+    /// metadata.
+    #[wasm_bindgen(
+        js_name = "getContractModerationActionCountsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<ContractModerationActionCounts>"
+    )]
+    pub async fn get_contract_moderation_action_counts_with_proof_info(
+        &self,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let contract_id = parse_moderated_contract_id(contract_id)?;
+        let (counts, metadata, proof) =
+            ContractModerationActionCounts::fetch_with_metadata_and_proof(
+                self.as_ref(),
+                contract_id,
+                None,
+            )
+            .await?;
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            moderation_action_counts_to_js(&counts.unwrap_or_default())?,
+            metadata,
+            proof,
+        ))
+    }
+}
+
+fn parse_moderated_contract_id(id: IdentifierLikeJs) -> Result<Identifier, WasmSdkError> {
+    id.try_into()
+        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract id: {err}")))
 }
 
 /// A removal record, and the check that a join reports it as a `JoinedDocumentRemoval`,
@@ -1546,6 +1647,27 @@ mod wasm_tests {
             },
             approval_count: u32::from(seed),
         }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_answer_moderation_action_counts_in_identity_id_order() {
+        let base58 = |id: Identifier| IdentifierWasm::from(id).to_base58();
+        let counts =
+            moderation_action_counts_to_js(&ContractModerationActionCounts(BTreeMap::from([
+                (Identifier::from([2; 32]), 5),
+                (Identifier::from([1; 32]), 3),
+            ])))
+            .expect("expected the counts");
+
+        let entries = Array::from(&get(&counts, "counts"));
+        assert_eq!(entries.length(), 2);
+        let first = entries.get(0);
+        assert_eq!(
+            get(&first, "identityId").as_string(),
+            Some(base58(Identifier::from([1; 32])))
+        );
+        assert_eq!(get(&first, "count").as_f64(), Some(3.0));
+        assert_eq!(get(&entries.get(1), "count").as_f64(), Some(5.0));
     }
 
     #[wasm_bindgen_test]

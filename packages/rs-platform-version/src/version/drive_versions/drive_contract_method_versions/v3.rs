@@ -76,6 +76,7 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V3: DriveContractMethodVersions =
             add_estimation_costs_for_contract_document_removal: 0,
             set_contract_moderation_action_count: 0,
             fetch_contract_moderation_action_counts: 0,
+            prove_contract_moderation_action_counts: 0,
             remove_contract_moderation_action_counts: 0,
             add_estimation_costs_for_contract_moderation_action_counts: 0,
             add_contract_team_action_signature: 0,

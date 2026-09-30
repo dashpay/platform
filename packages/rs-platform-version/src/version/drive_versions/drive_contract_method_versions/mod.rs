@@ -44,6 +44,8 @@ pub struct DriveContractModerationMethodVersions {
     pub set_contract_moderation_action_count: FeatureVersion,
     /// Reads every moderation action count of an elected contract
     pub fetch_contract_moderation_action_counts: FeatureVersion,
+    /// Proves every moderation action count of an elected contract, for the query
+    pub prove_contract_moderation_action_counts: FeatureVersion,
     /// Deletes moderation action counts: the reset at a settle of the moderators pot
     pub remove_contract_moderation_action_counts: FeatureVersion,
     pub add_estimation_costs_for_contract_moderation_action_counts: FeatureVersion,

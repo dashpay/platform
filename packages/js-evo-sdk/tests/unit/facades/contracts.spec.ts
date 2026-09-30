@@ -595,6 +595,26 @@ describe('ContractsFacade', () => {
       expect(stub).to.be.calledOnceWithExactly(query);
       expect(result).to.equal(response);
     });
+
+    it('should forward moderationActionCounts() to getContractModerationActionCounts()', async function run() {
+      const counts = { counts: [{ identityId, count: 3 }] };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationActionCounts').resolves(counts);
+
+      const result = await client.contracts.moderationActionCounts(contractId);
+
+      expect(stub).to.be.calledOnceWithExactly(contractId);
+      expect(result.counts).to.deep.equal([{ identityId, count: 3 }]);
+    });
+
+    it('should fetch the moderation action counts with proof', async function run() {
+      const response = { data: { counts: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationActionCountsWithProofInfo').resolves(response);
+
+      const result = await client.contracts.moderationActionCountsWithProof(contractId);
+
+      expect(stub).to.be.calledOnceWithExactly(contractId);
+      expect(result).to.equal(response);
+    });
   });
 
   describe('contract fee pots', () => {

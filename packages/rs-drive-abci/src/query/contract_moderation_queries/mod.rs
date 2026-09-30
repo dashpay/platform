@@ -1,10 +1,12 @@
 //! Contract moderation queries: one identity's status on a moderated contract, one page of a
 //! contract's banlist, suspension list or warning list, the records of the documents its
-//! moderators deleted, the actions its seated team votes on, and the fee pots a contract's
-//! document action fees collect in.
+//! moderators deleted, the actions its seated team votes on, how many moderation actions each
+//! member of that team signed since the last payout, and the fee pots a contract's document
+//! action fees collect in.
 
 mod contract_document_removals;
 mod contract_fee_pots;
+mod contract_moderation_action_counts;
 mod contract_moderation_entries;
 mod contract_moderation_status;
 mod contract_team_action_signers;
@@ -182,6 +184,43 @@ impl<C> Platform<C> {
             ))));
         };
         Ok(Ok(moderation.lists().collect()))
+    }
+}
+
+impl<C> Platform<C> {
+    /// Nothing, or a query error when the contract does not exist or keeps no moderation action
+    /// counts: only an elected contract, whose seated team shares the moderators pot by them,
+    /// has a counts tree, and a proof over a tree that does not exist could not be built.
+    pub(super) fn check_keeps_moderation_action_counts(
+        &self,
+        contract_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Result<(), QueryError>, Error> {
+        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
+            contract_id.to_buffer(),
+            false,
+            None,
+            platform_version,
+        )?
+        else {
+            return Ok(Err(QueryError::NotFound(format!(
+                "contract {} not found",
+                contract_id
+            ))));
+        };
+        let elected = contract_fetch_info
+            .contract
+            .config()
+            .moderation()
+            .is_some_and(|moderation| moderation.moderators.elected().is_some());
+        if !elected {
+            return Ok(Err(QueryError::InvalidArgument(format!(
+                "contract {} keeps no moderation action counts: its moderators are not an \
+                 elected team",
+                contract_id
+            ))));
+        }
+        Ok(Ok(()))
     }
 }
 

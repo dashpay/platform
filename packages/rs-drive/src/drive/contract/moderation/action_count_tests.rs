@@ -241,6 +241,61 @@ fn should_write_read_and_reset_the_action_counts() {
         .is_empty());
 }
 
+#[test]
+fn should_prove_the_action_counts_the_query_reads() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract_id = elected_contract(&drive, platform_version).id();
+    let root_hash = |drive: &Drive| {
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected a root hash")
+    };
+    let prove_and_verify = |drive: &Drive| {
+        let proof = drive
+            .prove_contract_moderation_action_counts(contract_id, None, platform_version)
+            .expect("expected a proof of the counts");
+        let (proved_root, counts) = Drive::verify_contract_moderation_action_counts(
+            &proof,
+            contract_id,
+            false,
+            platform_version,
+        )
+        .expect("expected the proof to verify");
+        assert_eq!(proved_root, root_hash(drive));
+        counts
+    };
+
+    // No member has acted yet: the proof shows an empty tree
+    assert!(prove_and_verify(&drive).is_empty());
+
+    apply(
+        &drive,
+        vec![
+            set_count(member(1), 2, contract_id),
+            set_count(member(2), 5, contract_id),
+        ],
+        true,
+    );
+    let expected = BTreeMap::from([(member(1), 2), (member(2), 5)]);
+    assert_eq!(prove_and_verify(&drive), expected);
+    assert_eq!(
+        drive
+            .fetch_contract_moderation_action_counts(
+                contract_id,
+                Drive::max_moderation_team_members(platform_version),
+                None,
+                platform_version,
+            )
+            .expect("expected to read the counts"),
+        expected
+    );
+    // The most members any team can hold: its leader, 15 elected and 15 added
+    assert_eq!(Drive::max_moderation_team_members(platform_version), 31);
+}
+
 /// The root key of the Merk at `path`/`key`, read from the tree element that points at it.
 fn merk_root_key(drive: &Drive, path: &[&[u8]], key: &[u8]) -> Option<Vec<u8>> {
     let platform_version = PlatformVersion::latest();

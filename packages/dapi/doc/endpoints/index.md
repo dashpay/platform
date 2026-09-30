@@ -65,6 +65,7 @@ The following endpoints are defined in the gRPC service but are served by Drive 
 - `getContractDocumentRemovals`
 - `getContractTeamActions`
 - `getContractTeamActionSigners`
+- `getContractModerationActionCounts`
 - `getContractFeePots`
 - `getIdentityByPublicKeyHash`
 - `getIdentitiesByPublicKeyHashes`

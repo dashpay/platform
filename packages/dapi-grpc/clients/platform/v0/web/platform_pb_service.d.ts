@@ -229,6 +229,15 @@ type PlatformgetContractTeamActionSigners = {
   readonly responseType: typeof platform_pb.GetContractTeamActionSignersResponse;
 };
 
+type PlatformgetContractModerationActionCounts = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractModerationActionCountsRequest;
+  readonly responseType: typeof platform_pb.GetContractModerationActionCountsResponse;
+};
+
 type PlatformgetContractFeePots = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -679,6 +688,7 @@ export class Platform {
   static readonly getContractDocumentRemovals: PlatformgetContractDocumentRemovals;
   static readonly getContractTeamActions: PlatformgetContractTeamActions;
   static readonly getContractTeamActionSigners: PlatformgetContractTeamActionSigners;
+  static readonly getContractModerationActionCounts: PlatformgetContractModerationActionCounts;
   static readonly getContractFeePots: PlatformgetContractFeePots;
   static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
@@ -984,6 +994,15 @@ export class PlatformClient {
   getContractTeamActionSigners(
     requestMessage: platform_pb.GetContractTeamActionSignersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationActionCounts(
+    requestMessage: platform_pb.GetContractModerationActionCountsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationActionCountsResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationActionCounts(
+    requestMessage: platform_pb.GetContractModerationActionCountsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationActionCountsResponse|null) => void
   ): UnaryResponse;
   getContractFeePots(
     requestMessage: platform_pb.GetContractFeePotsRequest,

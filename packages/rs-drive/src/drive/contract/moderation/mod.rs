@@ -99,6 +99,8 @@ mod insert_contract_team_action_trees;
 #[cfg(feature = "server")]
 mod prove_contract_document_removals;
 #[cfg(feature = "server")]
+mod prove_contract_moderation_action_counts;
+#[cfg(feature = "server")]
 mod prove_contract_moderation_entries;
 #[cfg(feature = "server")]
 mod prove_contract_moderation_status;

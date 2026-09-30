@@ -1,9 +1,10 @@
 //! Contract moderation queries: one identity's status on a moderated contract
 //! (`getContractModerationStatus`), one page of a contract's banlist, suspension list or
 //! warning list (`getContractModerationEntries`), the records of the documents its
-//! moderators deleted (`getContractDocumentRemovals`), and the actions its seated moderation
-//! team votes on (`getContractTeamActions`) with who approved each
-//! (`getContractTeamActionSigners`).
+//! moderators deleted (`getContractDocumentRemovals`), the actions its seated moderation team
+//! votes on (`getContractTeamActions`) with who approved each (`getContractTeamActionSigners`),
+//! and how many moderation actions each member of that team signed since the moderators pot was
+//! last paid out (`getContractModerationActionCounts`).
 //!
 //! A moderated contract declares in its config which lists it keeps
 //! (`DataContractConfig::moderation`). A status query names the lists to read, and each must be
@@ -33,6 +34,12 @@
 //!   approved one of those actions, the proposer among them unless it left the team and its
 //!   approval was dropped, in identity id order: none when the contract holds no action of that
 //!   id with the status asked.
+//! * [`ContractModerationActionCounts::fetch`] with a [`ContractModerationActionCountsQuery`] (or
+//!   the contract id alone) returns how many counted moderation actions (a ban, a suspension, a
+//!   warning or a document deletion) each member of an elected contract's seated team signed
+//!   since the moderators pot was last paid out, which resets every count: what a payout by
+//!   actions shares that part of the pot by. A member that did not act since has no count. Only
+//!   an elected contract keeps counts; the node refuses any other.
 //!
 //! Every type also implements [`FetchUnproved`] for the unverified fast path.
 
@@ -42,6 +49,7 @@ use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contrac
 use dapi_grpc::platform::v0::get_contract_document_removals_request::{
     DocumentIds, GetContractDocumentRemovalsRequestV0, Page,
 };
+use dapi_grpc::platform::v0::get_contract_moderation_action_counts_request::GetContractModerationActionCountsRequestV0;
 use dapi_grpc::platform::v0::get_contract_moderation_entries_request::GetContractModerationEntriesRequestV0;
 use dapi_grpc::platform::v0::get_contract_moderation_status_request::GetContractModerationStatusRequestV0;
 use dapi_grpc::platform::v0::get_contract_team_action_signers_request::{
@@ -51,9 +59,10 @@ use dapi_grpc::platform::v0::get_contract_team_actions_request::{
     ActionStatus as TeamActionsStatus, GetContractTeamActionsRequestV0, StartAtActionId,
 };
 use dapi_grpc::platform::v0::{
-    get_contract_document_removals_request, get_contract_moderation_entries_request,
-    get_contract_moderation_status_request, get_contract_team_action_signers_request,
-    get_contract_team_actions_request, GetContractDocumentRemovalsRequest,
+    get_contract_document_removals_request, get_contract_moderation_action_counts_request,
+    get_contract_moderation_entries_request, get_contract_moderation_status_request,
+    get_contract_team_action_signers_request, get_contract_team_actions_request,
+    GetContractDocumentRemovalsRequest, GetContractModerationActionCountsRequest,
     GetContractModerationEntriesRequest, GetContractModerationStatusRequest,
     GetContractTeamActionSignersRequest, GetContractTeamActionsRequest,
 };
@@ -65,7 +74,7 @@ pub use drive_proof_verifier::types::contract_moderation::{
     default_contract_document_removals_limit, default_contract_moderation_entries_limit,
     list_to_request, ContractDocumentRemoval, ContractDocumentRemovalEntry,
     ContractDocumentRemovals, ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
-    ContractModerationEntries, ContractModerationEntriesQuery, ContractModerationEntry,
+    ContractModerationActionCounts, ContractModerationEntries, ContractModerationEntriesQuery, ContractModerationEntry,
     ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
     ContractTeamAction, ContractTeamActionEntry, ContractTeamActionEvent,
     ContractTeamActionSigners, ContractTeamActions, ContractTeamActionsQuery, ContractWarning,
@@ -447,6 +456,48 @@ impl FetchUnproved for ContractTeamActionSigners {
     type Request = GetContractTeamActionSignersRequest;
 }
 
+/// Query for how many moderation actions each member of an elected contract's seated team
+/// signed since the moderators pot was last paid out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractModerationActionCountsQuery {
+    /// The elected contract.
+    pub contract_id: Identifier,
+}
+
+impl Query<GetContractModerationActionCountsRequest> for ContractModerationActionCountsQuery {
+    fn query(
+        &self,
+        settings: &QuerySettings<'_>,
+    ) -> Result<GetContractModerationActionCountsRequest, Error> {
+        Ok(GetContractModerationActionCountsRequest {
+            version: Some(get_contract_moderation_action_counts_request::Version::V0(
+                GetContractModerationActionCountsRequestV0 {
+                    contract_id: self.contract_id.to_vec(),
+                    prove: settings.prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetContractModerationActionCountsRequest> for Identifier {
+    fn query(
+        &self,
+        settings: &QuerySettings<'_>,
+    ) -> Result<GetContractModerationActionCountsRequest, Error> {
+        ContractModerationActionCountsQuery { contract_id: *self }.query(settings)
+    }
+}
+
+impl Fetch for ContractModerationActionCounts {
+    type Query = GetContractModerationActionCountsRequest;
+    type Request = GetContractModerationActionCountsRequest;
+}
+
+impl FetchUnproved for ContractModerationActionCounts {
+    type Request = GetContractModerationActionCountsRequest;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -539,6 +590,27 @@ mod tests {
                 status
             );
         }
+    }
+
+    #[test]
+    fn should_ask_for_the_moderation_action_counts_of_a_contract() {
+        let request_settings = RequestSettings::default();
+        let settings = query_settings(&request_settings);
+        let contract_id = Identifier::from([1; 32]);
+        let request: GetContractModerationActionCountsRequest =
+            contract_id.query(&settings).expect("request");
+        assert_eq!(
+            request,
+            ContractModerationActionCountsQuery { contract_id }
+                .query(&settings)
+                .expect("request")
+        );
+        let Some(get_contract_moderation_action_counts_request::Version::V0(v0)) = request.version
+        else {
+            panic!("expected a v0 request");
+        };
+        assert_eq!(v0.contract_id, contract_id.to_vec());
+        assert!(v0.prove);
     }
 
     #[test]

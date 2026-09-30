@@ -217,6 +217,20 @@ pub fn decode_moderation_action_count(value: &[u8]) -> Result<u32, String> {
     Ok(u32::from_be_bytes(bytes))
 }
 
+/// Decodes one moderation action count as a query of the counts returns it: the member's
+/// identity id as the key, and the count as an item.
+pub fn decode_moderation_action_count_entry(
+    key: &[u8],
+    element: &Element,
+) -> Result<(Identifier, u32), String> {
+    let identity_id =
+        Identifier::from_bytes(key).map_err(|_| format!("key {:?} is not an identity id", key))?;
+    let Element::Item(value, _) = element else {
+        return Err(format!("the count of {} is not an item", identity_id));
+    };
+    Ok((identity_id, decode_moderation_action_count(value)?))
+}
+
 /// The stored size of what a document removal starts with: the document owner's id, the
 /// moderator's id, the removal time as a u64, the hash of the removed document and the tag
 /// byte that says what follows.

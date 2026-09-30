@@ -1215,7 +1215,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     ban, suspension, warning or deletion must name a `reason` document its
 ///     proposal lists (`ModerationReasonNotListedError`, 41203). No table moves
 ///     but the four
-///     new Drive method slots, `0` at every version.
+///     new Drive method slots, `0` at every version. The counts are read with
+///     the `getContractModerationActionCounts` query (an elected contract
+///     only), its proof limited to the most members any team can hold.
 ///
 /// 42. **Repaid identity debt reaches the processing fee pool**: an identity
 ///     whose fee the balance could not fully cover keeps the unpaid processing
@@ -1802,7 +1804,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     record replaced, approvals moved or dropped), which is refunded as ever.
 ///     The proof is the signer's approval, active or closed
 ///     (`VerifiedContractTeamActionSignature`, appended); the new
-///     `getContractTeamActions` and `getContractTeamActionSigners` queries read
+///     `getContractTeamActions` (each action with its approval count, the sum
+///     of its approvals tree) and `getContractTeamActionSigners` queries read
 ///     them. New errors, appended: `DocumentTypeNotDeletableOnceSettledError`
 ///     (41204), `ContractModerationTeamNotSeatedError` (41205),
 ///     `DocumentNotSettledError` (41206), `ContractTeamActionDoesNotExistError`

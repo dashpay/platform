@@ -4,9 +4,10 @@
 //! read with a [`ContractModerationEntriesQuery`]). The records of the documents its moderators deleted
 //! ([`ContractDocumentRemovals`], read with a [`ContractDocumentRemovalsQuery`]), the actions
 //! its seated moderation team votes on ([`ContractTeamActions`], read with a
-//! [`ContractTeamActionsQuery`]) and who approved one ([`ContractTeamActionSigners`]), and the
-//! fee pots of a contract ([`ContractFeePots`]) are read here too: the pots are what its
-//! document action fees pay its owner and its moderators.
+//! [`ContractTeamActionsQuery`]) and who approved one ([`ContractTeamActionSigners`]), how many
+//! moderation actions each member of that team signed since the last payout
+//! ([`ContractModerationActionCounts`]), and the fee pots of a contract ([`ContractFeePots`]) are
+//! read here too: the pots are what its document action fees pay its owner and its moderators.
 
 use crate::Error;
 use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
@@ -17,6 +18,7 @@ use dapi_grpc::platform::v0::get_contract_fee_pots_response::ContractFeePotLastC
 use dapi_grpc::platform::v0::get_contract_fee_pots_response::{
     ContractFeePot as ContractFeePotProto, ContractFeePots as ContractFeePotsProto,
 };
+use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::ContractModerationActionCount as ContractModerationActionCountProto;
 use dapi_grpc::platform::v0::get_contract_moderation_entries_response::ContractModerationEntry as ContractModerationEntryProto;
 use dapi_grpc::platform::v0::get_contract_team_actions_request::{
     ActionStatus as TeamActionStatusProto, StartAtActionId,
@@ -47,6 +49,7 @@ pub use drive::drive::contract::moderation::types::{
     ContractTeamActionEntry, ContractTeamActionsQuery,
 };
 pub use dpp::group::group_action_status::GroupActionStatus;
+use std::collections::BTreeMap;
 
 /// The page size a request without a limit asks for, which is also the largest page a node
 /// returns: the platform version's `max_returned_elements`, the number the node reads too.
@@ -177,6 +180,20 @@ pub struct ContractTeamActionSigners(pub Vec<Identifier>);
 impl ContractTeamActionSigners {
     /// The members that approved.
     pub fn signers(&self) -> &[Identifier] {
+        &self.0
+    }
+}
+
+/// How many counted moderation actions (a ban, a suspension, a warning or a document deletion)
+/// each member of an elected contract's seated team signed since the moderators pot was last
+/// paid out, which resets every count. A member that did not act since has no count. A payout
+/// by actions shares that part of the pot in proportion to them.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ContractModerationActionCounts(pub BTreeMap<Identifier, u32>);
+
+impl ContractModerationActionCounts {
+    /// The counts, by member.
+    pub fn counts(&self) -> &BTreeMap<Identifier, u32> {
         &self.0
     }
 }
@@ -617,6 +634,24 @@ pub fn team_actions_from_response(
         })
         .collect::<Result<Vec<ContractTeamActionEntry>, Error>>()?;
     Ok(ContractTeamActions(entries))
+}
+
+/// The counts of an unproved moderation action counts response, each member a 32 byte
+/// identifier named once.
+pub fn moderation_action_counts_from_response(
+    counts: Vec<ContractModerationActionCountProto>,
+) -> Result<ContractModerationActionCounts, Error> {
+    let mut by_member = BTreeMap::new();
+    for count in counts {
+        let identity_id =
+            identifier_from_response(&count.identity_id, "moderation action counter")?;
+        if by_member.insert(identity_id, count.count).is_some() {
+            return Err(Error::ResponseDecodeError {
+                error: format!("moderation action counts name {} twice", identity_id),
+            });
+        }
+    }
+    Ok(ContractModerationActionCounts(by_member))
 }
 
 /// The approvals of an unproved team action signers response, each a 32 byte identifier.
@@ -1497,6 +1532,26 @@ mod tests {
         );
         team_action_signers_from_response(vec![vec![1; 31]])
             .expect_err("expected a malformed signer id to be refused");
+    }
+
+    #[test]
+    fn should_read_the_moderation_action_counts_of_a_response() {
+        let count = |seed: u8, count: u32| ContractModerationActionCountProto {
+            identity_id: id(seed).to_vec(),
+            count,
+        };
+        assert_eq!(
+            moderation_action_counts_from_response(vec![count(2, 5), count(1, 3)])
+                .expect("expected the counts"),
+            ContractModerationActionCounts(BTreeMap::from([(id(1), 3), (id(2), 5)]))
+        );
+        moderation_action_counts_from_response(vec![count(1, 3), count(1, 4)])
+            .expect_err("expected a member counted twice to be refused");
+        moderation_action_counts_from_response(vec![ContractModerationActionCountProto {
+            identity_id: vec![1; 31],
+            count: 1,
+        }])
+        .expect_err("expected a malformed member id to be refused");
     }
 
     #[test]

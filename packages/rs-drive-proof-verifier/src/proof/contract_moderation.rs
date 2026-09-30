@@ -4,22 +4,23 @@ use crate::error::MapGroveDbError;
 use crate::types::contract_moderation::{
     entries_query_from_request, identifier_from_request, lists_from_request,
     removals_query_from_request, team_action_status_from_request, team_actions_query_from_request,
-    ContractDocumentRemovals, ContractFeePots, ContractModerationEntries,
-    ContractModerationListStatuses, ContractTeamActionSigners, ContractTeamActions,
-    CONTRACT_FEE_POTS_QUERIED,
+    ContractDocumentRemovals, ContractFeePots, ContractModerationActionCounts,
+    ContractModerationEntries, ContractModerationListStatuses, ContractTeamActionSigners,
+    ContractTeamActions, CONTRACT_FEE_POTS_QUERIED,
 };
 use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_contract_document_removals_request, get_contract_fee_pots_request,
-    get_contract_moderation_entries_request, get_contract_moderation_status_request,
-    get_contract_team_action_signers_request, get_contract_team_actions_request,
-    GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
-    GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractModerationEntriesRequest,
-    GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
-    GetContractModerationStatusResponse, GetContractTeamActionSignersRequest,
-    GetContractTeamActionSignersResponse, GetContractTeamActionsRequest,
-    GetContractTeamActionsResponse, Proof, ResponseMetadata,
+    get_contract_moderation_action_counts_request, get_contract_moderation_entries_request,
+    get_contract_moderation_status_request, get_contract_team_action_signers_request,
+    get_contract_team_actions_request, GetContractDocumentRemovalsRequest,
+    GetContractDocumentRemovalsResponse, GetContractFeePotsRequest, GetContractFeePotsResponse,
+    GetContractModerationActionCountsRequest, GetContractModerationActionCountsResponse,
+    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
+    GetContractModerationStatusRequest, GetContractModerationStatusResponse,
+    GetContractTeamActionSignersRequest, GetContractTeamActionSignersResponse,
+    GetContractTeamActionsRequest, GetContractTeamActionsResponse, Proof, ResponseMetadata,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
@@ -306,6 +307,53 @@ impl FromProof<GetContractTeamActionSignersRequest> for ContractTeamActionSigner
         // An action that is not there with that status proves as no approvals, so the approvals
         // are always the answer.
         Ok((Some(ContractTeamActionSigners(signers)), metadata, proof))
+    }
+}
+
+impl FromProof<GetContractModerationActionCountsRequest> for ContractModerationActionCounts {
+    type Request = GetContractModerationActionCountsRequest;
+    type Response = GetContractModerationActionCountsResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let get_contract_moderation_action_counts_request::Version::V0(v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let contract_id = identifier_from_request(&v0.contract_id, "contract_id")?;
+
+        let metadata = response
+            .metadata()
+            .or(Err(Error::EmptyResponseMetadata))?
+            .clone();
+        let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, counts) = Drive::verify_contract_moderation_action_counts(
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            contract_id,
+            false,
+            platform_version,
+        )
+        .map_drive_error(&proof, &metadata)?;
+
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+
+        // No member acted since the last payout proves as no counts, so the counts are always
+        // the answer.
+        Ok((
+            Some(ContractModerationActionCounts(counts)),
+            metadata,
+            proof,
+        ))
     }
 }
 
