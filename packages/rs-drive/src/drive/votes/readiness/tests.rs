@@ -19,7 +19,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::{
-    PrefundedSpecializedBalanceOperationType, ReadinessOperationType,
+    IdentityOperationType, PrefundedSpecializedBalanceOperationType, ReadinessOperationType,
 };
 use crate::util::batch::DriveOperation;
 use crate::util::common::encode::encode_u64;
@@ -402,6 +402,39 @@ mod genesis {
     }
 }
 
+/// Asserts that `operations` is refused whether estimated, applied or converted.
+fn assert_batch_refused<'a>(
+    drive: &Drive,
+    operations: impl Fn() -> Vec<DriveOperation<'a>>,
+    block_info: &BlockInfo,
+) {
+    let platform_version = PlatformVersion::latest();
+    for apply in [false, true] {
+        let result = drive.apply_drive_operations(
+            operations(),
+            apply,
+            block_info,
+            None,
+            platform_version,
+            None,
+        );
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::NotSupported(_)))),
+            "{result:?}"
+        );
+    }
+    let result = drive.convert_drive_operations_to_grove_operations(
+        operations(),
+        block_info,
+        None,
+        platform_version,
+    );
+    assert!(
+        matches!(result, Err(Error::Drive(DriveError::NotSupported(_)))),
+        "{result:?}"
+    );
+}
+
 mod funds {
     use super::*;
 
@@ -658,6 +691,92 @@ mod funds {
         assert!(
             estimated.processing_fee >= applied.processing_fee,
             "{estimated:?} < {applied:?}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_readiness_fund_written_twice_in_one_batch_and_sum_writes_batched_apart() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = block_info(1, 1, 1);
+        let fund_id = Identifier::from([0xF3u8; 32]);
+        drive
+            .add_readiness_fund(fund_id, 1_000, None, platform_version)
+            .expect("fund");
+        let add = |add_balance| {
+            DriveOperation::PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::CreateNewReadinessFund {
+                    fund_id,
+                    add_balance,
+                },
+            )
+        };
+        let deduct = || {
+            DriveOperation::PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::DeductFromReadinessFund {
+                    fund_id,
+                    remove_balance: 600,
+                    reserve: 200,
+                },
+            )
+        };
+
+        // Each write is computed from the committed balance, so the second would replace the
+        // first: two adds would keep only one, two deductions would both pass the reserve.
+        assert_batch_refused(&drive, || vec![add(20), add(30)], &block_info);
+        assert_batch_refused(&drive, || vec![deduct(), deduct()], &block_info);
+        assert_batch_refused(&drive, || vec![add(20), deduct()], &block_info);
+        assert_eq!(
+            drive
+                .fetch_readiness_fund(fund_id.to_buffer(), None, platform_version)
+                .expect("fetch"),
+            Some(1_000)
+        );
+
+        // Batched apart, both adds land and the reserve holds against the second deduction.
+        for added in [20, 30] {
+            drive
+                .apply_drive_operations(
+                    vec![add(added)],
+                    true,
+                    &block_info,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("add");
+        }
+        assert_eq!(
+            drive
+                .fetch_readiness_fund(fund_id.to_buffer(), None, platform_version)
+                .expect("fetch"),
+            Some(1_050)
+        );
+        drive
+            .apply_drive_operations(
+                vec![deduct()],
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("deduct");
+        assert!(drive
+            .apply_drive_operations(
+                vec![deduct()],
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None
+            )
+            .is_err());
+        assert_eq!(
+            drive
+                .fetch_readiness_fund(fund_id.to_buffer(), None, platform_version)
+                .expect("fetch"),
+            Some(450)
         );
     }
 }
@@ -1799,30 +1918,7 @@ mod retirement {
 
         // Both retirements would rewrite the pool from the same read, so one credit would be
         // lost; the batch is refused whether estimated, applied or converted.
-        for apply in [false, true] {
-            let result = drive.apply_drive_operations(
-                vec![cancel(first), cancel(second)],
-                apply,
-                &block_info,
-                None,
-                platform_version,
-                None,
-            );
-            assert!(
-                matches!(result, Err(Error::Drive(DriveError::NotSupported(_)))),
-                "{result:?}"
-            );
-        }
-        let result = drive.convert_drive_operations_to_grove_operations(
-            vec![cancel(first), cancel(second)],
-            &block_info,
-            None,
-            platform_version,
-        );
-        assert!(
-            matches!(result, Err(Error::Drive(DriveError::NotSupported(_)))),
-            "{result:?}"
-        );
+        assert_batch_refused(&drive, || vec![cancel(first), cancel(second)], &block_info);
         for contract_id in [first, second] {
             assert!(drive
                 .fetch_readiness_round(contract_id, None, platform_version)
@@ -1844,6 +1940,75 @@ mod retirement {
                 .expect("cancel");
         }
         assert_eq!(pool_credits(&drive, None), 2 * CLEANUP_RESERVE);
+    }
+
+    #[test]
+    fn should_refuse_a_round_settlement_beside_another_balance_write_of_its_batch() {
+        let (drive, payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let open_contract = [1u8; 32];
+        let cancel_contract = [2u8; 32];
+        open_round(&drive, cancel_contract, payer, 10, None);
+        let block_info = block_info(1_100_000, 11, 100);
+        let balance_before = payer_balance(&drive, payer, None);
+        let open = || {
+            DriveOperation::ReadinessOperation(ReadinessOperationType::OpenRound {
+                opening: opening(open_contract, payer, 11),
+                funding: FUNDING,
+            })
+        };
+        let cancel = || {
+            DriveOperation::ReadinessOperation(ReadinessOperationType::CancelRound {
+                contract_id: cancel_contract,
+                cleanup_reserve: CLEANUP_RESERVE,
+            })
+        };
+        let debit = || {
+            DriveOperation::IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
+                identity_id: payer.to_buffer(),
+                balance_to_remove: 3_000_000,
+            })
+        };
+        let credit = || {
+            DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+                identity_id: payer.to_buffer(),
+                added_balance: 3_000_000,
+            })
+        };
+        let fund = || {
+            DriveOperation::PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::CreateNewReadinessFund {
+                    fund_id: Identifier::from([0xF4u8; 32]),
+                    add_balance: 1,
+                },
+            )
+        };
+
+        // A settlement writes the payer's balance as an absolute value computed before the
+        // batch, so it would erase the debit or the credit batched beside it.
+        assert_batch_refused(&drive, || vec![open(), debit()], &block_info);
+        assert_batch_refused(&drive, || vec![debit(), open()], &block_info);
+        assert_batch_refused(&drive, || vec![cancel(), credit()], &block_info);
+        assert_batch_refused(&drive, || vec![cancel(), fund()], &block_info);
+        assert_eq!(payer_balance(&drive, payer, None), balance_before);
+
+        // Batched apart, the debit and the opening both reach the payer.
+        for operation in [debit(), open()] {
+            drive
+                .apply_drive_operations(
+                    vec![operation],
+                    true,
+                    &block_info,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("apply");
+        }
+        assert_eq!(
+            payer_balance(&drive, payer, None),
+            balance_before - 3_000_000 - INITIAL_FUNDING
+        );
     }
 
     #[test]

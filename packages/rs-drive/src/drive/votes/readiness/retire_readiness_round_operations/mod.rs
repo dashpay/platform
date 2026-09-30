@@ -39,7 +39,8 @@ impl Drive {
     /// One retirement per applied batch: the pool credit is an absolute rewrite of the
     /// epoch's processing pool item, so two retirements in one batch would collapse too.
     /// `apply_drive_operations` refuses a batch holding more than one opening or
-    /// cancellation for that reason.
+    /// cancellation for that reason, and one that pairs an opening or cancellation with any
+    /// other identity balance or readiness fund write, which the settlement would overwrite.
     ///
     /// # Parameters
     ///

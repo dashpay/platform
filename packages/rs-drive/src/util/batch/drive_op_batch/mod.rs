@@ -393,6 +393,9 @@ impl DriveOperation<'_> {
     /// because no batch repeats their keys: the total system credits
     /// ([`SystemOperationType`]) and address balances ([`AddressFundsOperationType`]). Their
     /// docs say what keeps it so; a change that could repeat one must extend this merge first.
+    /// Readiness fund writes and the settlements of readiness round openings and cancellations
+    /// are not merged either: a batch that would repeat their keys is refused beforehand
+    /// (`refuse_conflicting_readiness_writes`).
     pub fn merge_balance_writes(operations: Vec<Self>) -> Result<Vec<Self>, Error> {
         // Most batches make at most one such write: nothing to merge, and no map to build.
         if operations
