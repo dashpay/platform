@@ -128,7 +128,7 @@ All refusals below are `InvalidContractStructure` (10231). The shape of the list
 - An immutable property may not hold a `deletableDocument` reference that a replace could not clear: a typed array of them, one inside an object, or one found by `findBy` whose key no function computes. A single reference by id held directly by the property is allowed, but only without a condition: once cleared, a replace the condition leaves free could set it to another document.
 - On a type whose documents can be transferred or traded, an immutable property may not hold a `contract` reference whose `contractRequirements` has an `owner` requirement: after a change of owner the new owner could neither meet it nor repoint it.
 - A listed property, with a condition or without, may not be one of the fields only moderators write ([`moderatorAbilities.changeFields`](moderator-abilities.md#changefields)).
-- A property listed with a condition is not fixed once written, so a `findBy` key, an `inList` list, or a value read beside a `findBy` function may not rely on it. See [References](refers-to.md).
+- A property listed with a condition is not fixed once written, so a `findBy` key, an `inList` list, a value read beside a `findBy` function, or a value another type indexes through a reference may not rely on it. See [References](refers-to.md).
 
 ### On update
 

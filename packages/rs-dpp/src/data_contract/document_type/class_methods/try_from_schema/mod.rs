@@ -45,6 +45,8 @@ mod v1;
 mod v2;
 mod v3;
 
+pub(in crate::data_contract) use v3::resolve_derived_index_properties;
+
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
 /// How a `$ref` to one of the contract's `$defs` starts: `#/$defs/<name>`.

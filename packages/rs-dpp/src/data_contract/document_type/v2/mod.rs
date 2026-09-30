@@ -1,9 +1,11 @@
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::{DocumentProperty, GeneratedFrom};
+use crate::data_contract::document_type::property::{
+    DocumentProperty, DocumentPropertyType, GeneratedFrom,
+};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
@@ -219,11 +221,24 @@ pub struct DocumentTypeV2 {
     /// has a contested index; the references that may point at such a type treat it as
     /// deletable.
     pub(in crate::data_contract) documents_ttl_seconds: Option<u32>,
+    /// The index properties whose values are read from the document a
+    /// reference of the type points at (`"<reference property>.<field>"`,
+    /// protocol version 14), by their names in the indexes. The documents never
+    /// store these values: Drive reads them from the referenced documents when
+    /// it writes or removes index entries. Empty on document types that declare
+    /// none and on those that predate them.
+    pub(in crate::data_contract) derived_index_properties: BTreeMap<String, DerivedIndexProperty>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {
     fn has_moderator_changeable_fields(&self) -> bool {
         !self.moderator_changeable_fields.is_empty()
+    }
+
+    fn derived_index_property_type(&self, name: &str) -> Option<&DocumentPropertyType> {
+        self.derived_index_properties
+            .get(name)
+            .and_then(|derived| derived.property_type.as_ref())
     }
 }
 
@@ -331,6 +346,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             creator_reference: None,
             property_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
+            derived_index_properties: BTreeMap::new(),
         }
     }
 }
@@ -388,6 +404,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             creator_reference: None,
             property_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
+            derived_index_properties: BTreeMap::new(),
         }
     }
 }

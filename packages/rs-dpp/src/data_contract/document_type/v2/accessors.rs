@@ -3,7 +3,7 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV2Getters, DocumentTypeV2Setters,
 };
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
@@ -314,6 +314,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
         &self.property_constraints
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        &self.derived_index_properties
     }
 }
 

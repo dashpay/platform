@@ -354,4 +354,5 @@ The registration errors name the declaration as `<documentType>.<property>`, `<d
 - [Elected Moderation](../data-model/contract-moderation.md#elected-moderation) for the moderation charters contract, the first user of most reference forms.
 - [Typed Arrays](typed-arrays.md), [System Properties](system-properties.md), [Mutability](mutability.md), [Deletion](deletion.md), [Time To Live (ttl)](ttl.md) and [Creation, Transfers and Trading](ownership-and-trading.md) for the keywords references read.
 - [distinctFrom](distinct-from.md), which requires an identifier to differ from another, and [encryptedFor](encrypted-for.md), which names the key references an encrypted property was made with.
+- [Values of Referenced Documents](derived-index-properties.md), where an index holds a value of the document a `permanentDocument` or `moderatedDocument` reference points at.
 - [Contract Keywords](../contract-keywords.md) for the conventions these pages use.

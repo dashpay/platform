@@ -385,11 +385,25 @@ impl DocumentTypeBasicMethods for DocumentType {
     fn has_moderator_changeable_fields(&self) -> bool {
         !self.moderator_changeable_fields().is_empty()
     }
+
+    fn derived_index_property_type(&self, name: &str) -> Option<&DocumentPropertyType> {
+        match self {
+            DocumentType::V0(_) | DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.derived_index_property_type(name),
+        }
+    }
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {
     fn has_moderator_changeable_fields(&self) -> bool {
         !self.moderator_changeable_fields().is_empty()
+    }
+
+    fn derived_index_property_type(&self, name: &str) -> Option<&DocumentPropertyType> {
+        match self {
+            DocumentTypeRef::V0(_) | DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.derived_index_property_type(name),
+        }
     }
 }
 
