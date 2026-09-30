@@ -801,6 +801,18 @@ mod tests {
             let decoded = StateTransition::deserialize_from_bytes_with_budget(&bytes, budget)
                 .expect("decode under a supported budget");
             assert_eq!(decoded, fixture);
+            // A trailing byte and a second whole transition are both bytes left over.
+            for suffix in [vec![0u8], bytes.clone()] {
+                let mut suffixed = bytes.clone();
+                suffixed.extend_from_slice(&suffix);
+                assert!(
+                    matches!(
+                        StateTransition::deserialize_from_bytes_with_budget(&suffixed, budget),
+                        Err(ProtocolError::PlatformDeserializationError(_))
+                    ),
+                    "{budget:?} must reject bytes left over after the transition"
+                );
+            }
         }
         for platform_version in PLATFORM_VERSIONS {
             if let Some(budget) = platform_version
