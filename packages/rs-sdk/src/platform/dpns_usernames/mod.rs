@@ -8,17 +8,20 @@ pub use dash_platform_queries::dpns_usernames::{
 pub use queries::DpnsUsername;
 
 use crate::platform::transition::put_document::PutDocument;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Document, FetchMany};
 use crate::{Error, Sdk};
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{DocumentV0, DocumentV0Getters};
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::debug;
@@ -68,6 +71,11 @@ pub struct RegisterDpnsNameInput<S: Signer<IdentityPublicKey>> {
     pub signer: S,
     /// Optional callback to be called with the preorder document result
     pub preorder_callback: Option<PreorderCallback>,
+    /// The most the registration is willing to pay into the contest a contested name joins.
+    /// From protocol version 14 the fund to join doubles once a contest holds 250 contenders
+    /// and again for every 50 more, and a registration is charged it. The identity must hold
+    /// what it states. `None` states the fund to join read just before the domain is submitted.
+    pub contest_fund: Option<Credits>,
 }
 
 /// Result of a DPNS name registration
@@ -186,6 +194,8 @@ impl Sdk {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         // Create domain document
@@ -234,6 +244,8 @@ impl Sdk {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         // Submit preorder document first
@@ -261,6 +273,13 @@ impl Sdk {
 
         // Submit domain document after preorder
         debug!(%identity_id, stage = "domain", "DPNS registration: submitting document");
+        let domain_settings = input.contest_fund.map(|contest_fund| PutSettings {
+            state_transition_creation_options: Some(StateTransitionCreationOptions {
+                contest_fund: Some(contest_fund),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
         let platform_domain_document = domain_document
             .put_to_platform_and_wait_for_response(
                 self,
@@ -269,7 +288,7 @@ impl Sdk {
                 input.identity_public_key,
                 None, // token payment info
                 &input.signer,
-                None, // settings
+                domain_settings,
             )
             .await
             .inspect_err(|error| {
@@ -332,6 +351,7 @@ impl Sdk {
                 },
             ],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             sub_queries: vec![],
             group_by: vec![],
             having: vec![],
@@ -393,6 +413,7 @@ impl Sdk {
                 },
             ],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             sub_queries: vec![],
             group_by: vec![],
             having: vec![],

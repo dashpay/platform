@@ -14,6 +14,21 @@ impl Drive {
     ///
     /// Returns the root hash and the page, empty when the group is absent or has no members of
     /// that kind after the cursor.
+    ///
+    /// # Parameters
+    ///
+    /// * `proof`: The proof, as `prove_contract_group_members` produced it.
+    /// * `contract_group_id`: The group's id.
+    /// * `query`: The kind of member and the cursor the proof was built for.
+    /// * `limit`: The page size the proof was built for.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((RootHash, ContractGroupMembersPage))` with the proof's root hash and the page,
+    ///   empty when the group is absent or has no more members of that kind.
+    /// * `Err(Error)` when the method version is unknown, the proof fails verification, or a
+    ///   proven member is malformed.
     pub fn verify_contract_group_members(
         proof: &[u8],
         contract_group_id: Identifier,

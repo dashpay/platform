@@ -235,7 +235,7 @@ fn should_repair_legacy_keep_history_delete_flag_at_protocol_14() {
         let repaired = parse_at_version(repair_schema(true, false), 14, true).unwrap();
         let result = old
             .as_ref()
-            .validate_update(repaired.as_ref(), 2, PlatformVersion::get(14).unwrap())
+            .validate_update(repaired.as_ref(), 2, PlatformVersion::latest())
             .expect("repair must reach a consensus result");
         assert!(result.is_valid(), "repair rejected: {:?}", result.errors);
     }
@@ -276,7 +276,7 @@ fn should_reject_other_delete_and_history_flag_changes_at_protocol_14() {
         let new = parse_at_version(repair_schema(new_flags.0, new_flags.1), 14, false).unwrap();
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), 2, PlatformVersion::get(14).unwrap())
+            .validate_update(new.as_ref(), 2, PlatformVersion::latest())
             .unwrap();
         assert!(
             !result.is_valid(),
@@ -304,7 +304,7 @@ fn should_reject_incompatible_properties_during_keep_history_repair() {
     .unwrap();
     let result = old
         .as_ref()
-        .validate_update(new.as_ref(), 2, PlatformVersion::get(14).unwrap())
+        .validate_update(new.as_ref(), 2, PlatformVersion::latest())
         .unwrap();
     assert!(
         !result.is_valid(),
@@ -320,7 +320,7 @@ fn should_reject_mutability_change_during_keep_history_repair() {
     let new = parse_at_version(schema, 14, true).unwrap();
     let result = old
         .as_ref()
-        .validate_update(new.as_ref(), 2, PlatformVersion::get(14).unwrap())
+        .validate_update(new.as_ref(), 2, PlatformVersion::latest())
         .unwrap();
     assert!(
         !result.is_valid(),
@@ -353,7 +353,7 @@ fn should_still_validate_property_named_can_be_deleted_during_keep_history_repai
     let new = parse_at_version(new_schema, 14, true).unwrap();
     let result = old
         .as_ref()
-        .validate_update(new.as_ref(), 2, PlatformVersion::get(14).unwrap())
+        .validate_update(new.as_ref(), 2, PlatformVersion::latest())
         .unwrap();
     assert!(
         !result.is_valid(),

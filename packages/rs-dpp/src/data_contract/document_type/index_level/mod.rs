@@ -7,7 +7,7 @@ use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::IndexCountability;
-use crate::data_contract::document_type::index::TimeRangeTransform;
+use crate::data_contract::document_type::index::{IndexBucketing, TimeRangeTransform};
 use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
@@ -134,6 +134,15 @@ pub struct IndexLevelTypeInfo {
     /// defines it instead of inferring it from a path height. `false` on
     /// every pre-PV14 contract and on every prefixed index.
     pub flat: bool,
+    /// The skip set of the terminating index
+    /// ([`Index::skip_if_absent_properties`]): the walkers write this
+    /// level's entry only for a document that carries every one of these
+    /// properties, and build a level only when some entry at or below it is
+    /// written. Carried here for the same reason as `terminal`: the walkers
+    /// only see the merged levels, and indexes with different skip sets can
+    /// share them. Empty on every index that does not skip, which is every
+    /// index of every pre-PV14 contract.
+    pub skip_if_absent_properties: Vec<String>,
 }
 
 impl IndexType {
@@ -154,14 +163,15 @@ pub struct IndexLevel {
     sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
     has_index_with_type: Option<IndexLevelTypeInfo>,
-    /// When set, the property reached at this level is a timestamp that is
-    /// bucketed into time ranges (see [`TimeRangeTransform`]). Only ever set
-    /// on a *first-property* node (a direct child of the root), because a
-    /// time-range transform must be its index's leading property. At
-    /// insert/delete/update time the document's timestamp for this property
-    /// is expanded into one key per overlapping range bucket instead of a
-    /// single key. Immutable after contract creation.
-    time_range: Option<TimeRangeTransform>,
+    /// When set, the property reached at this level is bucketed into
+    /// windows: a timestamp by a `timeRange` grid (see [`TimeRangeTransform`])
+    /// or an integer by an `integerRange` grid. Only ever set on a
+    /// *first-property* node (a direct child of the root), because a grid
+    /// must bucket its index's leading property. At insert/delete/update
+    /// time the document's value for this property is expanded into one key
+    /// per containing window instead of a single key. Immutable after
+    /// contract creation.
+    bucketing: Option<IndexBucketing>,
     /// When `true`, the property-name tree materialized at this level is the
     /// prefix-level Count ranking tree of exactly one index — the one whose
     /// [`Index::ranked_countable_at`] names this level's property. The
@@ -203,6 +213,13 @@ pub struct IndexLevel {
     /// on PV14+ contracts (the `at` grammar is rejected below meta-schema
     /// v3), so every historical index level derives bit-identically.
     count_exempt_branch: bool,
+    /// Whether an index with a non-empty skip set
+    /// ([`Index::skip_if_absent_properties`]) passes through or ends at this
+    /// level. The walkers only have to ask which indexes a document takes
+    /// part in below a level that is stamped: every other level has an entry
+    /// for every document. Never set on a contract without a skipIfAbsent
+    /// index, so every historical index level derives bit-identically.
+    skip_at_or_below: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -219,7 +236,13 @@ impl IndexLevel {
     /// The time-range transform applied to the property reached at this
     /// level, if any. Only set on first-property nodes.
     pub fn time_range(&self) -> Option<&TimeRangeTransform> {
-        self.time_range.as_ref()
+        self.bucketing.as_ref().and_then(IndexBucketing::time_range)
+    }
+
+    /// The grid (time or integer) applied to the property reached at this
+    /// level, if any. Only set on first-property nodes.
+    pub fn bucketing(&self) -> Option<&IndexBucketing> {
+        self.bucketing.as_ref()
     }
 
     /// Whether this level hosts a prefix-level Count ranking — see the field
@@ -240,6 +263,12 @@ impl IndexLevel {
     /// — see the field docs on [`IndexLevel`].
     pub fn count_exempt_branch(&self) -> bool {
         self.count_exempt_branch
+    }
+
+    /// Whether a skipIfAbsent index passes through or ends at this level —
+    /// see the field docs on [`IndexLevel`].
+    pub fn skip_at_or_below(&self) -> bool {
+        self.skip_at_or_below
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -343,10 +372,11 @@ impl IndexLevel {
         let mut index_level = IndexLevel {
             sub_index_levels: Default::default(),
             has_index_with_type: None,
-            time_range: None,
+            bucketing: None,
             ranked_count_grouping: false,
             count_propagating: false,
             count_exempt_branch: false,
+            skip_at_or_below: false,
             level_identifier: 0,
         };
 
@@ -387,10 +417,11 @@ impl IndexLevel {
                                 level_identifier: counter,
                                 sub_index_levels: Default::default(),
                                 has_index_with_type: None,
-                                time_range: None,
+                                bucketing: None,
                                 ranked_count_grouping: false,
                                 count_propagating: false,
                                 count_exempt_branch: false,
+                                skip_at_or_below: false,
                             }
                         });
                 if flat_level.has_index_with_type.is_some() {
@@ -427,16 +458,21 @@ impl IndexLevel {
                             level_identifier: counter,
                             sub_index_levels: Default::default(),
                             has_index_with_type: None,
-                            time_range: None,
+                            bucketing: None,
                             ranked_count_grouping: false,
                             count_propagating: false,
                             count_exempt_branch: false,
+                            skip_at_or_below: false,
                         }
                     });
 
+                if !index.skip_if_absent_properties.is_empty() {
+                    current_level.skip_at_or_below = true;
+                }
+
                 if position == 0 {
-                    if let Some(transform) = &index.time_range {
-                        current_level.time_range = Some(transform.clone());
+                    if let Some(bucketing) = index.bucketing() {
+                        current_level.bucketing = Some(bucketing);
                     }
                 }
 
@@ -535,6 +571,7 @@ impl IndexLevel {
             // document type: the one layout whose prune boundary is the
             // level's `0` bucket rather than the document type.
             flat: index.is_flat(),
+            skip_if_absent_properties: index.skip_if_absent_properties.clone(),
         }
     }
 
@@ -657,8 +694,8 @@ impl IndexLevel {
             );
         }
 
-        // A time-range transform determines how many index entries each
-        // document produces and under which bucket keys. Changing it after
+        // A time-range or integer-range grid determines how many index
+        // entries each document produces and under which bucket keys. Changing it after
         // creation would leave already-stored documents indexed under stale
         // buckets, so it is immutable — reject any change.
         if let Some(time_range_change_path) = self.find_first_time_range_change(new_indices) {
@@ -719,9 +756,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -758,9 +797,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![
@@ -782,9 +823,11 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
             Index {
                 name: "test2".to_string(),
@@ -804,9 +847,11 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
         ];
 
@@ -852,9 +897,11 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
             Index {
                 name: "test2".to_string(),
@@ -874,9 +921,11 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
         ];
 
@@ -898,9 +947,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -944,9 +995,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -973,9 +1026,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1025,9 +1080,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1048,9 +1105,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1094,9 +1153,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1117,9 +1178,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1163,9 +1226,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1186,9 +1251,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1232,9 +1299,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1278,9 +1347,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1301,9 +1372,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1347,9 +1420,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1370,9 +1445,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1422,9 +1499,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1451,9 +1530,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1503,9 +1584,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1532,9 +1615,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1592,9 +1677,11 @@ mod tests {
             ranked_summable,
             ranked_averageable,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -1658,9 +1745,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -1731,9 +1820,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -2130,9 +2221,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let mut new_indices = old_indices.clone();
@@ -2183,9 +2276,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {

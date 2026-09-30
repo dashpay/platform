@@ -146,6 +146,8 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding;
 @class GetDocumentsRequest_HavingAggregate;
 @class GetDocumentsRequest_HavingClause;
+@class GetDocumentsRequest_IntegerRangeSelection;
+@class GetDocumentsRequest_IntegerRangeSelection_Grid;
 @class GetDocumentsRequest_OrderClause;
 @class GetDocumentsRequest_TimeRangeSelection;
 @class GetDocumentsRequest_TimeRangeSelection_Grid;
@@ -489,6 +491,18 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
    * meta-schema and `drive::query::resolve_time_range_bucket_clause`.
    **/
   GetDocumentsRequest_WhereOperator_InTimeRange = 11,
+
+  /**
+   * Integer-range window selection (v1 only). `field` names an integer
+   * property covered by an `integerRange` index. The operand is
+   * `WhereClause.integer_range` (an `IntegerRangeSelection`);
+   * `WhereClause.value` must be unset. The window is named by its
+   * start, so the server and the verifier both resolve it from the
+   * query alone to a window-start equality — an ordinary index/count
+   * proof. See `integerRange` in the document meta-schema and
+   * `drive::query::resolve_integer_range_bucket_clause`.
+   **/
+  GetDocumentsRequest_WhereOperator_InIntegerRange = 12,
 };
 
 GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);
@@ -3409,7 +3423,7 @@ typedef GPB_ENUM(GetContractDocumentRemovalsRequest_Version_OneOfCase) {
 
 /**
  * The records of the documents a contract's moderators deleted, within one
- * document type whose documents they may delete (`canBeDeletedByModerators`):
+ * document type whose documents they may delete (`moderatorAbilities.delete`):
  * the ones of the document ids named, or one page in document id order.
  **/
 GPB_FINAL @interface GetContractDocumentRemovalsRequest : GPBMessage
@@ -4567,6 +4581,63 @@ GPB_FINAL @interface GetDocumentsRequest_TimeRangeSelection_Grid : GPBMessage
 
 @end
 
+#pragma mark - GetDocumentsRequest_IntegerRangeSelection
+
+typedef GPB_ENUM(GetDocumentsRequest_IntegerRangeSelection_FieldNumber) {
+  GetDocumentsRequest_IntegerRangeSelection_FieldNumber_Start = 1,
+  GetDocumentsRequest_IntegerRangeSelection_FieldNumber_Grid = 2,
+};
+
+/**
+ * Operand of an `IN_INTEGER_RANGE` where clause: which window of an
+ * `integerRange` grid the query selects, named by its start.
+ *
+ * `start` is required and must be a window start of the grid:
+ * `phase + k * step` within the property's integer type, or the
+ * type's minimum (0 for a property with a non-negative minimum), which
+ * starts the bottom window when the grid clamps it. An unaligned start
+ * is rejected rather than snapped. It rides as a `DocumentFieldValue`
+ * (`int64_value` or `uint64_value`) and is coerced through the schema
+ * like any value of the field. A window with no documents is a
+ * provable empty answer, not an error.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_IntegerRangeSelection : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *start;
+/** Test to see if @c start has been set. */
+@property(nonatomic, readwrite) BOOL hasStart;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_IntegerRangeSelection_Grid *grid;
+/** Test to see if @c grid has been set. */
+@property(nonatomic, readwrite) BOOL hasGrid;
+
+@end
+
+#pragma mark - GetDocumentsRequest_IntegerRangeSelection_Grid
+
+typedef GPB_ENUM(GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber) {
+  GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Range = 1,
+  GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Step = 2,
+  GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Phase = 3,
+};
+
+/**
+ * Names one of the field's declared grids, verbatim from the
+ * contract's `integerRange` declaration. Required when more than one
+ * grid buckets the field; optional while exactly one does. A zero
+ * `phase` is the proto3 default, matching the contract grammar where
+ * `phase` is an omittable key.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_IntegerRangeSelection_Grid : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t range;
+
+@property(nonatomic, readwrite) uint64_t step;
+
+@property(nonatomic, readwrite) uint64_t phase;
+
+@end
+
 #pragma mark - GetDocumentsRequest_WhereClause
 
 typedef GPB_ENUM(GetDocumentsRequest_WhereClause_FieldNumber) {
@@ -4574,6 +4645,7 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereClause_FieldNumber) {
   GetDocumentsRequest_WhereClause_FieldNumber_Operator_p = 2,
   GetDocumentsRequest_WhereClause_FieldNumber_Value = 3,
   GetDocumentsRequest_WhereClause_FieldNumber_TimeRange = 4,
+  GetDocumentsRequest_WhereClause_FieldNumber_IntegerRange = 5,
 };
 
 /**
@@ -4587,9 +4659,10 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereClause_FieldNumber) {
  * triples — only the envelope differs.
  *
  * Exactly one operand field is set, keyed by the operator:
- * `operator = IN_TIME_RANGE` carries its operand in `time_range`
- * (`value` must be unset); every other operator carries `value`
- * (`time_range` must be unset). Either mismatch is rejected.
+ * `operator = IN_TIME_RANGE` carries its operand in `time_range`,
+ * `operator = IN_INTEGER_RANGE` in `integer_range` (`value` unset in
+ * both); every other operator carries `value` (`time_range` and
+ * `integer_range` unset). Any mismatch is rejected.
  **/
 GPB_FINAL @interface GetDocumentsRequest_WhereClause : GPBMessage
 
@@ -4604,6 +4677,10 @@ GPB_FINAL @interface GetDocumentsRequest_WhereClause : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_TimeRangeSelection *timeRange;
 /** Test to see if @c timeRange has been set. */
 @property(nonatomic, readwrite) BOOL hasTimeRange;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_IntegerRangeSelection *integerRange;
+/** Test to see if @c integerRange has been set. */
+@property(nonatomic, readwrite) BOOL hasIntegerRange;
 
 @end
 

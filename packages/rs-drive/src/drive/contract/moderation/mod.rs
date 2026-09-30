@@ -19,7 +19,7 @@
 //!
 //! ```text
 //!         [16] document removals
-//!         └── <document type name>            (a type that sets `canBeDeletedByModerators`)
+//!         └── <document type name>            (a type that sets `moderatorAbilities.delete`)
 //!             └── <document id> -> Item(document owner id ‖ moderator id ‖ removed at ‖ reason)
 //! ```
 //!

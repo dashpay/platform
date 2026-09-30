@@ -14,7 +14,7 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::document_reference_size;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
-use crate::drive::document::index_only_entry_payload_max_size;
+use crate::drive::document::{index_only_entry_payload_max_size, INDEX_ONLY_ROW_COMMITMENT_SIZE};
 use crate::error::drive::DriveError;
 use crate::util::storage_flags::StorageFlags;
 
@@ -78,11 +78,9 @@ impl Drive {
                 .iter()
                 .map(|key_info| match key_info {
                     KnownKey(key) => Ok(key.clone()),
-                    _ => Err(Error::Drive(
-                        crate::error::drive::DriveError::CorruptedCodeExecution(
-                            "expired-entry skip is stateful-only; its path must be known",
-                        ),
-                    )),
+                    _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "expired-entry skip is stateful-only; its path must be known",
+                    ))),
                 })
                 .collect::<Result<_, _>>()?;
             // The layouts that store the reference inside a `[0]` subtree
@@ -134,7 +132,7 @@ impl Drive {
             let member_key_max_size =
                 index_only_terminal_max_key_size(document_type, terminal, platform_version)?;
             // The stored item: the commitment plus the type's entry payload.
-            let entry_value_size = crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE
+            let entry_value_size = INDEX_ONLY_ROW_COMMITMENT_SIZE
                 + index_only_entry_payload_max_size(document_type, platform_version)?;
 
             // Sum-bearing entries (`ItemWithSumItem`) carry the i64 sum

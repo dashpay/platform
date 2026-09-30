@@ -2,6 +2,8 @@ mod advanced_structure;
 mod basic_structure;
 #[cfg(test)]
 mod contract_group_tests;
+#[cfg(test)]
+mod contract_structure_error_tests;
 mod identity_nonce;
 mod state;
 
@@ -5685,6 +5687,41 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_reject_a_permanent_reference_to_a_type_whose_documents_expire() {
+            // The target forbids its owners to delete, but declares a `ttl`: the platform
+            // deletes its documents, so a permanentDocument reference could dangle.
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-expiring.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeDeletableError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_a_deletable_reference_to_a_type_whose_documents_expire() {
+            // `canBeDeleted: false` alone would refuse a deletableDocument reference; the
+            // `ttl` makes the target deletable, so it is accepted.
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc-registration-expiring.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
         async fn should_reject_contract_referencing_unknown_own_document_type() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-unknown-type.json",
@@ -5704,9 +5741,9 @@ mod tests {
 
         #[tokio::test]
         async fn should_register_contract_with_owner_references() {
-            // `ownerRefersTo` on three types: a lookup into a permanent type of
-            // the same contract, the same with a propertyAgreement whose
-            // referring side is the writer (`$ownerId`, the reference's own
+            // `ownerRefersTo` on three types: a findBy into a permanent type of
+            // the same contract, the same with a where entry whose
+            // referring value is the writer (`$ownerId`, the reference's own
             // value), and an identity target; `creatorRefersTo` on two
             // transferable types, a lookup and an identity target
             let result = run_contract_create(
@@ -5723,8 +5760,8 @@ mod tests {
         #[tokio::test]
         async fn should_register_contract_with_reference_expressions() {
             // `anyOf`s of two lookups on a property and on the elements of a
-            // typed array, of an identity and a document id, and of two lookups
-            // one of which carries a propertyAgreement, an `allOf`, and nested
+            // typed array, of an identity and a document id, and of two findBy
+            // leaves one of which carries a where, an `allOf`, and nested
             // expressions down to the depth limit: every leaf is checked as it
             // would be declared alone
             let result = run_contract_create(
@@ -5842,7 +5879,7 @@ mod tests {
         async fn should_register_contract_with_deletable_document_references() {
             // A deletableDocument reference targets a document type that
             // allows deletion (`draft`), which a permanentDocument one
-            // refuses; its propertyAgreement and writer gate declarations
+            // refuses; its where and writer gate declarations
             // are validated like a permanentDocument reference's
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc.json",
@@ -5942,10 +5979,10 @@ mod tests {
             );
         }
 
-        /// An agreement is checked at write time by comparing index key
-        /// encodings, which a typed array does not have, so one between two
-        /// typed arrays of the same element type is refused at registration
-        /// rather than refusing every write that carries them.
+        /// An agreement is checked at write time by comparing single values,
+        /// which a typed array is not, so one between two typed arrays of the
+        /// same element type is refused at registration rather than refusing
+        /// every write that carries them.
         #[tokio::test]
         async fn should_reject_agreement_on_typed_array_properties() {
             let result = run_contract_create(
@@ -5961,6 +5998,21 @@ mod tests {
                     ),
                     ..
                 } if error.reason().contains("not typed arrays")
+            );
+        }
+
+        /// No index bounds these agreement properties, so their values may be
+        /// longer than a tree key: the pair compares values, not keys.
+        #[tokio::test]
+        async fn should_register_an_agreement_on_strings_longer_than_a_tree_key() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-long-values.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
         }
 
@@ -5995,6 +6047,48 @@ mod tests {
         async fn should_register_agreement_on_a_transient_referring_property() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-transient-referring.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// A preallocated index keyed through an agreement pair makes the
+        /// referenced property's value a tree key when a referenced document is
+        /// created. A `post.hashtag` of up to 280 characters can take 1,120
+        /// bytes, past the 255 a tree key holds, so every post carrying a long
+        /// one could never be created: the contract is refused instead.
+        #[tokio::test]
+        async fn should_reject_an_agreement_keying_a_preallocated_index_by_a_property_wider_than_a_tree_key(
+        ) {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-preallocated-too-wide.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.referring_property() == "hashtag"
+                    && error.reason().contains("preallocated index byHashtagPost")
+                    && error.reason().contains("up to 1120 bytes")
+            );
+        }
+
+        /// At most 63 characters, 252 bytes: every `post.hashtag` fits a tree
+        /// key.
+        #[tokio::test]
+        async fn should_register_an_agreement_keying_a_preallocated_index_by_a_property_that_fits_a_tree_key(
+        ) {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-preallocated-fits.json",
             )
             .await;
 
@@ -6449,7 +6543,7 @@ mod tests {
 
         #[tokio::test]
         async fn should_reject_an_owner_lookup_into_another_contract_at_its_owner_path() {
-            // `joinRequest` of the lookup contract has no `byMessage` index
+            // `joinRequest` of the lookup contract has no unique index over `message`
             let result = run_contract_create_with_foreign(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-foreign-lookup-invalid.json",
                 LOOKUP_CONTRACT_PATH,
@@ -6463,7 +6557,7 @@ mod tests {
                         StateError::ReferencedDocumentLookupInvalidError(e)
                     ),
                     ..
-                } if e.path() == "note.$ownerId" && e.index() == "byMessage"
+                } if e.path() == "note.$ownerId" && e.find_by() == "message"
             );
         }
 
@@ -6482,7 +6576,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn should_reject_a_lookup_naming_an_index_another_contract_does_not_have() {
+        async fn should_reject_find_by_naming_no_unique_index_another_contract_has() {
             // Only registration sees the other contract's indexes: the contract
             // parse cannot, so this is a state error
             let result = run_contract_create_with_foreign(
@@ -6499,8 +6593,8 @@ mod tests {
                     ),
                     ..
                 } if e.path() == "vote.voterId"
-                    && e.index() == "byMessage"
-                    && e.reason().contains("has no index named \"byMessage\"")
+                    && e.find_by() == "message"
+                    && e.reason().contains("has no unique index over exactly (message)")
             );
         }
 
@@ -6521,7 +6615,7 @@ mod tests {
                         DataContractError::InvalidContractStructure(message)
                     )),
                     ..
-                } if message.contains("index \"byCharter\" of \"ballot\" is not unique")
+                } if message.contains("index \"byCharter\" of \"ballot\" over (submittedCharterId) is not unique")
             );
         }
 
@@ -6587,7 +6681,7 @@ mod tests {
                     )),
                     ..
                 } if message.contains(
-                    "refersTo listElement: \"members\" of \"electedCharter\" can be changed by a replace"
+                    "refersTo inList: \"members\" of \"electedCharter\" can be changed by a replace"
                 )
             );
         }

@@ -1,5 +1,9 @@
 use crate::asset_lock::reduced_asset_lock_value::v0::AssetLockValueV0;
 use crate::fee::Credits;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -40,10 +44,10 @@ pub enum AssetLockValue {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for AssetLockValue {}
+impl JsonConvertible for AssetLockValue {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for AssetLockValue {}
+impl ValueConvertible for AssetLockValue {}
 
 impl AssetLockValue {
     pub fn new(

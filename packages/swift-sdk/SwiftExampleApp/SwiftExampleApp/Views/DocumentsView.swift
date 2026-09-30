@@ -1498,6 +1498,7 @@ struct CreateDocumentView: View {
 
     private struct SubmitError: Identifiable {
         let id = UUID()
+        var title = "Create failed"
         let message: String
     }
 
@@ -1532,7 +1533,7 @@ struct CreateDocumentView: View {
             .interactiveDismissDisabled(isSubmitting)
             .alert(item: $submitError) { err in
                 Alert(
-                    title: Text("Create failed"),
+                    title: Text(err.title),
                     message: Text(err.message),
                     dismissButton: .default(Text("OK"))
                 )
@@ -1764,6 +1765,21 @@ struct CreateDocumentView: View {
             return
         }
 
+        // Protocol version 14: consensus refuses a document breaking one of
+        // its type's propertyConstraints rules (error 10422) and still charges
+        // for the transition, so judge it first with the same Rust check.
+        if let violation = propertyConstraintViolation(
+            of: docType,
+            propertiesJSON: propertiesJSON,
+            ownerId: ownerIdentity.identityId
+        ) {
+            submitError = .init(
+                title: "Not sent: a property constraint is broken",
+                message: "Rule: \(violation.rule)\nViolation: \(violation.violation.name)\nReason: \(violation.message)"
+            )
+            return
+        }
+
         isSubmitting = true
         // Fresh `KeychainSigner` per submit pass, same as
         // `TransferCreditsView` / `RegisterNameView`: the trampoline
@@ -1814,6 +1830,30 @@ struct CreateDocumentView: View {
                     self.isSubmitting = false
                 }
             }
+        }
+    }
+
+    /// The first propertyConstraints rule the document would break, or `nil`
+    /// when it meets every rule judged or has none (the device clock stands in
+    /// for the block time, and a rule reading a block height or a `countOf` or
+    /// `sumOf` total is not judged).
+    /// A check that cannot run (no SDK, no stored contract serialization)
+    /// blocks nothing: consensus judges the document either way.
+    private func propertyConstraintViolation(
+        of docType: PersistentDocumentType,
+        propertiesJSON: String,
+        ownerId: Identifier
+    ) -> PropertyConstraintViolation? {
+        guard docType.declaresPropertyConstraints, let sdk = appState.sdk else { return nil }
+        do {
+            return try docType.propertyConstraintViolation(
+                propertiesJSON: propertiesJSON,
+                ownerId: ownerId,
+                using: sdk
+            )
+        } catch {
+            print("⚠️ propertyConstraints pre-check could not run: \(error.localizedDescription)")
+            return nil
         }
     }
 

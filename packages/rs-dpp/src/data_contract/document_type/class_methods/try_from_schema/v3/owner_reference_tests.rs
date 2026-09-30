@@ -43,16 +43,14 @@ fn identifier(position: u32) -> serde_json::Value {
 }
 
 /// The moderation charters' rule: the writer must be the `memberId` of an
-/// `addedModerator` for the document's `electedCharterId`.
-fn added_moderator_lookup() -> serde_json::Value {
-    json!({
-        "index": "byElectedCharterMember",
-        "keys": { "electedCharterId": "electedCharterId", "memberId": "." }
-    })
+/// `addedModerator` for the document's `electedCharterId`, found through its
+/// unique index over (`electedCharterId`, `memberId`).
+fn added_moderator_find_by() -> serde_json::Value {
+    json!({ "electedCharterId": "electedCharterId", "memberId": "." })
 }
 
-fn permanent_added_moderator(lookup: serde_json::Value) -> serde_json::Value {
-    json!({ "type": "permanentDocument", "documentType": "addedModerator", "lookup": lookup })
+fn permanent_added_moderator(find_by: serde_json::Value) -> serde_json::Value {
+    json!({ "type": "permanentDocument", "documentType": "addedModerator", "findBy": find_by })
 }
 
 /// A contract with a permanent, immutable `addedModerator` type (unique on
@@ -200,7 +198,6 @@ fn assert_refused(result: Result<DataContract, ProtocolError>, fragment: &str) {
 #[test]
 fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
     let lookup = DocumentReferenceLookup {
-        index: "byElectedCharterMember".to_string(),
         keys: BTreeMap::from([
             (
                 "electedCharterId".to_string(),
@@ -208,6 +205,8 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
             ),
             ("memberId".to_string(), LookupKeySource::ReferenceValue),
         ]),
+        minimum_age_blocks: None,
+        consume: false,
     };
     let agreement = BTreeMap::from([("$ownerId".to_string(), "memberId".to_string())]);
 
@@ -217,7 +216,7 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
             DocumentPropertyReferenceTarget::Identity,
         ),
         (
-            permanent_added_moderator(added_moderator_lookup()),
+            permanent_added_moderator(added_moderator_find_by()),
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "addedModerator".to_string(),
@@ -231,8 +230,8 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
             json!({
                 "type": "permanentDocument",
                 "documentType": "addedModerator",
-                "propertyAgreement": { "$ownerId": "memberId" },
-                "lookup": added_moderator_lookup()
+                "findBy": added_moderator_find_by(),
+                "where": { "memberId": "$ownerId" }
             }),
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
@@ -303,11 +302,11 @@ fn should_refuse_an_owner_or_creator_reference_to_a_target_its_identity_can_neve
             ),
             (
                 json!({ "type": "permanentDocument", "documentType": "addedModerator" }),
-                "takes a document reference only with a lookup",
+                "takes a document reference only with findBy",
             ),
             (
                 json!({ "type": "deletableDocument", "documentType": "post" }),
-                "takes a document reference only with a lookup",
+                "takes a document reference only with findBy",
             ),
         ] {
             let schema = contract_declaring(declaration.clone());
@@ -348,20 +347,17 @@ fn should_refuse_an_owner_reference_on_a_type_whose_documents_can_change_owner()
 
 #[test]
 fn should_refuse_an_owner_lookup_without_the_reference_value() {
-    // `"$ownerId"` names the writer too, but a lookup still fills exactly one
-    // key part from `"."`
-    for keys in [
+    // `"$ownerId"` names the writer too, but findBy still reads exactly one
+    // part from `"."`
+    for find_by in [
         json!({ "electedCharterId": "electedCharterId", "memberId": "$ownerId" }),
         json!({ "electedCharterId": ".", "memberId": "." }),
     ] {
-        let schema = charter_contract(permanent_added_moderator(json!({
-            "index": "byElectedCharterMember",
-            "keys": keys
-        })));
+        let schema = charter_contract(permanent_added_moderator(find_by));
         for full_validation in [true, false] {
             assert_refused(
                 contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
-                "must fill exactly one index property from \".\"",
+                "must read \".\", the reference's own value, exactly once, found",
             );
         }
     }
@@ -370,10 +366,9 @@ fn should_refuse_an_owner_lookup_without_the_reference_value() {
 #[test]
 fn should_check_the_referring_side_of_an_owner_lookup_on_every_parse() {
     // A key part read from an optional property could be missing
-    let optional_source = charter_contract(permanent_added_moderator(json!({
-        "index": "byElectedCharterMember",
-        "keys": { "electedCharterId": "note", "memberId": "." }
-    })));
+    let optional_source = charter_contract(permanent_added_moderator(
+        json!({ "electedCharterId": "note", "memberId": "." }),
+    ));
     for full_validation in [true, false] {
         assert_refused(
             contract_on(
@@ -381,17 +376,16 @@ fn should_check_the_referring_side_of_an_owner_lookup_on_every_parse() {
                 full_validation,
                 PlatformVersion::latest(),
             ),
-            "document type \"resignationRequest\" ownerRefersTo lookup: key \
+            "document type \"resignationRequest\" ownerRefersTo findBy: findBy \
              \"electedCharterId\" reads \"note\", which is not required",
         );
     }
 
     // `"$ownerId"` is the writer, like `"."`, and passes the owner rule of a
     // lookup's referring side: the type cannot change owner
-    let writer_source = contract(charter_contract(permanent_added_moderator(json!({
-        "index": "byOwnerMember",
-        "keys": { "$ownerId": "$ownerId", "memberId": "." }
-    }))))
+    let writer_source = contract(charter_contract(permanent_added_moderator(
+        json!({ "$ownerId": "$ownerId", "memberId": "." }),
+    )))
     .expect("an owner lookup may read the writer");
     assert!(matches!(
         owner_reference(&writer_source),
@@ -400,27 +394,20 @@ fn should_check_the_referring_side_of_an_owner_lookup_on_every_parse() {
 }
 
 #[test]
-fn should_check_an_owner_lookup_into_a_type_of_the_same_contract() {
-    for (index, fragment) in [
+fn should_check_an_owner_find_by_into_a_type_of_the_same_contract() {
+    for (find_by, fragment) in [
         (
-            "byNothing",
-            "document type \"resignationRequest\" ownerRefersTo lookup: the referenced document \
-             type \"addedModerator\" has no index named \"byNothing\"",
+            json!({ "anything": "." }),
+            "document type \"resignationRequest\" ownerRefersTo findBy: \"addedModerator\" has \
+             no unique index over exactly (anything)",
         ),
         (
-            "byMember",
-            "document type \"resignationRequest\" ownerRefersTo lookup: index \"byMember\" of \
-             \"addedModerator\" is not unique",
+            json!({ "memberId": "." }),
+            "document type \"resignationRequest\" ownerRefersTo findBy: index \"byMember\" of \
+             \"addedModerator\" over (memberId) is not unique",
         ),
     ] {
-        let keys = if index == "byMember" {
-            json!({ "memberId": "." })
-        } else {
-            json!({ "anything": "." })
-        };
-        let schema = charter_contract(permanent_added_moderator(
-            json!({ "index": index, "keys": keys }),
-        ));
+        let schema = charter_contract(permanent_added_moderator(find_by));
         assert_refused(contract(schema.clone()), fragment);
         // A contract read back from state passed the check when it was
         // registered
@@ -476,7 +463,7 @@ fn should_count_the_owner_or_creator_reference_against_the_references_a_document
 
 #[test]
 fn should_refuse_owner_refers_to_before_protocol_version_14_and_read_it_at_14() {
-    let schema = charter_contract(permanent_added_moderator(added_moderator_lookup()));
+    let schema = charter_contract(permanent_added_moderator(added_moderator_find_by()));
     let platform_version_13 = PlatformVersion::get(13).expect("platform version 13 should exist");
 
     // Meta-schema v2 closes the document type level, so a registering parse
@@ -507,7 +494,7 @@ fn should_round_trip_a_contract_through_platform_serialization_with_and_without_
     for owner_refers_to in [
         serde_json::Value::Null,
         json!({ "type": "identity" }),
-        permanent_added_moderator(added_moderator_lookup()),
+        permanent_added_moderator(added_moderator_find_by()),
     ] {
         let original = contract(charter_contract(owner_refers_to.clone())).expect("parses");
         let bytes = original
@@ -544,7 +531,7 @@ fn should_round_trip_a_contract_through_platform_serialization_with_and_without_
 fn should_refuse_adding_removing_or_changing_an_owner_reference_on_update() {
     let platform_version = PlatformVersion::latest();
     let identity = json!({ "type": "identity" });
-    let lookup = permanent_added_moderator(added_moderator_lookup());
+    let lookup = permanent_added_moderator(added_moderator_find_by());
 
     for (before, after, operation) in [
         (serde_json::Value::Null, identity.clone(), "add"),
@@ -588,7 +575,6 @@ fn should_refuse_adding_removing_or_changing_an_owner_reference_on_update() {
 #[test]
 fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
     let lookup = DocumentReferenceLookup {
-        index: "byElectedCharterMember".to_string(),
         keys: BTreeMap::from([
             (
                 "electedCharterId".to_string(),
@@ -596,6 +582,8 @@ fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
             ),
             ("memberId".to_string(), LookupKeySource::ReferenceValue),
         ]),
+        minimum_age_blocks: None,
+        consume: false,
     };
     for keyword in [("transferable", 1), ("tradeMode", 1)] {
         for (creator_refers_to, expected) in [
@@ -604,7 +592,7 @@ fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
                 DocumentPropertyReferenceTarget::Identity,
             ),
             (
-                permanent_added_moderator(added_moderator_lookup()),
+                permanent_added_moderator(added_moderator_find_by()),
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                     contract_id: None,
                     document_type_name: "addedModerator".to_string(),
@@ -669,18 +657,17 @@ fn should_refuse_a_creator_reference_on_a_type_that_records_no_creator_ids() {
 #[test]
 fn should_refuse_a_creator_lookup_reading_the_owner() {
     assert_refused(
-        contract(creator_contract(permanent_added_moderator(json!({
-            "index": "byOwnerMember",
-            "keys": { "$ownerId": "$ownerId", "memberId": "." }
-        })))),
-        "document type \"resignationRequest\" creatorRefersTo lookup: key \"$ownerId\" reads \
-         \"$ownerId\"",
+        contract(creator_contract(permanent_added_moderator(
+            json!({ "$ownerId": "$ownerId", "memberId": "." }),
+        ))),
+        "document type \"resignationRequest\" creatorRefersTo findBy: findBy \"$ownerId\" \
+         reads \"$ownerId\"",
     );
 }
 
 #[test]
 fn should_refuse_creator_refers_to_before_protocol_version_14_and_read_it_at_14() {
-    let schema = creator_contract(permanent_added_moderator(added_moderator_lookup()));
+    let schema = creator_contract(permanent_added_moderator(added_moderator_find_by()));
     let platform_version_13 = PlatformVersion::get(13).expect("platform version 13 should exist");
 
     contract_on(schema.clone(), true, platform_version_13)
@@ -699,7 +686,7 @@ fn should_refuse_creator_refers_to_before_protocol_version_14_and_read_it_at_14(
 #[test]
 fn should_round_trip_a_creator_reference_and_refuse_changing_it_on_update() {
     let platform_version = PlatformVersion::latest();
-    let lookup = permanent_added_moderator(added_moderator_lookup());
+    let lookup = permanent_added_moderator(added_moderator_find_by());
 
     let original = contract(creator_contract(lookup.clone())).expect("parses");
     let bytes = original
@@ -749,12 +736,10 @@ fn should_round_trip_a_creator_reference_and_refuse_changing_it_on_update() {
 /// and a leaf by id is refused as it is alone, named by where it sits.
 #[test]
 fn should_parse_an_owner_or_creator_reference_expression_of_identity_capable_leaves() {
-    let owner_lookup = permanent_added_moderator(json!({
-        "index": "byOwnerMember",
-        "keys": { "$ownerId": "$ownerId", "memberId": "." }
-    }));
+    let owner_lookup =
+        permanent_added_moderator(json!({ "$ownerId": "$ownerId", "memberId": "." }));
     let expression = json!({
-        "anyOf": [permanent_added_moderator(added_moderator_lookup()), owner_lookup]
+        "anyOf": [permanent_added_moderator(added_moderator_find_by()), owner_lookup]
     });
     for full_validation in [true, false] {
         let parsed = contract_on(
@@ -770,7 +755,7 @@ fn should_parse_an_owner_or_creator_reference_expression_of_identity_capable_lea
     let creator_expression = json!({
         "allOf": [
             { "type": "identity" },
-            permanent_added_moderator(added_moderator_lookup())
+            permanent_added_moderator(added_moderator_find_by())
         ]
     });
     let parsed = contract(creator_contract(creator_expression)).expect("parses");
@@ -781,7 +766,7 @@ fn should_parse_an_owner_or_creator_reference_expression_of_identity_capable_lea
 
     let with_leaf_by_id = json!({
         "anyOf": [
-            permanent_added_moderator(added_moderator_lookup()),
+            permanent_added_moderator(added_moderator_find_by()),
             { "type": "permanentDocument", "documentType": "addedModerator" }
         ]
     });
@@ -792,7 +777,7 @@ fn should_parse_an_owner_or_creator_reference_expression_of_identity_capable_lea
                 full_validation,
                 PlatformVersion::latest(),
             ),
-            "ownerRefersTo anyOf[1] takes a document reference only with a lookup",
+            "ownerRefersTo anyOf[1] takes a document reference only with findBy",
         );
     }
 }
@@ -801,13 +786,14 @@ fn should_parse_an_owner_or_creator_reference_expression_of_identity_capable_lea
 /// deleting its addition, so the writer's membership may be a deletable document that exists
 /// now. `ownerRefersTo` takes a `deletableDocument` found through a lookup, alone or as an
 /// operand; `creatorRefersTo` does not, since the creator's document could be deleted after
-/// a transfer, leaving the new owner unable to replace theirs.
+/// a transfer, leaving the new owner unable to replace theirs, unless the lookup's key is
+/// computed, which is judged on the create alone (see `commit_reveal_lookup_tests`).
 #[test]
 fn should_parse_an_owner_reference_to_a_deletable_document_found_through_a_lookup() {
     let deletable_added_moderator = json!({
         "type": "deletableDocument",
         "documentType": "addedModerator",
-        "lookup": added_moderator_lookup()
+        "findBy": added_moderator_find_by()
     });
     let with_deletable_additions = |mut schema: serde_json::Value| {
         schema["documentSchemas"]["addedModerator"]["canBeDeleted"] = json!(true);
@@ -839,18 +825,16 @@ fn should_parse_an_owner_reference_to_a_deletable_document_found_through_a_looku
         }
     }
 
-    // The meta-schema refuses it on the creator at registration, and the parser on the
-    // stored path, alone or as an operand
+    // The parser refuses it on the creator, at registration and on the stored path, alone
+    // or as an operand: the meta-schema admits a deletableDocument there for a computed
+    // lookup key, which only the parser tells apart
     let schema = with_deletable_additions(creator_contract(deletable_added_moderator.clone()));
-    let error = contract(schema.clone()).expect_err("the meta-schema should refuse it");
-    assert!(
-        is_json_schema_error(&error),
-        "expected a meta-schema error, got {error}"
-    );
-    assert_refused(
-        contract_on(schema, false, PlatformVersion::latest()),
-        "creatorRefersTo does not take a deletableDocument reference",
-    );
+    for full_validation in [true, false] {
+        assert_refused(
+            contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
+            "creatorRefersTo does not take a deletableDocument reference",
+        );
+    }
     assert_refused(
         contract_on(
             with_deletable_additions(creator_contract(json!({

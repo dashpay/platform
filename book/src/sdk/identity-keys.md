@@ -90,7 +90,9 @@ security. This matters because many operations check
    security levels:
    - Adding/disabling other keys requires MASTER
    - Credit transfers require CRITICAL (enforced via the TRANSFER purpose)
-   - Document operations accept HIGH or MEDIUM depending on the contract
+   - Document operations accept CRITICAL down to the level each document type
+     requires (`signatureSecurityLevelRequirement`, HIGH by default), so MEDIUM only
+     where a type asks for it; a batch holding a token transition needs CRITICAL
 
 3. **Which purposes allow which levels.** Not all combinations are valid for
    externally added keys (i.e., keys added via identity create/update transitions):

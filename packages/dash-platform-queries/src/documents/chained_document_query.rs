@@ -88,13 +88,14 @@ impl TryFromPlatformVersioned<ChainedDocumentQuery> for GetDocumentsRequest {
             ));
         }
         if !inner.time_range_clauses.is_empty()
+            || !inner.integer_range_clauses.is_empty()
             || inner.start.is_some()
             || inner.offset.is_some()
             || !inner.group_by.is_empty()
             || !inner.having.is_empty()
         {
             return Err(Error::Config(
-                "a chained inner query supports where/order_by/limit only: no time-range \
+                "a chained inner query supports where/order_by/limit only: no window \
                  selections, cursors, offsets, group_by, or having (paginate with a range \
                  clause on the join property)"
                     .to_string(),

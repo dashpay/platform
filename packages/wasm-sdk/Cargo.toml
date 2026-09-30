@@ -66,6 +66,8 @@ dash-sdk = { path = "../rs-sdk", features = [
 ], default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
+  # the storage refund of `documentCreateCost`
+  "fee-distribution",
 ] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.17" }

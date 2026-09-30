@@ -139,6 +139,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
         update_checkpoints: Some(0),
         record_shielded_pool_anchor: Some(0),
         prune_shielded_pool_anchors: Some(0),
+        expire_documents: None,
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,

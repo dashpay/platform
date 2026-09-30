@@ -6,6 +6,7 @@ use crate::execution::types::block_fees::v0::{
 use derive_more::From;
 
 use dpp::fee::epoch::CreditsPerEpoch;
+use dpp::fee::fee_result::LifetimeStorageFees;
 use serde::{Deserialize, Serialize};
 
 /// The versioned block fees
@@ -43,6 +44,12 @@ impl BlockFeesV0Getters for BlockFees {
     fn refunds_per_epoch_mut(&mut self) -> &mut CreditsPerEpoch {
         match self {
             BlockFees::V0(v0) => v0.refunds_per_epoch_mut(),
+        }
+    }
+
+    fn lifetime_storage_fees(&self) -> &LifetimeStorageFees {
+        match self {
+            BlockFees::V0(v0) => v0.lifetime_storage_fees(),
         }
     }
 }

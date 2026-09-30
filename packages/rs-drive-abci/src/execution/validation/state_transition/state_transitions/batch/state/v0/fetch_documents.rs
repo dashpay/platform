@@ -4,8 +4,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{DocumentReferenceLookup, DocumentTypeRef};
+use dpp::data_contract::document_type::{DocumentReferenceLookup, DocumentTypeRef, LookupHashKey};
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
@@ -204,6 +203,7 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
         processing_fee: documents_outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     }));
 
     Ok(ConsensusValidationResult::new_with_data(
@@ -332,6 +332,7 @@ fn fetch_document_with_id_v0(
         processing_fee: fee,
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     };
     let mut documents = documents_outcome.documents_owned();
 
@@ -395,6 +396,7 @@ fn fetch_document_with_id_v1(
         processing_fee: documents_outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     }));
 
     let mut documents = documents_outcome.documents_owned();
@@ -410,10 +412,44 @@ fn fetch_document_with_id_v1(
 // fetch_document_through_lookup
 // ============================================================================
 
+/// A computed lookup key's hash, billed: only [`hash_lookup_key`] builds one,
+/// after adding the hash to the execution context, so a key is never hashed
+/// unbilled or billed twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BilledLookupKey([u8; 32]);
+
+impl BilledLookupKey {
+    /// The hash, the value of the index property the key fills.
+    pub(crate) fn digest(&self) -> [u8; 32] {
+        self.0
+    }
+}
+
+/// Hashes `key` for a create of a document of `declaring_document_type`
+/// carrying `document_data`, `"."` reading `reference_id` (an element's, the
+/// writer's or the creator's id; `None` for a property carrying the reference,
+/// which the key names by its path), and bills it as the double SHA-256 it is
+/// (`ValidationOperation::DoubleSha256`, by the blocks it hashes). `None`, with
+/// nothing hashed or billed, when the preimage cannot be assembled.
+pub(crate) fn hash_lookup_key(
+    key: &LookupHashKey,
+    declaring_document_type: DocumentTypeRef,
+    reference_id: Option<Identifier>,
+    document_data: &BTreeMap<String, Value>,
+    execution_context: &mut StateTransitionExecutionContext,
+) -> Option<BilledLookupKey> {
+    let (digest, blocks) = key
+        .key_value(declaring_document_type, reference_id, document_data)
+        .ok()?;
+    execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
+    Some(BilledLookupKey(digest))
+}
+
 /// The document a `refersTo` lookup resolves to for one value: the one the
 /// declared unique index of `document_type` finds for the key assembled from
-/// `reference_value` (the property's value, or one array element's), the
-/// writer `owner_id` and the sources in `document_data`. `None` when no
+/// `reference_value` (the identifier property's value, one array element, the
+/// writer or the creator), the writer `owner_id` and the sources in
+/// `document_data`, a document of `declaring_document_type`. `None` when no
 /// document matches, and when the key cannot be assembled or the index is
 /// missing or not unique. Contract registration and update refuse the last
 /// three (an optional source, a missing or non-unique index), and a referenced
@@ -424,30 +460,50 @@ fn fetch_document_with_id_v1(
 /// The query is billed exactly as [`fetch_document_with_id`] v1 bills an id
 /// fetch: an equality query over the index's properties (the shape the unique
 /// index conflict check builds), limit 1, whose processing cost is added to
-/// `execution_context`. Only reached from the document reference validation,
-/// which exists from protocol version 14, so it carries no version of its own.
+/// `execution_context`. A computed key is `billed_key` when the caller hashed
+/// it already, and is otherwise hashed and billed here, by [`hash_lookup_key`].
+/// Only reached from the document reference validation, which exists from
+/// protocol version 14, so it carries no version of its own.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_document_through_lookup(
     drive: &Drive,
     contract: &DataContract,
     document_type: DocumentTypeRef,
+    declaring_document_type: DocumentTypeRef,
     lookup: &DocumentReferenceLookup,
     reference_value: Identifier,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
+    billed_key: Option<BilledLookupKey>,
     epoch: &Epoch,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<Option<Document>, Error> {
-    if !document_type
-        .indexes()
-        .get(&lookup.index)
-        .is_some_and(|index| index.unique)
-    {
+    // Registration resolved the index its `findBy` names, and a type's indexes
+    // never change, so this only guards a declaration no registration admits:
+    // one naming no unique index finds no document
+    if lookup.resolve_index(document_type).is_err() {
         return Ok(None);
     }
-    let Some(key_values) = lookup.key_values(reference_value, document_data, owner_id) else {
+    let billed_key = billed_key.or_else(|| {
+        lookup.hash_key().and_then(|(_, key)| {
+            hash_lookup_key(
+                key,
+                declaring_document_type,
+                Some(reference_value),
+                document_data,
+                execution_context,
+            )
+        })
+    });
+    let computed_key = billed_key.map(|key| Value::Bytes32(key.digest()));
+    let Some(key_values) = lookup.key_values(
+        reference_value,
+        document_data,
+        owner_id,
+        computed_key.as_ref(),
+    ) else {
         return Ok(None);
     };
     let equal_clauses = key_values
@@ -498,6 +554,7 @@ pub(crate) fn fetch_document_through_lookup(
         processing_fee: documents_outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     }));
 
     Ok(documents_outcome.documents_owned().into_iter().next())
@@ -539,6 +596,7 @@ pub(crate) fn has_contested_document_with_document_id<'a>(
         processing_fee: fee,
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     };
     let documents = documents_outcome.documents_owned();
 

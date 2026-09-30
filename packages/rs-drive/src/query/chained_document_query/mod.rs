@@ -51,6 +51,7 @@
 //! pagination lives on the inner query alone.
 
 use crate::error::drive::DriveError;
+use crate::error::proof::ProofError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{
@@ -231,19 +232,20 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             _ => None,
         };
-        // A lookup reference is a document reference whose value is not the
-        // outer document's id, so `as_document_reference` leaves it out; it
-        // is named here so the refusal says why
+        // A reference found by `findBy` is a document reference whose value
+        // is not the outer document's id, so `as_document_reference` leaves it
+        // out; it is named here so the refusal says why
         if let DocumentPropertyType::IdentifierWithReference(
             DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
             | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
         ) = &join_document_property.property_type
         {
             return Err(unsupported(format!(
-                "chained query join property \"{}\" refers to its document through the \
-                 unique index \"{}\", so its value is not the outer document's id: a join \
-                 needs a reference whose value is the referenced document's $id",
-                join_property, lookup.index,
+                "chained query join property \"{}\" refers to its document by findBy ({}), \
+                 so its value is not the outer document's id: a join needs a reference whose \
+                 value is the referenced document's $id",
+                join_property,
+                lookup.find_by_names(),
             )));
         }
         // A reference expression is no single document reference either: an
@@ -437,12 +439,10 @@ impl<'a> DriveDocumentQuery<'a> {
         for document in outer_documents {
             let id = document.id();
             if by_id.insert(id, document).is_some() {
-                return Err(Error::Proof(
-                    crate::error::proof::ProofError::CorruptedProof(format!(
-                        "chained outer results carry document {} twice",
-                        id
-                    )),
-                ));
+                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                    "chained outer results carry document {} twice",
+                    id
+                ))));
             }
         }
         let target_is_permanent = self.chained_join_target_is_permanent()?;
@@ -452,27 +452,23 @@ impl<'a> DriveDocumentQuery<'a> {
             match by_id.remove(join_value) {
                 Some(document) => ordered.push(document),
                 None if target_is_permanent => {
-                    return Err(Error::Proof(
-                        crate::error::proof::ProofError::CorruptedProof(format!(
-                            "chained outer results are missing referenced document {}: a \
+                    return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                        "chained outer results are missing referenced document {}: a \
                              permanentDocument reference cannot dangle, so the outer half \
                              does not prove the derived query",
-                            join_value
-                        )),
-                    ));
+                        join_value
+                    ))));
                 }
                 // A deletableDocument target that is no longer in state.
                 None => missing.push(*join_value),
             }
         }
         if let Some((extra_id, _)) = by_id.into_iter().next() {
-            return Err(Error::Proof(
-                crate::error::proof::ProofError::CorruptedProof(format!(
-                    "chained outer results carry document {} that no proven join value \
+            return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                "chained outer results carry document {} that no proven join value \
                      references",
-                    extra_id
-                )),
-            ));
+                extra_id
+            ))));
         }
         Ok((ordered, missing))
     }

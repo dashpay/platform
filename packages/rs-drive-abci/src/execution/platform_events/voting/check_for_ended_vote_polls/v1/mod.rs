@@ -114,11 +114,12 @@ where
                                 .first()
                                 .map(|max_voted_contender| max_voted_contender.final_vote_tally)
                                 .unwrap_or_default();
-                            // These are all the people who got top votes
+                            // These are all the people who got top votes, every one of them
+                            // considered (up to `maximum_contenders_to_consider`); version 0
+                            // compared at most 100
                             let top_contenders: Vec<FinalizedContender> = sorted_contenders
                                 .into_iter()
                                 .filter(|c| c.final_vote_tally == highest_vote_tally)
-                                .take(100) // Limit to the first 100 before the expensive operation
                                 .map(|contender| {
                                     FinalizedContender::try_from_contender_with_serialized_document(
                                         contender,

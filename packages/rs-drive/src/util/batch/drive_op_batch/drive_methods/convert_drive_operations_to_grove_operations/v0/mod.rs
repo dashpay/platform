@@ -73,16 +73,20 @@ impl Drive {
                          repaid an identity's debt; apply them through apply_drive_operations",
                     )));
                 }
+                // `(..)` covers the pricing rule ephemeral operations gained with document time
+                // to live (protocol version 14); the refusal is the same at every protocol
+                // version, and before 14 no operation this converts is ephemeral.
                 if inner_drive_operations.iter().any(|operation| {
                     matches!(
                         operation,
-                        LowLevelDriveOperation::EphemeralGroveOperation(_)
+                        LowLevelDriveOperation::EphemeralGroveOperation(..)
                     )
                 }) {
                     return Err(Error::Drive(DriveError::NotSupported(
                         "convert_drive_operations_to_grove_operations returns one plain batch \
-                         and cannot carry a TTL'd subtree's ephemeral operations, whose bytes \
-                         are priced separately; apply them through apply_drive_operations",
+                         and cannot carry ephemeral operations (a TTL'd subtree's, or a \
+                         document's with a time to live), whose bytes are priced separately; \
+                         apply them through apply_drive_operations",
                     )));
                 }
                 Ok(LowLevelDriveOperation::grovedb_operations_consume(

@@ -14,6 +14,10 @@ use serde::de::Error;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{ProtocolError, SerdeParsingError};
@@ -89,10 +93,10 @@ impl Default for AssetLockProof {
 }
 
 #[cfg(feature = "json-conversion")]
-impl crate::serialization::JsonConvertible for AssetLockProof {}
+impl JsonConvertible for AssetLockProof {}
 
 #[cfg(feature = "value-conversion")]
-impl crate::serialization::ValueConvertible for AssetLockProof {}
+impl ValueConvertible for AssetLockProof {}
 
 impl AsRef<AssetLockProof> for AssetLockProof {
     fn as_ref(&self) -> &AssetLockProof {

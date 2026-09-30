@@ -161,17 +161,18 @@ export class ContractsFacade {
 
   /**
    * Deletes one document on a moderated contract as a moderator, whoever owns it, except the
-   * contract owner and the moderators. The document type must set `canBeDeletedByModerators`;
-   * when it also sets `canBeDeletedByModeratorsFor`, the deletion passes up to and including
+   * contract owner and the moderators. The document type must set `moderatorAbilities.delete`;
+   * when it also sets `moderatorAbilities.deleteWithin`, the deletion passes up to and including
    * that many seconds after the document's last modification, and is refused (41116) once
    * block time is later than that.
    * Signed like the other moderations. `options.reason` is optional here: left out, no code and
-   * an empty text are stored. Resolves with the record the deletion left under the contract;
-   * the document's owner gets no storage refund.
+   * an empty text are stored. Resolves with the record the deletion left under the contract, or
+   * undefined on a type whose `moderatorAbilities.deleteKeepsRecord` is false; the document's
+   * owner gets no storage refund unless the type sets `moderatorAbilities.deleteRefundsOwner`.
    */
   async moderatorDeleteDocument(
     options: wasm.ContractDeleteDocumentOptions,
-  ): Promise<wasm.ContractDocumentRemovalResult> {
+  ): Promise<wasm.ContractDocumentRemovalResult | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.contractDeleteDocument(options);
   }
@@ -191,6 +192,23 @@ export class ContractsFacade {
   ): Promise<wasm.ContractDocumentRemovalResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.contractRestoreDocument(options);
+  }
+
+  /**
+   * Changes, as a moderator, the fields a document type keeps for its moderators
+   * (`moderatorAbilities.changeFields`) on one of its documents, whoever owns it:
+   * `options.fields` sets each one, a `null` removing it. A field the type does not keep for
+   * its moderators is refused (41123); a document's owner can never write those fields in its
+   * own creates and replaces unless it moderates the contract (41124). Every other property,
+   * `$updatedAt` among them, stays as its owner wrote it, and `$revision` goes up by one, so a
+   * replace its owner built on the earlier revision is refused. Signed like the other
+   * moderations; `options.reason` is optional. Resolves with the document as it now stands.
+   */
+  async moderatorChangeDocumentFields(
+    options: wasm.ContractChangeDocumentFieldsOptions,
+  ): Promise<wasm.Document> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractChangeDocumentFields(options);
   }
 
   /**

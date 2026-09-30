@@ -45,7 +45,9 @@ pub trait BroadcastStateTransition {
     /// transition executed. For the transition families whose proofs can
     /// only authenticate the affected state (balance top-ups, credit
     /// transfers and withdrawals, address funds movements, shields,
-    /// no-history token operations, key limits updates), this returns
+    /// no-history token operations, key limits updates, contract updates,
+    /// contract moderation and fee claims, and creates and deletes of
+    /// indexOnly documents), this returns
     /// [`Error::ExecutionNotProved`] — use
     /// [`wait_for_affected_state`](Self::wait_for_affected_state) for those
     /// flows and treat the result as a height-pinned snapshot.
@@ -395,7 +397,7 @@ pub fn require_execution_proved(
         StateTransitionProofGuarantee::ExecutionProved => Ok(result),
         StateTransitionProofGuarantee::AffectedState => Err(Error::ExecutionNotProved(
             format!(
-                "received a verified {} snapshot for this transition family; use the *_affected_state wait APIs and treat the result as a height-pinned snapshot",
+                "received a verified {} snapshot for this transition family; wait with the affected-state APIs instead (wait_for_affected_state in Rust, waitForAffectedState or broadcastAndWaitForAffectedState in JavaScript) and treat the result as a height-pinned snapshot",
                 result
             ),
         )),

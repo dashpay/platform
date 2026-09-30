@@ -321,6 +321,15 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::ShieldedWithdrawal(_) => false,
         }
     }
+
+    /// A block refuses a masternode vote that fails state validation without charging anyone,
+    /// and a proposer drops it silently, so only check_tx can tell the voter why.
+    fn validates_full_state_on_check_tx(&self) -> bool {
+        match self {
+            StateTransition::MasternodeVote(st) => st.validates_full_state_on_check_tx(),
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]
