@@ -2615,6 +2615,9 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                 }
                 | DocumentPropertyReferenceTarget::DeletableDocument {
                     property_agreement, ..
+                }
+                | DocumentPropertyReferenceTarget::ModeratedDocument {
+                    property_agreement, ..
                 } => Some(property_agreement),
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                     property_agreement,

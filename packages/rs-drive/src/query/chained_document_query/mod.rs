@@ -32,8 +32,13 @@
 //! outer documents. When the join property's `refersTo` targets a
 //! `permanentDocument` type (non-deletable, enforced at write time),
 //! every proven join value MUST resolve to a document — a missing outer
-//! document is an invalid proof, not an absence. A `deletableDocument`
-//! target promises only that the document existed when the inner one was
+//! document is an invalid proof, not an absence. A `moderatedDocument`
+//! target leaves state only through a moderator's recorded removal, so
+//! the merged proof also covers the removal records of the join values
+//! (see [`moderated_join`](crate::query::moderated_join)): a join value
+//! with no outer document is reported with its proven record, and one
+//! with neither is an invalid proof. A `deletableDocument` target
+//! promises only that the document existed when the inner one was
 //! written, so there a join value with no outer document is left out.
 //! That omission is proven, not trusted: every derived `$id` is a queried
 //! key of the merged query, and grovedb refuses a proof without the
@@ -43,17 +48,22 @@
 //! Guardrails (v1): the inner query must resolve to an indexOnly index
 //! that carries the join property (as terminal or prefix property, so
 //! every synthesized projection provably carries its value); the join
-//! edge must be a same-contract `refersTo: permanentDocument` or
-//! `refersTo: deletableDocument` whose target is the outer type; the
+//! edge must be a same-contract `refersTo: permanentDocument`,
+//! `refersTo: moderatedDocument` or `refersTo: deletableDocument` whose
+//! target is the outer type; the
 //! inner limit is required (it is what
 //! bounds the outer fan-out); the outer half takes no clauses, no
 //! limit and no cursor — it is purely the derived by-ids fetch, and
 //! pagination lives on the inner query alone.
 
+use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+#[cfg(feature = "server")]
+use crate::query::moderated_join::fetch_removals;
+use crate::query::moderated_join::{pair_missing_with_removals, removals_path_query};
 use crate::query::{
     BindingSource, DriveDocumentQuery, InternalClauses, SubQueryBinding, SubQueryKind, WhereClause,
     WhereOperator,
@@ -62,13 +72,14 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentTypeRef,
+    DocumentReferenceKind, DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 /// The most join values one chained query can carry — the derived
 /// outer query is a single `$id IN [...]` clause, and `in` clauses
@@ -88,6 +99,13 @@ pub struct ChainedDocumentsResult {
     /// was written); off a `permanentDocument` property a missing document
     /// is refused instead. On the proof path each is a proven absence.
     pub missing_outer_ids: Vec<Identifier>,
+    /// The join values whose outer document the contract's moderators
+    /// removed, each with its removal record, in first-appearance order.
+    /// Only a join off a `refersTo: moderatedDocument` property can report
+    /// any; there a join value with neither a document nor a record is
+    /// refused. On the proof path each is a proven absence of the document
+    /// and a proven record.
+    pub removed_outer_documents: Vec<ContractDocumentRemovalEntry>,
     /// The inner projections (synthesized indexOnly documents), exactly
     /// as the inner query alone would return them — the caller reads its
     /// pagination cursor (the last join value) from here.
@@ -95,6 +113,20 @@ pub struct ChainedDocumentsResult {
     /// The referenced outer documents, ordered by FIRST APPEARANCE of
     /// their id in `inner_documents` (deduplicated).
     pub outer_documents: Vec<Document>,
+}
+
+/// The outer half of a chained query, assembled against its join values by
+/// [`DriveDocumentQuery::assemble_chained_outer_documents`].
+#[derive(Debug, Default)]
+pub struct ChainedOuterDocuments {
+    /// The outer documents, in first-appearance order of their ids.
+    pub documents: Vec<Document>,
+    /// The join values with no outer document, off a `deletableDocument`
+    /// join property.
+    pub missing: Vec<Identifier>,
+    /// The removal records of the join values with no outer document, off a
+    /// `moderatedDocument` join property.
+    pub removed: Vec<ContractDocumentRemovalEntry>,
 }
 
 impl<'a> DriveDocumentQuery<'a> {
@@ -288,8 +320,9 @@ impl<'a> DriveDocumentQuery<'a> {
             None => {
                 return Err(unsupported(format!(
                     "chained query join property \"{}\" must carry a `refersTo: \
-                     permanentDocument` or `refersTo: deletableDocument` declaration: it is \
-                     what names the outer document type the proven join values resolve in",
+                     permanentDocument`, `refersTo: moderatedDocument` or `refersTo: \
+                     deletableDocument` declaration: it is what names the outer document type \
+                     the proven join values resolve in",
                     join_property,
                 )));
             }
@@ -398,11 +431,12 @@ impl<'a> DriveDocumentQuery<'a> {
         })
     }
 
-    /// Whether the join property's reference guarantees its target stays
-    /// in state (`permanentDocument`) or not (`deletableDocument`). A join
-    /// property that is neither, which `validate_chained` refuses, is
-    /// held to the strict rule.
-    fn chained_join_target_is_permanent(&self) -> Result<bool, Error> {
+    /// What the join property's reference guarantees of its target: that
+    /// it stays in state (`permanentDocument`), leaves it only on a
+    /// moderator's record (`moderatedDocument`), or nothing
+    /// (`deletableDocument`). A join property that is none of them, which
+    /// `validate_chained` refuses, is held to the strict rule.
+    fn chained_join_kind(&self) -> Result<DocumentReferenceKind, Error> {
         let (join_property, _, _) = self.chained_join()?;
         Ok(self
             .document_type
@@ -414,7 +448,30 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
                 _ => None,
             })
-            .is_none_or(|declaration| declaration.permanent))
+            .map_or(DocumentReferenceKind::Permanent, |declaration| {
+                declaration.kind
+            }))
+    }
+
+    /// The removal records component of the chained proof: for a join off
+    /// a `moderatedDocument` property with join values, the records of
+    /// every join value (see [`removals_path_query`]), walking as the outer
+    /// by-ids query does; `None` for every other join.
+    fn chained_removals_path_query(
+        &self,
+        join_values: &[Identifier],
+        outer_left_to_right: bool,
+    ) -> Result<Option<grovedb::PathQuery>, Error> {
+        if join_values.is_empty() || self.chained_join_kind()? != DocumentReferenceKind::Moderated {
+            return Ok(None);
+        }
+        let (_, outer_document_type, outer_contract) = self.chained_join()?;
+        Ok(Some(removals_path_query(
+            outer_contract.id(),
+            outer_document_type.name(),
+            join_values,
+            outer_left_to_right,
+        )))
     }
 
     /// Reorders the outer documents (returned in key order by the by-ids
@@ -423,18 +480,21 @@ impl<'a> DriveDocumentQuery<'a> {
     /// no join value references, is always refused. A join value with no
     /// outer document is refused when the join property is a
     /// `permanentDocument` reference (it cannot dangle: corrupted state
-    /// on the server, an invalid proof in the verifier) and left out when
-    /// it is a `deletableDocument` reference (the target was deleted after
-    /// the inner document was written, and the by-ids query that found
-    /// nothing under its `$id` is the very query the proof covers); the
-    /// join values left out are returned alongside, in first-appearance
-    /// order. Shared by the server and the verifier.
+    /// on the server, an invalid proof in the verifier), reported with its
+    /// removal record, taken from `removals`, when it is a
+    /// `moderatedDocument` reference (one without a record is refused as a
+    /// permanent one is), and left out when it is a `deletableDocument`
+    /// reference (the target was deleted after the inner document was
+    /// written, and the by-ids query that found nothing under its `$id` is
+    /// the very query the proof covers); the join values left out and the
+    /// records are returned alongside, each in first-appearance order.
+    /// Shared by the server and the verifier.
     pub fn assemble_chained_outer_documents(
         &self,
         join_values: &[Identifier],
         outer_documents: Vec<Document>,
-    ) -> Result<(Vec<Document>, Vec<Identifier>), Error> {
-        use std::collections::BTreeMap;
+        removals: &BTreeMap<Identifier, ContractDocumentRemovalEntry>,
+    ) -> Result<ChainedOuterDocuments, Error> {
         let mut by_id: BTreeMap<Identifier, Document> = BTreeMap::new();
         for document in outer_documents {
             let id = document.id();
@@ -445,13 +505,13 @@ impl<'a> DriveDocumentQuery<'a> {
                 ))));
             }
         }
-        let target_is_permanent = self.chained_join_target_is_permanent()?;
+        let kind = self.chained_join_kind()?;
         let mut ordered = Vec::with_capacity(join_values.len());
         let mut missing = Vec::new();
         for join_value in join_values {
             match by_id.remove(join_value) {
                 Some(document) => ordered.push(document),
-                None if target_is_permanent => {
+                None if kind.is_permanent() => {
                     return Err(Error::Proof(ProofError::CorruptedProof(format!(
                         "chained outer results are missing referenced document {}: a \
                              permanentDocument reference cannot dangle, so the outer half \
@@ -459,7 +519,8 @@ impl<'a> DriveDocumentQuery<'a> {
                         join_value
                     ))));
                 }
-                // A deletableDocument target that is no longer in state.
+                // A moderatedDocument or deletableDocument target that is no
+                // longer in state.
                 None => missing.push(*join_value),
             }
         }
@@ -470,12 +531,25 @@ impl<'a> DriveDocumentQuery<'a> {
                 extra_id
             ))));
         }
-        Ok((ordered, missing))
+        // A moderated target leaves state on a moderator's record only
+        if kind == DocumentReferenceKind::Moderated {
+            return Ok(ChainedOuterDocuments {
+                removed: pair_missing_with_removals(&missing, removals)?,
+                documents: ordered,
+                missing: Vec::new(),
+            });
+        }
+        Ok(ChainedOuterDocuments {
+            documents: ordered,
+            missing,
+            removed: Vec::new(),
+        })
     }
 
     /// The component path queries the chained proof covers: the inner
     /// query's own path query, plus — for a non-empty join — the outer
-    /// by-ids path query derived from `join_values`. ONE builder both
+    /// by-ids path query derived from `join_values`, and for a join off a
+    /// `moderatedDocument` property the removal records of the same ids. ONE builder both
     /// the prover (`prove_query_many` merges these) and the verifier
     /// (`PathQuery::merge` on the same inputs at the same grove
     /// version) call, so the merged query is byte-identical on both
@@ -508,7 +582,10 @@ impl<'a> DriveDocumentQuery<'a> {
         let outer = self
             .derive_chained_outer_query(join_values)?
             .construct_path_query(None, platform_version)?;
-        Ok(vec![inner, outer])
+        match self.chained_removals_path_query(join_values, outer.query.query.left_to_right)? {
+            Some(removals) => Ok(vec![inner, outer, removals]),
+            None => Ok(vec![inner, outer]),
+        }
     }
 }
 
@@ -538,6 +615,7 @@ impl DriveDocumentQuery<'_> {
                 inner_documents,
                 outer_documents: Vec::new(),
                 missing_outer_ids: Vec::new(),
+                removed_outer_documents: Vec::new(),
             });
         }
 
@@ -557,13 +635,29 @@ impl DriveDocumentQuery<'_> {
                     .map_err(|e| Error::Protocol(Box::new(e)))
             })
             .collect::<Result<Vec<Document>, Error>>()?;
-        let (outer_documents, missing_outer_ids) =
-            self.assemble_chained_outer_documents(&join_values, outer_documents)?;
+        // The records component the proof covers; a fetch by keys selects the same records
+        // whichever way it walks
+        let removals = match self.chained_removals_path_query(&join_values, true)? {
+            Some(path_query) => fetch_removals(
+                drive,
+                &path_query,
+                transaction,
+                drive_operations,
+                platform_version,
+            )?,
+            None => BTreeMap::new(),
+        };
+        let ChainedOuterDocuments {
+            documents: outer_documents,
+            missing: missing_outer_ids,
+            removed: removed_outer_documents,
+        } = self.assemble_chained_outer_documents(&join_values, outer_documents, &removals)?;
 
         Ok(ChainedDocumentsResult {
             inner_documents,
             outer_documents,
             missing_outer_ids,
+            removed_outer_documents,
         })
     }
 

@@ -12,8 +12,6 @@ use dpp::document::property_names::CREATOR_ID;
 use dpp::errors::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
-use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
-use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
@@ -31,6 +29,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::document_reference_kind::document_reference_kind_mismatch;
 
 /// Whether two property types hold the same KIND of value for agreement
 /// purposes: sizes and other constraints may differ (both sides validated
@@ -93,12 +92,15 @@ fn preallocated_index_keyed_by(
 /// Checks every reference declaration of the given contract that carries
 /// declaration content.
 ///
-/// `permanentDocument` and `deletableDocument`: the referenced contract must
-/// exist (the declaring contract itself when no contract id is named,
-/// including when it names its own id) and the referenced document type must
-/// exist in it; for `permanentDocument` that type must forbid deletion, for
-/// `deletableDocument` it must allow it.
-/// Every `where` entry is checked for both, and a `findBy` into another
+/// `permanentDocument`, `moderatedDocument` and `deletableDocument`: the
+/// referenced contract must exist (the declaring contract itself when no
+/// contract id is named, including when it names its own id) and the
+/// referenced document type must exist in it and admit the declared kind (see
+/// [`document_reference_kind_mismatch`]): for `permanentDocument` its
+/// documents never leave state, for `moderatedDocument` they leave it only
+/// through a moderator's recorded removal, for `deletableDocument` in any
+/// other way.
+/// Every `where` entry is checked for all three, and a `findBy` into another
 /// contract's document type is checked against that type's indexes
 /// (one into the declaring contract was checked by the contract parse). Self
 /// references are checked against the in-flight contract, so a contract may
@@ -420,7 +422,7 @@ fn validate_reference_target_declaration_v0(
         contract_id,
         document_type_name,
         property_agreement,
-        permanent,
+        kind,
         lookup,
         in_list,
     }) = reference_target.as_any_document_reference()
@@ -490,35 +492,22 @@ fn validate_reference_target_declaration_v0(
         ));
     };
 
-    // The two document references are disjoint: a
-    // `permanentDocument` one demands a document type that forbids
-    // deletion, a `deletableDocument` one a document type that
-    // allows it, so the declaration always states which guarantee
-    // the reference carries. Deletable means by anyone: a document type moderators
-    // can delete from is deletable whatever its `canBeDeleted` says about a document's
-    // own owner, since a reference to it could dangle, and so is one whose documents the
-    // platform deletes when their `ttl` passes. None of the three can change on an update,
-    // so the answer holds for good.
-    let target_is_deletable = referenced_document_type.documents_can_disappear();
-    if permanent && target_is_deletable {
-        return Ok(SimpleConsensusValidationResult::new_with_error(
-            ReferencedDocumentTypeDeletableError::new(
-                effective_contract_id,
-                document_type_name.to_string(),
-                declaration_path,
-            )
-            .into(),
-        ));
-    }
-    if !permanent && !target_is_deletable {
-        return Ok(SimpleConsensusValidationResult::new_with_error(
-            ReferencedDocumentTypeNotDeletableError::new(
-                effective_contract_id,
-                document_type_name.to_string(),
-                declaration_path,
-            )
-            .into(),
-        ));
+    // The three document references are disjoint: a `permanentDocument` one demands a
+    // document type whose documents never leave state, a `moderatedDocument` one a type whose
+    // documents leave it only through a moderator's recorded removal, a `deletableDocument`
+    // one any other, so the declaration always states which guarantee the reference carries.
+    // A document type moderators can delete from is no longer permanent whatever its
+    // `canBeDeleted` says about a document's own owner, since a reference to it could dangle,
+    // and neither is one whose documents the platform deletes when their `ttl` passes. Nothing
+    // the kind reads can change on an update, so the answer holds for good.
+    if let Some(error) = document_reference_kind_mismatch(
+        kind,
+        referenced_document_type.document_reference_kind(),
+        effective_contract_id,
+        document_type_name,
+        &declaration_path,
+    ) {
+        return Ok(SimpleConsensusValidationResult::new_with_error(error));
     }
 
     // A `findBy`, on a document reference of either kind, must resolve

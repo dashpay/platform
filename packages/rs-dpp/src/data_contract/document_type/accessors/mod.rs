@@ -6,7 +6,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyReferenceTarget, GeneratedFrom,
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
 
@@ -1060,6 +1060,21 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentType::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentType::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentType::V0(_) | DocumentType::V1(_) => DocumentReferenceKind::Permanent,
+            DocumentType::V2(v2) => v2.document_reference_kind(),
+        }
+    }
+
     fn distinct_from_fields(&self) -> &[String] {
         match self {
             DocumentType::V0(_) => &[],
@@ -1265,6 +1280,21 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentTypeRef::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeRef::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeRef::V0(_) | DocumentTypeRef::V1(_) => DocumentReferenceKind::Permanent,
+            DocumentTypeRef::V2(v2) => v2.document_reference_kind(),
+        }
+    }
+
     fn distinct_from_fields(&self) -> &[String] {
         match self {
             DocumentTypeRef::V0(_) => &[],
@@ -1433,6 +1463,23 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_can_be_deleted(),
             DocumentTypeMutRef::V1(v1) => v1.documents_can_be_deleted(),
             DocumentTypeMutRef::V2(v2) => v2.documents_can_disappear(),
+        }
+    }
+
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentTypeMutRef::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeMutRef::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeMutRef::V0(_) | DocumentTypeMutRef::V1(_) => {
+                DocumentReferenceKind::Permanent
+            }
+            DocumentTypeMutRef::V2(v2) => v2.document_reference_kind(),
         }
     }
 

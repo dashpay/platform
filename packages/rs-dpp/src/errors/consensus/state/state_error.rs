@@ -75,6 +75,9 @@ use crate::consensus::state::document::referenced_document_type_not_deletable_er
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
+use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
+use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
+use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -648,6 +651,19 @@ pub enum StateError {
     // `minimumAgeBlocks` (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
+
+    // A `moderatedDocument` reference names a document type whose documents can leave state
+    // otherwise than through a moderator's recorded removal, a `deletableDocument` reference
+    // names one whose documents leave it only that way, and a replace keeping a reference to a
+    // removed document had to compare one of its properties (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentTypeNotModeratedError(ReferencedDocumentTypeNotModeratedError),
+
+    #[error(transparent)]
+    ReferencedDocumentTypeModeratedError(ReferencedDocumentTypeModeratedError),
+
+    #[error(transparent)]
+    ReferencedDocumentRemovedError(ReferencedDocumentRemovedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1384,6 +1400,38 @@ mod tests {
                 )
             )),
             155
+        );
+        // The third kind of document reference, `moderatedDocument` (protocol version 14):
+        // the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeNotModeratedError(
+                ReferencedDocumentTypeNotModeratedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            156
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeModeratedError(
+                ReferencedDocumentTypeModeratedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            157
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentRemovedError(
+                ReferencedDocumentRemovedError::new(
+                    identity_id,
+                    "replyTo".to_string(),
+                    "threadId".to_string(),
+                )
+            )),
+            158
         );
     }
 }

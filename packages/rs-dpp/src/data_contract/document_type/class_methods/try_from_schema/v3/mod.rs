@@ -835,6 +835,10 @@ fn with_own_contract_id_omitted(
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
             contract_id: referenced,
             ..
+        }
+        | DocumentPropertyReferenceTarget::ModeratedDocument {
+            contract_id: referenced,
+            ..
         } => {
             if *referenced == Some(contract_id) {
                 *referenced = None;
