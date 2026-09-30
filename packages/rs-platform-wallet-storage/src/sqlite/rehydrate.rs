@@ -267,8 +267,8 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   among them: it is rebuilt from `core_instant_locks` above, for every
 ///   UTXO a replayed lock covers.
 /// - **Transaction records**: the SQLite loader replays recorded history
-///   (confirmed, then unconfirmed) through the wallet checker after this
-///   projection.
+///   through the wallet checker after this projection, in dependency order
+///   (in-set parents first, otherwise chain order).
 ///
 /// # Errors
 ///
@@ -453,6 +453,11 @@ pub(crate) fn restore_recorded_transactions(
     // TODO(bound-load-history-replay): every stored record is replayed on each
     // load; bounding it to records above the last chain lock needs care so
     // finality and spend guards for older records are not lost.
+    // TODO(expire-unconfirmed-spend-reservations): mempool records are replayed
+    // on every load with no expiry, so a forged or never-mined spend of a wallet
+    // outpoint keeps its reservation across load and rescan; only a conflicting
+    // IS-locked or confirmed spend releases it. Sibling of
+    // TODO(release-repair-spends-after-reorg) in `core_history`.
     let replay = replay_order(records);
 
     // Kept only to undo a replay the checker suspended part-way through.
@@ -462,7 +467,10 @@ pub(crate) fn restore_recorded_transactions(
             // The lock set already holds this txid (load marked the restored
             // UTXOs), so a later lock event is deduplicated: the InstantSend
             // context, and the conflict sweep it runs, must come from here.
-            let context = match (record.context, instant_locks.get(&record.txid)) {
+            let lock = instant_locks
+                .get(&record.txid)
+                .filter(|lock| lock_matches_record(lock, &record));
+            let context = match (record.context, lock) {
                 (TransactionContext::Mempool, Some(lock)) => {
                     TransactionContext::InstantSend(lock.clone())
                 }
@@ -522,6 +530,26 @@ pub(crate) fn restore_recorded_transactions(
         wallet_info.apply_chain_lock(chain_lock);
     }
     wallet_info.update_balance();
+}
+
+/// Whether `lock` really locks `record`, so upgrading its context is safe.
+///
+/// The lock map is keyed by the stored `txid` column and a record's `txid` is
+/// stored beside its transaction, so neither is proof on its own. A mismatch
+/// keeps the record's stored context: the lock's conflict sweep must not drop
+/// history on the strength of a lock that belongs to another transaction.
+fn lock_matches_record(lock: &InstantLock, record: &TransactionRecord) -> bool {
+    let transaction_txid = record.transaction.txid();
+    let matches = lock.txid == record.txid && transaction_txid == record.txid;
+    if !matches {
+        tracing::warn!(
+            record_txid = %record.txid,
+            transaction_txid = %transaction_txid,
+            lock_txid = %lock.txid,
+            "persisted InstantSend lock does not match its transaction record; replaying without it"
+        );
+    }
+    matches
 }
 
 /// Poll `future` once, returning its output only if it completed without suspending.
@@ -3348,19 +3376,9 @@ mod tests {
         );
     }
 
-    /// Load replays history without an async runtime by polling the checker
-    /// once. If upstream ever makes it suspend, this fails in CI instead of
-    /// load silently skipping the restored spend guards in production.
-    #[test]
-    fn should_complete_transaction_checker_on_first_poll() {
-        use dashcore::hashes::Hash;
-        use dashcore::{OutPoint, Transaction, TxIn, TxOut, Txid};
-        use key_wallet::transaction_checking::{
-            BlockInfo, TransactionContext, WalletTransactionChecker,
-        };
-        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-
-        let mut wallet =
+    /// A fresh random wallet and its first BIP44 receive address.
+    fn wallet_with_receive_address() -> (Wallet, ManagedWalletInfo, dashcore::Address) {
+        let wallet =
             Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
         let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
@@ -3371,6 +3389,19 @@ mod tests {
             .unwrap()
             .next_receive_address(Some(&xpub), true)
             .unwrap();
+        (wallet, info, address)
+    }
+
+    /// Load replays history without an async runtime by polling the checker
+    /// once. If upstream ever makes it suspend, this fails in CI instead of
+    /// load silently skipping the restored spend guards in production.
+    #[test]
+    fn should_complete_transaction_checker_on_first_poll() {
+        use dashcore::hashes::Hash;
+        use dashcore::{Transaction, TxIn, TxOut};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
         let funding = Transaction {
             version: 1,
             lock_time: 0,
@@ -3412,26 +3443,15 @@ mod tests {
     #[tokio::test]
     async fn should_exclude_spent_output_for_either_same_height_replay_order() {
         use dashcore::hashes::Hash;
-        use dashcore::{BlockHash, Transaction, TxIn, TxOut, Txid};
-        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use dashcore::{BlockHash, Transaction, TxIn, TxOut};
+        use key_wallet::transaction_checking::BlockInfo;
         use key_wallet::Utxo;
 
         for (spend_first, positioned) in
             [(false, false), (true, false), (false, true), (true, true)]
         {
             let case = format!("spend_first={spend_first} positioned={positioned}");
-            let mut wallet =
-                Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default)
-                    .unwrap();
-            let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
-            let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
-            let address = info
-                .accounts
-                .standard_bip44_accounts
-                .get_mut(&0)
-                .unwrap()
-                .next_receive_address(Some(&xpub), true)
-                .unwrap();
+            let (mut wallet, mut info, address) = wallet_with_receive_address();
             let funding = Transaction {
                 version: 1,
                 lock_time: 0,
@@ -3536,17 +3556,7 @@ mod tests {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::transaction_checking::BlockInfo;
 
-        let mut wallet =
-            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
-        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
-        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
-        let address = info
-            .accounts
-            .standard_bip44_accounts
-            .get_mut(&0)
-            .unwrap()
-            .next_receive_address(Some(&xpub), true)
-            .unwrap();
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
         let funding = Transaction {
             version: 1,
             lock_time: 0,
@@ -3635,6 +3645,105 @@ mod tests {
                 .contains_key(&loser.txid()),
             "the lock's conflict sweep must drop the competing spend"
         );
+    }
+
+    /// A persisted lock is trusted only when it names the record it is keyed
+    /// under and that record's transaction really has that txid; otherwise the
+    /// record replays in its stored mempool context and no sweep runs.
+    #[tokio::test]
+    async fn should_not_upgrade_record_to_instant_send_with_mismatched_lock() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn, TxOut};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let funding = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([23; 32]), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: 100_000,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let spend = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(funding.txid(), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: 99_000,
+                script_pubkey: dashcore::ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        };
+        let block = TransactionContext::InBlock(BlockInfo::new(
+            100,
+            BlockHash::from_byte_array([8; 32]),
+            100,
+        ));
+        let mut records = info
+            .check_core_transaction(&funding, block, &mut wallet, true, true)
+            .await
+            .new_records;
+        records.extend(
+            info.check_core_transaction(
+                &spend,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+        );
+        assert_eq!(records.len(), 2);
+        let foreign = Txid::from_byte_array([24; 32]);
+        let lock_for = |txid| InstantLock {
+            inputs: vec![OutPoint::new(funding.txid(), 0)],
+            txid,
+            ..Default::default()
+        };
+        let mut forged_record = records.clone();
+        forged_record
+            .iter_mut()
+            .find(|record| record.txid == spend.txid())
+            .unwrap()
+            .txid = foreign;
+        let cases = [
+            // The lock row is keyed under the record but locks another txid.
+            (
+                "lock txid",
+                records.clone(),
+                spend.txid(),
+                lock_for(foreign),
+            ),
+            // Record and lock agree, but the record's transaction is another one.
+            ("record txid", forged_record, foreign, lock_for(foreign)),
+        ];
+        for (case, records, key, lock) in cases {
+            let locks: BTreeMap<Txid, InstantLock> = [(key, lock)].into_iter().collect();
+            let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
+            restore_recorded_transactions(&mut restored, &mut wallet, records, &locks);
+            let transactions = restored.accounts.standard_bip44_accounts[&0].transactions();
+            assert!(
+                !transactions
+                    .values()
+                    .any(|record| matches!(record.context, TransactionContext::InstantSend(_))),
+                "{case}: a mismatched lock must not upgrade any record"
+            );
+            assert!(
+                transactions.contains_key(&spend.txid()),
+                "{case}: the spend must still replay in its stored context"
+            );
+        }
     }
 
     /// A record spending `parents` (output 0 of each); `value` keeps txids distinct.

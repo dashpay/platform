@@ -425,6 +425,16 @@ pub fn embedded_migrations_sql() -> Vec<String> {
         .collect()
 }
 
+/// Undo V019 so the next [`run`] replays it over the current rows.
+#[cfg(test)]
+pub(crate) fn rewind_to_v018(conn: &rusqlite::Connection) {
+    conn.execute_batch(
+        "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+         DELETE FROM refinery_schema_history WHERE version >= 19;",
+    )
+    .unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

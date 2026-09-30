@@ -1367,6 +1367,7 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sqlite::migrations::rewind_to_v018;
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
@@ -1652,11 +1653,7 @@ mod tests {
     fn v018_with_corrupt_record(height: Option<i64>) -> (Connection, [u8; 32]) {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
-        conn.execute_batch(
-            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-             DELETE FROM refinery_schema_history WHERE version >= 19;",
-        )
-        .unwrap();
+        rewind_to_v018(&conn);
         let wallet_id = [0xADu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 100)",
@@ -1991,11 +1988,7 @@ mod tests {
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0xB2u8; 32];
         let (contact, own) = stage_contact_only_utxo(&conn, &wallet_id);
-        conn.execute_batch(
-            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-             DELETE FROM refinery_schema_history WHERE version >= 19;",
-        )
-        .unwrap();
+        rewind_to_v018(&conn);
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let unspent_rows = |outpoint: &OutPoint| -> i64 {
             conn.query_row(

@@ -2,9 +2,12 @@
 //! stored accounting for databases migrating from V018 or earlier.
 //!
 //! Frozen on purpose: the live per-round repair in `schema::core_history` may
-//! evolve, but V019 must keep doing exactly what it did when it shipped. Only
-//! the low-level blob codec is shared; `TransactionRecord`'s encoding is owned
-//! upstream (key-wallet) and cannot be frozen here. Do not edit.
+//! evolve, but V019 must keep doing exactly what it did when it shipped. It
+//! shares only these live helpers, which must stay behaviour-stable: the blob
+//! codec and its size/width gates (`blob`), `id32`, `wallets::parse_network`,
+//! `i64_to_u64` and the `WalletStorageError` variants it returns.
+//! `TransactionRecord`'s encoding is owned upstream (key-wallet) and cannot be
+//! frozen here. Do not edit.
 
 use std::collections::BTreeMap;
 
@@ -145,8 +148,10 @@ fn network(
         params![wallet_id.as_slice()],
         |r| r.get(0),
     )?;
-    wallets::parse_network(&label)
-        .ok_or_else(|| WalletStorageError::blob_decode("wallets.network is unknown"))
+    wallets::parse_network(&label).ok_or_else(|| WalletStorageError::UnknownWalletNetwork {
+        wallet_id: *wallet_id,
+        label,
+    })
 }
 
 fn owned_output(
@@ -155,7 +160,10 @@ fn owned_output(
     outpoint: &OutPoint,
     network: dashcore::Network,
 ) -> Result<Option<(u64, Address)>, WalletStorageError> {
-    let mut stmt = tx.prepare_cached("SELECT value, length(script), script FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0")?;
+    let mut stmt = tx.prepare_cached(
+        "SELECT value, length(script), script FROM core_utxos \
+         WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+    )?;
     let mut rows = stmt.query(params![
         wallet_id.as_slice(),
         blob::encode_outpoint(outpoint)?
@@ -180,8 +188,12 @@ fn contact_only_script(
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
     Ok(conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) AND NOT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
-        params![wallet_id.as_slice(), script], |r| r.get(0))?)
+        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
+         AND NOT EXISTS(SELECT 1 FROM core_address_pool \
+             WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
+        params![wallet_id.as_slice(), script],
+        |r| r.get(0),
+    )?)
 }
 
 fn repair_record(
@@ -277,8 +289,11 @@ fn repair_record(
         .map(|d| i128::from(d.value))
         .sum();
     let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
-    record.net_amount = i64::try_from(received - spent).map_err(|_| {
-        WalletStorageError::blob_decode("wallet transaction net amount exceeds i64")
+    let net = received - spent;
+    record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
+        wallet_id: *wallet_id,
+        txid: *txid,
+        value: net,
     })?;
     let has_ours = outputs
         .values()
@@ -334,7 +349,10 @@ pub(super) fn repair_history(tx: &Transaction<'_>) -> Result<(), WalletStorageEr
     // Keys are collected first so drops never race the open cursor.
     let mut keys = Vec::new();
     {
-        let mut stmt = tx.prepare_cached("SELECT length(wallet_id), wallet_id, length(txid), txid FROM core_transactions WHERE record_blob IS NOT NULL")?;
+        let mut stmt = tx.prepare_cached(
+            "SELECT length(wallet_id), wallet_id, length(txid), txid \
+             FROM core_transactions WHERE record_blob IS NOT NULL",
+        )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
             blob::check_fixed_width(row.get(0)?, 32, "core_transactions.wallet_id")?;
@@ -370,6 +388,7 @@ mod tests {
     use rusqlite::Connection;
 
     use super::*;
+    use crate::sqlite::migrations::rewind_to_v018;
     use crate::sqlite::schema::core_state;
 
     fn address(marker: u8) -> Address {
@@ -394,15 +413,6 @@ mod tests {
             is_locked: false,
             is_trusted: false,
         }
-    }
-
-    /// Undo V019 so the next `migrations::run` replays it over current rows.
-    fn rewind_to_v018(conn: &Connection) {
-        conn.execute_batch(
-            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-             DELETE FROM refinery_schema_history WHERE version >= 19;",
-        )
-        .unwrap();
     }
 
     /// An oversize confirmed record fails its length gate before its payload
