@@ -28,15 +28,17 @@
 //! and Accepted and Mined count as the same. The host is told to drop a
 //! send's verdict (cleared) when the send settles or leaves the wallet, when
 //! its wallet is removed and, for every send, when probing is turned off;
-//! cleared says only "forget the verdict", not that the send settled.
+//! cleared says only "forget the verdict", not that the send settled. A
+//! wallet event that reports a send settled (in a block, InstantSend- or
+//! chain-locked) or swept clears its verdict at once, even mid-scan; a pass
+//! clears whatever else left the wallet when it next reads it.
 //!
 //! When: once as soon as dash-spv reports an `Uncertain` broadcast (the root
 //! of that transaction's chain), then on each advance of the wallet's synced
 //! height that follows the tip — steps of more than [`CATCH_UP_STEP`] blocks,
 //! steps back (a rescan) and the first step after launch are catch-up and
 //! skipped: passes queued before them probe only what an `Uncertain` result
-//! forced (and still read the records, for the clears, while the host holds
-//! verdicts for the wallet) — every block
+//! forced — every block
 //! for [`EVERY_BLOCK_WINDOW`] blocks, counted from the first height-driven
 //! pass that sees the root while the wallet follows the tip (a forced pass
 //! does not start it), and every [`SLOW_INTERVAL`]
@@ -68,6 +70,7 @@ use dash_async::WorkerStatus;
 use dash_spv::sync::SyncEvent;
 use dash_spv::{BroadcastResult, EventHandler};
 use dashcore::{Transaction, Txid};
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
@@ -421,16 +424,9 @@ pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     finished: HashMap<(WalletId, Txid), Final>,
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
-    /// How many sends of each wallet have a published verdict.
-    published_per_wallet: HashMap<WalletId, usize>,
 }
 
 impl ResolverState {
-    /// The host holds a verdict for some send of `wallet_id`.
-    fn has_published(&self, wallet_id: &WalletId) -> bool {
-        self.published_per_wallet.contains_key(wallet_id)
-    }
-
     /// Drop everything kept for `wallet_id`; a clear for every send the host
     /// had a verdict for.
     fn forget_wallet(&mut self, wallet_id: &WalletId) -> Vec<Outgoing> {
@@ -462,14 +458,6 @@ impl ResolverState {
         cleared.sort();
         self.published
             .retain(|(wallet, txid), _| !drop(wallet, txid));
-        for (wallet_id, _) in &cleared {
-            if let Some(count) = self.published_per_wallet.get_mut(wallet_id) {
-                *count -= 1;
-                if *count == 0 {
-                    self.published_per_wallet.remove(wallet_id);
-                }
-            }
-        }
         cleared
             .into_iter()
             .map(|(wallet_id, txid)| Outgoing {
@@ -495,8 +483,8 @@ impl ResolverState {
             }
             Some(previous) => !same_for_host(previous, verdict),
         };
-        if changed && self.published.insert(key, verdict.clone()).is_none() {
-            *self.published_per_wallet.entry(key.0).or_insert(0) += 1;
+        if changed {
+            self.published.insert(key, verdict.clone());
         }
         changed
     }
@@ -899,6 +887,13 @@ enum Command {
         wallet_id: WalletId,
         touched: bool,
     },
+    /// Transactions a wallet event reports settled (in a block, InstantSend-
+    /// or chain-locked) or gone (swept): their verdicts are cleared at once,
+    /// without a pass — during a catch-up too.
+    Settled {
+        wallet_id: WalletId,
+        txids: HashSet<Txid>,
+    },
     Uncertain(Txid),
     SetEnabled(bool),
     WalletRemoved(WalletId),
@@ -930,10 +925,6 @@ struct PendingPass {
     /// results asked for it, or a catch-up overtook it — probes only the
     /// roots those results forced and starts no windows.
     anchor_at: Option<u32>,
-    /// Queued by a catch-up while the host holds verdicts for the wallet: it
-    /// runs for the clears (sends settled in the scanned blocks) even with
-    /// nothing to probe.
-    clears: bool,
 }
 
 /// A pass in flight: reading the wallet, then probing its due roots one at
@@ -1111,43 +1102,30 @@ impl Actor {
                 if is_catch_up_step(previous, height) {
                     // Behind the tip: passes queued or running from before are
                     // confined to what an `Uncertain` result forced — the scan
-                    // settles most roots — and start no windows. While the host
-                    // holds verdicts for the wallet, a pass still reads the
-                    // records, for the clears of sends the scan settles.
-                    let has_verdicts = self.state.has_published(&wallet_id);
-                    let Some(entry) = self.wallets.get_mut(&wallet_id) else {
-                        return;
-                    };
+                    // settles most roots, and its events clear their verdicts
+                    // (see `Command::Settled`) — and start no windows.
                     if let Some(pending) = entry.pending.as_mut() {
                         pending.anchor_at = None;
-                        pending.clears |= has_verdicts;
-                        if pending.forced.is_empty() && !pending.clears {
+                        // A rewind replays lower heights: never run above them.
+                        pending.height = height;
+                        if pending.forced.is_empty() {
                             entry.pending = None;
                         }
-                    } else if has_verdicts && enabled {
-                        entry.pending = Some(PendingPass {
-                            height,
-                            clears: true,
-                            ..PendingPass::default()
-                        });
                     }
-                    if let Some(run) = entry.run.as_mut() {
-                        run.anchor_at = None;
-                        if !has_verdicts {
-                            run.walk.store(false, Ordering::SeqCst);
-                        }
-                        if let Some(probing) = run.probing.as_mut() {
-                            probing.due.retain(|root| root.forced);
-                        }
-                        // Still reading, with nothing forced and nothing to
-                        // clear: stop its walk over the records now.
-                        if run.probing.is_none() && !run.has_forced && !has_verdicts {
-                            run.abort.abort();
-                            self.end_run(wallet_id);
-                            return;
-                        }
+                    let Some(run) = entry.run.as_mut() else {
+                        return;
+                    };
+                    run.anchor_at = None;
+                    run.walk.store(false, Ordering::SeqCst);
+                    if let Some(probing) = run.probing.as_mut() {
+                        probing.due.retain(|root| root.forced);
                     }
-                    self.start(wallet_id);
+                    // Still reading, with nothing forced: nothing it could
+                    // probe — stop its walk over the records now.
+                    if run.probing.is_none() && !run.has_forced {
+                        run.abort.abort();
+                        self.end_run(wallet_id);
+                    }
                     return;
                 }
                 // While a pass runs, its end decides the wait: queue the height
@@ -1161,6 +1139,15 @@ impl Actor {
                 pending.height = pending.height.max(height);
                 pending.anchor_at = Some(height);
                 self.start(wallet_id);
+            }
+            Command::Settled { wallet_id, txids } => {
+                self.entry(wallet_id);
+                let events = self.state.clear_where(
+                    |wallet, txid| *wallet == wallet_id && txids.contains(txid),
+                    None,
+                    "settled-or-left",
+                );
+                deliver(&self.sink, events);
             }
             Command::Seen { wallet_id, touched } => {
                 let entry = self.entry(wallet_id);
@@ -1231,11 +1218,9 @@ impl Actor {
         };
         let anchor_at = pending.anchor_at;
         let has_forced = !pending.forced.is_empty();
-        // Walk the records if the pass may probe by schedule or has verdicts
-        // to clear; a pass confined to forced roots with none held skips it.
-        let walk = Arc::new(AtomicBool::new(
-            anchor_at.is_some() || pending.clears || self.state.has_published(&wallet_id),
-        ));
+        // Walk the records if the pass may probe by schedule; one confined to
+        // forced roots with none of them held has nothing to read for.
+        let walk = Arc::new(AtomicBool::new(anchor_at.is_some()));
         self.next_run += 1;
         let run = self.next_run;
         let source = Arc::clone(&self.source);
@@ -1441,7 +1426,7 @@ impl Actor {
         };
         entry.run = None;
         if let (Some(pending), Some(until)) = (&entry.pending, entry.wait_until) {
-            if pending.forced.is_empty() && !pending.clears && pending.height < until {
+            if pending.forced.is_empty() && pending.height < until {
                 entry.pending = None;
             }
         }
@@ -1619,9 +1604,46 @@ fn may_leave_work(event: &WalletEvent) -> bool {
     }
 }
 
+/// The transactions a wallet event reports settled — in a block,
+/// InstantSend- or chain-locked — or gone from the wallet (swept).
+fn settled_or_gone(event: &WalletEvent) -> HashSet<Txid> {
+    match event {
+        WalletEvent::TransactionDetected { record, .. } => is_settled(record)
+            .then_some(record.txid)
+            .into_iter()
+            .collect(),
+        WalletEvent::TransactionInstantLocked { txid, .. } => HashSet::from([*txid]),
+        WalletEvent::TransactionsSwept { txids, .. } => txids.iter().copied().collect(),
+        WalletEvent::BlockProcessed {
+            inserted, updated, ..
+        } => inserted
+            .iter()
+            .chain(updated)
+            .filter(|record| is_settled(record))
+            .map(|record| record.txid)
+            .collect(),
+        WalletEvent::ChainLockProcessed {
+            locked_transactions,
+            ..
+        } => locked_transactions.values().flatten().copied().collect(),
+        WalletEvent::SyncHeightAdvanced { .. } => HashSet::new(),
+    }
+}
+
+fn is_settled(record: &TransactionRecord) -> bool {
+    record.is_confirmed() || matches!(record.context, TransactionContext::InstantSend(_))
+}
+
 impl EventHandler for BroadcastResolver {
     fn on_wallet_event(&self, event: &WalletEvent) {
         let wallet_id = event.wallet_id();
+        let settled = settled_or_gone(event);
+        if !settled.is_empty() {
+            self.send(Command::Settled {
+                wallet_id,
+                txids: settled,
+            });
+        }
         let command = match event {
             WalletEvent::SyncHeightAdvanced { height, .. } => Command::Height {
                 wallet_id,
@@ -3152,32 +3174,6 @@ mod tests {
         assert!(rig.actor.wallets[&wallet()].run.is_none());
     }
 
-    /// A catch-up does not stop a reading pass while the host holds verdicts
-    /// for the wallet: the pass still clears the send that settled.
-    #[tokio::test]
-    async fn should_let_a_pass_clear_verdicts_through_a_catch_up() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        assert_eq!(
-            rig.sent(),
-            vec![ResolverEvent::Verdict(txid(1), unresolved())]
-        );
-        rig.views(wallet(), Vec::new()); // settled
-
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 102,
-        });
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 140,
-        });
-        rig.settle().await;
-
-        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
-    }
-
     /// A catch-up takes the anchor from a queued pass that carries a forced
     /// txid; the pass still runs, confined to what was forced, and — with the
     /// txid no longer held — without walking the records.
@@ -3230,51 +3226,105 @@ mod tests {
         assert_eq!(rig.walks(), walks, "txid 9 is not held: no walk");
     }
 
-    /// A catch-up on a wallet whose host holds verdicts reads the records for
-    /// the clears even when no pass was queued or running: a send settled in
-    /// the scanned blocks stops showing its verdict during the scan.
+    /// A wallet event that settles a send clears its verdict at once — during
+    /// a catch-up too — without a pass or a walk over the records, and only
+    /// that send's.
     #[tokio::test]
-    async fn should_clear_verdicts_during_a_catch_up_with_no_pass_queued() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
-        rig.views(wallet(), Vec::new()); // settled in the blocks being scanned
-
-        rig.height(wallet(), 140).await; // catch-up; idle, nothing queued
-
-        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
-    }
-
-    /// A queued pass overtaken by a catch-up is kept while verdicts are out,
-    /// and clears what the scan settled.
-    #[tokio::test]
-    async fn should_keep_a_queued_pass_for_the_clears_through_a_catch_up() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+    async fn should_clear_a_verdict_as_soon_as_an_event_settles_its_send() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[
+            (txid(1), dead()),
+            (txid(2), unresolved()),
+        ])))
+        .await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+        );
         rig.follow(wallet(), 100).await;
         rig.sent();
+        rig.height(wallet(), 140).await; // catch-up
+        let walks = rig.walks();
 
+        rig.send(Command::Settled {
+            wallet_id: wallet(),
+            txids: HashSet::from([txid(1)]),
+        })
+        .await;
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+        assert_eq!(rig.walks(), walks);
+        assert!(rig.actor.state.published.contains_key(&(wallet(), txid(2))));
+    }
+
+    /// Which transactions a wallet event reports settled or gone.
+    #[test]
+    fn should_read_settled_and_gone_txids_from_wallet_events() {
+        let lock = WalletEvent::ChainLockProcessed {
+            wallet_id: wallet(),
+            chain_lock: chain_lock(),
+            locked_transactions: BTreeMap::from([(
+                AccountType::CoinJoin { index: 0 },
+                vec![txid(1)],
+            )]),
+        };
+        let swept = WalletEvent::TransactionsSwept {
+            wallet_id: wallet(),
+            txids: vec![txid(2)],
+            superseded_by: txid(3),
+            winner_mined_height: None,
+            released_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+        let height = WalletEvent::SyncHeightAdvanced {
+            wallet_id: wallet(),
+            height: 100,
+        };
+
+        assert_eq!(settled_or_gone(&lock), HashSet::from([txid(1)]));
+        assert_eq!(settled_or_gone(&swept), HashSet::from([txid(2)]));
+        assert!(settled_or_gone(&height).is_empty());
+    }
+
+    /// A step back (a rewind for a rescan) lowers a queued forced pass to the
+    /// replayed height: a probe marked above it would keep the root from
+    /// being due until the rescan passed that height again.
+    #[tokio::test]
+    async fn should_lower_a_queued_pass_to_the_height_of_a_rewind() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.source.pause(true);
         rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 102,
         });
-        // The running pass has read the records from before the scan and is
-        // probing; only the queued one can see the send settle.
-        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
-        rig.actor.joined(read);
+        rig.actor.handle(Command::Uncertain(txid(1)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.actor.joined(listed);
         rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 103,
         });
-        rig.views(wallet(), Vec::new()); // settled in the scan
-        rig.handle(Command::Height {
+
+        // The rewind: synced height goes back, then the step is reported.
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 50);
+        rig.actor.handle(Command::Height {
             wallet_id: wallet(),
-            height: 140,
+            height: 50,
         });
+        rig.source.pause(false);
         rig.settle().await;
 
-        assert!(rig.sent().contains(&ResolverEvent::Cleared(txid(1))));
+        // The forced probe went out at the replayed height, not at 103.
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(1))].last_probe,
+            Some(50)
+        );
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
