@@ -31,6 +31,7 @@ use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTra
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::version::PlatformVersion;
 use tonic::Request;
+use tonic::codegen::http::HeaderMap;
 
 /// Consensus code of `InvalidShieldedProofError`, the CheckTx answer for a
 /// bundle whose proof or signatures do not verify.
@@ -52,7 +53,7 @@ const MAX_TRACKED_SOURCES: usize = 16_384;
 /// Where a broadcast comes from. An IPv6 source is its /48, the usual size of
 /// one site's allocation, so a holder cannot rotate through its own /64s.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) enum SourceKey {
+pub(crate) enum SourceKey {
     V4(Ipv4Addr),
     V6Prefix48([u8; 6]),
 }
@@ -78,12 +79,19 @@ impl SourceKey {
     /// trusted only on a request from a loopback or private peer, which is
     /// where the gateway sits; any other peer is the client itself.
     pub(super) fn of_request<T>(request: &Request<T>) -> Option<Self> {
-        let peer = request.remote_addr().map(|address| address.ip());
+        Self::of_parts(
+            request.remote_addr().map(|address| address.ip()),
+            request.metadata().as_ref(),
+        )
+    }
+
+    /// [`SourceKey::of_request`] from the peer address and the HTTP headers,
+    /// for a layer that runs before tonic builds its request.
+    pub(crate) fn of_parts(peer: Option<IpAddr>, headers: &HeaderMap) -> Option<Self> {
         let behind_gateway = peer.is_none_or(is_internal);
         let forwarded = behind_gateway
             .then(|| {
-                request
-                    .metadata()
+                headers
                     .get_all("x-forwarded-for")
                     .iter()
                     .next_back()

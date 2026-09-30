@@ -1,19 +1,23 @@
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{info, trace};
 
 use crate::error::DAPIResult;
 use crate::logging::AccessLogLayer;
 use crate::metrics::MetricsLayer;
+use crate::services::platform_service::SourceKey;
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, Request, Response};
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::PlatformServer;
 use dapi_grpc::tonic::Status;
 use dapi_grpc::tonic::body::Body as TonicBody;
 use dapi_grpc::tonic::codegen::Bytes;
+use dapi_grpc::tonic::transport::server::TcpConnectInfo;
 use http_body::{Body, Frame};
 use tower::layer::util::{Identity, Stack};
 use tower::util::Either;
@@ -60,6 +64,12 @@ const MAX_PLATFORM_TRANSACTION_BODY_BYTES: usize = 34 * 1024 * 1024; // 34 MiB
 /// small transition never needs a slot. Node-local admission policy, not
 /// consensus.
 const MAX_CONCURRENT_LARGE_TRANSACTION_BODIES: usize = 8;
+/// How many of those slots one source may hold at once, so a single client
+/// holding stalled streams open cannot take every slot from other publishers.
+/// A source is the address the shielded proof failure budget keys on (the
+/// client address, or the gateway's `x-forwarded-for` entry behind Envoy; an
+/// IPv6 client counts as its /48).
+const MAX_CONCURRENT_LARGE_TRANSACTION_BODIES_PER_SOURCE: usize = 2;
 /// The Platform methods allowed the transaction body allowance.
 const PLATFORM_TRANSACTION_METHODS: &[&str] =
     &["/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"];
@@ -113,6 +123,7 @@ impl DapiServer {
             MAX_PLATFORM_TRANSACTION_BODY_BYTES,
             PLATFORM_TRANSACTION_METHODS,
             MAX_CONCURRENT_LARGE_TRANSACTION_BODIES,
+            MAX_CONCURRENT_LARGE_TRANSACTION_BODIES_PER_SOURCE,
         );
 
         // Stack layers (execution order: metrics -> access log -> timeout -> body limit)
@@ -285,7 +296,7 @@ where
 /// needs one of a fixed number of large-body slots, taken when the header that
 /// crosses the small limit is in and held until the body is dropped, so the
 /// receive buffers tonic reserves for large messages are bounded in total and
-/// not only per request.
+/// not only per request. One source may hold only a few of them.
 ///
 /// Requests to any other service pass through untouched.
 #[derive(Clone)]
@@ -294,7 +305,7 @@ struct BodyLimitLayer {
     default_limit: usize,
     large_limit: usize,
     large_limit_methods: &'static [&'static str],
-    large_body_slots: Arc<Semaphore>,
+    large_body_slots: Arc<LargeBodySlots>,
 }
 
 impl BodyLimitLayer {
@@ -304,27 +315,121 @@ impl BodyLimitLayer {
         large_limit: usize,
         large_limit_methods: &'static [&'static str],
         max_concurrent_large_bodies: usize,
+        max_concurrent_large_bodies_per_source: usize,
     ) -> Self {
         Self {
             service_path_prefix,
             default_limit,
             large_limit,
             large_limit_methods,
-            large_body_slots: Arc::new(Semaphore::new(max_concurrent_large_bodies)),
+            large_body_slots: Arc::new(LargeBodySlots::new(
+                max_concurrent_large_bodies,
+                max_concurrent_large_bodies_per_source,
+            )),
         }
     }
 
     /// Wraps the request body of a method of the configured service in its
     /// limit, or gives it back for a method of another service.
-    fn limit_body<B>(&self, path: &str, body: B) -> Result<LimitedMessageBody<B>, B> {
+    fn limit_body<B>(&self, parts: &Parts, body: B) -> Result<LimitedMessageBody<B>, B> {
+        let path = parts.uri.path();
         if !path.starts_with(self.service_path_prefix) {
             return Err(body);
         }
         if self.large_limit_methods.contains(&path) {
-            Ok(LimitedMessageBody::new(body, self.large_limit)
-                .with_large_body_slots(self.default_limit, self.large_body_slots.clone()))
+            let peer = parts
+                .extensions
+                .get::<TcpConnectInfo>()
+                .and_then(TcpConnectInfo::remote_addr)
+                .map(|address| address.ip());
+            let source = SourceKey::of_parts(peer, &parts.headers);
+            Ok(
+                LimitedMessageBody::new(body, self.large_limit).with_large_body_slots(
+                    self.default_limit,
+                    self.large_body_slots.clone(),
+                    source,
+                ),
+            )
         } else {
             Ok(LimitedMessageBody::new(body, self.default_limit))
+        }
+    }
+}
+
+/// The large-body slots of the transaction methods: how many bodies past the
+/// small limit may be open at once, in total and per source.
+struct LargeBodySlots {
+    max_total: usize,
+    max_per_source: usize,
+    held: Mutex<HeldLargeBodySlots>,
+}
+
+#[derive(Default)]
+struct HeldLargeBodySlots {
+    total: usize,
+    by_source: HashMap<SourceKey, usize>,
+}
+
+impl LargeBodySlots {
+    fn new(max_total: usize, max_per_source: usize) -> Self {
+        Self {
+            max_total,
+            max_per_source,
+            held: Mutex::default(),
+        }
+    }
+
+    fn held(&self) -> MutexGuard<'_, HeldLargeBodySlots> {
+        self.held
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Takes a slot for `source`, refused when the source already holds its
+    /// share or the node has none left. A request without a known source
+    /// counts against the total only.
+    fn claim(self: &Arc<Self>, source: Option<SourceKey>) -> Result<LargeBodySlot, Status> {
+        let mut held = self.held();
+        if let Some(source) = source
+            && held.by_source.get(&source).copied().unwrap_or(0) >= self.max_per_source
+        {
+            return Err(Status::resource_exhausted(
+                "too many large requests in flight from this address; retry later",
+            ));
+        }
+        if held.total >= self.max_total {
+            return Err(Status::resource_exhausted(
+                "too many large requests in flight on this node; retry later",
+            ));
+        }
+        held.total += 1;
+        if let Some(source) = source {
+            *held.by_source.entry(source).or_default() += 1;
+        }
+        Ok(LargeBodySlot {
+            slots: self.clone(),
+            source,
+        })
+    }
+}
+
+/// A held large-body slot, given back when dropped.
+struct LargeBodySlot {
+    slots: Arc<LargeBodySlots>,
+    source: Option<SourceKey>,
+}
+
+impl Drop for LargeBodySlot {
+    fn drop(&mut self) {
+        let mut held = self.slots.held();
+        held.total = held.total.saturating_sub(1);
+        if let Some(source) = self.source
+            && let Entry::Occupied(mut count) = held.by_source.entry(source)
+        {
+            *count.get_mut() -= 1;
+            if *count.get() == 0 {
+                count.remove();
+            }
         }
     }
 }
@@ -363,7 +468,7 @@ where
 
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
         let (parts, body) = req.into_parts();
-        let body = match self.config.limit_body(parts.uri.path(), body) {
+        let body = match self.config.limit_body(&parts, body) {
             Ok(limited) => TonicBody::new(limited),
             Err(body) => TonicBody::new(body),
         };
@@ -397,11 +502,12 @@ impl MessageFraming {
     }
 }
 
-/// The shared slots a body must hold once its messages grow past `threshold`.
-struct LargeBodySlots {
+/// The shared slot a body must hold once its messages grow past `threshold`.
+struct LargeBodyClaim {
     threshold: usize,
-    slots: Arc<Semaphore>,
-    held: Option<OwnedSemaphorePermit>,
+    slots: Arc<LargeBodySlots>,
+    source: Option<SourceKey>,
+    held: Option<LargeBodySlot>,
 }
 
 /// A request body bounded by a byte limit, checked on the declared length of
@@ -411,7 +517,7 @@ struct LimitedMessageBody<B> {
     limit: usize,
     delivered: usize,
     framing: MessageFraming,
-    large_body_slots: Option<LargeBodySlots>,
+    large_body_claim: Option<LargeBodyClaim>,
 }
 
 impl<B> LimitedMessageBody<B> {
@@ -421,16 +527,22 @@ impl<B> LimitedMessageBody<B> {
             limit,
             delivered: 0,
             framing: MessageFraming::next_header(),
-            large_body_slots: None,
+            large_body_claim: None,
         }
     }
 
-    /// Requires one of `slots` for as long as the body lives once a message
-    /// header takes it past `threshold` bytes.
-    fn with_large_body_slots(mut self, threshold: usize, slots: Arc<Semaphore>) -> Self {
-        self.large_body_slots = Some(LargeBodySlots {
+    /// Requires one of `slots` for `source` for as long as the body lives once
+    /// a message header takes it past `threshold` bytes.
+    fn with_large_body_slots(
+        mut self,
+        threshold: usize,
+        slots: Arc<LargeBodySlots>,
+        source: Option<SourceKey>,
+    ) -> Self {
+        self.large_body_claim = Some(LargeBodyClaim {
             threshold,
             slots,
+            source,
             held: None,
         });
         self
@@ -445,18 +557,13 @@ impl<B> LimitedMessageBody<B> {
     /// Takes a large-body slot for a body that will end at `end` bytes, if it
     /// needs one and holds none yet.
     fn claim_large_body_slot(&mut self, end: usize) -> Result<(), Status> {
-        let Some(large) = &mut self.large_body_slots else {
+        let Some(claim) = &mut self.large_body_claim else {
             return Ok(());
         };
-        if end <= large.threshold || large.held.is_some() {
+        if end <= claim.threshold || claim.held.is_some() {
             return Ok(());
         }
-        let permit = large.slots.clone().try_acquire_owned().map_err(|_| {
-            Status::resource_exhausted(
-                "too many large requests in flight on this node; retry later",
-            )
-        })?;
-        large.held = Some(permit);
+        claim.held = Some(claim.slots.claim(claim.source)?);
         Ok(())
     }
 
@@ -635,6 +742,7 @@ mod tests {
             MAX_PLATFORM_TRANSACTION_BODY_BYTES,
             PLATFORM_TRANSACTION_METHODS,
             MAX_CONCURRENT_LARGE_TRANSACTION_BODIES,
+            MAX_CONCURRENT_LARGE_TRANSACTION_BODIES_PER_SOURCE,
         )
     }
 
@@ -749,6 +857,33 @@ mod tests {
         ))
     }
 
+    /// The request parts of a transaction call from `peer`, forwarded for `forwarded_for`.
+    fn transaction_parts(peer: Option<&str>, forwarded_for: Option<&str>) -> Parts {
+        let mut request = Request::builder().uri(TRANSACTION_PATH);
+        if let Some(forwarded_for) = forwarded_for {
+            request = request.header("x-forwarded-for", forwarded_for);
+        }
+        let (mut parts, ()) = request.body(()).expect("request").into_parts();
+        if let Some(peer) = peer {
+            parts.extensions.insert(TcpConnectInfo {
+                local_addr: None,
+                remote_addr: Some(peer.parse().expect("peer address")),
+            });
+        }
+        parts
+    }
+
+    /// A large gRPC header, sent on a transaction body that then stays open.
+    fn open_large_body(
+        layer: &BodyLimitLayer,
+        parts: &Parts,
+    ) -> LimitedMessageBody<impl Body<Data = Bytes, Error = Status> + Unpin> {
+        let Ok(body) = layer.limit_body(parts, open_body(grpc_message(30 * 1024 * 1024, 0))) else {
+            panic!("the transaction method is limited");
+        };
+        body
+    }
+
     /// Large transaction bodies share a fixed number of slots: a header that takes the body
     /// past the query allowance needs one while the body lives, a request that finds none
     /// left is refused on that header, a body within the query allowance never needs one, and
@@ -761,9 +896,11 @@ mod tests {
             MAX_PLATFORM_TRANSACTION_BODY_BYTES,
             PLATFORM_TRANSACTION_METHODS,
             1,
+            1,
         );
+        let parts = transaction_parts(Some("203.0.113.7:4000"), None);
         let open = |bytes: Vec<u8>| {
-            let Ok(body) = layer.limit_body(TRANSACTION_PATH, open_body(bytes)) else {
+            let Ok(body) = layer.limit_body(&parts, open_body(bytes)) else {
                 panic!("the transaction method is limited");
             };
             body
@@ -807,6 +944,73 @@ mod tests {
             .await
             .expect("a frame")
             .expect("the dropped body gave its slot back");
+    }
+
+    /// One source holds at most its share of the large-body slots while another source still
+    /// gets one, the node-wide total still applies across sources and to a request with no
+    /// known source, a gateway's forwarded client is the source rather than the gateway, and
+    /// a dropped body gives its source's share back.
+    #[tokio::test]
+    async fn large_transaction_bodies_are_capped_per_source() {
+        let layer = BodyLimitLayer::new(
+            PLATFORM_SERVICE_PATH_PREFIX,
+            MAX_PLATFORM_QUERY_BODY_BYTES,
+            MAX_PLATFORM_TRANSACTION_BODY_BYTES,
+            PLATFORM_TRANSACTION_METHODS,
+            3,
+            2,
+        );
+        let flooder = transaction_parts(Some("203.0.113.7:4000"), None);
+        let refused = |status: Status, reason: &str| {
+            assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+            assert!(status.message().contains(reason), "{status:?}");
+        };
+
+        let mut first = open_large_body(&layer, &flooder);
+        first.frame().await.expect("a frame").expect("first slot");
+        let mut second = open_large_body(&layer, &flooder);
+        second.frame().await.expect("a frame").expect("second slot");
+        refused(
+            open_large_body(&layer, &flooder)
+                .frame()
+                .await
+                .expect("a frame")
+                .expect_err("the source has used its share"),
+            "from this address",
+        );
+
+        // Behind the gateway the forwarded client is the source, not the gateway.
+        let publisher = transaction_parts(Some("10.0.0.2:4000"), Some("198.51.100.9"));
+        let mut third = open_large_body(&layer, &publisher);
+        third
+            .frame()
+            .await
+            .expect("a frame")
+            .expect("another source still gets a slot");
+        refused(
+            open_large_body(&layer, &transaction_parts(Some("192.0.2.1:4000"), None))
+                .frame()
+                .await
+                .expect("a frame")
+                .expect_err("the node-wide total still applies"),
+            "on this node",
+        );
+        refused(
+            open_large_body(&layer, &transaction_parts(None, None))
+                .frame()
+                .await
+                .expect("a frame")
+                .expect_err("a request with no known source counts against the total"),
+            "on this node",
+        );
+
+        drop(first);
+        open_large_body(&layer, &flooder)
+            .frame()
+            .await
+            .expect("a frame")
+            .expect("the dropped body gave its source's share back");
+        drop((second, third));
     }
 
     /// Sends the body as the given chunks, one DATA frame each.
@@ -1004,6 +1208,7 @@ mod tests {
             MAX_PLATFORM_QUERY_BODY_BYTES,
             MAX_PLATFORM_TRANSACTION_BODY_BYTES,
             PLATFORM_TRANSACTION_METHODS,
+            1,
             1,
         );
         let server = tokio::spawn(async move {

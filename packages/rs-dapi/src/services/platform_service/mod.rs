@@ -28,6 +28,7 @@ use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
 pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
+pub(crate) use shielded_proof_failure_budget::SourceKey;
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
 
