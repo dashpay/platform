@@ -84,7 +84,7 @@ use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, RwLock};
 use tokio::task::{self, AbortHandle, JoinError, JoinHandle, JoinSet};
 use tokio::time::{timeout_at, Instant};
 
-use crate::broadcast_probe::{AcceptanceProbe, ProbeVerdict};
+use crate::broadcast_probe::{AcceptanceProbe, ProbeReport, ProbeVerdict};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -437,6 +437,10 @@ pub(crate) struct ResolverState {
     /// those roots. Their Dead is withdrawn once none of them is known dead
     /// any more (settled, left, or forgotten).
     dead_from: HashMap<(WalletId, Txid), BTreeSet<Txid>>,
+    /// Roots some node once reported in a block. Never Dead after that — a
+    /// later probe that asks other nodes cannot overturn it; kept while the
+    /// root stays unsettled in the wallet.
+    seen_in_block: HashSet<(WalletId, Txid)>,
 }
 
 impl ResolverState {
@@ -445,6 +449,7 @@ impl ResolverState {
     fn forget_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) -> Vec<Outgoing> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
+        self.seen_in_block.retain(|(wallet, _)| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, trigger)
     }
 
@@ -452,6 +457,7 @@ impl ResolverState {
     fn forget_all(&mut self) -> Vec<Outgoing> {
         self.schedules.clear();
         self.finished.clear();
+        self.seen_in_block.clear();
         self.clear_where(|_, _| true, None, "disabled")
     }
 
@@ -462,6 +468,7 @@ impl ResolverState {
             let key = (wallet_id, *txid);
             self.schedules.remove(&key);
             self.finished.remove(&key);
+            self.seen_in_block.remove(&key);
         }
         let mut events = self.clear_where(
             |wallet, txid| *wallet == wallet_id && txids.contains(txid),
@@ -684,6 +691,9 @@ pub(crate) fn begin_pass(
     state
         .finished
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
+    state
+        .seen_in_block
+        .retain(|(wallet, txid)| !is_gone(wallet, txid));
     // Cleared because the send is no longer an unsettled own send: it
     // settled, or left the wallet — not a statement that it settled.
     events.extend(state.clear_where(
@@ -774,10 +784,13 @@ pub(crate) fn record_probe(
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
     let key = (wallet_id, root.txid);
-    // `record_final` is off for a probe sent before a rewind: its answer is
-    // still told, but it does not end the root's probing across the replay.
+    // `record_final` is off for a probe sent before a rewind: its answer
+    // belongs to the state the rewind dropped — neither recorded nor told.
+    if !record_final {
+        return events;
+    }
     match verdict {
-        ProbeVerdict::Dead { reason } if record_final => {
+        ProbeVerdict::Dead { reason } => {
             state.finished.insert(
                 key,
                 Final::Dead {
@@ -785,15 +798,13 @@ pub(crate) fn record_probe(
                 },
             );
         }
-        ProbeVerdict::Mined if record_final => {
+        ProbeVerdict::Mined => {
             state.finished.insert(key, Final::Mined);
         }
         _ => {}
     }
     let trigger = trigger_of(root.forced);
-    // Spread a Dead down the chain only when it is recorded: a Dead the chain
-    // inherits needs a root known dead to hang on (see `dead_from`).
-    if matches!(verdict, ProbeVerdict::Dead { .. }) && record_final {
+    if matches!(verdict, ProbeVerdict::Dead { .. }) {
         let sends = ChainGraph::new(views, &state.mined(&wallet_id)).own_in_chain(&root.txid);
         state.publish_dead(
             wallet_id,
@@ -1040,7 +1051,7 @@ enum JobDone {
         /// The root it probed: a result for a root no longer in flight (its
         /// probe was stopped, but had already finished) is not this one's.
         root: Txid,
-        verdict: ProbeVerdict,
+        report: ProbeReport,
     },
 }
 
@@ -1066,8 +1077,9 @@ struct Run {
     /// probe is out is moot once gone from the views). Gone with the run — a
     /// later read is current, a send a reorg brings back included.
     settled: HashSet<Txid>,
-    /// Cleared by a rewind: the wallet's schedules were restarted, and this
-    /// run, older than that, marks no probes into them.
+    /// Cleared by a rewind: the resolver forgot the wallet, and this run,
+    /// older than that, neither marks its probes nor tells or records their
+    /// answers.
     marks: bool,
     /// Something touched the wallet during the run: its read may be stale, so
     /// the next height must not be skipped.
@@ -1540,7 +1552,7 @@ impl Actor {
                 wallet_id,
                 run,
                 root: probed,
-                verdict,
+                report,
             } => {
                 let Some(current) = self
                     .wallets
@@ -1587,6 +1599,18 @@ impl Actor {
                     self.probe_next(wallet_id);
                     return;
                 }
+                // Once any node reported the root in a block, no later probe
+                // makes it Dead: it exists, even if these nodes do not know it.
+                let key = (wallet_id, root.txid);
+                if report.seen_in_block {
+                    self.state.seen_in_block.insert(key);
+                }
+                let verdict = match report.verdict {
+                    ProbeVerdict::Dead { .. } if self.state.seen_in_block.contains(&key) => {
+                        ProbeVerdict::Accepted
+                    }
+                    verdict => verdict,
+                };
                 let events = record_probe(
                     &mut self.state,
                     wallet_id,
@@ -1619,12 +1643,12 @@ impl Actor {
             let transaction = Arc::clone(&root.transaction);
             let root_txid = root.txid;
             run.abort = self.jobs.spawn(async move {
-                let verdict = probe.probe(&transaction).await;
+                let report = probe.probe_report(&transaction).await;
                 JobDone::Probed {
                     wallet_id,
                     run: id,
                     root: root_txid,
-                    verdict,
+                    report,
                 }
             });
             self.job_runs
@@ -4146,11 +4170,10 @@ mod tests {
         assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
     }
 
-    /// A probe sent before a rewind answers Dead after it: the root itself is
-    /// told, the sends built on it are not — nothing records the root dead for
-    /// their inherited Dead to hang on.
+    /// A probe sent before a rewind answers Dead after it: the answer belongs
+    /// to the state the rewind dropped — nothing is told or recorded.
     #[tokio::test]
-    async fn should_publish_a_pre_rewind_dead_to_the_root_only() {
+    async fn should_neither_tell_nor_record_a_pre_rewind_answer() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
         rig.views(
             wallet(),
@@ -4170,7 +4193,57 @@ mod tests {
         });
         rig.settle().await;
 
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
+        assert!(rig.sent().is_empty());
+        assert!(rig.actor.state.finished.is_empty());
+    }
+
+    /// A probe that reports the root in a block once, then Dead.
+    struct SeenThenDead {
+        calls: StdMutex<usize>,
+    }
+
+    #[async_trait]
+    impl AcceptanceProbe for SeenThenDead {
+        async fn probe(&self, transaction: &Transaction) -> ProbeVerdict {
+            self.probe_report(transaction).await.verdict
+        }
+
+        async fn probe_report(&self, _transaction: &Transaction) -> ProbeReport {
+            let first = {
+                let mut calls = self.calls.lock().expect("calls");
+                *calls += 1;
+                *calls == 1
+            };
+            if first {
+                ProbeReport {
+                    verdict: ProbeVerdict::Accepted,
+                    seen_in_block: true,
+                }
+            } else {
+                ProbeReport {
+                    verdict: dead(),
+                    seen_in_block: false,
+                }
+            }
+        }
+    }
+
+    /// Once a node reported a root in a block, a later probe asking other
+    /// nodes cannot make it Dead.
+    #[tokio::test]
+    async fn should_never_turn_dead_a_root_once_seen_in_a_block() {
+        let mut rig = enabled(Arc::new(SeenThenDead {
+            calls: StdMutex::new(0),
+        }))
+        .await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.height(wallet(), 102).await;
+
+        assert!(!rig
+            .sent()
+            .contains(&ResolverEvent::Verdict(txid(1), dead())));
+        assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
