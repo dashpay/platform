@@ -526,7 +526,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// When on, the roots of a registered wallet's unconfirmed chains are
     /// resubmitted to evonodes over DAPI — right after dash-spv reports a send
-    /// `Uncertain`, then every block for 24 blocks and every 10 after — and
+    /// `Uncertain` (each report), then, while the wallet follows the chain tip,
+    /// every block for 24 blocks from when it first did so for that root, and
+    /// every 10 blocks after, a return from the background included — and
     /// each change of a send's verdict is published as
     /// `on_outgoing_transaction_probed`, each send that no longer needs one
     /// as `on_outgoing_transaction_cleared`. Nothing in the wallet changes.

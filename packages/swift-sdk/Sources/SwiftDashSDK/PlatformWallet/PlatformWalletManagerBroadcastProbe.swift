@@ -106,8 +106,11 @@ extension PlatformWalletManager {
     /// While on, the SDK resubmits to evonodes over DAPI the root of every
     /// chain of unconfirmed sends — the first unsettled transaction the chain
     /// depends on, which may be an incoming payment the wallet spent — right
-    /// after SPV reports a broadcast uncertain, then every block for 24 blocks
-    /// and every 10 after. It publishes each *change* of verdict for the
+    /// after SPV reports a broadcast uncertain (each report), then, while the
+    /// wallet follows the chain tip, every block for 24 blocks from when it
+    /// first did so for that root, and every 10 blocks after — a return from
+    /// the background does not restart the 24. It publishes each *change* of
+    /// verdict for the
     /// wallet's own sends in `outgoingTransactionVerdicts` /
     /// `lastOutgoingTransactionProbe`. An entry is removed when its send
     /// settles or leaves the wallet, when its wallet is deleted, and every

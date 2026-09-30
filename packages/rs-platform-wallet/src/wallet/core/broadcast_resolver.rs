@@ -75,7 +75,8 @@ use crate::broadcast_probe::{AcceptanceProbe, ProbeVerdict};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-/// Blocks after a root is first seen during which it is probed on every block.
+/// Blocks from the start of a root's window (see [`ProbeSchedule`]) during
+/// which it is probed on every block.
 pub(crate) const EVERY_BLOCK_WINDOW: u32 = 24;
 
 /// Blocks between probes once [`EVERY_BLOCK_WINDOW`] has passed.
@@ -304,32 +305,29 @@ fn ambiguous_roots(views: &[OutgoingView]) -> Vec<&OutgoingView> {
 /// When a root is next due for a probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProbeSchedule {
-    /// Where the every-block window starts: the first pass that saw the root
-    /// while the wallet followed the tip. `None` while it has only been seen
-    /// behind the tip (a forced pass right after launch, at the stored tip):
-    /// probed every block until anchored.
-    first_seen: Option<u32>,
+    /// Where the every-block window starts: the first height-driven pass that
+    /// saw the root while the wallet followed the tip. `None` until then —
+    /// the root was only seen by a forced pass, whose height may be a stale
+    /// stored tip — and it is due at the next pass once the wallet follows.
+    window_start: Option<u32>,
     last_probe: Option<u32>,
 }
 
 impl ProbeSchedule {
-    /// A schedule seen first at `height`, anchored there when the wallet
-    /// `following` the tip.
-    pub(crate) fn new(height: u32, following: bool) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            first_seen: following.then_some(height),
+            window_start: None,
             last_probe: None,
         }
     }
 
-    /// Start the window here if it has not started — once, at the first pass
-    /// that follows the tip.
+    /// Start the window here if it has not started — once.
     fn anchor(&mut self, height: u32) {
-        self.first_seen.get_or_insert(height);
+        self.window_start.get_or_insert(height);
     }
 
     fn in_window(&self, height: u32) -> bool {
-        self.first_seen
+        self.window_start
             .is_none_or(|first| height.saturating_sub(first) < EVERY_BLOCK_WINDOW)
     }
 
@@ -556,16 +554,16 @@ pub(crate) struct PassStart {
 /// it `Uncertain`) are due regardless of their schedule — even if one went
 /// out at this height already: a repeat probe is cheaper than bookkeeping
 /// that tells the two apart. A root found mined counts as settled when
-/// picking roots, so its children are probed next. A root's every-block
-/// window starts at the first pass made while the wallet is `following` the
-/// tip; one seen only behind it is probed every block until then.
+/// picking roots, so its children are probed next. `anchoring`: a
+/// height-driven pass while the wallet follows the tip — it starts the
+/// every-block window of every root that has none yet.
 pub(crate) fn begin_pass(
     state: &mut ResolverState,
     wallet_id: WalletId,
     height: u32,
     views: &[OutgoingView],
     forced: &HashSet<Txid>,
-    following: bool,
+    anchoring: bool,
 ) -> PassStart {
     let mut events = Vec::new();
     // What the wallet itself still holds unsettled — what state is kept for.
@@ -616,8 +614,8 @@ pub(crate) fn begin_pass(
         let schedule = state
             .schedules
             .entry(key)
-            .or_insert_with(|| ProbeSchedule::new(height, following));
-        if following {
+            .or_insert_with(ProbeSchedule::new);
+        if anchoring {
             schedule.anchor(height);
         }
         let forced = forced_roots.contains(&view.txid);
@@ -896,6 +894,7 @@ enum JobDone {
         wallet_id: WalletId,
         run: u64,
         height: u32,
+        by_height: bool,
         read: Option<Option<WalletRead>>,
     },
     Probed {
@@ -1172,6 +1171,7 @@ impl Actor {
                 wallet_id,
                 run,
                 height: pending.height,
+                by_height: pending.by_height,
                 read,
             }
         });
@@ -1205,6 +1205,7 @@ impl Actor {
                 wallet_id,
                 run,
                 height,
+                by_height,
                 read,
             } => {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
@@ -1239,19 +1240,18 @@ impl Actor {
                     Some(None) => self.end_run(wallet_id),
                     Some(Some(read)) => {
                         // A request queued before any height was reported
-                        // carries 0; the wallet's own synced height, or one
-                        // reported while this read ran, is better.
-                        let height = height
-                            .max(read.synced_height)
-                            .max(entry.height.unwrap_or(0));
-                        let following = entry.following;
+                        // carries 0; the wallet's own synced height is better.
+                        let height = height.max(read.synced_height);
+                        // Only a height-driven pass while following knows the
+                        // tip: a forced pass may run at a stale height.
+                        let anchoring = by_height && entry.following;
                         let start = begin_pass(
                             &mut self.state,
                             wallet_id,
                             height,
                             &read.views,
                             &read.forced,
-                            following,
+                            anchoring,
                         );
                         if let Some(current) = entry.run.as_mut() {
                             current.probing = Some(Probing {
@@ -1289,6 +1289,7 @@ impl Actor {
                         wallet_id = %hex::encode(wallet_id),
                         "broadcast probe: a probe result for a run that is not probing"
                     );
+                    current.abort.abort();
                     self.end_run(wallet_id);
                     return;
                 };
@@ -1726,14 +1727,20 @@ mod tests {
 
     // ---- ProbeSchedule / catch-up ------------------------------------------
 
+    fn anchored(height: u32) -> ProbeSchedule {
+        let mut schedule = ProbeSchedule::new();
+        schedule.anchor(height);
+        schedule
+    }
+
     #[test]
     fn should_be_due_immediately_when_never_probed() {
-        assert!(ProbeSchedule::new(100, true).is_due(100));
+        assert!(anchored(100).is_due(100));
     }
 
     #[test]
     fn should_probe_at_most_once_per_block() {
-        let mut s = ProbeSchedule::new(100, true);
+        let mut s = anchored(100);
         s.probed_at(100);
         assert!(!s.is_due(100));
         assert!(s.is_due(101));
@@ -1742,7 +1749,7 @@ mod tests {
     #[test]
     fn should_slow_down_after_the_every_block_window() {
         let first = 100;
-        let mut s = ProbeSchedule::new(first, true);
+        let mut s = anchored(first);
         let late = first + EVERY_BLOCK_WINDOW;
         s.probed_at(late);
         for height in late + 1..late + SLOW_INTERVAL {
@@ -1755,7 +1762,7 @@ mod tests {
     #[test]
     fn should_agree_on_the_next_due_height_with_is_due() {
         let first = 100;
-        let mut schedule = ProbeSchedule::new(first, true);
+        let mut schedule = anchored(first);
         for probed in [
             first,
             first + 5,
@@ -2763,33 +2770,38 @@ mod tests {
     }
 
     /// A return to following the tip does not restart the every-block window
-    /// of a root already past it.
+    /// of a root already past it: exactly one probe, when the slow interval
+    /// is up.
     #[tokio::test]
     async fn should_not_restart_the_window_of_a_root_past_it_after_a_catch_up() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
         let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
+        // Window 101..=124, then 134.
         let past = 101 + EVERY_BLOCK_WINDOW + SLOW_INTERVAL;
         for height in 102..=past {
             rig.height(wallet(), height).await;
         }
-        let before = probe.probed().len();
+        assert_eq!(probe.probed().len(), EVERY_BLOCK_WINDOW as usize + 1);
 
-        // Away for a while, then following again.
+        // Away for a while (a catch-up step), then following again.
         rig.height(wallet(), past + 10).await;
         for height in past + 11..=past + 14 {
             rig.height(wallet(), height).await;
         }
 
-        assert!(
-            probe.probed().len() <= before + 1,
-            "slow cadence kept: at most one probe in four blocks"
+        assert_eq!(
+            probe.probed().len(),
+            EVERY_BLOCK_WINDOW as usize + 2,
+            "one probe at the first following height past the slow interval"
         );
     }
 
     /// A forced read whose result is joined only after the wallet follows the
-    /// tip again anchors the root at the tip, not at the stale stored height.
+    /// tip again does not start the window at the stale stored height: the
+    /// next height-driven pass starts it at the tip, for exactly
+    /// EVERY_BLOCK_WINDOW blocks.
     #[tokio::test]
     async fn should_anchor_a_root_read_before_the_wallet_followed_at_the_tip() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
@@ -2806,11 +2818,34 @@ mod tests {
             });
         }
         rig.settle().await;
-        for height in 502..=505 {
+        for height in 502..=530 {
             rig.height(wallet(), height).await;
         }
 
-        assert!(probe.probed().len() >= 5, "every block from 501 to 505");
+        // The forced probe, then 501..=524 every block, nothing up to 530.
+        assert_eq!(probe.probed().len(), 1 + EVERY_BLOCK_WINDOW as usize);
+    }
+
+    /// Back from the background with no height event yet, a send reported
+    /// `Uncertain` is probed at once but its window waits for the wallet to
+    /// follow the tip again — it does not start at the height from before.
+    #[tokio::test]
+    async fn should_not_start_a_window_at_the_height_from_before_the_background() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), Vec::new());
+        rig.follow(wallet(), 100).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.send(Command::Uncertain(txid(1))).await;
+        assert_eq!(probe.probed().len(), 1, "forced at once");
+        // 30 blocks later: a catch-up step, then following.
+        rig.height(wallet(), 131).await;
+        for height in 132..=136 {
+            rig.height(wallet(), height).await;
+        }
+
+        assert_eq!(probe.probed().len(), 1 + 5, "every block from 132");
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.

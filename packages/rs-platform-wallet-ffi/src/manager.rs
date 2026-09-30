@@ -2147,8 +2147,10 @@ mod remove_wallet_lifecycle_tests {
 /// Turn automatic probing of unconfirmed sends on or off (off by default).
 ///
 /// While on, the roots of every unconfirmed chain are resubmitted to evonodes
-/// over DAPI — right after SPV reports a send uncertain, then every block for
-/// 24 blocks and every 10 after — and each change of a send's verdict, and
+/// over DAPI — right after SPV reports a send uncertain (each report), then,
+/// while the wallet follows the chain tip, every block for 24 blocks from when
+/// it first did so for that root, and every 10 blocks after (a return from the
+/// background does not restart the 24) — and each change of a send's verdict, and
 /// each clear, reaches the host through
 /// `EventHandlerCallbacksExtension::on_outgoing_transaction_probed_fn`.
 /// Nothing in the wallet changes; turning it off clears every verdict.
