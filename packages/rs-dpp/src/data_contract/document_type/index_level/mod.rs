@@ -125,6 +125,15 @@ pub struct IndexLevelTypeInfo {
     /// `false` on every pre-PV14 contract (the grammar rejects the keyword
     /// below meta-schema v3).
     pub preallocated: bool,
+    /// Whether the terminating index's entries outlive a delete of their
+    /// document ([`Index::outlives_delete`], see
+    /// [`crate::data_contract::document_type::index::OUTLIVES_DELETE`]): the
+    /// delete walker leaves them to expire with their window, and the insert
+    /// walker keeps an entry already there instead of writing it again.
+    /// Carried here for the same reason as `preallocated`. `false` on every
+    /// pre-PV14 contract (the grammar rejects the keyword below meta-schema
+    /// v3).
+    pub outlives_delete: bool,
     /// Whether the terminating index is FLAT (an indexOnly index with no
     /// prefix properties, see [`Index::is_flat`]): its entries sit directly
     /// under the `0` bucket of its own level, which is registration-time
@@ -220,6 +229,12 @@ pub struct IndexLevel {
     /// for every document. Never set on a contract without a skipIfAbsent
     /// index, so every historical index level derives bit-identically.
     skip_at_or_below: bool,
+    /// Whether an index whose entries outlive a delete of their document
+    /// ([`Index::outlives_delete`]) passes through or ends at this level. The
+    /// delete walkers only have to ask which indexes a delete clears below a
+    /// level that is stamped. Never set on a contract without such an index,
+    /// so every historical index level derives bit-identically.
+    outlives_delete_at_or_below: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -269,6 +284,12 @@ impl IndexLevel {
     /// see the field docs on [`IndexLevel`].
     pub fn skip_at_or_below(&self) -> bool {
         self.skip_at_or_below
+    }
+
+    /// Whether an index whose entries outlive a delete passes through or ends
+    /// at this level — see the field docs on [`IndexLevel`].
+    pub fn outlives_delete_at_or_below(&self) -> bool {
+        self.outlives_delete_at_or_below
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -377,6 +398,7 @@ impl IndexLevel {
             count_propagating: false,
             count_exempt_branch: false,
             skip_at_or_below: false,
+            outlives_delete_at_or_below: false,
             level_identifier: 0,
         };
 
@@ -422,6 +444,7 @@ impl IndexLevel {
                                 count_propagating: false,
                                 count_exempt_branch: false,
                                 skip_at_or_below: false,
+                                outlives_delete_at_or_below: false,
                             }
                         });
                 if flat_level.has_index_with_type.is_some() {
@@ -463,11 +486,15 @@ impl IndexLevel {
                             count_propagating: false,
                             count_exempt_branch: false,
                             skip_at_or_below: false,
+                            outlives_delete_at_or_below: false,
                         }
                     });
 
                 if !index.skip_if_absent_properties.is_empty() {
                     current_level.skip_at_or_below = true;
+                }
+                if index.outlives_delete {
+                    current_level.outlives_delete_at_or_below = true;
                 }
 
                 if position == 0 {
@@ -567,6 +594,7 @@ impl IndexLevel {
             // Same PV14+ gating as `terminal` — `false` on every
             // historical index level.
             preallocated: index.preallocated,
+            outlives_delete: index.outlives_delete,
             // A flat index terminates on its own level, directly under the
             // document type: the one layout whose prune boundary is the
             // level's `0` bucket rather than the document type.
@@ -723,6 +751,24 @@ impl IndexLevel {
             );
         }
 
+        // Whether an index's entries outlive their document's delete decides
+        // what a delete carries and what a row commits to: turning it on
+        // would leave every existing row committed to values its deletes no
+        // longer carry, and turning it off would ask every delete for a value
+        // the rows written since never committed to. Immutable like the flags
+        // above.
+        if let Some(outlives_delete_change_path) =
+            self.find_first_outlives_delete_change(new_indices)
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    outlives_delete_change_path,
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }
@@ -759,6 +805,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -800,6 +847,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -826,6 +874,7 @@ mod tests {
                 integer_range: None,
                 terminal: None,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
             },
@@ -850,6 +899,7 @@ mod tests {
                 integer_range: None,
                 terminal: None,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
             },
@@ -900,6 +950,7 @@ mod tests {
                 integer_range: None,
                 terminal: None,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
             },
@@ -924,6 +975,7 @@ mod tests {
                 integer_range: None,
                 terminal: None,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
             },
@@ -950,6 +1002,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -998,6 +1051,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1029,6 +1083,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1083,6 +1138,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1108,6 +1164,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1156,6 +1213,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1181,6 +1239,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1229,6 +1288,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1254,6 +1314,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1302,6 +1363,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1350,6 +1412,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1375,6 +1438,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1423,6 +1487,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1448,6 +1513,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1502,6 +1568,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1533,6 +1600,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1587,6 +1655,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1618,6 +1687,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -1680,6 +1750,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }
@@ -1748,6 +1819,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }
@@ -1823,6 +1895,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }
@@ -2224,6 +2297,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }];
@@ -2279,6 +2353,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         };
@@ -2301,6 +2376,64 @@ mod tests {
                 old_index_structure.validate_update(document_type_name, &new_index_structure);
 
             let expected_path = format!("test -> (preallocated: {} -> {})", old_flag, new_flag);
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == expected_path
+            );
+        }
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_outlives_delete_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let index_with_outlives_delete = |outlives_delete: bool| Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            integer_range: None,
+            terminal: None,
+            preallocated: false,
+            outlives_delete,
+            skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
+        };
+
+        for (old_flag, new_flag) in [(false, true), (true, false)] {
+            let old_index_structure = IndexLevel::try_from_indices(
+                &[index_with_outlives_delete(old_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create old index level");
+            let new_index_structure = IndexLevel::try_from_indices(
+                &[index_with_outlives_delete(new_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create new index level");
+
+            let result =
+                old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+            let expected_path = format!("test -> (outlivesDelete: {} -> {})", old_flag, new_flag);
             assert_matches!(
                 result.errors.as_slice(),
                 [ConsensusError::BasicError(

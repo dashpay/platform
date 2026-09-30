@@ -470,6 +470,37 @@ pub(crate) fn level_reaches_entry(
     })
 }
 
+/// Whether a delete of the document of `document_info` removes an entry at or
+/// below `level`: an index ending there that neither skipped the document nor
+/// outlives its delete ([`IndexLevelTypeInfo::outlives_delete`]), or a level
+/// below reaching one. The delete walkers descend only where this holds, so
+/// they leave the entries of an index that outlives the delete, and never
+/// read the values only such an index is keyed by (a delete does not carry
+/// them). A level no such index passes through is answered by
+/// [`level_reaches_entry`], every level of a document type without one.
+#[cfg(feature = "server")]
+pub(crate) fn level_removes_entry(
+    level: &IndexLevel,
+    document_info: &DocumentInfo,
+) -> Result<bool, Error> {
+    if !level.outlives_delete_at_or_below() {
+        return level_reaches_entry(level, document_info);
+    }
+    if let Some(index_type) = level.has_index_with_type() {
+        if !index_type.outlives_delete
+            && document_takes_part_in_index(&index_type.skip_if_absent_properties, document_info)?
+        {
+            return Ok(true);
+        }
+    }
+    for sub_level in level.sub_levels().values() {
+        if level_removes_entry(sub_level, document_info)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// The wrapper that makes an empty `inner_tree_type` tree contribute zero to
 /// an `aggregating_parent_tree_type` parent, or `None` when it contributes
 /// zero unwrapped (a non-sum tree under a sum-only parent):
@@ -561,6 +592,7 @@ mod tests {
             ranked_averageable: false,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             flat: false,
             skip_if_absent_properties: Vec::new(),
         }
@@ -698,6 +730,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         };
@@ -787,6 +820,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         };
@@ -882,6 +916,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         };
@@ -963,6 +998,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         };
@@ -993,6 +1029,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         };
