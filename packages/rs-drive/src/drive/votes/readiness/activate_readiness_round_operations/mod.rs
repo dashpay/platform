@@ -19,6 +19,11 @@ impl Drive {
     /// funding. Routing the activated bundle into the contract's method tables is the
     /// caller's hook; nothing here touches the contract.
     ///
+    /// The refund can repay the payer's debt, which leaves a
+    /// [`LowLevelDriveOperation::RepaidIdentityDebt`] among the operations that only
+    /// `apply_drive_operations` routes, so a block applies an activation as
+    /// `ReadinessOperationType::ActivateRound`.
+    ///
     /// An estimate reads no state and checks nothing: it prices the activation of the largest
     /// round shape (crossed, funded, with a payer to refund) and returns that placeholder in
     /// place of the stored round.
@@ -38,7 +43,7 @@ impl Drive {
     /// * The activated round (the placeholder when estimating) and the low level operations
     ///   that perform the writes.
     /// * `Err(DriveError::CorruptedDriveState)` when the round is not the contract's current
-    ///   crossed round.
+    ///   crossed round, or the block is earlier than its activation deadline.
     /// * `Err(DriveError::VersionNotActive)` on a platform version without readiness.
     #[allow(clippy::too_many_arguments)]
     pub fn activate_readiness_round_operations(

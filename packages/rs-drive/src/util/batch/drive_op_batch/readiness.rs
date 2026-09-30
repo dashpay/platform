@@ -34,6 +34,15 @@ pub enum ReadinessOperationType {
         /// The credits charged to the pool for the deferred cleanup
         cleanup_reserve: Credits,
     },
+    /// Activates a contract's crossed round at its deadline
+    ActivateRound {
+        /// The contract
+        contract_id: [u8; 32],
+        /// The round the deadline entry names
+        round_id: [u8; 32],
+        /// The credits charged to the pool for the deferred cleanup
+        cleanup_reserve: Credits,
+    },
     /// Inserts one accepted report into the current round
     InsertReport {
         /// The contract
@@ -58,11 +67,13 @@ pub enum ReadinessOperationType {
 
 impl ReadinessOperationType {
     /// Whether the operation can retire a round: an opening retires the contract's previous
-    /// round when there is one, a cancellation always does.
+    /// round when there is one, a cancellation and an activation always do.
     fn can_retire_a_round(&self) -> bool {
         matches!(
             self,
-            ReadinessOperationType::OpenRound { .. } | ReadinessOperationType::CancelRound { .. }
+            ReadinessOperationType::OpenRound { .. }
+                | ReadinessOperationType::CancelRound { .. }
+                | ReadinessOperationType::ActivateRound { .. }
         )
     }
 }
@@ -76,8 +87,8 @@ impl ReadinessOperationType {
 ///
 /// * at most one operation that can retire a round: each credits its cleanup reserve to the
 ///   epoch's processing pool as an absolute rewrite of the pool item;
-/// * a round opening or cancellation shares its batch with no identity balance write and no
-///   readiness fund write: it settles the payers and funds of both rounds with absolute
+/// * a round opening, cancellation or activation shares its batch with no identity balance
+///   write and no readiness fund write: it settles the payers and funds of both rounds with absolute
 ///   writes, and the payer it refunds is only known once the round is read;
 /// * each readiness fund is written at most once, since a deduction's reserve check reads the
 ///   committed balance too.
@@ -158,6 +169,21 @@ impl DriveLowLevelOperationConverter for ReadinessOperationType {
             } => drive
                 .cancel_readiness_round_operations(
                     contract_id,
+                    cleanup_reserve,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )
+                .map(|(_, operations)| operations),
+            ReadinessOperationType::ActivateRound {
+                contract_id,
+                round_id,
+                cleanup_reserve,
+            } => drive
+                .activate_readiness_round_operations(
+                    contract_id,
+                    round_id,
                     cleanup_reserve,
                     block_info,
                     estimated_costs_only_with_layer_info,

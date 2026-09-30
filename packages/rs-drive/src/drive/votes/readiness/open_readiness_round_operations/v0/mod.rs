@@ -1,5 +1,5 @@
 use crate::drive::votes::paths::{
-    readiness_contract_tree_path_vec, readiness_contracts_tree_path,
+    readiness_contract_tree_path, readiness_contract_tree_path_vec, readiness_contracts_tree_path,
     readiness_contracts_tree_path_vec, readiness_round_tree_path_vec,
     READINESS_CURRENT_ROUND_POINTER_KEY, READINESS_ROUND_RECORD_KEY,
     READINESS_ROUND_REPORTS_TREE_KEY,
@@ -11,6 +11,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::util::grove_operations::DirectQueryType;
+use crate::util::grove_operations::QueryTarget::QueryTargetTree;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
@@ -18,7 +19,7 @@ use dpp::version::PlatformVersion;
 use dpp::voting::readiness::payer::ReadinessPayer;
 use dpp::voting::readiness::round::{ReadinessRound, ReadinessRoundOpening};
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -77,16 +78,6 @@ impl Drive {
             placeholder.record_crossing(opening.accepted_at_ms, 0, u64::MAX)?;
             Some(placeholder)
         };
-        // The same opening derives the same id: retiring the current round and recreating it
-        // under its own key would queue the live round for cleanup.
-        if previous
-            .as_ref()
-            .is_some_and(|previous| previous.round_id() == round_id)
-        {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "opening a readiness round whose id is already the contract's current round",
-            )));
-        }
         let contract_tree_exists = if estimated_costs_only_with_layer_info.is_none() {
             let contracts_path = readiness_contracts_tree_path();
             self.grove_has_raw(
@@ -100,6 +91,42 @@ impl Drive {
         } else {
             false
         };
+        // The same opening derives the same id, and a retired round keeps its tree until
+        // cleanup: recreating either under its own key would leave the live round queued for
+        // cleanup. An estimate prices the read.
+        let round_tree_exists = if estimated_costs_only_with_layer_info.is_some() {
+            let contract_path = readiness_contract_tree_path(&contract_id);
+            self.grove_has_raw(
+                (&contract_path).into(),
+                &round_id,
+                DirectQueryType::StatelessDirectQuery {
+                    in_tree_type: TreeType::NormalTree,
+                    query_target: QueryTargetTree(0, TreeType::NormalTree),
+                },
+                transaction,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
+            false
+        } else if contract_tree_exists {
+            let contract_path = readiness_contract_tree_path(&contract_id);
+            self.grove_has_raw(
+                (&contract_path).into(),
+                &round_id,
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?
+        } else {
+            false
+        };
+        if round_tree_exists {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "opening a readiness round whose id is the contract's current round or a retired \
+                 round awaiting cleanup",
+            )));
+        }
 
         // The retired round's refund belongs to whoever funded it.
         let mut previous_refund = None;

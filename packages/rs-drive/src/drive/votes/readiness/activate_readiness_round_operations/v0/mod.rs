@@ -47,10 +47,18 @@ impl Drive {
                         .to_string(),
                 )));
             }
-            if round.is_pending() {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(
-                    "activating a readiness round that has not crossed".to_string(),
-                )));
+            match round.deadline_ms() {
+                None => {
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(
+                        "activating a readiness round that has not crossed".to_string(),
+                    )));
+                }
+                Some(deadline_ms) if block_info.time_ms < deadline_ms => {
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(
+                        "activating a readiness round before its activation deadline".to_string(),
+                    )));
+                }
+                Some(_) => {}
             }
             round
         } else {

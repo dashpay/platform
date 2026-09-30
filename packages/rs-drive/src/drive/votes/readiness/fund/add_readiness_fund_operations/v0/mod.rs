@@ -29,6 +29,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        // No stored balance makes this amount valid, so an estimate refuses it as execution does.
+        if amount >= MAX_CREDITS {
+            return Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
+                "trying to set a readiness fund to over max credits amount (i64::MAX)",
+            )));
+        }
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_readiness_fund_update(

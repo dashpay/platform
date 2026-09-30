@@ -16,6 +16,7 @@ use crate::drive::votes::readiness::{
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::{
@@ -25,6 +26,7 @@ use crate::util::batch::DriveOperation;
 use crate::util::common::encode::encode_u64;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use crate::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
+use dpp::balances::credits::MAX_CREDITS;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
@@ -779,6 +781,39 @@ mod funds {
             Some(450)
         );
     }
+
+    #[test]
+    fn should_refuse_a_fund_amount_no_balance_can_hold_when_estimating_as_when_applying() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = block_info(1, 1, 1);
+        let add = || {
+            vec![DriveOperation::PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::CreateNewReadinessFund {
+                    fund_id: Identifier::from([0xF5u8; 32]),
+                    add_balance: MAX_CREDITS,
+                },
+            )]
+        };
+
+        for apply in [false, true] {
+            let result = drive.apply_drive_operations(
+                add(),
+                apply,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            );
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Identity(IdentityError::CriticalBalanceOverflow(_)))
+                ),
+                "{result:?}"
+            );
+        }
+    }
 }
 
 mod rounds {
@@ -1298,6 +1333,87 @@ mod rounds {
             result,
             Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
         ));
+    }
+
+    #[test]
+    fn should_refuse_to_reopen_a_cancelled_round_awaiting_cleanup() {
+        let (drive, payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = [1u8; 32];
+        let (round, _) = open_round(&drive, contract_id, payer, 10, None);
+        insert_reports(&drive, &round, 0, 1, None);
+        let block_info = block_info(1_100_000, 11, 100);
+        drive
+            .apply_drive_operations(
+                vec![DriveOperation::ReadinessOperation(
+                    ReadinessOperationType::CancelRound {
+                        contract_id,
+                        cleanup_reserve: CLEANUP_RESERVE,
+                    },
+                )],
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("cancel");
+        let balance_before = payer_balance(&drive, payer, None);
+        let reopen = |height| {
+            vec![DriveOperation::ReadinessOperation(
+                ReadinessOperationType::OpenRound {
+                    opening: opening(contract_id, payer, height),
+                    funding: FUNDING,
+                },
+            )]
+        };
+
+        // The cancelled round keeps its tree until cleanup, and the same opening derives its
+        // id again: recreating that tree would leave the new round queued for cleanup.
+        let result = drive.apply_drive_operations(
+            reopen(10),
+            true,
+            &block_info,
+            None,
+            platform_version,
+            None,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            drive
+                .fetch_readiness_round(contract_id, None, platform_version)
+                .expect("fetch"),
+            None
+        );
+        let retired = drive
+            .fetch_retired_readiness_round(None, platform_version)
+            .expect("retired")
+            .expect("queued");
+        assert_eq!(
+            (retired.contract_id, retired.round_id),
+            (contract_id, round.round_id())
+        );
+        assert_eq!(payer_balance(&drive, payer, None), balance_before);
+
+        // An opening accepted at another height derives another id and opens.
+        drive
+            .apply_drive_operations(reopen(11), true, &block_info, None, platform_version, None)
+            .expect("open");
+        let current = drive
+            .fetch_readiness_round(contract_id, None, platform_version)
+            .expect("fetch")
+            .expect("current");
+        assert_ne!(current.round_id(), round.round_id());
+        assert_eq!(
+            payer_balance(&drive, payer, None),
+            balance_before - INITIAL_FUNDING
+        );
     }
 
     #[test]
@@ -2012,7 +2128,113 @@ mod retirement {
     }
 
     #[test]
-    fn should_activate_a_crossed_round_and_refuse_a_pending_or_stale_one() {
+    fn should_route_the_debt_an_activation_refund_repays_to_the_processing_pool() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let payer = funded_identity(&drive, 8, [0xABu8; 32], INITIAL_FUNDING);
+        drive
+            .add_to_system_credits(INITIAL_FUNDING, None, platform_version)
+            .expect("system credits");
+        let contract_id = [1u8; 32];
+        let (mut round, _) = open_round(&drive, contract_id, payer, 10, None);
+        let deadline_ms = cross(&drive, &mut round, 1_500_000);
+        // The payer spent everything on the opening and has since fallen into debt.
+        const DEBT: Credits = 5_000_000;
+        let debt_operation = drive
+            .update_identity_negative_credit_operation(payer.to_buffer(), DEBT, platform_version)
+            .expect("debt operation");
+        apply(&drive, vec![debt_operation], None, platform_version);
+        let block_info = block_info(deadline_ms, 20, 100);
+        let activate = || {
+            DriveOperation::ReadinessOperation(ReadinessOperationType::ActivateRound {
+                contract_id,
+                round_id: round.round_id(),
+                cleanup_reserve: CLEANUP_RESERVE,
+            })
+        };
+
+        // Applied as plain low level operations, the repaid debt has nowhere to go.
+        let (_, operations) = drive
+            .activate_readiness_round_operations(
+                contract_id,
+                round.round_id(),
+                CLEANUP_RESERVE,
+                &block_info,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("activation operations");
+        assert!(LowLevelDriveOperation::holds_repaid_identity_debt(
+            &operations
+        ));
+        // Beside another balance write, the settlement would overwrite it.
+        assert_batch_refused(
+            &drive,
+            || {
+                vec![
+                    activate(),
+                    DriveOperation::IdentityOperation(
+                        IdentityOperationType::AddToIdentityBalance {
+                            identity_id: payer.to_buffer(),
+                            added_balance: 1,
+                        },
+                    ),
+                ]
+            },
+            &block_info,
+        );
+
+        let estimated = drive
+            .apply_drive_operations(
+                vec![activate()],
+                false,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("estimate");
+        let applied = drive
+            .apply_drive_operations(
+                vec![activate()],
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("activate");
+        assert_estimate_covers(&estimated, &applied);
+
+        assert_eq!(
+            drive
+                .fetch_readiness_round(contract_id, None, platform_version)
+                .expect("fetch"),
+            None
+        );
+        assert_eq!(
+            payer_balance(&drive, payer, None),
+            INITIAL_FUNDING - CLEANUP_RESERVE - DEBT
+        );
+        assert_eq!(
+            drive
+                .fetch_identity_negative_balance_operations(
+                    payer.to_buffer(),
+                    true,
+                    None,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("debt"),
+            Some(0)
+        );
+        assert_eq!(pool_credits(&drive, None), CLEANUP_RESERVE + DEBT);
+        assert!(conservation_holds(&drive, None));
+    }
+
+    #[test]
+    fn should_activate_a_crossed_round_and_refuse_a_pending_early_or_stale_one() {
         let (drive, payer) = setup();
         let platform_version = PlatformVersion::latest();
         let contract_id = [1u8; 32];
@@ -2051,6 +2273,20 @@ mod retirement {
             [9u8; 32],
             CLEANUP_RESERVE,
             &block_info(deadline_ms, 20, 100),
+            &mut None,
+            None,
+            platform_version,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+
+        let result = drive.activate_readiness_round_operations(
+            contract_id,
+            round.round_id(),
+            CLEANUP_RESERVE,
+            &block_info(deadline_ms - 1, 20, 100),
             &mut None,
             None,
             platform_version,
