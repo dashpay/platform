@@ -648,11 +648,9 @@ fn balance_explicit_inputs(
     let mut shares: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
     let mut assigned: u128 = 0;
     for (addr, weight) in inputs {
-        let share = if weight_total == 0 {
-            (total_output as u128) / n
-        } else {
-            ((total_output as u128) * (*weight as u128)) / weight_total
-        };
+        let share = ((total_output as u128) * (*weight as u128))
+            .checked_div(weight_total)
+            .unwrap_or((total_output as u128) / n);
         shares.insert(*addr, share as Credits);
         assigned += share;
     }
@@ -1013,7 +1011,7 @@ impl Drop for SetupGuard {
             let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
                 super::funding_ledger::print_report,
             ));
-            if let Err(_) = unwind {
+            if unwind.is_err() {
                 tracing::error!(
                     target: "platform_wallet::e2e::wallet_factory",
                     "funding ledger report panicked; suppressed via catch_unwind"

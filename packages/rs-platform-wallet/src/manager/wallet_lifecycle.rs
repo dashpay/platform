@@ -1531,7 +1531,11 @@ mod persister_error_tests {
     ) -> Arc<PlatformWalletManager<FaultyPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
-        Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
+        Arc::new(PlatformWalletManager::new(
+            sdk,
+            persister,
+            vec![event_handler],
+        ))
     }
 
     fn seed_bytes() -> [u8; 64] {
@@ -1805,7 +1809,7 @@ mod persister_error_tests {
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
-        let manager = PlatformWalletManager::new(sdk, Arc::clone(&persister), event_handler);
+        let manager = PlatformWalletManager::new(sdk, Arc::clone(&persister), vec![event_handler]);
         let _ = persister
             .wallet_manager
             .set(Arc::downgrade(&manager.wallet_manager));

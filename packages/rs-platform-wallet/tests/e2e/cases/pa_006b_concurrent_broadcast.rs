@@ -43,7 +43,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 
 use crate::framework::prelude::*;
@@ -138,7 +138,7 @@ async fn pa_006b_concurrent_identical_broadcasts() {
     let sdk_a = Arc::clone(s.ctx.sdk());
     let b1 = Arc::clone(&bytes);
     let task_a = tokio::spawn(async move {
-        let st = StateTransition::deserialize_from_bytes(&b1)
+        let st = StateTransition::deserialize_from_bytes_untrusted(&b1)
             .expect("task_a: deserialize captured ST bytes");
         st.broadcast(sdk_a.as_ref(), None).await
     });
@@ -146,7 +146,7 @@ async fn pa_006b_concurrent_identical_broadcasts() {
     let sdk_b = Arc::clone(s.ctx.sdk());
     let b2 = Arc::clone(&bytes);
     let task_b = tokio::spawn(async move {
-        let st = StateTransition::deserialize_from_bytes(&b2)
+        let st = StateTransition::deserialize_from_bytes_untrusted(&b2)
             .expect("task_b: deserialize captured ST bytes");
         st.broadcast(sdk_b.as_ref(), None).await
     });

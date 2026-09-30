@@ -1313,7 +1313,7 @@ mod tests {
         let manager = PlatformWalletManager::new(
             sdk,
             persister,
-            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+            vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
         );
 
         // `Some(0)` skips the SPV-tip birth-height lookup, so nothing here

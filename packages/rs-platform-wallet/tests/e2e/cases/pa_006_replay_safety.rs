@@ -25,7 +25,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 
 use crate::framework::prelude::*;
@@ -122,7 +122,7 @@ async fn pa_006_replay_safety() {
         .expect("addr_dst never observed first transfer");
 
     // ---- Re-broadcast the captured bytes. Expect protocol rejection. ----
-    let replay_st = StateTransition::deserialize_from_bytes(&captured_bytes)
+    let replay_st = StateTransition::deserialize_from_bytes_untrusted(&captured_bytes)
         .expect("deserialize captured ST bytes");
 
     use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;

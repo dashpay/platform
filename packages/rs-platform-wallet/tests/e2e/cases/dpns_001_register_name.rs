@@ -134,7 +134,7 @@ async fn dpns_001_register_and_resolve_name() {
         .test_wallet
         .platform_wallet()
         .identity()
-        .register_name_with_external_signer(&identity.id, &label, identity.signer.as_ref())
+        .register_name_with_external_signer(&identity.id, &label, None, identity.signer.as_ref())
         .await
         .expect("register_name_with_external_signer");
     assert_eq!(

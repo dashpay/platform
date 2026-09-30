@@ -533,6 +533,7 @@ async fn setup_with_per_identity_funding_inner(
 /// - [`FrameworkError::Cleanup`] (via [`wait::wait_for_core_balance`])
 ///   when the SPV bloom filter doesn't observe the inbound UTXO
 ///   within [`CORE_FUNDING_TIMEOUT`].
+///
 /// Non-async sync wrapper so `#[track_caller]` captures the test
 /// file before the async state machine is created.
 #[track_caller]

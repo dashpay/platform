@@ -140,7 +140,7 @@ impl PerTestMap {
     pub fn snapshot_sorted(&self) -> Vec<(String, PerTestCounters)> {
         let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let mut entries: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        entries.sort_by(|a, b| b.1.net().cmp(&a.1.net()));
+        entries.sort_by_key(|a| std::cmp::Reverse(a.1.net()));
         entries
     }
 }

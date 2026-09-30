@@ -50,6 +50,7 @@
 
 use std::collections::BTreeMap;
 
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;

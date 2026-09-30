@@ -899,26 +899,28 @@ mod tests {
     /// bank starve mid-run again.
     #[test]
     fn refill_defaults_cover_measured_burn() {
-        assert!(
-            DEFAULT_CORE_REFILL_THRESHOLD_DUFF >= CORE_BURN_PER_FULL_PASS_DUFF,
-            "threshold must cover ≥1 full pass (threshold={DEFAULT_CORE_REFILL_THRESHOLD_DUFF} \
-             burn/pass={CORE_BURN_PER_FULL_PASS_DUFF})"
-        );
-        assert!(
-            DEFAULT_CORE_REFILL_TARGET_DUFF >= CORE_BURN_PER_FULL_PASS_DUFF * 3,
-            "target must buy ≥3 full passes (target={DEFAULT_CORE_REFILL_TARGET_DUFF} \
-             burn/pass={CORE_BURN_PER_FULL_PASS_DUFF})"
-        );
+        const {
+            assert!(
+                DEFAULT_CORE_REFILL_THRESHOLD_DUFF >= CORE_BURN_PER_FULL_PASS_DUFF,
+                "threshold must cover >=1 full pass of measured burn"
+            );
+            assert!(
+                DEFAULT_CORE_REFILL_TARGET_DUFF >= CORE_BURN_PER_FULL_PASS_DUFF * 3,
+                "target must buy >=3 full passes of measured burn"
+            );
+        }
         // Preflight floor is exactly one pass: below it a run cannot
         // finish, so failing fast is the only correct behaviour.
         assert_eq!(
             CORE_REFILL_OPERATIONAL_MIN_DUFF, CORE_BURN_PER_FULL_PASS_DUFF,
             "preflight floor must equal one full pass of burn"
         );
-        assert!(
-            DEFAULT_CORE_REFILL_THRESHOLD_DUFF >= CORE_REFILL_OPERATIONAL_MIN_DUFF,
-            "auto-refill trip line must sit at or above the hard preflight floor so \
-             a healthy run never lands in the fail-fast window"
-        );
+        const {
+            assert!(
+                DEFAULT_CORE_REFILL_THRESHOLD_DUFF >= CORE_REFILL_OPERATIONAL_MIN_DUFF,
+                "auto-refill trip line must sit at or above the hard preflight floor so \
+                 a healthy run never lands in the fail-fast window"
+            );
+        }
     }
 }
