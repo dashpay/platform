@@ -3,7 +3,9 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+use crate::changeset::{
+    ClientStartState, ClientWalletStartState, PersistenceCapabilities, PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::manager::history_replay::replay_recorded_history;
 use crate::wallet::core::WalletGeneration;
@@ -89,6 +91,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             #[cfg(feature = "shielded")]
                 shielded: _,
         } = start_state;
+
+        // Without stored history the load replay has nothing to rebuild
+        // confirmed-spend guards from; say so rather than degrade silently.
+        if !wallets.is_empty()
+            && !self
+                .persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::CORE_HISTORY_RESTORE)
+        {
+            tracing::warn!(
+                wallets = wallets.len(),
+                "load: persister does not restore transaction history; confirmed-spend \
+                 guards are not rebuilt until the spends are observed again"
+            );
+        }
 
         // Tracked (wallet-independent) masternodes ride the same startup
         // hydration; a failure logs and starts empty rather than failing
