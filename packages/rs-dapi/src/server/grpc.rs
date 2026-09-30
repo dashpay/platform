@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tracing::{info, trace};
@@ -413,6 +414,12 @@ impl LargeBodySlots {
     }
 }
 
+/// A large-body slot shared by the request body that claims it and the call
+/// that consumes the request: tonic drops a unary request body as soon as the
+/// message is decoded, before the handler runs, while the handler still holds
+/// the transaction, so the slot is given back only once both are gone.
+type LargeBodyLease = Arc<OnceLock<LargeBodySlot>>;
+
 /// A held large-body slot, given back when dropped.
 struct LargeBodySlot {
     slots: Arc<LargeBodySlots>,
@@ -455,12 +462,13 @@ struct BodyLimitService<S> {
 impl<S, ReqBody> Service<Request<ReqBody>> for BodyLimitService<S>
 where
     S: Service<Request<TonicBody>>,
+    S::Future: Send + 'static,
     ReqBody: Body<Data = Bytes> + Send + Unpin + 'static,
     ReqBody::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = S::Future;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -468,11 +476,20 @@ where
 
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
         let (parts, body) = req.into_parts();
-        let body = match self.config.limit_body(&parts, body) {
-            Ok(limited) => TonicBody::new(limited),
-            Err(body) => TonicBody::new(body),
+        let (body, lease) = match self.config.limit_body(&parts, body) {
+            Ok(limited) => {
+                let lease = limited.large_body_lease();
+                (TonicBody::new(limited), lease)
+            }
+            Err(body) => (TonicBody::new(body), None),
         };
-        self.inner.call(Request::from_parts(parts, body))
+        let call = self.inner.call(Request::from_parts(parts, body));
+        Box::pin(async move {
+            // Keeps any large-body slot the body takes until the call ends or
+            // is cancelled, not only until tonic drops the body.
+            let _lease = lease;
+            call.await
+        })
     }
 }
 
@@ -507,7 +524,7 @@ struct LargeBodyClaim {
     threshold: usize,
     slots: Arc<LargeBodySlots>,
     source: Option<SourceKey>,
-    held: Option<LargeBodySlot>,
+    lease: LargeBodyLease,
 }
 
 /// A request body bounded by a byte limit, checked on the declared length of
@@ -531,8 +548,9 @@ impl<B> LimitedMessageBody<B> {
         }
     }
 
-    /// Requires one of `slots` for `source` for as long as the body lives once
-    /// a message header takes it past `threshold` bytes.
+    /// Requires one of `slots` for `source` once a message header takes the
+    /// body past `threshold` bytes, held for as long as the body or a clone of
+    /// its [`LimitedMessageBody::large_body_lease`] lives.
     fn with_large_body_slots(
         mut self,
         threshold: usize,
@@ -543,9 +561,16 @@ impl<B> LimitedMessageBody<B> {
             threshold,
             slots,
             source,
-            held: None,
+            lease: LargeBodyLease::default(),
         });
         self
+    }
+
+    /// The lease on the large-body slot this body takes, if it may need one.
+    fn large_body_lease(&self) -> Option<LargeBodyLease> {
+        self.large_body_claim
+            .as_ref()
+            .map(|claim| claim.lease.clone())
     }
 
     fn over_limit(limit: usize) -> Status {
@@ -560,10 +585,13 @@ impl<B> LimitedMessageBody<B> {
         let Some(claim) = &mut self.large_body_claim else {
             return Ok(());
         };
-        if end <= claim.threshold || claim.held.is_some() {
+        if end <= claim.threshold || claim.lease.get().is_some() {
             return Ok(());
         }
-        claim.held = Some(claim.slots.claim(claim.source)?);
+        let slot = claim.slots.claim(claim.source)?;
+        // Only this body sets the lease and it holds none yet, so the slot is
+        // stored; were it not, dropping it would give it straight back.
+        let _ = claim.lease.set(slot);
         Ok(())
     }
 
@@ -683,9 +711,17 @@ fn parse_grpc_timeout_header(headers: &HeaderMap) -> Option<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dapi_grpc::tonic::client::Grpc as GrpcClient;
+    use dapi_grpc::tonic::server::{Grpc as GrpcServer, NamedService, UnaryService};
+    use dapi_grpc::tonic::transport::server::TcpIncoming;
+    use dapi_grpc::tonic::transport::{Channel, Server};
+    use dapi_grpc::tonic::{Code, Request as TonicRequest, Response as TonicResponse};
+    use dapi_grpc::tonic_prost::ProstCodec;
     use http_body_util::BodyExt;
-    use std::future::Future;
+    use std::net::SocketAddr;
     use std::task::{Context, Poll};
+    use tokio::net::TcpListener;
+    use tokio::sync::{Notify, Semaphore};
 
     #[derive(Clone)]
     struct SlowService;
@@ -1146,6 +1182,106 @@ mod tests {
         }
     }
 
+    /// A gRPC service on the Platform path whose every method takes raw bytes and answers with
+    /// their length. With a gate, the handler holds the request until it gets a permit.
+    #[derive(Clone, Default)]
+    struct ByteCounter {
+        gate: Option<Arc<Semaphore>>,
+        entered: Arc<Notify>,
+    }
+
+    impl NamedService for ByteCounter {
+        const NAME: &'static str = "org.dash.platform.dapi.v0.Platform";
+    }
+
+    impl UnaryService<Vec<u8>> for ByteCounter {
+        type Response = u64;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<TonicResponse<u64>, Status>> + Send + 'static>>;
+
+        fn call(&mut self, request: TonicRequest<Vec<u8>>) -> Self::Future {
+            let gate = self.gate.clone();
+            let entered = self.entered.clone();
+            Box::pin(async move {
+                entered.notify_one();
+                if let Some(gate) = gate {
+                    gate.acquire().await.expect("the gate stays open").forget();
+                }
+                Ok(TonicResponse::new(request.into_inner().len() as u64))
+            })
+        }
+    }
+
+    impl Service<Request<TonicBody>> for ByteCounter {
+        type Response = Response<TonicBody>;
+        type Error = std::convert::Infallible;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, req: Request<TonicBody>) -> Self::Future {
+            let service = self.clone();
+            Box::pin(async move {
+                let mut grpc = GrpcServer::new(ProstCodec::default())
+                    .max_decoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES);
+                Ok(grpc.unary(service, req).await)
+            })
+        }
+    }
+
+    /// Serves `service` behind `layer` on a local port, with a client connected to it.
+    async fn serve(
+        layer: BodyLimitLayer,
+        service: ByteCounter,
+    ) -> (SocketAddr, GrpcClient<Channel>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("local address");
+        tokio::spawn(async move {
+            Server::builder()
+                .layer(layer)
+                .add_service(service)
+                .serve_with_incoming(TcpIncoming::from(listener))
+                .await
+                .expect("test server");
+        });
+        let channel = Channel::from_shared(format!("http://{address}"))
+            .expect("endpoint")
+            .connect()
+            .await
+            .expect("connect");
+        let client = GrpcClient::new(channel)
+            .max_encoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES)
+            .max_decoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES);
+        (address, client)
+    }
+
+    /// One unary call of `path` carrying `payload`, answered with the byte count.
+    async fn call_unary(
+        client: &mut GrpcClient<Channel>,
+        path: &str,
+        payload: Vec<u8>,
+    ) -> Result<u64, Status> {
+        client.ready().await.expect("client ready");
+        client
+            .unary(
+                TonicRequest::new(payload),
+                path.parse().expect("path"),
+                ProstCodec::<Vec<u8>, u64>::default(),
+            )
+            .await
+            .map(|response| response.into_inner())
+    }
+
+    fn family_cap() -> usize {
+        dpp::version::PlatformVersion::latest()
+            .system_limits
+            .max_contract_code_state_transition_size
+            .expect("the latest version bounds contract code envelopes") as usize
+    }
+
     /// Through a real tonic server and HTTP/2 client: a `getPathElements` body above the query
     /// allowance is refused by the layer (ResourceExhausted, naming the limit) even though it
     /// is far below tonic's service-wide decode cap, and a broadcast carrying a family-cap
@@ -1154,55 +1290,8 @@ mod tests {
     /// crossed the layer, not on Platform semantics.
     #[tokio::test]
     async fn real_server_applies_the_per_method_body_limit() {
-        use dapi_grpc::tonic::client::Grpc as GrpcClient;
-        use dapi_grpc::tonic::server::{Grpc as GrpcServer, NamedService, UnaryService};
-        use dapi_grpc::tonic::transport::server::TcpIncoming;
-        use dapi_grpc::tonic::transport::{Channel, Server};
-        use dapi_grpc::tonic::{Code, Request as TonicRequest, Response as TonicResponse};
-        use dapi_grpc::tonic_prost::ProstCodec;
-        use tokio::net::TcpListener;
-
-        /// A gRPC service whose every method takes raw bytes and returns their length.
-        #[derive(Clone)]
-        struct ByteCounter;
-
-        impl NamedService for ByteCounter {
-            const NAME: &'static str = "org.dash.platform.dapi.v0.Platform";
-        }
-
-        impl UnaryService<Vec<u8>> for ByteCounter {
-            type Response = u64;
-            type Future = std::future::Ready<Result<TonicResponse<u64>, Status>>;
-
-            fn call(&mut self, request: TonicRequest<Vec<u8>>) -> Self::Future {
-                std::future::ready(Ok(TonicResponse::new(request.into_inner().len() as u64)))
-            }
-        }
-
-        impl Service<Request<TonicBody>> for ByteCounter {
-            type Response = Response<TonicBody>;
-            type Error = std::convert::Infallible;
-            type Future =
-                Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
-
-            fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-                Poll::Ready(Ok(()))
-            }
-
-            fn call(&mut self, req: Request<TonicBody>) -> Self::Future {
-                let service = self.clone();
-                Box::pin(async move {
-                    let mut grpc = GrpcServer::new(ProstCodec::default())
-                        .max_decoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES);
-                    Ok(grpc.unary(service, req).await)
-                })
-            }
-        }
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let address = listener.local_addr().expect("local address");
         // One large-body slot, so the second family-cap call below only passes if the server
-        // gives the slot back once tonic is done with the first request's body.
+        // gives the slot back once the first call is done.
         let layer = BodyLimitLayer::new(
             PLATFORM_SERVICE_PATH_PREFIX,
             MAX_PLATFORM_QUERY_BODY_BYTES,
@@ -1211,34 +1300,9 @@ mod tests {
             1,
             1,
         );
-        let server = tokio::spawn(async move {
-            Server::builder()
-                .layer(layer)
-                .add_service(ByteCounter)
-                .serve_with_incoming(TcpIncoming::from(listener))
-                .await
-                .expect("test server");
-        });
-
-        let channel = Channel::from_shared(format!("http://{address}"))
-            .expect("endpoint")
-            .connect()
-            .await
-            .expect("connect");
-        let mut client = GrpcClient::new(channel)
-            .max_encoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES)
-            .max_decoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES);
-        let mut call = async |path: &str, payload: Vec<u8>| {
-            client.ready().await.expect("client ready");
-            client
-                .unary(
-                    TonicRequest::new(payload),
-                    path.parse().expect("path"),
-                    ProstCodec::<Vec<u8>, u64>::default(),
-                )
-                .await
-                .map(|response| response.into_inner())
-        };
+        let (address, mut client) = serve(layer, ByteCounter::default()).await;
+        let mut call =
+            async |path: &str, payload: Vec<u8>| call_unary(&mut client, path, payload).await;
 
         // A query body above the query allowance but below the service-wide cap is refused by
         // the layer, and the status names the limit.
@@ -1260,11 +1324,7 @@ mod tests {
                 .expect("a query under the allowance passes"),
             64 * 1024
         );
-        let family_cap = dpp::version::PlatformVersion::latest()
-            .system_limits
-            .max_contract_code_state_transition_size
-            .expect("the latest version bounds contract code envelopes")
-            as usize;
+        let family_cap = family_cap();
         for _ in 0..2 {
             assert_eq!(
                 call(TRANSACTION_PATH, vec![0x5Au8; family_cap])
@@ -1320,8 +1380,79 @@ mod tests {
                 "{status:?}"
             );
         }
+    }
 
-        server.abort();
+    /// Through a real tonic server: tonic drops a unary request body once the message is
+    /// decoded, before the handler runs, so a large broadcast whose handler is still working
+    /// (waiting on Tenderdash, say) keeps its large-body slot. With one slot, a second large
+    /// broadcast is refused while the first handler is blocked, and passes once it is done.
+    #[tokio::test]
+    async fn real_server_holds_the_large_body_slot_until_the_call_ends() {
+        let layer = BodyLimitLayer::new(
+            PLATFORM_SERVICE_PATH_PREFIX,
+            MAX_PLATFORM_QUERY_BODY_BYTES,
+            MAX_PLATFORM_TRANSACTION_BODY_BYTES,
+            PLATFORM_TRANSACTION_METHODS,
+            1,
+            1,
+        );
+        let gate = Arc::new(Semaphore::new(0));
+        let service = ByteCounter {
+            gate: Some(gate.clone()),
+            ..ByteCounter::default()
+        };
+        let entered = service.entered.clone();
+        let (_, client) = serve(layer, service).await;
+        let family_cap = family_cap();
+
+        let mut first_client = client.clone();
+        let first = tokio::spawn(async move {
+            call_unary(
+                &mut first_client,
+                TRANSACTION_PATH,
+                vec![0x5Au8; family_cap],
+            )
+            .await
+        });
+        entered.notified().await;
+
+        let mut second_client = client.clone();
+        let status = tokio::time::timeout(
+            Duration::from_secs(5),
+            call_unary(
+                &mut second_client,
+                TRANSACTION_PATH,
+                vec![0x5Au8; family_cap],
+            ),
+        )
+        .await
+        .expect("the second broadcast is refused instead of waiting in the handler")
+        .expect_err("no slot is left while the first handler runs");
+        assert_eq!(status.code(), Code::ResourceExhausted, "{status:?}");
+        assert!(
+            status.message().contains("too many large requests"),
+            "{status:?}"
+        );
+
+        gate.add_permits(2);
+        assert_eq!(
+            first
+                .await
+                .expect("the first call task")
+                .expect("the first broadcast completes"),
+            family_cap as u64
+        );
+        let mut third_client = client.clone();
+        assert_eq!(
+            call_unary(
+                &mut third_client,
+                TRANSACTION_PATH,
+                vec![0x5Au8; family_cap]
+            )
+            .await
+            .expect("the finished call gave its slot back"),
+            family_cap as u64
+        );
     }
 
     #[tokio::test]
