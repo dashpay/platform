@@ -14,6 +14,8 @@ const CONTRACT_MODERATION_TEAM_NOT_SEATED: u32 = 41205;
 const DOCUMENT_NOT_SETTLED: u32 = 41206;
 const SETTLED_DELETION_REASON_MISMATCH: u32 = 41207;
 const SETTLED_DELETION_ALREADY_APPROVED: u32 = 41208;
+const MODERATION_REASON_NOT_LISTED: u32 = 41203;
+const SETTLED_DELETION_NOT_RESTORABLE: u32 = 41209;
 
 /// A month after the documents of these tests were written, and after the seat was awarded:
 /// every story and memo is settled.
@@ -316,8 +318,8 @@ async fn should_refuse_an_approval_while_the_story_is_within_its_window() {
 }
 
 /// Before a team is seated nobody approves a settled deletion, the interim moderators included;
-/// a type that says nothing of settled deletions takes none from anyone; and nobody off the team
-/// approves one.
+/// a type that says nothing of settled deletions takes none from anyone; nobody off the team
+/// approves one; and the first approval names a reason the team's proposal lists.
 #[tokio::test]
 async fn should_refuse_an_approval_without_a_seated_team_a_rule_or_a_seat() {
     let team = Team::new(InterimModerators::ContractOwner).await;
@@ -353,6 +355,22 @@ async fn should_refuse_an_approval_without_a_seated_team_a_rule_or_a_seat() {
             IDENTITY_NOT_CONTRACT_MODERATOR,
         );
     }
+    // The first approval names a reason document the team's proposal lists.
+    let unlisted = setup
+        .moderate(
+            &team.leader,
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name: STORY.to_string(),
+                document_id: story.id(),
+                reason: ContractModerationReason::from_text("doxxing")
+                    .with_reason_document(UNLISTED_REASON),
+            },
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&unlisted, SETTLED_AT, &transaction),
+        MODERATION_REASON_NOT_LISTED,
+    );
     assert_eq!(team.settled_deletion(STORY, story.id(), &transaction), None);
 }
 
@@ -456,4 +474,115 @@ async fn should_drop_approvers_who_left_and_start_afresh_once_none_remains_or_th
     assert_eq!(lapsed.proposed_at, lapsed_at);
     assert_eq!(lapsed.reason.text, "harassment");
     assert!(team.is_stored(STORY, story.id(), &transaction));
+}
+
+/// A deletion the team approved together stands: no member restores it, the leader included. A
+/// member's deletion within the window is restored as ever.
+#[tokio::test]
+async fn should_refuse_to_restore_a_deletion_the_team_approved() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let settled = team.written_by(&setup.stranger, MEMO).await;
+    let fresh = team.written_by(&setup.stranger, MEMO).await;
+    team.award();
+    let bytes_of = |document: &Document| {
+        let stored = setup
+            .stored_document(MEMO, document.id(), None)
+            .expect("expected the memo");
+        setup.document_bytes(MEMO, &stored)
+    };
+    let (settled_bytes, fresh_bytes) = (bytes_of(&settled), bytes_of(&fresh));
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    // The leader alone deletes the settled memo; the member deletes the fresh one within its
+    // window.
+    let approval = setup
+        .moderate(&team.leader, approve(MEMO, settled.id(), "doxxing"))
+        .await;
+    assert_success(&setup.process_at(&approval, SETTLED_AT, &transaction));
+    let deletion = setup
+        .moderate(&team.member, delete_action(MEMO, fresh.id()))
+        .await;
+    assert_success(&setup.process_at(&deletion, BLOCK_TIME_MS + 1_000, &transaction));
+
+    for member in [&team.leader, &team.member] {
+        let restore = setup
+            .moderate(member, restore_action(MEMO, settled_bytes.clone()))
+            .await;
+        assert_paid_with_code(
+            &setup.process_at(&restore, SETTLED_AT + 1, &transaction),
+            SETTLED_DELETION_NOT_RESTORABLE,
+        );
+    }
+    assert!(!team.is_stored(MEMO, settled.id(), &transaction));
+
+    let restore = setup
+        .moderate(&team.member, restore_action(MEMO, fresh_bytes))
+        .await;
+    assert_success(&setup.process_at(&restore, BLOCK_TIME_MS + 2_000, &transaction));
+    assert!(team.is_stored(MEMO, fresh.id(), &transaction));
+}
+
+/// The approval that deletes a document forfeits the refund of whoever paid for the document,
+/// and nothing else: the approvals record it rewrites shorter refunds the member who paid for
+/// it.
+#[tokio::test]
+async fn should_refund_the_member_who_paid_for_the_approvals_the_deletion_rewrites() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let memo = team.written_by(&setup.stranger, MEMO).await;
+    team.award();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    // The member's approval falls short (the leader must approve the memo's deletion), for a
+    // long reason, and lapses a week later.
+    let member_approval = setup
+        .moderate(&team.member, approve(MEMO, memo.id(), &"x".repeat(200)))
+        .await;
+    assert_success(&setup.process_at(&member_approval, SETTLED_AT, &transaction));
+
+    // The leader's approval, for a short reason, starts afresh and deletes the memo: its
+    // record is shorter than the member's it replaces.
+    let lapsed_at = SETTLED_AT
+        + PlatformVersion::latest()
+            .system_limits
+            .contract_settled_deletion_approval_window_ms
+        + 1;
+    let leader_approval = setup
+        .moderate(&team.leader, approve(MEMO, memo.id(), "spam"))
+        .await;
+    let execution = setup.process_at(&leader_approval, lapsed_at, &transaction);
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = &execution else {
+        panic!("expected the approval to pass, got {execution:?}");
+    };
+    assert_eq!(
+        fee_result.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
+        vec![team.member.id().to_buffer()]
+    );
+    assert!(!team.is_stored(MEMO, memo.id(), &transaction));
+}
+
+/// No update adds a type that says who of the team approves the deletion of its settled
+/// documents: the elected declaration, which no update changes, does not give the team
+/// `deleteDocuments` on a type the contract was not created with, so the update is refused
+/// (10900), and no such type is ever without the approvals tree only the contract's insertion
+/// creates.
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_type_that_deletes_settled_documents() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let mut changed = setup.contract.clone();
+    changed.increment_version();
+    let schema = changed
+        .document_type_for_name(STORY)
+        .expect("expected the story type")
+        .schema()
+        .clone();
+    add_document_type(&mut changed, "saga", schema);
+    let update = setup.contract_update(changed).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_unpaid_with_code(
+        &setup.process(&update, &transaction),
+        INVALID_CONTRACT_MODERATION_CONFIG,
+    );
 }

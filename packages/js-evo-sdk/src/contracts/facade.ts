@@ -200,7 +200,9 @@ export class ContractsFacade {
    * Restores, as a moderator, one document a moderator deleted: `options.document` is the
    * document as it was (as fetched before the deletion), which must hash to what its removal
    * record holds, and the restore must come within a week of the deletion (41120). Any current
-   * moderator or the contract owner may restore, whoever deleted. The document goes back
+   * moderator or the contract owner may restore, whoever deleted, except a deletion a seated
+   * team approved together past the type's window (`deleteSettled`), which stands (41209).
+   * The document goes back
    * through an ordinary insert, so a unique index value another document took meanwhile
    * refuses it (40105). Signed like the other moderations. Resolves with the record of the
    * deletion, now marked restored (`restoredBy`, `restoredAt`); the signer paid for the

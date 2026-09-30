@@ -2378,9 +2378,10 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - the contract's moderators must be an elected team: the rule names the
 ///   seated team's leader and counts its members, and the owner and appointed
 ///   moderators of the other kinds are neither;
-/// - `approvals` is at least 1 and at most
-///   `SystemLimits::max_contract_moderation_settled_deletion_approvals`, the most
-///   members a seated team can hold.
+/// - `approvals` is at least 1 and, under full validation, at most the members
+///   the declared team can hold: its leader,
+///   `SystemLimits::max_moderation_charter_elected_members` elected members and
+///   the declaration's `maxAddedModerators`.
 ///
 /// `changeFields` names the properties only the moderators write. A
 /// moderator's change is stored as an update that touches nothing else, and is
@@ -2412,6 +2413,7 @@ pub(super) fn apply_moderator_abilities(
     abilities: ModeratorAbilitiesKeyword,
     data_contract_config: &DataContractConfig,
     name: &str,
+    full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     let ModeratorAbilitiesKeyword {
@@ -2566,24 +2568,32 @@ pub(super) fn apply_moderator_abilities(
             )));
         }
         // The moderation config was checked present above
-        let elected = data_contract_config
+        let Some(elected) = data_contract_config
             .moderation()
-            .is_some_and(|moderation| moderation.moderators.elected().is_some());
-        if !elected {
+            .and_then(|moderation| moderation.moderators.elected())
+        else {
             return Err(structure_error(format!(
                 "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}`, which \
                  names the leader and the members of an elected moderation team, but the \
                  contract's moderators are not elected",
             )));
-        }
-        let max_approvals = platform_version
-            .system_limits
-            .max_contract_moderation_settled_deletion_approvals;
-        if rule.approvals == 0 || rule.approvals > max_approvals {
+        };
+        // The most members the declared team can hold: its leader, the members a charter
+        // elects and those the declaration lets the leader add. A registration limit, like the
+        // others: a stored contract was checked when it was registered, and the charter's
+        // bound changing later must not make it unreadable.
+        let max_approvals = 1u16
+            .saturating_add(
+                platform_version
+                    .system_limits
+                    .max_moderation_charter_elected_members,
+            )
+            .saturating_add(elected.max_added_moderators);
+        if rule.approvals == 0 || (full_validation && rule.approvals > max_approvals) {
             return Err(structure_error(format!(
                 "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}.{}: {}`, \
-                 which must be between 1 and {max_approvals}, the most members a seated team \
-                 holds",
+                 which must be between 1 and {max_approvals}, the most members the declared \
+                 team can hold",
                 delete_settled::APPROVALS,
                 rule.approvals,
             )));

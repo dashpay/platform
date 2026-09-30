@@ -107,7 +107,8 @@ use dpp::consensus::state::contract_moderation::{
     ContractModerationAbilityNotGrantedError, ContractModerationTeamNotSeatedError,
     DocumentNotSettledError, DocumentTypeNotDeletableOnceSettledError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
-    SettledDeletionAlreadyApprovedError, SettledDeletionReasonMismatchError,
+    SettledDeletionAlreadyApprovedError, SettledDeletionNotRestorableError,
+    SettledDeletionReasonMismatchError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
@@ -735,6 +736,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::SettledDeletionAlreadyApprovedError(e) => {
             generic_consensus_error!(SettledDeletionAlreadyApprovedError, e).into()
+        }
+        StateError::SettledDeletionNotRestorableError(e) => {
+            generic_consensus_error!(SettledDeletionNotRestorableError, e).into()
         }
         StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
             generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()

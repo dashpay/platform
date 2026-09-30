@@ -337,7 +337,8 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
 /// index and aggregate of its type right and not asking `canBeDeleted` (that is the owner's rule,
 /// not the moderators'), then its record when the type keeps one: a fresh one, or in place of
 /// the restored one a document deleted before carries. Unless the type refunds the owner, the
-/// marker makes the batch refund nobody: the document's owner forfeits the storage fee.
+/// marker makes the batch refund nobody for the document's storage: whoever paid for it
+/// forfeits the storage fee, while the moderation records the batch rewrites refund as ever.
 fn push_document_deletion_operations(
     operations: &mut Vec<DriveOperation<'_>>,
     contract_id: Identifier,

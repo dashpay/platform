@@ -1,5 +1,3 @@
-mod v0;
-
 use crate::drive::contract::moderation::types::{
     ContractSettledDeletionEntry, ContractSettledDeletionsQuery,
 };
@@ -7,6 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
+use dpp::data_contract::config::moderation::ContractSettledDeletion;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 
@@ -48,7 +47,7 @@ impl Drive {
             .contract_moderation
             .verify_contract_settled_deletions
         {
-            0 => Self::verify_contract_settled_deletions_v0(
+            0 => Self::verify_contract_document_records_v0::<ContractSettledDeletion>(
                 proof,
                 contract_id,
                 query,

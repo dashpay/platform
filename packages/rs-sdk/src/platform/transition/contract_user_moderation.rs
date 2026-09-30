@@ -434,9 +434,12 @@ pub trait ModerateContractUser: Waitable {
     /// Brings back `document`, of `document_type_name` on `contract`, that a moderator deleted:
     /// the document as it was when it was deleted, which must hash to what its removal record
     /// holds, within `SystemLimits::contract_document_restore_window_ms` (a week) of the
-    /// deletion. Any current moderator or the contract owner may restore, whoever deleted.
-    /// The document goes back through an ordinary insert, so a unique index value another
-    /// document took meanwhile refuses it. Resolves with the record, now marked restored.
+    /// deletion. Any current moderator or the contract owner may restore, whoever deleted,
+    /// except a deletion a seated team approved together past the type's window
+    /// (`moderatorAbilities.deleteSettled`): that one stands, and its restore is refused
+    /// (`SettledDeletionNotRestorableError`, 41209). The document goes back through an ordinary
+    /// insert, so a unique index value another document took meanwhile refuses it. Resolves
+    /// with the record, now marked restored.
     ///
     /// The signer pays for the document's storage; the refund of a later deletion stays its
     /// owner's. `contract` serializes the document and is what the proof of the restore is

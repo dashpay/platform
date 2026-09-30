@@ -457,10 +457,12 @@ export interface ContractSettledDeletionResult {
 /**
  * Options for restoring, as a moderator, one document a moderator deleted (protocol version
  * 14): the document as it was, within a week of its deletion. Any current moderator or the
- * contract owner may restore, whoever deleted. The document goes back through an ordinary
- * insert, so a unique index value another document took meanwhile refuses it (40105); a
- * document with no removal record (41119), one restored already (41122), a restore past the
- * week (41120) or a document that is not the one deleted (41121) are refused too. The signer
+ * contract owner may restore, whoever deleted, except a deletion a seated team approved
+ * together past the type's window (`deleteSettled`), which stands. The document goes back
+ * through an ordinary insert, so a unique index value another document took meanwhile refuses
+ * it (40105); a document with no removal record (41119), one restored already (41122), a
+ * restore past the week (41120), a document that is not the one deleted (41121) or one the
+ * seated team deleted together (41209) are refused too. The signer
  * pays for the document's storage; the refund of a later deletion stays its owner's. As for
  * the other moderations, the signer must hold a CRITICAL authentication key without contract
  * bounds of the moderating identity.

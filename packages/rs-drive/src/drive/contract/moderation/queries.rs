@@ -1,10 +1,9 @@
 use crate::drive::contract::moderation::types::{
-    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+    ContractDocumentRecords, ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
     ContractModerationEntriesQuery, ContractSettledDeletionsQuery,
 };
 use crate::drive::contract::paths::{
-    contract_document_type_removals_path_vec, contract_document_type_settled_deletions_path_vec,
-    contract_moderation_list_path_vec,
+    contract_document_type_records_path_vec, contract_moderation_list_path_vec,
 };
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -84,17 +83,11 @@ impl Drive {
         contract_id: [u8; 32],
         removals_query: &ContractDocumentRemovalsQuery,
     ) -> PathQuery {
-        PathQuery {
-            path: contract_document_type_removals_path_vec(
-                &contract_id,
-                &removals_query.document_type_name,
-            ),
-            query: SizedQuery {
-                query: document_ids_selection_query(&removals_query.selection),
-                limit: Some(removals_query.limit()),
-                offset: None,
-            },
-        }
+        Self::contract_document_records_query(
+            contract_id,
+            ContractDocumentRecords::Removals,
+            removals_query,
+        )
     }
 
     /// A read names at least one and at most `max_returned_elements` records, whether by id or
@@ -105,9 +98,9 @@ impl Drive {
         query: &ContractDocumentRemovalsQuery,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        check_document_ids_selection(
-            &query.selection,
-            "contract document removals",
+        Self::check_contract_document_records_query(
+            query,
+            ContractDocumentRecords::Removals,
             platform_version,
         )
     }
@@ -119,14 +112,31 @@ impl Drive {
         contract_id: [u8; 32],
         settled_deletions_query: &ContractSettledDeletionsQuery,
     ) -> PathQuery {
+        Self::contract_document_records_query(
+            contract_id,
+            ContractDocumentRecords::SettledDeletions,
+            settled_deletions_query,
+        )
+    }
+
+    /// The query for one kind of the records a contract keeps by document type and document
+    /// id: the ids named, each proved present with its record or absent, or one page in
+    /// document id order continuing after the cursor. The limit of an id read is the number of
+    /// ids, so the prover and the verifier bound the proof alike.
+    pub fn contract_document_records_query(
+        contract_id: [u8; 32],
+        records: ContractDocumentRecords,
+        query: &ContractDocumentRemovalsQuery,
+    ) -> PathQuery {
         PathQuery {
-            path: contract_document_type_settled_deletions_path_vec(
+            path: contract_document_type_records_path_vec(
                 &contract_id,
-                &settled_deletions_query.document_type_name,
+                records,
+                &query.document_type_name,
             ),
             query: SizedQuery {
-                query: document_ids_selection_query(&settled_deletions_query.selection),
-                limit: Some(settled_deletions_query.limit()),
+                query: document_ids_selection_query(&query.selection),
+                limit: Some(query.limit()),
                 offset: None,
             },
         }
@@ -138,9 +148,23 @@ impl Drive {
         query: &ContractSettledDeletionsQuery,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        Self::check_contract_document_records_query(
+            query,
+            ContractDocumentRecords::SettledDeletions,
+            platform_version,
+        )
+    }
+
+    /// The bounds of a read of one kind of the records a contract keeps by document type and
+    /// document id ([`Self::check_contract_document_removals_query`]).
+    pub fn check_contract_document_records_query(
+        query: &ContractDocumentRemovalsQuery,
+        records: ContractDocumentRecords,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         check_document_ids_selection(
             &query.selection,
-            "contract settled deletions",
+            &format!("contract {}s", records.record_name()),
             platform_version,
         )
     }

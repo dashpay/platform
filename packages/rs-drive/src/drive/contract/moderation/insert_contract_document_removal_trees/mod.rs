@@ -1,5 +1,4 @@
-mod v0;
-
+use crate::drive::contract::moderation::types::ContractDocumentRecords;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -59,8 +58,9 @@ impl Drive {
             .moderation
             .insert_contract_document_removal_trees
         {
-            0 => self.insert_contract_document_removal_trees_operations_v0(
+            0 => self.insert_contract_document_record_trees_operations_v0(
                 contract_id,
+                ContractDocumentRecords::Removals,
                 with_root,
                 document_type_names,
                 storage_flags,

@@ -365,39 +365,6 @@ impl Drive {
             )?;
         }
 
-        // The approvals tree of every document type the update adds that says who must approve
-        // the deletion of its settled documents, on the same terms: the keyword is fixed with
-        // its type, and the stored contract says whether the common tree exists.
-        let added_settled_document_type_names: Vec<&str> = contract
-            .document_types()
-            .iter()
-            .filter(|(name, document_type)| {
-                document_type.moderator_settled_deletion().is_some()
-                    && !original_contract.document_types().contains_key(*name)
-            })
-            .map(|(name, _)| name.as_str())
-            .collect();
-        if !added_settled_document_type_names.is_empty() {
-            let has_settled_deletions_tree = original_contract
-                .document_types()
-                .values()
-                .any(|document_type| document_type.moderator_settled_deletion().is_some());
-            let storage_flags = StorageFlags::new_single_epoch(
-                block_info.epoch.index,
-                Some(contract.owner_id().to_buffer()),
-            );
-            self.insert_contract_settled_deletion_trees_operations(
-                contract.id().to_buffer(),
-                !has_settled_deletions_tree,
-                &added_settled_document_type_names,
-                Some(&storage_flags),
-                estimated_costs_only_with_layer_info,
-                transaction,
-                &mut batch_operations,
-                platform_version,
-            )?;
-        }
-
         Ok(batch_operations)
     }
 

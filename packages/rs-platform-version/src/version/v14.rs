@@ -1670,8 +1670,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     40212) lets the members of an elected contract's seated team delete it
 ///     once `approvals` of them approve, the leader among them when `leader` is
 ///     set. It needs `deleteWithin` and an elected declaration giving the team
-///     `deleteDocuments` on the type (10231, 10900), `approvals` 1 to
-///     `SystemLimits::max_contract_moderation_settled_deletion_approvals` (31).
+///     `deleteDocuments` on the type (10231, 10900), `approvals` from 1 to the
+///     members the declared team can hold (its leader,
+///     `SystemLimits::max_moderation_charter_elected_members` and the
+///     declaration's `maxAddedModerators`), the upper bound checked at
+///     registration only; a seated team whose charter elects fewer members,
+///     and so holds fewer than the rule asks for, must have all it can hold
+///     approve.
 ///     `ContractUserModeration` gains the `DeleteSettledDocument` action
 ///     (appended): each approver sends it for the same reason, and the approvals
 ///     are kept under the contract (other tree key `24`, one subtree per such
@@ -1681,13 +1686,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     each approval drops earlier approvers no longer on the team (none left:
 ///     it starts afresh, for its own reason), and the one that meets the rule
 ///     deletes the document as `DeleteDocument` does and
-///     counts toward the action share for every approver. The proof is the
+///     counts toward the action share for every approver. The storage refund
+///     forfeiture of a moderator's deletion now takes the document operations
+///     alone, applied as a GroveDB batch of their own, so the moderation records
+///     the same batch rewrites shorter (a restored removal record, the
+///     approvals) refund whoever paid for them. The proof is the
 ///     record (`VerifiedContractSettledDeletion`, appended), read with the new
 ///     `getContractSettledDeletions` query. New errors, appended:
 ///     `DocumentTypeNotDeletableOnceSettledError` (41204),
 ///     `ContractModerationTeamNotSeatedError` (41205), `DocumentNotSettledError`
-///     (41206), `SettledDeletionReasonMismatchError` (41207) and
-///     `SettledDeletionAlreadyApprovedError` (41208).
+///     (41206), `SettledDeletionReasonMismatchError` (41207),
+///     `SettledDeletionAlreadyApprovedError` (41208) and
+///     `SettledDeletionNotRestorableError` (41209): a deletion the team approved
+///     is never restored, by the leader or any member.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

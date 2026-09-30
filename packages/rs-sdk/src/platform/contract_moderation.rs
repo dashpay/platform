@@ -55,7 +55,7 @@ use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 pub use drive_proof_verifier::types::contract_moderation::{
     default_contract_document_removals_limit, default_contract_moderation_entries_limit,
-    default_contract_settled_deletions_limit, list_to_request, ContractDocumentRemoval,
+    list_to_request, ContractDocumentRemoval,
     ContractDocumentRemovalEntry, ContractDocumentRemovals, ContractDocumentRemovalsQuery,
     ContractDocumentRemovalsSelection, ContractModerationEntries, ContractModerationEntriesQuery,
     ContractModerationEntry, ContractModerationList, ContractModerationListStatus,
@@ -248,13 +248,42 @@ impl ContractDocumentRemovalsPageQuery {
         self
     }
 
-    /// The query for the page after `page`, or `None` when `page` holds fewer records than the
-    /// limit and so was the last. A read by ids has no page after it.
-    pub fn after(&self, page: &ContractDocumentRemovals) -> Option<Self> {
+    /// The query for the page after `page`, removal records or settled deletion approvals, or
+    /// `None` when `page` holds fewer records than the limit and so was the last. A read by ids
+    /// has no page after it.
+    pub fn after<P: ContractDocumentRecordsPage>(&self, page: &P) -> Option<Self> {
         page.next_query(&self.query).map(|query| Self {
             contract_id: self.contract_id,
             query,
         })
+    }
+}
+
+/// A page of the records a moderated contract keeps by document id, within one document type:
+/// removal records, or the approvals of settled deletions. Both are read with one query.
+pub trait ContractDocumentRecordsPage {
+    /// The query for the page after this one, `None` when this one was the last.
+    fn next_query(
+        &self,
+        query: &ContractDocumentRemovalsQuery,
+    ) -> Option<ContractDocumentRemovalsQuery>;
+}
+
+impl ContractDocumentRecordsPage for ContractDocumentRemovals {
+    fn next_query(
+        &self,
+        query: &ContractDocumentRemovalsQuery,
+    ) -> Option<ContractDocumentRemovalsQuery> {
+        ContractDocumentRemovals::next_query(self, query)
+    }
+}
+
+impl ContractDocumentRecordsPage for ContractSettledDeletions {
+    fn next_query(
+        &self,
+        query: &ContractDocumentRemovalsQuery,
+    ) -> Option<ContractDocumentRemovalsQuery> {
+        ContractSettledDeletions::next_query(self, query)
     }
 }
 
@@ -299,75 +328,12 @@ impl FetchUnproved for ContractDocumentRemovals {
 }
 
 /// Query for the approvals a moderated contract keeps of the deletion of settled documents of
-/// one of its document types: one page of them, or the records of the document ids named.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContractSettledDeletionsPageQuery {
-    /// The moderated contract.
-    pub contract_id: Identifier,
-    /// The document type, and which of its records to read.
-    pub query: ContractSettledDeletionsQuery,
-}
+/// one of its document types: one page of them, or the records of the document ids named. The
+/// documents are selected as the removal records of one type are, so it is the same query, sent
+/// as a settled deletions request when [`ContractSettledDeletions`] are fetched.
+pub type ContractSettledDeletionsPageQuery = ContractDocumentRemovalsPageQuery;
 
-impl ContractSettledDeletionsPageQuery {
-    /// The first page of the records of `document_type_name`, up to the page cap of
-    /// `platform_version`: the version of the network queried (`Sdk::version`), whose cap is
-    /// the one the node enforces.
-    pub fn new(
-        contract_id: Identifier,
-        document_type_name: String,
-        platform_version: &PlatformVersion,
-    ) -> Self {
-        Self {
-            contract_id,
-            query: ContractSettledDeletionsQuery {
-                document_type_name,
-                selection: ContractDocumentRemovalsSelection::Page {
-                    start_after: None,
-                    limit: default_contract_settled_deletions_limit(platform_version),
-                },
-            },
-        }
-    }
-
-    /// The records of `document_ids` alone, from one to the page cap of the network queried.
-    /// A document no approval was given for is left out of the answer rather than refused.
-    pub fn for_document_ids(
-        contract_id: Identifier,
-        document_type_name: String,
-        document_ids: Vec<Identifier>,
-    ) -> Self {
-        Self {
-            contract_id,
-            query: ContractSettledDeletionsQuery {
-                document_type_name,
-                selection: ContractDocumentRemovalsSelection::DocumentIds(document_ids),
-            },
-        }
-    }
-
-    /// Bounds the page to `limit` records, leaving a read by ids as it is: it is already
-    /// bounded by the ids it names.
-    pub fn with_limit(mut self, limit: u16) -> Self {
-        if let ContractDocumentRemovalsSelection::Page { start_after, .. } = &self.query.selection {
-            self.query.selection = ContractDocumentRemovalsSelection::Page {
-                start_after: *start_after,
-                limit,
-            };
-        }
-        self
-    }
-
-    /// The query for the page after `page`, or `None` when `page` holds fewer records than the
-    /// limit and so was the last. A read by ids has no page after it.
-    pub fn after(&self, page: &ContractSettledDeletions) -> Option<Self> {
-        page.next_query(&self.query).map(|query| Self {
-            contract_id: self.contract_id,
-            query,
-        })
-    }
-}
-
-impl Query<GetContractSettledDeletionsRequest> for ContractSettledDeletionsPageQuery {
+impl Query<GetContractSettledDeletionsRequest> for ContractDocumentRemovalsPageQuery {
     fn query(
         &self,
         settings: &QuerySettings<'_>,

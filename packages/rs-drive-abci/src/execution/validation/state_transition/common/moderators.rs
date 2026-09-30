@@ -221,18 +221,17 @@ impl<'a> Moderators<'a> {
         if !counts {
             return Ok(action);
         }
-        let (fee, count) = drive.fetch_contract_moderation_action_count_with_fee(
+        let count = next_moderation_action_count(
+            drive,
             action.data_contract_id(),
             action.moderator_id(),
             epoch,
+            execution_context,
             tx,
             platform_version,
         )?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-        // A contract stored elected before the counts existed has nowhere to count: its team's
-        // actions go uncounted, and a settle splits the action share equally.
         Ok(match count {
-            Some(count) => action.with_moderation_action_count(count.saturating_add(1)),
+            Some(count) => action.with_moderation_action_count(count),
             None => action,
         })
     }
@@ -253,6 +252,32 @@ impl<'a> Moderators<'a> {
             },
         }
     }
+}
+
+/// The moderation action count of `identity_id`, a member of the seated team of the elected
+/// contract `contract_id`, with one more action counted: its count since the moderators pot was
+/// last settled (0 when it has none), plus one, for Drive to write. One point read, billed.
+/// `None` when the contract has no counts tree, being stored elected before the counts existed:
+/// its team's actions go uncounted, and a settle splits the action share equally.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn next_moderation_action_count(
+    drive: &Drive,
+    contract_id: Identifier,
+    identity_id: Identifier,
+    epoch: &Epoch,
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<u32>, Error> {
+    let (fee, count) = drive.fetch_contract_moderation_action_count_with_fee(
+        contract_id,
+        identity_id,
+        epoch,
+        tx,
+        platform_version,
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+    Ok(count.map(|count| count.saturating_add(1)))
 }
 
 /// The refusal of a document create or replace by `writer` that sets, changes or removes

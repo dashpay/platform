@@ -1,5 +1,3 @@
-mod v0;
-
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -62,7 +60,7 @@ impl Drive {
             .moderation
             .add_contract_settled_deletion
         {
-            0 => self.add_contract_settled_deletion_operations_v0(
+            0 => self.add_contract_document_record_operations_v0(
                 contract_id,
                 document_type_name,
                 document_id,

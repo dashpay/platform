@@ -134,11 +134,11 @@ Who must agree to delete a settled document: one past its `deleteWithin` window,
 | | |
 |---|---|
 | **Where** | `moderatorAbilities` of a document type, with `delete: true` and `deleteWithin`, in a contract whose moderators are an elected team |
-| **Value** | object with `leader` (boolean, default `false`: whether the team's leader must be among the approvals) and `approvals` (integer, 1 to 31, default 1: how many members of the seated team must approve, the leader counted), at least one of them given |
+| **Value** | object with `leader` (boolean, default `false`: whether the team's leader must be among the approvals) and `approvals` (integer, default 1: how many members of the seated team must approve, the leader counted, at least 1 and at most the members the declared team can hold), at least one of them given |
 | **Default** | absent: nobody deletes a settled document |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (`DocumentTypeUpdateError`, 40212), in both directions: fewer approvals would reach content written under more |
-| **Errors** | `DocumentTypeNotDeletableOnceSettledError` (41204), `ContractModerationTeamNotSeatedError` (41205), `DocumentNotSettledError` (41206), `SettledDeletionReasonMismatchError` (41207), `SettledDeletionAlreadyApprovedError` (41208), and those of a moderator's deletion (41101, 41102, 41201, 41203) |
+| **Errors** | `DocumentTypeNotDeletableOnceSettledError` (41204), `ContractModerationTeamNotSeatedError` (41205), `DocumentNotSettledError` (41206), `SettledDeletionReasonMismatchError` (41207), `SettledDeletionAlreadyApprovedError` (41208), `SettledDeletionNotRestorableError` (41209), and those of a moderator's deletion (41101, 41102, 41201, 41203) |
 
 ### Example
 
@@ -164,10 +164,11 @@ For a day after a post is written or edited, any moderator deletes it. After tha
 ### How it works
 
 - Each member of the seated team who agrees sends the contract user moderation transition's `deleteSettledDocument` action, naming the document type, the document id and a reason. The first approval starts the approvals, and each later one must name the same reason: every approver approves the same thing. The approval that meets the rule deletes the document, as a moderator's `deleteDocument` would: its removal record (unless the type sets `deleteKeepsRecord: false`, with the reason and the member whose approval deleted it), and the owner's refund as `deleteRefundsOwner` says.
-- The approvals are kept under the contract, whether they delete the document or not: who approved, in what order, for what reason, when the first came, and when they deleted the document. They are readable with `getContractSettledDeletions`, which is how a member finds what the others have approved, and the reason to repeat.
+- The approvals are kept under the contract, whether they delete the document or not: who approved, in what order, for what reason, when the first came, and when they deleted the document. The next approval of the same document replaces them once they are closed. They are readable with `getContractSettledDeletions`, which is how a member finds what the others have approved, and the reason to repeat.
 - The approvals hold for a week after the first (`SystemLimits::contract_settled_deletion_approval_window_ms`), and for the document as it was then. Once they lapse, or once the author edits the document, the next approval starts afresh, for its own reason. An edit opens the `deleteWithin` window again anyway, in which any moderator deletes the document alone.
 - A member who left the team since approving no longer counts: every approval checks the earlier approvers against the team and drops those who are gone. When none is left, the approvals hold nothing and the next one starts afresh, for its own reason: a member the leader removes can not hold the reason the others must repeat.
-- The checks, in order, each refusal paid: the document type exists (10406) and sets `deleteSettled` (41204); a team is seated (41205): the interim moderators and the contract owner never delete a settled document; the signer is on the team (41101), the declaration gives the team `deleteDocuments` on the type (41201) and the reason names a reason document the team's proposal lists (41203); the document exists (40101) and its owner is not protected (41102); the document is settled (41206: within the window, use `deleteDocument`); and when approvals are open, the reason is theirs (41207) and the signer has not approved already (41208).
+- The checks, in order, each refusal paid: the document type exists (10406) and sets `deleteSettled` (41204); a team is seated (41205): the interim moderators and the contract owner never delete a settled document; the signer is on the team (41101) and the declaration gives the team `deleteDocuments` on the type (41201); the document exists (40101) and its owner is not protected (41102); the document is settled (41206: within the window, use `deleteDocument`); when approvals are open, the signer has not approved already (41208) and the reason is theirs (41207); and an approval that starts the approvals names a reason document the team's proposal lists (41203).
+- A deletion the team approved stands: no moderator restores it, the leader included (`SettledDeletionNotRestorableError`, 41209). A single moderator undoing what the leader and the members agreed on would defeat the rule; a deletion within the window is restored as before.
 - A deletion counts toward the moderators pot's action share for every approver, once it happens. Approvals that fall short count for nobody.
 - Each approver pays for the transition and for the bytes its approval adds to the record.
 
@@ -177,7 +178,7 @@ All refusals below are `InvalidContractStructure` (10231).
 
 - Needs `deleteWithin`: without a window nothing is ever settled.
 - Needs a contract whose `moderation` declares an elected team. The elected declaration must give the team `deleteDocuments` on the type (`InvalidContractModerationConfigError`, 10900), or no team could ever use the rule.
-- `approvals` is at least 1 and at most 31, the most members a seated team holds: its leader, the 15 members a charter elects and the 15 its leader may add.
+- `approvals` is at least 1 and at most the members the declared team can hold: its leader, the 15 members a charter elects and the `maxAddedModerators` of the elected declaration (31 at most). A rule no team could meet would leave settled documents undeletable for good, since neither the rule nor the declaration can change. A seated team whose charter elects fewer than 15 members holds fewer: a rule asking for more than it can hold asks for all of them.
 
 ## `moderatorAbilities.deleteKeepsRecord`
 

@@ -126,6 +126,107 @@ pub fn estimated_entry_value_size(list: ContractModerationList) -> u32 {
     }
 }
 
+/// A tree of records a moderated contract keeps by document type, then document id, under its
+/// other tree: the removal records of the documents its moderators deleted, and the approvals
+/// its seated team gave the deletion of settled documents. The two are written, read, proved
+/// and estimated the same way, and selected by the same query
+/// ([`ContractDocumentRemovalsQuery`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractDocumentRecords {
+    /// The records of the documents the contract's moderators deleted (key `16`)
+    Removals,
+    /// The approvals the contract's seated team gave the deletion of settled documents (key
+    /// `24`)
+    SettledDeletions,
+}
+
+impl ContractDocumentRecords {
+    /// What one record is called in messages
+    pub fn record_name(self) -> &'static str {
+        match self {
+            ContractDocumentRecords::Removals => "document removal",
+            ContractDocumentRecords::SettledDeletions => "settled deletion",
+        }
+    }
+
+    /// The size a record is estimated at when its value is not known
+    pub fn estimated_value_size(self) -> u32 {
+        match self {
+            ContractDocumentRecords::Removals => estimated_document_removal_value_size(),
+            ContractDocumentRecords::SettledDeletions => estimated_settled_deletion_value_size(),
+        }
+    }
+}
+
+/// A record kept by document id in one of the trees of [`ContractDocumentRecords`]: how it is
+/// stored, and what a read of it returns.
+pub trait ContractDocumentRecord: Sized {
+    /// The tree the records are kept in
+    const RECORDS: ContractDocumentRecords;
+    /// A record read with the id of its document
+    type Entry;
+    /// The record as it is stored
+    fn encode(&self) -> Vec<u8>;
+    /// Decodes a stored record
+    fn decode(value: &[u8]) -> Result<Self, String>;
+    /// The record read under `document_id`
+    fn into_entry(self, document_id: Identifier) -> Self::Entry;
+}
+
+impl ContractDocumentRecord for ContractDocumentRemoval {
+    const RECORDS: ContractDocumentRecords = ContractDocumentRecords::Removals;
+    type Entry = ContractDocumentRemovalEntry;
+
+    fn encode(&self) -> Vec<u8> {
+        encode_document_removal(self)
+    }
+
+    fn decode(value: &[u8]) -> Result<Self, String> {
+        decode_document_removal(value)
+    }
+
+    fn into_entry(self, document_id: Identifier) -> Self::Entry {
+        ContractDocumentRemovalEntry {
+            document_id,
+            removal: self,
+        }
+    }
+}
+
+impl ContractDocumentRecord for ContractSettledDeletion {
+    const RECORDS: ContractDocumentRecords = ContractDocumentRecords::SettledDeletions;
+    type Entry = ContractSettledDeletionEntry;
+
+    fn encode(&self) -> Vec<u8> {
+        encode_settled_deletion(self)
+    }
+
+    fn decode(value: &[u8]) -> Result<Self, String> {
+        decode_settled_deletion(value)
+    }
+
+    fn into_entry(self, document_id: Identifier) -> Self::Entry {
+        ContractSettledDeletionEntry {
+            document_id,
+            settled_deletion: self,
+        }
+    }
+}
+
+/// Decodes one stored record of `T` read or proved under its document id.
+pub fn decode_document_record_element<T: ContractDocumentRecord>(
+    key: &[u8],
+    element: &Element,
+) -> Result<T::Entry, String> {
+    let record_name = T::RECORDS.record_name();
+    let document_id = Identifier::from_bytes(key)
+        .map_err(|_| format!("{record_name} key is not a document id: {:?}", key))?;
+    let Element::Item(value, _) = element else {
+        return Err(format!("{record_name} is not an item"));
+    };
+    Ok(T::decode(value)?.into_entry(document_id))
+}
+
 /// Which removal records of one document type to read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractDocumentRemovalsSelection {
@@ -154,7 +255,12 @@ pub struct ContractDocumentRemovalsQuery {
 impl ContractDocumentRemovalsQuery {
     /// The most records the read can return: what bounds its proof.
     pub fn limit(&self) -> u16 {
-        selection_limit(&self.selection)
+        match &self.selection {
+            ContractDocumentRemovalsSelection::DocumentIds(ids) => {
+                ids.len().min(u16::MAX as usize) as u16
+            }
+            ContractDocumentRemovalsSelection::Page { limit, .. } => *limit,
+        }
     }
 }
 
@@ -170,43 +276,14 @@ pub struct ContractDocumentRemovalEntry {
 impl ContractDocumentRemovalEntry {
     /// Decodes one stored record: see [`encode_document_removal`].
     pub fn from_key_element(key: &[u8], element: &Element) -> Result<Self, String> {
-        let document_id = Identifier::from_bytes(key)
-            .map_err(|_| format!("document removal key is not a document id: {:?}", key))?;
-        let Element::Item(value, _) = element else {
-            return Err("document removal is not an item".to_string());
-        };
-        Ok(Self {
-            document_id,
-            removal: decode_document_removal(value)?,
-        })
+        decode_document_record_element::<ContractDocumentRemoval>(key, element)
     }
 }
 
 /// A read of the approvals a seated moderation team gave the deletion of settled documents,
-/// within one document type: the documents are selected as the removal records of one type are.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContractSettledDeletionsQuery {
-    /// The document type the documents are of.
-    pub document_type_name: String,
-    /// Which documents' approvals.
-    pub selection: ContractDocumentRemovalsSelection,
-}
-
-impl ContractSettledDeletionsQuery {
-    /// The most approval records the read can return: what bounds its proof.
-    pub fn limit(&self) -> u16 {
-        selection_limit(&self.selection)
-    }
-}
-
-fn selection_limit(selection: &ContractDocumentRemovalsSelection) -> u16 {
-    match selection {
-        ContractDocumentRemovalsSelection::DocumentIds(ids) => {
-            ids.len().min(u16::MAX as usize) as u16
-        }
-        ContractDocumentRemovalsSelection::Page { limit, .. } => *limit,
-    }
-}
+/// within one document type: the documents are selected, and the read bounded, as the removal
+/// records of one type are, so it is the same query.
+pub type ContractSettledDeletionsQuery = ContractDocumentRemovalsQuery;
 
 /// The approvals of the deletion of one settled document.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,15 +297,7 @@ pub struct ContractSettledDeletionEntry {
 impl ContractSettledDeletionEntry {
     /// Decodes one stored approval record: see [`encode_settled_deletion`].
     pub fn from_key_element(key: &[u8], element: &Element) -> Result<Self, String> {
-        let document_id = Identifier::from_bytes(key)
-            .map_err(|_| format!("settled deletion key is not a document id: {:?}", key))?;
-        let Element::Item(value, _) = element else {
-            return Err("settled deletion is not an item".to_string());
-        };
-        Ok(Self {
-            document_id,
-            settled_deletion: decode_settled_deletion(value)?,
-        })
+        decode_document_record_element::<ContractSettledDeletion>(key, element)
     }
 }
 
@@ -406,9 +475,10 @@ pub fn encode_settled_deletion(settled_deletion: &ContractSettledDeletion) -> Ve
             value.extend_from_slice(&deleted_at.to_be_bytes());
         }
     }
-    // The approvals fit a byte: each is a member of the seated team, which holds at most
-    // `SystemLimits::max_contract_moderation_settled_deletion_approvals`, and every approval
-    // drops the members that left it.
+    // The approvals fit a byte: each is a member of the seated team, which holds its leader,
+    // at most `SystemLimits::max_moderation_charter_elected_members` elected members and at
+    // most `SystemLimits::max_contract_moderation_added_moderators` added ones, and every
+    // approval drops the members that left it.
     value.push(settled_deletion.approvals.len().min(u8::MAX as usize) as u8);
     for approver in settled_deletion.approvals.iter().take(u8::MAX as usize) {
         value.extend_from_slice(approver.as_slice());

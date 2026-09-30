@@ -254,8 +254,8 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
-    /// Whether the batch this operation is in refunds nobody for the storage it removes: see
-    /// [`ContractModerationOperationType::ForfeitStorageRefunds`].
+    /// Whether the batch this operation is in refunds nobody for the storage its document
+    /// operations remove: see [`ContractModerationOperationType::ForfeitStorageRefunds`].
     pub fn forfeits_storage_refunds(&self) -> bool {
         matches!(
             self,

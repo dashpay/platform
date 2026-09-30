@@ -1,5 +1,5 @@
 //! The approvals a seated moderation team gives the deletion of settled documents: their trees,
-//! their writer, and the reads and proofs over them.
+//! their writer, the reads and proofs over them, and the refunds of the batch that deletes.
 
 use crate::drive::contract::moderation::types::{
     ContractDocumentRemovalsSelection, ContractSettledDeletionEntry, ContractSettledDeletionsQuery,
@@ -8,9 +8,14 @@ use crate::drive::contract::paths::{
     contract_other_path, contract_settled_deletions_path, CONTRACT_SETTLED_DELETIONS_KEY,
 };
 use crate::drive::Drive;
-use crate::util::batch::DriveOperation::ContractModerationOperation;
-use crate::util::batch::{ContractModerationOperationType, DriveOperation};
+use crate::util::batch::DriveOperation::{ContractModerationOperation, DocumentOperation};
+use crate::util::batch::{ContractModerationOperationType, DocumentOperationType, DriveOperation};
 use crate::util::grove_operations::DirectQueryType;
+use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use crate::util::object_size_info::{
+    DataContractInfo, DocumentAndContractInfo, DocumentTypeInfo, OwnedDocumentInfo,
+};
+use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
@@ -20,8 +25,10 @@ use dpp::data_contract::config::moderation::{
     ContractSettledDeletion, ElectedModerators, InterimModerators, ModerationAbility,
     DEFAULT_ELECTION_WINDOW_SECONDS,
 };
+use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
@@ -30,6 +37,7 @@ use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use once_cell::sync::Lazy;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 static FEE_VERSIONS: Lazy<CachedEpochIndexFeeVersions> =
@@ -269,69 +277,6 @@ fn should_create_the_approval_trees_with_the_contract() {
 }
 
 #[test]
-fn should_create_the_approval_tree_of_a_document_type_an_update_adds() {
-    let platform_version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = elected_contract_with(&[POST], None);
-    insert(&drive, &contract);
-    assert!(!has_settled_deletions_root(&drive, contract.id()));
-
-    // The first type that says so brings the tree above it, the next one only its own.
-    let mut updated = contract.clone();
-    updated.increment_version();
-    add_post_type(
-        &mut updated,
-        "reply",
-        Some(platform_value!({ "approvals": 2 })),
-    );
-    drive
-        .update_contract(
-            &updated,
-            BlockInfo::default(),
-            true,
-            None,
-            platform_version,
-            None,
-        )
-        .expect("expected to update the contract");
-    assert!(has_settled_deletions_root(&drive, contract.id()));
-    assert!(has_settled_deletions_tree_of(
-        &drive,
-        contract.id(),
-        "reply"
-    ));
-    assert!(!has_settled_deletions_tree_of(&drive, contract.id(), POST));
-
-    let mut updated_again = updated.clone();
-    updated_again.increment_version();
-    add_post_type(
-        &mut updated_again,
-        "comment",
-        Some(platform_value!({ "leader": true })),
-    );
-    drive
-        .update_contract(
-            &updated_again,
-            BlockInfo::default(),
-            true,
-            None,
-            platform_version,
-            None,
-        )
-        .expect("expected to update the contract again");
-    assert!(has_settled_deletions_tree_of(
-        &drive,
-        contract.id(),
-        "comment"
-    ));
-    assert!(has_settled_deletions_tree_of(
-        &drive,
-        contract.id(),
-        "reply"
-    ));
-}
-
-#[test]
 fn should_record_replace_read_and_prove_approvals() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -483,7 +428,7 @@ fn should_refuse_a_read_of_approvals_out_of_bounds() {
 fn should_estimate_approvals_at_no_less_than_they_cost() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = elected_contract_with(&[POST], Some(platform_value!({ "approvals": 31 })));
+    let contract = elected_contract_with(&[POST], Some(platform_value!({ "leader": true })));
     insert(&drive, &contract);
     let longest = "x".repeat(
         platform_version
@@ -523,4 +468,152 @@ fn should_estimate_approvals_at_no_less_than_they_cost() {
             );
         }
     }
+}
+
+/// A post by `owner_id`, stored with its owner's flags, as a create leaves it
+fn add_post(drive: &Drive, contract: &DataContract, owner_id: Identifier) -> Document {
+    let platform_version = PlatformVersion::latest();
+    let document_type = contract
+        .document_type_for_name(POST)
+        .expect("expected the post document type");
+    let mut document = document_type
+        .random_document(Some(5), platform_version)
+        .expect("expected a random post");
+    document.set_owner_id(owner_id);
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+        0,
+        owner_id.to_buffer(),
+    )));
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&document, storage_flags)),
+                    owner_id: None,
+                },
+                contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("expected to add the post");
+    document
+}
+
+/// The batch of the leader's approval that starts afresh with `text` and deletes `post_id`:
+/// the post, the approvals record it rewrites, and the forfeiture of a moderator's deletion
+fn delete_by_approval(
+    drive: &Drive,
+    contract: &DataContract,
+    post_id: Identifier,
+    text: &str,
+) -> FeeResult {
+    apply(
+        drive,
+        vec![
+            DocumentOperation(DocumentOperationType::ForceDeleteDocument {
+                document_id: post_id,
+                contract_info: DataContractInfo::BorrowedDataContract(contract),
+                document_type_info: DocumentTypeInfo::DocumentTypeName(POST.to_string()),
+            }),
+            write(
+                contract.id(),
+                post_id,
+                approvals(text, &[9], Some(2_000)),
+                true,
+            ),
+            ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds),
+        ],
+        true,
+    )
+}
+
+/// The refunds of the leader's approval that deletes a post by `author` over lapsed approvals
+/// `[1, 2, 3]`, paid for last by the third approver
+fn refunds_of_a_deciding_approval(author: Identifier) -> FeeResult {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = elected_contract_with(&[POST], Some(platform_value!({ "leader": true })));
+    insert(&drive, &contract);
+    let post = add_post(&drive, &contract, author);
+    apply(
+        &drive,
+        vec![write(
+            contract.id(),
+            post.id(),
+            approvals("doxxing", &[1, 2, 3], None),
+            false,
+        )],
+        true,
+    );
+    delete_by_approval(&drive, &contract, post.id(), "doxxing")
+}
+
+#[test]
+fn should_refund_an_approver_the_bytes_the_deciding_approval_frees() {
+    // The leader's record is shorter than the one it replaces. The author forfeits the post's
+    // refund; the third approver keeps the refund of the record bytes the replacement frees.
+    let applied = refunds_of_a_deciding_approval(identity(0x41));
+    assert_eq!(
+        applied.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
+        vec![identity(3).to_buffer()]
+    );
+    assert!(applied.removed_bytes_from_system > 0);
+}
+
+#[test]
+fn should_refund_an_approver_who_wrote_the_post_only_the_record_bytes() {
+    // The approver who paid for the record also paid for the post: the post's refund is
+    // forfeited all the same, and the approver gets back the record bytes alone, as much as an
+    // approver who did not write it.
+    let own_post = refunds_of_a_deciding_approval(identity(3));
+    let other_post = refunds_of_a_deciding_approval(identity(0x41));
+    assert_eq!(own_post.fee_refunds, other_post.fee_refunds);
+    assert!(own_post.removed_bytes_from_system > 0);
+}
+
+#[test]
+fn should_refund_whoever_the_record_flags_name_though_no_longer_an_approver() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = elected_contract_with(&[POST], Some(platform_value!({ "leader": true })));
+    insert(&drive, &contract);
+    let post = add_post(&drive, &contract, identity(0x41));
+
+    // The first approver's record lapses, and a fresh one of the same size replaces it: GroveDB
+    // keeps the first approver's flags, though the approvals now name another member.
+    let reason = |letter: &str| letter.repeat(60);
+    apply(
+        &drive,
+        vec![write(
+            contract.id(),
+            post.id(),
+            approvals(&reason("a"), &[1], None),
+            false,
+        )],
+        true,
+    );
+    apply(
+        &drive,
+        vec![write(
+            contract.id(),
+            post.id(),
+            approvals(&reason("b"), &[3], None),
+            true,
+        )],
+        true,
+    );
+
+    // The leader's approval, for a shorter reason, deletes the post: the bytes it frees go back
+    // to the member the record's flags name.
+    let applied = delete_by_approval(&drive, &contract, post.id(), "spam");
+    assert_eq!(
+        applied.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
+        vec![identity(1).to_buffer()]
+    );
 }

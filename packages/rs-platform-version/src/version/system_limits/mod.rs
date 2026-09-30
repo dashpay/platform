@@ -211,12 +211,15 @@ pub struct SystemLimits {
     /// after the election (`maxAddedModerators`). Read by the declaration's validation
     /// (protocol version 14) and never reached before.
     pub max_contract_moderation_added_moderators: u16,
-    /// Most members of a seated moderation team a document type's
+    /// Most members a moderation charter elects beside its leader: the `maxItems` of the
+    /// moderation charters contract's `electedCharter.members`, which must stay equal to it.
+    /// With the leader and the members an elected declaration lets the leader add
+    /// (`maxAddedModerators`), it bounds how many members of a seated team a document type's
     /// `moderatorAbilities.deleteSettled` may require to approve the deletion of a settled
-    /// document: the most a team holds, its leader, the 15 members a charter may elect and the
-    /// `max_contract_moderation_added_moderators` its leader may add. Read by the document
-    /// type parser (protocol version 14) and never reached before.
-    pub max_contract_moderation_settled_deletion_approvals: u16,
+    /// document. Refused under full validation only, so a stored contract stays readable if it
+    /// ever shrinks. Read by the document type parser (protocol version 14) and never reached
+    /// before.
+    pub max_moderation_charter_elected_members: u16,
     /// How long the approvals of a moderator's deletion of a settled document hold, in
     /// milliseconds of block time after the first (`ContractUserModeration`'s
     /// `DeleteSettledDocument` action): a week. The next approval after that starts afresh.

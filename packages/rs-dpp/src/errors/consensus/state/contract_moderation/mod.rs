@@ -31,6 +31,7 @@ mod identity_not_contract_moderator_error;
 mod moderation_charter_added_moderator_limit_reached_error;
 mod moderation_reason_not_listed_error;
 mod settled_deletion_already_approved_error;
+mod settled_deletion_not_restorable_error;
 mod settled_deletion_reason_mismatch_error;
 
 pub use contract_document_already_restored_error::*;
@@ -66,4 +67,5 @@ pub use identity_not_contract_moderator_error::*;
 pub use moderation_charter_added_moderator_limit_reached_error::*;
 pub use moderation_reason_not_listed_error::*;
 pub use settled_deletion_already_approved_error::*;
+pub use settled_deletion_not_restorable_error::*;
 pub use settled_deletion_reason_mismatch_error::*;

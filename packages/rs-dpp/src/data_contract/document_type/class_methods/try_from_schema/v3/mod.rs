@@ -576,6 +576,7 @@ fn parse_generation_3(
         moderator_abilities,
         data_contact_config,
         name,
+        full_validation,
         platform_version,
     )?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.

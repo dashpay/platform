@@ -1,5 +1,3 @@
-mod v0;
-
 use crate::drive::contract::moderation::types::{
     ContractSettledDeletionEntry, ContractSettledDeletionsQuery,
 };
@@ -47,7 +45,7 @@ impl Drive {
             .moderation
             .fetch_contract_settled_deletions
         {
-            0 => self.fetch_contract_settled_deletions_v0(
+            0 => self.fetch_contract_document_records_v0::<ContractSettledDeletion>(
                 contract_id,
                 query,
                 transaction,
@@ -99,14 +97,15 @@ impl Drive {
         {
             0 => {
                 let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-                let settled_deletion = self.fetch_contract_settled_deletion_add_to_operations_v0(
-                    contract_id,
-                    document_type_name,
-                    document_id,
-                    transaction,
-                    &mut drive_operations,
-                    platform_version,
-                )?;
+                let settled_deletion = self
+                    .fetch_contract_document_record_add_to_operations_v0::<ContractSettledDeletion>(
+                        contract_id,
+                        document_type_name,
+                        document_id,
+                        transaction,
+                        &mut drive_operations,
+                        platform_version,
+                    )?;
                 let fee = Drive::calculate_fee(
                     None,
                     Some(drive_operations),

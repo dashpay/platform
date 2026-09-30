@@ -886,7 +886,9 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
     );
 
     // Deleted again by a moderator: a fresh record in place of the restored one, the author
-    // refunded nothing again.
+    // refunded nothing again. The fresh record is shorter than the restored one it replaces,
+    // and the restorer, who paid for the bytes that frees, keeps that refund: the forfeiture
+    // takes the document's removals alone.
     let again = ContractDocumentRemoval {
         moderator_id: restorer,
         removed_at: 30,
@@ -902,7 +904,10 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
         ],
         true,
     );
-    assert!(applied.fee_refunds.0.is_empty());
+    assert_eq!(
+        applied.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
+        vec![restorer.to_buffer()]
+    );
     assert!(applied.removed_bytes_from_system > 0);
     assert!(!post_is_stored(&drive, &contract, post.id()));
     assert_removals(

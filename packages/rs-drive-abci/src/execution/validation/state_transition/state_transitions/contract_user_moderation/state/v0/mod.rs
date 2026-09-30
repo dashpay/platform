@@ -4,7 +4,9 @@ use crate::execution::types::execution_operation::{ValidationOperation, SHA256_B
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use crate::execution::validation::state_transition::common::moderators::Moderators;
+use crate::execution::validation::state_transition::common::moderators::{
+    next_moderation_action_count, Moderators,
+};
 use crate::execution::validation::state_transition::common::validate_document_not_expired::validate_document_not_expired;
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::state_transitions::batch::{
@@ -30,7 +32,7 @@ use dpp::consensus::state::contract_moderation::{
     DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, DocumentTypeNotDeletableOnceSettledError,
     IdentityNotContractModeratorError, SettledDeletionAlreadyApprovedError,
-    SettledDeletionReasonMismatchError,
+    SettledDeletionNotRestorableError, SettledDeletionReasonMismatchError,
 };
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::state_error::StateError;
@@ -522,12 +524,8 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
     // carried neither would read as modified at time zero, which is settled: the refusal that
     // protects the author.
     if let Some(window_seconds) = document_type.documents_can_be_deleted_by_moderators_for() {
-        let last_modified_at = document
-            .updated_at()
-            .or(document.created_at())
-            .unwrap_or_default();
-        let settled_at = last_modified_at
-            .saturating_add(u64::from(window_seconds).saturating_mul(MILLIS_PER_SECOND));
+        let (last_modified_at, settled_at) =
+            last_modified_and_settled_at(&document, window_seconds);
         if block_info.time_ms > settled_at {
             return refuse(
                 DocumentModerationWindowElapsedError::new(
@@ -573,18 +571,18 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
 /// An approval of the deletion of a settled document: the document type exists and says who
 /// of a seated team must approve the deletion of its settled documents
 /// (`moderatorAbilities.deleteSettled`), a team is seated on the contract, the signer is on it and
-/// the declaration gives the team `deleteDocuments` on the type, the reason names a reason
-/// document the team's proposal lists, the document exists, its owner is not protected, and it
-/// is settled: last modified longer ago than the type's `deleteWithin` window, within which a
-/// moderator deletes it alone. Every refusal is paid for by bumping the signer's contract nonce.
+/// the declaration gives the team `deleteDocuments` on the type, the document exists, its owner
+/// is not protected, and it is settled: last modified longer ago than the type's `deleteWithin`
+/// window, within which a moderator deletes it alone. Every refusal is paid for by bumping the
+/// signer's contract nonce.
 ///
 /// The approvals the contract keeps of the deletion are then read. While they are open (they
 /// have not met the rule, are of the document as it is, and have not lapsed,
-/// `SystemLimits::contract_settled_deletion_approval_window_ms` after the first), every earlier
-/// approver is checked to still be on the team, and one that has left no longer counts; this
-/// approval joins those that remain: it must be for their reason, and the signer must not be
-/// among them already. Otherwise, or when none remains, this approval is the first of a fresh
-/// record in their place, for its own reason.
+/// `SystemLimits::contract_settled_deletion_approval_window_ms` after the first), the signer must
+/// not be among them already, every earlier approver is checked to still be on the team, and one
+/// that has left no longer counts; this approval joins those that remain, for their reason.
+/// Otherwise, or when none remains, this approval is the first of a fresh record in their place,
+/// for its own reason, which must name a reason document the team's proposal lists.
 ///
 /// When the approvals meet the type's rule, the leader among them if it says so, the document is
 /// deleted as a moderator's `DeleteDocument` deletes it, the record is marked with the deletion,
@@ -652,9 +650,15 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
     )?;
     // Only a seated team deletes a settled document: the rule names its leader and counts its
     // members, and the moderators of an interim are neither.
-    let Moderators::Seated { charter, .. } = &moderators else {
+    let Moderators::Seated { elected, charter } = &moderators else {
         return refuse(ContractModerationTeamNotSeatedError::new(contract_id).into());
     };
+    // The most members the seated team can hold: its leader, the members its charter elected
+    // and those the declaration lets the leader add. A rule asking for more asks for all of
+    // them, so that a charter electing fewer members than the rule allows for can still meet it.
+    let team_capacity = 1usize
+        .saturating_add(charter.charter.members.len())
+        .saturating_add(usize::from(elected.max_added_moderators));
     if !moderators.may_moderate(
         owner_id,
         moderator_id,
@@ -675,17 +679,6 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
             )
             .into(),
         );
-    }
-    if let Some(error) = moderators.unlisted_reason(
-        transition.action(),
-        contract_id,
-        platform.drive,
-        epoch,
-        execution_context,
-        tx,
-        platform_version,
-    )? {
-        return refuse(error);
     }
 
     let Some(document) = fetch_document_with_id(
@@ -719,14 +712,9 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
         );
     }
 
-    // Measured as the window of a moderator's deletion is: from the last modification, the
-    // boundary millisecond still inside it.
-    let last_modified_at = document
-        .updated_at()
-        .or(document.created_at())
-        .unwrap_or_default();
-    let settled_at = last_modified_at
-        .saturating_add(u64::from(window_seconds).saturating_mul(MILLIS_PER_SECOND));
+    // The window of a moderator's deletion, measured the same way: the boundary millisecond
+    // is still inside it.
+    let (last_modified_at, settled_at) = last_modified_and_settled_at(&document, window_seconds);
     if block_info.time_ms <= settled_at {
         return refuse(
             DocumentNotSettledError::new(
@@ -759,6 +747,18 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
     // a member who left can not hold the reason the others must repeat.
     let open = match existing {
         Some(open) if open.is_open_at(block_info.time_ms, last_modified_at, approval_window_ms) => {
+            // The signer is on the team (checked above), so approvals it is among stay open
+            // whoever else left: its second one is refused before any seat is read, for the
+            // reason it gives as a later approval's would be.
+            if open.approvals.contains(&moderator_id) {
+                return refuse(if open.reason != *reason {
+                    SettledDeletionReasonMismatchError::new(contract_id, document_id, open.reason)
+                        .into()
+                } else {
+                    SettledDeletionAlreadyApprovedError::new(contract_id, document_id, moderator_id)
+                        .into()
+                });
+            }
             let mut still_seated = Vec::with_capacity(open.approvals.len() + 1);
             for approver in open.approvals.iter().copied() {
                 if charter.seats(
@@ -780,6 +780,9 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
         _ => None,
     };
     let mut settled_deletion = match open {
+        // A joining approval repeats the reason the first gave, which was checked against the
+        // team's proposal then: a proposal never changes and, in protocol version 14, a seat is
+        // never replaced, so the proposal is not read again.
         Some(mut open) => {
             if open.reason != *reason {
                 return refuse(
@@ -787,69 +790,74 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
                         .into(),
                 );
             }
-            if open.approvals.contains(&moderator_id) {
-                return refuse(
-                    SettledDeletionAlreadyApprovedError::new(
-                        contract_id,
-                        document_id,
-                        moderator_id,
-                    )
-                    .into(),
-                );
-            }
             open.approvals.push(moderator_id);
             open
         }
-        // None yet, or closed: deleted before a restore, of the document as it was before a
-        // replace, lapsed, or approved only by members who left since. This approval starts
-        // afresh in its place, for its own reason.
-        None => ContractSettledDeletion {
-            proposed_at: block_info.time_ms,
-            document_last_modified_at: last_modified_at,
-            reason: reason.clone(),
-            approvals: vec![moderator_id],
-            deleted_at: None,
-        },
-    };
-
-    let (deletion, approver_action_counts) =
-        if rule.is_met_by(&settled_deletion.approvals, charter.leader_id) {
-            settled_deletion.deleted_at = Some(block_info.time_ms);
-            let deletion = document_deletion_context(
-                platform,
-                contract_fetch_info,
-                document_type,
-                document_type_name,
-                &document,
-                block_info,
+        // None yet, or closed: of the document as it was before a replace, lapsed, or approved
+        // only by members who left since (approvals that deleted the document close for good:
+        // that deletion is never restored). This approval starts
+        // afresh in its place, for its own reason, which must be one the proposal lists.
+        None => {
+            if let Some(error) = moderators.unlisted_reason(
+                transition.action(),
+                contract_id,
+                platform.drive,
+                epoch,
                 execution_context,
                 tx,
                 platform_version,
-            )?;
-            // Every approver's count, one point read each, billed. A contract stored elected
-            // before the counts existed has nowhere to count, and none is written.
-            let mut counts = Vec::with_capacity(settled_deletion.approvals.len());
-            for approver in settled_deletion.approvals.iter().copied() {
-                let (fee, count) = platform
-                    .drive
-                    .fetch_contract_moderation_action_count_with_fee(
-                        contract_id,
-                        approver,
-                        epoch,
-                        tx,
-                        platform_version,
-                    )?;
-                execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-                let Some(count) = count else {
-                    counts.clear();
-                    break;
-                };
-                counts.push((approver, count.saturating_add(1)));
+            )? {
+                return refuse(error);
             }
-            (Some(deletion), counts)
-        } else {
-            (None, vec![])
-        };
+            ContractSettledDeletion {
+                proposed_at: block_info.time_ms,
+                document_last_modified_at: last_modified_at,
+                reason: reason.clone(),
+                approvals: vec![moderator_id],
+                deleted_at: None,
+            }
+        }
+    };
+
+    let (deletion, approver_action_counts) = if rule.is_met_by(
+        &settled_deletion.approvals,
+        charter.leader_id,
+        team_capacity,
+    ) {
+        settled_deletion.deleted_at = Some(block_info.time_ms);
+        let deletion = document_deletion_context(
+            platform,
+            contract_fetch_info,
+            document_type,
+            document_type_name,
+            &document,
+            block_info,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
+        // Every approver's count, one point read each, billed. A contract stored elected
+        // before the counts existed has nowhere to count, which the first read finds.
+        let mut counts = Vec::with_capacity(settled_deletion.approvals.len());
+        for approver in settled_deletion.approvals.iter().copied() {
+            let Some(count) = next_moderation_action_count(
+                platform.drive,
+                contract_id,
+                approver,
+                epoch,
+                execution_context,
+                tx,
+                platform_version,
+            )?
+            else {
+                break;
+            };
+            counts.push((approver, count));
+        }
+        (Some(deletion), counts)
+    } else {
+        (None, vec![])
+    };
 
     Ok(ConsensusValidationResult::new_with_data(
         ContractUserModerationTransitionAction::from_borrowed_transition_with_settled_deletion(
@@ -863,6 +871,22 @@ fn transform_settled_document_deletion_v0<C: CoreRPCLike>(
         )
         .into(),
     ))
+}
+
+/// When `document` last changed, and when it settles under a moderators' window of
+/// `window_seconds`: its `$updatedAt`, or `$createdAt` on a type that carries no `$updatedAt`,
+/// and that time plus the window. A document that carried neither reads as changed at time
+/// zero, which is settled. A moderator's deletion is refused after the settling time (41116) and
+/// the approval of a settled document's deletion up to it (41206): measured once, the two can
+/// neither overlap nor leave a gap.
+fn last_modified_and_settled_at(document: &Document, window_seconds: u32) -> (u64, u64) {
+    let last_modified_at = document
+        .updated_at()
+        .or(document.created_at())
+        .unwrap_or_default();
+    let settled_at = last_modified_at
+        .saturating_add(u64::from(window_seconds).saturating_mul(MILLIS_PER_SECOND));
+    (last_modified_at, settled_at)
 }
 
 /// What Drive needs to delete `document` as a moderator deletes it: the contract, the document's
@@ -1246,9 +1270,9 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
 /// documents, the signer moderates the contract (see [`Moderators`]: a seated team must also
 /// hold `deleteDocuments` on the type, which is what a restore undoes), the bytes decode
 /// under the type, the type keeps removal records and the document has one that is not yet
-/// restored, block time is
-/// within the restore window after the removal, the bytes hash to what the record holds, and
-/// no other document holds a value of one of the type's unique indexes. Every refusal is paid
+/// restored, block time is within the restore window after the removal, the bytes hash to what
+/// the record holds, the removal is no deletion the seated team approved together (those
+/// stand), and no other document holds a value of one of the type's unique indexes. Every refusal is paid
 /// for by bumping the signer's contract nonce.
 ///
 /// The action carries the contract, the decoded document and the record marked restored, so
@@ -1442,6 +1466,29 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
             )
             .into(),
         );
+    }
+
+    // A deletion the seated team made together stands: no single moderator undoes what the
+    // leader and the members agreed on. It is the only removal made after the document
+    // settled, a moderator alone deleting up to its settling time and the team only after it,
+    // so the removal time tells the two apart with no read: the hash above pins the document
+    // to the one deleted, its last modification included, and the window is fixed with the
+    // type.
+    if let (Some(_), Some(window_seconds)) = (
+        document_type.moderator_settled_deletion(),
+        document_type.documents_can_be_deleted_by_moderators_for(),
+    ) {
+        let (_, settled_at) = last_modified_and_settled_at(&document, window_seconds);
+        if removal.removed_at > settled_at {
+            return refuse(
+                SettledDeletionNotRestorableError::new(
+                    contract_id,
+                    document_id,
+                    removal.removed_at,
+                )
+                .into(),
+            );
+        }
     }
 
     // A document whose type declares a `ttl` and has expired stays deleted: the cleanup after

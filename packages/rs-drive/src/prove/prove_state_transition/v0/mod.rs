@@ -358,7 +358,9 @@ impl Drive {
                 {
                     // An approval of a settled document's deletion proves the approvals the
                     // contract keeps of it, which the verifier rebuilds from the transition
-                    // alone: the record says whether the document was deleted.
+                    // alone: the record says whether the document was deleted. Only a contract
+                    // user moderation takes this arm, a transition protocol version 14
+                    // introduced, so no earlier proof changes.
                     Drive::contract_settled_deletions_query(
                         contract_id.to_buffer(),
                         &ContractSettledDeletionsQuery {

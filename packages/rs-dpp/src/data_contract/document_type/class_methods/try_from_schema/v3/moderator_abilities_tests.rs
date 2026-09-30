@@ -1106,28 +1106,41 @@ fn should_refuse_a_settled_deletion_on_a_contract_whose_moderators_are_not_elect
 }
 
 #[test]
-fn should_refuse_a_number_of_approvals_no_team_can_give() {
-    let max = PlatformVersion::latest()
+fn should_refuse_a_number_of_approvals_the_declared_team_can_not_give() {
+    // The declaration adds nobody to the elected team: it holds its leader and the members a
+    // charter elects, and no more.
+    let team = 1 + PlatformVersion::latest()
         .system_limits
-        .max_contract_moderation_settled_deletion_approvals;
-    // The meta-schema speaks first under full validation, so the parser's words are checked
-    // on the stored path.
-    for approvals in [0, max + 1] {
-        assert_refused_naming(
-            parse_elected(
-                settled_schema(platform_value!({ "approvals": approvals })),
-                false,
-            ),
-            &["deleteSettled.approvals", "between 1 and"],
-        );
-        assert!(parse_elected(
-            settled_schema(platform_value!({ "approvals": approvals })),
-            true
-        )
-        .is_err());
-    }
-    parse_elected(settled_schema(platform_value!({ "approvals": max })), true)
-        .expect("the most members a team holds may be required");
+        .max_moderation_charter_elected_members;
+    parse_elected(settled_schema(platform_value!({ "approvals": team })), true)
+        .expect("as many approvals as the team holds may be required");
+    assert_refused_naming(
+        parse_elected(
+            settled_schema(platform_value!({ "approvals": team + 1 })),
+            true,
+        ),
+        &["deleteSettled.approvals", &format!("between 1 and {team}")],
+    );
+    // A registration limit: a stored contract is read back whatever the bound says now.
+    let stored = parse_elected(
+        settled_schema(platform_value!({ "approvals": team + 1 })),
+        false,
+    )
+    .expect("a stored contract is read back");
+    assert_eq!(
+        stored.moderator_settled_deletion(),
+        Some(SettledDeletionRule {
+            leader: false,
+            approvals: team + 1,
+        })
+    );
+    // No approvals at all is no rule, on both paths; the meta-schema speaks first under full
+    // validation.
+    assert_refused_naming(
+        parse_elected(settled_schema(platform_value!({ "approvals": 0 })), false),
+        &["deleteSettled.approvals", "between 1 and"],
+    );
+    assert!(parse_elected(settled_schema(platform_value!({ "approvals": 0 })), true).is_err());
 }
 
 #[test]

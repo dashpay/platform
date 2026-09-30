@@ -65,6 +65,8 @@ mod add_contract_suspension;
 #[cfg(feature = "server")]
 mod add_contract_warning;
 #[cfg(feature = "server")]
+mod document_records;
+#[cfg(feature = "server")]
 mod estimated_costs;
 #[cfg(feature = "server")]
 mod fetch_contract_document_removals;

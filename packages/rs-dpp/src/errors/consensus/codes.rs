@@ -507,6 +507,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentNotSettledError(_) => 41206,
             Self::SettledDeletionReasonMismatchError(_) => 41207,
             Self::SettledDeletionAlreadyApprovedError(_) => 41208,
+            Self::SettledDeletionNotRestorableError(_) => 41209,
         }
     }
 }

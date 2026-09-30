@@ -84,9 +84,9 @@ impl ContractModerationEntries {
 pub const CONTRACT_FEE_POTS_QUERIED: [ContractFeePot; 2] =
     [ContractFeePot::Owner, ContractFeePot::Moderators];
 
-/// The page size a removals request without a limit asks for, which is also the largest page a
-/// node returns and the most document ids one may name: the platform version's
-/// `max_returned_elements`, the number the node reads too.
+/// The page size a removals or settled deletions request without a limit asks for, which is also
+/// the largest page a node returns and the most document ids one may name: the platform
+/// version's `max_returned_elements`, the number the node reads too.
 pub fn default_contract_document_removals_limit(platform_version: &PlatformVersion) -> u16 {
     platform_version.drive_abci.query.max_returned_elements
 }
@@ -110,28 +110,35 @@ impl ContractDocumentRemovals {
         &self,
         query: &ContractDocumentRemovalsQuery,
     ) -> Option<ContractDocumentRemovalsQuery> {
-        let ContractDocumentRemovalsSelection::Page { limit, .. } = &query.selection else {
-            return None;
-        };
-        let limit = *limit;
-        if self.0.len() < usize::from(limit) {
-            return None;
-        }
-        self.0.last().map(|entry| ContractDocumentRemovalsQuery {
-            document_type_name: query.document_type_name.clone(),
-            selection: ContractDocumentRemovalsSelection::Page {
-                start_after: Some(entry.document_id),
-                limit,
-            },
-        })
+        next_records_page(
+            query,
+            self.0.len(),
+            self.0.last().map(|entry| entry.document_id),
+        )
     }
 }
 
-/// The page size a settled deletions request without a limit asks for, which is also the
-/// largest page a node returns and the most document ids one may name: the platform version's
-/// `max_returned_elements`, the number the node reads too.
-pub fn default_contract_settled_deletions_limit(platform_version: &PlatformVersion) -> u16 {
-    platform_version.drive_abci.query.max_returned_elements
+/// The page after one holding `returned` records by document id, the last `last_document_id`,
+/// read with `query`: `None` when that page held fewer records than it asked for, and so was the
+/// last, and for a read by ids, which names every record it wants.
+fn next_records_page(
+    query: &ContractDocumentRemovalsQuery,
+    returned: usize,
+    last_document_id: Option<Identifier>,
+) -> Option<ContractDocumentRemovalsQuery> {
+    let ContractDocumentRemovalsSelection::Page { limit, .. } = &query.selection else {
+        return None;
+    };
+    if returned < usize::from(*limit) {
+        return None;
+    }
+    last_document_id.map(|document_id| ContractDocumentRemovalsQuery {
+        document_type_name: query.document_type_name.clone(),
+        selection: ContractDocumentRemovalsSelection::Page {
+            start_after: Some(document_id),
+            limit: *limit,
+        },
+    })
 }
 
 /// The approvals a contract's seated moderation team gave the deletion of settled documents
@@ -155,20 +162,11 @@ impl ContractSettledDeletions {
         &self,
         query: &ContractSettledDeletionsQuery,
     ) -> Option<ContractSettledDeletionsQuery> {
-        let ContractDocumentRemovalsSelection::Page { limit, .. } = &query.selection else {
-            return None;
-        };
-        let limit = *limit;
-        if self.0.len() < usize::from(limit) {
-            return None;
-        }
-        self.0.last().map(|entry| ContractSettledDeletionsQuery {
-            document_type_name: query.document_type_name.clone(),
-            selection: ContractDocumentRemovalsSelection::Page {
-                start_after: Some(entry.document_id),
-                limit,
-            },
-        })
+        next_records_page(
+            query,
+            self.0.len(),
+            self.0.last().map(|entry| entry.document_id),
+        )
     }
 }
 
@@ -1382,7 +1380,7 @@ mod tests {
     #[test]
     fn should_build_the_settled_deletions_query_of_a_request() {
         let platform_version = PlatformVersion::latest();
-        let max = default_contract_settled_deletions_limit(platform_version);
+        let max = default_contract_document_removals_limit(platform_version);
         assert_eq!(
             settled_deletions_query_from_request(
                 POST.to_string(),

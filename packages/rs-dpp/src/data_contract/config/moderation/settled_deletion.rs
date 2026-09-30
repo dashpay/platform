@@ -14,15 +14,24 @@ pub struct SettledDeletionRule {
     /// Whether the team's leader must be among the approvals.
     pub leader: bool,
     /// How many moderators of the seated team must approve, the leader counted among them: at
-    /// least 1, at most `SystemLimits::max_contract_moderation_settled_deletion_approvals`.
+    /// least 1, and at registration at most the members the declared team can hold (its
+    /// leader, `SystemLimits::max_moderation_charter_elected_members` elected members and the
+    /// declaration's `maxAddedModerators`). A seated team that can hold fewer, its charter
+    /// electing fewer members, must have all it can hold approve.
     pub approvals: u16,
 }
 
 impl SettledDeletionRule {
     /// Whether `approvals`, identities of the seated team led by `leader_id`, each at most once,
-    /// meet the rule.
-    pub fn is_met_by(&self, approvals: &[Identifier], leader_id: Identifier) -> bool {
-        approvals.len() >= usize::from(self.approvals)
+    /// meet the rule. The team holds at most `team_capacity` members, the leader counted: a rule
+    /// asking for more asks for that many, so that it can be met by the team seated.
+    pub fn is_met_by(
+        &self,
+        approvals: &[Identifier],
+        leader_id: Identifier,
+        team_capacity: usize,
+    ) -> bool {
+        approvals.len() >= usize::from(self.approvals).min(team_capacity)
             && (!self.leader || approvals.contains(&leader_id))
     }
 }
@@ -98,23 +107,39 @@ mod tests {
             leader: true,
             approvals: 3,
         };
-        assert!(!leader_and_two.is_met_by(&[leader, member], leader));
-        assert!(!leader_and_two.is_met_by(&[member, other, Identifier::from([4; 32])], leader));
-        assert!(leader_and_two.is_met_by(&[member, leader, other], leader));
+        assert!(!leader_and_two.is_met_by(&[leader, member], leader, 31));
+        assert!(!leader_and_two.is_met_by(&[member, other, Identifier::from([4; 32])], leader, 31));
+        assert!(leader_and_two.is_met_by(&[member, leader, other], leader, 31));
 
         let leader_alone = SettledDeletionRule {
             leader: true,
             approvals: 1,
         };
-        assert!(leader_alone.is_met_by(&[leader], leader));
-        assert!(!leader_alone.is_met_by(&[member], leader));
+        assert!(leader_alone.is_met_by(&[leader], leader, 31));
+        assert!(!leader_alone.is_met_by(&[member], leader, 31));
 
         let any_two = SettledDeletionRule {
             leader: false,
             approvals: 2,
         };
-        assert!(any_two.is_met_by(&[member, other], leader));
-        assert!(!any_two.is_met_by(&[member], leader));
+        assert!(any_two.is_met_by(&[member, other], leader, 31));
+        assert!(!any_two.is_met_by(&[member], leader, 31));
+    }
+
+    #[test]
+    fn should_ask_a_team_that_holds_fewer_than_the_rule_for_all_it_holds() {
+        let leader = Identifier::from([1; 32]);
+        let member = Identifier::from([2; 32]);
+        let other = Identifier::from([3; 32]);
+        let thirty_one = SettledDeletionRule {
+            leader: true,
+            approvals: 31,
+        };
+        // A team of three at most: all three meet the rule, two do not.
+        assert!(thirty_one.is_met_by(&[member, leader, other], leader, 3));
+        assert!(!thirty_one.is_met_by(&[member, leader], leader, 3));
+        // The leader still has to be among them.
+        assert!(!thirty_one.is_met_by(&[member, other], leader, 2));
     }
 
     #[test]

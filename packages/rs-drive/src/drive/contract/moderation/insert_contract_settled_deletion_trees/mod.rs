@@ -1,5 +1,4 @@
-mod v0;
-
+use crate::drive::contract::moderation::types::ContractDocumentRecords;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -12,19 +11,17 @@ use std::collections::HashMap;
 
 impl Drive {
     /// The operations creating the trees that hold the approvals a seated moderation team gives
-    /// the deletion of settled documents: the tree of all of them (`[64, id, 2, 24]`) when
-    /// `with_root` is set, and under it one tree per document type of `document_type_names`.
+    /// the deletion of settled documents: the tree of all of them (`[64, id, 2, 24]`), and under
+    /// it one tree per document type of `document_type_names`.
     ///
-    /// Called as [`Drive::insert_contract_document_removal_trees_operations`] is: by a contract
-    /// insertion with the root and every document type that sets
-    /// `moderatorAbilities.deleteSettled`, and by a contract update for the document types it
-    /// adds that set it, with the root when they are the contract's first. The keyword is fixed
-    /// with its type, so a type's tree is created exactly once, with the type.
+    /// Called by a contract insertion with every document type that sets
+    /// `moderatorAbilities.deleteSettled`, when there is one. No contract update adds such a
+    /// type: the keyword needs the contract's elected declaration, which is fixed at creation,
+    /// to give its team `deleteDocuments` on the type, and it can not name a type added later.
     ///
     /// # Parameters
     ///
     /// * `contract_id`: The contract the trees belong to.
-    /// * `with_root`: Whether to also create the tree of all the approvals.
     /// * `document_type_names`: The document types to create an approvals tree for.
     /// * `storage_flags`: The storage flags of the new trees.
     /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
@@ -40,7 +37,6 @@ impl Drive {
     pub fn insert_contract_settled_deletion_trees_operations(
         &self,
         contract_id: [u8; 32],
-        with_root: bool,
         document_type_names: &[&str],
         storage_flags: Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -57,9 +53,10 @@ impl Drive {
             .moderation
             .insert_contract_settled_deletion_trees
         {
-            0 => self.insert_contract_settled_deletion_trees_operations_v0(
+            0 => self.insert_contract_document_record_trees_operations_v0(
                 contract_id,
-                with_root,
+                ContractDocumentRecords::SettledDeletions,
+                true,
                 document_type_names,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

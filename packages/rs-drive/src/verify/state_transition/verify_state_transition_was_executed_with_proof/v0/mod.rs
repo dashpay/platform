@@ -1274,6 +1274,8 @@ impl Drive {
                     platform_version,
                 )
             }
+            // A contract user moderation exists from protocol version 14 only, so no earlier
+            // proof changes.
             StateTransition::ContractUserModeration(transition)
                 if transition.action().settled_document().is_some() =>
             {

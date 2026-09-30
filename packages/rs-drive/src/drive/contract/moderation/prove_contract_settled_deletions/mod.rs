@@ -1,6 +1,6 @@
-mod v0;
-
-use crate::drive::contract::moderation::types::ContractSettledDeletionsQuery;
+use crate::drive::contract::moderation::types::{
+    ContractDocumentRecords, ContractSettledDeletionsQuery,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -40,8 +40,9 @@ impl Drive {
             .moderation
             .prove_contract_settled_deletions
         {
-            0 => self.prove_contract_settled_deletions_v0(
+            0 => self.prove_contract_document_records_v0(
                 contract_id,
+                ContractDocumentRecords::SettledDeletions,
                 query,
                 transaction,
                 platform_version,

@@ -1497,20 +1497,29 @@ async fn should_not_be_active_before_protocol_version_14() {
     let platform_version = PlatformVersion::get(13).expect("protocol version 13");
     let setup = Setup::new_at(None, platform_version).await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    let ban = setup
-        .moderate(&setup.owner, ban_action(setup.user.id()))
-        .await;
-    let execution = setup.process(&ban, &transaction);
-    // The transition type does not exist before protocol version 14, so the node cannot even
-    // decode it as active: the same refusal every transition added since the fork gets.
-    assert!(
-        matches!(
-            &execution,
-            StateTransitionExecutionResult::InternalError(message)
-                if message.contains("ContractUserModeration") && message.contains("not active")
-        ),
-        "expected the transition to be inactive before protocol version 14, got {execution:?}"
-    );
+    // An approval of a settled document's deletion among them: the shipped prover and verifier
+    // v0 have its arms, which no transition of an earlier protocol version reaches.
+    for action in [
+        ban_action(setup.user.id()),
+        ContractUserModerationAction::DeleteSettledDocument {
+            document_type_name: POST.to_string(),
+            document_id: Identifier::new([0x66; 32]),
+            reason: ContractModerationReason::from_text("doxxing"),
+        },
+    ] {
+        let moderation = setup.moderate(&setup.owner, action).await;
+        let execution = setup.process(&moderation, &transaction);
+        // The transition type does not exist before protocol version 14, so the node cannot
+        // even decode it as active: the same refusal every transition added since the fork gets.
+        assert!(
+            matches!(
+                &execution,
+                StateTransitionExecutionResult::InternalError(message)
+                    if message.contains("ContractUserModeration") && message.contains("not active")
+            ),
+            "expected the transition to be inactive before protocol version 14, got {execution:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -3555,7 +3564,17 @@ async fn should_let_any_moderator_restore_a_deleted_post_within_a_week_and_delet
         .moderate(&setup.moderator, delete_action(POST, post.id()))
         .await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    assert_success(&setup.process_at(&delete_again, removed_again_at, &transaction));
+    let execution = setup.process_at(&delete_again, removed_again_at, &transaction);
+    // The fresh record is shorter than the restored one it replaces: the owner, who restored
+    // the post and paid for the record's restoration, is refunded the bytes that frees, while
+    // the post's own storage refunds nobody.
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = &execution else {
+        panic!("expected the deletion to pass, got {execution:?}");
+    };
+    assert_eq!(
+        fee_result.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
+        vec![setup.owner.id().to_buffer()]
+    );
     setup.commit(transaction);
     assert_eq!(
         setup.post_removal(post.id(), None),

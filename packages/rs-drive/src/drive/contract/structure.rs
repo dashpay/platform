@@ -16,12 +16,16 @@ pub(crate) const CONTRACT_FLAGS: &str =
      history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state \
      transitions and later upgrades write none.";
 const REMOVAL_FLAGS: &str =
-    "The owner is the moderator who deleted the document. They pay for the record, \
-     which nothing deletes or replaces.";
+    "The owner is the moderator whose write last changed the record's size: the one who \
+     deleted the document, who restored it, or who deleted it again once restored. They pay \
+     for the bytes a longer record adds, and the bytes a shorter one frees are refunded to \
+     the moderator it named before. A rewrite of the same size keeps the earlier moderator. \
+     Nothing deletes it.";
 const SETTLED_DELETION_FLAGS: &str =
-    "The owner is the member of the seated team whose approval wrote the record last and \
-     made it longer, who paid for the added bytes; a record rewritten no longer stays the \
-     earlier member's. Nothing deletes it.";
+    "The owner is the member of the seated team whose approval last changed the record's \
+     size: they pay for the bytes a longer record adds, and the bytes a shorter one frees are \
+     refunded to the member it named before. A rewrite of the same size keeps the earlier \
+     member. Nothing deletes it.";
 const MODERATOR_FLAGS: &str =
     "The owner is the moderator who added the entry. They pay for it, and are \
      refunded when it is removed. A suspension replaced with a longer reason \
@@ -167,11 +171,12 @@ pub(crate) fn structure() -> StructureNode {
                     .describe(
                         "The approvals the contract's seated moderation team gave the \
                              deletion of settled documents, past their type's \
-                             `deleteWithin`. Created with the first document type that \
-                             sets `moderatorAbilities.deleteSettled`, by the contract's \
-                             creation or by an update. Read by the team's approvals and by \
-                             clients, never by a document transition, so it sorts below \
-                             the rest.",
+                             `deleteWithin`. Created with the contract when one of its \
+                             document types sets `moderatorAbilities.deleteSettled`: no \
+                             update can add such a type, since the elected declaration \
+                             fixed at creation must give the team `deleteDocuments` on it. \
+                             Read by the team's approvals and by clients, never by a \
+                             document transition, so it sorts below the rest.",
                     )
                     .child(
                         StructureNode::dynamic(
@@ -185,9 +190,7 @@ pub(crate) fn structure() -> StructureNode {
                         .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                         .describe(
                             "The approvals of the settled deletions of one document type \
-                                 that sets `deleteSettled`. Created with the document type, \
-                                 by the contract's creation or by the update that adds the \
-                                 type.",
+                                 that sets `deleteSettled`. Created with the contract.",
                         )
                         .child(
                             StructureNode::identifier(

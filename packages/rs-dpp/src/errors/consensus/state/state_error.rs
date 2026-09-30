@@ -15,7 +15,7 @@ use crate::consensus::state::contract_moderation::{
     ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
     ContractModerationTeamNotSeatedError, DocumentNotSettledError,
     DocumentTypeNotDeletableOnceSettledError, SettledDeletionAlreadyApprovedError,
-    SettledDeletionReasonMismatchError,
+    SettledDeletionNotRestorableError, SettledDeletionReasonMismatchError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
@@ -668,6 +668,9 @@ pub enum StateError {
 
     #[error(transparent)]
     SettledDeletionAlreadyApprovedError(SettledDeletionAlreadyApprovedError),
+
+    #[error(transparent)]
+    SettledDeletionNotRestorableError(SettledDeletionNotRestorableError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1436,6 +1439,12 @@ mod tests {
                 SettledDeletionAlreadyApprovedError::new(group_id, identity_id, identity_id)
             )),
             160
+        );
+        assert_eq!(
+            discriminant_of(StateError::SettledDeletionNotRestorableError(
+                SettledDeletionNotRestorableError::new(group_id, identity_id, 1_000)
+            )),
+            161
         );
     }
 }
