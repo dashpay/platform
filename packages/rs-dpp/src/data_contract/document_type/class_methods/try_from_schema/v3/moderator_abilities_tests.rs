@@ -714,6 +714,17 @@ fn should_refuse_an_immutable_field() {
 }
 
 #[test]
+fn should_refuse_a_field_frozen_after_a_window() {
+    assert_refused_naming(
+        parse_moderated(merged(
+            report_schema(platform_value!({ "changeFields": ["status"] })),
+            platform_value!({ "documentsMutable": true, "immutableAfter": { "status": 300 } }),
+        )),
+        &["status", "immutableAfter"],
+    );
+}
+
+#[test]
 fn should_refuse_a_field_holding_a_reference() {
     assert_refused_naming(
         parse_moderated(merged(

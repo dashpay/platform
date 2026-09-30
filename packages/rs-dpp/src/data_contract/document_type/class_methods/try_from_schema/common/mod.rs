@@ -2330,8 +2330,8 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - optional: a document's owner can not set it when creating the document,
 ///   so it starts absent;
 /// - stored, so not transient;
-/// - not listed under `immutable`, which would freeze what the moderators are
-///   to change;
+/// - not listed under `immutable` or `immutableAfter`, which would freeze what
+///   the moderators are to change;
 /// - neither a reference nor read by one (a `where` value, a `findBy` source
 ///   or function param, a key id): a reference is checked when the document is written by its
 ///   owner, and a moderator's change must leave every reference as it was
@@ -2550,6 +2550,12 @@ pub(super) fn apply_moderator_abilities(
             Some("it is transient, so no stored document holds it".to_string())
         } else if document_type.immutable_fields.contains(field) {
             Some("it is listed under `immutable`, which would freeze it".to_string())
+        } else if document_type.immutable_after_seconds.contains_key(field) {
+            Some(
+                "it is listed under `immutableAfter`, which would freeze it once its window \
+                 passed"
+                    .to_string(),
+            )
         } else if read_by_references.contains(field.as_str()) {
             Some(
                 "it holds a reference or is read by one, and a moderator's change leaves every \
@@ -2907,6 +2913,150 @@ pub(super) fn apply_immutable_fields(
 
     document_type.immutable_fields = immutable_fields;
     document_type.immutable_fields_allow_setting = immutable_fields_allow_setting;
+
+    Ok(())
+}
+
+/// Reads the doctype-level `immutableAfter` object (protocol version 14)
+/// before the core parse consumes `schema`: the top-level properties a replace
+/// may change only for so many seconds after the document's `$createdAt`, each
+/// with its window. Its shape is enforced on both paths, as
+/// [`parse_property_name_list_keyword`] enforces the lists beside it: an
+/// object whose every value is a whole number of seconds, 1 to `u32::MAX`. A
+/// window of none is a property frozen at creation, which `immutable` says.
+pub(super) fn parse_immutable_after_keyword(
+    schema: &Value,
+    name: &str,
+) -> Result<BTreeMap<String, u32>, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    let keyword = property_names::IMMUTABLE_AFTER;
+
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(BTreeMap::new());
+    };
+    let Some(value) = Value::get_optional_from_map(schema_map, keyword) else {
+        return Ok(BTreeMap::new());
+    };
+    let Value::Map(entries) = value else {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{keyword}` must be an object mapping top-level property \
+             names to seconds"
+        )));
+    };
+
+    entries
+        .iter()
+        .map(|(key, seconds)| {
+            let property = key.as_text().ok_or_else(|| {
+                structure_error(format!(
+                    "document type \"{name}\": every `{keyword}` key must be a property name (a \
+                     string)"
+                ))
+            })?;
+            match seconds.to_integer::<u32>() {
+                Ok(seconds) if seconds > 0 => Ok((property.to_owned(), seconds)),
+                Ok(_) => Err(structure_error(format!(
+                    "document type \"{name}\" gives \"{property}\" an `{keyword}` window of 0 \
+                     seconds: a property no replace may ever change is listed under `immutable`"
+                ))),
+                Err(_) => Err(structure_error(format!(
+                    "document type \"{name}\": the `{keyword}` window of \"{property}\" must be a \
+                     whole number of seconds from 1 to {}",
+                    u32::MAX
+                ))),
+            }
+        })
+        .collect()
+}
+
+/// Write the `immutableAfter` windows onto the parsed document type and, under
+/// full validation, check them against the rest of the type. Runs after
+/// [`apply_immutable_fields`], whose list it reads.
+///
+/// A listed property is one a replace may change until block time passes the
+/// document's `$createdAt` plus the property's window, and is then frozen as
+/// an `immutable` entry is. So, as for `immutable`, the type's documents must
+/// be mutable and every entry must name a declared top-level property that is
+/// neither a system property nor transient. Beyond those:
+/// - the type must require `$createdAt`, the clock the window is measured on:
+///   every document then carries it, and `required` never gains a system
+///   property on update, so no stored document of the type lacks it;
+/// - no entry may also be in `immutable`, which freezes the property at
+///   creation already: the two would say different things of one property.
+///
+/// Like the `immutable` rules these are schema lints for contracts entering
+/// the chain, not storage-layout invariants, so stored contracts bypass them.
+pub(super) fn apply_immutable_after(
+    document_type: &mut DocumentTypeV2,
+    immutable_after_seconds: BTreeMap<String, u32>,
+    name: &str,
+    full_validation: bool,
+) -> Result<(), ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if full_validation && !immutable_after_seconds.is_empty() {
+        if !document_type.documents_mutable {
+            return Err(structure_error(format!(
+                "document type \"{name}\" lists `immutableAfter` properties but its documents are \
+                 not mutable (documentsMutable: false), so every property is already immutable; \
+                 remove `immutableAfter` or set documentsMutable: true"
+            )));
+        }
+        if !document_type.required_fields.contains(CREATED_AT) {
+            return Err(structure_error(format!(
+                "document type \"{name}\" lists `immutableAfter` properties but does not require \
+                 `{CREATED_AT}`: each window is measured from a document's creation, so add \
+                 \"{CREATED_AT}\" to `required`"
+            )));
+        }
+
+        for property in immutable_after_seconds.keys() {
+            if property.starts_with('$') {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists system property \"{property}\" under \
+                     `immutableAfter`: system properties are managed by the platform and cannot \
+                     be listed"
+                )));
+            }
+            if !document_type.properties.contains_key(property) {
+                let hint = if property.contains('.') {
+                    "; nested paths are not accepted, list the top-level property that contains \
+                     it to freeze it whole"
+                } else {
+                    ""
+                };
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" under `immutableAfter`, but it \
+                     is not a top-level property of the document type{hint}"
+                )));
+            }
+            if document_type.transient_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" as both transient and under \
+                     `immutableAfter`: a transient property is never stored, so once its window \
+                     passed every replace that supplies it would be refused; remove it from one \
+                     of the two"
+                )));
+            }
+            if document_type.immutable_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" both under `immutable`, which \
+                     freezes it at creation, and under `immutableAfter`, which lets replaces \
+                     change it for a while; remove it from one of the two"
+                )));
+            }
+        }
+    }
+
+    document_type.immutable_after_seconds = immutable_after_seconds;
 
     Ok(())
 }

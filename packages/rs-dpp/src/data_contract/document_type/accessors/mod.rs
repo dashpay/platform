@@ -948,6 +948,8 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
 /// predate the keyword: V0 and V1 have no field to borrow from, and the
 /// getter hands out a reference.
 static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
+/// What `immutable_after_seconds` returns for the same generations.
+static NO_IMMUTABLE_AFTER_SECONDS: BTreeMap<String, u32> = BTreeMap::new();
 static NO_ENTRY_PAYLOAD: BTreeSet<String> = BTreeSet::new();
 static NO_MODERATOR_CHANGEABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
 /// What `property_constraints` returns for the generations that predate the
@@ -1089,6 +1091,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
             DocumentType::V1(_) => &NO_IMMUTABLE_FIELDS,
             DocumentType::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
+
+    fn immutable_after_seconds(&self) -> &BTreeMap<String, u32> {
+        match self {
+            DocumentType::V0(_) => &NO_IMMUTABLE_AFTER_SECONDS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_AFTER_SECONDS,
+            DocumentType::V2(v2) => v2.immutable_after_seconds(),
         }
     }
 
@@ -1297,6 +1307,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn immutable_after_seconds(&self) -> &BTreeMap<String, u32> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_AFTER_SECONDS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_AFTER_SECONDS,
+            DocumentTypeRef::V2(v2) => v2.immutable_after_seconds(),
+        }
+    }
+
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         match self {
             DocumentTypeRef::V0(_) => None,
@@ -1465,6 +1483,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
             DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
             DocumentTypeMutRef::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
+
+    fn immutable_after_seconds(&self) -> &BTreeMap<String, u32> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_AFTER_SECONDS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_AFTER_SECONDS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_after_seconds(),
         }
     }
 

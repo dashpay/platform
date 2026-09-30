@@ -378,16 +378,16 @@ await sdk.documents.create({ document: resignation, identityKey, signer });
 
 The leader reads either with `sdk.encryptedFor.decrypt`.
 
-## Immutable properties (`immutable`)
+## Immutable properties (`immutable`, `immutableAfter`)
 
-From protocol version 14 a mutable document type can freeze some of its top-level properties at creation with the doctype-level `immutable` list, while the rest of the document stays replaceable. A second list, `immutableAllowSetting`, names the frozen properties a replace may still set while the stored document has no value for them; once present they are frozen too. Both are consensus-enforced on every replace, and a fetched contract can be asked what it declares:
+From protocol version 14 a mutable document type can freeze some of its top-level properties at creation with the doctype-level `immutable` list, while the rest of the document stays replaceable. A second list, `immutableAllowSetting`, names the frozen properties a replace may still set while the stored document has no value for them; once present they are frozen too. A third keyword, `immutableAfter`, maps properties to a window in seconds: a replace may change them until the document's `$createdAt` plus the window, and not after (a post's text editable for five minutes is `"immutableAfter": { "text": 300 }`). All three are consensus-enforced on every replace, and a fetched contract can be asked what it declares:
 
 ```ts
 const contract = await sdk.contracts.fetch(contractId);
 
 contract.documentTypeImmutableProperties('post');
-// { immutable: ['author', 'mood'], immutableAllowSetting: ['mood'] }
-// Both arrays hold top-level property names, sorted. Listing an object
+// { immutable: ['author', 'mood'], immutableAllowSetting: ['mood'], immutableAfter: { text: 300 } }
+// All three hold top-level property names, sorted. Listing an object
 // property freezes it whole, nested values included.
 
 // Every document type that freezes at least one property.
@@ -406,6 +406,9 @@ try {
 } catch (e) {
   if (e.code === DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged) {
     // the replace touched a property the document type freezes (code 40128)
+  }
+  if (e.code === DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed) {
+    // the replace touched an immutableAfter property past its window (code 40143)
   }
 }
 ```

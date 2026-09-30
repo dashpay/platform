@@ -57,6 +57,12 @@ pub struct DocumentTypeV2 {
     /// keyword, protocol version 14). Once present they are frozen like the
     /// rest of the list. Every entry is also in `immutable_fields`.
     pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
+    /// The top-level properties of a mutable document type that a replace may
+    /// change only for so many seconds after the document's `$createdAt`
+    /// (`immutableAfter` keyword, protocol version 14), each with its window.
+    /// Past it the property is frozen as an `immutable_fields` entry is. No
+    /// entry is also in `immutable_fields`, and the type requires `$createdAt`.
+    pub(in crate::data_contract) immutable_after_seconds: BTreeMap<String, u32>,
     /// The dotted paths of the properties that declare `distinctFrom`
     /// (protocol version 14), in schema order, so a document write finds
     /// them without walking every property. Empty on every pre-PV14 contract.
@@ -294,6 +300,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
+            immutable_after_seconds: BTreeMap::new(),
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),
@@ -351,6 +358,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
+            immutable_after_seconds: BTreeMap::new(),
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),

@@ -116,6 +116,16 @@ pub trait DocumentTypeV2Getters {
     /// keyword.
     fn immutable_fields_allow_setting(&self) -> &BTreeSet<String>;
 
+    /// The top-level properties a replace may change only for so many seconds
+    /// after the document's `$createdAt` (the `immutableAfter` keyword,
+    /// protocol version 14), each with its window in seconds. Once block time
+    /// is past `$createdAt` plus the window, a replace that changes, adds or
+    /// removes the property is rejected with
+    /// `DocumentPropertyEditWindowElapsedError`. Disjoint from
+    /// [`Self::immutable_fields`]; empty on document types that predate the
+    /// keyword.
+    fn immutable_after_seconds(&self) -> &BTreeMap<String, u32>;
+
     /// The fixed fees in credits this document type charges for actions on its documents
     /// (the `actionFees` keyword, protocol version 14). `None` on document types that
     /// declare none and on those that predate the keyword.

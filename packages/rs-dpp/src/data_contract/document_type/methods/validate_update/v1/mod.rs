@@ -130,6 +130,14 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate `immutableAfter` changes (the top-level key is stripped
+        // from the schema compatibility diff as well)
+        let result = self.validate_immutable_after_update(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate that the action fees are unchanged
         let result = self.validate_action_fees_unchanged(new_document_type);
 
@@ -673,6 +681,46 @@ impl DocumentTypeRef<'_> {
                     .into(),
                 );
             }
+        }
+
+        SimpleConsensusValidationResult::new()
+    }
+
+    /// The `immutableAfter` windows may only tighten. A property may gain a
+    /// window (documents already stored whose window has passed are frozen
+    /// at once, as a property added to `immutable` is), and a window may
+    /// shorten. A window may never lengthen, which would reopen documents
+    /// that had been frozen, and a property may leave `immutableAfter` only
+    /// for `immutable`, which freezes it at creation: leaving it for neither
+    /// would let replaces change it again. The move the other way, out of
+    /// `immutable`, is `validate_immutable_fields_update`'s to refuse.
+    ///
+    /// Judged here because the top-level key is stripped from the schema
+    /// compatibility diff, like `immutable`.
+    fn validate_immutable_after_update(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        let new_windows = new_document_type.immutable_after_seconds();
+        let new_immutable = new_document_type.immutable_fields();
+
+        for (property, old_seconds) in self.immutable_after_seconds() {
+            let refusal = match new_windows.get(property) {
+                Some(new_seconds) if new_seconds > old_seconds => format!(
+                    "document type can not lengthen the immutableAfter window of property \
+                     '{property}' from {old_seconds} to {new_seconds} seconds: that would let \
+                     replaces change documents already frozen; a window may only shorten"
+                ),
+                Some(_) => continue,
+                None if new_immutable.contains(property) => continue,
+                None => format!(
+                    "document type can not remove property '{property}' from immutableAfter: \
+                     it may only move to immutable"
+                ),
+            };
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(self.data_contract_id(), self.name(), refusal).into(),
+            );
         }
 
         SimpleConsensusValidationResult::new()
@@ -1357,6 +1405,138 @@ mod tests {
             result.is_valid(),
             "an unchanged (reordered) immutable list must be accepted, got {:?}",
             result.errors
+        );
+    }
+
+    /// A mutable document type with three string properties, `$createdAt`
+    /// required, and the given `immutable` list and `immutableAfter` windows.
+    fn doc_type_with_windows(
+        immutable: Value,
+        immutable_after: Value,
+        platform_version: &PlatformVersion,
+    ) -> DocumentType {
+        let schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                "c": {"type": "string", "position": 2, "maxLength": 60_u32},
+            },
+            "required": ["$createdAt"],
+            "immutable": immutable,
+            "immutableAfter": immutable_after,
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create document type")
+    }
+
+    fn validate_windows_update(
+        (old_immutable, old_windows): (Value, Value),
+        (new_immutable, new_windows): (Value, Value),
+    ) -> crate::validation::SimpleConsensusValidationResult {
+        let platform_version = PlatformVersion::latest();
+        let old = doc_type_with_windows(old_immutable, old_windows, platform_version);
+        let new = doc_type_with_windows(new_immutable, new_windows, platform_version);
+        old.as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error")
+    }
+
+    // Each runs the whole v1 pipeline, so the accepted ones also pin that the
+    // compatibility differ ignores the top-level `immutableAfter` key instead
+    // of hard-erroring on a keyword it has no rule for.
+    #[test]
+    fn should_accept_adding_or_shortening_an_immutable_after_window() {
+        for (old, new) in [
+            (platform_value!({ "a": 300 }), platform_value!({ "a": 300 })),
+            (platform_value!({ "a": 300 }), platform_value!({ "a": 60 })),
+            (
+                platform_value!({ "a": 300 }),
+                platform_value!({ "a": 300, "b": 60 }),
+            ),
+        ] {
+            let result = validate_windows_update(
+                (platform_value!([]), old.clone()),
+                (platform_value!([]), new.clone()),
+            );
+            assert!(
+                result.is_valid(),
+                "{old:?} -> {new:?} must be accepted, got {:?}",
+                result.errors
+            );
+        }
+    }
+
+    // Freezing at creation is tighter than any window.
+    #[test]
+    fn should_accept_moving_a_windowed_property_to_immutable() {
+        let result = validate_windows_update(
+            (platform_value!([]), platform_value!({ "a": 300, "b": 60 })),
+            (platform_value!(["a"]), platform_value!({ "b": 60 })),
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    // A longer window would reopen documents already frozen.
+    #[test]
+    fn should_reject_lengthening_an_immutable_after_window() {
+        let result = validate_windows_update(
+            (platform_value!([]), platform_value!({ "a": 60 })),
+            (platform_value!([]), platform_value!({ "a": 300 })),
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                if e.additional_message().starts_with(
+                    "document type can not lengthen the immutableAfter window of property 'a' \
+                     from 60 to 300 seconds"
+                )
+        );
+    }
+
+    #[test]
+    fn should_reject_removing_a_windowed_property() {
+        let result = validate_windows_update(
+            (platform_value!([]), platform_value!({ "a": 60, "b": 60 })),
+            (platform_value!([]), platform_value!({ "b": 60 })),
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                if e.additional_message()
+                    == "document type can not remove property 'a' from immutableAfter: it may only move to immutable"
+        );
+    }
+
+    // Out of `immutable` into a window is a loosening, refused by the
+    // `immutable` list's own rule.
+    #[test]
+    fn should_reject_moving_an_immutable_property_to_a_window() {
+        let result = validate_windows_update(
+            (platform_value!(["a"]), platform_value!({ "b": 60 })),
+            (platform_value!([]), platform_value!({ "a": 300, "b": 60 })),
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                if e.additional_message()
+                    == "document type can not remove immutable property 'a': the immutable list may only grow"
         );
     }
 

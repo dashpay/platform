@@ -2394,6 +2394,20 @@
       "uniqueItems": true,
       "description": "The subset of the immutable properties a replace may still set while the stored document has no value for them: a first-time set is accepted, after which the property is frozen like the rest of the immutable list (it can neither change nor be removed). Every entry must also appear in immutable; it is only meaningful for optional properties, since a required one always has a value from creation. On contract update an entry may be dropped (tightening) at any time, but may only be added for a property that becomes immutable in the same update: an already-immutable property cannot start allowing a set. Available from protocol version 14."
     },
+    "immutableAfter": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4294967295
+      },
+      "minProperties": 1,
+      "description": "Top-level properties of a mutable document type that replaces may change only for a while after the document is created, each mapped to that window in seconds. A replace whose block time is later than the document's $createdAt plus the window, and that changes, adds or removes the property, is rejected (DocumentPropertyEditWindowElapsedError, code 40143); at exactly that time it is still accepted. A replace may still remove a refersTo deletableDocument reference whose referenced document has been deleted, as for immutable. Only allowed when documentsMutable is true (the default), and requires $createdAt in required. Every key must name a declared top-level property that is neither transient nor listed under immutable (which freezes it at creation); system properties ($-prefixed) and nested paths are refused, as for immutable. On contract update a property may be added with any window, its window may shorten but never lengthen, and it may leave immutableAfter only for immutable. Available from protocol version 14."
+    },
     "ownerRefersTo": {
       "description": "A refersTo declaration whose value is the document's $ownerId, the writer, instead of a property's value: the declaration of an identifier property, with the same keys and the same checks, for the targets a writer can be: identity, a permanentDocument or a deletableDocument found by findBy, where \".\" is the writer, or a permanentDocument with inList, the writer an element of the list, or an anyOf or allOf expression whose every leaf is one of them and \"$ownerId\" names the writer as well. A deletableDocument leaf gates the writer on the document findBy finds existing now: every replace checks it again, so a writer whose document is gone can no longer replace theirs (it may still delete it). contract, token and a document by id are refused, since the writer's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the writer does not carry. A where value is still a property of the document or its $ownerId, the same writer. Only on a document type whose documents can be neither transferred nor traded, so the writer stays the owner; on a type whose documents can, creatorRefersTo checks the creator instead. When a document is created, and when a replace changes a property findBy or where reads (every replace for a where value $ownerId), consensus checks the writer against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $ownerId as the path. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
       "$ref": "#/$defs/documentSchema/properties/refersTo",

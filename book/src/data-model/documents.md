@@ -609,7 +609,21 @@ The parser (generation 3, meta-schema v3) checks both lists when a contract ente
 
 Enforcement lives in the replace action's state validation (generation 1). The action already records which top-level properties differ from the stored document in `changed_data_fields` (the same set that scopes `refersTo` re-validation), and alongside it which of those the stored document had no value for (`added_data_fields`). A changed property in the type's `immutable_fields()` fails the replace with `DocumentImmutablePropertyChangedError` (state code 40128) unless it is in `immutable_fields_allow_setting()` and was absent before, or it is a `deletableDocument` reference by id that the replace removed after its target was deleted. The registration rule above keeps the two from ever applying to one property. "Differ" covers a changed value, a property the stored document lacked, and a property the replace dropped. Transfers, price updates and purchases carry no property data and are unaffected.
 
-In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`. Earlier document type generations return empty sets.
+### Properties frozen after a window
+
+A third keyword, `immutableAfter`, freezes a property some time after the document is created instead of at creation: it maps top-level properties to a window in seconds, measured from the document's `$createdAt`, which the type must require.
+
+```json
+"required": ["author", "body", "$createdAt"],
+"immutable": ["author"],
+"immutableAfter": { "body": 300 }
+```
+
+The parser holds it to the rules of `immutable` (a mutable type, declared top-level properties that are neither system properties nor transient, the same reference restrictions) and to three of its own: `$createdAt` is required, no property is under both `immutable` and `immutableAfter`, and no window is 0. On contract update a property may gain a window and a window may shorten, while a longer window, or a property leaving `immutableAfter` for anything but `immutable`, is a `DocumentTypeUpdateError`. The differ strips the key too.
+
+The same replace state validation enforces it, reading the stored `$createdAt` the replace action carries. A changed property with a window fails the replace with `DocumentPropertyEditWindowElapsedError` (state code 40143) when the block time is later than `$createdAt` plus the window, again unless it is a dead `deletableDocument` reference the replace removed. `changed_data_fields` is name-ordered, so a replace touching both an `immutable` property and an `immutableAfter` one past its window reports whichever sorts first.
+
+In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`, and the windows `immutable_after_seconds()`, property to seconds. Earlier document type generations return empty ones.
 
 ## Transient Properties
 

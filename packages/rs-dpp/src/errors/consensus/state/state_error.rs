@@ -93,6 +93,7 @@ use crate::consensus::state::identity::identity_public_key_already_expired_error
 use crate::consensus::state::identity::identity_public_key_budget_exceeded_error::IdentityPublicKeyBudgetExceededError;
 use crate::consensus::state::identity::identity_public_key_limit_not_raised_error::IdentityPublicKeyLimitNotRaisedError;
 use crate::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
+use crate::consensus::state::document::document_property_edit_window_elapsed_error::DocumentPropertyEditWindowElapsedError;
 use crate::consensus::state::identity::identity_public_key_limit_not_set_error::IdentityPublicKeyLimitNotSetError;
 use crate::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
 use crate::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
@@ -648,6 +649,11 @@ pub enum StateError {
     // `minimumAgeBlocks` (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
+
+    // A replace changed a property listed under `immutableAfter` once its window since the
+    // document's creation had passed (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyEditWindowElapsedError(DocumentPropertyEditWindowElapsedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1373,7 +1379,7 @@ mod tests {
             154
         );
         // A commitment a `findBy` function found that does not meet the reference's
-        // `minimumAgeSeconds` (protocol version 14): the tail of the enum.
+        // `minimumAgeSeconds` (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentRequirementNotMetError(
                 ReferencedDocumentRequirementNotMetError::new(
@@ -1384,6 +1390,21 @@ mod tests {
                 )
             )),
             155
+        );
+        // A replace changing an `immutableAfter` property past its window (protocol
+        // version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentPropertyEditWindowElapsedError(
+                DocumentPropertyEditWindowElapsedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "text".to_string(),
+                    1,
+                    300,
+                    300_002,
+                )
+            )),
+            156
         );
     }
 }

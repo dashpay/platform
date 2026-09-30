@@ -92,6 +92,14 @@ pub(crate) mod property_names {
     /// they are frozen like the rest of the list. Every entry must also be in
     /// [`IMMUTABLE`]. Meta-schema v3+ (protocol version 14).
     pub const IMMUTABLE_ALLOW_SETTING: &str = "immutableAllowSetting";
+    /// Doctype-level object mapping top-level properties of a **mutable**
+    /// document type to a window in seconds: a replace may change the
+    /// property until the document's `$createdAt` plus that window, and is
+    /// rejected afterwards as if the property were listed under
+    /// [`IMMUTABLE`]. Meta-schema v3+ (protocol version 14). See
+    /// `apply_immutable_after` in `try_from_schema::common` for the
+    /// structural rules.
+    pub const IMMUTABLE_AFTER: &str = "immutableAfter";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";

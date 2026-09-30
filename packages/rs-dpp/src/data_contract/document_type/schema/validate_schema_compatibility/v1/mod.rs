@@ -170,10 +170,17 @@ const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 18] = [
 /// annotated with `requiredSince`), and `immutable` together with
 /// `immutableAllowSetting` (`validate_immutable_fields_update`: the first may
 /// only grow, the second may only shrink except for newly immutable
-/// properties). The differ has no rule for the last three at all and would
+/// properties), and `immutableAfter` (`validate_immutable_after_update`: a
+/// window may be added or shortened, never lengthened or dropped except for
+/// `immutable`). The differ has no rule for the last four at all and would
 /// hard-error on any change to them.
-const TOP_LEVEL_VALIDATED_KEYS: [&str; 4] =
-    ["indices", "required", "immutable", "immutableAllowSetting"];
+const TOP_LEVEL_VALIDATED_KEYS: [&str; 5] = [
+    "indices",
+    "required",
+    "immutable",
+    "immutableAllowSetting",
+    "immutableAfter",
+];
 
 /// The document type's own top-level lists of property names that the parse
 /// reads as sets: `transient`, and `entryPayload`, whose properties are framed
@@ -211,13 +218,14 @@ fn prepared_for_diff(schema: &JsonValue) -> Cow<'_, JsonValue> {
     }
 }
 
-/// Pairing invariant: stripping `indices`, top-level `required` and
-/// `immutable` unconditionally is only safe because every `PlatformVersion`
-/// that selects this generation (`validate_schema_compatibility: 1`) also
-/// selects a `validate_update` generation of at least 1
-/// (`dpp.validation.document_type.validate_update`), which rejects every
-/// real index change, every disallowed required-set change and every
-/// shrinking of the immutable list before this check runs. A future version
+/// Pairing invariant: stripping `indices`, top-level `required`, `immutable`
+/// and `immutableAfter` unconditionally is only safe because every
+/// `PlatformVersion` that selects this generation
+/// (`validate_schema_compatibility: 1`) also selects a `validate_update`
+/// generation of at least 1 (`dpp.validation.document_type.validate_update`),
+/// which rejects every real index change, every disallowed required-set
+/// change, every shrinking of the immutable list and every loosening of an
+/// `immutableAfter` window before this check runs. A future version
 /// table that bumps one without the other would let those changes bypass
 /// compatibility validation entirely.
 pub(super) fn validate_schema_compatibility_v1(

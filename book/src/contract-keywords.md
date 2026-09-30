@@ -55,7 +55,7 @@ The document meta-schema has changed three times:
 | v0 | 1 to 11 | The original keywords. A document type key the meta-schema did not know was ignored. |
 | v1 | 12 | Unknown document type keys are refused. The count, sum and average keywords. |
 | v2 | 13 | `keepsTransferHistory`, `keepsPurchaseHistory`, `keepsPricingHistory`. |
-| v3 | 14 | References, typed arrays, `requiredSince`, `immutable`, `ttl`, `propertyConstraints`, `actionFees`, moderation deletion, ranked, time-range and integer-range indexes, index-only types, and the rest marked 14 in these chapters. |
+| v3 | 14 | References, typed arrays, `requiredSince`, `immutable`, `immutableAfter`, `ttl`, `propertyConstraints`, `actionFees`, moderation deletion, ranked, time-range and integer-range indexes, index-only types, and the rest marked 14 in these chapters. |
 
 Most keywords of v0 took effect at protocol version 1. The exceptions are `tokenCost` (9) and the index keyword `countable` (12).
 
@@ -122,6 +122,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `documentsMutable` | boolean, default `true` | `false`: documents cannot be replaced. | 1 | [documentsMutable](contract-keywords/mutability.md#documentsmutable) |
 | `immutable` | array of top-level names | Properties frozen at creation on a mutable type. | 14 | [immutable](contract-keywords/mutability.md#immutable) · [internals](data-model/documents.md#immutable-properties-on-mutable-document-types) |
 | `immutableAllowSetting` | array of names from `immutable` | Immutable properties a replace may still set once, while they have no value. | 14 | [immutableAllowSetting](contract-keywords/mutability.md#immutableallowsetting) |
+| `immutableAfter` | object of top-level names to seconds | Properties a replace may change only for so many seconds after `$createdAt`. | 14 | [immutableAfter](contract-keywords/mutability.md#immutableafter) |
 | `canBeDeleted` | boolean, default `true` | `false`: a document's owner cannot delete it. | 1 | [canBeDeleted](contract-keywords/deletion.md#canbedeleted) |
 | `moderatorAbilities` | object: `delete`, `deleteWithin` (seconds), `deleteKeepsRecord`, `deleteRefundsOwner`, `changeFields` (array of top-level names) | What the contract's moderators may do to documents of the type: delete them, within a window after their last change, with or without a removal record and a refund to the owner, and write the fields only they write. | 14 | [Moderator Abilities](contract-keywords/moderator-abilities.md) · [delete](contract-keywords/deletion.md#moderatorabilitiesdelete) · [internals](data-model/contract-moderation.md#changing-document-fields) |
 | `ttl` | seconds, 3600 to 31536000 | The platform deletes each document this long after its creation. | 14 | [Time To Live](contract-keywords/ttl.md) · [internals](data-model/document-ttl.md) |

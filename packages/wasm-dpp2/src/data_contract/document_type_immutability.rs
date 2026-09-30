@@ -1,11 +1,13 @@
-//! `immutable` / `immutableAllowSetting` declarations: the per-property
-//! immutability a mutable document type carries from protocol version 14
-//! onward.
+//! `immutable` / `immutableAllowSetting` / `immutableAfter` declarations: the
+//! per-property immutability a mutable document type carries from protocol
+//! version 14 onward.
 //!
 //! `immutable` lists the top-level properties frozen at document creation,
-//! and `immutableAllowSetting` the subset of them a replace may still set
-//! while the stored document has no value for them (frozen from then on).
-//! Consensus enforces both on every replace (code 40128). What this module
+//! `immutableAllowSetting` the subset of them a replace may still set while
+//! the stored document has no value for them (frozen from then on), and
+//! `immutableAfter` the properties a replace may change only for so many
+//! seconds after the document's `$createdAt`. Consensus enforces them on
+//! every replace (codes 40128 and 40143). What this module
 //! adds is the ability to *discover* the declarations, "which properties of
 //! this document type can never change, and which may still be set once?",
 //! without hand-parsing the contract's raw JSON schema.
@@ -23,12 +25,13 @@ const DOCUMENT_TYPE_IMMUTABLE_PROPERTIES_TS: &'static str = r#"
 /**
  * The immutability declarations of one document type.
  *
- * Mirrors the `immutable` and `immutableAllowSetting` keywords of the v3
- * document meta-schema, which are active from protocol version 14. The
- * field names are the schema keywords' own, so what `contract.toJSON()`
- * shows and what these accessors return line up key for key. Both arrays
- * are sorted by property name and hold top-level property names only:
- * listing an object property freezes it whole, nested values included.
+ * Mirrors the `immutable`, `immutableAllowSetting` and `immutableAfter`
+ * keywords of the v3 document meta-schema, which are active from protocol
+ * version 14. The field names are the schema keywords' own, so what
+ * `contract.toJSON()` shows and what these accessors return line up key for
+ * key. All three are sorted by property name and hold top-level property
+ * names only: listing an object property freezes it whole, nested values
+ * included.
  */
 export type DocumentTypeImmutableProperties = {
   /**
@@ -44,6 +47,15 @@ export type DocumentTypeImmutableProperties = {
    * the rest. Always a subset of `immutable`.
    */
   immutableAllowSetting: string[];
+  /**
+   * Top-level properties a replace may change only for a while after the
+   * document is created, each mapped to that window in seconds. Once block
+   * time is past the document's `$createdAt` plus the window, a replace that
+   * changes, adds or removes the property is rejected with consensus code
+   * 40143 (`DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed`).
+   * No key is also in `immutable`.
+   */
+  immutableAfter: Record<string, number>;
 };
 "#;
 
@@ -73,13 +85,41 @@ fn set_field(
     Ok(())
 }
 
+/// `set_field` for a key that is a property name: defined as an own data
+/// property, so a property named like an inherited accessor (`__proto__`) is
+/// a key of the object, not a call to the accessor.
+fn define_field(
+    target: &Object,
+    key: &str,
+    value: &JsValue,
+    document_type_name: &str,
+) -> WasmDppResult<()> {
+    let descriptor = Object::new();
+    for (flag, flag_value) in [
+        ("value", value.clone()),
+        ("writable", JsValue::TRUE),
+        ("enumerable", JsValue::TRUE),
+        ("configurable", JsValue::TRUE),
+    ] {
+        set_field(&descriptor, flag, &flag_value, document_type_name)?;
+    }
+    Reflect::define_property(target, &JsValue::from_str(key), &descriptor).map_err(|_| {
+        WasmDppError::generic(format!(
+            "unable to serialize the `{key}` window of the immutability declarations of document \
+             type '{document_type_name}'"
+        ))
+    })?;
+    Ok(())
+}
+
 fn names_to_array(names: &BTreeSet<String>) -> Array {
     names.iter().map(|name| JsValue::from_str(name)).collect()
 }
 
-/// Build the `{ immutable, immutableAllowSetting }` object for one document
-/// type. Both arrays come out in name order, which is the order the sets
-/// keep and the order consensus reports the first offending property in.
+/// Build the `{ immutable, immutableAllowSetting, immutableAfter }` object
+/// for one document type. Each comes out in name order, which is the order
+/// the sets and the map keep and the order consensus reports the first
+/// offending property in.
 pub(crate) fn immutable_properties_for_document_type(
     document_type: DocumentTypeRef<'_>,
     document_type_name: &str,
@@ -95,6 +135,21 @@ pub(crate) fn immutable_properties_for_document_type(
         &object,
         "immutableAllowSetting",
         &names_to_array(document_type.immutable_fields_allow_setting()).into(),
+        document_type_name,
+    )?;
+    let windows = Object::new();
+    for (property, seconds) in document_type.immutable_after_seconds() {
+        define_field(
+            &windows,
+            property,
+            &JsValue::from(*seconds),
+            document_type_name,
+        )?;
+    }
+    set_field(
+        &object,
+        "immutableAfter",
+        &windows.into(),
         document_type_name,
     )?;
     Ok(object)

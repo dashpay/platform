@@ -80,6 +80,7 @@ use dpp::consensus::state::document::document_contest_document_with_same_id_alre
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
+use dpp::consensus::state::document::document_property_edit_window_elapsed_error::DocumentPropertyEditWindowElapsedError;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
@@ -736,6 +737,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentRequirementNotMetError(e) => {
             generic_consensus_error!(ReferencedDocumentRequirementNotMetError, e).into()
+        }
+        StateError::DocumentPropertyEditWindowElapsedError(e) => {
+            generic_consensus_error!(DocumentPropertyEditWindowElapsedError, e).into()
         }
     }
 }

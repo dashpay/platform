@@ -1664,6 +1664,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
 ///
+/// 64. **Properties frozen some time after creation (`immutableAfter`)**: a
+///     doctype-level object of meta-schema v3 and parser generation 3, in
+///     place, mapping top-level properties of a mutable document type to a
+///     window in seconds (1 to `u32::MAX`). Document replace state
+///     validation 1, extended in place, refuses a replace that changes, adds
+///     or removes such a property once block time is later than the stored
+///     document's `$createdAt` plus its window
+///     (`DocumentPropertyEditWindowElapsedError`, 40143, `StateError`
+///     discriminant 156), with the dead `deletableDocument` reference clear
+///     that `immutable` allows. The type must require `$createdAt`; no
+///     property may also be under `immutable`, be transient, or be a field
+///     only moderators write, and the reference rules of `immutable` apply
+///     (`validate_no_immutable_deletable_element_references`,
+///     `validate_no_immutable_contract_owner_requirements`). Document type
+///     update validation 1 (`validate_immutable_after_update`) lets a
+///     property gain a window or a window shorten, and refuses a longer
+///     window or a property leaving for anything but `immutable`; the
+///     schema compatibility differ strips the key.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

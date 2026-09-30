@@ -401,6 +401,7 @@ fn parse_generation_3(
         name,
         property_names::IMMUTABLE_ALLOW_SETTING,
     )?;
+    let immutable_after_seconds = common::parse_immutable_after_keyword(&schema, name)?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -538,6 +539,9 @@ fn parse_generation_3(
         name,
         full_validation,
     )?;
+    // After `apply_immutable_fields`: an `immutableAfter` entry may not also
+    // be in the `immutable` list.
+    common::apply_immutable_after(&mut v2, immutable_after_seconds, name, full_validation)?;
 
     // After the core parse: every property, its transient flag and its schema
     // are known, so each `encryptedFor` declaration can be checked against the
@@ -567,10 +571,11 @@ fn parse_generation_3(
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
 
-    // After `apply_index_only`, `apply_immutable_fields` and the parse of the
-    // references and generated properties: each ability is refused on an
-    // indexOnly type, and the fields only moderators write may be neither
-    // immutable, nor read by a reference, nor generated.
+    // After `apply_index_only`, `apply_immutable_fields`, `apply_immutable_after`
+    // and the parse of the references and generated properties: each ability
+    // is refused on an indexOnly type, and the fields only moderators write may
+    // be neither immutable (at creation or after a window), nor read by a
+    // reference, nor generated.
     common::apply_moderator_abilities(&mut v2, moderator_abilities, data_contact_config, name)?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.
     common::apply_documents_ttl(
@@ -900,6 +905,25 @@ fn validate_reference_count(
     Ok(())
 }
 
+/// How `document_type` freezes the top-level property `top_level`, worded for
+/// a registration error: `as immutable` for an `immutable` entry, `under
+/// \`immutableAfter\`` for one frozen once its window passes, `None` for a
+/// property replaces may always change. Both freeze it for good sooner or
+/// later, so the reference rules below judge them alike.
+#[cfg(feature = "validation")]
+fn frozen_listing(document_type: &DocumentTypeV2, top_level: &str) -> Option<&'static str> {
+    if document_type.immutable_fields.contains(top_level) {
+        Some("as immutable")
+    } else if document_type
+        .immutable_after_seconds
+        .contains_key(top_level)
+    {
+        Some("under `immutableAfter`")
+    } else {
+        None
+    }
+}
+
 /// An `immutable` property may not hold a `contract` reference whose
 /// `contractRequirements` carry an `owner` requirement when the document type's
 /// documents can be transferred or traded. The requirement relates the
@@ -910,7 +934,9 @@ fn validate_reference_count(
 /// wherever the reference sits under the immutable property (the property
 /// itself, inside an immutable object, the elements of a typed array) and for
 /// both `self` and `other`. On a type whose documents cannot change owner the
-/// requirement is never re-checked, so the pair is admitted there.
+/// requirement is never re-checked, so the pair is admitted there. A property
+/// listed under `immutableAfter` is judged alike: once its window passed it is
+/// as frozen.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_contract_owner_requirements(
     document_type: &DocumentTypeV2,
@@ -938,10 +964,10 @@ fn validate_no_immutable_contract_owner_requirements(
             continue;
         }
         let top_level = path.split('.').next().unwrap_or(path);
-        if document_type.immutable_fields.contains(top_level) {
+        if let Some(listed) = frozen_listing(document_type, top_level) {
             return Err(consensus_or_protocol_data_contract_error(
                 DataContractError::InvalidContractStructure(format!(
-                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                    "document type \"{name}\" lists \"{top_level}\" {listed}, but \"{path}\" is \
                      a contract reference with an `owner` requirement and the type's documents can \
                      be transferred or traded: every replace re-checks the requirement against the \
                      owner writing it, so an owner who does not meet it could never replace the \
@@ -980,6 +1006,11 @@ fn validate_no_immutable_contract_owner_requirements(
 /// re-validated; an `immutableAllowSetting` entry is always immutable, and the
 /// referring-side rules refuse such a reference's carrier there, so no
 /// deletableDocument reference can be set once.
+///
+/// A property listed under `immutableAfter` is judged as an immutable one:
+/// once its window passed it is as frozen, and the replace state validation
+/// lets it clear a single reference by id whose target is gone as it lets an
+/// immutable one.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_deletable_element_references(
     document_type: &DocumentTypeV2,
@@ -1032,7 +1063,7 @@ fn validate_no_immutable_deletable_element_references(
             }
             continue;
         }
-        if document_type.immutable_fields.contains(top_level) {
+        if let Some(listed) = frozen_listing(document_type, top_level) {
             let held_as = if deletable_lookup {
                 "a deletableDocument reference found by findBy"
             } else if is_list {
@@ -1042,7 +1073,7 @@ fn validate_no_immutable_deletable_element_references(
             };
             return Err(consensus_or_protocol_data_contract_error(
                 DataContractError::InvalidContractStructure(format!(
-                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                    "document type \"{name}\" lists \"{top_level}\" {listed}, but \"{path}\" is \
                      {held_as}: every replace re-validates it, so once a target is deleted the \
                      property would have to change and the document could never be replaced \
                      again. Use permanentDocument references, or leave the property mutable",
@@ -1092,6 +1123,8 @@ mod commit_reveal_lookup_tests;
 mod documents_ttl_tests;
 #[cfg(all(test, feature = "validation"))]
 mod dotted_aggregate_name_tests;
+#[cfg(test)]
+mod immutable_after_tests;
 #[cfg(test)]
 mod immutable_tests;
 #[cfg(test)]

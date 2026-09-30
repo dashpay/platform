@@ -1,6 +1,6 @@
 # Mutability
 
-These three keywords decide what a replace may change once a document exists. A replace is the transition an owner sends to overwrite a document with a new version of it. `documentsMutable` turns replaces on or off for the whole document type. `immutable` freezes chosen properties while the rest of the document stays editable, and `immutableAllowSetting` lets some of those frozen properties be filled in once, later, when they were left empty at creation.
+These four keywords decide what a replace may change once a document exists. A replace is the transition an owner sends to overwrite a document with a new version of it. `documentsMutable` turns replaces on or off for the whole document type. `immutable` freezes chosen properties while the rest of the document stays editable, and `immutableAllowSetting` lets some of those frozen properties be filled in once, later, when they were left empty at creation. `immutableAfter` freezes chosen properties some time after the document is created, so they can be corrected for a while and then stay as they are.
 
 None of the three governs deletion, transfers or trading: see [Deletion](deletion.md) and [Creation, Transfers and Trading](ownership-and-trading.md).
 
@@ -53,7 +53,7 @@ A vote is cast once and stays as cast: no replace is accepted, and with `canBeDe
 
 - A contested index needs a type whose documents cannot be replaced (`ContestedUniqueIndexOnMutableDocumentTypeError`, 10248). See [Contested Indexes](contested.md).
 - An `indexOnly` type must set `documentsMutable: false`. See [Index-Only Types](index-only.md).
-- `immutable` and `immutableAllowSetting` are only accepted when the type's documents are mutable (`InvalidContractStructure`, 10231).
+- `immutable`, `immutableAllowSetting` and `immutableAfter` are only accepted when the type's documents are mutable (`InvalidContractStructure`, 10231).
 - `moderatorAbilities.deleteWithin` on a mutable type needs `$updatedAt` in `required`. See [Deletion](deletion.md).
 
 ## `immutable`
@@ -145,6 +145,66 @@ The `immutable` properties that a replace may still set while the stored documen
 ### On update
 
 Dropping an entry tightens the rule and is always allowed. Adding one to a property that was already immutable would let documents change what they were promised to keep, so it is only allowed together with making the property immutable in the same update.
+
+## `immutableAfter`
+
+The top-level properties a replace may change only for a while after the document is created, each with that window in seconds. Past the window the property is frozen as an `immutable` one is. Reach for it when a document should be correctable at first and then stand: a post whose text can be fixed for a few minutes after it is published, a bid that can be adjusted for an hour.
+
+| | |
+|---|---|
+| **Where** | document type, on a type with `documentsMutable: true` that lists `$createdAt` in `required` |
+| **Value** | object mapping top-level property names to seconds, each 1 to 4294967295 |
+| **Default** | empty: no property is frozen after a window |
+| **Since** | protocol version 14 |
+| **On update** | A property may gain a window and a window may shorten. A window may not lengthen, and a property may leave the object only for `immutable` (`DocumentTypeUpdateError`, 40212). |
+| **Errors** | `DocumentPropertyEditWindowElapsedError` (40143) for a replace past the window that changes, adds or removes the property |
+
+### Example
+
+```json
+"post": {
+  "type": "object",
+  "documentsMutable": true,
+  "properties": {
+    "author": { "type": "string", "maxLength": 63, "position": 0 },
+    "text": { "type": "string", "maxLength": 500, "position": 1 },
+    "language": { "type": "string", "maxLength": 8, "position": 2 },
+    "pinned": { "type": "boolean", "position": 3 }
+  },
+  "required": ["author", "text", "$createdAt"],
+  "immutable": ["author"],
+  "immutableAfter": { "text": 300, "language": 300 },
+  "additionalProperties": false
+}
+```
+
+The author can fix a typo in `text` or change `language` for five minutes after posting. From then on both stay as they were, while `pinned` can still be switched at any time, and `author` never changes at all.
+
+### How it works
+
+- The window of a property starts at the document's `$createdAt`. A replace whose block time is at most `$createdAt` plus the window may change the property; one later than that which changes, adds or removes it is refused with `DocumentPropertyEditWindowElapsedError` (40143). The error names the property, the document's `$createdAt`, the window and the block time it was judged at.
+- Nothing moves the window: a replace, a transfer or a purchase leaves `$createdAt` as it is, so editing a post does not buy more time to edit it again.
+- "Changes" means what it means for `immutable`: a value that differs by its data, a value the stored document did not have, or one the replace leaves out. Freezing an object freezes everything inside it.
+- As for `immutable`, one change is always allowed: a replace may clear a `deletableDocument` reference by id once the document it points to has been deleted. See [References](refers-to.md).
+- Each property is judged by its own window, and the properties outside `immutable` and `immutableAfter` stay editable for good.
+- A replace judged by `checkTx` shortly before the window closes may still land in a block after it, and is then refused there, paid, like any other state check.
+
+### Rules at registration
+
+All refusals below are `InvalidContractStructure` (10231).
+
+- Only on a type whose documents are mutable.
+- The type must list `$createdAt` in `required`: the window is measured from it, and a document without one would have nothing to measure from.
+- Every key names a declared top-level property. System properties and nested paths are refused, as for `immutable`.
+- No key may be a `transient` property, nor one listed under `immutable`, which is frozen from creation already.
+- The references `immutable` refuses are refused here too, since past the window the property is as frozen: a `deletableDocument` reference a replace could not clear, and, on a type whose documents can be transferred or traded, a `contract` reference with an `owner` requirement.
+- A key may not be one of the fields only moderators write ([`moderatorAbilities.changeFields`](moderator-abilities.md#changefields)).
+- A window of 0 is refused, on every parse: a property no replace may ever change belongs in `immutable`.
+- `immutableAllowSetting` does not apply: its entries must be in `immutable`.
+
+### On update
+
+The windows may only tighten. A property may gain a window, and documents already stored whose window has passed are frozen at once, as when a property is added to `immutable`. A window may shorten, with the same effect on documents it now ends for. A longer window would reopen documents that had been frozen, so it is refused, and a property may leave `immutableAfter` only by moving to `immutable`. Moving a property the other way, out of `immutable`, is refused by that list's own rule.
 
 ## See also
 

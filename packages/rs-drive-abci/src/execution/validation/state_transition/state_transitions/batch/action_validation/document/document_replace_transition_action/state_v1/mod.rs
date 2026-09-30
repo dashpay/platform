@@ -1,5 +1,7 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
+use dpp::consensus::state::document::document_property_edit_window_elapsed_error::DocumentPropertyEditWindowElapsedError;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::identifier::Identifier;
@@ -55,27 +57,30 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
         // Immutable properties (protocol version 14). The action already
         // knows which top-level properties differ from the stored document
         // (a changed value, a property added, or a property removed), so the
-        // check is an intersection with the type's `immutable` list. Two
-        // differences are allowed. One is a first-time set of a property
-        // listed under `immutableAllowSetting`: the stored document had no
-        // value for it (`added_data_fields`), so nothing was frozen yet. The
-        // other is clearing a `deletableDocument` reference whose target has
-        // been deleted: every replace re-validates such a reference, so a
-        // document whose immutable reference went dead could otherwise
-        // never be replaced again, and clearing it is the only change that
-        // does not rewrite what the document pointed at. The two can no
-        // longer meet on one property: one replace after the other, they
-        // would clear a dead reference and then set it, absent again, to
-        // another document as a first-time set. So the document type parser
-        // (generation 3) refuses a `deletableDocument` reference listed
-        // under `immutableAllowSetting`, at registration and on every
-        // contract update, which re-parses the whole contract. Refusing the
-        // clear here instead would bring back the document that can never be
-        // replaced once its target is deleted. The clear alone reads state
-        // (the stored target, by the identifier the removed property held);
-        // everything else is decided without it, before the reference
-        // validation. `changed_data_fields` is name-ordered, so the reported
-        // property is deterministic.
+        // check is an intersection with the type's `immutable` list and with
+        // the `immutableAfter` properties whose window has passed: block time
+        // later than the stored `$createdAt` plus the window (at exactly that
+        // time the replace still passes). Two differences are allowed. One is
+        // a first-time set of a property listed under
+        // `immutableAllowSetting`: the stored document had no value for it
+        // (`added_data_fields`), so nothing was frozen yet. The other is
+        // clearing a `deletableDocument` reference whose target has been
+        // deleted: every replace re-validates such a reference, so a
+        // document whose frozen reference went dead could otherwise never be
+        // replaced again, and clearing it is the only change that does not
+        // rewrite what the document pointed at. The two can no longer meet on
+        // one property: one replace after the other, they would clear a dead
+        // reference and then set it, absent again, to another document as a
+        // first-time set. So the document type parser (generation 3) refuses
+        // a `deletableDocument` reference listed under
+        // `immutableAllowSetting`, at registration and on every contract
+        // update, which re-parses the whole contract. Refusing the clear here
+        // instead would bring back the document that can never be replaced
+        // once its target is deleted. The clear alone reads state (the stored
+        // target, by the identifier the removed property held); everything
+        // else is decided without it, before the reference validation.
+        // `changed_data_fields` is name-ordered, so the reported property is
+        // deterministic.
         let contract_fetch_info = self.base().data_contract_fetch_info();
         let document_type_name = self.base().document_type_name();
         // V0 above has already refused an unknown document type.
@@ -83,14 +88,46 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             .contract
             .document_type_for_name(document_type_name)?;
         let immutable_fields = document_type.immutable_fields();
-        if !immutable_fields.is_empty() {
+        let immutable_after_seconds = document_type.immutable_after_seconds();
+        if !immutable_fields.is_empty() || !immutable_after_seconds.is_empty() {
             let allow_setting = document_type.immutable_fields_allow_setting();
             let added_fields = self.added_data_fields();
             let removed_identifier_fields = self.removed_identifier_fields();
-            for property in self.changed_data_fields().iter().filter(|field| {
-                immutable_fields.contains(*field)
-                    && !(allow_setting.contains(*field) && added_fields.contains(*field))
-            }) {
+            // A type listing `immutableAfter` requires `$createdAt` (checked at
+            // registration, and `required` never gains a system property on
+            // update), so every stored document of it carries one. Were one
+            // missing, its windows are taken to have started at time 0 and so
+            // to have passed.
+            let created_at = self.created_at().unwrap_or_default();
+            for property in self.changed_data_fields() {
+                let refusal: ConsensusError = if immutable_fields.contains(property) {
+                    if allow_setting.contains(property) && added_fields.contains(property) {
+                        continue;
+                    }
+                    DocumentImmutablePropertyChangedError::new(
+                        self.base().id(),
+                        document_type_name.clone(),
+                        property.clone(),
+                    )
+                    .into()
+                } else if let Some(window_seconds) = immutable_after_seconds.get(property) {
+                    let editable_until =
+                        created_at.saturating_add(u64::from(*window_seconds) * 1000);
+                    if block_info.time_ms <= editable_until {
+                        continue;
+                    }
+                    DocumentPropertyEditWindowElapsedError::new(
+                        self.base().id(),
+                        document_type_name.clone(),
+                        property.clone(),
+                        created_at,
+                        *window_seconds,
+                        block_info.time_ms,
+                    )
+                    .into()
+                } else {
+                    continue;
+                };
                 let cleared_a_dead_reference = match removed_identifier_fields.get(property) {
                     Some(referenced_id) => {
                         self.base().deletable_document_reference_target_is_gone(
@@ -106,14 +143,7 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
                     None => false,
                 };
                 if !cleared_a_dead_reference {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        DocumentImmutablePropertyChangedError::new(
-                            self.base().id(),
-                            document_type_name.clone(),
-                            property.clone(),
-                        )
-                        .into(),
-                    ));
+                    return Ok(SimpleConsensusValidationResult::new_with_error(refusal));
                 }
             }
         }

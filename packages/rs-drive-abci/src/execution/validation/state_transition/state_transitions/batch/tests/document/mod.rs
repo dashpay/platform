@@ -13,6 +13,7 @@ mod gas_sponsorship;
 mod generated_from;
 mod id_reuse;
 mod immutable;
+mod immutable_after;
 mod index_only;
 mod keep_history;
 mod list_element_reference;

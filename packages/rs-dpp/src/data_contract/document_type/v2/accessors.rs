@@ -286,6 +286,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.immutable_fields_allow_setting
     }
 
+    fn immutable_after_seconds(&self) -> &BTreeMap<String, u32> {
+        &self.immutable_after_seconds
+    }
+
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         self.action_fees.as_ref()
     }
