@@ -136,6 +136,24 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
         }
     }
 
+    /// Async variant of the refusal assertion, for the manual sync calls.
+    private func assertRefusedWhileStopping(
+        _ call: () async throws -> Void,
+        _ name: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            try await call()
+            XCTFail("\(name): expected the in-flight stop refusal", file: file, line: line)
+        } catch PlatformWalletError.walletOperation(let message)
+            where message.contains("Shielded sync stop in progress") {
+            // Expected.
+        } catch {
+            XCTFail("\(name): expected the in-flight stop refusal, got \(error)", file: file, line: line)
+        }
+    }
+
     private static func event(_ seconds: UInt64) -> ShieldedSyncEvent {
         ShieldedSyncEvent(syncUnixSeconds: seconds, walletResults: [])
     }
@@ -182,9 +200,10 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
     // MARK: - Events
 
     /// With the main actor free during the drain, events of the pass being
-    /// stopped arrive while their generation is still current. All three
-    /// handlers drop them until the stop ends.
-    func testEventsDeliveredWhileTheStopIsInFlightAreDropped() async throws {
+    /// stopped arrive while their generation is still current. Progress is
+    /// dropped and the completion held; a stop that drains the pass then
+    /// drops the held completion.
+    func testEventsDuringADrainingStopAreNeverPublished() async throws {
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
         let log = EventLog()
@@ -202,7 +221,75 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
 
         gate.signal()
         try await stopTask.value
+        assertNothingPublished(manager)
+        XCTAssertNil(manager.shieldedCompletionHeldByStop)
         await manager.shutdown()
+    }
+
+    /// A completion that lands while a stop is timing out belongs to a pass
+    /// that keeps running: the stop publishes it once it returns.
+    func testCompletionHeldDuringATimedOutStopIsPublishedWhenItReturns() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let log = EventLog()
+        let recorder = StopRecorder(
+            gate: gate, eventLog: log,
+            firstResultCode: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE)
+        let manager = makeManager(handle: 42, recorder: recorder, log: log)
+
+        let stopTask = Task { try await manager.stopShieldedSync() }
+        try await waitUntilStopStarted(recorder)
+        manager.handleShieldedSyncCompleted(Self.event(1_000), generation: manager.shieldedSyncGeneration.current())
+        XCTAssertNil(manager.lastShieldedSyncEvent, "the completion waits for the stop to settle it")
+
+        gate.signal()
+        do {
+            try await stopTask.value
+            XCTFail("expected shutdownIncomplete")
+        } catch PlatformWalletError.shutdownIncomplete {
+            // Expected.
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(manager.lastShieldedSyncEvent?.syncUnixSeconds, 1_000)
+        XCTAssertNil(manager.shieldedCompletionHeldByStop)
+        await manager.shutdown()
+    }
+
+    /// Like the blocking overload, the progress mirrors are cleared only by
+    /// a stop that drains the pass: after a timed-out stop the pass keeps
+    /// running, and its progress stays visible.
+    func testProgressIsClearedOnlyByAStopThatDrains() async throws {
+        let log = EventLog()
+        let drained = makeManager(handle: 43, recorder: StopRecorder(gate: nil, eventLog: log), log: log)
+        let timedOut = makeManager(
+            handle: 44,
+            recorder: StopRecorder(
+                gate: nil, eventLog: log,
+                firstResultCode: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE),
+            log: log)
+        for manager in [drained, timedOut] {
+            let generation = manager.shieldedSyncGeneration.current()
+            manager.handleShieldedSyncProgress(cumulativeScanned: 10, blockHeight: 20, generation: generation)
+            manager.handleShieldedTreeProgress(committed: 30, total: 40, generation: generation)
+        }
+
+        try await drained.stopShieldedSync()
+        do {
+            try await timedOut.stopShieldedSync()
+            XCTFail("expected shutdownIncomplete")
+        } catch PlatformWalletError.shutdownIncomplete {
+            // Expected.
+        }
+
+        assertNothingPublished(drained)
+        XCTAssertEqual(timedOut.currentShieldedSyncScanned, 10)
+        XCTAssertEqual(timedOut.currentShieldedSyncBlockHeight, 20)
+        XCTAssertEqual(timedOut.currentShieldedTreeCommitted, 30)
+        XCTAssertEqual(timedOut.currentShieldedTreeTotal, 40)
+        await drained.shutdown()
+        await timedOut.shutdown()
     }
 
     /// An event the pass dispatches just before the native stop returns
@@ -300,10 +387,10 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
 
     // MARK: - Lifecycle calls while stopping
 
-    /// With the main actor free during the stop, the shielded lifecycle calls
-    /// that would restart the loop or wait on the same drain are refused, and
-    /// the synchronous native operations refuse to run beside the admitted
-    /// stop.
+    /// With the main actor free during the stop, the shielded calls that
+    /// would restart the loop, start a pass that outlives the stop, or wait
+    /// on the same drain are refused, and the synchronous native operations
+    /// refuse to run beside the admitted stop.
     func testLifecycleCallsAreRefusedWhileAnAsyncStopIsInFlight() async throws {
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
@@ -323,6 +410,9 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
         let resolver = MnemonicResolver()
         assertRefusedWhileStopping(
             try manager.bindShielded(walletId: Self.walletId, resolver: resolver), "bindShielded")
+        await assertRefusedWhileStopping({ try await manager.syncShieldedNow() }, "syncShieldedNow")
+        await assertRefusedWhileStopping(
+            { try await manager.syncShieldedWalletNow(walletId: Self.walletId) }, "syncShieldedWalletNow")
 
         func syncCreate() throws {
             _ = try manager.createWallet(mnemonic: "unused", network: .testnet)

@@ -94,9 +94,10 @@ extension PlatformWalletManager {
     }
 
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
-    /// flight. The main actor is free during that stop, so a shielded
-    /// lifecycle call issued meanwhile would otherwise restart the loop the
-    /// stop is cancelling, or block the main thread on the same drain.
+    /// flight. The main actor is free during that stop, so a shielded call
+    /// issued meanwhile would otherwise restart the loop the stop is
+    /// cancelling, start a pass that outlives it, or block the main thread on
+    /// the same drain.
     func ensureNoShieldedStopInFlight(before operation: String) throws {
         guard shieldedStopsInFlight == 0 else {
             throw PlatformWalletError.walletOperation(
@@ -113,11 +114,16 @@ extension PlatformWalletManager {
         // same actor turn (the restart does not reset the counter). Shutdown
         // suppresses callbacks immediately, while leaving the generation
         // valid until admitted local reads finish their MainActor delivery.
-        // An async stop in flight suppresses them too: the main actor is free
-        // during its drain, so events of the pass being stopped arrive while
-        // their generation is still current.
-        guard !shutdownRequested, shieldedStopsInFlight == 0,
-              generation == shieldedSyncGeneration.current() else { return }
+        guard !shutdownRequested, generation == shieldedSyncGeneration.current() else { return }
+        // The main actor is free while an async stop drains, so a completion
+        // of the pass being stopped arrives with a current generation. Hold
+        // it for the stop to settle (`shieldedCompletionHeldByStop`): dropped
+        // if the stop drains that pass, published if the stop times out and
+        // the pass keeps running.
+        if shieldedStopsInFlight > 0 {
+            shieldedCompletionHeldByStop = (event, generation)
+            return
+        }
         lastShieldedSyncEvent = event
         // A completed pass means the per-chunk progress counter for
         // this pass is no longer meaningful — clear so the next pass
@@ -348,21 +354,29 @@ extension PlatformWalletManager {
     /// `shutdownIncomplete`, and the pass keeps running: it can still persist
     /// what it finds and deliver its events after this returns.
     ///
-    /// Events: every shielded event that reaches the main actor while the
-    /// stop is in flight is dropped, and the progress mirrors are cleared
-    /// when it begins. A stop that drains the pass then bumps the generation,
-    /// which drops the events that pass dispatched but the main actor only
-    /// delivers afterwards. Like the blocking overload, a stop that times
-    /// out leaves the generation alone. So does a stop that finishes while
-    /// [`shutdown()`] is draining admitted operations: the bump would cancel
-    /// the local balance reads that drain waits for, and shutdown bumps the
+    /// Events: while the stop is in flight, progress events that reach the
+    /// main actor are dropped, and a completion is held
+    /// ([`shieldedCompletionHeldByStop`]). A stop that drains the pass bumps
+    /// the generation and clears the progress mirrors, which drops the held
+    /// completion and the events that pass dispatched but the main actor only
+    /// delivers afterwards. A stop that times out leaves the generation and
+    /// the mirrors alone, like the blocking overload, and publishes the held
+    /// completion: the pass keeps running, and its events are real data. A
+    /// stop that finishes while [`shutdown()`] is draining admitted
+    /// operations also leaves the generation alone: the bump would cancel the
+    /// local balance reads that drain waits for, and shutdown bumps the
     /// generation itself afterwards.
+    ///
+    /// Cancelling the calling task does not abort the stop. The native call
+    /// cannot be interrupted, so the caller keeps waiting for its result, and
+    /// the steps after it still run.
     ///
     /// Admitted like the other async native entry points: `shutdown()` waits
     /// for an in-flight stop before destroying the handle, and a stop
     /// requested once a shutdown has begun throws `invalidHandle` before any
     /// native work. While the stop is in flight:
-    /// - [`startShieldedSync(intervalSeconds:)`], the blocking stop,
+    /// - [`startShieldedSync(intervalSeconds:)`], [`syncShieldedNow()`],
+    ///   [`syncShieldedWalletNow(walletId:)`], the blocking stop,
     ///   [`clearShielded()`] and [`bindShielded(walletId:resolver:accounts:)`]
     ///   throw `walletOperation`;
     /// - the synchronous native operations that refuse to run beside an
@@ -379,7 +393,6 @@ extension PlatformWalletManager {
         defer { finishNativeOp() }
         shieldedStopsInFlight += 1
         defer { shieldedStopsInFlight -= 1 }
-        resetCurrentShieldedProgress()
 
         let h = handle
         let stop = nativeTeardownCalls.shieldedSyncStop
@@ -406,6 +419,15 @@ extension PlatformWalletManager {
         if failure == nil, !shutdownRequested {
             shieldedSyncGeneration.bump()
             resetCurrentShieldedProgress()
+        }
+        // The last stop in flight settles the held completion: stale after
+        // the bump above, still current after a timeout.
+        if shieldedStopsInFlight == 1, let held = shieldedCompletionHeldByStop {
+            shieldedCompletionHeldByStop = nil
+            if !shutdownRequested, held.generation == shieldedSyncGeneration.current() {
+                lastShieldedSyncEvent = held.event
+                resetCurrentShieldedProgress()
+            }
         }
         if let failure {
             throw failure
@@ -491,8 +513,12 @@ extension PlatformWalletManager {
         try platform_wallet_manager_shielded_sync_set_interval(handle, seconds).check()
     }
 
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight: once the stop's drain succeeds the native gate reopens, so a
+    /// pass requested meanwhile could start and outlive that stop.
     public func syncShieldedNow() async throws {
         try ensureShieldedLifecycleAllowed("syncShieldedNow")
+        try ensureNoShieldedStopInFlight(before: "a manual shielded sync")
         // No generation reset needed: this run's completion event snapshots
         // the current generation and passes the guard, while a trailing
         // event from a prior stopped run still carries the older generation.
@@ -1402,8 +1428,11 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight, like [`syncShieldedNow()`].
     public func syncShieldedWalletNow(walletId: Data) async throws {
         try ensureShieldedLifecycleAllowed("syncShieldedWalletNow")
+        try ensureNoShieldedStopInFlight(before: "a manual shielded sync")
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be exactly 32 bytes"
