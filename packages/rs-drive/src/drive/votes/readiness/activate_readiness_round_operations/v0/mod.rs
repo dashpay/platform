@@ -30,34 +30,40 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(ReadinessRound, Vec<LowLevelDriveOperation>), Error> {
         let mut drive_operations = vec![];
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_readiness(
+        let round = if estimated_costs_only_with_layer_info.is_none() {
+            let round = self
+                .fetch_readiness_round_operations(
+                    contract_id,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?
+                .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                    "activating a readiness round of a contract that has none".to_string(),
+                )))?;
+            if round.round_id() != round_id {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "activating a readiness round that is not the contract's current round"
+                        .to_string(),
+                )));
+            }
+            if round.is_pending() {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "activating a readiness round that has not crossed".to_string(),
+                )));
+            }
+            round
+        } else {
+            // An estimate reads no state: it prices the pointer and record reads, then the
+            // activation of the largest round shape so the estimate covers every case.
+            self.estimate_current_readiness_round_v0(
                 contract_id,
-                round_id,
-                estimated_costs_only_with_layer_info,
-                platform_version,
-            )?;
-        }
-        let round = self
-            .fetch_readiness_round_operations(
-                contract_id,
+                block_info,
                 transaction,
                 &mut drive_operations,
                 platform_version,
             )?
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "activating a readiness round of a contract that has none".to_string(),
-            )))?;
-        if round.round_id() != round_id {
-            return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "activating a readiness round that is not the contract's current round".to_string(),
-            )));
-        }
-        if round.is_pending() {
-            return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "activating a readiness round that has not crossed".to_string(),
-            )));
-        }
+        };
 
         let (retirement, retire_operations) = self.retire_readiness_round_operations(
             &round,
@@ -90,7 +96,8 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        if retirement.refund > 0 {
+        // An estimate always prices the credit: the placeholder's fund reads as empty.
+        if retirement.refund > 0 || estimated_costs_only_with_layer_info.is_some() {
             if let Some(payer_id) = round.payer().identity_id() {
                 drive_operations.extend(self.add_to_identity_balance_operations(
                     payer_id.to_buffer(),

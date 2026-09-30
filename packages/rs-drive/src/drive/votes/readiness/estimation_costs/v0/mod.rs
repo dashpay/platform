@@ -5,19 +5,34 @@ use crate::drive::prefunded_specialized_balances::{
     prefunded_specialized_balances_for_readiness_path_vec, prefunded_specialized_balances_path,
 };
 use crate::drive::votes::paths::{
+    readiness_contract_tree_path, readiness_round_tree_path, READINESS_CURRENT_ROUND_POINTER_KEY,
+    READINESS_ROUND_RECORD_KEY,
+};
+use crate::drive::votes::paths::{
     readiness_contract_tree_path_vec, readiness_contracts_tree_path_vec,
     readiness_deadline_tree_path_vec, readiness_deadlines_tree_path_vec,
     readiness_retired_rounds_tree_path_vec, readiness_round_reports_tree_path_vec,
     readiness_round_tree_path_vec, readiness_tree_path_vec, vote_root_path_vec,
 };
 use crate::drive::Drive;
-use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U64_SIZE_U8, U8_SIZE_U8};
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::type_constants::{
+    DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8, U8_SIZE_U8,
+};
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::identifier::Identifier;
+use dpp::version::PlatformVersion;
+use dpp::voting::readiness::payer::ReadinessPayer;
+use dpp::voting::readiness::round::{ReadinessRound, ReadinessRoundOpening};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees, SomeSumTrees};
-use grovedb::{EstimatedLayerInformation, TreeType};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 /// The serialized size of a readiness round record, rounded up: a versioned enum around two
@@ -314,5 +329,60 @@ impl Drive {
                 },
             },
         );
+    }
+
+    /// Prices the reads of a contract's current readiness round without state and returns a
+    /// placeholder for the largest round shape it could be: a crossed round (with a deadline
+    /// entry and time tree to drop) funded by an identity (with a payer to refund). An
+    /// estimate that retires the current round prices that placeholder's retirement so it
+    /// covers every stored round.
+    pub(in crate::drive::votes::readiness) fn estimate_current_readiness_round_v0(
+        &self,
+        contract_id: [u8; 32],
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ReadinessRound, Error> {
+        let mut placeholder = ReadinessRound::new(
+            self.config.network.magic(),
+            ReadinessRoundOpening {
+                contract_id: Identifier::new(contract_id),
+                version: 0,
+                bundle_digest: [0u8; 32],
+                preparation_profile: 0,
+                accepted_at_ms: block_info.time_ms,
+                accepted_at_height: block_info.height,
+                payer: ReadinessPayer::Identity(Identifier::new([0u8; 32])),
+            },
+            platform_version,
+        )?;
+        placeholder.record_crossing(block_info.time_ms, 0, u64::MAX)?;
+        let contract_path = readiness_contract_tree_path(&contract_id);
+        self.grove_get_raw_optional(
+            (&contract_path).into(),
+            &[READINESS_CURRENT_ROUND_POINTER_KEY as u8],
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::NormalTree,
+                query_target: QueryTargetValue(DEFAULT_HASH_SIZE_U32),
+            },
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?;
+        let round_id = placeholder.round_id();
+        let round_path = readiness_round_tree_path(&contract_id, &round_id);
+        self.grove_get_raw_optional(
+            (&round_path).into(),
+            &[READINESS_ROUND_RECORD_KEY],
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::NormalTree,
+                query_target: QueryTargetValue(ESTIMATED_READINESS_ROUND_RECORD_SIZE),
+            },
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?;
+        Ok(placeholder)
     }
 }

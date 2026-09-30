@@ -1687,6 +1687,111 @@ mod retirement {
         assert_eq!(pool_credits(&drive, None), CLEANUP_RESERVE);
     }
 
+    /// Activates the contract's round, first as an estimate and then applied, and returns
+    /// both fees and both write counts.
+    fn estimate_then_activate(
+        drive: &Drive,
+        contract_id: [u8; 32],
+        round_id: [u8; 32],
+        block_info: &BlockInfo,
+    ) -> ((FeeResult, usize), (FeeResult, usize)) {
+        let platform_version = PlatformVersion::latest();
+        let writes = |operations: &[LowLevelDriveOperation]| {
+            operations
+                .iter()
+                .filter(|operation| matches!(operation, LowLevelDriveOperation::GroveOperation(_)))
+                .count()
+        };
+        let mut layer_info = Some(HashMap::new());
+        let (_, operations) = drive
+            .activate_readiness_round_operations(
+                contract_id,
+                round_id,
+                CLEANUP_RESERVE,
+                block_info,
+                &mut layer_info,
+                None,
+                platform_version,
+            )
+            .expect("estimate");
+        let estimated_writes = writes(&operations);
+        let estimated = estimate(
+            drive,
+            layer_info.expect("layer info"),
+            operations,
+            platform_version,
+        );
+        let (_, operations) = drive
+            .activate_readiness_round_operations(
+                contract_id,
+                round_id,
+                CLEANUP_RESERVE,
+                block_info,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("activate");
+        let applied_writes = writes(&operations);
+        let applied = apply(drive, operations, None, platform_version);
+        ((estimated, estimated_writes), (applied, applied_writes))
+    }
+
+    #[test]
+    fn should_estimate_an_activation_without_reading_state() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let mut layer_info = Some(HashMap::new());
+        let (_, operations) = drive
+            .activate_readiness_round_operations(
+                [1u8; 32],
+                [2u8; 32],
+                CLEANUP_RESERVE,
+                &block_info(2_000_000, 20, 100),
+                &mut layer_info,
+                None,
+                platform_version,
+            )
+            .expect("estimate without a stored round");
+        let estimated = estimate(
+            &drive,
+            layer_info.expect("layer info"),
+            operations,
+            platform_version,
+        );
+        assert!(estimated.processing_fee > 0 && estimated.storage_fee > 0);
+    }
+
+    #[test]
+    fn should_estimate_activating_a_funded_crossed_round_at_no_less_than_it_costs() {
+        let (drive, payer) = setup();
+        let contract_id = [1u8; 32];
+        let (mut round, _) = open_round(&drive, contract_id, payer, 10, None);
+        insert_reports(&drive, &round, 0, 3, None);
+        let deadline_ms = cross(&drive, &mut round, 1_500_000);
+        let balance_before = payer_balance(&drive, payer, None);
+
+        let ((estimated, estimated_writes), (applied, applied_writes)) = estimate_then_activate(
+            &drive,
+            contract_id,
+            round.round_id(),
+            &block_info(deadline_ms, 20, 100),
+        );
+
+        // The applied run refunded the payer, so the estimate prices that credit too.
+        assert!(
+            estimated_writes >= applied_writes,
+            "{estimated_writes} estimated writes < {applied_writes} applied"
+        );
+        assert!(!deadline_bucket_exists(&drive, deadline_ms));
+        assert_eq!(
+            payer_balance(&drive, payer, None),
+            balance_before + INITIAL_FUNDING - CLEANUP_RESERVE
+        );
+        assert_eq!(pool_credits(&drive, None), CLEANUP_RESERVE);
+        assert_estimate_covers(&estimated, &applied);
+    }
+
     #[test]
     fn should_leave_no_partial_subtree_when_an_opening_batch_is_rolled_back() {
         let (drive, payer) = setup();

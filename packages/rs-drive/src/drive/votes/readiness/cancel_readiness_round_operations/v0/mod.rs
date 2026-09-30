@@ -1,20 +1,15 @@
 use crate::drive::votes::paths::{
-    readiness_contract_tree_path, readiness_round_tree_path, READINESS_CURRENT_ROUND_POINTER_KEY,
-    READINESS_ROUND_RECORD_KEY,
+    readiness_contract_tree_path, READINESS_CURRENT_ROUND_POINTER_KEY,
 };
-use crate::drive::votes::readiness::estimation_costs::ESTIMATED_READINESS_ROUND_RECORD_SIZE;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::QueryTarget::QueryTargetValue;
-use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
+use crate::util::grove_operations::BatchDeleteApplyType;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
-use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use dpp::voting::readiness::payer::ReadinessPayer;
-use dpp::voting::readiness::round::{ReadinessRound, ReadinessRoundOpening};
+use dpp::voting::readiness::round::ReadinessRound;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use std::collections::HashMap;
@@ -45,48 +40,14 @@ impl Drive {
             }
         } else {
             // An estimate reads no state: it prices the pointer and record reads, then the
-            // cancellation of the largest round shape (a crossed round, so its deadline entry
-            // and time tree go too, with a fund to settle and a payer to refund) so the
-            // estimate covers every case.
-            let mut placeholder = ReadinessRound::new(
-                self.config.network.magic(),
-                ReadinessRoundOpening {
-                    contract_id: Identifier::new(contract_id),
-                    version: 0,
-                    bundle_digest: [0u8; 32],
-                    preparation_profile: 0,
-                    accepted_at_ms: block_info.time_ms,
-                    accepted_at_height: block_info.height,
-                    payer: ReadinessPayer::Identity(Identifier::new([0u8; 32])),
-                },
+            // cancellation of the largest round shape so the estimate covers every case.
+            self.estimate_current_readiness_round_v0(
+                contract_id,
+                block_info,
+                transaction,
+                &mut drive_operations,
                 platform_version,
-            )?;
-            placeholder.record_crossing(block_info.time_ms, 0, u64::MAX)?;
-            self.grove_get_raw_optional(
-                (&contract_path).into(),
-                &[READINESS_CURRENT_ROUND_POINTER_KEY as u8],
-                DirectQueryType::StatelessDirectQuery {
-                    in_tree_type: TreeType::NormalTree,
-                    query_target: QueryTargetValue(DEFAULT_HASH_SIZE_U32),
-                },
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?;
-            let round_id = placeholder.round_id();
-            let round_path = readiness_round_tree_path(&contract_id, &round_id);
-            self.grove_get_raw_optional(
-                (&round_path).into(),
-                &[READINESS_ROUND_RECORD_KEY],
-                DirectQueryType::StatelessDirectQuery {
-                    in_tree_type: TreeType::NormalTree,
-                    query_target: QueryTargetValue(ESTIMATED_READINESS_ROUND_RECORD_SIZE),
-                },
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?;
-            placeholder
+            )?
         };
 
         let (retirement, retire_operations) = self.retire_readiness_round_operations(
