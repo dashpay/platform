@@ -21,7 +21,6 @@ use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
     apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
-    restore_recorded_transactions,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
@@ -1850,13 +1849,17 @@ fn load_one_wallet(
                 ))
             })?;
     }
-    let mut wallet = wallet;
-    restore_recorded_transactions(
-        &mut wallet_info,
-        &mut wallet,
-        core_state.records,
-        &core_state.instant_locks_for_non_final_records,
-    );
+    // The stored records are replayed by the shared load
+    // (`platform_wallet::manager::history_replay`), which rebuilds the spend
+    // guards on top of the projection restored above.
+    let recorded_history = platform_wallet::changeset::RecordedHistory {
+        transactions: core_state
+            .records
+            .into_iter()
+            .map(platform_wallet::changeset::StoredTransaction::from)
+            .collect(),
+        instant_locks: core_state.instant_locks_for_non_final_records,
+    };
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
@@ -1867,6 +1870,7 @@ fn load_one_wallet(
         // replay inert here, which is the behaviour this path had before the
         // field existed.
         unconfirmed_outgoing_txs: Vec::new(),
+        recorded_history,
     })
 }
 

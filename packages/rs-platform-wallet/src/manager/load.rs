@@ -1,10 +1,11 @@
 //! Hydrate a [`PlatformWalletManager`] from its persister.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
+use crate::manager::history_replay::replay_recorded_history;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -13,6 +14,7 @@ use crate::wallet::PlatformWallet;
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use dashcore::Txid;
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
 use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
 
@@ -129,7 +131,29 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_manager,
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
+                recorded_history,
             } = wallet_state;
+
+            // Replay the stored history first, in chain order, so every spend
+            // the wallet ever saw guards its outpoint again. The persisted
+            // UTXO set stays authoritative for credits; see
+            // `replay_recorded_history`.
+            let history_txids: HashSet<Txid> = recorded_history
+                .transactions
+                .iter()
+                .map(|stored| stored.txid)
+                .collect();
+            if !recorded_history.is_empty() {
+                let offered = recorded_history.transactions.len();
+                let replayed =
+                    replay_recorded_history(&mut wallet_info, &mut wallet, recorded_history).await;
+                tracing::info!(
+                    wallet_id = %hex::encode(expected_wallet_id),
+                    offered,
+                    replayed,
+                    "load: replayed stored transaction history"
+                );
+            }
 
             // Replay the sends the host still holds as unconfirmed, before
             // anything reads the restored balance.
@@ -159,7 +183,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // below, and the UI reads that.
             if !unconfirmed_outgoing_txs.is_empty() {
                 let mut replayed = 0usize;
-                for tx in &unconfirmed_outgoing_txs {
+                // A send the history replay already applied is only
+                // re-dispatched below, never accounted twice.
+                for tx in unconfirmed_outgoing_txs
+                    .iter()
+                    .filter(|tx| !history_txids.contains(&tx.txid()))
+                {
                     let result = wallet_info
                         .check_core_transaction(
                             tx,
@@ -674,12 +703,14 @@ mod idempotent_load_tests {
     use crate::wallet::core::WalletGeneration;
 
     use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::transaction_context::TransactionContext;
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::wallet::ManagedWalletInfo;
     use key_wallet::Wallet;
 
     use crate::changeset::{
         ClientStartState, ClientWalletStartState, IdentityManagerStartState, PersistenceError,
-        PlatformWalletChangeSet, PlatformWalletPersistence,
+        PlatformWalletChangeSet, PlatformWalletPersistence, RecordedHistory, StoredTransaction,
     };
     use crate::events::PlatformEventHandler;
     use crate::test_support::NoopTestEventHandler;
@@ -718,6 +749,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: self.pending.clone(),
+                    recorded_history: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -784,6 +816,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    recorded_history: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -823,6 +856,7 @@ mod idempotent_load_tests {
                 identity_manager: IdentityManagerStartState::default(),
                 unused_asset_locks: BTreeMap::new(),
                 unconfirmed_outgoing_txs: Vec::new(),
+                recorded_history: Default::default(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());
@@ -1128,6 +1162,125 @@ mod idempotent_load_tests {
              spendable; {} duffs left means the input came back",
             total
         );
+    }
+
+    /// Persister that hands back a projection holding only the persisted
+    /// UTXO set (no in-memory transactions) plus the stored history — the
+    /// shape every persister produces once history replay is shared.
+    struct RecordedHistoryPersister {
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+        history: RecordedHistory,
+    }
+
+    impl PlatformWalletPersistence for RecordedHistoryPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let mut wallets = BTreeMap::new();
+            wallets.insert(
+                self.wallet.compute_wallet_id(),
+                ClientWalletStartState {
+                    wallet: self.wallet.clone(),
+                    wallet_info: self.managed.clone(),
+                    identity_manager: IdentityManagerStartState::default(),
+                    unused_asset_locks: BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
+                    recorded_history: self.history.clone(),
+                },
+            );
+            Ok(ClientStartState {
+                wallets,
+                ..Default::default()
+            })
+        }
+    }
+
+    /// `load_from_persistor` replays the stored history the persister hands
+    /// back, whatever the persister: a stored spend of the only coin must
+    /// leave nothing spendable even though the persisted UTXO set still
+    /// lists that coin (an unconfirmed spend never flips `isSpent`).
+    #[tokio::test]
+    async fn load_replays_the_recorded_history_of_any_persister() {
+        let (ctx, funding) = TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let funded_outpoint = dashcore::OutPoint {
+            txid: funding.txid(),
+            vout: 0,
+        };
+        let spend = spend_to(funded_outpoint, 74_000);
+
+        // The persisted projection: the coin as an unspent row, no history.
+        let mut projection = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
+        let coin =
+            ctx.managed_wallet.accounts.standard_bip44_accounts[&0].utxos[&funded_outpoint].clone();
+        projection
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("bip44 account")
+            .utxos
+            .insert(funded_outpoint, coin);
+        projection.update_balance();
+        assert_eq!(projection.balance.total(), 100_000);
+
+        let stored = |transaction: dashcore::Transaction| StoredTransaction {
+            txid: transaction.txid(),
+            transaction,
+            context: TransactionContext::Mempool,
+            stored_net_amount: None,
+            stored_direction: None,
+        };
+        let manager = make_history_manager(RecordedHistoryPersister {
+            wallet: ctx.wallet,
+            managed: projection,
+            history: RecordedHistory {
+                transactions: vec![stored(spend), stored(funding)],
+                instant_locks: BTreeMap::new(),
+            },
+        });
+
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("the loaded wallet must be registered");
+        let balance = wallet.balance();
+        let total = balance.confirmed() + balance.unconfirmed();
+        assert_eq!(
+            total, 0,
+            "the replayed stored spend consumes the only coin; {} duffs left \
+             means the history was not replayed",
+            total
+        );
+    }
+
+    fn make_history_manager(
+        persister: RecordedHistoryPersister,
+    ) -> Arc<PlatformWalletManager<RecordedHistoryPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(persister),
+            event_handler,
+        ))
     }
 
     fn make_pending_manager(

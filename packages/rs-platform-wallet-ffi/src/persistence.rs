@@ -5856,6 +5856,7 @@ fn build_wallet_start_state(
         identity_manager,
         unused_asset_locks,
         unconfirmed_outgoing_txs,
+        recorded_history: Default::default(),
     };
 
     let platform_address_state = if per_account.is_empty()

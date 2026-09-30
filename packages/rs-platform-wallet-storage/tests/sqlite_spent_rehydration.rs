@@ -24,7 +24,21 @@ use platform_wallet::changeset::{
     AccountRegistrationEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
     WalletMetadataEntry,
 };
+use platform_wallet::manager::history_replay::replay_recorded_history;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+
+/// Load one wallet and run the shared history replay on it, as
+/// `load_from_persistor` does.
+async fn load_replayed(
+    persister: &SqlitePersister,
+    wallet_id: &[u8; 32],
+) -> (Wallet, ManagedWalletInfo) {
+    let mut state = persister.load().unwrap();
+    let restored = state.wallets.remove(wallet_id).unwrap();
+    let (mut wallet, mut info) = (restored.wallet, restored.wallet_info);
+    replay_recorded_history(&mut info, &mut wallet, restored.recorded_history).await;
+    (wallet, info)
+}
 
 fn block(height: u32) -> TransactionContext {
     TransactionContext::InBlock(BlockInfo::new(
@@ -155,10 +169,14 @@ impl Fixture {
         }
     }
 
-    fn load(&self) -> (Wallet, ManagedWalletInfo) {
+    async fn load(&self) -> (Wallet, ManagedWalletInfo) {
+        load_replayed(&self.persister, &self.wallet_id).await
+    }
+
+    /// The persister's projection alone, before the shared replay.
+    fn load_projection(&self) -> ManagedWalletInfo {
         let mut state = self.persister.load().unwrap();
-        let restored = state.wallets.remove(&self.wallet_id).unwrap();
-        (restored.wallet, restored.wallet_info)
+        state.wallets.remove(&self.wallet_id).unwrap().wallet_info
     }
 
     fn assert_spent_excluded(&self, info: &ManagedWalletInfo) {
@@ -212,7 +230,7 @@ impl Fixture {
                 },
             )
             .unwrap();
-        let (_, reloaded) = self.load();
+        let (_, reloaded) = self.load().await;
         self.assert_spent_excluded(&reloaded);
     }
 }
@@ -220,7 +238,7 @@ impl Fixture {
 #[tokio::test]
 async fn should_reject_spent_output_after_reload_and_funding_redelivery() {
     let fixture = Fixture::new(block(200)).await;
-    let (mut wallet, mut info) = fixture.load();
+    let (mut wallet, mut info) = fixture.load().await;
     fixture.assert_spent_excluded(&info);
     fixture.redeliver(&mut wallet, &mut info).await;
 }
@@ -228,7 +246,7 @@ async fn should_reject_spent_output_after_reload_and_funding_redelivery() {
 #[tokio::test]
 async fn should_keep_spent_output_excluded_after_finality_pruning() {
     let fixture = Fixture::new(block(200)).await;
-    let (mut wallet, mut info) = fixture.load();
+    let (mut wallet, mut info) = fixture.load().await;
     info.apply_chain_lock(ChainLock {
         block_height: 300,
         block_hash: BlockHash::from_byte_array([30; 32]),
@@ -247,7 +265,7 @@ async fn should_reconcile_stale_unspent_projection_against_confirmed_history() {
         .lock_conn_for_test()
         .execute("UPDATE core_utxos SET spent = 0", [])
         .unwrap();
-    let (mut wallet, mut info) = fixture.load();
+    let (mut wallet, mut info) = fixture.load().await;
     fixture.assert_spent_excluded(&info);
     fixture.redeliver(&mut wallet, &mut info).await;
 }
@@ -255,7 +273,7 @@ async fn should_reconcile_stale_unspent_projection_against_confirmed_history() {
 #[tokio::test]
 async fn should_not_release_inputs_reserved_by_unconfirmed_spend() {
     let fixture = Fixture::new(TransactionContext::Mempool).await;
-    let (mut wallet, mut info) = fixture.load();
+    let (mut wallet, mut info) = fixture.load().await;
     fixture.assert_spent_excluded(&info);
     assert!(!info.observed_spent_outpoints().contains_key(&fixture.spent));
     fixture.redeliver(&mut wallet, &mut info).await;
@@ -266,7 +284,7 @@ async fn should_not_release_inputs_reserved_by_unconfirmed_spend() {
 async fn should_keep_unconfirmed_funding_reserved_when_it_confirms_after_reload() {
     let fixture =
         Fixture::with_funding(TransactionContext::Mempool, TransactionContext::Mempool).await;
-    let (mut wallet, mut info) = fixture.load();
+    let (mut wallet, mut info) = fixture.load().await;
     assert!(!info.accounts.standard_bip44_accounts[&0]
         .utxos
         .contains_key(&fixture.spent));
@@ -277,7 +295,7 @@ async fn should_keep_unconfirmed_funding_reserved_when_it_confirms_after_reload(
 #[tokio::test]
 async fn should_handle_funding_and_spend_in_the_same_block() {
     let fixture = Fixture::new(block(100)).await;
-    let (mut wallet, mut info) = fixture.load();
+    let (mut wallet, mut info) = fixture.load().await;
     fixture.assert_spent_excluded(&info);
     fixture.redeliver(&mut wallet, &mut info).await;
 }
@@ -288,7 +306,7 @@ fn should_restore_without_an_async_runtime() {
         .build()
         .unwrap()
         .block_on(Fixture::new(block(200)));
-    let (_, info) = fixture.load();
+    let info = fixture.load_projection();
     fixture.assert_spent_excluded(&info);
 }
 
@@ -296,7 +314,7 @@ fn should_restore_without_an_async_runtime() {
 async fn should_restore_on_managers_blocking_pool() {
     let fixture = Fixture::new(block(200)).await;
     tokio::task::spawn_blocking(move || {
-        let (_, info) = fixture.load();
+        let info = fixture.load_projection();
         fixture.assert_spent_excluded(&info);
     })
     .await
@@ -325,7 +343,7 @@ async fn should_restore_persisted_finality_before_advancing_sync_checkpoint() {
             },
         )
         .unwrap();
-    let (mut wallet, mut info) = fixture.load();
+    let (mut wallet, mut info) = fixture.load().await;
     assert!(info.accounts.standard_bip44_accounts[&0]
         .keys()
         .transaction_is_finalized(&fixture.funding.txid()));
@@ -456,8 +474,7 @@ async fn should_keep_replayed_output_only_in_its_owning_account() {
         .unwrap();
     }
 
-    let mut state = persister.load().unwrap();
-    let info = state.wallets.remove(&wallet.wallet_id).unwrap().wallet_info;
+    let (_, info) = load_replayed(&persister, &wallet.wallet_id).await;
     let holders = |outpoint: &OutPoint| {
         info.accounts
             .all_funding_accounts()
@@ -586,8 +603,7 @@ async fn should_drop_replay_credit_for_contact_only_script() {
         .unwrap();
     }
 
-    let mut state = persister.load().unwrap();
-    let info = state.wallets.remove(&wallet.wallet_id).unwrap().wallet_info;
+    let (_, info) = load_replayed(&persister, &wallet.wallet_id).await;
     assert!(
         info.accounts
             .all_funding_accounts()

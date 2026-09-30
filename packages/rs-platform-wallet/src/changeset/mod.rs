@@ -20,6 +20,7 @@ pub mod persistence_capabilities;
 pub mod platform_address_sync_start_state;
 #[cfg(any(feature = "bls", feature = "eddsa"))]
 pub mod provider_key_account;
+pub mod recorded_history;
 #[cfg(feature = "serde")]
 pub mod serde_adapters;
 #[cfg(feature = "shielded")]
@@ -51,6 +52,7 @@ pub use identity_scan_state::IdentityScanStateEntry;
 pub use merge::Merge;
 pub use persistence_capabilities::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
+pub use recorded_history::{RecordedHistory, StoredTransaction};
 #[cfg(feature = "shielded")]
 pub use shielded_changeset::ShieldedChangeSet;
 #[cfg(not(feature = "shielded"))]
