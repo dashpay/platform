@@ -15,7 +15,7 @@ use key_wallet::managed_account::transaction_record::{
 };
 use key_wallet::transaction_checking::{TransactionContext, TransactionType};
 use platform_wallet::wallet::platform_wallet::WalletId;
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{params, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::{blob, id32, wallets};
@@ -27,23 +27,23 @@ fn read_record(
     wallet_id: &WalletId,
     txid: &Txid,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
-    let stored: Option<Option<(i64, Vec<u8>)>> = tx
-        .query_row(
-            "SELECT length(record_blob), record_blob FROM core_transactions \
-             WHERE wallet_id = ?1 AND txid = ?2",
-            params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
-            |row| {
-                Ok(match row.get::<_, Option<i64>>(0)? {
-                    Some(len) => Some((len, row.get(1)?)),
-                    None => None,
-                })
-            },
-        )
-        .optional()?;
-    let Some(Some((len, payload))) = stored else {
+    let mut stmt = tx.prepare_cached(
+        "SELECT length(record_blob), record_blob FROM core_transactions \
+         WHERE wallet_id = ?1 AND txid = ?2",
+    )?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        txid.as_byte_array().as_slice()
+    ])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    // Gate the stored length before the payload is materialized.
+    let Some(len) = row.get::<_, Option<i64>>(0)? else {
         return Ok(None);
     };
     blob::check_size(len)?;
+    let payload: Vec<u8> = row.get(1)?;
     let record: TransactionRecord = blob::decode(&payload)?;
     if record.txid != *txid {
         return Err(WalletStorageError::blob_decode(
@@ -396,6 +396,63 @@ mod tests {
         }
     }
 
+    /// Undo V019 so the next `migrations::run` replays it over current rows.
+    fn rewind_to_v018(conn: &Connection) {
+        conn.execute_batch(
+            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+             DELETE FROM refinery_schema_history WHERE version >= 19;",
+        )
+        .unwrap();
+    }
+
+    /// An oversize confirmed record fails its length gate before its payload
+    /// is read, and is dropped with a rescan from just below the birth height.
+    #[test]
+    fn should_drop_oversize_confirmed_record_for_resync() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xC2u8; 32];
+        let txid = Txid::from_byte_array([0x72; 32]);
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 50)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) \
+             VALUES (?1, 900, 900)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
+             VALUES (?1, ?2, 300, 1, zeroblob(?3))",
+            params![
+                &wallet_id[..],
+                txid.as_byte_array().as_slice(),
+                i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES + 1).unwrap()
+            ],
+        )
+        .unwrap();
+        rewind_to_v018(&conn);
+
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+
+        let (records, synced): (i64, i64) = conn
+            .query_row(
+                "SELECT (SELECT count(*) FROM core_transactions WHERE wallet_id = ?1), \
+                        (SELECT synced_height FROM core_sync_state WHERE wallet_id = ?1)",
+                params![&wallet_id[..]],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(records, 0, "the oversize record must be dropped");
+        assert_eq!(
+            synced, 49,
+            "the rescan must restart just below the birth height"
+        );
+    }
+
     /// Pins V019's observable result on a V018-shaped database: the repaired
     /// record, the preserved original, the input index and the spent marks.
     #[test]
@@ -492,11 +549,7 @@ mod tests {
                 ],
             )
             .unwrap();
-            tx.execute_batch(
-                "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-                 DELETE FROM refinery_schema_history WHERE version >= 19;",
-            )
-            .unwrap();
+            rewind_to_v018(&tx);
             tx.commit().unwrap();
         }
 
