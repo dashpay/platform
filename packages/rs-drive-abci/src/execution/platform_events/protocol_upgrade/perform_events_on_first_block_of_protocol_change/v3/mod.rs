@@ -147,6 +147,31 @@ mod tests {
         results.to_key_elements()
     }
 
+    /// Reads every element at every level under `path`, depth first, keyed by its full path.
+    fn read_subtree(
+        platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
+        transaction: drive::grovedb::TransactionArg,
+        path: Vec<Vec<u8>>,
+        platform_version: &PlatformVersion,
+    ) -> Vec<(Vec<Vec<u8>>, Element)> {
+        let mut elements = vec![];
+        for (key, element) in read_level(platform, transaction, path.clone(), platform_version) {
+            let mut element_path = path.clone();
+            element_path.push(key);
+            let is_tree = element.is_any_tree();
+            elements.push((element_path.clone(), element));
+            if is_tree {
+                elements.extend(read_subtree(
+                    platform,
+                    transaction,
+                    element_path,
+                    platform_version,
+                ));
+            }
+        }
+        elements
+    }
+
     /// CONSENSUS-CRITICAL equivalence guard for the v16 -> v17 boundary.
     ///
     /// The readiness structures are built two ways that MUST be byte-identical:
@@ -156,8 +181,14 @@ mod tests {
     ///    activation block on a node born at v16.
     ///
     /// Both go through `Drive::add_readiness_structure_operations`; this pins that they
-    /// keep doing so, element by element under `[Votes] / r` and for
+    /// keep doing so, element by element through every level of `[Votes] / r` and
     /// `[PreFundedSpecializedBalances] / 129`.
+    ///
+    /// The whole database root is not compared: the `[Votes]` Merk holds the same children
+    /// on both nodes but its AVL shape depends on insertion order (genesis builds `r` with
+    /// its siblings in one batch, the upgrade appends it to an existing tree), so the
+    /// `[Votes]` element's root key legitimately differs. A chain has one history, so no two
+    /// nodes of one network ever take different paths.
     #[test]
     fn test_genesis_v17_and_upgrade_to_v17_build_identical_readiness_structures() {
         let platform_version_17 = &PLATFORM_V17;
@@ -260,6 +291,31 @@ mod tests {
                 vec![READINESS_RETIRED_ROUNDS_TREE_KEY],
             ]
         );
+
+        // Every level below the two roots, so a nested element or a nested tree's shape (its
+        // root key) cannot differ unseen.
+        for path in [
+            readiness_tree_path_vec(),
+            prefunded_specialized_balances_path()
+                .iter()
+                .map(|segment| segment.to_vec())
+                .chain([vec![PREFUNDED_BALANCES_FOR_READINESS]])
+                .collect(),
+        ] {
+            let genesis_subtree =
+                read_subtree(&platform_genesis, None, path.clone(), platform_version_17);
+            let upgraded_subtree = read_subtree(
+                &platform_upgraded,
+                Some(&transaction),
+                path.clone(),
+                platform_version_17,
+            );
+            assert_eq!(
+                genesis_subtree, upgraded_subtree,
+                "CONSENSUS FORK: the subtree under {path:?} differs between a fresh genesis-v17 \
+                 node and an in-place-upgraded v17 node"
+            );
+        }
     }
 
     /// A rejected proposal drops its transaction; the retried block runs the transition
