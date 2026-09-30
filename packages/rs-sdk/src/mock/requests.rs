@@ -488,8 +488,8 @@ impl MockResponse for ContractModerationEntries {
 }
 
 /// One removal record as a fixture holds it: the document id, its owner, the moderator, when
-/// the removal happened, why, what the document hashed to, and who restored it and when if
-/// anyone did.
+/// the removal happened, why, what the document hashed to, who restored it and when if anyone
+/// did, and the values it keeps of the document.
 type EncodedContractDocumentRemoval = (
     Identifier,
     Identifier,
@@ -498,6 +498,7 @@ type EncodedContractDocumentRemoval = (
     ContractModerationReason,
     [u8; 32],
     Option<(Identifier, u64)>,
+    Vec<u8>,
 );
 
 /// One removal record in its mock wire shape.
@@ -514,12 +515,22 @@ fn encode_removal_entry(entry: &ContractDocumentRemovalEntry) -> EncodedContract
             .restoration
             .as_ref()
             .map(|restoration| (restoration.moderator_id, restoration.restored_at)),
+        entry.removal.kept_fields.clone(),
     )
 }
 
 /// One removal record back from its mock wire shape.
 fn decode_removal_entry(
-    (document_id, document_owner_id, moderator_id, removed_at, reason, document_hash, restoration): EncodedContractDocumentRemoval,
+    (
+        document_id,
+        document_owner_id,
+        moderator_id,
+        removed_at,
+        reason,
+        document_hash,
+        restoration,
+        kept_fields,
+    ): EncodedContractDocumentRemoval,
 ) -> ContractDocumentRemovalEntry {
     ContractDocumentRemovalEntry {
         document_id,
@@ -535,6 +546,7 @@ fn decode_removal_entry(
                     restored_at,
                 }
             }),
+            kept_fields,
         },
     }
 }

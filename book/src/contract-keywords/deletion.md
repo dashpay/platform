@@ -89,7 +89,7 @@ Authors cannot retract a post, but the contract's moderators can remove one for 
 
 - A moderator deletes a document with the contract user moderation transition, naming the document type, the document id and a reason. The moderators are the ones the contract's `moderation` config declares; see [Contract Moderation](../data-model/contract-moderation.md#the-model).
 - The transition is checked in this order, each refusal paid: the document type exists (`InvalidDocumentTypeError`, 10406); it sets `delete` (41115); the signer is the contract owner or a moderator (41101); the document exists (40101); its owner is neither the contract owner nor a moderator (41102); and, when the type sets `deleteWithin`, the window has not passed (41116).
-- The document and all its index entries are deleted as an owner's delete would delete them, without the `canBeDeleted` check. A removal record is written under the contract: whose document it was, which moderator removed it, the reason, the block time and a hash of the document. The record is never deleted. A type may leave no record: see [`deleteKeepsRecord`](#moderatorabilitiesdeletekeepsrecord).
+- The document and all its index entries are deleted as an owner's delete would delete them, without the `canBeDeleted` check. A removal record is written under the contract: whose document it was, which moderator removed it, the reason, the block time and a hash of the document, and the values of any fields the type keeps public (see [`deleteKeepsFields`](#moderatorabilitiesdeletekeepsfields)). The record is never deleted. A type may leave no record: see [`deleteKeepsRecord`](#moderatorabilitiesdeletekeepsrecord).
 - The document's owner gets no storage refund unless the type says otherwise (see [`deleteRefundsOwner`](#moderatorabilitiesdeleterefundsowner)), and the moderator pays neither the type's delete token cost nor its delete action fee.
 - For a week after the deletion a moderator may restore the document exactly as it was. See [Restoring Documents](../data-model/contract-moderation.md#restoring-documents).
 
@@ -202,6 +202,81 @@ Whether a moderator's deletion leaves a removal record under the contract. The r
 ### Rules at registration
 
 - Needs `delete: true` (`InvalidContractStructure`, 10231).
+
+## `moderatorAbilities.deleteKeepsFields`
+
+Which fields of a deleted document stay public in its removal record. The document is gone, but some of what it said may still matter to everyone else: the hashtag of a removed post keeps the hashtag's timeline honest ("a post here was removed"), the thread a removed reply belonged to, the time it was written. The record keeps a copy of those values; everything else leaves with the document.
+
+| | |
+|---|---|
+| **Where** | `moderatorAbilities` of a document type, with `delete: true` and a record (`deleteKeepsRecord` not `false`) |
+| **Value** | array of property paths, at least one, none twice |
+| **Default** | absent: the record keeps no field of the document |
+| **Since** | protocol version 14 |
+| **On update** | Fixed (`DocumentTypeUpdateError`, 40212), in both directions: which fields stay public is what an author was told when writing |
+
+### Example
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "text": { "type": "string", "maxLength": 500, "position": 0 },
+    "hashtag": { "type": "string", "maxLength": 61, "position": 1 },
+    "meta": {
+      "type": "object",
+      "position": 2,
+      "properties": {
+        "tags": { "type": "array", "items": { "type": "string", "maxLength": 20 }, "maxItems": 5, "position": 0 },
+        "note": { "type": "string", "maxLength": 100, "position": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["$createdAt", "text"],
+  "canBeDeleted": false,
+  "moderatorAbilities": {
+    "delete": true,
+    "deleteKeepsFields": ["hashtag", "meta.tags", "$createdAt"]
+  },
+  "additionalProperties": false
+}
+```
+
+A moderator deleting a post of this type leaves a record that still says which hashtag and tags it carried and when it was written, while its text and its note are gone:
+
+```json
+{
+  "documentId": "…",
+  "documentOwnerId": "…",
+  "moderatorId": "…",
+  "reason": { "text": "spam" },
+  "removedAt": 1759200000000,
+  "documentHash": "…",
+  "keptFields": {
+    "$createdAt": 1759100000000,
+    "hashtag": "dash",
+    "meta.tags": ["privacy", "payments"]
+  }
+}
+```
+
+### How it works
+
+- The values are copied from the document as stored at the deletion, each under the path the type lists: a top-level property, a property inside an object (`meta.tags`), or a whole object (`meta`). A path the document holds no value at is left out of the record.
+- The record stores them as the document stores its properties, so they are read, as the document is, under its document type, and come back typed exactly as the document's values: the SDKs do this for you (`keptFields`). An object kept whole shows members an update added after the removal as absent, as an older document does.
+- They are read wherever the record is: `getContractDocumentRemovals`, by document id or by page, the proof of the deletion, and a join through a [`moderatedDocument`](refers-to.md#moderateddocument) reference. They are not indexed: no query finds records by a kept value.
+- A `moderatedDocument` reference to a removed document checks a `where` pair on a kept property against the kept value, as it would against the document.
+- A restore brings the document back and leaves the record, marked restored, with what it kept. A later deletion of the restored document writes a fresh record, with the values the document then held.
+- The moderator pays for the record, kept values included.
+
+### Rules at registration
+
+All refusals below are `InvalidContractStructure` (10231).
+
+- Needs `delete: true`, and a record: refused beside `deleteKeepsRecord: false`.
+- Each entry is a declared property at any depth, stepping through objects by `.`, or one of the timestamps and block heights (`$createdAt`, `$updatedAt`, `$transferredAt`, and their `BlockHeight` and `CoreBlockHeight` forms) listed in `required`, without which no document carries it.
+- Refused: a transient property (no stored document holds it), `$id` and `$ownerId` (every record holds them already), any other system property, and a path inside another listed path (the object around it is kept whole already).
 
 ## `moderatorAbilities.deleteRefundsOwner`
 

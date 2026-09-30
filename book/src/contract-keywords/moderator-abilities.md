@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Where** | document type, in a contract whose config declares `moderation` |
-| **Value** | object with `delete` (boolean), `deleteWithin` (seconds), `deleteKeepsRecord` and `deleteRefundsOwner` (booleans), the last three only beside `delete: true`, `deleteSettled` (object, beside `deleteWithin`), and `changeFields` (array of top-level property names), at least one of them given |
+| **Value** | object with `delete` (boolean), `deleteWithin` (seconds), `deleteKeepsRecord` and `deleteRefundsOwner` (booleans), `deleteKeepsFields` (array of property paths), the last four only beside `delete: true`, `deleteSettled` (object, beside `deleteWithin`), and `changeFields` (array of top-level property names), at least one of them given |
 | **Default** | absent: the moderators can do nothing to documents of the type |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (`DocumentTypeUpdateError`, 40212): a type can neither gain, lose nor change it. A type the update adds may declare it. |
@@ -19,6 +19,7 @@ The keys:
 | `deleteKeepsRecord` | Whether a deletion leaves a removal record, and so can be restored. Default `true`. | [Deletion](deletion.md#moderatorabilitiesdeletekeepsrecord) |
 | `deleteRefundsOwner` | Whether the deleted document's owner is refunded its storage. Default `false`. | [Deletion](deletion.md#moderatorabilitiesdeleterefundsowner) |
 | `deleteSettled` | Past `deleteWithin`, the seated team of an elected contract deletes a document together: its leader, and in all so many members. | [Deletion](deletion.md#moderatorabilitiesdeletesettled) |
+| `deleteKeepsFields` | The fields of a deleted document whose values stay public in its removal record, such as a post's hashtag. | [Deletion](deletion.md#moderatorabilitiesdeletekeepsfields) |
 | `changeFields` | The listed properties are written only by the moderators. | [below](#changefields) |
 
 The moderators are the ones the contract's `moderation` config declares: the contract owner, the identities it appoints, or the members of the seated team of an elected contract. A seated team holds an ability on a type only when the declaration's `moderatedDocumentTypes` gives it: `deleteDocuments` for `delete`, `changeDocumentFields` for `changeFields`. See [Contract Moderation](../data-model/contract-moderation.md).

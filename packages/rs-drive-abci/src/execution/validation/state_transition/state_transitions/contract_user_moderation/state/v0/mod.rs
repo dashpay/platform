@@ -39,9 +39,9 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
-    ContractModerationList, ContractModerationReason, ContractModerationStatus,
-    ContractSettledDeletion, ModerationAbility,
+    encode_kept_fields, ContractDocumentRemoval, ContractDocumentRestoration,
+    ContractModerationConfig, ContractModerationList, ContractModerationReason,
+    ContractModerationStatus, ContractSettledDeletion, ModerationAbility,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -948,9 +948,9 @@ fn document_deletion_context<C: CoreRPCLike>(
                 platform_version,
             )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(removal_fee));
-        let replaces_restored_record = match existing_removal {
-            None => false,
-            Some(removal) if removal.is_restored() => true,
+        let replaced_record = match existing_removal {
+            None => None,
+            Some(removal) if removal.is_restored() => Some(removal),
             Some(_) => {
                 return Err(Error::Execution(ExecutionError::DriveIncoherence(
                     "a document with an unrestored moderation removal record exists",
@@ -960,7 +960,10 @@ fn document_deletion_context<C: CoreRPCLike>(
         Some(ContractDocumentRemovalRecordContext {
             removed_at: block_info.time_ms,
             document_hash,
-            replaces_restored_record,
+            replaced_record,
+            // What of the document stays public once it is gone, copied from it as stored and
+            // encoded as the document encodes its properties
+            kept_fields: encode_kept_fields(document, document_type)?,
         })
     } else {
         None

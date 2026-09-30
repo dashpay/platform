@@ -261,6 +261,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.moderator_settled_deletion
     }
 
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        &self.moderator_deletion_kept_fields
+    }
+
     fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
         &self.moderator_changeable_fields
     }

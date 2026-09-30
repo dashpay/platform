@@ -94,10 +94,11 @@ pub enum DocumentReferenceErrorCodeWasm {
     ReferencedDocumentTypeModerated = 40144,
     /// A replace kept a `moderatedDocument` reference whose document the
     /// contract's moderators removed, and had to check a `where` entry
-    /// against a property of it other than its id and owner, which its
-    /// removal record does not keep. Point the reference at a document in
-    /// state, or leave the properties `where` reads unchanged until the
-    /// document is restored.
+    /// against a property its removal record does not keep (a record keeps
+    /// the document's id, its owner and the fields its type lists under
+    /// `moderatorAbilities.deleteKeepsFields`). Point the reference at a
+    /// document in state, or leave the properties `where` reads unchanged
+    /// until the document is restored.
     ReferencedDocumentRemoved = 40145,
     /// A create cannot reveal the preimage of a `refersTo` `findBy`
     /// function: a value a param reads is absent, or a variable-length

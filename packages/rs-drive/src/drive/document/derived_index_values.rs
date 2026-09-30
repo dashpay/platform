@@ -16,7 +16,9 @@
 //! (`moderatedDocument`, `$ownerId` only). So a later read finds the value the entry was
 //! written under.
 
-use crate::drive::contract::moderation::types::estimated_document_removal_value_size;
+use crate::drive::contract::moderation::types::{
+    estimated_document_removal_kept_fields_size, estimated_document_removal_value_size,
+};
 use crate::drive::contract::paths::contract_document_type_removals_path;
 use crate::drive::document::cost::value_of;
 use crate::drive::document::paths::{
@@ -462,7 +464,12 @@ impl Drive {
                 &[0; 32],
                 DirectQueryType::StatelessDirectQuery {
                     in_tree_type: TreeType::NormalTree,
-                    query_target: QueryTargetValue(estimated_document_removal_value_size()),
+                    query_target: QueryTargetValue(estimated_document_removal_value_size(
+                        estimated_document_removal_kept_fields_size(
+                            referenced_type,
+                            platform_version,
+                        )?,
+                    )),
                 },
                 None,
                 drive_operations,

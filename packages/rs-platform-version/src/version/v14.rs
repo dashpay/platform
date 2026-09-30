@@ -1482,7 +1482,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (41119) and the deletion is proved by the document's absence, which the
 ///     verifier learns from the contract. `deleteRefundsOwner` (default false)
 ///     says whether the owner is refunded its storage instead of forfeiting it
-///     (the batch then carries no `ForfeitStorageRefunds`). A listed property must be declared,
+///     (the batch then carries no `ForfeitStorageRefunds`). `deleteKeepsFields`
+///     lists property paths at any depth, and the timestamps and block heights
+///     the type requires, whose values the removal record keeps, copied from
+///     the document as it was deleted: what stays public once it is gone. It
+///     needs a record, and is fixed with the type. A record keeping any
+///     carries them behind bit 1 of its tag byte, encoded as the document
+///     encodes its properties (a presence byte and the value per kept path,
+///     the paths themselves not written) and read under the document's type,
+///     and a record keeping none is written as before; the removals
+///     response carries the bytes as `kept_fields` (field 8), and a
+///     `moderatedDocument` reference's `where` pair on a kept property is
+///     checked against the record's value. A property `changeFields` lists must be declared,
 ///     optional, stored, not immutable, neither a reference nor read by one,
 ///     neither generated nor a generation parameter, and in no contested index,
 ///     on a type that is not indexOnly; a type listing any keeps `$revision` even
@@ -1852,7 +1863,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody unless its type sets `deleteRefundsOwner`; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody unless its type sets `deleteRefundsOwner`, but the moderator holding a removal record it replaces; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

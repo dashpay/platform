@@ -10,7 +10,9 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::contract_moderation::{
     default_contract_document_removals_limit, ContractDocumentRemoval,
     ContractDocumentRemovalEntry, ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
@@ -27,6 +29,7 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::{moderation_reason_to_js, moderation_warnings_to_js};
 use wasm_dpp2::error::WasmDppError;
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::serialization::conversions::kept_fields_to_js;
 use wasm_dpp2::utils::{
     try_from_options_optional_with, try_from_options_with, try_to_array, try_to_string, try_to_u32,
 };
@@ -173,6 +176,14 @@ export interface ContractDocumentRemovalEntry {
   restoredBy?: string;
   /** The time of the block that restored it, in milliseconds; absent while the removal stands. */
   restoredAt?: bigint;
+  /**
+   * The values the record keeps of the document, by the property path its type lists under
+   * `moderatorAbilities.deleteKeepsFields` (`hashtag`, `meta.tags`, `$createdAt`), copied from
+   * it as it was removed and shown as the document's `properties` show them: what of it stays
+   * public once it is gone. Empty when the type keeps none; a path the document held no value
+   * at is absent.
+   */
+  keptFields: Record<string, unknown>;
 }
 
 /**
@@ -607,15 +618,17 @@ fn entries_to_js(
     Ok(result.into())
 }
 
-/// Sets `documentOwnerId`, `moderatorId`, `reason`, `removedAt` and `documentHash` on
-/// `target`, and `restoredBy` and `restoredAt` when the document was restored. The removals
+/// Sets `documentOwnerId`, `moderatorId`, `reason`, `removedAt`, `documentHash` and
+/// `keptFields` on `target`, and `restoredBy` and `restoredAt` when the document was restored. The removals
 /// query and the result of a deletion or a restore carry the same record, so they share this.
 /// Each writes identifiers its own way, which `id_to_js` decides: base58 strings in a query
 /// answer, as the entries of a moderation list are, and `Identifier`s in the result of a
-/// transition. The hash is 64 hex characters either way.
+/// transition. The hash is 64 hex characters either way, and the kept values are shown as a
+/// document's `properties` show them.
 pub(crate) fn set_removal_fields(
     target: &js_sys::Object,
     removal: &ContractDocumentRemoval,
+    document_type: DocumentTypeRef,
     id_to_js: impl Fn(Identifier) -> JsValue,
 ) -> Result<(), WasmSdkError> {
     let set = |key: &str, value: JsValue| {
@@ -638,6 +651,11 @@ pub(crate) fn set_removal_fields(
             js_sys::BigInt::from(restoration.restored_at).into(),
         )?;
     }
+    // Read under the document's type, as its documents are
+    set(
+        "keptFields",
+        kept_fields_to_js(&removal.kept_values(document_type)?)?,
+    )?;
     Ok(())
 }
 
@@ -646,6 +664,7 @@ pub(crate) fn set_removal_fields(
 /// `moderatedDocument` reference (`JoinedDocumentRemoval`), as the join's other ids are.
 pub(crate) fn removal_entry_to_js(
     entry: &ContractDocumentRemovalEntry,
+    document_type: DocumentTypeRef,
     id_to_js: impl Fn(Identifier) -> JsValue,
 ) -> Result<JsValue, WasmSdkError> {
     let js_entry = js_sys::Object::new();
@@ -655,13 +674,14 @@ pub(crate) fn removal_entry_to_js(
         &id_to_js(entry.document_id),
     )
     .map_err(|_| WasmSdkError::generic("failed to set `documentId` on the removal"))?;
-    set_removal_fields(&js_entry, &entry.removal, id_to_js)?;
+    set_removal_fields(&js_entry, &entry.removal, document_type, id_to_js)?;
     Ok(js_entry.into())
 }
 
 fn removals_to_js(
     page: ContractDocumentRemovals,
     query: &ContractDocumentRemovalsPageQuery,
+    document_type: DocumentTypeRef,
 ) -> Result<JsValue, WasmSdkError> {
     let result = js_sys::Object::new();
     let set = |target: &js_sys::Object, key: &str, value: JsValue| {
@@ -671,7 +691,7 @@ fn removals_to_js(
     let id_to_js = |id: Identifier| JsValue::from_str(&IdentifierWasm::from(id).to_base58());
     let removals = Array::new();
     for entry in page.removals() {
-        removals.push(&removal_entry_to_js(entry, |id| {
+        removals.push(&removal_entry_to_js(entry, document_type, |id| {
             JsValue::from_str(&IdentifierWasm::from(id).to_base58())
         })?);
     }
@@ -887,10 +907,15 @@ impl WasmSdk {
         query: ContractDocumentRemovalsQueryJs,
     ) -> Result<JsValue, WasmSdkError> {
         let query = parse_removals_query(query, self.inner_sdk().version())?;
+        // The fields a record keeps are read under the document's type, as its documents are
+        let contract = self.get_or_fetch_contract(query.contract_id).await?;
+        let document_type = contract
+            .document_type_for_name(&query.query.document_type_name)
+            .map_err(ProtocolError::from)?;
         let page = ContractDocumentRemovals::fetch(self.as_ref(), query.clone())
             .await?
             .unwrap_or_default();
-        removals_to_js(page, &query)
+        removals_to_js(page, &query, document_type)
     }
 
     /// The removal records of a document type together with their proof and metadata.
@@ -903,6 +928,10 @@ impl WasmSdk {
         query: ContractDocumentRemovalsQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_removals_query(query, self.inner_sdk().version())?;
+        let contract = self.get_or_fetch_contract(query.contract_id).await?;
+        let document_type = contract
+            .document_type_for_name(&query.query.document_type_name)
+            .map_err(ProtocolError::from)?;
         let (page, metadata, proof) = ContractDocumentRemovals::fetch_with_metadata_and_proof(
             self.as_ref(),
             query.clone(),
@@ -910,7 +939,7 @@ impl WasmSdk {
         )
         .await?;
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            removals_to_js(page.unwrap_or_default(), &query)?,
+            removals_to_js(page.unwrap_or_default(), &query, document_type)?,
             metadata,
             proof,
         ))
@@ -989,6 +1018,7 @@ pub(crate) mod joined_removal_tests {
                 removed_at: 1_700_000_000_000,
                 document_hash: [0x5A; 32],
                 restoration: None,
+                kept_fields: Vec::new(),
             },
         }
     }
@@ -1044,5 +1074,259 @@ pub(crate) mod joined_removal_tests {
             Some("spam")
         );
         assert!(!Reflect::has(js, &"restoredBy".into()).expect("has() on a plain object"));
+        // What the record keeps of the document rides with it through the join: here nothing
+        assert_eq!(
+            js_sys::Object::keys(field(js, "keptFields").unchecked_ref()).length(),
+            0
+        );
+    }
+}
+
+/// What a removal record keeps of its document, as JavaScript reads it: read under the
+/// document's type, each path an own property, each value as the document's `properties` show
+/// it. Run on the wasm32 target with the runner command in `Cargo.toml`.
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::joined_removal_tests::field as get;
+    use super::*;
+    use dash_sdk::dpp::data_contract::config::moderation::{
+        encode_kept_fields, ContractModerationConfig, ContractModerationReason, ContractModerators,
+    };
+    use dash_sdk::dpp::data_contract::config::DataContractConfig;
+    use dash_sdk::dpp::data_contract::document_type::DocumentType;
+    use dash_sdk::dpp::document::{Document, DocumentV0};
+    use dash_sdk::dpp::platform_value::{platform_value, Value};
+    use dash_sdk::platform::contract_moderation::ContractDocumentRemovalEntry;
+    use std::collections::BTreeMap;
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+    use wasm_dpp2::serialization::conversions::js_value_to_json;
+    use wasm_dpp2::state_transitions::proof_result::VerifiedContractDocumentRemovalWasm;
+
+    /// A post keeping its creation time, a hashtag, a property named like an inherited
+    /// accessor, and an object whole
+    fn post_type() -> DocumentType {
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("expected a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        DocumentType::try_from_schema(
+            Identifier::new([8; 32]),
+            1,
+            config.version(),
+            "post",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+                    "__proto__": { "type": "string", "maxLength": 20, "position": 1 },
+                    "meta": {
+                        "type": "object",
+                        "position": 2,
+                        "properties": {
+                            "tags": {
+                                "type": "array",
+                                "items": { "type": "string", "maxLength": 20 },
+                                "maxItems": 5,
+                                "position": 0,
+                            },
+                            "author": {
+                                "type": "array",
+                                "byteArray": true,
+                                "minItems": 32,
+                                "maxItems": 32,
+                                "contentMediaType": "application/x.dash.dpp.identifier",
+                                "position": 1,
+                            },
+                        },
+                        "additionalProperties": false,
+                    },
+                },
+                "required": ["$createdAt"],
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": ["$createdAt", "__proto__", "hashtag", "meta"],
+                },
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("expected the post type")
+    }
+
+    /// The entry `removals_to_js` gives for one record keeping `kept_fields`
+    fn entry_of(kept_fields: Vec<u8>, document_type: &DocumentType) -> JsValue {
+        let query = ContractDocumentRemovalsPageQuery::for_document_ids(
+            Identifier::from([8; 32]),
+            "post".to_string(),
+            vec![Identifier::from([9; 32])],
+        );
+        let page = removals_to_js(
+            ContractDocumentRemovals(vec![ContractDocumentRemovalEntry {
+                document_id: Identifier::from([9; 32]),
+                removal: ContractDocumentRemoval {
+                    reason: ContractModerationReason::from_text("spam"),
+                    kept_fields,
+                    ..Default::default()
+                },
+            }]),
+            &query,
+            document_type.as_ref(),
+        )
+        .expect("expected the page");
+        Array::from(&get(&page, "removals")).get(0)
+    }
+
+    #[wasm_bindgen_test]
+    fn should_carry_the_fields_a_removal_keeps() {
+        let document_type = post_type();
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::new([2; 32]),
+            owner_id: Identifier::new([3; 32]),
+            properties: BTreeMap::from([
+                ("hashtag".to_string(), Value::Text("dash".to_string())),
+                ("__proto__".to_string(), Value::Text("a field".to_string())),
+                (
+                    "meta".to_string(),
+                    Value::Map(vec![
+                        (
+                            Value::Text("tags".to_string()),
+                            Value::Array(vec![Value::Text("a".to_string())]),
+                        ),
+                        (
+                            Value::Text("author".to_string()),
+                            Value::Identifier([6; 32]),
+                        ),
+                    ]),
+                ),
+            ]),
+            created_at: Some(4),
+            ..Default::default()
+        });
+        let kept_fields =
+            encode_kept_fields(&document, document_type.as_ref()).expect("expected to encode");
+        let kept = get(&entry_of(kept_fields, &document_type), "keptFields");
+
+        assert_eq!(get(&kept, "hashtag").as_string().as_deref(), Some("dash"));
+        assert_eq!(
+            get(&kept, "$createdAt").js_typeof().as_string().as_deref(),
+            Some("bigint")
+        );
+        // An object kept whole, an identifier inside it base58, as in a document's
+        // `properties`
+        let meta = get(&kept, "meta");
+        assert_eq!(
+            Array::from(&get(&meta, "tags"))
+                .get(0)
+                .as_string()
+                .as_deref(),
+            Some("a")
+        );
+        assert_eq!(
+            get(&meta, "author").as_string(),
+            Some(IdentifierWasm::from(Identifier::from([6; 32])).to_base58())
+        );
+        // A path named like an inherited accessor is the record's own property.
+        let own = js_sys::Object::get_own_property_descriptor(
+            kept.unchecked_ref(),
+            &JsValue::from_str("__proto__"),
+        );
+        assert_eq!(get(&own, "value").as_string().as_deref(), Some("a field"));
+    }
+
+    #[wasm_bindgen_test]
+    fn should_carry_an_empty_object_when_a_removal_keeps_nothing() {
+        let kept = get(&entry_of(Vec::new(), &post_type()), "keptFields");
+        assert!(kept.is_object());
+        assert_eq!(js_sys::Object::keys(kept.unchecked_ref()).length(), 0);
+    }
+
+    /// A member named `__proto__` inside a kept object is the object's own, as a top-level
+    /// path is the record's
+    #[wasm_bindgen_test]
+    fn should_keep_a_nested_proto_member_its_own() {
+        let proto_object = || {
+            Value::Map(vec![(
+                Value::Text("__proto__".to_string()),
+                Value::Map(vec![(Value::Text("admin".to_string()), Value::Bool(true))]),
+            )])
+        };
+        let kept_fields = BTreeMap::from([
+            ("meta".to_string(), proto_object()),
+            (
+                "list".to_string(),
+                Value::Array(vec![
+                    proto_object(),
+                    Value::Map(vec![(
+                        Value::Text("__proto__".to_string()),
+                        Value::Text("a scalar".to_string()),
+                    )]),
+                ]),
+            ),
+        ]);
+        let kept = kept_fields_to_js(&kept_fields).expect("expected the kept fields");
+        let own = |object: &JsValue| {
+            js_sys::Object::get_own_property_descriptor(
+                object.unchecked_ref(),
+                &JsValue::from_str("__proto__"),
+            )
+        };
+        let meta = get(&kept, "meta");
+        assert_eq!(get(&get(&own(&meta), "value"), "admin"), JsValue::TRUE);
+        // Not the object's prototype: nothing is inherited through it
+        assert_eq!(get(&meta, "admin"), JsValue::UNDEFINED);
+        // Inside an array too, object-valued or scalar
+        let list = Array::from(&get(&kept, "list"));
+        assert_eq!(
+            get(&get(&own(&list.get(0)), "value"), "admin"),
+            JsValue::TRUE
+        );
+        assert_eq!(get(&list.get(0), "admin"), JsValue::UNDEFINED);
+        assert_eq!(
+            get(&own(&list.get(1)), "value").as_string().as_deref(),
+            Some("a scalar")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_keep_kept_fields_whole_in_their_json_form() {
+        let kept_fields = BTreeMap::from([
+            ("__proto__".to_string(), Value::Text("a field".to_string())),
+            ("amount".to_string(), Value::U64(10_000_000_000_000_000)),
+        ]);
+        let json =
+            js_value_to_json(&kept_fields_to_js(&kept_fields).expect("expected the kept fields"))
+                .expect("expected the JSON form");
+        assert_eq!(json["__proto__"], "a field");
+        assert_eq!(json["amount"], "10000000000000000");
+
+        let removal = VerifiedContractDocumentRemovalWasm {
+            contract_id: Identifier::from([1; 32]).into(),
+            document_type_name: "post".to_string(),
+            document_id: Identifier::from([2; 32]).into(),
+            document_owner_id: Identifier::from([3; 32]).into(),
+            moderator_id: Identifier::from([4; 32]).into(),
+            reason: ContractModerationReason::from_text("spam"),
+            removed_at: 5,
+            document_hash: [6; 32],
+            restored_by: None,
+            restored_at: None,
+            kept_fields: vec![1, 4, b'd', b'a', b's', b'h'],
+        };
+        let json = removal.to_json().expect("toJSON does not throw");
+        assert_eq!(
+            get(&json, "keptFieldsBytes").as_string().as_deref(),
+            Some("AQRkYXNo")
+        );
     }
 }

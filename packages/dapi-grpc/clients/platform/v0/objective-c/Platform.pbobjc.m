@@ -7619,6 +7619,7 @@ typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRestoration__
 @dynamic hasReason, reason;
 @dynamic documentHash;
 @dynamic hasRestoration, restoration;
+@dynamic keptFields;
 
 typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_ {
   uint32_t _has_storage_[1];
@@ -7628,6 +7629,7 @@ typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__stor
   ContractModerationReason *reason;
   NSData *documentHash;
   GetContractDocumentRemovalsResponse_ContractDocumentRestoration *restoration;
+  NSData *keptFields;
   uint64_t removedAt;
 } GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_;
 
@@ -7699,6 +7701,15 @@ typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__stor
         .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_, restoration),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "keptFields",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_KeptFields,
+        .hasIndex = 7,
+        .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_, keptFields),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =

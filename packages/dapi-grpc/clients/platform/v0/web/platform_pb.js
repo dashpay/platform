@@ -34555,7 +34555,8 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
     removedAt: jspb.Message.getFieldWithDefault(msg, 4, 0),
     reason: (f = msg.getReason()) && proto.org.dash.platform.dapi.v0.ContractModerationReason.toObject(includeInstance, f),
     documentHash: msg.getDocumentHash_asB64(),
-    restoration: (f = msg.getRestoration()) && proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.toObject(includeInstance, f)
+    restoration: (f = msg.getRestoration()) && proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.toObject(includeInstance, f),
+    keptFields: msg.getKeptFields_asB64()
   };
 
   if (includeInstance) {
@@ -34621,6 +34622,10 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
       var value = new proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.deserializeBinaryFromReader);
       msg.setRestoration(value);
+      break;
+    case 8:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setKeptFields(value);
       break;
     default:
       reader.skipField();
@@ -34700,6 +34705,13 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
       7,
       f,
       proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.serializeBinaryToWriter
+    );
+  }
+  f = message.getKeptFields_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      8,
+      f
     );
   }
 };
@@ -34962,6 +34974,48 @@ proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocu
  */
 proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.hasRestoration = function() {
   return jspb.Message.getField(this, 7) != null;
+};
+
+
+/**
+ * optional bytes kept_fields = 8;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.getKeptFields = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 8, ""));
+};
+
+
+/**
+ * optional bytes kept_fields = 8;
+ * This is a type-conversion wrapper around `getKeptFields()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.getKeptFields_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getKeptFields()));
+};
+
+
+/**
+ * optional bytes kept_fields = 8;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getKeptFields()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.getKeptFields_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getKeptFields()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.prototype.setKeptFields = function(value) {
+  return jspb.Message.setProto3BytesField(this, 8, value);
 };
 
 

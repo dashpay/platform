@@ -142,6 +142,7 @@ impl Drive {
         contract_id: [u8; 32],
         records: ContractDocumentRecords,
         document_type_name: &str,
+        estimated_value_size: u32,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -153,8 +154,9 @@ impl Drive {
         )?;
 
         // The records of one document type: one item per document, keyed by document id. The
-        // records a write walks past are sized like a typical one; the record being written is
-        // priced by its own size.
+        // records a write walks past are sized like a typical one (a removal record keeping
+        // what its type's records are estimated to keep, the same paths at their middle sizes);
+        // the record being written is priced by its own size.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_document_type_records_path(
                 &contract_id,
@@ -166,7 +168,7 @@ impl Drive {
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     DEFAULT_HASH_SIZE_U8,
-                    records.estimated_value_size(),
+                    estimated_value_size,
                     Some(StorageFlags::approximate_size(true, None)),
                 ),
             },

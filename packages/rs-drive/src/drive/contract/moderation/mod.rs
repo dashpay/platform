@@ -20,7 +20,9 @@
 //! ```text
 //!         [16] document removals
 //!         └── <document type name>            (a type that sets `moderatorAbilities.delete`)
-//!             └── <document id> -> Item(document owner id ‖ moderator id ‖ removed at ‖ reason)
+//!             └── <document id> -> Item(document owner id ‖ moderator id ‖ removed at ‖
+//!                                       document hash ‖ tag ‖ restoration? ‖ kept fields? ‖
+//!                                       reason)
 //! ```
 //!
 //! and the approvals a seated moderation team gives the deletion of settled documents, under
@@ -29,14 +31,15 @@
 //! ```text
 //!         [24] settled deletions
 //!         └── <document type name>            (a type that sets `moderatorAbilities.deleteSettled`)
-//!             └── <document id> -> Item(proposed at ‖ last modified at ‖ deleted at? ‖ approvals ‖ reason)
+//!             └── <document id> -> Item(proposed at ‖ last modified at ‖ revision ‖ deleted at? ‖ approvals ‖ reason)
 //! ```
 //!
 //! See [`types::encode_settled_deletion`]. Each approval pays for the bytes it adds, and nothing
 //! ever deletes a record: a closed one is replaced by the next approval of the document.
 //!
-//! `removed at` is a u64 of block time in milliseconds, big-endian: see
-//! [`types::encode_document_removal`]. The moderator pays for the record and nothing ever
+//! `removed at` is a u64 of block time in milliseconds, big-endian; the tag says whether a
+//! restoration (bit 0) and kept fields (bit 1, `moderatorAbilities.deleteKeepsFields`)
+//! follow: see [`types::encode_document_removal`]. The moderator pays for the record and nothing ever
 //! deletes it; the deleted document's own storage refund goes to nobody.
 //!
 //! `until` is a u64 of block time in milliseconds, big-endian. A reason is a tag byte (bit 0: a

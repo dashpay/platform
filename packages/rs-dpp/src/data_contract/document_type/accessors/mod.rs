@@ -953,6 +953,7 @@ static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
 static NO_IMMUTABLE_FIELD_CONDITIONS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
 static NO_ENTRY_PAYLOAD: BTreeSet<String> = BTreeSet::new();
 static NO_MODERATOR_CHANGEABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
+static NO_MODERATOR_DELETION_KEPT_FIELDS: BTreeSet<String> = BTreeSet::new();
 /// What `property_constraints` returns for the generations that predate the
 /// keyword, for the same reason.
 static NO_PROPERTY_CONSTRAINTS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
@@ -1047,6 +1048,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(_) => None,
             DocumentType::V2(v2) => v2.moderator_settled_deletion(),
+        }
+    }
+
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentType::V1(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentType::V2(v2) => v2.moderator_deletion_kept_fields(),
         }
     }
 
@@ -1286,6 +1295,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.moderator_deletion_kept_fields(),
+        }
+    }
+
     fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeRef::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
@@ -1485,6 +1502,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(_) => None,
             DocumentTypeMutRef::V2(v2) => v2.moderator_settled_deletion(),
+        }
+    }
+
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_deletion_kept_fields(),
         }
     }
 

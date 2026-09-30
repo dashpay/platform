@@ -263,8 +263,9 @@ pub(crate) mod property_names {
     /// this type with a `ContractUserModeration` transition, whatever `canBeDeleted` and
     /// `documentsMutable` say about the documents' own owners: delete them (`delete`, within
     /// `deleteWithin` seconds of their last modification when given, leaving a removal record
-    /// unless `deleteKeepsRecord` is false, and refunding the owner when `deleteRefundsOwner`
-    /// is true), and write the fields `changeFields` lists, which nobody else writes. Meta-schema v3+ (protocol version
+    /// unless `deleteKeepsRecord` is false, keeping in it the values `deleteKeepsFields` lists,
+    /// and refunding the owner when `deleteRefundsOwner` is true), and write the fields
+    /// `changeFields` lists, which nobody else writes. Meta-schema v3+ (protocol version
     /// 14). See [`moderator_abilities`] for its keys, and `apply_moderator_abilities` in
     /// `try_from_schema::common` for what each requires of the type and of the contract.
     pub const MODERATOR_ABILITIES: &str = "moderatorAbilities";
@@ -303,6 +304,12 @@ pub(crate) mod property_names {
         /// must approve, the leader counted, default 1). See [`delete_settled`] for the keys.
         /// Needs `deleteWithin` and a contract whose moderators are an elected team.
         pub const DELETE_SETTLED: &str = "deleteSettled";
+        /// The property paths whose values a moderator's removal record keeps, copied from
+        /// the document as it was deleted: what of it stays public once it is gone (the
+        /// hashtag of a removed post, say). Any declared, stored property at any depth, and
+        /// the timestamps and block heights the type requires. Needs `delete: true` and a
+        /// record (`deleteKeepsRecord` not false).
+        pub const DELETE_KEEPS_FIELDS: &str = "deleteKeepsFields";
         /// The top-level properties only the moderators write: a document's owner can
         /// neither set them when creating it nor change them when replacing it, unless the
         /// owner moderates the contract.

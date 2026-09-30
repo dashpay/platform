@@ -452,6 +452,8 @@ pub fn removals_from_response(
                             })
                         })
                         .transpose()?,
+                    // Read under the document's type, as documents are, by whoever holds it
+                    kept_fields: removal.kept_fields,
                 },
             })
         })
@@ -1057,6 +1059,12 @@ mod tests {
                 moderator_id: id(0x78),
                 restored_at: 2_000 + u64::from(seed),
             }),
+            // Every odd record keeps fields of its document, as the document encoded them.
+            kept_fields: if seed.is_multiple_of(2) {
+                Vec::new()
+            } else {
+                vec![1, 3, b't', b'a', b'g', seed]
+            },
         }
     }
 
@@ -1080,6 +1088,7 @@ mod tests {
                     moderator_id: restoration.moderator_id.to_vec(),
                     restored_at: restoration.restored_at,
                 }),
+            kept_fields: removal.kept_fields,
         }
     }
 

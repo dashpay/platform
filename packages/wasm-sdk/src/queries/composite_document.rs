@@ -26,6 +26,7 @@ use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::documents::composite_document_query::{
     CompositeBindingSource, CompositeSubQuery,
 };
@@ -423,15 +424,21 @@ fn composite_result_to_js(
                 }
                 set_field(&entry, "missingIds", &missing_ids)?;
                 let removed = Array::new();
-                for removal in composite
+                let removals = composite
                     .sub_result_removals
                     .get(index)
                     .map(|removals| removals.as_slice())
-                    .unwrap_or_default()
-                {
-                    removed.push(&removal_entry_to_js(removal, |id| {
-                        IdentifierWasm::from(id).into()
-                    })?);
+                    .unwrap_or_default();
+                if !removals.is_empty() {
+                    let removed_type = sub_query
+                        .data_contract
+                        .document_type_for_name(&sub_query.document_type_name)
+                        .map_err(ProtocolError::from)?;
+                    for removal in removals {
+                        removed.push(&removal_entry_to_js(removal, removed_type, |id| {
+                            IdentifierWasm::from(id).into()
+                        })?);
+                    }
                 }
                 set_field(&entry, "removed", &removed)?;
                 set_field(

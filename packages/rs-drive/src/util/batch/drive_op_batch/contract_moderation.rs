@@ -94,10 +94,16 @@ pub enum ContractModerationOperationType {
         /// The id the document had.
         document_id: Identifier,
         /// Whose it was, who removed it, why and when, what it was, and whether it was
-        /// restored since.
-        removal: ContractDocumentRemoval,
-        /// Whether the document already has a record, which is then replaced.
-        replaces_existing: bool,
+        /// restored since. Boxed: with the fields it keeps, it outweighs every other
+        /// operation of the kind.
+        removal: Box<ContractDocumentRemoval>,
+        /// The stored size of the record the document already has, which is then replaced;
+        /// `None` for a fresh record. An estimate prices a replacement by what it adds.
+        replaced_record_size: Option<u32>,
+        /// What the type's records are estimated to keep
+        /// (`types::estimated_document_removal_kept_fields_size`): the size the records a
+        /// write walks past are estimated at.
+        estimated_kept_fields_size: u32,
         /// The identity that pays for the record, or for the bytes a replacement adds, and
         /// receives its refund: the moderator that removed the document, or the one that
         /// restored it.
@@ -249,14 +255,16 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 document_type_name,
                 document_id,
                 removal,
-                replaces_existing,
+                replaced_record_size,
+                estimated_kept_fields_size,
                 moderator_id,
             } => drive.add_contract_document_removal_operations(
                 contract_id,
                 &document_type_name,
                 document_id,
                 &removal,
-                replaces_existing,
+                replaced_record_size,
+                estimated_kept_fields_size,
                 moderator_id,
                 block_info,
                 estimated_costs_only_with_layer_info,

@@ -82,26 +82,30 @@ impl Drive {
         Ok(())
     }
 
-    /// The write of one record under its document's type, keyed by the document's id, flagged
-    /// with `payer_id`: the moderator that writes it pays for it. Nothing ever deletes it. It
-    /// is replaced in place when `replaces_existing`; two operations on one key would fail the
-    /// batch. A replacement may change size, and its flags follow GroveDB's flag merge: a
-    /// longer or a shorter record passes to the moderator that replaced it, who pays for the
-    /// bytes a longer one adds, while the bytes a shorter one frees are refunded to the
-    /// moderator the record named before; an equally long one keeps the earlier moderator's
-    /// flags.
+    /// The write of one record, `value` as its kind stores it, under its document's type,
+    /// keyed by the document's id, flagged with `payer_id`: the moderator that writes it pays
+    /// for it. Nothing ever deletes it. It is replaced in place when `replaces_existing`; two
+    /// operations on one key would fail the batch. A replacement may change size, and its
+    /// flags follow GroveDB's flag merge: a longer or a shorter record passes to the moderator
+    /// that replaced it, who pays for the bytes a longer one adds, while the bytes a shorter
+    /// one frees are refunded to the moderator the record named before; an equally long one
+    /// keeps the earlier moderator's flags.
     ///
-    /// An estimate prices a replacement as a fresh insert of the whole record: GroveDB's
-    /// average-case replace assumes an item keeps its size and would price no storage for what
-    /// a replacement adds, which the moderator's balance is then not checked against.
+    /// An estimate writes `value` as a fresh insert: GroveDB's average-case replace assumes an
+    /// item keeps its size and would price no storage for what a replacement adds, which the
+    /// moderator's balance is then not checked against. Each kind says what `value` stands for
+    /// then (the whole approvals record, or what a removal record's replacement adds), and the
+    /// records the write walks past are estimated at `estimated_value_size`.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_contract_document_record_operations_v0<T: ContractDocumentRecord>(
+    pub(super) fn add_contract_document_record_operations_v0(
         &self,
         contract_id: Identifier,
+        records: ContractDocumentRecords,
         document_type_name: &str,
         document_id: Identifier,
-        record: &T,
+        value: Vec<u8>,
         replaces_existing: bool,
+        estimated_value_size: u32,
         payer_id: Identifier,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -114,8 +118,9 @@ impl Drive {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Drive::add_estimation_costs_for_contract_document_record(
                 contract_id.to_buffer(),
-                T::RECORDS,
+                records,
                 document_type_name,
+                estimated_value_size,
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
@@ -127,11 +132,11 @@ impl Drive {
         let path_key_element = PathFixedSizeKeyRefElement((
             contract_document_type_records_path(
                 contract_id.as_slice(),
-                T::RECORDS,
+                records,
                 document_type_name,
             ),
             document_id.as_slice(),
-            Element::new_item_with_flags(record.encode(), storage_flags.to_some_element_flags()),
+            Element::new_item_with_flags(value, storage_flags.to_some_element_flags()),
         ));
 
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];

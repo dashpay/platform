@@ -1299,15 +1299,16 @@ fn validate_reference_target_v0(
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(removal_fee));
                 if let Some(removal) = removal.filter(|removal| !removal.is_restored()) {
-                    return Ok(validate_pairs_against_removal(
+                    return validate_pairs_against_removal(
                         property_agreement,
                         &removal,
+                        referenced_document_type,
                         Identifier::from(referenced_id),
                         changed_fields,
                         document_data,
                         owner_id,
                         path,
-                    ));
+                    );
                 }
             }
 
@@ -1554,14 +1555,21 @@ fn validate_reference_target_v0(
 /// removed: it holds through `removal`, the document's removal record. The
 /// record keeps the document's id and its owner at the removal, which no
 /// transfer can move since (a removed document can not be transferred, and a
-/// restore brings it back as it was), but none of its properties. So a `where`
-/// pair the replace asks about again, its referring property changed or the
-/// pair a writer gate (`$ownerId` on the referring side), is checked against
-/// the record when it compares the referenced `$ownerId` or `$id`, and refuses
-/// the replace with [`ReferencedDocumentRemovedError`] when it compares
-/// anything else: the replace has to repoint the reference at a document in
-/// state, or leave the pair's referring property unchanged until the document
-/// is restored. A writer gate never meets that refusal: the parser admits one
+/// restore brings it back as it was), and the values of the paths its type
+/// lists under `moderatorAbilities.deleteKeepsFields`, as the document held
+/// them and read under `referenced_document_type` as the document would be, a
+/// path it held no value at left out. So a `where` pair
+/// the replace asks about again, its referring property changed or the pair a
+/// writer gate (`$ownerId` on the referring side), is checked against the
+/// record when it compares the referenced `$ownerId`, `$id` or a property the
+/// type keeps (a kept path, or a path inside a kept object), with the absence
+/// rule of a document in state: both sides absent agree, one absent is a
+/// mismatch. It refuses the replace with [`ReferencedDocumentRemovedError`]
+/// when it compares anything else: the replace has to repoint the reference at
+/// a document in state, or leave the pair's referring property unchanged until
+/// the document is restored. The record's kept values are decoded only when
+/// a pair asks about one; a record whose values do not read under the type is
+/// a corrupted state, an error rather than a refusal. A writer gate never meets that refusal: the parser admits one
 /// on a `moderatedDocument` reference against the referenced `$ownerId` or
 /// `$id` alone, since a writer gate is asked about on every replace. A pair the replace does not ask about held when it was last
 /// checked, against a document whose values the removal froze, and is left as
@@ -1569,15 +1577,19 @@ fn validate_reference_target_v0(
 ///
 /// In place in generation 0: reached from protocol version 14 only, the only
 /// version whose parser produces a `moderatedDocument` reference.
+#[allow(clippy::too_many_arguments)]
 fn validate_pairs_against_removal(
     property_agreement: &BTreeMap<String, String>,
     removal: &ContractDocumentRemoval,
+    referenced_document_type: DocumentTypeRef,
     document_id: Identifier,
     changed_fields: &BTreeSet<String>,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
     path: &str,
-) -> SimpleConsensusValidationResult {
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let kept_paths = referenced_document_type.moderator_deletion_kept_fields();
+    let mut kept_values = None;
     for (referring_property, referenced_property) in property_agreement {
         let rechecked = is_referring_system_agreement_property(referring_property)
             || is_changed_field(changed_fields, referring_property);
@@ -1585,43 +1597,92 @@ fn validate_pairs_against_removal(
             continue;
         }
         let referenced_value = match referenced_property.as_str() {
-            OWNER_ID => removal.document_owner_id,
-            ID => document_id,
-            _ => {
-                return SimpleConsensusValidationResult::new_with_error(
+            OWNER_ID => Some(Cow::Owned(Value::Identifier(
+                removal.document_owner_id.to_buffer(),
+            ))),
+            ID => Some(Cow::Owned(Value::Identifier(document_id.to_buffer()))),
+            property if !is_kept(kept_paths, property) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentRemovedError::new(
                         document_id,
                         path.to_string(),
                         referenced_property.clone(),
                     )
                     .into(),
-                )
+                ))
+            }
+            property => {
+                let kept_values = match &mut kept_values {
+                    Some(kept_values) => kept_values,
+                    None => kept_values.insert(removal.kept_values(referenced_document_type)?),
+                };
+                kept_value(kept_paths, kept_values, property).map(Cow::Owned)
             }
         };
-        let referenced_value = Value::Identifier(referenced_value.to_buffer());
         // As against a document in state: the writer for `$ownerId`, a
-        // property of the document otherwise, one absent or unreadable a
-        // mismatch against an identifier that is always there
-        let holds = if referring_property == OWNER_ID {
-            Value::Identifier(owner_id.to_buffer()).same_scalar_data(&referenced_value)
+        // property of the document otherwise, one unreadable a mismatch
+        let referring_value = if referring_property == OWNER_ID {
+            Some(Cow::Owned(Value::Identifier(owner_id.to_buffer())))
         } else {
-            matches!(
-                document_data.get_optional_at_path(referring_property),
-                Ok(Some(referring_value)) if referring_value.same_scalar_data(&referenced_value)
-            )
+            match document_data.get_optional_at_path(referring_property) {
+                Ok(referring_value) => referring_value.map(Cow::Borrowed),
+                Err(_) => None,
+            }
+        };
+        let holds = match (referring_value, referenced_value) {
+            (Some(referring_value), Some(referenced_value)) => {
+                referring_value.same_scalar_data(&referenced_value)
+            }
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
         };
         if !holds {
-            return SimpleConsensusValidationResult::new_with_error(
+            return Ok(SimpleConsensusValidationResult::new_with_error(
                 ReferencedDocumentPropertyMismatchError::new(
                     path.to_string(),
                     referring_property.clone(),
                     referenced_property.clone(),
                 )
                 .into(),
-            );
+            ));
         }
     }
-    SimpleConsensusValidationResult::new()
+    Ok(SimpleConsensusValidationResult::new())
+}
+
+/// Whether a path the type keeps (`kept_paths`) covers the referenced `property`: the path
+/// itself, or an object around it, kept whole.
+fn is_kept(kept_paths: &BTreeSet<String>, property: &str) -> bool {
+    kept_paths.iter().any(|kept| {
+        kept == property
+            || property
+                .strip_prefix(kept.as_str())
+                .is_some_and(|rest| rest.starts_with('.'))
+    })
+}
+
+/// The value a removal record keeps at the referenced `property`, one [`is_kept`] covers:
+/// itself kept or read inside a kept object, `None` when the document held no value there.
+fn kept_value(
+    kept_paths: &BTreeSet<String>,
+    kept_values: &BTreeMap<String, Value>,
+    property: &str,
+) -> Option<Value> {
+    if kept_paths.contains(property) {
+        return kept_values.get(property).cloned();
+    }
+    kept_paths.iter().find_map(|kept| {
+        let inner = property.strip_prefix(kept.as_str())?.strip_prefix('.')?;
+        // Down through the kept object, a member it lacks or a step through what is no
+        // object reading as absent, as a document's own path does
+        kept_values
+            .get(kept)?
+            .get_optional_value_at_path(inner)
+            .ok()
+            .flatten()
+            .filter(|value| !value.is_null())
+            .cloned()
+    })
 }
 
 /// A key reference declared on the key id property at `path`

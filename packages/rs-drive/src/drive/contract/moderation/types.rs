@@ -3,8 +3,13 @@ use dpp::data_contract::config::moderation::{
     ContractModerationList, ContractModerationReason, ContractSettledDeletion, ContractSuspension,
     ContractWarning,
 };
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::property_constraints::SystemProperty;
+use dpp::data_contract::document_type::{property_at_path, DocumentTypeRef};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::Identifier;
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::Element;
 
 /// One page of one of a contract's moderation lists: at most `limit` identities in id order,
@@ -148,14 +153,6 @@ impl ContractDocumentRecords {
             ContractDocumentRecords::SettledDeletions => "settled deletion",
         }
     }
-
-    /// The size a record is estimated at when its value is not known
-    pub fn estimated_value_size(self) -> u32 {
-        match self {
-            ContractDocumentRecords::Removals => estimated_document_removal_value_size(),
-            ContractDocumentRecords::SettledDeletions => estimated_settled_deletion_value_size(),
-        }
-    }
 }
 
 /// A record kept by document id in one of the trees of [`ContractDocumentRecords`]: how it is
@@ -165,8 +162,6 @@ pub trait ContractDocumentRecord: Sized {
     const RECORDS: ContractDocumentRecords;
     /// A record read with the id of its document
     type Entry;
-    /// The record as it is stored
-    fn encode(&self) -> Vec<u8>;
     /// Decodes a stored record
     fn decode(value: &[u8]) -> Result<Self, String>;
     /// The record read under `document_id`
@@ -176,10 +171,6 @@ pub trait ContractDocumentRecord: Sized {
 impl ContractDocumentRecord for ContractDocumentRemoval {
     const RECORDS: ContractDocumentRecords = ContractDocumentRecords::Removals;
     type Entry = ContractDocumentRemovalEntry;
-
-    fn encode(&self) -> Vec<u8> {
-        encode_document_removal(self)
-    }
 
     fn decode(value: &[u8]) -> Result<Self, String> {
         decode_document_removal(value)
@@ -196,10 +187,6 @@ impl ContractDocumentRecord for ContractDocumentRemoval {
 impl ContractDocumentRecord for ContractSettledDeletion {
     const RECORDS: ContractDocumentRecords = ContractDocumentRecords::SettledDeletions;
     type Entry = ContractSettledDeletionEntry;
-
-    fn encode(&self) -> Vec<u8> {
-        encode_settled_deletion(self)
-    }
 
     fn decode(value: &[u8]) -> Result<Self, String> {
         decode_settled_deletion(value)
@@ -323,57 +310,147 @@ pub fn decode_moderation_action_count(value: &[u8]) -> Result<u32, String> {
 
 /// The stored size of what a document removal starts with: the document owner's id, the
 /// moderator's id, the removal time as a u64, the hash of the removed document and the tag
-/// byte that says whether a restoration follows.
+/// byte that says what follows.
 pub const CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE: usize = 32 + 32 + 8 + 32 + 1;
 
 /// The stored size of the restoration a restored record carries after its tag: the restoring
 /// moderator's id and the restoration time as a u64.
 pub const CONTRACT_DOCUMENT_RESTORATION_SIZE: usize = 32 + 8;
 
-const NOT_RESTORED: u8 = 0;
-const RESTORED: u8 = 1;
+/// The stored size of what the kept fields of a record start with: their length as a u32.
+pub const CONTRACT_DOCUMENT_REMOVAL_KEPT_FIELDS_LENGTH_SIZE: usize = 4;
+
+/// The tag byte of a record: bit 0 says a restoration follows, bit 1 that kept fields follow.
+/// A record from before fields could be kept has bit 1 clear, and reads as keeping none.
+const RECORD_RESTORED: u8 = 1;
+const RECORD_WITH_KEPT_FIELDS: u8 = 2;
 
 /// The size a document removal record is estimated at when its value is not known: the
 /// records a write walks past, sized like a list entry's typical reason and as if restored,
-/// the larger of the two shapes. A record being written is priced by its own size.
-pub fn estimated_document_removal_value_size() -> u32 {
-    (CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + CONTRACT_DOCUMENT_RESTORATION_SIZE) as u32
+/// the larger of the two shapes, plus `estimated_kept_fields_size`, what the type's records
+/// are estimated to keep ([`estimated_document_removal_kept_fields_size`]). A record being
+/// written is priced by its own size.
+pub fn estimated_document_removal_value_size(estimated_kept_fields_size: u32) -> u32 {
+    ((CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + CONTRACT_DOCUMENT_RESTORATION_SIZE) as u32
         + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
         + CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE
-        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
+        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE)
+        .saturating_add(estimated_kept_fields_size)
 }
 
-/// The stored size of a document removal record.
-pub fn document_removal_encoded_size(removal: &ContractDocumentRemoval) -> usize {
-    CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE
+/// The stored size the fields a removal record of `document_type` keeps
+/// (`moderatorAbilities.deleteKeepsFields`) are estimated at when the record is not known: the
+/// records a write walks past. They are encoded as the document encodes its properties
+/// (`dpp::data_contract::config::moderation::encode_kept_fields`), so each kept path is sized
+/// as a document of the type is estimated: its presence byte and its property's middle size,
+/// an object kept whole at the middle sizes of its members, a system time or height at its
+/// eight bytes and a core block height at its four. The records of a type keep the same paths
+/// but not the same values (a path the document held no value at takes its presence byte
+/// alone), so they are estimated from the type, not from whichever record is being written.
+/// `0` for a type that keeps none.
+pub fn estimated_document_removal_kept_fields_size(
+    document_type: DocumentTypeRef,
+    platform_version: &PlatformVersion,
+) -> Result<u32, ProtocolError> {
+    let kept_paths = document_type.moderator_deletion_kept_fields();
+    if kept_paths.is_empty() {
+        return Ok(0);
+    }
+    let mut size = CONTRACT_DOCUMENT_REMOVAL_KEPT_FIELDS_LENGTH_SIZE as u32;
+    for path in kept_paths {
+        let value_size = match SystemProperty::from_name(path) {
+            Some(
+                SystemProperty::CreatedAtCoreBlockHeight
+                | SystemProperty::UpdatedAtCoreBlockHeight
+                | SystemProperty::TransferredAtCoreBlockHeight,
+            ) => 4,
+            Some(_) => 8,
+            None => property_at_path(document_type.properties(), path)
+                .map(|property| {
+                    property
+                        .property_type
+                        .saturating_middle_byte_size_ceil(platform_version)
+                })
+                .transpose()?
+                .flatten()
+                .map_or(0, u32::from),
+        };
+        // The presence byte, then the value
+        size = size.saturating_add(1).saturating_add(value_size);
+    }
+    Ok(size)
+}
+
+/// The stored size of a document removal record. Fails as [`encode_document_removal`] does.
+pub fn document_removal_encoded_size(removal: &ContractDocumentRemoval) -> Result<usize, String> {
+    Ok(CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE
         + if removal.restoration.is_some() {
             CONTRACT_DOCUMENT_RESTORATION_SIZE
         } else {
             0
         }
-        + reason_encoded_size(&removal.reason)
+        + document_removal_kept_fields_encoded_size(&removal.kept_fields)
+        + reason_encoded_size(&removal.reason))
+}
+
+/// The stored size of the fields a record keeps: their length and the bytes, nothing when it
+/// keeps none.
+pub fn document_removal_kept_fields_encoded_size(kept_fields: &[u8]) -> usize {
+    if kept_fields.is_empty() {
+        0
+    } else {
+        CONTRACT_DOCUMENT_REMOVAL_KEPT_FIELDS_LENGTH_SIZE + kept_fields.len()
+    }
 }
 
 /// Encodes a document removal record: the document owner's id, the moderator's id, the removal
-/// time as eight big-endian bytes, the hash of the removed document, a tag byte (`0`: not
-/// restored, `1`: restored) followed when restored by the restoring moderator's id and the
-/// restoration time as eight big-endian bytes, then the reason as in [`encode_ban`].
-pub fn encode_document_removal(removal: &ContractDocumentRemoval) -> Vec<u8> {
-    let mut value = Vec::with_capacity(document_removal_encoded_size(removal));
+/// time as eight big-endian bytes, the hash of the removed document, a tag byte (bit 0: a
+/// restoration follows, bit 1: kept fields follow), the restoring moderator's id and the
+/// restoration time as eight big-endian bytes when restored, the fields the record keeps when it
+/// keeps any (their length as four big-endian bytes, then the bytes, encoded as the document
+/// encodes its properties and read under its type, see
+/// `dpp::data_contract::config::moderation::encode_kept_fields`), then the reason as in
+/// [`encode_ban`]. A record that keeps no fields is written without them, as before fields
+/// could be kept.
+///
+/// Fails only on kept fields too long for their length prefix, which the document size limits
+/// keep far out of reach: a record whose prefix undercounts what follows could never be read
+/// back.
+pub fn encode_document_removal(removal: &ContractDocumentRemoval) -> Result<Vec<u8>, String> {
+    let mut value = Vec::with_capacity(
+        CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE
+            + CONTRACT_DOCUMENT_RESTORATION_SIZE
+            + reason_encoded_size(&removal.reason),
+    );
     value.extend_from_slice(removal.document_owner_id.as_slice());
     value.extend_from_slice(removal.moderator_id.as_slice());
     value.extend_from_slice(&removal.removed_at.to_be_bytes());
     value.extend_from_slice(&removal.document_hash);
-    match &removal.restoration {
-        None => value.push(NOT_RESTORED),
-        Some(restoration) => {
-            value.push(RESTORED);
-            value.extend_from_slice(restoration.moderator_id.as_slice());
-            value.extend_from_slice(&restoration.restored_at.to_be_bytes());
-        }
+    let mut tag = 0;
+    if removal.restoration.is_some() {
+        tag |= RECORD_RESTORED;
+    }
+    if !removal.kept_fields.is_empty() {
+        tag |= RECORD_WITH_KEPT_FIELDS;
+    }
+    value.push(tag);
+    if let Some(restoration) = &removal.restoration {
+        value.extend_from_slice(restoration.moderator_id.as_slice());
+        value.extend_from_slice(&restoration.restored_at.to_be_bytes());
+    }
+    if !removal.kept_fields.is_empty() {
+        let length = u32::try_from(removal.kept_fields.len()).map_err(|_| {
+            format!(
+                "kept fields of {} bytes exceed the {} a record can hold",
+                removal.kept_fields.len(),
+                u32::MAX
+            )
+        })?;
+        value.extend_from_slice(&length.to_be_bytes());
+        value.extend_from_slice(&removal.kept_fields);
     }
     encode_reason_into(&removal.reason, &mut value);
-    value
+    Ok(value)
 }
 
 /// Decodes a document removal record.
@@ -390,29 +467,40 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
     let (removed_at, rest) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
     let (document_hash, rest) = rest.split_first_chunk::<32>().ok_or_else(cut_short)?;
     let (tag, rest) = rest.split_first().ok_or_else(cut_short)?;
-    let (restoration, reason) = match *tag {
-        NOT_RESTORED => (None, rest),
-        RESTORED => {
-            let (restored_by, rest) = rest.split_first_chunk::<32>().ok_or_else(|| {
-                "document removal is cut short inside its restoration".to_string()
-            })?;
-            let (restored_at, reason) = rest.split_first_chunk::<8>().ok_or_else(|| {
-                "document removal is cut short inside its restoration".to_string()
-            })?;
-            (
-                Some(ContractDocumentRestoration {
-                    moderator_id: Identifier::from(*restored_by),
-                    restored_at: TimestampMillis::from_be_bytes(*restored_at),
-                }),
-                reason,
-            )
+    if *tag & !(RECORD_RESTORED | RECORD_WITH_KEPT_FIELDS) != 0 {
+        return Err(format!("document removal has unknown tag {}", tag));
+    }
+    let (restoration, rest) = if *tag & RECORD_RESTORED != 0 {
+        let (restored_by, rest) = rest
+            .split_first_chunk::<32>()
+            .ok_or_else(|| "document removal is cut short inside its restoration".to_string())?;
+        let (restored_at, rest) = rest
+            .split_first_chunk::<8>()
+            .ok_or_else(|| "document removal is cut short inside its restoration".to_string())?;
+        (
+            Some(ContractDocumentRestoration {
+                moderator_id: Identifier::from(*restored_by),
+                restored_at: TimestampMillis::from_be_bytes(*restored_at),
+            }),
+            rest,
+        )
+    } else {
+        (None, rest)
+    };
+    let (kept_fields, reason) = if *tag & RECORD_WITH_KEPT_FIELDS != 0 {
+        let cut_short = || "document removal is cut short inside its kept fields".to_string();
+        let (length, rest) = rest
+            .split_first_chunk::<CONTRACT_DOCUMENT_REMOVAL_KEPT_FIELDS_LENGTH_SIZE>()
+            .ok_or_else(cut_short)?;
+        let length = usize::try_from(u32::from_be_bytes(*length)).map_err(|_| cut_short())?;
+        // The bit is set only for a record that keeps fields
+        if length == 0 {
+            return Err("document removal says it keeps fields and keeps none".to_string());
         }
-        tag => {
-            return Err(format!(
-                "document removal has unknown restoration tag {}",
-                tag
-            ))
-        }
+        let (kept_fields, reason) = rest.split_at_checked(length).ok_or_else(cut_short)?;
+        (kept_fields.to_vec(), reason)
+    } else {
+        (Vec::new(), rest)
     };
     // A list entry with no reason bytes is one written before entries carried a reason. No
     // record was ever written without one, so here the same bytes are a record cut short.
@@ -426,6 +514,7 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
         removed_at: TimestampMillis::from_be_bytes(*removed_at),
         document_hash: *document_hash,
         restoration,
+        kept_fields,
     })
 }
 
@@ -1029,15 +1118,16 @@ mod tests {
             removed_at: 1_700_000_000_123,
             document_hash: [4; 32],
             restoration: None,
+            kept_fields: Vec::new(),
         };
-        let value = encode_document_removal(&removal);
+        let value = encode_document_removal(&removal).expect("encode");
         assert_eq!(&value[..32], &[1; 32]);
         assert_eq!(&value[32..64], &[2; 32]);
         assert_eq!(&value[64..72], &1_700_000_000_123u64.to_be_bytes());
         assert_eq!(&value[72..104], &[4; 32]);
         assert_eq!(value[104], 0, "not restored");
         assert_eq!(&value[105..], [&[1u8, 0, 3][..], b"spam"].concat());
-        assert_eq!(value.len(), document_removal_encoded_size(&removal));
+        assert_eq!(value.len(), CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + 3 + 4);
         assert_eq!(decode_document_removal(&value).expect("decode"), removal);
 
         // Restored: the restoring moderator and the time follow the tag, before the reason.
@@ -1048,19 +1138,22 @@ mod tests {
             }),
             ..removal.clone()
         };
-        let value = encode_document_removal(&restored);
+        let value = encode_document_removal(&restored).expect("encode");
         assert_eq!(value[104], 1, "restored");
         assert_eq!(&value[105..137], &[5; 32]);
         assert_eq!(&value[137..145], &1_700_000_000_999u64.to_be_bytes());
         assert_eq!(&value[145..], [&[1u8, 0, 3][..], b"spam"].concat());
-        assert_eq!(value.len(), document_removal_encoded_size(&restored));
+        assert_eq!(
+            value.len(),
+            CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + CONTRACT_DOCUMENT_RESTORATION_SIZE + 3 + 4
+        );
         assert_eq!(decode_document_removal(&value).expect("decode"), restored);
         assert!(
             decode_document_removal(&value[..140]).is_err(),
             "a record cut short inside its restoration is refused"
         );
         let mut unknown_tag = value.clone();
-        unknown_tag[104] = 2;
+        unknown_tag[104] = 4;
         assert!(decode_document_removal(&unknown_tag).is_err());
 
         // No code and no text: what a moderator that gives no reason leaves.
@@ -1068,7 +1161,7 @@ mod tests {
             reason: ContractModerationReason::default(),
             ..removal
         };
-        let value = encode_document_removal(&bare);
+        let value = encode_document_removal(&bare).expect("encode");
         assert_eq!(value.len(), CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + 1);
         assert_eq!(decode_document_removal(&value).expect("decode"), bare);
 
@@ -1083,6 +1176,105 @@ mod tests {
                 document_id: id,
                 removal: bare,
             }
+        );
+    }
+
+    #[test]
+    fn should_round_trip_a_document_removal_that_keeps_fields() {
+        // What a type keeps, encoded as its documents encode their properties: opaque here,
+        // read under the type by `ContractDocumentRemoval::kept_values`
+        let kept_fields = vec![1, 4, b'd', b'a', b's', b'h', 0];
+        let removal = ContractDocumentRemoval {
+            document_owner_id: Identifier::from([1; 32]),
+            moderator_id: Identifier::from([2; 32]),
+            reason: ContractModerationReason {
+                code: Some(3),
+                text: "spam".to_string(),
+                documents: vec![],
+                reason_document_id: None,
+            },
+            removed_at: 1_700_000_000_123,
+            document_hash: [4; 32],
+            restoration: None,
+            kept_fields: kept_fields.clone(),
+        };
+        let value = encode_document_removal(&removal).expect("encode");
+        assert_eq!(value[104], 2, "kept fields, not restored");
+        // Their length, then the bytes, then the reason
+        assert_eq!(&value[105..109], &7u32.to_be_bytes());
+        assert_eq!(&value[109..116], kept_fields.as_slice());
+        assert_eq!(&value[116..], [&[1u8, 0, 3][..], b"spam"].concat());
+        assert_eq!(
+            value.len(),
+            document_removal_encoded_size(&removal).expect("size")
+        );
+        assert_eq!(decode_document_removal(&value).expect("decode"), removal);
+
+        // Restored: the restoration comes first, then the kept fields, then the reason.
+        let restored = ContractDocumentRemoval {
+            restoration: Some(ContractDocumentRestoration {
+                moderator_id: Identifier::from([5; 32]),
+                restored_at: 1_700_000_000_999,
+            }),
+            ..removal.clone()
+        };
+        let value = encode_document_removal(&restored).expect("encode");
+        assert_eq!(value[104], 3, "restored, with kept fields");
+        assert_eq!(&value[105..137], &[5; 32]);
+        assert_eq!(&value[145..149], &7u32.to_be_bytes());
+        assert_eq!(
+            value.len(),
+            document_removal_encoded_size(&restored).expect("size")
+        );
+        assert_eq!(decode_document_removal(&value).expect("decode"), restored);
+
+        // No fields kept: the record is the one written before fields could be kept.
+        assert_eq!(document_removal_kept_fields_encoded_size(&[]), 0);
+        assert_eq!(
+            document_removal_kept_fields_encoded_size(&kept_fields),
+            4 + 7
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_record_whose_kept_fields_are_malformed() {
+        let removal = ContractDocumentRemoval {
+            document_owner_id: Identifier::from([1; 32]),
+            moderator_id: Identifier::from([2; 32]),
+            reason: ContractModerationReason::from_text("spam".to_string()),
+            removed_at: 1,
+            document_hash: [4; 32],
+            restoration: None,
+            kept_fields: vec![1, 2, 3],
+        };
+        let value = encode_document_removal(&removal).expect("encode");
+        let reason = 105 + 4 + 3;
+
+        // Cut short inside the length or inside the bytes it announces
+        for end in [106, 108, 110] {
+            decode_document_removal(&value[..end]).expect_err("cut short inside the kept fields");
+        }
+
+        // The tag says fields follow and none do.
+        let mut none_kept = value[..105].to_vec();
+        none_kept.extend_from_slice(&0u32.to_be_bytes());
+        none_kept.extend_from_slice(&value[reason..]);
+        assert_eq!(
+            decode_document_removal(&none_kept),
+            Err("document removal says it keeps fields and keeps none".to_string())
+        );
+
+        // A record ends with its reason: a whole prefix, or a whole kept section, followed by
+        // nothing is refused as a record without one, not read as the empty reason
+        assert_eq!(
+            decode_document_removal(&value[..reason]),
+            Err("document removal holds no reason".to_string())
+        );
+        let mut bare_prefix = value[..CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE].to_vec();
+        bare_prefix[104] = 0;
+        assert_eq!(
+            decode_document_removal(&bare_prefix),
+            Err("document removal holds no reason".to_string())
         );
     }
 

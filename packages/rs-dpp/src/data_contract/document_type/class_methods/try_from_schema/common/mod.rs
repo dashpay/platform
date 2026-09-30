@@ -34,15 +34,15 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{
-    top_level_property, DocumentPropertyReferenceTarget, KeyIdReference,
-    KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
+    is_transient, property_at_path, top_level_property, DocumentPropertyReferenceTarget,
+    KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraint_condition, STORED_DOCUMENT_PREFIX,
+    parse_property_constraint_condition, SystemProperty, STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::property_names::moderator_abilities::{
-    delete_settled, CHANGE_FIELDS, DELETE, DELETE_KEEPS_RECORD, DELETE_REFUNDS_OWNER,
-    DELETE_SETTLED, DELETE_WITHIN,
+    delete_settled, CHANGE_FIELDS, DELETE, DELETE_KEEPS_FIELDS, DELETE_KEEPS_RECORD,
+    DELETE_REFUNDS_OWNER, DELETE_SETTLED, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
@@ -60,7 +60,9 @@ use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
-use crate::document::property_names::{CREATED_AT, MODERATED_AT, MODERATED_BY, UPDATED_AT};
+use crate::document::property_names::{
+    CREATED_AT, ID, MODERATED_AT, MODERATED_BY, OWNER_ID, UPDATED_AT,
+};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -2234,6 +2236,9 @@ pub(super) struct ModeratorAbilitiesKeyword {
     /// `deleteWithin`, its defaults filled in; the number is checked against its
     /// limit when applied.
     pub(super) delete_settled: Option<SettledDeletionRule>,
+    /// `deleteKeepsFields`: the property paths whose values their removal
+    /// record keeps.
+    pub(super) delete_keeps_fields: BTreeSet<String>,
     /// `changeFields`: the top-level properties only they write.
     pub(super) change_fields: BTreeSet<String>,
 }
@@ -2243,8 +2248,9 @@ pub(super) struct ModeratorAbilitiesKeyword {
 /// this generation: a stored contract is read without one. An object, with
 /// only the keys `delete`, `deleteKeepsRecord` and `deleteRefundsOwner`
 /// (booleans), `deleteWithin` (seconds, a u32), `deleteSettled` (an object with
-/// only `leader`, a boolean, and `approvals`, a u16, at least one of them) and
-/// `changeFields` (a non-empty list of property names), saying something.
+/// only `leader`, a boolean, and `approvals`, a u16, at least one of them),
+/// `deleteKeepsFields` (a non-empty list of property paths) and `changeFields`
+/// (a non-empty list of property names), saying something.
 pub(super) fn parse_moderator_abilities_keyword(
     schema: &Value,
     name: &str,
@@ -2273,7 +2279,7 @@ pub(super) fn parse_moderator_abilities_keyword(
         .find_map(|(key, _)| match key.as_text() {
             Some(
                 DELETE | DELETE_WITHIN | DELETE_KEEPS_RECORD | DELETE_REFUNDS_OWNER
-                | DELETE_SETTLED | CHANGE_FIELDS,
+                | DELETE_SETTLED | DELETE_KEEPS_FIELDS | CHANGE_FIELDS,
             ) => None,
             Some(other) => Some(other.to_string()),
             None => Some(key.to_string()),
@@ -2282,7 +2288,7 @@ pub(super) fn parse_moderator_abilities_keyword(
         return Err(structure_error(format!(
             "document type \"{name}\": `{MODERATOR_ABILITIES}` has no key \"{unknown}\", only \
              `{DELETE}`, `{DELETE_WITHIN}`, `{DELETE_KEEPS_RECORD}`, `{DELETE_REFUNDS_OWNER}`, \
-             `{DELETE_SETTLED}` and `{CHANGE_FIELDS}`"
+             `{DELETE_SETTLED}`, `{DELETE_KEEPS_FIELDS}` and `{CHANGE_FIELDS}`"
         )));
     }
 
@@ -2336,6 +2342,38 @@ pub(super) fn parse_moderator_abilities_keyword(
             Some(SettledDeletionRule { leader, approvals })
         }
     };
+    let delete_keeps_fields = match Value::get_optional_from_map(abilities_map, DELETE_KEEPS_FIELDS)
+    {
+        None => BTreeSet::new(),
+        Some(Value::Array(entries)) => {
+            let fields = entries
+                .iter()
+                .map(|entry| {
+                    entry.as_text().map(str::to_owned).ok_or_else(|| {
+                        structure_error(format!(
+                            "document type \"{name}\": every \
+                             `{MODERATOR_ABILITIES}.{DELETE_KEEPS_FIELDS}` entry must be a \
+                             property path (a string)"
+                        ))
+                    })
+                })
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            if fields.is_empty() {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_KEEPS_FIELDS}` \
+                     lists no property (leave it out for a type whose removal records keep \
+                     none)"
+                )));
+            }
+            fields
+        }
+        Some(_) => {
+            return Err(structure_error(format!(
+                "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_KEEPS_FIELDS}` must \
+                 be an array of property paths"
+            )));
+        }
+    };
     let change_fields = match Value::get_optional_from_map(abilities_map, CHANGE_FIELDS) {
         None => BTreeSet::new(),
         Some(_) => {
@@ -2362,6 +2400,7 @@ pub(super) fn parse_moderator_abilities_keyword(
         delete_keeps_record,
         delete_refunds_owner,
         delete_settled,
+        delete_keeps_fields,
         change_fields,
     })
 }
@@ -2413,6 +2452,17 @@ pub(super) fn parse_moderator_abilities_keyword(
 ///   `SystemLimits::max_moderation_charter_elected_members` elected members and
 ///   the declaration's `maxAddedModerators`.
 ///
+/// `deleteKeepsFields` names what of a deleted document its removal record
+/// keeps, copied from the document as it was deleted: what stays public once
+/// it is gone. It needs `delete: true` and a record to keep them in, so it is
+/// refused beside `deleteKeepsRecord: false`. Each entry is either:
+/// - the path of a declared property at any depth (`hashtag`, `meta.tags`, or
+///   an object, kept whole), not transient (no stored document holds it) and
+///   not inside another listed path (which keeps it already); or
+/// - one of the timestamps and block heights a document carries (a
+///   [`SystemProperty`]), listed in `required`, without which no document
+///   carries it. `$id` and `$ownerId` are in every record already.
+///
 /// `changeFields` names the properties only the moderators write. A
 /// moderator's change is stored as an update that touches nothing else, and is
 /// not checked against the type's references, so each property must be:
@@ -2452,6 +2502,7 @@ pub(super) fn apply_moderator_abilities(
         delete_keeps_record,
         delete_refunds_owner,
         delete_settled,
+        delete_keeps_fields,
         change_fields,
     } = abilities;
     let structure_error = |message: String| {
@@ -2491,6 +2542,7 @@ pub(super) fn apply_moderator_abilities(
         && delete_keeps_record.is_none()
         && delete_refunds_owner.is_none()
         && delete_settled.is_none()
+        && delete_keeps_fields.is_empty()
         && change_fields.is_empty()
     {
         return Ok(());
@@ -2549,6 +2601,7 @@ pub(super) fn apply_moderator_abilities(
     for (key, given) in [
         (DELETE_KEEPS_RECORD, delete_keeps_record.is_some()),
         (DELETE_REFUNDS_OWNER, delete_refunds_owner.is_some()),
+        (DELETE_KEEPS_FIELDS, !delete_keeps_fields.is_empty()),
     ] {
         if given && !delete {
             return Err(structure_error(format!(
@@ -2556,6 +2609,10 @@ pub(super) fn apply_moderator_abilities(
                  moderator's deletion leaves and means nothing without `{DELETE}: true`",
             )));
         }
+    }
+
+    if !delete_keeps_fields.is_empty() {
+        apply_delete_keeps_fields(document_type, delete_keeps_fields, name)?;
     }
 
     if let Some(seconds) = delete_within {
@@ -2723,6 +2780,65 @@ pub(super) fn apply_moderator_abilities(
         }
     }
     document_type.moderator_changeable_fields = change_fields;
+    Ok(())
+}
+
+/// Checks and applies `moderatorAbilities.deleteKeepsFields` on a type whose
+/// moderators delete (see [`apply_moderator_abilities`] for the rules).
+fn apply_delete_keeps_fields(
+    document_type: &mut DocumentTypeV2,
+    kept_fields: BTreeSet<String>,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    if !document_type.moderator_deletions_keep_records {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_KEEPS_FIELDS}` and \
+             `{DELETE_KEEPS_RECORD}: false`: the values are kept in the removal record, which \
+             its moderators' deletions do not leave",
+        )));
+    }
+    for field in &kept_fields {
+        let refusal = if [ID, OWNER_ID].contains(&field.as_str()) {
+            Some("every removal record holds it already".to_string())
+        } else if field.starts_with('$') {
+            if SystemProperty::from_name(field).is_none() {
+                Some(format!(
+                    "the system properties a record keeps are {}",
+                    SystemProperty::ALL.map(SystemProperty::name).join(", ")
+                ))
+            } else if !document_type.required_fields.contains(field) {
+                Some("it is not listed in `required`, so no document carries it".to_string())
+            } else {
+                None
+            }
+        } else if let Some(outer) = kept_fields.iter().find(|outer| {
+            field
+                .strip_prefix(outer.as_str())
+                .is_some_and(|rest| rest.starts_with('.'))
+        }) {
+            Some(format!(
+                "it is inside \"{outer}\", which the record keeps whole"
+            ))
+        } else if property_at_path(&document_type.properties, field).is_none() {
+            Some("it is not a declared property of the document type".to_string())
+        } else if is_transient(DocumentTypeRef::V2(document_type), field) {
+            Some("it is transient, so no stored document holds it".to_string())
+        } else {
+            None
+        };
+        if let Some(refusal) = refusal {
+            return Err(structure_error(format!(
+                "document type \"{name}\" can not list \"{field}\" under \
+                 `{MODERATOR_ABILITIES}.{DELETE_KEEPS_FIELDS}`: {refusal}",
+            )));
+        }
+    }
+    document_type.moderator_deletion_kept_fields = kept_fields;
     Ok(())
 }
 

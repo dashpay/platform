@@ -75,6 +75,13 @@ pub trait DocumentTypeV2Getters {
     /// type that predates the keyword.
     fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule>;
 
+    /// The property paths whose values a moderator's removal record of a document of this
+    /// type keeps, copied from the document as it was deleted
+    /// (`moderatorAbilities.deleteKeepsFields`, protocol version 14): what of it stays public
+    /// once it is gone. Empty on a type whose deletions keep no record or list none, and on
+    /// those that predate the keyword.
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String>;
+
     /// The top-level properties only the contract's moderators write
     /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
     /// changes them with a `ContractUserModeration` transition, and a document's

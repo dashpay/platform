@@ -1,3 +1,7 @@
+use crate::drive::contract::moderation::types::{
+    document_removal_encoded_size, estimated_document_removal_kept_fields_size,
+    CONTRACT_DOCUMENT_RESTORATION_SIZE,
+};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -18,6 +22,7 @@ use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
     ContractDocumentRemoval, ContractModerationReason, ContractWarning,
 };
@@ -171,7 +176,8 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             document_id,
                             reason,
                             deletion,
-                        );
+                            platform_version,
+                        )?;
                     }
                     ContractUserModerationAction::DeleteSettledDocument {
                         document_type_name,
@@ -201,7 +207,8 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                 document_id,
                                 reason,
                                 deletion,
-                            );
+                                platform_version,
+                            )?;
                         }
                         operations.push(ContractModerationOperation(
                             ContractModerationOperationType::AddSettledDeletion {
@@ -237,6 +244,17 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         ))?;
                         let document_id = document.id();
                         let owner_id = document.owner_id();
+                        // The record replaced is the same one unmarked: the restore adds its
+                        // restoration and nothing else
+                        let replaced_record_size = removal_record_size(&removal)?
+                            .saturating_sub(CONTRACT_DOCUMENT_RESTORATION_SIZE as u32);
+                        let estimated_kept_fields_size =
+                            estimated_document_removal_kept_fields_size(
+                                data_contract_fetch_info
+                                    .contract
+                                    .document_type_for_name(&document_type_name)?,
+                                platform_version,
+                            )?;
                         // The document goes back the way a create puts it in, every index and
                         // aggregate of its type included. Its storage flags name its owner, as
                         // they did before the deletion: the moderator pays for the bytes, and
@@ -267,8 +285,9 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                 contract_id,
                                 document_type_name,
                                 document_id,
-                                removal,
-                                replaces_existing: true,
+                                removal: Box::new(removal),
+                                replaced_record_size: Some(replaced_record_size),
+                                estimated_kept_fields_size,
                                 moderator_id,
                             },
                         ));
@@ -335,10 +354,12 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
 
 /// The operations of a moderator's deletion of a document: the document goes, keeping every
 /// index and aggregate of its type right and not asking `canBeDeleted` (that is the owner's rule,
-/// not the moderators'), then its record when the type keeps one: a fresh one, or in place of
-/// the restored one a document deleted before carries. Unless the type refunds the owner, the
-/// marker makes the batch refund nobody for the document's storage: whoever paid for it
-/// forfeits the storage fee, while the moderation records the batch rewrites refund as ever.
+/// not the moderators'), then its record when the type keeps one, with the fields the type
+/// keeps: a fresh one, or in place of the restored one a document deleted before carries. Unless
+/// the type refunds the owner, the marker makes the batch refund nobody for the document's
+/// storage: whoever paid for it forfeits the storage fee, while the moderation records the batch
+/// rewrites refund as ever.
+#[allow(clippy::too_many_arguments)]
 fn push_document_deletion_operations(
     operations: &mut Vec<DriveOperation<'_>>,
     contract_id: Identifier,
@@ -347,13 +368,20 @@ fn push_document_deletion_operations(
     document_id: Identifier,
     reason: ContractModerationReason,
     deletion: ContractDocumentDeletionContext,
-) {
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
     let ContractDocumentDeletionContext {
         data_contract_fetch_info,
         document_owner_id,
         record,
         refunds_owner,
     } = deletion;
+    let estimated_kept_fields_size = estimated_document_removal_kept_fields_size(
+        data_contract_fetch_info
+            .contract
+            .document_type_for_name(&document_type_name)?,
+        platform_version,
+    )?;
     operations.push(DocumentOperation(
         DocumentOperationType::ForceDeleteDocument {
             document_id,
@@ -364,23 +392,30 @@ fn push_document_deletion_operations(
     if let Some(ContractDocumentRemovalRecordContext {
         removed_at,
         document_hash,
-        replaces_restored_record,
+        replaced_record,
+        kept_fields,
     }) = record
     {
+        let replaced_record_size = replaced_record
+            .as_ref()
+            .map(removal_record_size)
+            .transpose()?;
         operations.push(ContractModerationOperation(
             ContractModerationOperationType::AddDocumentRemoval {
                 contract_id,
                 document_type_name,
                 document_id,
-                removal: ContractDocumentRemoval {
+                removal: Box::new(ContractDocumentRemoval {
                     document_owner_id,
                     moderator_id,
                     reason,
                     removed_at,
                     document_hash,
                     restoration: None,
-                },
-                replaces_existing: replaces_restored_record,
+                    kept_fields,
+                }),
+                replaced_record_size,
+                estimated_kept_fields_size,
                 moderator_id,
             },
         ));
@@ -390,6 +425,18 @@ fn push_document_deletion_operations(
             ContractModerationOperationType::ForfeitStorageRefunds,
         ));
     }
+    Ok(())
+}
+
+/// The stored size of `removal`, a record read back from state or about to be written, which
+/// the document size limits keep far inside what a record can hold.
+fn removal_record_size(removal: &ContractDocumentRemoval) -> Result<u32, Error> {
+    document_removal_encoded_size(removal)
+        .ok()
+        .and_then(|size| u32::try_from(size).ok())
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "a removal record exceeds what a record can hold",
+        )))
 }
 
 #[cfg(test)]

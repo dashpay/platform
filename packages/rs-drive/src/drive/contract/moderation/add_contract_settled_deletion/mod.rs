@@ -1,3 +1,6 @@
+use crate::drive::contract::moderation::types::{
+    encode_settled_deletion, estimated_settled_deletion_value_size, ContractDocumentRecords,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -60,12 +63,15 @@ impl Drive {
             .moderation
             .add_contract_settled_deletion
         {
+            // An estimate prices every write as a fresh insert of the whole record.
             0 => self.add_contract_document_record_operations_v0(
                 contract_id,
+                ContractDocumentRecords::SettledDeletions,
                 document_type_name,
                 document_id,
-                settled_deletion,
+                encode_settled_deletion(settled_deletion),
                 replaces_existing,
+                estimated_settled_deletion_value_size(),
                 moderator_id,
                 block_info,
                 estimated_costs_only_with_layer_info,

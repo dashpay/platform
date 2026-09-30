@@ -171,6 +171,10 @@ impl Drive {
     /// * `contract_id`: The contract the document is of.
     /// * `records`: The kind of record.
     /// * `document_type_name`: The document's type, whose records tree holds the record.
+    /// * `estimated_value_size`: The size the records the write walks past are estimated at:
+    ///   a typical removal record, with what its type keeps
+    ///   (`types::estimated_document_removal_value_size`), or a typical approvals record
+    ///   (`types::estimated_settled_deletion_value_size`).
     /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
     /// * `drive_version`: The drive version.
     ///
@@ -182,6 +186,7 @@ impl Drive {
         contract_id: [u8; 32],
         records: ContractDocumentRecords,
         document_type_name: &str,
+        estimated_value_size: u32,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -190,6 +195,7 @@ impl Drive {
                 contract_id,
                 records,
                 document_type_name,
+                estimated_value_size,
                 estimated_costs_only_with_layer_info,
                 drive_version,
             ),

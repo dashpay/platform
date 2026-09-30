@@ -352,6 +352,7 @@ describe('ContractsFacade', () => {
       reason: { code: 2, text: 'spam' },
       removedAt: BigInt(1800000000000),
       documentHash: '11'.repeat(32),
+      keptFields: { hashtag: 'dash', $createdAt: BigInt(1799999990000) },
     };
 
     it('should forward moderatorDeleteDocument() to contractDeleteDocument() and return the removal record', async function run() {
@@ -372,6 +373,11 @@ describe('ContractsFacade', () => {
 
       expect(stub).to.be.calledOnceWithExactly(options);
       expect(result).to.equal(record);
+      // What the type keeps public of the removed document rides with the record.
+      expect(result.keptFields).to.deep.equal({
+        hashtag: 'dash',
+        $createdAt: BigInt(1799999990000),
+      });
     });
 
     it('should delete a document without a reason', async function run() {
