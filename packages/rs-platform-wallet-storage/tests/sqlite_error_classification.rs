@@ -510,6 +510,9 @@ fn tc_p2_005_is_transient_table() {
                 (false, "empty_pool_address_script")
             }
             WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
+            // `WalletStorageError` is `#[non_exhaustive]`, so this external test
+            // crate needs a catch-all arm. Exhaustiveness is enforced in-crate by
+            // the wildcard-free matches in `src/sqlite/error.rs`.
             other => panic!("sample {other:?} has no expected classification"),
         }
     }
