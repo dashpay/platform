@@ -1,5 +1,6 @@
 import isMasternodeSafeToStopDuringDkg, {
   DKG_MINING_WINDOW_START_BY_LLMQ_TYPE,
+  needsSafeStopConfirmation,
   shouldInspectDkgStatusForSafeStop,
 } from '../../../../src/core/quorum/isMasternodeSafeToStopDuringDkg.js';
 import { MIN_BLOCKS_BEFORE_DKG } from '../../../../src/constants.js';
@@ -136,6 +137,16 @@ describe('isMasternodeSafeToStopDuringDkg', () => {
       };
 
       expect(shouldInspectDkgStatusForSafeStop(dkgInfo)).to.equal(false);
+    });
+
+    it('should need confirmation only when membership data clears an imminent DKG', () => {
+      expect(needsSafeStopConfirmation({ active_dkgs: 0, next_dkg: 1, upcoming_dkgs: [] }))
+        .to.equal(true);
+      expect(needsSafeStopConfirmation({ active_dkgs: 0, next_dkg: 1 })).to.equal(false);
+      expect(needsSafeStopConfirmation({
+        active_dkgs: 0, next_dkg: MIN_BLOCKS_BEFORE_DKG + 1, upcoming_dkgs: [],
+      })).to.equal(false);
+      expect(needsSafeStopConfirmation({ next_dkg: 1, upcoming_dkgs: [] })).to.equal(false);
     });
 
     describe('fail-safe on malformed upcoming_dkgs', () => {
