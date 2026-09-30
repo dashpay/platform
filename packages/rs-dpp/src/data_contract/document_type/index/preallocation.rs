@@ -23,9 +23,14 @@
 //! `moderatedDocument` one, whose document leaves it only through a
 //! moderator's removal, which keeps a record of it for good. Through the
 //! latter a binding holds only when the record keeps every key of the path
-//! (see [`PreallocationBinding::is_kept_on_removal`]), so the trees stay a
-//! function of what is public about the document once it is removed, and
-//! are the ones a restore needs again.
+//! (see [`PreallocationBinding::is_kept_on_removal`]), so a removed
+//! document's trees stay keyed by values its record still shows, and a
+//! restore of the document as it was removed finds them in place. As through
+//! a `permanentDocument` reference, the trees are keyed by the values the
+//! document was created with: a key that changes afterwards (a mutable
+//! property, a moderator's `changeFields`, a transferred `$ownerId`) leaves
+//! them empty and the first entry under the new value builds its own, as
+//! without preallocation, which stays an optimization.
 
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
@@ -35,7 +40,7 @@ use crate::data_contract::document_type::property::{
     DocumentReferenceKind,
 };
 use crate::data_contract::document_type::{DocumentTypeRef, Index};
-use crate::document::property_names::OWNER_ID;
+use crate::document::property_names::{ID, OWNER_ID};
 use indexmap::IndexMap;
 use platform_value::Identifier;
 use std::collections::BTreeSet;
@@ -83,8 +88,8 @@ impl<'a> PreallocationBinding<'a> {
     /// document leaves state. Always through a `permanentDocument`
     /// reference, whose document never does. Through a `moderatedDocument`
     /// one, whose document leaves it only through a moderator's removal,
-    /// when each key the `where` binds is the document's `$ownerId` or a
-    /// field its removal record keeps: one of `kept_fields`, the referenced
+    /// when each key the `where` binds is the document's `$id`, its
+    /// `$ownerId` or a field its removal record keeps: one of `kept_fields`, the referenced
     /// type's `moderatorAbilities.deleteKeepsFields`, or inside an object
     /// listed there ([`is_path_listed`]). The record always keeps the
     /// document's id and owner, never its creator.
@@ -103,7 +108,9 @@ impl<'a> PreallocationBinding<'a> {
             .iter()
             .find_map(|key_source| match *key_source {
                 PreallocatedKeySource::ReferencedDocumentProperty(referenced)
-                    if referenced != OWNER_ID && !is_path_listed(kept_fields, referenced) =>
+                    if referenced != ID
+                        && referenced != OWNER_ID
+                        && !is_path_listed(kept_fields, referenced) =>
                 {
                     Some(referenced)
                 }
@@ -611,6 +618,7 @@ mod tests {
         assert!(binding(DocumentReferenceKind::Permanent, "hashtag").is_kept_on_removal(&kept(&[])));
         // The record always keeps the document's owner, and its id
         assert!(binding(moderated, "$ownerId").is_kept_on_removal(&kept(&[])));
+        assert!(binding(moderated, "$id").is_kept_on_removal(&kept(&[])));
         // A schema property only when its type lists it, or an object around it
         assert!(!binding(moderated, "hashtag").is_kept_on_removal(&kept(&[])));
         assert!(!binding(moderated, "hashtag").is_kept_on_removal(&kept(&["text"])));

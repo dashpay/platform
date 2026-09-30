@@ -1817,13 +1817,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `moderatedDocument` reference as through a `permanentDocument` one, and a
 ///     binding records its kind (`PreallocationBinding::kind`). Through a moderated
 ///     reference a binding holds only when the removal record of the referenced
-///     document keeps every key it binds, the referenced `$ownerId` or a property
+///     document keeps every key it binds, the referenced `$id`, `$ownerId` or a property
 ///     the referenced type lists under `moderatorAbilities.deleteKeepsFields`
 ///     (`is_path_listed`), never `$creatorId`
 ///     (`PreallocationBinding::is_kept_on_removal`). `create_document_types_from_document_schemas`
-///     1 refuses, under full validation, a preallocated index with no binding that
-///     holds (`validate_preallocated_indexes_kept_on_removal`,
-///     `InvalidContractStructure`), and the Drive insert of a referenced document
+///     1 and `set_document_schema` refuse, under full validation, a preallocated index
+///     with no binding that holds (`validate_preallocated_indexes_kept_on_removal`,
+///     `InvalidContractStructure`); the reference validation 0 checks the key width of a
+///     `where` pair only through a binding that holds; and the Drive insert of a referenced document
 ///     (`add_document_for_contract_operations` 1) and the document cost model
 ///     preallocate only through one that holds
 ///     (`Index::preallocation_bindings_for_target`, now given the referenced type).

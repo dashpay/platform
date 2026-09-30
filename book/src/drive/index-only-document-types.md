@@ -331,7 +331,7 @@ moderator's removal, whose record is never deleted, so its trees outlive it
 the way the record does, and a restore (which puts the document back through
 the create path) finds them in place. Through such a reference a binding
 counts only when the record keeps every key it binds: the referenced
-`$ownerId`, or a property the referenced type lists under
+`$id` or `$ownerId`, or a property the referenced type lists under
 `moderatorAbilities.deleteKeepsFields` (`PreallocationBinding::is_kept_on_removal`).
 Registration refuses a preallocated index with no such binding
 (`validate_preallocated_indexes_kept_on_removal`, once every document type

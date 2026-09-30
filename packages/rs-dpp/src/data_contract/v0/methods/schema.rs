@@ -1,6 +1,8 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::class_methods::resolve_derived_index_properties;
+use crate::data_contract::document_type::class_methods::{
+    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+};
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
@@ -75,6 +77,12 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             false,
             platform_version,
         )?;
+        // A preallocated index bound through a moderatedDocument reference needs every key of
+        // its path kept by the referenced type's removal record, judged as the parse of the
+        // whole contract judges it
+        if full_validation {
+            validate_preallocated_indexes_kept_on_removal(&self.document_types)?;
+        }
 
         Ok(())
     }

@@ -961,21 +961,23 @@ pub(in crate::data_contract) fn validate_preallocated_indexes_kept_on_removal(
                     .map(|referenced| referenced.moderator_deletion_kept_fields())
             };
             // A binding whose referenced type is missing, or admits another
-            // kind of reference, is the reference check's to refuse
-            if bindings.is_empty()
-                || bindings.iter().any(|binding| {
-                    kept_fields(binding).is_none_or(|kept| binding.is_kept_on_removal(kept))
-                })
-            {
-                continue;
+            // kind of reference, is the reference check's to refuse; one
+            // whose record keeps every key holds. Otherwise every binding is
+            // through a moderatedDocument reference whose record drops a
+            // key: name the first one
+            let mut first_dropped = None;
+            for binding in &bindings {
+                match kept_fields(binding).map(|kept| binding.first_key_dropped_on_removal(kept)) {
+                    None | Some(None) => {
+                        first_dropped = None;
+                        break;
+                    }
+                    Some(Some(referenced)) => {
+                        first_dropped.get_or_insert((binding, referenced));
+                    }
+                }
             }
-            // Every binding is through a moderatedDocument reference whose
-            // record drops a key: name the first one
-            let Some((binding, referenced)) = bindings.iter().find_map(|binding| {
-                kept_fields(binding)
-                    .and_then(|kept| binding.first_key_dropped_on_removal(kept))
-                    .map(|referenced| (binding, referenced))
-            }) else {
+            let Some((binding, referenced)) = first_dropped else {
                 continue;
             };
             let target = binding.target_document_type_name;

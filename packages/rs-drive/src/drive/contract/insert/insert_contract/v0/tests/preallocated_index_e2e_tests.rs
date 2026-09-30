@@ -1021,8 +1021,11 @@ fn should_skip_preallocation_for_a_bound_value_wider_than_the_referring_property
 /// The preallocated fixture's `post` and `like` alone, with the post taken
 /// down only by the moderators, each removal on the record keeping the fields
 /// `kept` lists (none when `None`), and `like.postId` a `moderatedDocument`
-/// reference to it.
-fn setup_likes_of_a_moderated_post(kept: Option<&[&str]>) -> (Drive, DataContract) {
+/// reference to it; with `preallocated` false, no like index preallocates.
+fn setup_likes_of_a_moderated_post(
+    kept: Option<&[&str]>,
+    preallocated: bool,
+) -> (Drive, DataContract) {
     let pv = platform_version();
     let drive = setup_drive_with_initial_state_structure(None);
     let mut schema = json_document_to_json_value(
@@ -1039,6 +1042,17 @@ fn setup_likes_of_a_moderated_post(kept: Option<&[&str]>) -> (Drive, DataContrac
     };
     document_schemas["like"]["properties"]["postId"]["refersTo"]["type"] =
         json!("moderatedDocument");
+    if !preallocated {
+        for index in document_schemas["like"]["indices"]
+            .as_array_mut()
+            .expect("like indices")
+        {
+            index
+                .as_object_mut()
+                .expect("an index")
+                .remove("preallocated");
+        }
+    }
     let config = DataContractConfig::default_for_version(pv)
         .expect("default config available")
         .with_moderation(Some(ContractModerationConfig {
@@ -1075,7 +1089,7 @@ fn setup_likes_of_a_moderated_post(kept: Option<&[&str]>) -> (Drive, DataContrac
 /// there, paying for none of them again.
 #[test]
 fn should_preallocate_through_a_moderated_reference_whose_record_keeps_the_path() {
-    let (drive, contract) = setup_likes_of_a_moderated_post(Some(&["hashtag"]));
+    let (drive, contract) = setup_likes_of_a_moderated_post(Some(&["hashtag"]), true);
     let post = build_post(&contract, "dash", 1);
     let post_id = post.id().to_buffer();
     let first_insert = insert_post(&drive, &contract, &post, true).expect("insert post");
@@ -1116,11 +1130,14 @@ fn should_preallocate_through_a_moderated_reference_whose_record_keeps_the_path(
     assert_preallocated("after the last like of the removed post is removed");
 
     let restore = insert_post(&drive, &contract, &post, true).expect("restore the post");
-    assert!(
-        restore.storage_fee < first_insert.storage_fee,
-        "the restore must not pay for the trees again: {} >= {}",
-        restore.storage_fee,
-        first_insert.storage_fee
+    // The restore pays for the post alone, as a post pays where nothing preallocates
+    let (plain_drive, plain_contract) = setup_likes_of_a_moderated_post(Some(&["hashtag"]), false);
+    let plain_insert =
+        insert_post(&plain_drive, &plain_contract, &post, true).expect("insert post");
+    assert!(first_insert.storage_fee > plain_insert.storage_fee);
+    assert_eq!(
+        restore.storage_fee, plain_insert.storage_fee,
+        "the restore must not pay for the trees again"
     );
     insert_like(&drive, &contract, &like, true).expect("like the restored post");
     assert_eq!(
@@ -1139,7 +1156,7 @@ fn should_preallocate_through_a_moderated_reference_whose_record_keeps_the_path(
 /// preallocated index none of whose bindings the record keeps.)
 #[test]
 fn should_not_preallocate_through_a_moderated_reference_whose_record_drops_a_key() {
-    let (drive, contract) = setup_likes_of_a_moderated_post(None);
+    let (drive, contract) = setup_likes_of_a_moderated_post(None, true);
     let post = build_post(&contract, "dash", 1);
     let post_id = post.id().to_buffer();
     let estimated = insert_post(&drive, &contract, &post, false).expect("estimate post");

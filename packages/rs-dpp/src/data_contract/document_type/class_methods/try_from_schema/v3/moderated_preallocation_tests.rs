@@ -2,10 +2,14 @@
 //! parse of the whole contract admits one only when the removal record of the referenced
 //! document keeps every key of the index path.
 
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::schema::DataContractSchemaMethodsV0;
+use crate::data_contract::DataContract;
 use crate::ProtocolError;
 use platform_value::{platform_value, Identifier, Value};
 use platform_version::version::PlatformVersion;
@@ -237,4 +241,84 @@ fn should_leave_a_moderated_reference_to_another_kind_of_type_to_the_reference_c
         .expect("the post declares moderator abilities");
     parse(post, like("moderatedDocument", "byHashtagPost"), true)
         .expect("the parse leaves the reference kind to the reference check");
+}
+
+/// The bindings a post's insert preallocates through, read against the parsed post type: only
+/// those whose every key the post's removal record keeps
+#[test]
+fn should_preallocate_through_the_bindings_a_moderated_posts_record_keeps() {
+    let bindings_for = |kept: Value, index_name: &str| {
+        // Without full validation, as a stored contract is read, so the refused shape parses
+        let document_types = parse(
+            moderated_post(kept),
+            like("moderatedDocument", index_name),
+            false,
+        )
+        .expect("the contract should parse");
+        let like = document_types.get("like").expect("the like type").as_ref();
+        let post = document_types.get("post").expect("the post type").as_ref();
+        like.indexes()
+            .get(index_name)
+            .expect("the index")
+            .preallocation_bindings_for_target(
+                like.flattened_properties(),
+                like.data_contract_id(),
+                post,
+            )
+            .len()
+    };
+    assert_eq!(bindings_for(platform_value!([]), "byPost"), 1);
+    assert_eq!(bindings_for(platform_value!([]), "byAuthorPost"), 1);
+    assert_eq!(bindings_for(platform_value!([]), "byHashtagPost"), 0);
+    assert_eq!(bindings_for(platform_value!(["text"]), "byHashtagPost"), 0);
+    assert_eq!(
+        bindings_for(platform_value!(["hashtag"]), "byHashtagPost"),
+        1
+    );
+}
+
+/// A type added to a contract one at a time under full validation is judged as the parse of
+/// the whole contract judges it
+#[test]
+fn should_refuse_a_like_type_set_on_a_contract_whose_post_record_drops_its_key() {
+    let platform_version = PlatformVersion::latest();
+    let contract_with_post = || {
+        DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Value::Identifier(CONTRACT_ID),
+                "ownerId": Value::Identifier([8; 32]),
+                "version": 1,
+                "config": platform_value::to_value(config()).expect("the config converts"),
+                "documentSchemas": { "post": moderated_post(platform_value!([])) },
+            }),
+            true,
+            platform_version,
+        )
+        .expect("the contract parses")
+    };
+    let mut contract = contract_with_post();
+    assert_refused(
+        contract
+            .set_document_schema(
+                "like",
+                like("moderatedDocument", "byHashtagPost"),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .map(|()| BTreeMap::new()),
+        "\"hashtag\" of \"post\" is not kept by a moderator's removal",
+    );
+    let mut contract = contract_with_post();
+    contract
+        .set_document_schema(
+            "like",
+            like("moderatedDocument", "byHashtagPost"),
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("without full validation the type is added as a stored contract's is read");
+    assert!(contract.document_type_for_name("like").is_ok());
 }
