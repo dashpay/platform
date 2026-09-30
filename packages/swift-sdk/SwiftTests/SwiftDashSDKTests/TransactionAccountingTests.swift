@@ -110,7 +110,7 @@ final class TransactionAccountingTests: XCTestCase {
         let funding = PersistentTransaction(txid: walletId, transactionData: Data())
         let spender = PersistentTransaction(
             txid: Data(repeating: 3, count: 32), transactionData: serializedSpend(inputs: [walletId]),
-            direction: 0, netAmount: 40
+            direction: CoreDirectionCode.incoming, netAmount: 40
         )
         let coin = PersistentTxo(transaction: funding, vout: 0, amount: 100, address: "", height: 1)
         coin.walletId = walletId
@@ -138,7 +138,7 @@ final class TransactionAccountingTests: XCTestCase {
         let funding = PersistentTransaction(txid: walletId, transactionData: Data())
         let spender = PersistentTransaction(
             txid: Data(repeating: 3, count: 32), transactionData: serializedSpend(inputs: [walletId]),
-            direction: 0, netAmount: 40
+            direction: CoreDirectionCode.incoming, netAmount: 40
         )
         let coin = PersistentTxo(transaction: funding, vout: 0, amount: 100, address: "", height: 1)
         coin.walletId = walletId
@@ -196,7 +196,7 @@ final class TransactionAccountingTests: XCTestCase {
         let spender = PersistentTransaction(
             txid: Data(repeating: 3, count: 32),
             transactionData: serializedSpend(inputs: [walletId, Data(repeating: 2, count: 32)]),
-            direction: 1, netAmount: -200
+            direction: CoreDirectionCode.outgoing, netAmount: -200
         )
         coin.spendingTransaction = spender
         context.insert(coin)
@@ -291,7 +291,10 @@ final class TransactionAccountingTests: XCTestCase {
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         let spenderId = Data(repeating: 3, count: 32)
         let bytes = serializedSpend(inputs: [walletId, Data(repeating: 2, count: 32)], outputValue: 0, burn: true)
-        let spender = PersistentTransaction(txid: spenderId, transactionData: bytes, direction: 2, netAmount: -200)
+        let spender = PersistentTransaction(
+            txid: spenderId, transactionData: bytes,
+            direction: CoreDirectionCode.internalTransfer, netAmount: -200
+        )
         spender.transactionTypeKind = 6
         let coin = input(100)
         coin.spendingTransaction = spender
@@ -313,7 +316,10 @@ final class TransactionAccountingTests: XCTestCase {
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         let spenderId = Data(repeating: 3, count: 32)
         let bytes = serializedSpend(inputs: [Data(repeating: 2, count: 32)], outputValue: 0, burn: true)
-        let lock = PersistentTransaction(txid: spenderId, transactionData: bytes, direction: 2, netAmount: -200)
+        let lock = PersistentTransaction(
+            txid: spenderId, transactionData: bytes,
+            direction: CoreDirectionCode.internalTransfer, netAmount: -200
+        )
         lock.transactionTypeKind = 6
         lock.fee = 7
         context.insert(lock)
@@ -380,7 +386,7 @@ final class TransactionAccountingTests: XCTestCase {
         bytes.append(contentsOf: [25, 0x76, 0xa9, 0x14] + [UInt8](repeating: 5, count: 20) + [0x88, 0xac])
         bytes.append(contentsOf: [0, 0, 0, 0])
         let spender = PersistentTransaction(
-            txid: Data(repeating: 3, count: 32), transactionData: bytes, direction: 1, netAmount: -100
+            txid: Data(repeating: 3, count: 32), transactionData: bytes, direction: CoreDirectionCode.outgoing, netAmount: -100
         )
         let coin = input(100)
         coin.spendingTransaction = spender
@@ -408,7 +414,7 @@ final class TransactionAccountingTests: XCTestCase {
         let coin = input(100)
         let spender = PersistentTransaction(
             txid: Data(repeating: 3, count: 32), transactionData: serializedSpend(inputs: [walletId]),
-            direction: 2, netAmount: -60
+            direction: CoreDirectionCode.internalTransfer, netAmount: -60
         )
         coin.spendingTransaction = spender
         let contactOutput = PersistentTxo(transaction: spender, vout: 0, amount: 40, address: "", height: 1)
@@ -442,7 +448,7 @@ final class TransactionAccountingTests: XCTestCase {
         coin.account = contactAccount
         let spender = PersistentTransaction(
             txid: Data(repeating: 3, count: 32), transactionData: serializedSpend(inputs: [walletId]),
-            direction: 0, netAmount: 40
+            direction: CoreDirectionCode.incoming, netAmount: 40
         )
         coin.spendingTransaction = spender
         let received = PersistentTxo(transaction: spender, vout: 0, amount: 40, address: "", height: 1)

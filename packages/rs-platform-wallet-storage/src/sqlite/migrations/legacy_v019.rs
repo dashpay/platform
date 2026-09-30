@@ -18,7 +18,7 @@ use key_wallet::managed_account::transaction_record::{
 };
 use key_wallet::transaction_checking::{TransactionContext, TransactionType};
 use platform_wallet::wallet::platform_wallet::WalletId;
-use rusqlite::{params, Transaction};
+use rusqlite::{params, OptionalExtension, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::{blob, id32, wallets};
@@ -30,23 +30,27 @@ fn read_record(
     wallet_id: &WalletId,
     txid: &Txid,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
-    let mut stmt = tx.prepare_cached(
-        "SELECT length(record_blob), record_blob FROM core_transactions \
-         WHERE wallet_id = ?1 AND txid = ?2",
-    )?;
-    let mut rows = stmt.query(params![
-        wallet_id.as_slice(),
-        txid.as_byte_array().as_slice()
-    ])?;
-    let Some(row) = rows.next()? else {
-        return Ok(None);
-    };
-    // Gate the stored length before the payload is materialized.
-    let Some(len) = row.get::<_, Option<i64>>(0)? else {
+    let key = params![wallet_id.as_slice(), txid.as_byte_array().as_slice()];
+    // Gate the stored length in its own statement: SQLite evaluates every
+    // result column before a row is returned, so selecting the payload
+    // alongside its length would load an oversize blob before the check.
+    let len: Option<Option<i64>> = tx
+        .prepare_cached(
+            "SELECT length(record_blob) FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+        )?
+        .query_row(key, |row| row.get(0))
+        .optional()?;
+    let Some(Some(len)) = len else {
         return Ok(None);
     };
     blob::check_size(len)?;
-    let payload: Vec<u8> = row.get(1)?;
+    let payload: Vec<u8> = tx
+        .prepare_cached(
+            "SELECT record_blob FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+        )?
+        .query_row(key, |row| row.get(0))?;
     let record: TransactionRecord = blob::decode(&payload)?;
     if record.txid != *txid {
         return Err(WalletStorageError::blob_decode(
@@ -388,7 +392,7 @@ mod tests {
     use rusqlite::Connection;
 
     use super::*;
-    use crate::sqlite::migrations::rewind_to_v018;
+    use crate::sqlite::migrations::{self, rewind_to_v018};
     use crate::sqlite::schema::core_state;
 
     fn address(marker: u8) -> Address {
@@ -420,7 +424,7 @@ mod tests {
     #[test]
     fn should_drop_oversize_confirmed_record_for_resync() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xC2u8; 32];
         let txid = Txid::from_byte_array([0x72; 32]);
         conn.execute(
@@ -446,7 +450,7 @@ mod tests {
         .unwrap();
         rewind_to_v018(&conn);
 
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
 
         let (records, synced): (i64, i64) = conn
             .query_row(
@@ -468,7 +472,7 @@ mod tests {
     #[test]
     fn should_pin_v019_repair_of_a_v018_database() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xC1u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -563,7 +567,7 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
 
         let mut expected = original.clone();
         expected.input_details = vec![InputDetail {

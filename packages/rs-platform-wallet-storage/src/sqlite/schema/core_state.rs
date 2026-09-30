@@ -1367,7 +1367,7 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sqlite::migrations::rewind_to_v018;
+    use crate::sqlite::migrations::{self, rewind_to_v018};
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
@@ -1425,7 +1425,7 @@ mod tests {
     #[test]
     fn should_repair_history_when_spent_funding_arrives_late() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xAB; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -1562,7 +1562,7 @@ mod tests {
     #[test]
     fn should_repair_existing_history_during_migration() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xAC; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -1606,7 +1606,7 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let repaired = get_tx_record(&conn, &wallet_id, &spending.txid, &LoadCtx::strict())
             .unwrap()
             .unwrap();
@@ -1626,7 +1626,7 @@ mod tests {
             !spent,
             "a stale mempool attempt cannot undo a released coin during migration"
         );
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         assert_eq!(
             get_tx_record(&conn, &wallet_id, &spending.txid, &LoadCtx::strict())
                 .unwrap()
@@ -1652,7 +1652,7 @@ mod tests {
     /// A V018 database whose wallet 0xAD has one corrupt record at `height`.
     fn v018_with_corrupt_record(height: Option<i64>) -> (Connection, [u8; 32]) {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         rewind_to_v018(&conn);
         let wallet_id = [0xADu8; 32];
         conn.execute(
@@ -1679,7 +1679,7 @@ mod tests {
     fn should_fail_history_migration_on_corrupt_unconfirmed_record() {
         let (mut conn, _) = v018_with_corrupt_record(None);
         assert!(
-            crate::sqlite::migrations::run(&mut conn).is_err(),
+            migrations::run(&mut conn).is_err(),
             "a resync cannot restore an unconfirmed record, so it must not be dropped"
         );
         let tables: i64 = conn
@@ -1717,8 +1717,7 @@ mod tests {
             ],
         )
         .unwrap();
-        crate::sqlite::migrations::run(&mut conn)
-            .expect("a re-deliverable corrupt record must not block opening");
+        migrations::run(&mut conn).expect("a re-deliverable corrupt record must not block opening");
         let rows: Vec<Vec<u8>> = conn
             .prepare_cached("SELECT txid FROM core_transactions WHERE wallet_id = ?1")
             .unwrap()
@@ -1756,7 +1755,7 @@ mod tests {
     #[test]
     fn should_reject_corrupt_prior_record_when_storing_the_transaction() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xA9u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -1792,7 +1791,7 @@ mod tests {
     #[test]
     fn should_mark_observed_spent_and_doomed_outputs_spent() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xAEu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -1830,7 +1829,7 @@ mod tests {
     #[test]
     fn should_keep_prior_spent_flag_for_uncredited_outputs() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xA8u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -1884,7 +1883,7 @@ mod tests {
     fn should_exclude_historical_contact_outputs_from_accounting() {
         use key_wallet::managed_account::transaction_record::{OutputDetail, OutputRole};
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xAFu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -1967,7 +1966,7 @@ mod tests {
     #[test]
     fn should_not_load_contact_only_outputs_as_spendable() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xB1u8; 32];
         let (contact, own) = stage_contact_only_utxo(&conn, &wallet_id);
         let (cs, owners) = load_state(
@@ -1985,11 +1984,11 @@ mod tests {
     #[test]
     fn should_keep_contact_only_rows_but_exclude_them_after_history_migration() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xB2u8; 32];
         let (contact, own) = stage_contact_only_utxo(&conn, &wallet_id);
         rewind_to_v018(&conn);
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let unspent_rows = |outpoint: &OutPoint| -> i64 {
             conn.query_row(
                 "SELECT count(*) FROM core_utxos \
@@ -2024,7 +2023,7 @@ mod tests {
     fn should_preserve_known_inputs_when_replay_has_no_historical_txo() {
         use key_wallet::managed_account::transaction_record::InputDetail;
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xB0u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2077,7 +2076,7 @@ mod tests {
     #[test]
     fn should_preserve_spendability_for_unknown_credit_verdicts() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xB1u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2141,7 +2140,7 @@ mod tests {
     #[test]
     fn load_state_rejects_oversize_instant_lock_txid() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let w = [0xABu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2169,7 +2168,7 @@ mod tests {
     #[test]
     fn load_state_reconciles_utxo_height_from_confirmed_transaction_record() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x42u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2237,7 +2236,7 @@ mod tests {
     #[test]
     fn load_state_restores_confirmed_recordless_utxo_height() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x44u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2280,7 +2279,7 @@ mod tests {
     #[test]
     fn height_only_placeholder_does_not_regress() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x49u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2330,7 +2329,7 @@ mod tests {
     #[test]
     fn load_state_treats_height_zero_as_confirmed() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x4Au8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2365,7 +2364,7 @@ mod tests {
     #[test]
     fn transaction_record_always_overrides_height_only_placeholder() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x45u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2465,7 +2464,7 @@ mod tests {
     #[test]
     fn load_state_defaults_utxo_without_transaction_record_to_unconfirmed() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x43u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2523,7 +2522,7 @@ mod tests {
     #[test]
     fn load_state_tolerates_transaction_blob_txid_drift_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x46u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2578,7 +2577,7 @@ mod tests {
     fn load_state_blob_height_wins_over_drifted_typed_column_in_either_scan_order() {
         for (case, typed_byte) in [0x10, 0xF0].into_iter().enumerate() {
             let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-            crate::sqlite::migrations::run(&mut conn).unwrap();
+            migrations::run(&mut conn).unwrap();
             let wallet_id = [0x50 + case as u8; 32];
             conn.execute(
                 "INSERT INTO wallets (wallet_id, network, birth_height) \
@@ -2645,7 +2644,7 @@ mod tests {
     #[test]
     fn load_state_tolerates_transaction_blob_height_drift_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x47u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2709,7 +2708,7 @@ mod tests {
     #[test]
     fn get_tx_record_declines_a_txid_drifted_row_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x4Bu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2765,7 +2764,7 @@ mod tests {
     #[test]
     fn get_tx_record_tolerates_blob_height_drift_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x4Cu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2823,7 +2822,7 @@ mod tests {
     #[test]
     fn load_used_addresses_wraps_address_error_as_address_decode() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let w = [0x99u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2858,7 +2857,7 @@ mod tests {
     #[test]
     fn apply_refuses_an_empty_script_on_a_new_utxo() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x5Bu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2893,7 +2892,7 @@ mod tests {
     #[test]
     fn apply_refuses_an_empty_script_on_a_synthetic_spent_row() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x5Cu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -2925,7 +2924,7 @@ mod tests {
     #[test]
     fn apply_still_marks_an_existing_utxo_spent() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0x5Du8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
