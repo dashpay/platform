@@ -719,8 +719,11 @@ fn should_refuse_a_carrier_or_stored_param_a_replace_could_change() {
     );
     assert_refused(
         not_transient(json!({
-            "immutable": ["normalizedLabel", "parentDomainName", "preorderSalt"],
-            "immutableAllowSetting": ["preorderSalt"]
+            "immutable": [
+                "normalizedLabel",
+                "parentDomainName",
+                { "property": "preorderSalt", "when": { "present": "$old.preorderSalt" } }
+            ]
         })),
         "\"preorderSalt\" carries a reference found by a computed key",
     );
@@ -817,11 +820,13 @@ fn should_hold_an_identifier_reference_with_a_function_pair_beside_its_value() {
             json!({ "hash": hash.clone() }),
             json!({
                 "documentsMutable": true,
-                "immutable": ["label", "committerId"],
-                "immutableAllowSetting": ["committerId"]
+                "immutable": [
+                    "label",
+                    { "property": "committerId", "when": { "present": "$old.committerId" } }
+                ]
             }),
         )),
-        "immutableAllowSetting",
+        "under `immutable` without a condition",
     );
     // On a mutable type the carrier is listed under immutable, which a
     // deletable lookup re-validated on every replace could not be, but a

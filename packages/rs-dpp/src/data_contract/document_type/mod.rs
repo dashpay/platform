@@ -72,10 +72,11 @@ pub(crate) mod property_names {
     pub const REQUIRED: &str = "required";
     pub const REQUIRED_SINCE: &str = "requiredSince";
     pub const TRANSIENT: &str = "transient";
-    /// Doctype-level array naming the top-level properties of a **mutable**
-    /// document type whose values are frozen at creation: a replace that
-    /// changes, adds or removes any of them is rejected. Meta-schema v3+
-    /// (protocol version 14). See `apply_immutable_fields` in
+    /// Doctype-level array of the top-level properties of a **mutable**
+    /// document type a replace may not change, add or remove: a property
+    /// name, frozen at creation, or `{ "property": ..., "when": ... }`
+    /// ([`immutable_entry`]), frozen while its condition holds. Meta-schema
+    /// v3+ (protocol version 14). See `apply_immutable_fields` in
     /// `try_from_schema::common` for the structural rules.
     pub const IMMUTABLE: &str = "immutable";
     /// Doctype-level object declaring a fixed fee in credits for actions on documents of
@@ -87,10 +88,11 @@ pub(crate) mod property_names {
     /// `replace`, `delete`, `transfer`, `update_price`, `purchase`). Meta-schema
     /// v0+ (protocol version 9). See `parse_token_costs` in `try_from_schema::common`.
     pub const TOKEN_COST: &str = "tokenCost";
-    /// Doctype-level array naming the [`IMMUTABLE`] properties a replace may
-    /// still set when the stored document has no value for them. Once set
-    /// they are frozen like the rest of the list. Every entry must also be in
-    /// [`IMMUTABLE`]. Meta-schema v3+ (protocol version 14).
+    /// The keyword that listed the [`IMMUTABLE`] properties a replace could
+    /// still set while absent, before a conditional `immutable` entry said it
+    /// (`{ "property": "p", "when": { "present": "$old.p" } }`). Refused on
+    /// every parse, naming its replacement, so that no contract written with
+    /// it loads with another meaning.
     pub const IMMUTABLE_ALLOW_SETTING: &str = "immutableAllowSetting";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
@@ -268,6 +270,16 @@ pub(crate) mod property_names {
     pub const MODERATOR_ABILITIES: &str = "moderatorAbilities";
 
     /// The keys of the `moderatorAbilities` object.
+    /// The keys of a conditional [`IMMUTABLE`] entry.
+    pub mod immutable_entry {
+        /// The top-level property the entry freezes.
+        pub const PROPERTY: &str = "property";
+        /// The condition under which it is frozen, in the grammar of a
+        /// `propertyConstraints` rule, judged on the document a replace
+        /// writes, with the stored one read through `$old.`.
+        pub const WHEN: &str = "when";
+    }
+
     pub mod moderator_abilities {
         /// When true, the moderators may delete documents of the type, leaving a removal
         /// record under the contract.

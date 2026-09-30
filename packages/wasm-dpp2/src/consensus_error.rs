@@ -133,7 +133,7 @@ impl DocumentReferenceErrorCodeWasm {
 }
 
 /// Consensus error codes emitted by the immutable-property check on document
-/// replaces (`immutable` / `immutableAllowSetting`, protocol version 14+).
+/// replaces (`immutable`, protocol version 14+).
 ///
 /// Branch on an error's `code` against this instead of matching its message:
 ///
@@ -150,8 +150,8 @@ impl DocumentReferenceErrorCodeWasm {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentImmutabilityErrorCodeWasm {
     /// The replace changed, added or removed a property the document type
-    /// lists under `immutable`, and the change was not the one first-time
-    /// set `immutableAllowSetting` permits.
+    /// lists under `immutable`: by name, or with a condition that held for
+    /// the replace.
     DocumentImmutablePropertyChanged = 40128,
 }
 

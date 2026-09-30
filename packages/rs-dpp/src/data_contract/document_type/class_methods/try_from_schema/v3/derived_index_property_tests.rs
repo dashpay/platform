@@ -322,13 +322,15 @@ fn should_refuse_a_post_property_that_can_change_once_written() {
         ),
         "can change once written",
     );
-    // Frozen, but settable while absent
+    // Frozen only under a condition (here: once the stored post holds it)
     assert_refused(
         parse(
             post(platform_value!({
                 "documentsMutable": true,
-                "immutable": ["hashtag", "text"],
-                "immutableAllowSetting": ["text"],
+                "immutable": [
+                    "hashtag",
+                    { "property": "text", "when": { "present": "$old.text" } }
+                ],
             })),
             reply(permanent_reference(), "postId.text", Value::Null),
             true,

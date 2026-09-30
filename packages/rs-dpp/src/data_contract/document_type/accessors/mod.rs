@@ -948,6 +948,8 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
 /// predate the keyword: V0 and V1 have no field to borrow from, and the
 /// getter hands out a reference.
 static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
+/// What `immutable_field_conditions` returns for the same generations.
+static NO_IMMUTABLE_FIELD_CONDITIONS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
 static NO_ENTRY_PAYLOAD: BTreeSet<String> = BTreeSet::new();
 static NO_MODERATOR_CHANGEABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
 /// What `property_constraints` returns for the generations that predate the
@@ -1102,11 +1104,11 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
         match self {
-            DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
-            DocumentType::V1(_) => &NO_IMMUTABLE_FIELDS,
-            DocumentType::V2(v2) => v2.immutable_fields_allow_setting(),
+            DocumentType::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentType::V2(v2) => v2.immutable_field_conditions(),
         }
     }
 
@@ -1330,11 +1332,11 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
         match self {
-            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
-            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELDS,
-            DocumentTypeRef::V2(v2) => v2.immutable_fields_allow_setting(),
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentTypeRef::V2(v2) => v2.immutable_field_conditions(),
         }
     }
 
@@ -1526,11 +1528,11 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
         }
     }
 
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
         match self {
-            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
-            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
-            DocumentTypeMutRef::V2(v2) => v2.immutable_fields_allow_setting(),
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_field_conditions(),
         }
     }
 

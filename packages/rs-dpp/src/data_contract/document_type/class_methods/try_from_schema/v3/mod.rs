@@ -31,7 +31,6 @@ use crate::data_contract::document_type::index::{
     DerivedIndexPropertyName, Index, IndexGrammarAdmissions,
 };
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::property::top_level_property;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
@@ -400,13 +399,7 @@ fn parse_generation_3(
     let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
     let moderator_abilities = common::parse_moderator_abilities_keyword(&schema, name)?;
     let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
-    let immutable_fields =
-        common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
-    let immutable_fields_allow_setting = common::parse_property_name_list_keyword(
-        &schema,
-        name,
-        property_names::IMMUTABLE_ALLOW_SETTING,
-    )?;
+    let immutable = common::parse_immutable_keyword(&schema, name)?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -539,13 +532,15 @@ fn parse_generation_3(
     // indexOnly type does not have), so it has to see them already applied.
     common::apply_index_only(&mut v2, index_only, name, platform_version)?;
     // After the core parse: the lints read the resolved `documentsMutable`
-    // flag (contract default applied) and the parsed top-level properties.
+    // flag (contract default applied) and the parsed top-level properties,
+    // and each condition's reads are checked against the parsed properties.
     common::apply_immutable_fields(
         &mut v2,
-        immutable_fields,
-        immutable_fields_allow_setting,
+        immutable,
+        schema_defs,
         name,
         full_validation,
+        platform_version,
     )?;
 
     // After the core parse: every property, its transient flag and its schema
@@ -579,7 +574,8 @@ fn parse_generation_3(
     // After `apply_index_only`, `apply_immutable_fields` and the parse of the
     // references and generated properties: each ability is refused on an
     // indexOnly type, and the fields only moderators write may be neither
-    // immutable, nor read by a reference, nor generated.
+    // immutable (with a condition or without), nor read by a reference, nor
+    // generated.
     common::apply_moderator_abilities(&mut v2, moderator_abilities, data_contact_config, name)?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.
     common::apply_documents_ttl(
@@ -644,8 +640,8 @@ fn parse_generation_3(
 /// need one it can not read:
 ///
 /// * a reference a replace could repoint: it must be fixed once written (the
-///   type's documents are immutable, or it is listed under `immutable` and not
-///   `immutableAllowSetting`, and moderators do not write it);
+///   type's documents are immutable, or it is listed under `immutable`
+///   without a condition, and moderators do not write it);
 /// * an indexOnly type, whose entries hold every value of its documents and
 ///   whose delete carries them;
 /// * a unique or contested index, whose check reads the values a create
@@ -720,15 +716,12 @@ fn derived_index_property_referring_side_error(
     if !schema_property_is_fixed_once_written(
         DocumentTypeRef::V2(document_type),
         reference_property,
-    ) || document_type
-        .immutable_fields_allow_setting
-        .contains(reference_property)
-    {
+    ) {
         return Some(format!(
             "a replace could point \"{reference_property}\" at another document, and the \
              entry would no longer be found under the value it was written under: list \
-             \"{reference_property}\" under `immutable` (and not `immutableAllowSetting`), or \
-             make the type's documents immutable"
+             \"{reference_property}\" under `immutable` without a condition, or make the \
+             type's documents immutable"
         ));
     }
     if index.unique || index.contested_index.is_some() {
@@ -910,16 +903,12 @@ fn derived_index_field_error(
              its value is never stored"
         ));
     }
-    if !schema_property_is_fixed_once_written(referenced, path)
-        || referenced
-            .immutable_fields_allow_setting()
-            .contains(top_level_property(path))
-    {
+    if !schema_property_is_fixed_once_written(referenced, path) {
         return Some(format!(
             "\"{path}\" of \"{referenced_name}\" can change once written, and the entry would \
              no longer be found under the value it was written under: make \
-             \"{referenced_name}\" immutable, or list the property under its `immutable` (and \
-             not `immutableAllowSetting`), and keep it out of `moderatorAbilities.changeFields`"
+             \"{referenced_name}\" immutable, or list the property under its `immutable` \
+             without a condition, and keep it out of `moderatorAbilities.changeFields`"
         ));
     }
     None
@@ -1211,6 +1200,18 @@ fn validate_reference_count(
     Ok(())
 }
 
+/// Whether `document_type` lists the top-level property `top_level` under
+/// `immutable`, with a condition or without. A replace may not change it while
+/// it is frozen, and a condition may hold for good, so the reference rules
+/// below judge both alike.
+#[cfg(feature = "validation")]
+fn lists_as_immutable(document_type: &DocumentTypeV2, top_level: &str) -> bool {
+    document_type.immutable_fields.contains(top_level)
+        || document_type
+            .immutable_field_conditions
+            .contains_key(top_level)
+}
+
 /// An `immutable` property may not hold a `contract` reference whose
 /// `contractRequirements` carry an `owner` requirement when the document type's
 /// documents can be transferred or traded. The requirement relates the
@@ -1221,7 +1222,9 @@ fn validate_reference_count(
 /// wherever the reference sits under the immutable property (the property
 /// itself, inside an immutable object, the elements of a typed array) and for
 /// both `self` and `other`. On a type whose documents cannot change owner the
-/// requirement is never re-checked, so the pair is admitted there.
+/// requirement is never re-checked, so the pair is admitted there. A property
+/// listed with a condition is judged alike: while the condition holds it is
+/// as frozen.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_contract_owner_requirements(
     document_type: &DocumentTypeV2,
@@ -1249,7 +1252,7 @@ fn validate_no_immutable_contract_owner_requirements(
             continue;
         }
         let top_level = path.split('.').next().unwrap_or(path);
-        if document_type.immutable_fields.contains(top_level) {
+        if lists_as_immutable(document_type, top_level) {
             return Err(consensus_or_protocol_data_contract_error(
                 DataContractError::InvalidContractStructure(format!(
                     "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
@@ -1279,18 +1282,18 @@ fn validate_no_immutable_contract_owner_requirements(
 /// exception that reads the one identifier the removed top-level property
 /// held, which neither a list nor an object gives it.
 ///
-/// That property may not also be listed under `immutableAllowSetting`. Once
-/// the reference is cleared the stored document has no value for it, so the
-/// allowance would let the next replace set it again, to another document,
-/// as a first-time set: the frozen reference would be repointed. The pair is
-/// refused here rather than by refusing the clear at write time, since
-/// without the clear a document whose target is deleted could never be
-/// replaced again. Every other `deletableDocument` form is refused on any
-/// immutable property, except one whose key a `findBy` function computes,
-/// which is judged when the document is created only and never
-/// re-validated; an `immutableAllowSetting` entry is always immutable, and the
-/// referring-side rules refuse such a reference's carrier there, so no
-/// deletableDocument reference can be set once.
+/// That property must be listed without a condition. Once the reference is
+/// cleared the stored document has no value for it, and a condition that
+/// does not hold then (`present: "$old.<property>"`, the way to let an absent
+/// value be set once) would let the next replace set it again, to another
+/// document: the frozen reference would be repointed. The condition is refused
+/// here rather than the clear at write time, since without the clear a
+/// document whose target is deleted could never be replaced again. Every other
+/// `deletableDocument` form is refused on any immutable property, with a
+/// condition or without, except one whose key a `findBy` function computes,
+/// which is judged when the document is created only and never re-validated;
+/// such a reference's carrier must be fixed once written, which a property
+/// listed with a condition is not, so the referring-side rules refuse it there.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_deletable_element_references(
     document_type: &DocumentTypeV2,
@@ -1327,23 +1330,24 @@ fn validate_no_immutable_deletable_element_references(
         let top_level = path.split('.').next().unwrap_or(path);
         let is_list = matches!(reference, PropertyReference::Elements { .. });
         // A single reference by id that is itself the immutable property can be
-        // cleared once its target is gone, so it may not also be settable while
-        // absent: the clear makes it absent again
+        // cleared once its target is gone, so it may not be frozen only while a
+        // condition holds: the clear makes it absent, and a replace the
+        // condition then leaves free could set it to another document
         if !deletable_lookup && !is_list && top_level == path {
-            if document_type.immutable_fields_allow_setting.contains(path) {
+            if document_type.immutable_field_conditions.contains_key(path) {
                 return Err(consensus_or_protocol_data_contract_error(
                     DataContractError::InvalidContractStructure(format!(
-                        "document type \"{name}\" lists \"{path}\" in `immutableAllowSetting`, \
-                         but it is a deletableDocument reference: a replace may clear it once \
-                         its target is deleted, and the next replace could then set it to \
-                         another document. Use a permanentDocument reference, or leave it out \
-                         of immutableAllowSetting",
+                        "document type \"{name}\" lists \"{path}\" under `immutable` with a \
+                         condition, but it is a deletableDocument reference: a replace may clear \
+                         it once its target is deleted, and a replace the condition leaves free \
+                         could then set it to another document. List it without a condition, or \
+                         use a permanentDocument reference",
                     )),
                 ));
             }
             continue;
         }
-        if document_type.immutable_fields.contains(top_level) {
+        if lists_as_immutable(document_type, top_level) {
             let held_as = if deletable_lookup {
                 "a deletableDocument reference found by findBy"
             } else if is_list {

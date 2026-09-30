@@ -296,8 +296,8 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.generated_from_fields
     }
 
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
-        &self.immutable_fields_allow_setting
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.immutable_field_conditions
     }
 
     fn action_fees(&self) -> Option<&DocumentActionFees> {

@@ -5,8 +5,8 @@ use crate::impl_wasm_type_info;
 use crate::serialization::{js_value_to_platform_value, platform_value_to_object};
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    try_from_options, try_from_options_optional, try_from_options_optional_with, try_to_bytes,
-    try_to_u16, try_to_u32, try_to_u64,
+    define_own_property, try_from_options, try_from_options_optional,
+    try_from_options_optional_with, try_to_bytes, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::data_contract::config::moderation::{
     ContractModerationDocument, ContractModerationReason, ContractWarning,
@@ -757,21 +757,7 @@ impl ContractUserModerationWasm {
             };
             // Defined as an own data property, so a field named like an inherited accessor
             // (`__proto__`) is a field, not a call to the accessor
-            let descriptor = js_sys::Object::new();
-            for (key, flag) in [
-                ("value", value),
-                ("writable", JsValue::TRUE),
-                ("enumerable", JsValue::TRUE),
-                ("configurable", JsValue::TRUE),
-            ] {
-                js_sys::Reflect::set(&descriptor, &JsValue::from_str(key), &flag).map_err(
-                    |_| WasmDppError::serialization(format!("failed to describe field `{name}`")),
-                )?;
-            }
-            js_sys::Reflect::define_property(&object, &JsValue::from_str(name), &descriptor)
-                .map_err(|_| {
-                    WasmDppError::serialization(format!("failed to set field `{name}`"))
-                })?;
+            define_own_property(&object, name, value)?;
         }
         Ok(object.into())
     }
