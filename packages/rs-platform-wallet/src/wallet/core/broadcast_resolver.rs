@@ -33,8 +33,9 @@
 //! locked) or swept clears its verdict at once, even mid-scan; a pass
 //! clears whatever else left the wallet when it next reads it.
 //!
-//! When: once as soon as dash-spv reports an `Uncertain` broadcast (the root
-//! of that transaction's chain), then on each advance of the wallet's synced
+//! When: once as soon as dash-spv reports an `Uncertain` broadcast — the
+//! current root of that transaction's chain; a send built on it becomes due
+//! by schedule once the root settles, not at once — then on each advance of the wallet's synced
 //! height that follows the tip — steps of more than [`CATCH_UP_STEP`] blocks,
 //! steps back (a rescan) and the first step after launch are catch-up and
 //! skipped (passes queued before them probe only what an `Uncertain` result
@@ -853,30 +854,6 @@ fn log_outgoing(item: &Outgoing) {
     }
 }
 
-/// The forced txids whose chain gains a root it did not have when the pass
-/// saw `views` with `mined_before` found in blocks, now that `gone` left and
-/// `mined_after` are known mined: a new root worth probing at once.
-fn forced_with_new_roots(
-    views: &[OutgoingView],
-    mined_before: &HashSet<Txid>,
-    mined_after: &HashSet<Txid>,
-    gone: &HashSet<Txid>,
-    forced: &HashSet<Txid>,
-) -> Vec<Txid> {
-    let before = ChainGraph::new(views, mined_before);
-    let remaining: Vec<OutgoingView> = views
-        .iter()
-        .filter(|view| !gone.contains(&view.txid))
-        .cloned()
-        .collect();
-    let after = ChainGraph::new(&remaining, mined_after);
-    forced
-        .iter()
-        .filter(|txid| !after.roots_of(txid).is_subset(&before.roots_of(txid)))
-        .copied()
-        .collect()
-}
-
 // ---- The actor -------------------------------------------------------------
 
 /// What a pass reads from a wallet.
@@ -1089,16 +1066,14 @@ struct Run {
     /// Cleared by a rewind: the wallet's schedules were restarted, and this
     /// run, older than that, marks no probes into them.
     marks: bool,
-    /// The wallet's command count when the run started.
-    seq: u64,
     /// Something touched the wallet during the run: its read may be stale, so
     /// the next height must not be skipped.
     woken: bool,
     /// Where this pass starts windows; `None` confines it to forced roots
     /// (see [`PendingPass::anchor_at`]).
     anchor_at: Option<u32>,
-    /// The txids `Uncertain` results forced it for.
-    forced: HashSet<Txid>,
+    /// `Uncertain` results forced it.
+    has_forced: bool,
     /// Whether the read walks the records even when none of the forced txids
     /// is held (`anchor_at.is_some()`): shared with the read job, cleared by a
     /// catch-up.
@@ -1128,10 +1103,6 @@ struct WalletEntry {
     wait_until: Option<u32>,
     pending: Option<PendingPass>,
     run: Option<Run>,
-    /// Commands seen for this wallet. A run that found the wallet gone drops
-    /// the entry only if none arrived since it started — a same-id wallet
-    /// added meanwhile keeps its entry.
-    seq: u64,
 }
 
 /// Owns all of the resolver's state. One task; commands and job results are
@@ -1254,11 +1225,9 @@ impl Actor {
         }
     }
 
-    /// The wallet's entry, created on first sight, with this command counted.
+    /// The wallet's entry, created on first sight.
     fn entry(&mut self, wallet_id: WalletId) -> &mut WalletEntry {
-        let entry = self.wallets.entry(wallet_id).or_default();
-        entry.seq += 1;
-        entry
+        self.wallets.entry(wallet_id).or_default()
     }
 
     fn handle(&mut self, command: Command) {
@@ -1269,7 +1238,6 @@ impl Actor {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                entry.seq += 1;
                 let previous = entry.height.replace(height);
                 let rewound = previous.is_some_and(|previous| height < previous);
                 if rewound {
@@ -1306,7 +1274,7 @@ impl Actor {
                     }
                     // Still reading, with nothing forced: nothing it could
                     // probe — stop its walk over the records now.
-                    if run.probing.is_none() && run.forced.is_empty() {
+                    if run.probing.is_none() && !run.has_forced {
                         run.abort.abort();
                         self.end_run(wallet_id);
                     }
@@ -1329,27 +1297,12 @@ impl Actor {
                 // Only a wallet already known: an event queued behind its
                 // removal must not bring back an entry nothing would drop.
                 if let Some(entry) = self.wallets.get_mut(&wallet_id) {
-                    entry.seq += 1;
-                    let mut requeue = HashSet::new();
                     // A pass under way read the wallet before this: it neither
                     // probes these any more nor publishes anything for them.
                     if let Some(run) = entry.run.as_mut() {
                         match run.probing.as_mut() {
                             None => run.settled.extend(txids.iter().copied()),
                             Some(probing) => {
-                                if !run.forced.is_empty() {
-                                    // A forced chain may gain a root (its parent
-                                    // settled): ask for it in a new pass rather
-                                    // than wait for the next block.
-                                    let mined = self.state.mined(&wallet_id);
-                                    requeue.extend(forced_with_new_roots(
-                                        &probing.views,
-                                        &mined,
-                                        &mined,
-                                        &txids,
-                                        &run.forced,
-                                    ));
-                                }
                                 probing.due.retain(|root| !txids.contains(&root.txid));
                                 probing.views.retain(|view| !txids.contains(&view.txid));
                                 // The root whose probe is out settled: stop
@@ -1366,12 +1319,6 @@ impl Actor {
                             }
                         }
                     }
-                    if !requeue.is_empty() {
-                        let height = entry.height.unwrap_or(0);
-                        let pending = entry.pending.get_or_insert_with(PendingPass::default);
-                        pending.height = pending.height.max(height);
-                        pending.forced.extend(requeue);
-                    }
                 }
                 let events = self.state.settle(wallet_id, &txids);
                 deliver(&self.sink, events);
@@ -1384,7 +1331,6 @@ impl Actor {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                entry.seq += 1;
                 if touched {
                     entry.wait_until = None;
                     if let Some(run) = entry.run.as_mut() {
@@ -1454,7 +1400,7 @@ impl Actor {
             return;
         };
         let anchor_at = pending.anchor_at;
-        let forced = pending.forced.clone();
+        let has_forced = !pending.forced.is_empty();
         // Walk the records if the pass may probe by schedule; one confined to
         // forced roots with none of them held has nothing to read for.
         let walk = Arc::new(AtomicBool::new(anchor_at.is_some()));
@@ -1476,10 +1422,9 @@ impl Actor {
             id: run,
             settled: HashSet::new(),
             marks: true,
-            seq: entry.seq,
             woken: false,
             anchor_at,
-            forced,
+            has_forced,
             walk,
             abort,
             probing: None,
@@ -1495,12 +1440,9 @@ impl Actor {
                 for wallet_id in wallets {
                     // Only a wallet the actor was told about (see
                     // `WalletAdded`): one removed since the lookup is gone.
-                    // Counted like a command: a run that read the id as gone
-                    // before this must not drop the entry and its request.
                     let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                         continue;
                     };
-                    entry.seq += 1;
                     let pending = entry.pending.get_or_insert_with(PendingPass::default);
                     pending.height = pending.height.max(entry.height.unwrap_or(0));
                     pending.forced.insert(txid);
@@ -1516,31 +1458,25 @@ impl Actor {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                let run_seq = match entry.run.as_ref() {
-                    Some(current) if current.id == run => current.seq,
-                    _ => return,
-                };
+                if !entry.run.as_ref().is_some_and(|current| current.id == run) {
+                    return;
+                }
                 match read {
                     None => {
-                        // Gone from the wallet manager. Every removal path
-                        // also sends `WalletRemoved`, but that command may
-                        // still be queued, or a lookup may have raced it:
-                        // forget the wallet here too — clearing twice is
-                        // harmless. Keep the entry if a command for a same-id
-                        // wallet arrived meanwhile.
-                        let keep = run_seq != entry.seq;
-                        if !keep {
-                            self.wallets.remove(&wallet_id);
-                        }
+                        // Gone from the wallet manager. Cannot happen: its
+                        // WalletRemoved is queued under the same guard that
+                        // removed it, and commands are handled before job
+                        // results. Fail safe: forget its state and end the run.
+                        tracing::error!(
+                            wallet_id = %hex::encode(wallet_id),
+                            "broadcast probe: a registered wallet read as gone"
+                        );
                         let events = self.state.forget_wallet(&wallet_id);
                         deliver(&self.sink, events);
-                        if keep {
-                            // The wait belonged to the state just forgotten.
-                            if let Some(entry) = self.wallets.get_mut(&wallet_id) {
-                                entry.wait_until = None;
-                            }
-                            self.end_run(wallet_id);
+                        if let Some(entry) = self.wallets.get_mut(&wallet_id) {
+                            entry.wait_until = None;
                         }
+                        self.end_run(wallet_id);
                     }
                     Some(None) => self.end_run(wallet_id),
                     Some(Some(read)) => {
@@ -1639,23 +1575,6 @@ impl Actor {
                     self.probe_next(wallet_id);
                     return;
                 }
-                // Found in a block: the sends built on it become roots, and a
-                // forced one among them is worth probing at once.
-                let reroot = if matches!(verdict, ProbeVerdict::Mined) && !current.forced.is_empty()
-                {
-                    let before = self.state.mined(&wallet_id);
-                    let mut after = before.clone();
-                    after.insert(root.txid);
-                    forced_with_new_roots(
-                        &probing.views,
-                        &before,
-                        &after,
-                        &HashSet::new(),
-                        &current.forced,
-                    )
-                } else {
-                    Vec::new()
-                };
                 let events = record_probe(
                     &mut self.state,
                     wallet_id,
@@ -1665,14 +1584,6 @@ impl Actor {
                     &verdict,
                 );
                 deliver(&self.sink, events);
-                if !reroot.is_empty() {
-                    if let Some(entry) = self.wallets.get_mut(&wallet_id) {
-                        let height = entry.height.unwrap_or(0);
-                        let pending = entry.pending.get_or_insert_with(PendingPass::default);
-                        pending.height = pending.height.max(height);
-                        pending.forced.extend(reroot);
-                    }
-                }
                 self.probe_next(wallet_id);
             }
         }
@@ -2829,17 +2740,15 @@ mod tests {
             }
         }
 
-        /// The wallet's unsettled records; the first call registers the
-        /// wallet, as the manager does before any of its events.
+        /// The wallet's unsettled records; registers the wallet if the actor
+        /// does not know it, as the manager does before any of its events.
         fn views(&mut self, wallet_id: WalletId, views: Vec<OutgoingView>) {
-            let new = self
-                .source
+            self.source
                 .views
                 .lock()
                 .expect("views")
-                .insert(wallet_id, views)
-                .is_none();
-            if new && !self.actor.wallets.contains_key(&wallet_id) {
+                .insert(wallet_id, views);
+            if !self.actor.wallets.contains_key(&wallet_id) {
                 self.actor.handle(Command::WalletAdded(wallet_id));
             }
         }
@@ -3043,25 +2952,6 @@ mod tests {
         rig.send(Command::WalletRemoved(wallet())).await;
 
         assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
-        assert!(!rig.actor.wallets.contains_key(&wallet()));
-    }
-
-    /// A registered wallet the manager no longer holds (removed without the
-    /// removal reaching the resolver yet): the first pass that finds it gone
-    /// drops it.
-    #[tokio::test]
-    async fn should_drop_a_wallet_the_manager_no_longer_holds() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.actor.handle(Command::WalletAdded(wallet())); // never in the source
-
-        rig.height(wallet(), 100).await;
-        assert!(rig.actor.wallets.contains_key(&wallet()));
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 101,
-        });
-        rig.settle().await;
-
         assert!(!rig.actor.wallets.contains_key(&wallet()));
     }
 
@@ -4020,35 +3910,6 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(2)]);
     }
 
-    /// A forced send whose unconfirmed parent was the root settles in the
-    /// middle of the pass: the send, now a root, is probed at once — not at
-    /// the next block.
-    #[tokio::test]
-    async fn should_probe_a_forced_send_at_once_when_its_parent_root_settles() {
-        let probe = Arc::new(ScriptedProbe::new(&[]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), Vec::new());
-        rig.follow(wallet(), 100).await;
-        rig.views(
-            wallet(),
-            vec![incoming(5, &[outpoint(80, 0)]), send(6, &[outpoint(5, 0)])],
-        );
-        rig.actor.handle(Command::Uncertain(txid(6)));
-        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
-        rig.actor.joined(listed);
-        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
-        rig.actor.joined(read); // the parent's probe is out
-
-        rig.views(wallet(), vec![send(6, &[outpoint(5, 0)])]);
-        rig.handle(Command::Settled {
-            wallet_id: wallet(),
-            txids: HashSet::from([txid(5)]),
-        });
-        rig.settle().await;
-
-        assert_eq!(probe.probed(), vec![txid(6)]);
-    }
-
     /// The first root's probe finishes Dead, then the root settles before
     /// the result is handled: the leftover answer is not recorded against
     /// the next root in flight.
@@ -4167,24 +4028,6 @@ mod tests {
         rig.settle().await;
 
         assert_eq!(probe.probed(), vec![txid(2)], "root 1 stopped, root 2 once");
-    }
-
-    /// The forced send's parent root is found in a block: the send becomes a
-    /// root and is probed at once, not at the next block.
-    #[tokio::test]
-    async fn should_probe_a_forced_send_at_once_when_its_root_is_found_mined() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined)]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), Vec::new());
-        rig.follow(wallet(), 100).await;
-        rig.views(
-            wallet(),
-            vec![incoming(1, &[outpoint(80, 0)]), send(2, &[outpoint(1, 0)])],
-        );
-
-        rig.send(Command::Uncertain(txid(2))).await;
-
-        assert_eq!(probe.probed(), vec![txid(1), txid(2)]);
     }
 
     /// An `Uncertain` lookup that lands after its wallet was removed does not
