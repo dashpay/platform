@@ -1,11 +1,8 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
-
 use super::signing_key::AvailableSigningKey;
 
 use dpp::fee::Credits;
-use dpp::identity::accessors::IdentityGettersV0;
-
 
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;

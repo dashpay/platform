@@ -59,8 +59,8 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    merge_payment_overlays, AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PaymentOverlay,
-    PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
+    coalesce_account_records, merge_payment_overlays, AssetLockChangeSet, CoreChangeSet,
+    HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
@@ -1234,17 +1234,11 @@ async fn build_core_changeset(
             ..
         } => {
             let mut cs = CoreChangeSet::default();
-            // Inserted records bring fresh UTXOs and may consume previous ones.
-            for r in inserted {
+            // Corrections can discover owned inputs or outputs after the first observation.
+            for r in inserted.iter().chain(updated.iter()) {
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
             }
-            // Updated records (re-confirmation, IS-lock applied to a known
-            // mempool tx, etc.) don't usually change UTXO topology — the
-            // record's content does change though, so re-emit it.
-            // Matured coinbase records likewise: no UTXO topology change,
-            // just a status update for the persister.
-            //
             // Contact watch-only records are filtered out of all three
             // lists: re-emitting one on confirmation would re-clobber the
             // funding account's row with an incoming/positive
@@ -1265,6 +1259,7 @@ async fn build_core_changeset(
                     .filter(|r| !is_contact_watch_only(r))
                     .cloned(),
             );
+            coalesce_account_records(&mut cs.account_records);
             cs.records = cs.account_records.clone();
             crate::changeset::changeset::fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
@@ -3438,6 +3433,40 @@ mod contact_watch_only_projection_tests {
 
         assert_eq!(cs.records.len(), 1);
         assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
+        assert_eq!(
+            cs.spent_utxos.len(),
+            1,
+            "updated records must project recognized inputs"
+        );
+        assert_eq!(
+            cs.new_utxos.len(),
+            1,
+            "updated records must project owned change"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_coalesce_repeated_account_corrections_within_one_block() {
+        let (_, corrected, _) = contact_payment_records();
+        let mut stale = corrected.clone();
+        stale.input_details.clear();
+        stale.net_amount = CHANGE as i64;
+        stale.direction = TransactionDirection::Incoming;
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_001,
+            chain_lock: None,
+            inserted: vec![stale],
+            updated: vec![corrected.clone()],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].net_amount, corrected.net_amount);
+        assert_eq!(cs.account_records.len(), 1);
     }
 
     /// A cross-account spend (CoinJoin-funded send with BIP44 change)

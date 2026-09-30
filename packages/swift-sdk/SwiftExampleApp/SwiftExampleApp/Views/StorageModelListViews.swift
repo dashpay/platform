@@ -1162,10 +1162,10 @@ struct TransactionStorageListView: View {
             // Direction.
             switch directionFilter {
             case .all: break
-            case .incoming where record.direction != 0: return false
-            case .outgoing where record.direction != 1: return false
-            case .internalTx where record.direction != 2: return false
-            case .coinjoin where record.direction != 3: return false
+            case .incoming where record.direction != CoreDirectionCode.incoming: return false
+            case .outgoing where record.direction != CoreDirectionCode.outgoing: return false
+            case .internalTx where record.direction != CoreDirectionCode.internalTransfer: return false
+            case .coinjoin where record.direction != CoreDirectionCode.coinJoin: return false
             default: break
             }
             // Type. Treat the legacy `"Standard"` placeholder (the

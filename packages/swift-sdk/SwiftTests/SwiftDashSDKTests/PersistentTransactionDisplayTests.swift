@@ -12,7 +12,10 @@ final class PersistentTransactionDisplayTests: XCTestCase {
     /// Direction 2 = internal — the raw classification every special
     /// tx gets (asset locks, provider txs), which the display helpers
     /// exist to override.
-    private func makeTransaction(kind: UInt8, direction: UInt32 = 2) -> PersistentTransaction {
+    private func makeTransaction(
+        kind: UInt8,
+        direction: UInt32 = CoreDirectionCode.internalTransfer
+    ) -> PersistentTransaction {
         let tx = PersistentTransaction(
             txid: Data(repeating: 0xAB, count: 32),
             transactionData: Data(),
@@ -53,7 +56,7 @@ final class PersistentTransactionDisplayTests: XCTestCase {
         XCTAssertEqual(makeTransaction(kind: 7).displayDirection, "Asset Unlock")
         // …and non-special kinds fall through to the raw direction.
         XCTAssertEqual(makeTransaction(kind: 0).displayDirection, "Internal")
-        XCTAssertEqual(makeTransaction(kind: 0, direction: 0).displayDirection, "Incoming")
+        XCTAssertEqual(makeTransaction(kind: 0, direction: CoreDirectionCode.incoming).displayDirection, "Incoming")
         XCTAssertEqual(makeTransaction(kind: 0xFF).displayDirection, "Internal")
     }
 }

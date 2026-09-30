@@ -625,6 +625,33 @@ fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
     }
 }
 
+/// Keep one record per `(txid, account_type)` before folding account
+/// contributions. The record with the higher [`context_rank`] wins
+/// wholesale; on equal rank the later record wins. Records are never
+/// spliced together: a record's amounts, inputs and outputs are only
+/// coherent with the context they were observed under, so mixing a later
+/// body with an earlier, higher-ranked context would fabricate a record
+/// whose finality no single observation ever reported.
+// TODO(unify-record-coalescing): `coalesce_newest_wins` (the `Merge` path)
+// can regress a confirmed record to an older mempool slice; this helper
+// keeps the higher-ranked record. Unify them once `Merge` semantics are
+// reviewed.
+pub(crate) fn coalesce_account_records(records: &mut Vec<TransactionRecord>) {
+    let mut positions = BTreeMap::new();
+    for record in std::mem::take(records) {
+        let key = (record.txid, record.account_type);
+        if let Some(&position) = positions.get(&key) {
+            let previous: &TransactionRecord = &records[position];
+            if context_rank(&record.context) >= context_rank(&previous.context) {
+                records[position] = record;
+            }
+        } else {
+            positions.insert(key, records.len());
+            records.push(record);
+        }
+    }
+}
+
 /// Rank a [`TransactionContext`](key_wallet::transaction_checking::TransactionContext)
 /// by how far along the confirmation lifecycle the observation is.
 /// Used by [`fold_same_txid_records`] so a fold never regresses a
@@ -3597,5 +3624,74 @@ mod utxo_credit_verdict_merge_tests {
         ));
         older.merge(newer);
         assert!(older.utxo_credit_verdicts.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod coalesce_account_records_tests {
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::BlockHash;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+    fn record(net_amount: i64, context: TransactionContext) -> TransactionRecord {
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let mut record = TransactionRecord::new(
+            tx,
+            key_wallet::account::AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            },
+            context,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            net_amount,
+        );
+        record.txid = Txid::from_byte_array([7; 32]);
+        record
+    }
+
+    fn in_block() -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0))
+    }
+
+    #[test]
+    fn should_keep_confirmed_record_intact_when_stale_mempool_record_follows() {
+        let mut records = vec![
+            record(500, in_block()),
+            record(900, TransactionContext::Mempool),
+        ];
+        coalesce_account_records(&mut records);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].net_amount, 500);
+        assert!(matches!(records[0].context, TransactionContext::InBlock(_)));
+    }
+
+    #[test]
+    fn should_replace_with_later_record_of_equal_or_higher_rank() {
+        let mut equal = vec![
+            record(500, TransactionContext::Mempool),
+            record(900, TransactionContext::Mempool),
+        ];
+        coalesce_account_records(&mut equal);
+        assert_eq!(equal.len(), 1);
+        assert_eq!(equal[0].net_amount, 900);
+
+        let mut higher = vec![
+            record(500, TransactionContext::Mempool),
+            record(900, in_block()),
+        ];
+        coalesce_account_records(&mut higher);
+        assert_eq!(higher.len(), 1);
+        assert_eq!(higher[0].net_amount, 900);
+        assert!(matches!(higher[0].context, TransactionContext::InBlock(_)));
     }
 }
