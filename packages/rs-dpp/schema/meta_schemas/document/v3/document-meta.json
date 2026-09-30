@@ -2237,6 +2237,16 @@
           "type": "boolean",
           "description": "Whether the owner of a document a moderator deletes is refunded the part of its storage fee not yet paid out to past epochs, as an owner deleting it themselves is. Default false: the owner forfeits it, and the credits stay in the storage pools. A type with a `ttl` refunds nothing either way. Requires `delete: true`."
         },
+        "deleteKeepsFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Property paths whose values a moderator's removal record keeps, copied from the document as it was deleted: what of the document stays public once it is gone (the hashtag of a removed post, say). Each entry names a declared property at any depth (`hashtag`, `meta.tags`, or an object kept whole), or one of the timestamps and block heights the type lists in `required` (`$createdAt`, `$updatedAtBlockHeight`, ...); not a transient property, not `$id` or `$ownerId` (every record holds them already), and not a path inside another listed one. A document without a value at a path leaves it out of the record. The values are read with the record (getContractDocumentRemovals), and the moderator pays for their storage. Requires `delete: true` and a record (`deleteKeepsRecord` not false)."
+        },
         "changeFields": {
           "type": "array",
           "items": {
@@ -2250,7 +2260,7 @@
       },
       "additionalProperties": false,
       "minProperties": 1,
-      "description": "What the contract's moderators may do to documents of this type with a contract user moderation transition: delete them (`delete`, within `deleteWithin` seconds of their last modification when given, leaving a removal record unless `deleteKeepsRecord` is false, refunding the owner when `deleteRefundsOwner` is true), and write the fields only they write (`changeFields`). Requires the contract to declare `moderation` in its config. Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
+      "description": "What the contract's moderators may do to documents of this type with a contract user moderation transition: delete them (`delete`, within `deleteWithin` seconds of their last modification when given, leaving a removal record unless `deleteKeepsRecord` is false, keeping in it the values `deleteKeepsFields` lists, refunding the owner when `deleteRefundsOwner` is true), and write the fields only they write (`changeFields`). Requires the contract to declare `moderation` in its config. Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
     },
     "ttl": {
       "type": "integer",

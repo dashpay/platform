@@ -22,6 +22,7 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::documents::chained_document_query::ChainedDocumentQuery;
 use dash_sdk::platform::{ChainedDocuments, Fetch};
 use js_sys::{Array, Object, Reflect};
@@ -126,6 +127,12 @@ interface JoinedDocumentRemoval {
   restoredBy?: Identifier;
   /** The time of the block that restored it, in milliseconds; absent while the removal stands. */
   restoredAt?: bigint;
+  /**
+   * The values the record keeps of the document, by the property path its type lists under
+   * `moderatorAbilities.deleteKeepsFields`, shown as the document's `properties` show them.
+   * Empty when the type keeps none.
+   */
+  keptFields: Record<string, unknown>;
 }
 "#;
 
@@ -222,10 +229,18 @@ fn chained_result_to_js(
     )
     .map_err(|_| WasmSdkError::generic("failed to build chained result object"))?;
     let removed_outer_documents = Array::new();
-    for entry in &chained.removed_outer_documents {
-        removed_outer_documents.push(&removal_entry_to_js(entry, |id| {
-            IdentifierWasm::from(id).into()
-        })?);
+    if !chained.removed_outer_documents.is_empty() {
+        // The outer type is the inner contract's: a join follows a same-contract reference
+        let outer_type = query
+            .inner
+            .data_contract
+            .document_type_for_name(&query.outer_document_type_name)
+            .map_err(ProtocolError::from)?;
+        for entry in &chained.removed_outer_documents {
+            removed_outer_documents.push(&removal_entry_to_js(entry, outer_type, |id| {
+                IdentifierWasm::from(id).into()
+            })?);
+        }
     }
     Reflect::set(
         &result,

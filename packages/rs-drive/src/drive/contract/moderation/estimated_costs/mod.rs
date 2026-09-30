@@ -168,6 +168,10 @@ impl Drive {
     ///
     /// * `contract_id`: The contract the document belonged to.
     /// * `document_type_name`: The document's type, whose removal tree holds the record.
+    /// * `estimated_kept_fields_size`: What the type's records are estimated to keep
+    ///   (`moderatorAbilities.deleteKeepsFields`, see
+    ///   `types::estimated_document_removal_kept_fields_size`), which the records the write
+    ///   walks past are estimated to hold; `0` for a type that keeps none.
     /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
     /// * `drive_version`: The drive version.
     ///
@@ -178,6 +182,7 @@ impl Drive {
     pub(crate) fn add_estimation_costs_for_contract_document_removal(
         contract_id: [u8; 32],
         document_type_name: &str,
+        estimated_kept_fields_size: u32,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -190,6 +195,7 @@ impl Drive {
             0 => Self::add_estimation_costs_for_contract_document_removal_v0(
                 contract_id,
                 document_type_name,
+                estimated_kept_fields_size,
                 estimated_costs_only_with_layer_info,
                 drive_version,
             ),

@@ -2315,6 +2315,7 @@ async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody
         removed_at: BLOCK_TIME_MS,
         document_hash,
         restoration: None,
+        kept_fields: Default::default(),
     };
     assert_eq!(setup.post_removal(post.id(), None), Some(expected.clone()));
     assert_eq!(setup.assert_removal_proved(&delete), expected);

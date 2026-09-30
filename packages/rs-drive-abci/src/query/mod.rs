@@ -195,6 +195,7 @@ pub(crate) mod tests {
             removed_at: 1_000 + id[0] as u64,
             document_hash: id,
             restoration: None,
+            kept_fields: Default::default(),
         }
     }
 
@@ -218,11 +219,14 @@ pub(crate) mod tests {
                 contract_id: data_contract.id(),
                 document_type_name: "post".to_string(),
                 document_id: Identifier::from(id),
-                removal,
-                replaces_existing: false,
+                removal: Box::new(removal),
+                replaced_record_size: None,
+                estimated_kept_fields_size: 0,
                 moderator_id,
             }),
-            ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds),
+            ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds {
+                spared: None,
+            }),
         ];
         platform
             .drive

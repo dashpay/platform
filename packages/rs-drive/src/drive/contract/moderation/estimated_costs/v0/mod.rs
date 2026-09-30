@@ -139,6 +139,7 @@ impl Drive {
     pub(super) fn add_estimation_costs_for_contract_document_removal_v0(
         contract_id: [u8; 32],
         document_type_name: &str,
+        estimated_kept_fields_size: u32,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -149,8 +150,9 @@ impl Drive {
         )?;
 
         // The records of one document type: one item per removed document, keyed by document
-        // id. The records a write walks past are sized like a typical one; the record being
-        // written is priced by its own size.
+        // id. The records a write walks past are sized like a typical one, keeping what the
+        // type's records are estimated to keep (the same paths, at their middle sizes); the
+        // record being written is priced by its own size.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_document_type_removals_path(
                 &contract_id,
@@ -161,7 +163,7 @@ impl Drive {
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     DEFAULT_HASH_SIZE_U8,
-                    estimated_document_removal_value_size(),
+                    estimated_document_removal_value_size(estimated_kept_fields_size),
                     Some(StorageFlags::approximate_size(true, None)),
                 ),
             },

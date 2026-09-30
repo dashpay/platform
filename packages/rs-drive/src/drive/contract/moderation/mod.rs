@@ -20,11 +20,14 @@
 //! ```text
 //!         [16] document removals
 //!         └── <document type name>            (a type that sets `moderatorAbilities.delete`)
-//!             └── <document id> -> Item(document owner id ‖ moderator id ‖ removed at ‖ reason)
+//!             └── <document id> -> Item(document owner id ‖ moderator id ‖ removed at ‖
+//!                                       document hash ‖ tag ‖ restoration? ‖ kept fields? ‖
+//!                                       reason)
 //! ```
 //!
-//! `removed at` is a u64 of block time in milliseconds, big-endian: see
-//! [`types::encode_document_removal`]. The moderator pays for the record and nothing ever
+//! `removed at` is a u64 of block time in milliseconds, big-endian; the tag says whether a
+//! restoration (bit 0) and kept fields (bit 1, `moderatorAbilities.deleteKeepsFields`)
+//! follow: see [`types::encode_document_removal`]. The moderator pays for the record and nothing ever
 //! deletes it; the deleted document's own storage refund goes to nobody.
 //!
 //! `until` is a u64 of block time in milliseconds, big-endian. A reason is a tag byte (bit 0: a

@@ -84,7 +84,9 @@ pub(super) fn reason_to_response(
 }
 
 /// A document removal record as the wire carries it: the one shape the removals query and a
-/// join through a `moderatedDocument` reference answer with.
+/// join through a `moderatedDocument` reference answer with. The fields it keeps go out as the
+/// record stores them, encoded as the document encoded its properties, for the reader to read
+/// under the document's type as it reads documents.
 pub(super) fn removal_entry_to_response(
     entry: ContractDocumentRemovalEntry,
 ) -> ContractDocumentRemovalProto {
@@ -101,6 +103,7 @@ pub(super) fn removal_entry_to_response(
                 restored_at: restoration.restored_at,
             }
         }),
+        kept_fields: entry.removal.kept_fields,
     }
 }
 

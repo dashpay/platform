@@ -80,9 +80,13 @@ pub struct ContractDocumentRemovalRecordContext {
     /// a double SHA-256 of the document as serialized under its type, recorded so that a
     /// restore can be checked against it
     pub document_hash: [u8; 32],
-    /// whether the document has a removal record already, from a deletion a moderator
-    /// restored: the fresh record then replaces it
-    pub replaces_restored_record: bool,
+    /// the removal record the document has already, from a deletion a moderator restored,
+    /// which the fresh record replaces; `None` when it has none
+    pub replaced_record: Option<ContractDocumentRemoval>,
+    /// the values the record keeps of the document, the paths its type lists
+    /// (`moderatorAbilities.deleteKeepsFields`), read from the document as stored and encoded
+    /// as the document encodes its properties
+    pub kept_fields: Vec<u8>,
 }
 
 /// What the validation of a document restore read and decoded, so that Drive puts the

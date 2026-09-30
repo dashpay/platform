@@ -18,6 +18,7 @@ use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::contract_user_moderation::ModerateContractUser;
 use dash_sdk::platform::transition::put_contract::PutContract;
@@ -385,6 +386,13 @@ export interface ContractDocumentRemovalResult {
   restoredBy?: Identifier;
   /** The time of the block that restored it, in milliseconds; absent while the removal stands */
   restoredAt?: bigint;
+  /**
+   * The values the record keeps of the document, by the property path its type lists under
+   * `moderatorAbilities.deleteKeepsFields`, shown as the document's `properties` show them:
+   * what of it stays public once it is gone. Empty when the type keeps none; a path the
+   * document held no value at is absent
+   */
+  keptFields: Record<string, unknown>;
 }
 
 /**
@@ -708,7 +716,8 @@ impl WasmSdk {
         // A deletion is proved by the removal record it wrote, or on a type whose moderators'
         // deletions keep none by the document's absence; which of the two the verifier reads
         // from the contract, so the contract is resolved and cached before anything is paid for.
-        self.get_or_fetch_contract(contract_id).await?;
+        // The fields the record keeps are read under its document type too.
+        let contract = self.get_or_fetch_contract(contract_id).await?;
         let removal = identity
             .delete_contract_document(
                 self.inner_sdk(),
@@ -740,7 +749,14 @@ impl WasmSdk {
         )?;
         set("documentId", IdentifierWasm::from(document_id).into())?;
         // The record, with the fields `getContractDocumentRemovals` answers with.
-        set_removal_fields(&result, &removal, |id| IdentifierWasm::from(id).into())?;
+        set_removal_fields(
+            &result,
+            &removal,
+            contract
+                .document_type_for_name(&parsed.document_type_name)
+                .map_err(ProtocolError::from)?,
+            |id| IdentifierWasm::from(id).into(),
+        )?;
         Ok(JsValue::from(result).into())
     }
 
@@ -803,7 +819,14 @@ impl WasmSdk {
             JsValue::from_str(&parsed.document_type_name),
         )?;
         set("documentId", IdentifierWasm::from(document_id).into())?;
-        set_removal_fields(&result, &removal, |id| IdentifierWasm::from(id).into())?;
+        set_removal_fields(
+            &result,
+            &removal,
+            contract
+                .document_type_for_name(&parsed.document_type_name)
+                .map_err(ProtocolError::from)?,
+            |id| IdentifierWasm::from(id).into(),
+        )?;
         Ok(JsValue::from(result).into())
     }
 

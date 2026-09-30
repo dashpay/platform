@@ -29163,6 +29163,7 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [reason] ContractDocumentRemoval reason
                              * @property {Uint8Array|null} [documentHash] ContractDocumentRemoval documentHash
                              * @property {org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.IContractDocumentRestoration|null} [restoration] ContractDocumentRemoval restoration
+                             * @property {Uint8Array|null} [keptFields] ContractDocumentRemoval keptFields
                              */
 
                             /**
@@ -29237,6 +29238,14 @@ $root.org = (function() {
                             ContractDocumentRemoval.prototype.restoration = null;
 
                             /**
+                             * ContractDocumentRemoval keptFields.
+                             * @member {Uint8Array} keptFields
+                             * @memberof org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+                             * @instance
+                             */
+                            ContractDocumentRemoval.prototype.keptFields = $util.newBuffer([]);
+
+                            /**
                              * Creates a new ContractDocumentRemoval instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval
@@ -29274,6 +29283,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.documentHash);
                                 if (message.restoration != null && Object.hasOwnProperty.call(message, "restoration"))
                                     $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.encode(message.restoration, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+                                if (message.keptFields != null && Object.hasOwnProperty.call(message, "keptFields"))
+                                    writer.uint32(/* id 8, wireType 2 =*/66).bytes(message.keptFields);
                                 return writer;
                             };
 
@@ -29328,6 +29339,9 @@ $root.org = (function() {
                                         break;
                                     case 7:
                                         message.restoration = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.decode(reader, reader.uint32());
+                                        break;
+                                    case 8:
+                                        message.keptFields = reader.bytes();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -29389,6 +29403,9 @@ $root.org = (function() {
                                     if (error)
                                         return "restoration." + error;
                                 }
+                                if (message.keptFields != null && message.hasOwnProperty("keptFields"))
+                                    if (!(message.keptFields && typeof message.keptFields.length === "number" || $util.isString(message.keptFields)))
+                                        return "keptFields: buffer expected";
                                 return null;
                             };
 
@@ -29443,6 +29460,11 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRemoval.restoration: object expected");
                                     message.restoration = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.fromObject(object.restoration);
                                 }
+                                if (object.keptFields != null)
+                                    if (typeof object.keptFields === "string")
+                                        $util.base64.decode(object.keptFields, message.keptFields = $util.newBuffer($util.base64.length(object.keptFields)), 0);
+                                    else if (object.keptFields.length >= 0)
+                                        message.keptFields = object.keptFields;
                                 return message;
                             };
 
@@ -29495,6 +29517,13 @@ $root.org = (function() {
                                             object.documentHash = $util.newBuffer(object.documentHash);
                                     }
                                     object.restoration = null;
+                                    if (options.bytes === String)
+                                        object.keptFields = "";
+                                    else {
+                                        object.keptFields = [];
+                                        if (options.bytes !== Array)
+                                            object.keptFields = $util.newBuffer(object.keptFields);
+                                    }
                                 }
                                 if (message.documentId != null && message.hasOwnProperty("documentId"))
                                     object.documentId = options.bytes === String ? $util.base64.encode(message.documentId, 0, message.documentId.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentId) : message.documentId;
@@ -29513,6 +29542,8 @@ $root.org = (function() {
                                     object.documentHash = options.bytes === String ? $util.base64.encode(message.documentHash, 0, message.documentHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentHash) : message.documentHash;
                                 if (message.restoration != null && message.hasOwnProperty("restoration"))
                                     object.restoration = $root.org.dash.platform.dapi.v0.GetContractDocumentRemovalsResponse.ContractDocumentRestoration.toObject(message.restoration, options);
+                                if (message.keptFields != null && message.hasOwnProperty("keptFields"))
+                                    object.keptFields = options.bytes === String ? $util.base64.encode(message.keptFields, 0, message.keptFields.length) : options.bytes === Array ? Array.prototype.slice.call(message.keptFields) : message.keptFields;
                                 return object;
                             };
 
