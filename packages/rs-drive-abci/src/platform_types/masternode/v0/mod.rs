@@ -62,7 +62,7 @@ impl From<MasternodeListItem> for MasternodeV0 {
             pro_tx_hash,
             collateral_hash,
             collateral_index,
-            collateral_address,
+            collateral_address: collateral_address.unwrap_or_default(),
             operator_reward,
             state: state.into(),
         }
@@ -86,7 +86,7 @@ impl From<MasternodeV0> for MasternodeListItem {
             pro_tx_hash,
             collateral_hash,
             collateral_index,
-            collateral_address,
+            collateral_address: Some(collateral_address),
             operator_reward,
             state: state.into(),
         }
@@ -139,6 +139,8 @@ pub struct MasternodeStateV0 {
 
 impl From<DMNState> for MasternodeStateV0 {
     fn from(value: DMNState) -> Self {
+        // The payout list and the nested addresses are not stored.
+        #[allow(deprecated)]
         let DMNState {
             service,
             registered_height,
@@ -148,11 +150,13 @@ impl From<DMNState> for MasternodeStateV0 {
             owner_address,
             voting_address,
             payout_address,
+            payouts: _,
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port: platform_p2p_port,
+            legacy_platform_http_port: platform_http_port,
+            addresses: _,
         } = value;
 
         Self {
@@ -161,9 +165,9 @@ impl From<DMNState> for MasternodeStateV0 {
             pose_revived_height,
             pose_ban_height,
             revocation_reason,
-            owner_address,
+            owner_address: owner_address.unwrap_or_default(),
             voting_address,
-            payout_address,
+            payout_address: payout_address.unwrap_or_default(),
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
@@ -191,20 +195,23 @@ impl From<MasternodeStateV0> for DMNState {
             platform_http_port,
         } = value;
 
+        #[allow(deprecated)]
         Self {
             service,
             registered_height,
             pose_revived_height,
             pose_ban_height,
             revocation_reason,
-            owner_address,
+            owner_address: Some(owner_address),
             voting_address,
-            payout_address,
+            payout_address: Some(payout_address),
+            payouts: None,
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port: platform_p2p_port,
+            legacy_platform_http_port: platform_http_port,
+            addresses: None,
         }
     }
 }

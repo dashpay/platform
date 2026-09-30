@@ -751,7 +751,7 @@ pub(in crate::execution) mod tests {
                 pro_tx_hash,
                 collateral_hash: Txid::from_byte_array(rng.gen()),
                 collateral_index: 0,
-                collateral_address: rng.gen(),
+                collateral_address: Some(rng.gen()),
                 operator_reward: 0.0,
                 state: DMNState {
                     service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
@@ -759,14 +759,18 @@ pub(in crate::execution) mod tests {
                     pose_revived_height: None,
                     pose_ban_height: None,
                     revocation_reason: 0,
-                    owner_address,
+                    owner_address: Some(owner_address),
                     voting_address: rng.gen(),
-                    payout_address,
+                    payout_address: Some(payout_address),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
                 },
             },
         );
@@ -840,7 +844,7 @@ pub(in crate::execution) mod tests {
                 pro_tx_hash,
                 collateral_hash: Txid::from_byte_array(rng.gen()),
                 collateral_index: 0,
-                collateral_address: rng.gen(),
+                collateral_address: Some(rng.gen()),
                 operator_reward: 0.0,
                 state: DMNState {
                     service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
@@ -848,14 +852,18 @@ pub(in crate::execution) mod tests {
                     pose_revived_height: None,
                     pose_ban_height: None,
                     revocation_reason: 0,
-                    owner_address: rng.gen(),
+                    owner_address: Some(rng.gen()),
                     voting_address,
-                    payout_address: rng.gen(),
+                    payout_address: Some(rng.gen()),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
                 },
             },
         );

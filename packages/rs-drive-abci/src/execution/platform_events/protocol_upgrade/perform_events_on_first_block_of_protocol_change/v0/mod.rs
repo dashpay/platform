@@ -191,8 +191,15 @@ impl<C> Platform<C> {
                 .max()
                 .expect("there must be keys, we already checked");
 
+            let owner_address = masternode.state.owner_address.ok_or_else(|| {
+                Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
+                    "masternode {} has no owner address",
+                    masternode.pro_tx_hash
+                )))
+            })?;
+
             let new_owner_key = Self::get_owner_identity_owner_key(
-                masternode.state.owner_address,
+                owner_address,
                 last_key_id + 1,
                 platform_version,
             )?;
