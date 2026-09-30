@@ -2041,6 +2041,10 @@
             "type": "boolean",
             "description": "Only on indexOnly document types whose index path is fully determined by a same-contract permanentDocument or moderatedDocument refersTo declaration: every index property must be either the referring property itself (its value is the referenced document's $id) or a referring value of that declaration's where (consensus-equal to a referenced-document property; through moderatedDocument, the referenced $ownerId or a property the referenced type keeps under moderatorAbilities.deleteKeepsFields). When true, creating a referenced document also creates this index's dynamic trees for entries referencing it — paid by the referenced document's creator — and deleting the last entry keeps them, so every entry insert costs the same as the first. Available from protocol version 14."
           },
+          "outlivesDelete": {
+            "type": "boolean",
+            "description": "Only on a timeRange index with a ttl of an indexOnly document type, without a sum and on a type without entryPayload: a delete of a document leaves its entries in this index to expire with their window, and a create whose entry here already exists keeps it rather than being refused as a duplicate. A value only such indexes use ($createdAt, when every index involving it outlives deletes) is neither carried by a delete nor part of the row commitment. Available from protocol version 14."
+          },
           "skipIfAbsent": {
             "oneOf": [
               {

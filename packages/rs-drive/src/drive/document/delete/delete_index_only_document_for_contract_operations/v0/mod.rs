@@ -165,7 +165,13 @@ impl Drive {
         } else {
             let expected_commitment =
                 index_only_row_commitment(&document, document_type, platform_version)?;
-            for index in document_type.indexes().values() {
+            // An index whose entries outlive the delete is neither checked
+            // nor cleared: its entries stay to expire with their window.
+            for index in document_type
+                .indexes()
+                .values()
+                .filter(|index| !index.outlives_delete)
+            {
                 let matches = self.index_only_entry_commitment_matches(
                     contract.id(),
                     document_type,

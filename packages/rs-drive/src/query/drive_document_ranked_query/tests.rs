@@ -705,6 +705,7 @@ fn test_index(name: &str, properties: &[&str], summable: Option<&str>) -> Index 
         integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
         skip_if_absent_properties: Vec::new(),
     }

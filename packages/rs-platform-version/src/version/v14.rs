@@ -1839,6 +1839,28 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Inert for every contract that could be registered before: a moderated
 ///     reference never bound a preallocated index.
 ///
+/// 69. **Index entries that outlive a delete (`outlivesDelete`)**: an index
+///     keyword of meta-schema v3 and parser generation 3, in place
+///     (`Index::outlives_delete`, `IndexLevelTypeInfo::outlives_delete`,
+///     `IndexLevel::outlives_delete_at_or_below`), admitted only on a
+///     `timeRange` index with a `ttl` of an indexOnly type, without a sum and
+///     on a type without `entryPayload`; every schema property must also sit
+///     in an index that neither skips nor outlives deletes, the proof index
+///     may not outlive deletes (`index_only_proof_index`), and the flag is
+///     fixed with the index (`find_first_outlives_delete_change`). A delete
+///     leaves such an index's entries to expire with their window: document
+///     index-only delete state validation 0 and Drive's row-integrity gate do
+///     not probe it, and the delete walkers (top and index level 2) skip it
+///     (`level_removes_entry`). The row commitment leaves `$createdAt` out when
+///     every index involving it outlives deletes
+///     (`index_only_row_commits_created_at`, shared by the commitment, the
+///     delete transition's construction and advanced structure validation 0,
+///     which then refuses a carried `$createdAt`). Document create state
+///     validation 1 does not probe such an index for a duplicate, and the
+///     indexOnly terminal insert keeps an entry already standing there instead
+///     of refusing it. Inert for every contract without the keyword, which
+///     every earlier grammar refuses.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

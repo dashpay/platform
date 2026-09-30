@@ -96,6 +96,9 @@ impl IndexOnlyBatchEntries {
         let document =
             Document::try_from_create_transition_action(create_action, owner_id, platform_version)?;
 
+        // Every index, one whose entries outlive a delete included: storage
+        // keeps an entry already standing there, but within one grove batch
+        // the second write would replace the first, as described above.
         let mut claimed = Vec::new();
         for index in document_type.indexes().values() {
             let (paths, member_key) = Drive::index_only_entry_paths_and_key(

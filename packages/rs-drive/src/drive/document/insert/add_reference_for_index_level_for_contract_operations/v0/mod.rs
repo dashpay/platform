@@ -363,7 +363,9 @@ impl Drive {
     /// validation probes every index's entry before the batch applies, so
     /// reaching this error at apply time means validation was bypassed —
     /// the same backstop role the unique-index "reference already exists"
-    /// above plays.
+    /// above plays. The exception is an index whose entries outlive a delete
+    /// (`outlivesDelete`): validation does not probe it, and an entry there
+    /// already, left by an earlier document with the same values, is kept.
     ///
     /// Under a summable index the element is
     /// `ItemWithSumItem(commitment, amount, flags)` instead — the same
@@ -607,7 +609,12 @@ impl Drive {
             batch_operations,
             drive_version,
         )?;
-        if !inserted {
+        // An index whose entries outlive a delete keeps the entry an earlier
+        // document with the same values left: it already stands for this
+        // owner under these values, so the write is skipped and nothing
+        // counts twice. Every other index's collision was refused by state
+        // validation.
+        if !inserted && !index_type.outlives_delete {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
                 "index-only entry already exists: state validation must reject a create \
                  whose entries collide before it reaches storage"

@@ -351,6 +351,7 @@ mod tests {
             integer_range: None,
             terminal: Some(vec!["$ownerId".to_string()]),
             preallocated: true,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }
