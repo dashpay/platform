@@ -613,6 +613,10 @@ impl ResolverState {
                 *schedule = ProbeSchedule::default();
             }
         }
+        // A block a probe saw but the wallet never did may be one the replay
+        // drops: roots found mined are asked again.
+        self.finished
+            .retain(|(wallet, _), result| wallet != wallet_id || *result != Final::Mined);
     }
 
     /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
@@ -1228,11 +1232,6 @@ impl Actor {
         }
     }
 
-    /// The wallet's entry, created on first sight.
-    fn entry(&mut self, wallet_id: WalletId) -> &mut WalletEntry {
-        self.wallets.entry(wallet_id).or_default()
-    }
-
     fn handle(&mut self, command: Command) {
         match command {
             Command::Height { wallet_id, height } => {
@@ -1379,7 +1378,14 @@ impl Actor {
                 }
             }
             Command::WalletAdded(wallet_id) => {
-                self.entry(wallet_id);
+                // A fresh start: whatever was kept under this id (a same-id
+                // wallet whose removal never reached the resolver) is stale.
+                if let Some(run) = self.wallets.remove(&wallet_id).and_then(|entry| entry.run) {
+                    run.abort.abort();
+                }
+                self.wallets.insert(wallet_id, WalletEntry::default());
+                let events = self.state.forget_wallet(&wallet_id);
+                deliver(&self.sink, events);
             }
             Command::WalletRemoved(wallet_id) => {
                 if let Some(run) = self.wallets.remove(&wallet_id).and_then(|entry| entry.run) {
@@ -1466,10 +1472,11 @@ impl Actor {
                 }
                 match read {
                     None => {
-                        // Gone from the wallet manager. Cannot happen: its
-                        // WalletRemoved is queued under the same guard that
-                        // removed it, and commands are handled before job
-                        // results. Fail safe: forget its state and end the run.
+                        // Gone from the wallet manager. This manager's own
+                        // removals queue WalletRemoved under the same guard,
+                        // and commands are handled before job results, so only
+                        // a removal through `wallet_manager_arc` gets here.
+                        // Fail safe: forget its state and end the run.
                         tracing::error!(
                             wallet_id = %hex::encode(wallet_id),
                             "broadcast probe: a registered wallet read as gone"
@@ -2971,9 +2978,10 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
-    /// The fail-safe for a registered wallet read as gone (every removal path
-    /// notifies the resolver, so this cannot happen today): its verdicts are
-    /// cleared and it goes idle rather than being re-read every block.
+    /// The fail-safe for a registered wallet read as gone (removed by an
+    /// embedder through `wallet_manager_arc`, bypassing the notification): its
+    /// verdicts are cleared and it goes idle rather than being re-read every
+    /// block.
     #[tokio::test]
     async fn should_clear_the_verdicts_of_a_wallet_gone_without_a_removal() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
@@ -4051,6 +4059,45 @@ mod tests {
         rig.settle().await;
 
         assert!(!rig.actor.wallets.contains_key(&wallet()));
+    }
+
+    /// A same-id wallet registered again starts fresh: a stale idle wait and
+    /// stale verdicts from before do not carry over.
+    #[tokio::test]
+    async fn should_start_a_re_registered_wallet_fresh() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
+        assert_eq!(rig.actor.wallets[&wallet()].wait_until, Some(u32::MAX));
+
+        rig.send(Command::WalletAdded(wallet())).await;
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+        let entry = &rig.actor.wallets[&wallet()];
+        assert_eq!(entry.wait_until, None);
+        assert_eq!(entry.height, None);
+    }
+
+    /// A rewind asks again about roots a probe found mined: the block it saw
+    /// may be one the replay drops.
+    #[tokio::test]
+    async fn should_forget_probe_found_mined_roots_on_a_rewind() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Mined,
+        )])))
+        .await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        assert_eq!(
+            rig.actor.state.finished.get(&(wallet(), txid(1))),
+            Some(&Final::Mined)
+        );
+
+        rig.height(wallet(), 50).await;
+
+        assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.

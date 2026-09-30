@@ -73,9 +73,11 @@ pub(crate) static REMOVE_WALLET_MIDPOINT_HOOK: std::sync::Mutex<Option<RemoveWal
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Insert into the inner wallet manager and tell the broadcast resolver,
-    /// under the caller's write guard — the one way a wallet enters it, so the
-    /// resolver hears of every wallet before its events and in order with
-    /// removals.
+    /// under the caller's write guard — the way this manager adds wallets, so
+    /// the resolver hears of every wallet before its events and in order with
+    /// removals. (An embedder writing through `wallet_manager_arc` bypasses
+    /// it; the resolver then ignores that wallet, or fails safe on its
+    /// removal.)
     pub(super) fn insert_into_inner(
         &self,
         wm: &mut WalletManager<PlatformWalletInfo>,
@@ -95,9 +97,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wm: &mut WalletManager<PlatformWalletInfo>,
         wallet_id: &WalletId,
     ) -> Result<(), WalletError> {
-        wm.remove_wallet(wallet_id)?;
+        let removed = wm.remove_wallet(wallet_id).map(|_| ());
+        // Whatever the inner manager said — it can only fail for an id it no
+        // longer holds — the wallet is gone: the resolver forgets it.
         self.broadcast_resolver.wallet_removed(wallet_id);
-        Ok(())
+        removed
     }
 
     /// Create a PlatformWallet from a BIP39 mnemonic phrase.
@@ -467,16 +471,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // stays `WalletCreation`.
         let wallet_id = {
             let mut wm = self.wallet_manager.write().await;
-            let wallet_id = self
-                .insert_into_inner(&mut wm, wallet, platform_info)
+            self.insert_into_inner(&mut wm, wallet, platform_info)
                 .map_err(|e| match e {
-                    key_wallet_manager::WalletError::WalletExists(id) => already_registered(id),
+                    WalletError::WalletExists(id) => already_registered(id),
                     other => PlatformWalletError::WalletCreation(format!(
                         "Failed to register wallet in WalletManager: {}",
                         other
                     )),
-                })?;
-            wallet_id
+                })?
         };
 
         // `insert_wallet` recomputes the id from the (now external-signable)
