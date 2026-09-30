@@ -30,16 +30,24 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
             .map(|transition| transition.data_contract_id())
             .collect(),
         // A ban's proof covers every list the contract keeps, which the verifier reads from
-        // the contract. The other moderations prove the one entry they edit, or for a document
-        // deletion the removal record it wrote, and need none.
-        StateTransition::ContractUserModeration(moderation)
-            if matches!(
-                moderation.action(),
-                ContractUserModerationAction::Ban { .. }
-            ) =>
-        {
-            BTreeSet::from([moderation.data_contract_id()])
-        }
+        // the contract. A restore's verifier decodes the document under the contract's document
+        // type, and a field change's reads the changed document back under it. A deletion's
+        // reads from the contract whether the type keeps removal records: one that keeps none
+        // is proved by the document's absence, read under the type. The other moderations
+        // prove the one list entry they edit and need none.
+        StateTransition::ContractUserModeration(moderation) => match moderation.action() {
+            ContractUserModerationAction::Ban { .. }
+            | ContractUserModerationAction::DeleteDocument { .. }
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                BTreeSet::from([moderation.data_contract_id()])
+            }
+            ContractUserModerationAction::Unban { .. }
+            | ContractUserModerationAction::Suspend { .. }
+            | ContractUserModerationAction::Unsuspend { .. }
+            | ContractUserModerationAction::Warn { .. }
+            | ContractUserModerationAction::ClearWarnings { .. } => BTreeSet::new(),
+        },
         _ => BTreeSet::new(),
     }
 }
@@ -444,50 +452,78 @@ mod tests {
     }
 
     #[test]
-    fn should_prepare_the_moderated_contract_of_a_ban_only() {
+    fn should_prepare_the_moderated_contract_of_each_moderation_whose_verifier_reads_it() {
+        use dash_sdk::dpp::platform_value::Value;
         use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
         use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+        use std::collections::BTreeMap;
 
         let contract_id = Identifier::new([0x44; 32]);
-        let state_transition = StateTransition::ContractUserModeration(
-            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                ..Default::default()
-            }),
-        );
-
-        assert_eq!(
-            referenced_contract_ids(&state_transition)
-                .into_iter()
-                .collect::<Vec<_>>(),
-            vec![contract_id],
-        );
-
-        // Only a ban's proof is read against the contract.
-        let unban = StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
-            ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                action: ContractUserModerationAction::Unban {
-                    identity_id: Identifier::new([0x55; 32]),
+        let identity_id = Identifier::new([0x55; 32]);
+        let document_id = Identifier::new([0x66; 32]);
+        let moderation = |action| {
+            StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+                ContractUserModerationTransitionV0 {
+                    data_contract_id: contract_id,
+                    action,
+                    ..Default::default()
                 },
-                ..Default::default()
+            ))
+        };
+
+        // A ban's proof covers every barring list the contract keeps; a restore decodes the
+        // document under its type; a field change reads the document back under it; a deletion
+        // of a type that keeps no removal records is proved by the document's absence under it.
+        for action in [
+            ContractUserModerationAction::Ban {
+                identity_id,
+                reason: Default::default(),
             },
-        ));
-        assert!(referenced_contract_ids(&unban).is_empty());
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name: "post".to_string(),
+                document_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name: "post".to_string(),
+                document: BinaryData::new(vec![0x77; 8]),
+            },
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: "post".to_string(),
+                document_id,
+                fields: BTreeMap::from([("hidden".to_string(), Value::Bool(true))]),
+                reason: Default::default(),
+            },
+        ] {
+            assert_eq!(
+                referenced_contract_ids(&moderation(action.clone()))
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                vec![contract_id],
+                "{action}",
+            );
+        }
 
-        // A document deletion is proved by the removal record it wrote, contract unread.
-        let deletion = StateTransition::ContractUserModeration(
-            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                action: ContractUserModerationAction::DeleteDocument {
-                    document_type_name: "post".to_string(),
-                    document_id: Identifier::new([0x66; 32]),
-                    reason: Default::default(),
-                },
-                ..Default::default()
-            }),
-        );
-        assert!(referenced_contract_ids(&deletion).is_empty());
+        // The other moderations prove the one list entry they edit, contract unread.
+        for action in [
+            ContractUserModerationAction::Unban { identity_id },
+            ContractUserModerationAction::Suspend {
+                identity_id,
+                until: 1_000,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::Unsuspend { identity_id },
+            ContractUserModerationAction::Warn {
+                identity_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::ClearWarnings { identity_id },
+        ] {
+            assert!(
+                referenced_contract_ids(&moderation(action.clone())).is_empty(),
+                "{action}",
+            );
+        }
     }
 
     #[test]
