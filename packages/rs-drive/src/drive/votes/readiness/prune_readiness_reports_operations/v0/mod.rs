@@ -6,6 +6,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchDeleteApplyType;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
 use dpp::version::PlatformVersion;
+use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use std::collections::HashMap;
@@ -52,6 +53,18 @@ impl Drive {
                 &mut drive_operations,
                 &platform_version.drive,
             )?;
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                // The per-key walk the batch estimate leaves out.
+                Self::add_estimated_readiness_report_delete_walk_v0(
+                    contract_id,
+                    round_id,
+                    &KeyInfo::KnownKey(pro_tx_hash.to_vec()),
+                    estimated_costs_only_with_layer_info,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+            }
         }
         Ok(drive_operations)
     }

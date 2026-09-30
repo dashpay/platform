@@ -8,10 +8,9 @@ use crate::drive::votes::paths::{
 use crate::drive::votes::readiness::cleanup_retired_readiness_round_operations::ReadinessCleanupOutcome;
 use crate::drive::votes::readiness::estimation_costs::ESTIMATED_READINESS_REPORT_RECORD_SIZE;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::fees::op::LowLevelDriveOperation::{CalculatedCostOperation, GroveOperation};
+use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
@@ -21,10 +20,8 @@ use grovedb::batch::SubelementsDeletionBehavior;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{
-    EstimatedLayerInformation, GroveDb, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg,
-    TreeType,
+    EstimatedLayerInformation, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg, TreeType,
 };
-use grovedb_costs::CostContext;
 use std::collections::HashMap;
 
 impl Drive {
@@ -52,12 +49,6 @@ impl Drive {
             // fixed tail that removes the round, so it is at or above any applied step.
             let reports_path_vec = readiness_round_reports_tree_path_vec(contract_id, round_id);
             let reports_path = KeyInfoPath::from_known_owned_path(reports_path_vec.clone());
-            let reports_layer = estimated_costs_only_with_layer_info
-                .get(&reports_path)
-                .cloned()
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "the readiness estimation describes the reports tree",
-                )))?;
             let read_report = DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::CountTree,
                 query_target: QueryTargetValue(ESTIMATED_READINESS_REPORT_RECORD_SIZE),
@@ -79,19 +70,16 @@ impl Drive {
                     unique_id: index.to_be_bytes().to_vec(),
                     max_size: DEFAULT_HASH_SIZE_U32 as u8,
                 };
-                // The batch estimate charges the propagation of a layer once, while the merk
-                // walks and rehashes the path of every deleted key: price that walk per key.
-                // The applied step deletes the lowest keys, whose shared ancestors it rewrites
-                // once, so this is an upper bound (about ten times a 512-delete step); its
-                // margin also covers the step's handful of fixed reads.
-                let CostContext { value, cost } = GroveDb::average_case_merk_delete_element(
+                // The per-key walk the batch estimate leaves out; its margin also covers
+                // the step's handful of fixed reads.
+                Self::add_estimated_readiness_report_delete_walk_v0(
+                    contract_id,
+                    round_id,
                     &key,
-                    &reports_layer,
-                    true,
-                    &platform_version.drive.grove_version,
-                );
-                value?;
-                drive_operations.push(CalculatedCostOperation(cost));
+                    estimated_costs_only_with_layer_info,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
                 drive_operations.push(GroveOperation(QualifiedGroveDbOp::delete_estimated_op(
                     reports_path.clone(),
                     key,

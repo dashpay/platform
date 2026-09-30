@@ -868,6 +868,64 @@ mod rounds {
     }
 
     #[test]
+    fn should_estimate_pruning_a_full_page_of_reports_at_no_less_than_it_costs() {
+        let (drive, payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = [1u8; 32];
+        let (round, _) = open_round(&drive, contract_id, payer, 10, None);
+        insert_reports(&drive, &round, 0, 2_000, None);
+        let pruned: Vec<[u8; 32]> = (0..512).map(pro_tx_hash).collect();
+
+        let mut estimated_layer_info = Some(HashMap::new());
+        let operations = drive
+            .prune_readiness_reports_operations(
+                contract_id,
+                round.round_id(),
+                &pruned,
+                &mut estimated_layer_info,
+                None,
+                platform_version,
+            )
+            .expect("estimate");
+        let estimated = estimate(
+            &drive,
+            estimated_layer_info.expect("layer info"),
+            operations,
+            platform_version,
+        );
+        let operations = drive
+            .prune_readiness_reports_operations(
+                contract_id,
+                round.round_id(),
+                &pruned,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("prune");
+        let applied = apply(&drive, operations, None, platform_version);
+
+        assert_eq!(
+            drive
+                .fetch_readiness_round_raw_count(
+                    contract_id,
+                    round.round_id(),
+                    None,
+                    platform_version
+                )
+                .expect("count"),
+            1_488
+        );
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "estimated processing {} < applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
+        assert!(estimated.storage_fee >= applied.storage_fee);
+    }
+
+    #[test]
     fn should_prune_named_reports_and_decrement_the_count() {
         let (drive, payer) = setup();
         let platform_version = PlatformVersion::latest();

@@ -15,8 +15,10 @@ use crate::drive::votes::paths::{
     readiness_round_tree_path_vec, readiness_tree_path_vec, vote_root_path_vec,
 };
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::type_constants::{
@@ -28,11 +30,13 @@ use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::readiness::payer::ReadinessPayer;
 use dpp::voting::readiness::round::{ReadinessRound, ReadinessRoundOpening};
+use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees, SomeSumTrees};
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{EstimatedLayerInformation, GroveDb, TransactionArg, TreeType};
+use grovedb_costs::CostContext;
 use std::collections::HashMap;
 
 /// The largest serialized size of a readiness round record (223 bytes), rounded up: a
@@ -385,6 +389,41 @@ impl Drive {
             &platform_version.drive,
         )?;
         Ok(placeholder)
+    }
+
+    /// Prices the merk walk of one estimated report delete from a round's count tree.
+    ///
+    /// The batch estimate charges the propagation of a layer once, while the merk walks and
+    /// rehashes the path of every deleted key: this prices that walk per key, with
+    /// propagation. Applied deletes in one batch share ancestors they rewrite once, so the
+    /// sum over a batch is an upper bound (about ten times a 512-delete batch); its margin
+    /// also covers a caller's handful of fixed reads. The caller describes the readiness
+    /// layers first.
+    pub(in crate::drive::votes::readiness) fn add_estimated_readiness_report_delete_walk_v0(
+        contract_id: [u8; 32],
+        round_id: [u8; 32],
+        key: &KeyInfo,
+        estimated_costs_only_with_layer_info: &HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let reports_path = KeyInfoPath::from_known_owned_path(
+            readiness_round_reports_tree_path_vec(contract_id, round_id),
+        );
+        let reports_layer = estimated_costs_only_with_layer_info
+            .get(&reports_path)
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "the readiness estimation describes the reports tree",
+            )))?;
+        let CostContext { value, cost } = GroveDb::average_case_merk_delete_element(
+            key,
+            reports_layer,
+            true,
+            &platform_version.drive.grove_version,
+        );
+        value?;
+        drive_operations.push(CalculatedCostOperation(cost));
+        Ok(())
     }
 }
 
