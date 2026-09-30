@@ -492,3 +492,111 @@ async fn should_keep_replayed_output_only_in_its_owning_account() {
         .unwrap();
     assert_eq!(stored, 3, "load must not delete stored rows");
 }
+
+#[tokio::test]
+async fn should_drop_replay_credit_for_contact_only_script() {
+    let mut wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+    let [contact, ours]: [Address; 2] = info
+        .accounts
+        .standard_bip44_accounts
+        .get_mut(&0)
+        .unwrap()
+        .next_receive_addresses(Some(&xpub), 2, true)
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let funding = Transaction {
+        version: 1,
+        lock_time: 0,
+        input: vec![TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([16; 32]), 0),
+            ..Default::default()
+        }],
+        output: vec![
+            TxOut {
+                value: 40_000,
+                script_pubkey: contact.script_pubkey(),
+            },
+            TxOut {
+                value: 7_000,
+                script_pubkey: ours.script_pubkey(),
+            },
+        ],
+        special_transaction_payload: None,
+    };
+    let contact_coin = OutPoint::new(funding.txid(), 0);
+    let our_coin = OutPoint::new(funding.txid(), 1);
+    let result = info
+        .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+        .await;
+    let coins: Vec<_> = info.accounts.standard_bip44_accounts[&0]
+        .utxos
+        .values()
+        .cloned()
+        .collect();
+    assert_eq!(coins.len(), 2);
+    let (persister, _dir, _) = common::fresh_persister();
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 0,
+                }),
+                account_registrations: wallet
+                    .accounts
+                    .all_accounts()
+                    .into_iter()
+                    .map(|account| AccountRegistrationEntry {
+                        account_type: account.account_type,
+                        account_xpub: account.account_xpub,
+                    })
+                    .collect(),
+                core: Some(CoreChangeSet {
+                    records: result.new_records,
+                    new_utxos: coins,
+                    last_processed_height: Some(300),
+                    synced_height: Some(300),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    {
+        // The store tracks the script only on a contact's watch-only chain,
+        // yet the rebuilt funds account still derives it, so replay credits it.
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "DELETE FROM core_address_pool WHERE script = ?1",
+            [contact.script_pubkey().as_bytes()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_address_pool \
+             (wallet_id, account_type, account_index, pool_type, address_index, script) \
+             VALUES (?1, 'dashpay_external', 0, 0, 0, ?2)",
+            rusqlite::params![&wallet.wallet_id[..], contact.script_pubkey().as_bytes()],
+        )
+        .unwrap();
+    }
+
+    let mut state = persister.load().unwrap();
+    let info = state.wallets.remove(&wallet.wallet_id).unwrap().wallet_info;
+    assert!(
+        info.accounts
+            .all_funding_accounts()
+            .into_iter()
+            .all(|account| !account.utxos.contains_key(&contact_coin)),
+        "a replay-credited contact coin must not survive load"
+    );
+    assert!(info.accounts.standard_bip44_accounts[&0]
+        .utxos
+        .contains_key(&our_coin));
+    assert_eq!(info.balance.total(), 7_000);
+}

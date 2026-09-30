@@ -3362,4 +3362,117 @@ mod tests {
             );
         }
     }
+
+    /// Same-height records without a block position replay in stored order;
+    /// an output the load projection still parks as unspent must end up
+    /// excluded whichever of funding and spend replays first.
+    #[tokio::test]
+    async fn should_exclude_spent_output_for_either_same_height_replay_order() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn, TxOut, Txid};
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use key_wallet::Utxo;
+
+        for spend_first in [false, true] {
+            let mut wallet =
+                Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default)
+                    .unwrap();
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+            let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+            let address = info
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .next_receive_address(Some(&xpub), true)
+                .unwrap();
+            let funding = Transaction {
+                version: 1,
+                lock_time: 0,
+                input: vec![TxIn {
+                    previous_output: OutPoint::new(Txid::from_byte_array([15; 32]), 0),
+                    ..Default::default()
+                }],
+                output: [100_000, 20_000]
+                    .map(|value| TxOut {
+                        value,
+                        script_pubkey: address.script_pubkey(),
+                    })
+                    .to_vec(),
+                special_transaction_payload: None,
+            };
+            let (spent, available) = (
+                OutPoint::new(funding.txid(), 0),
+                OutPoint::new(funding.txid(), 1),
+            );
+            let spending = Transaction {
+                version: 1,
+                lock_time: 0,
+                input: vec![TxIn {
+                    previous_output: spent,
+                    ..Default::default()
+                }],
+                output: vec![TxOut {
+                    value: 99_000,
+                    script_pubkey: dashcore::ScriptBuf::new(),
+                }],
+                special_transaction_payload: None,
+            };
+            let context = TransactionContext::InBlock(BlockInfo::new(
+                100,
+                BlockHash::from_byte_array([7; 32]),
+                100,
+            ));
+            let mut records = info
+                .check_core_transaction(&funding, context.clone(), &mut wallet, true, true)
+                .await
+                .new_records;
+            records.extend(
+                info.check_core_transaction(&spending, context, &mut wallet, true, true)
+                    .await
+                    .new_records,
+            );
+            assert_eq!(records.len(), 2);
+            assert!(records
+                .iter()
+                .all(|r| r.block_info().is_some_and(|b| b.position().is_none())));
+            if spend_first {
+                records.reverse();
+            }
+
+            // A stale projection that still parks the spent output as unspent.
+            let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
+            let account = restored
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap();
+            for outpoint in [spent, available] {
+                account.utxos.insert(
+                    outpoint,
+                    Utxo {
+                        outpoint,
+                        txout: funding.output[outpoint.vout as usize].clone(),
+                        address: address.clone(),
+                        height: 100,
+                        is_coinbase: false,
+                        is_confirmed: true,
+                        is_instantlocked: false,
+                        is_locked: false,
+                        is_trusted: false,
+                    },
+                );
+            }
+            restore_recorded_transactions(&mut restored, &mut wallet, records);
+
+            let coins = &restored.accounts.standard_bip44_accounts[&0].utxos;
+            assert!(!coins.contains_key(&spent), "spend_first={spend_first}");
+            assert!(coins.contains_key(&available), "spend_first={spend_first}");
+            assert_eq!(
+                restored.balance.total(),
+                20_000,
+                "spend_first={spend_first}"
+            );
+        }
+    }
 }
