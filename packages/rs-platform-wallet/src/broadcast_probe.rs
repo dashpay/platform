@@ -46,13 +46,15 @@
 //!
 //! [`BroadcastError::MaybeSent`]: crate::broadcaster::BroadcastError::MaybeSent
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use dash_sdk::dapi_client::transport::TransportError;
 use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, RequestSettings};
-use dash_sdk::dapi_grpc::core::v0::{BroadcastTransactionRequest, GetTransactionRequest};
+use dash_sdk::dapi_grpc::core::v0::{
+    BroadcastTransactionRequest, GetTransactionRequest, GetTransactionResponse,
+};
 use dash_sdk::dapi_grpc::tonic::Code;
 use dashcore::consensus;
 use dashcore::{Transaction, Txid};
@@ -173,7 +175,7 @@ const DEAD_QUORUM: usize = 2;
 /// its place. One node on a stale fork, or one whose block is about to be
 /// reorged out, would otherwise settle it on false evidence. A single such
 /// answer still shows the transaction exists: it counts as accepted.
-const MINED_QUORUM: usize = 2;
+pub(crate) const MINED_QUORUM: usize = 2;
 
 /// Resubmits a transaction whose broadcast outcome is unknown and turns the
 /// nodes' answers into a verdict.
@@ -185,23 +187,30 @@ const MINED_QUORUM: usize = 2;
 pub trait AcceptanceProbe: Send + Sync + 'static {
     async fn probe(&self, transaction: &Transaction) -> ProbeVerdict;
 
-    /// The verdict and what else the probe learned. By default it learns
-    /// nothing else.
+    /// The verdict and what else the probe learned. The default calls
+    /// [`probe`](Self::probe) and learns nothing else — so an implementation
+    /// must not write `probe` in terms of this one without overriding it too.
     async fn probe_report(&self, transaction: &Transaction) -> ProbeReport {
-        ProbeReport {
-            verdict: self.probe(transaction).await,
-            seen_in_block: false,
-        }
+        self.probe(transaction).await.into()
     }
 }
 
-/// A probe's verdict, and whether any node reported the transaction in a
-/// block — which rules out Dead for good, not just for this probe: a later
-/// probe that happens to ask other nodes must not overturn it.
+/// A probe's verdict, and the identified nodes that reported the transaction
+/// in a block. The resolver adds these up across probes of one root:
+/// [`MINED_QUORUM`] distinct nodes over several probes make it mined too.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProbeReport {
     pub verdict: ProbeVerdict,
-    pub seen_in_block: bool,
+    pub in_block_by: BTreeSet<String>,
+}
+
+impl From<ProbeVerdict> for ProbeReport {
+    fn from(verdict: ProbeVerdict) -> Self {
+        Self {
+            verdict,
+            in_block_by: BTreeSet::new(),
+        }
+    }
 }
 
 /// Evidence rules shared by every probe: a node holding the transaction in its
@@ -218,10 +227,7 @@ pub(crate) async fn probe_with(
     let mut dead_nodes: HashSet<String> = HashSet::new();
     let mut dead_reason: Option<String> = None;
     let mut last_other = String::from("no submission was answered");
-    let report = |verdict| ProbeReport {
-        verdict,
-        seen_in_block: false,
-    };
+    let report = ProbeReport::from;
 
     for _ in 0..MAX_SUBMISSIONS_PER_PROBE {
         let (node, verdict) = submitter.submit(transaction).await;
@@ -236,7 +242,12 @@ pub(crate) async fn probe_with(
             NodeVerdict::Mined => {
                 // In a block by this node's word: not dead. A second opinion
                 // comes from a lookup, not from sending it again.
-                return confirm_by_lookup(submitter, &transaction.txid(), Some(node), None).await;
+                return confirm_by_lookup(
+                    submitter,
+                    &transaction.txid(),
+                    LookupFor::SecondOpinion { seen_by: node },
+                )
+                .await;
             }
             NodeVerdict::Dead { reason } => {
                 // A dead verdict from an unidentified node cannot count
@@ -246,8 +257,13 @@ pub(crate) async fn probe_with(
                 }
                 dead_reason.get_or_insert(reason);
                 if dead_nodes.len() >= DEAD_QUORUM {
-                    return confirm_by_lookup(submitter, &transaction.txid(), None, dead_reason)
-                        .await;
+                    let reason = dead_reason.unwrap_or_default();
+                    return confirm_by_lookup(
+                        submitter,
+                        &transaction.txid(),
+                        LookupFor::Dead { reason },
+                    )
+                    .await;
                 }
             }
             NodeVerdict::Unknown { reason } => {
@@ -265,6 +281,15 @@ pub(crate) async fn probe_with(
             None => last_other,
         },
     })
+}
+
+/// Why a probe turns to lookups.
+enum LookupFor {
+    /// A submission answered "already in a block" (from `seen_by`): a second
+    /// node is asked; dead is ruled out.
+    SecondOpinion { seen_by: Option<String> },
+    /// The refusal quorum for `reason` is met: dead, unless a node knows it.
+    Dead { reason: String },
 }
 
 /// Nodes that reported the transaction in a block, by submission or lookup.
@@ -293,21 +318,22 @@ impl MinedEvidence {
 /// [`DEAD_QUORUM`] distinct nodes not knowing the txid, and none knowing it,
 /// make it dead: a rejection for missing or spent inputs is also what a
 /// *mined* transaction whose outputs are all spent gets (see the module docs).
-/// `seen_by` is the node whose submission answered "already in a block", when
-/// one did (then `refused` is `None`).
 async fn confirm_by_lookup(
     submitter: &dyn NodeSubmitter,
     txid: &Txid,
-    seen_by: Option<Option<String>>,
-    refused: Option<String>,
+    purpose: LookupFor,
 ) -> ProbeReport {
     let mut mined = MinedEvidence::default();
-    if let Some(node) = seen_by {
-        mined.add(node);
-    }
+    let refused = match purpose {
+        LookupFor::SecondOpinion { seen_by } => {
+            mined.add(seen_by);
+            None
+        }
+        LookupFor::Dead { reason } => Some(reason),
+    };
     let report = |verdict, mined: &MinedEvidence| ProbeReport {
         verdict,
-        seen_in_block: mined.seen,
+        in_block_by: mined.nodes.iter().cloned().collect(),
     };
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
@@ -344,6 +370,7 @@ async fn confirm_by_lookup(
     }
     // A node's word that it is in a block: it exists, not settled as final.
     let Some(reason) = refused.filter(|_| !mined.seen) else {
+        // A second opinion that never came: it exists by one node's word.
         return report(ProbeVerdict::Accepted, &mined);
     };
     report(
@@ -355,6 +382,19 @@ async fn confirm_by_lookup(
         },
         &mined,
     )
+}
+
+/// What a node's `getTransaction` answer says. A block hash with no height and
+/// no confirmations is a block off the node's active chain (a stale fork; both
+/// DAPI servers send height 0 for Core's -1): neither mined nor in a mempool.
+fn lookup_answer(tx: &GetTransactionResponse) -> LookupAnswer {
+    let mined = tx.height > 0 || tx.confirmations > 0;
+    if !mined && !tx.block_hash.is_empty() {
+        return LookupAnswer::Unknown {
+            reason: "known only from a block off the active chain".to_string(),
+        };
+    }
+    LookupAnswer::Known { mined }
 }
 
 /// One node per request: the probe decides whether to ask another, and it has
@@ -403,20 +443,10 @@ impl NodeSubmitter for DapiNodeSubmitter {
             id: txid.to_string(),
         };
         match self.sdk.execute(request, single_node()).await {
-            Ok(response) => {
-                let tx = &response.inner;
-                let mined = tx.height > 0 || tx.confirmations > 0;
-                let answer = if !mined && !tx.block_hash.is_empty() {
-                    // Known from a block that is not on the node's active
-                    // chain (a stale fork): neither mined nor in a mempool.
-                    LookupAnswer::Unknown {
-                        reason: "known only from a block off the active chain".to_string(),
-                    }
-                } else {
-                    LookupAnswer::Known { mined }
-                };
-                (Some(response.address.to_string()), answer)
-            }
+            Ok(response) => (
+                Some(response.address.to_string()),
+                lookup_answer(&response.inner),
+            ),
             Err(error) => {
                 let node = error.address.as_ref().map(ToString::to_string);
                 let answer = match &error.inner {
@@ -451,7 +481,7 @@ impl DapiAcceptanceProbe {
 #[async_trait]
 impl AcceptanceProbe for DapiAcceptanceProbe {
     async fn probe(&self, transaction: &Transaction) -> ProbeVerdict {
-        self.probe_report(transaction).await.verdict
+        probe_with(&self.submitter, transaction).await.verdict
     }
 
     async fn probe_report(&self, transaction: &Transaction) -> ProbeReport {
@@ -786,10 +816,36 @@ mod tests {
 
         let report = probe_with(&refused_then_seen_mined, &transaction()).await;
         assert_eq!(report.verdict, ProbeVerdict::Accepted);
-        assert!(
-            report.seen_in_block,
-            "reported, so the resolver rules Dead out for later probes too"
+        assert_eq!(
+            report.in_block_by,
+            BTreeSet::from(["c".to_string()]),
+            "reported, for the resolver to add up across probes"
         );
+    }
+
+    #[test]
+    fn should_read_a_stale_fork_lookup_as_neither_mined_nor_mempool() {
+        let answer = |block_hash: Vec<u8>, height, confirmations| {
+            lookup_answer(&GetTransactionResponse {
+                block_hash,
+                height,
+                confirmations,
+                ..GetTransactionResponse::default()
+            })
+        };
+
+        assert_eq!(
+            answer(Vec::new(), 0, 0),
+            LookupAnswer::Known { mined: false }
+        );
+        assert_eq!(
+            answer(vec![1; 32], 100, 3),
+            LookupAnswer::Known { mined: true }
+        );
+        assert!(matches!(
+            answer(vec![1; 32], 0, 0),
+            LookupAnswer::Unknown { .. }
+        ));
     }
 
     #[tokio::test]

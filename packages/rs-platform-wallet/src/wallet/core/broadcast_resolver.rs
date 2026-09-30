@@ -84,7 +84,7 @@ use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, RwLock};
 use tokio::task::{self, AbortHandle, JoinError, JoinHandle, JoinSet};
 use tokio::time::{timeout_at, Instant};
 
-use crate::broadcast_probe::{AcceptanceProbe, ProbeReport, ProbeVerdict};
+use crate::broadcast_probe::{AcceptanceProbe, ProbeReport, ProbeVerdict, MINED_QUORUM};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -437,10 +437,10 @@ pub(crate) struct ResolverState {
     /// those roots. Their Dead is withdrawn once none of them is known dead
     /// any more (settled, left, or forgotten).
     dead_from: HashMap<(WalletId, Txid), BTreeSet<Txid>>,
-    /// Roots some node once reported in a block. Never Dead after that — a
-    /// later probe that asks other nodes cannot overturn it; kept while the
-    /// root stays unsettled in the wallet.
-    seen_in_block: HashSet<(WalletId, Txid)>,
+    /// The identified nodes that reported each root in a block, added up
+    /// across probes while it stays unsettled: [`MINED_QUORUM`] of them make
+    /// it mined even when no single probe heard two.
+    seen_in_block: HashMap<(WalletId, Txid), BTreeSet<String>>,
 }
 
 impl ResolverState {
@@ -449,7 +449,8 @@ impl ResolverState {
     fn forget_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) -> Vec<Outgoing> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
-        self.seen_in_block.retain(|(wallet, _)| wallet != wallet_id);
+        self.seen_in_block
+            .retain(|(wallet, _), _| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, trigger)
     }
 
@@ -693,7 +694,7 @@ pub(crate) fn begin_pass(
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
     state
         .seen_in_block
-        .retain(|(wallet, txid)| !is_gone(wallet, txid));
+        .retain(|(wallet, txid), _| !is_gone(wallet, txid));
     // Cleared because the send is no longer an unsettled own send: it
     // settled, or left the wallet — not a statement that it settled.
     events.extend(state.clear_where(
@@ -779,7 +780,7 @@ pub(crate) fn record_probe(
     height: u32,
     views: &[OutgoingView],
     root: &DueRoot,
-    verdict: &ProbeVerdict,
+    report: &ProbeReport,
     record_final: bool,
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
@@ -789,6 +790,15 @@ pub(crate) fn record_probe(
     if !record_final {
         return events;
     }
+    // Nodes that saw it in a block, over every probe of this root: enough of
+    // them make it mined whatever this probe's own verdict.
+    let seen = state.seen_in_block.entry(key).or_default();
+    seen.extend(report.in_block_by.iter().cloned());
+    let verdict = &if seen.len() >= MINED_QUORUM {
+        ProbeVerdict::Mined
+    } else {
+        report.verdict.clone()
+    };
     match verdict {
         ProbeVerdict::Dead { reason } => {
             state.finished.insert(
@@ -1260,6 +1270,10 @@ impl Actor {
                     entry.wait_until = None;
                     if let Some(run) = entry.run.as_mut() {
                         run.marks = false;
+                        // Its answers would be discarded: send no more probes.
+                        if let Some(probing) = run.probing.as_mut() {
+                            probing.due.clear();
+                        }
                     }
                     let events = self.state.forget_wallet(&wallet_id, "rewound");
                     deliver(&self.sink, events);
@@ -1599,25 +1613,13 @@ impl Actor {
                     self.probe_next(wallet_id);
                     return;
                 }
-                // Once any node reported the root in a block, no later probe
-                // makes it Dead: it exists, even if these nodes do not know it.
-                let key = (wallet_id, root.txid);
-                if report.seen_in_block {
-                    self.state.seen_in_block.insert(key);
-                }
-                let verdict = match report.verdict {
-                    ProbeVerdict::Dead { .. } if self.state.seen_in_block.contains(&key) => {
-                        ProbeVerdict::Accepted
-                    }
-                    verdict => verdict,
-                };
                 let events = record_probe(
                     &mut self.state,
                     wallet_id,
                     probing.height,
                     &probing.views,
                     &root,
-                    &verdict,
+                    &report,
                     current.marks,
                 );
                 deliver(&self.sink, events);
@@ -2287,7 +2289,7 @@ mod tests {
                 root.txid,
                 height,
             );
-            let verdict = probe.probe(&root.transaction).await;
+            let report = probe.probe_report(&root.transaction).await;
             let mut guard = state.lock().expect("state");
             let events = record_probe(
                 &mut guard.state,
@@ -2295,7 +2297,7 @@ mod tests {
                 height,
                 views,
                 &root,
-                &verdict,
+                &report,
                 true,
             );
             guard.push(events);
@@ -4197,53 +4199,71 @@ mod tests {
         assert!(rig.actor.state.finished.is_empty());
     }
 
-    /// A probe that reports the root in a block once, then Dead.
-    struct SeenThenDead {
-        calls: StdMutex<usize>,
+    /// A probe whose every answer is one node's "in a block", a different
+    /// node each time — then, after that, Dead.
+    struct OneNodeInBlockPerProbe {
+        answers: StdMutex<VecDeque<ProbeReport>>,
     }
 
     #[async_trait]
-    impl AcceptanceProbe for SeenThenDead {
-        async fn probe(&self, transaction: &Transaction) -> ProbeVerdict {
-            self.probe_report(transaction).await.verdict
+    impl AcceptanceProbe for OneNodeInBlockPerProbe {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+            unreachable!("the resolver asks for the report")
         }
 
         async fn probe_report(&self, _transaction: &Transaction) -> ProbeReport {
-            let first = {
-                let mut calls = self.calls.lock().expect("calls");
-                *calls += 1;
-                *calls == 1
-            };
-            if first {
-                ProbeReport {
-                    verdict: ProbeVerdict::Accepted,
-                    seen_in_block: true,
-                }
-            } else {
-                ProbeReport {
-                    verdict: dead(),
-                    seen_in_block: false,
-                }
-            }
+            self.answers
+                .lock()
+                .expect("answers")
+                .pop_front()
+                .unwrap_or_else(|| dead().into())
         }
     }
 
-    /// Once a node reported a root in a block, a later probe asking other
-    /// nodes cannot make it Dead.
+    fn seen_by(node: &str) -> ProbeReport {
+        ProbeReport {
+            verdict: ProbeVerdict::Accepted,
+            in_block_by: BTreeSet::from([node.to_string()]),
+        }
+    }
+
+    /// Two distinct nodes reporting the root in a block over two probes make
+    /// it mined, final — a later probe cannot turn it Dead.
     #[tokio::test]
-    async fn should_never_turn_dead_a_root_once_seen_in_a_block() {
-        let mut rig = enabled(Arc::new(SeenThenDead {
-            calls: StdMutex::new(0),
+    async fn should_settle_as_mined_when_two_nodes_saw_it_across_probes() {
+        let mut rig = enabled(Arc::new(OneNodeInBlockPerProbe {
+            answers: StdMutex::new(VecDeque::from([seen_by("a"), seen_by("b")])),
         }))
         .await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
         rig.height(wallet(), 102).await;
+        rig.height(wallet(), 103).await;
 
+        assert_eq!(
+            rig.actor.state.finished.get(&(wallet(), txid(1))),
+            Some(&Final::Mined)
+        );
         assert!(!rig
             .sent()
             .contains(&ResolverEvent::Verdict(txid(1), dead())));
-        assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
+    }
+
+    /// One node's word, over and over, is not enough to veto Dead for good.
+    #[tokio::test]
+    async fn should_not_let_one_node_veto_a_later_dead() {
+        let mut rig = enabled(Arc::new(OneNodeInBlockPerProbe {
+            answers: StdMutex::new(VecDeque::from([seen_by("a"), seen_by("a")])),
+        }))
+        .await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.height(wallet(), 102).await;
+        rig.height(wallet(), 103).await;
+
+        assert!(rig
+            .sent()
+            .contains(&ResolverEvent::Verdict(txid(1), dead())));
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
