@@ -2275,12 +2275,17 @@ extension SDK {
 /// thread and the caller's actor only awaits a continuation.
 extension SDK {
     /// Concurrent, not serial. The FFI handle is safe to use from several
-    /// threads at once: every query entry point takes it as a shared
-    /// `&SDKWrapper`, `dash_sdk::Sdk` is `Send + Sync`, and
+    /// threads at once because every `rs-sdk-ffi` entry point that takes a
+    /// live handle — queries, state transitions and helpers such as
+    /// `dash_sdk_document_destroy` that other callers run on the main actor
+    /// while a query here is still pending — borrows the wrapper shared
+    /// (`&SDKWrapper`), never `&mut`. `dash_sdk::Sdk` is `Send + Sync` and
     /// `BigStackRuntime::block_on` drives each call on its own scoped thread
-    /// over a multi-threaded Tokio runtime — the same handle is already used
-    /// concurrently by `dpnsActiveContests` and `dataContractGetOffMain` on
-    /// their own queues. Serializing here would make the newest availability
+    /// over a multi-threaded Tokio runtime, so shared borrows may overlap.
+    /// The only exclusive access is `dash_sdk_destroy`, called solely from
+    /// `SDK.deinit`, which cannot run while a query below retains `self`.
+    /// Serializing this queue would not add safety (it would not coordinate
+    /// with calls made elsewhere) and would make the newest availability
     /// check (one per keystroke) wait behind every stale one; GCD's worker
     /// limit still bounds how many callers can be parked at once.
     private static let platformQueryQueue = DispatchQueue(
