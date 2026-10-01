@@ -3138,12 +3138,19 @@ impl Drive {
                         // every other grouped kind is: by the signer's recorded entry under the
                         // action id this transition derives.
                         TokenTransition::MintToPool(_) => grouped,
-                        // A shielded transfer's spent nullifiers exist only if it executed.
-                        TokenTransition::ShieldedTransfer(_) => true,
-                        // Ungrouped, the pool nullifiers this burn spends exist only if it
-                        // executed. Grouped, the signer's recorded entry binds it whether or not
-                        // the action has gathered enough power to close.
-                        TokenTransition::BurnFromPool(_) => true,
+                        // Only the resulting state. A spend's nullifier comes from the note
+                        // and the viewing key, never from the outputs that replace it, so two
+                        // transfers of the same notes to different recipients carry the same
+                        // nullifiers. Whichever executes leaves evidence that fits both, and
+                        // this proof authenticates no output commitment, ciphertext or bundle
+                        // commitment that would tell them apart.
+                        TokenTransition::ShieldedTransfer(_) => false,
+                        // Grouped, the signer's recorded entry under the action id binds this
+                        // burn, and the id is derived from the digest of its actions. Ungrouped,
+                        // the evidence is the nullifiers alone, which name the notes spent and
+                        // not the amount burned: two burns of the same notes leaving different
+                        // change spend the same nullifiers.
+                        TokenTransition::BurnFromPool(_) => grouped,
                     }
                 }
             },
@@ -3207,7 +3214,9 @@ impl Drive {
             // the proof's block.
             StateTransition::IdentityTopUpFromShieldedPool(_) => false,
             // The token pool nullifiers bind the exact token bundle of this transfer.
-            StateTransition::TokenShieldedTransferWithShieldedFee(_) => true,
+            // Only the resulting state, for the reason the batched shielded transfer carries:
+            // its nullifiers name the notes it spends, not the recipients it pays.
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => false,
             // Balance and pool snapshots at the proof's block: not bindable to one transition.
             StateTransition::TokenUnshieldWithShieldedFee(_) => false,
             StateTransition::TokenPurchaseFromShieldedPool(_) => false,
