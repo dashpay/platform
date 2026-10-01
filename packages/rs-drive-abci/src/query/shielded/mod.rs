@@ -80,7 +80,8 @@ impl ShieldedPoolSelector {
     /// tree's own Merk proof for the pool's key. `Drive::verify_token_shielded_pool_nullifiers`
     /// reads that key and refuses a spend status for a pool the chain does not hold, because
     /// `is_spent: false` is the one absence here that a caller acts on. The other proved reads
-    /// answer a missing pool with the same value an empty pool gives.
+    /// return `None` for a missing pool, where an empty one gives `Some(0)`, so a caller that
+    /// distinguishes the two can; nothing here establishes that one does.
     pub(super) fn validate_pool_exists(
         &self,
         drive: &Drive,
@@ -610,7 +611,8 @@ mod tests {
     /// the verifier's own side. `Drive::verify_token_shielded_pool_nullifiers` reads the pool's key
     /// out of the same proof and refuses rather than reporting every nullifier unspent;
     /// `Drive::verify_pool_notes_count_v0` and the other siblings walk across the absent pool layer
-    /// and report the value an empty pool would give.
+    /// and return `None`, which an empty pool's `Some(0)` is distinguishable from. No test here
+    /// pins what a caller does with either.
     #[test]
     fn proved_queries_answer_a_pool_the_chain_does_not_have_with_an_absence_proof() {
         let (platform, state, version) = setup_platform_with_a_token_pool();

@@ -36,8 +36,9 @@ impl Drive {
     ///
     /// Reports a nullifier the proof did not carry as unspent, which is also what a pool that does
     /// not exist gives, so a caller whose pool may be missing has to establish that separately,
-    /// with `verify_token_shielded_pool_exists_v0`. The credit pool needs nothing of the kind:
-    /// every chain that serves this read holds it.
+    /// with `verify_token_shielded_pool_exists_v0`. The credit pool is not named by the caller, so
+    /// it cannot be asked for one that was never created; a chain serving this read before the
+    /// credit pool exists reads it as empty.
     #[allow(clippy::type_complexity)]
     pub(super) fn verify_pool_nullifiers_v0(
         proof: &[u8],

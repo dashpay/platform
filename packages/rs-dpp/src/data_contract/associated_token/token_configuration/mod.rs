@@ -826,21 +826,11 @@ mod unknown_configuration_key_tests {
         );
     }
 
-    /// Format version 1's field set is open where version 0's is closed: an unrecognized key is
-    /// dropped instead of refused, on both wires.
-    ///
-    /// `deny_unknown_fields` is what closes version 0, and it is declared on
-    /// `TokenConfigurationV0`. Version 1 reads that struct through `serde(flatten)`, which hands
-    /// it only the keys left over once the outer struct has claimed its own — so the attribute
-    /// governs what version 0 does with the leftovers it is given, and says nothing about the
-    /// outer struct. `TokenConfigurationV1` declares no refusal of its own, so a key neither
-    /// version names is accepted and dropped, and a caller's typo reaches the chain as a
-    /// configuration quietly missing whatever they meant to set.
-    ///
-    /// Pinned because it is the asymmetry a reader will not expect from the version 0 refusal
-    /// the tests above assert, and because closing it would change which configurations decode
-    /// at all — a decision to take deliberately, not as a side effect of tightening a struct.
     /// A key no format version carries is refused at format version 1, as it is at 0.
+    ///
+    /// Pinned because the failure it prevents is invisible: a dropped key lets a caller's typo
+    /// reach the chain as a configuration quietly missing whatever they meant to set, and what
+    /// a token can do is fixed when it is created.
     ///
     /// The refusal has to hold on both wires. `TokenConfigurationV1` takes version 0's fields
     /// through `serde(flatten)`, and an unknown key arriving through a flattened field is not
