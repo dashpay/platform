@@ -1,6 +1,5 @@
 use crate::rpc::prefetch::CorePrefetcher;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
@@ -20,48 +19,119 @@ pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
 /// The most transaction ids Core's `gettxchainlocks` answers in one call.
 const MAX_TRANSACTIONS_PER_CHAIN_LOCK_STATUS_REQUEST: usize = 100;
 
-/// What one Core block tells the Core-anchored withdrawal limit.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct CoreCreditPoolBlock {
-    /// Core's credit pool balance after the block, in duffs, as its coinbase records it; `0`
-    /// when the block has no credit pool (before the credit pool existed), which is how Core's
-    /// own unlock limit reads such a block.
-    pub credit_pool_balance: u64,
-    /// The ids of the asset lock transactions the block holds.
-    pub asset_lock_txids: Vec<Txid>,
+/// The special transaction type of a coinbase (`TRANSACTION_COINBASE` in Dash Core).
+const COINBASE_TRANSACTION_TYPE: u16 = 5;
+
+/// Reads Core's credit pool balance after a block, in duffs, from the coinbase of the raw
+/// (serialized) block; `0` when the coinbase carries none (a coinbase payload before version 3,
+/// before the credit pool existed), which is how Core's own unlock limit reads such a block.
+///
+/// Only the header and the coinbase are read, and the coinbase payload only up to the balance
+/// within its own length: Core adds fields after it (version 4 appends
+/// `merkleRootAssetUnlocks`) and new transaction types to blocks that a full block decoder of
+/// an older Platform release cannot read.
+pub fn credit_pool_balance_from_raw_block(block: &[u8]) -> Result<u64, String> {
+    let mut reader = RawReader(block);
+    reader.skip(80)?; // the header
+
+    if reader.compact_size()? == 0 {
+        return Err("block has no coinbase".to_string());
+    }
+
+    let version_and_type = reader.u32_le()?;
+    let version = (version_and_type & 0xffff) as u16;
+    let transaction_type = (version_and_type >> 16) as u16;
+
+    let inputs = reader.compact_size()?;
+    if inputs == 0 {
+        return Err("coinbase has no input".to_string());
+    }
+    for _ in 0..inputs {
+        reader.skip(36)?; // the outpoint
+        let script_len = reader.compact_size()?;
+        reader.skip_u64(script_len)?;
+        reader.skip(4)?; // the sequence
+    }
+    for _ in 0..reader.compact_size()? {
+        reader.skip(8)?; // the value
+        let script_len = reader.compact_size()?;
+        reader.skip_u64(script_len)?;
+    }
+    reader.skip(4)?; // the lock time
+
+    if version < 3 || transaction_type == 0 {
+        return Ok(0);
+    }
+    if transaction_type != COINBASE_TRANSACTION_TYPE {
+        return Err(format!(
+            "coinbase has special transaction type {transaction_type}"
+        ));
+    }
+
+    let payload_len = reader.compact_size()?;
+    let mut payload = RawReader(reader.take_u64(payload_len)?);
+    if payload.u16_le()? < 3 {
+        return Ok(0);
+    }
+    payload.skip(4)?; // the height
+    payload.skip(32)?; // merkleRootMNList
+    payload.skip(32)?; // merkleRootQuorums
+    payload.compact_size()?; // bestCLHeightDiff
+    payload.skip(96)?; // bestCLSignature
+    let balance = payload.i64_le()?;
+    u64::try_from(balance).map_err(|_| format!("negative credit pool balance {balance}"))
 }
 
-impl CoreCreditPoolBlock {
-    /// Reads the credit pool balance from the block's coinbase payload and collects its asset
-    /// lock transactions.
-    pub fn from_block(block: &Block) -> Self {
-        let credit_pool_balance = block
-            .txdata
-            .first()
-            .and_then(|coinbase| match &coinbase.special_transaction_payload {
-                Some(TransactionPayload::CoinbasePayloadType(payload)) => {
-                    payload.asset_locked_amount
-                }
-                _ => None,
-            })
-            .unwrap_or_default();
+/// A cursor over raw consensus-encoded bytes.
+struct RawReader<'a>(&'a [u8]);
 
-        let asset_lock_txids = block
-            .txdata
-            .iter()
-            .filter(|transaction| {
-                matches!(
-                    transaction.special_transaction_payload,
-                    Some(TransactionPayload::AssetLockPayloadType(_))
-                )
-            })
-            .map(Transaction::txid)
-            .collect();
-
-        CoreCreditPoolBlock {
-            credit_pool_balance,
-            asset_lock_txids,
+impl<'a> RawReader<'a> {
+    fn take(&mut self, len: usize) -> Result<&'a [u8], String> {
+        if self.0.len() < len {
+            return Err("raw block ends early".to_string());
         }
+        let (taken, rest) = self.0.split_at(len);
+        self.0 = rest;
+        Ok(taken)
+    }
+
+    fn take_u64(&mut self, len: u64) -> Result<&'a [u8], String> {
+        self.take(usize::try_from(len).map_err(|_| "raw block ends early".to_string())?)
+    }
+
+    fn skip(&mut self, len: usize) -> Result<(), String> {
+        self.take(len).map(|_| ())
+    }
+
+    fn skip_u64(&mut self, len: u64) -> Result<(), String> {
+        self.take_u64(len).map(|_| ())
+    }
+
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], String> {
+        let mut bytes = [0u8; N];
+        bytes.copy_from_slice(self.take(N)?);
+        Ok(bytes)
+    }
+
+    fn u16_le(&mut self) -> Result<u16, String> {
+        Ok(u16::from_le_bytes(self.array()?))
+    }
+
+    fn u32_le(&mut self) -> Result<u32, String> {
+        Ok(u32::from_le_bytes(self.array()?))
+    }
+
+    fn i64_le(&mut self) -> Result<i64, String> {
+        Ok(i64::from_le_bytes(self.array()?))
+    }
+
+    fn compact_size(&mut self) -> Result<u64, String> {
+        Ok(match self.take(1)?[0] {
+            0xfd => u16::from_le_bytes(self.array()?) as u64,
+            0xfe => u32::from_le_bytes(self.array()?) as u64,
+            0xff => u64::from_le_bytes(self.array()?),
+            small => small as u64,
+        })
     }
 }
 
@@ -176,10 +246,10 @@ pub trait CoreRPCLike {
     /// Sends raw transaction to the network
     fn send_raw_transaction(&self, transaction: &[u8]) -> Result<Txid, Error>;
 
-    /// Get Core's credit pool balance after the block at `height` and the asset lock
-    /// transactions it holds. Only ask for a chain locked height: the answer is then the same
-    /// on every node.
-    fn get_credit_pool_block(&self, height: CoreHeight) -> Result<CoreCreditPoolBlock, Error>;
+    /// Get Core's credit pool balance after the block at `height`, in duffs, read from the
+    /// block's coinbase. Only ask for a chain locked height: the answer is then the same on
+    /// every node.
+    fn get_credit_pool_balance(&self, height: CoreHeight) -> Result<u64, Error>;
 
     /// Get the height of the active chain block each transaction was mined in, in the order of
     /// `tx_ids`; `None` for one Core does not know, or holds in its mempool only. A height is
@@ -451,10 +521,13 @@ impl CoreRPCLike for DefaultCoreRPC {
             .get_asset_unlock_statuses(indices, Some(core_chain_locked_height)))
     }
 
-    fn get_credit_pool_block(&self, height: CoreHeight) -> Result<CoreCreditPoolBlock, Error> {
+    fn get_credit_pool_balance(&self, height: CoreHeight) -> Result<u64, Error> {
         let block_hash = self.get_block_hash(height)?;
-        let block = self.get_block(&block_hash)?;
-        Ok(CoreCreditPoolBlock::from_block(&block))
+        let block_hex = retry!(self.inner.get_block_hex(&block_hash))?;
+        let block = hex::decode(block_hex).map_err(|e| {
+            Error::UnexpectedStructure(format!("getblock answered invalid hex: {e}"))
+        })?;
+        credit_pool_balance_from_raw_block(&block).map_err(Error::UnexpectedStructure)
     }
 
     fn get_transactions_mined_heights(
@@ -479,5 +552,116 @@ impl CoreRPCLike for DefaultCoreRPC {
             );
         }
         Ok(heights)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::credit_pool_balance_from_raw_block;
+    use dpp::dashcore::bls_sig_utils::BLSSignature;
+    use dpp::dashcore::consensus::serialize;
+    use dpp::dashcore::hash_types::{MerkleRootMasternodeList, MerkleRootQuorums};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::transaction::special_transaction::coinbase::CoinbasePayload;
+    use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+    use dpp::dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut};
+
+    const BALANCE_DUFFS: u64 = 3_700_000_000_000;
+
+    /// A coinbase as the pinned rust-dashcore encodes it, with a version 3 payload.
+    fn coinbase(payload: Option<TransactionPayload>) -> Vec<u8> {
+        serialize(&Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::from(vec![0x51, 0x51]),
+                sequence: u32::MAX,
+                witness: Default::default(),
+            }],
+            output: vec![TxOut {
+                value: 5_000_000,
+                script_pubkey: ScriptBuf::from(vec![0x76; 25]),
+            }],
+            special_transaction_payload: payload,
+        })
+    }
+
+    fn version_3_payload() -> TransactionPayload {
+        TransactionPayload::CoinbasePayloadType(CoinbasePayload {
+            version: 3,
+            height: 1_000,
+            merkle_root_masternode_list: MerkleRootMasternodeList::from_byte_array([1; 32]),
+            merkle_root_quorums: MerkleRootQuorums::from_byte_array([2; 32]),
+            best_cl_height: Some(30),
+            best_cl_signature: Some(BLSSignature::from([3; 96])),
+            asset_locked_amount: Some(BALANCE_DUFFS),
+        })
+    }
+
+    /// A header, then the coinbase, then a transaction no decoder knows.
+    fn block(coinbase: &[u8]) -> Vec<u8> {
+        let mut block = vec![0u8; 80];
+        block.push(2);
+        block.extend_from_slice(coinbase);
+        block.extend_from_slice(&[0xff; 40]);
+        block
+    }
+
+    #[test]
+    fn should_read_the_balance_of_a_version_3_coinbase() {
+        assert_eq!(
+            credit_pool_balance_from_raw_block(&block(&coinbase(Some(version_3_payload())))),
+            Ok(BALANCE_DUFFS)
+        );
+    }
+
+    /// Core v24 blocks carry a version 4 payload, which appends `merkleRootAssetUnlocks`
+    /// after the balance; the pinned decoder cannot read it.
+    #[test]
+    fn should_read_the_balance_of_a_version_4_coinbase() {
+        let version_3 = coinbase(Some(version_3_payload()));
+        // The payload is last: its 1-byte length (175), then the payload itself.
+        let payload_start = version_3.len() - 175;
+        assert_eq!(version_3[payload_start - 1], 175);
+        let mut version_4 = version_3[..payload_start - 1].to_vec();
+        version_4.push(175 + 32);
+        version_4.extend_from_slice(&4u16.to_le_bytes());
+        version_4.extend_from_slice(&version_3[payload_start + 2..]);
+        version_4.extend_from_slice(&[0xaa; 32]);
+
+        assert_eq!(
+            credit_pool_balance_from_raw_block(&block(&version_4)),
+            Ok(BALANCE_DUFFS)
+        );
+    }
+
+    #[test]
+    fn should_read_no_balance_from_a_coinbase_before_the_credit_pool() {
+        let version_2 = TransactionPayload::CoinbasePayloadType(CoinbasePayload {
+            version: 2,
+            height: 1_000,
+            merkle_root_masternode_list: MerkleRootMasternodeList::from_byte_array([1; 32]),
+            merkle_root_quorums: MerkleRootQuorums::from_byte_array([2; 32]),
+            best_cl_height: None,
+            best_cl_signature: None,
+            asset_locked_amount: None,
+        });
+        assert_eq!(
+            credit_pool_balance_from_raw_block(&block(&coinbase(Some(version_2)))),
+            Ok(0)
+        );
+        assert_eq!(
+            credit_pool_balance_from_raw_block(&block(&coinbase(None))),
+            Ok(0)
+        );
+    }
+
+    #[test]
+    fn should_fail_on_a_truncated_block() {
+        let full = block(&coinbase(Some(version_3_payload())));
+        // Cut inside the payload, before the balance.
+        assert!(credit_pool_balance_from_raw_block(&full[..full.len() - 60]).is_err());
+        assert!(credit_pool_balance_from_raw_block(&full[..40]).is_err());
     }
 }

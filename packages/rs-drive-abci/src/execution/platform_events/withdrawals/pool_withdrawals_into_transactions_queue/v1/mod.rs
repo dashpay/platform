@@ -3,6 +3,7 @@ use metrics::gauge;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
+use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -31,6 +32,36 @@ where
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.pool_withdrawals_up_to_limit_v1(
+            block_info,
+            transaction,
+            platform_version,
+            |available, daily_maximum| {
+                let current_withdrawal_limit = available;
+
+                // Store prometheus metrics
+                gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE)
+                    .set(current_withdrawal_limit as f64);
+                gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL).set(daily_maximum as f64);
+
+                Ok(current_withdrawal_limit)
+            },
+        )
+    }
+
+    /// Version 1's pooling, given the amount to pool up to once the daily withdrawal limit is
+    /// known (`current_withdrawal_limit`, called with its available amount and daily maximum
+    /// only when withdrawals are queued). Extracted in place, unchanged, so version 2 can
+    /// reuse it: for version 1 the closure returns the available daily limit and sets the
+    /// gauges exactly where they were set before, so every protocol version that selects
+    /// version 1 (8 to 13) pools the same documents and writes the same state.
+    pub(super) fn pool_withdrawals_up_to_limit_v1(
+        &self,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        current_withdrawal_limit: impl FnOnce(Credits, Credits) -> Result<Credits, Error>,
     ) -> Result<(), Error> {
         let documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
@@ -65,11 +96,8 @@ where
             "Calculated withdrawal limit info"
         );
 
-        let current_withdrawal_limit = withdrawals_info.available();
-
-        // Store prometheus metrics
-        gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE).set(current_withdrawal_limit as f64);
-        gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL).set(withdrawals_info.daily_maximum as f64);
+        let current_withdrawal_limit =
+            current_withdrawal_limit(withdrawals_info.available(), withdrawals_info.daily_maximum)?;
 
         // Only process documents up to the current withdrawal limit.
         let mut total_withdrawal_amount = 0u64;

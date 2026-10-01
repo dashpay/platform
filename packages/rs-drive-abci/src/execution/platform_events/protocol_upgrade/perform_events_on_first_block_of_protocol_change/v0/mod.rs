@@ -19,10 +19,8 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
-    WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-    WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY, WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-    WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use drive::drive::saved_block_transactions::{
@@ -770,56 +768,14 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // Total credits history under the withdrawals tree: the daily withdrawal limit becomes
-        // a share of the total credits Platform held a day ago, recorded here every block.
-        self.drive.grove_insert_if_not_exists(
-            get_withdrawal_root_path().as_slice().into(),
-            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Credit inflows sum tree: every credit mint is recorded here so the daily withdrawal
-        // limit counts net outflow instead of gross — credits that entered Platform within the
-        // window may leave again without consuming the withdrawal budget of other users.
-        self.drive.grove_insert_if_not_exists(
-            get_withdrawal_root_path().as_slice().into(),
-            &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-            Element::empty_sum_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // The Core-anchored withdrawal limit: Core's credit pool balance per Core block read,
-        // the asset locks consumed before Core mined them, and the asset lock credit inflows
-        // dated by the Core block that mined them. Created in the same order as the initial
-        // structure creates them.
-        for (key, tree) in [
-            (
-                WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
-                Element::empty_tree(),
-            ),
-            (
-                WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY,
-                Element::empty_tree(),
-            ),
-            (
-                WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
-                Element::empty_sum_tree(),
-            ),
-        ] {
-            self.drive.grove_insert_if_not_exists(
-                get_withdrawal_root_path().as_slice().into(),
-                &key,
-                tree,
-                Some(transaction),
-                None,
-                &platform_version.drive,
-            )?;
-        }
+        // Withdrawal limit trees under the withdrawals tree: the total credits history (the
+        // daily withdrawal limit becomes a share of the total credits Platform held a day ago,
+        // recorded every block), the credit inflows sum tree (every credit mint, so the daily
+        // limit counts net outflow instead of gross) and Core's credit pool balance per Core
+        // block read (the Core-anchored withdrawal limit). Through the same helper as genesis,
+        // so both build the withdrawals Merk by the same sequence of inserts.
+        self.drive
+            .insert_withdrawal_limit_trees(Some(transaction), platform_version)?;
 
         // Contract version items: from this version the storage writer stores every
         // contract's version as a four-byte item beside it, and
@@ -887,6 +843,10 @@ mod tests {
     use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
     use drive::drive::credit_pools::pools_path;
     use drive::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
+    use drive::drive::identity::withdrawals::paths::{
+        WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+        WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+    };
     use drive::drive::shielded::paths::{
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
@@ -2322,6 +2282,69 @@ mod tests {
         }
     }
 
+    /// Genesis creates the withdrawal trees of version 14 in one batch, the upgrade adds the
+    /// new ones one insert at a time, and Merk's shape depends on insertion order: the
+    /// withdrawals tree element (its root key) and every element below it are the same on a
+    /// chain born at 14 and one upgraded to it.
+    #[test]
+    fn should_build_the_withdrawal_trees_as_a_chain_born_at_14_does() {
+        let platform_version = PlatformVersion::latest();
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        upgraded
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+
+        let withdrawals_element =
+            |platform: &crate::platform_types::platform::Platform<MockCoreRPCLike>,
+             transaction: Option<&Transaction>| {
+                platform
+                    .drive
+                    .grove_get_raw(
+                        (&[] as &[&[u8]; 0]).into(),
+                        &[RootTree::WithdrawalTransactions as u8],
+                        DirectQueryType::StatefulDirectQuery,
+                        transaction,
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to read the withdrawals tree")
+                    .expect("expected the withdrawals tree to exist")
+            };
+        assert_eq!(
+            withdrawals_element(&born_at_14, None),
+            withdrawals_element(&upgraded, Some(&transaction)),
+            "the withdrawals tree differs between a chain born at version 14 and one upgraded to it"
+        );
+
+        let diffs = collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::WithdrawalTransactions as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the withdrawal trees differ between a chain born at version 14 and one upgraded \
+             to it:\n{}",
+            diffs.join("\n"),
+        );
+    }
+
     #[test]
     fn test_transition_to_version_14_creates_total_credits_history_tree() {
         let platform_version = PlatformVersion::latest();
@@ -2339,8 +2362,6 @@ mod tests {
             &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
             &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
             &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
-            &WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY,
-            &WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
         ] {
             assert!(platform
                 .drive
@@ -2391,25 +2412,19 @@ mod tests {
             .expect("credit inflows sum tree should exist after the v14 transition");
         assert!(element.is_sum_tree());
 
-        for (key, is_sum_tree) in [
-            (&WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY, false),
-            (&WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY, false),
-            (&WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY, true),
-        ] {
-            let element = platform
-                .drive
-                .grove
-                .get(
-                    SubtreePath::from(&get_withdrawal_root_path()),
-                    key,
-                    Some(&transaction),
-                    &platform_version.drive.grove_version,
-                )
-                .value
-                .expect("the Core-anchored withdrawal limit trees should exist after the v14 transition");
-            assert!(element.is_any_tree());
-            assert_eq!(element.is_sum_tree(), is_sum_tree);
-        }
+        let element = platform
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(&get_withdrawal_root_path()),
+                &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("the Core credit pool balances tree should exist after the v14 transition");
+        assert!(element.is_any_tree());
+        assert!(!element.is_sum_tree());
 
         // Running it again is harmless and the tree stays usable
         platform

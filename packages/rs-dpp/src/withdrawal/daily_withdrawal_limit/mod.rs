@@ -14,8 +14,8 @@ mod v2;
 /// total credits in Platform for version 0 (10% of it, bounded; required), ignored
 /// by version 1 (a flat 2000 Dash), and the total credits Platform held a day ago
 /// for version 2 (`daily_withdrawal_limit_percent` of it, never below one maximal
-/// withdrawal nor above `max_daily_withdrawal_amount` when that is set; the flat
-/// limit of version 1 while that day-old total is not known yet).
+/// withdrawal; the flat limit of version 1 while that day-old total is not known
+/// yet).
 pub fn daily_withdrawal_limit(
     reference_total_credits: Option<Credits>,
     platform_version: &PlatformVersion,

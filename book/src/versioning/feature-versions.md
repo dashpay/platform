@@ -332,11 +332,9 @@ pub struct SystemLimits {
     pub max_withdrawal_amount: u64,
     /// `None` for the protocol versions that predate the relative rule.
     pub daily_withdrawal_limit_percent: Option<u8>,
-    pub max_daily_withdrawal_amount: Option<u64>,
     pub core_credit_pool_unlock_limit_percent: Option<u8>,
     pub core_credit_pool_unlock_limit_floor: Option<u64>,
-    pub core_credit_pool_window_min_blocks: Option<u32>,
-    pub core_credit_pool_window_max_blocks: Option<u32>,
+    pub core_credit_pool_unlock_mining_delay_blocks: Option<u32>,
     pub min_withdrawal_amount: u64,
     pub max_contract_group_size: u16,
     pub max_token_redemption_cycles: u32,
@@ -410,9 +408,8 @@ the situation the tables exist to prevent, and it leaves a dead module behind
 every time the number moves. A new method version is warranted only when the
 *logic* changes. `daily_withdrawal_limit` in `rs-dpp` is the reference case:
 `v0` derives the limit from the current total credits, `v2` reads
-`daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`. Raising the percentage later is a `SYSTEM_LIMITS_V5`, not a
-`v3`.
+`daily_withdrawal_limit_percent` from `SystemLimits`. Raising the percentage
+later is a `SYSTEM_LIMITS_V5`, not a `v3`.
 
 ## How Subsystem Version Constants Compose
 

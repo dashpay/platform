@@ -485,7 +485,9 @@ where
         // Record the credits this block minted into Platform (asset locks funding state
         // transitions, epoch Core rewards) as a credit inflow: the daily withdrawal limit adds
         // inflows younger than its day-old base to the daily maximum, so it limits net outflow.
-        // A system event, so nobody pays fees for the write.
+        // A system event, so nobody pays fees for the write. Changed in place to pass the two
+        // mint sources apart instead of their sum, inert for protocol versions 1 to 13: the
+        // event is `None` there and reads neither.
         self.record_credit_inflows_for_withdrawals(
             state_transitions_result.credit_mints(),
             processed_block_fees.credit_mints,

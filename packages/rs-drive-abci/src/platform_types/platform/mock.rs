@@ -2,7 +2,7 @@ use crate::config::PlatformConfig;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
-use crate::rpc::core::{CoreCreditPoolBlock, MockCoreRPCLike};
+use crate::rpc::core::MockCoreRPCLike;
 use dpp::dashcore::BlockHash;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::PlatformVersionCurrentVersion;
@@ -35,20 +35,17 @@ impl Platform<MockCoreRPCLike> {
             }))
         });
 
-        // A credit pool of 10 million Dash at every height, holding no asset locks: the
-        // Core-anchored withdrawal limit never binds unless a test sets its own answers.
-        core_rpc_mock.expect_get_credit_pool_block().returning(|_| {
-            Ok(CoreCreditPoolBlock {
-                credit_pool_balance: 1_000_000_000_000_000,
-                asset_lock_txids: vec![],
-            })
-        });
+        // A credit pool of 10 million Dash at every height: the Core-anchored withdrawal limit
+        // never binds unless a test sets its own answers.
+        core_rpc_mock
+            .expect_get_credit_pool_balance()
+            .returning(|_| Ok(1_000_000_000_000_000));
 
-        // Every asset lock mined at Core height 0, so its credits count as an inflow until
-        // Core height 552, like the inflows of a recently mined asset lock.
+        // Core knows no asset lock, so every asset lock mint counts as a credit inflow, as one
+        // Core mined recently does.
         core_rpc_mock
             .expect_get_transactions_mined_heights()
-            .returning(|tx_ids| Ok(vec![Some(0); tx_ids.len()]));
+            .returning(|tx_ids| Ok(vec![None; tx_ids.len()]));
 
         Self::open_with_client(path, config, core_rpc_mock, initial_protocol_version)
     }

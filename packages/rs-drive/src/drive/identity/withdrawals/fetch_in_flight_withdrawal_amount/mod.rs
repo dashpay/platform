@@ -4,15 +4,28 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::Credits;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
+
+/// What the pooled withdrawal transactions not completed yet take out of Core's credit pool
+/// once mined, in credits.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InFlightWithdrawalAmounts {
+    /// The sum over the queued transactions, which Core has not seen yet.
+    pub queued: Credits,
+    /// Each broadcast transaction's amount by its index: Core may have mined some of them
+    /// already, which the broadcast tree only learns of a bounded number at a time.
+    pub broadcast: BTreeMap<WithdrawalTransactionIndex, Credits>,
+}
 
 impl Drive {
-    /// Sums what the pooled withdrawal transactions not completed yet (the queue and the
+    /// Reads what the pooled withdrawal transactions not completed yet (the queue and the
     /// broadcast tree) will take out of Core's credit pool once mined, in credits: each
     /// transaction's outputs plus its fee, as Core counts an asset unlock. Core's own unlock
     /// limit only reflects unlocks already mined, so the Core-anchored withdrawal limit
-    /// subtracts these.
+    /// subtracts the queued sum and the broadcast transactions Core has not mined.
     ///
     /// # Parameters
     ///
@@ -21,14 +34,14 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Ok(Credits)`: The sum, in credits.
+    /// * `Ok(InFlightWithdrawalAmounts)`: The queued sum and the broadcast amounts, in credits.
     /// * `Err(Error)` when the method version is unknown or not active, a stored transaction
     ///   cannot be decoded, or the sum overflows.
     pub fn fetch_in_flight_withdrawal_amount(
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Credits, Error> {
+    ) -> Result<InFlightWithdrawalAmounts, Error> {
         match platform_version
             .drive
             .methods

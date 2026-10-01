@@ -32,6 +32,10 @@ where
         mut validation_result: ConsensusValidationResult<ExecutionEvent>,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        // Changed in place from `&mut Credits`, inert for protocol versions 13 and 14 (all that
+        // select this generation): it is only passed on to `execute_event`, whose total is
+        // the same sum, and the per-asset-lock part is read only by
+        // `record_credit_inflows_for_withdrawals` (`None` before 14, reading it is new in 14).
         block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,

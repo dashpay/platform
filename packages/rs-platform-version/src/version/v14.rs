@@ -78,16 +78,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
 ///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
 ///    withdrawal eventually fits and cannot block the pooling queue. The base has
-///    no fixed cap (`max_daily_withdrawal_amount` is `None`): what Core will mine
-///    bounds pooling through the Core-anchored limit of note 70 instead. The
-///    credit inflows of the active window — every credit mint, recorded per
-///    block by `record_credit_inflows_for_withdrawals` — are added to the base,
-///    so the limit counts net outflow and a matching deposit -> withdraw cycle
-///    does not consume the budget of other users (#4471), mirroring Core v24's
-///    net credit-pool rule. Asset lock credits count from the Core block that
-///    mined each asset lock, for `core_credit_pool_window_min_blocks` (552)
-///    Core blocks, in their own sum tree; the other mints (the epoch Core
-///    rewards) count from the block, in the credit inflows sum tree. Both the
+///    no fixed cap: what Core will mine bounds pooling through the Core-anchored
+///    limit of note 70 instead. The credit inflows of the active window — every
+///    credit mint, recorded per block by `record_credit_inflows_for_withdrawals`
+///    in the credit inflows sum tree — are added to the base, so the limit
+///    counts net outflow and a matching deposit -> withdraw cycle does not
+///    consume the budget of other users (#4471), mirroring Core v24's net
+///    credit-pool rule. An asset lock Core mined longer ago than its window
+///    minus `core_credit_pool_unlock_mining_delay_blocks` adds no inflow: Core
+///    no longer counts it in full either. Both the
 ///    inflows and the pooled reservations count over the
 ///    interval after the base snapshot only — an entry the snapshot already
 ///    reflects is neither added nor subtracted again. The base is
@@ -1866,32 +1865,30 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     documents in state share one of its entries. Inert for every contract
 ///     without the keyword, which every earlier grammar refuses.
 /// 70. **Withdrawals also fit a Core-anchored limit**: pooling
-///     (`pool_withdrawals_into_transactions_queue` 2) admits withdrawals up to
-///     the smaller of the daily withdrawal limit (note 4) and
+///     (`pool_withdrawals_into_transactions_queue` 2, which reuses version 1's
+///     pooling through a shared helper) admits withdrawals up to the smaller of
+///     the daily withdrawal limit (note 4) and
 ///     `calculate_core_anchored_withdrawal_limit`, a stricter copy of Core v24's
 ///     relative net unlock rule (dash#7712) read from Core's own credit pool
 ///     balances at chain locked heights: the pool may drop by at most
 ///     `core_credit_pool_unlock_limit_percent` (15; Core allows 20) of its
-///     highest balance at a window start 552 to 600 Core blocks back
-///     (`core_credit_pool_window_min_blocks`, `core_credit_pool_window_max_blocks`;
-///     Core's window is 576), at least `core_credit_pool_unlock_limit_floor`
-///     (1500 Dash; Core's floor is 2000), less what is queued or broadcast and
-///     not mined yet (`fetch_in_flight_withdrawal_amount`). The formula is
+///     highest balance at a window start Core may use for the unlock (Core's
+///     window, 576 blocks or 100 on regtest, back from the chain locked height,
+///     up to `core_credit_pool_unlock_mining_delay_blocks`, 48, later), at least
+///     `core_credit_pool_unlock_limit_floor` (1500 Dash; Core's floor is 2000),
+///     less what is queued or broadcast and not mined yet. The formula is
 ///     `core_credit_pool_unlock_limit` 0 in `DPP_METHOD_VERSIONS_V3`. Before
-///     pooling, `scan_core_blocks_for_withdrawals` reads the Core blocks the chain
-///     locked height passed (at most `core_blocks_scanned_per_block_limit`, 32,
-///     per block) through `CoreRPCLike::get_credit_pool_block`: it records each
-///     one's credit pool balance under the withdrawals tree and dates the asset
-///     locks Platform consumed before Core mined them, which wait in a pending
-///     tree until then (asked of Core once per block through
-///     `get_transactions_mined_heights`, `gettxchainlocks`). The Platform-side
+///     pooling, `scan_core_blocks_for_withdrawals` reads the Core blocks the
+///     chain locked height passed (at most `core_blocks_scanned_per_block_limit`,
+///     32, per block) and records each one's credit pool balance, read from the
+///     coinbase of the raw block, under the withdrawals tree. The Platform-side
 ///     accounting can grant more than Core will mine (an asset lock published to
-///     Platform long after Core mined it, a whole epoch of Core rewards minted in
-///     one block); over Core's limit an unlock waits unmined and is re-signed,
-///     and while Core's mempool holds more than the limit Core InstantSend-locks
-///     no withdrawal at all. The trees are created at genesis and by
+///     Platform after Core mined it, a whole epoch of Core rewards minted in one
+///     block); over Core's limit an unlock waits unmined and is re-signed, and
+///     while Core's mempool holds more than the limit Core InstantSend-locks no
+///     withdrawal at all. The balance tree is created at genesis and by
 ///     `transition_to_version_14`, and `cleanup_expired_locks_of_withdrawal_amounts`
-///     1 prunes them by Core height.
+///     1 prunes it by Core height.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

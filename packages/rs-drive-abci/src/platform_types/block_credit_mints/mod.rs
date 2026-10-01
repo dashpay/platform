@@ -3,8 +3,8 @@ use drive::util::batch::DriveOperation;
 use std::collections::BTreeMap;
 
 /// The credits a block's applied state transitions minted into Platform, in total and per asset
-/// lock transaction they came from. The daily withdrawal limit counts the asset lock mints from
-/// the Core block that mined each asset lock, and any other mint from the Platform block.
+/// lock transaction they came from. The daily withdrawal limit leaves out the mints of an asset
+/// lock Core mined a whole credit pool window ago, and counts every other mint.
 ///
 /// Mirrors applied state: the block loop rewinds it with the state a dropped transition rolls
 /// back, or the block would record an inflow for a transition the proposal omits.

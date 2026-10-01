@@ -18,9 +18,9 @@ where
     /// transitions, and the epoch Core block rewards on an epoch change) as credit inflows
     /// the net daily withdrawal limit adds to its daily maximum, so money that entered
     /// Platform within the window may leave again without consuming the withdrawal budget of
-    /// other users. Asset lock credits are dated by the Core block that mined each asset lock,
-    /// the way Core's own unlock limit counts them; one Core has not mined at or below the
-    /// block's chain locked height waits as pending. The other mints are dated by the block.
+    /// other users. All are dated by the block, except the credits of an asset lock Core mined
+    /// so long ago that Core's own unlock limit reads it from its window start balance: those
+    /// add no inflow.
     ///
     /// Runs as a system event once per block, so nobody pays fees for the write; a block that
     /// minted nothing writes nothing.
@@ -30,8 +30,8 @@ where
     /// * `state_transition_mints`: The credits the block's state transitions minted, per asset
     ///   lock.
     /// * `block_fee_mints`: The credits the block's fee processing minted (epoch Core rewards).
-    /// * `block_info`: The block being executed; its time dates the other mints, and its Core
-    ///   chain locked height bounds which Core blocks count as mined.
+    /// * `block_info`: The block being executed; its time dates the mints, and its Core chain
+    ///   locked height decides which asset locks Core mined a window ago.
     /// * `transaction`: The GroveDB transaction.
     /// * `platform_version`: The platform version.
     ///

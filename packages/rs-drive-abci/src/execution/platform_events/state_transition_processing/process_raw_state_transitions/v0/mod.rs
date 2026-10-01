@@ -140,7 +140,10 @@ where
 
         // Credits the block's applied operations mint into Platform (asset locks), summed
         // across state transitions and recorded once per block as a credit inflow the net
-        // daily withdrawal limit adds to its daily maximum.
+        // daily withdrawal limit adds to its daily maximum. Changed in place from `Credits`,
+        // inert for protocol versions 1 to 14 (all select this generation): its total is the
+        // same sum, and only `record_credit_inflows_for_withdrawals`, `None` before 14, reads
+        // it (from 14 also per asset lock, which is new there).
         let mut block_credit_mints = BlockCreditMints::default();
 
         for decoded_state_transition in state_transition_container.into_iter() {
@@ -186,6 +189,8 @@ where
                         if rollback_dropped_transitions {
                             transaction.set_savepoint();
                         }
+                        // In place and inert: the savepoint is only restored when
+                        // `rollback_dropped_transitions` holds, so it is only taken then.
                         let credit_mints_at_savepoint =
                             rollback_dropped_transitions.then(|| block_credit_mints.clone());
 

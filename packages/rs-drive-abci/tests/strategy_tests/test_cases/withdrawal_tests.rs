@@ -11,15 +11,14 @@ mod tests {
     use dpp::dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::data_contracts::withdrawals_contract;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
-    use dpp::withdrawal::daily_withdrawal_limit::daily_withdrawal_limit;
     use dpp::withdrawal::WithdrawalTransactionIndex;
     use dpp::{dash_to_credits, dash_to_duffs};
     use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
     use drive::drive::identity::withdrawals::fetch_total_credits_in_platform_a_day_ago::DAY_IN_MS;
     use drive::drive::identity::withdrawals::paths::{
-        get_withdrawal_root_path, WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
-        WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+        get_withdrawal_root_path, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+        WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
     };
     use drive::drive::system::misc_path;
     use drive::util::grove_operations::DirectQueryType;
@@ -27,7 +26,6 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
-    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::mocks::v3_test::TEST_PLATFORM_V3;
     use platform_version::version::PlatformVersion;
@@ -2322,6 +2320,8 @@ mod tests {
                 .core_rpc
                 .expect_get_asset_unlock_statuses()
                 .returning(move |indices, _| {
+                    // An index the test has not set a status for is one Core has not mined;
+                    // pooling asks for the broadcast ones to subtract what is still in flight.
                     Ok(indices
                         .iter()
                         .map(|index| {
@@ -2331,7 +2331,10 @@ mod tests {
                                 .asset_unlock_statuses
                                 .get(index)
                                 .cloned()
-                                .unwrap()
+                                .unwrap_or(AssetUnlockStatusResult {
+                                    index: *index,
+                                    status: AssetUnlockStatus::Unknown,
+                                })
                         })
                         .collect())
                 });
@@ -2448,30 +2451,22 @@ mod tests {
             assert_eq!(total_credits_in_platform, Some(1010000000000000));
 
             // Every credit entered through an asset lock, so the whole 10,100 Dash is
-            // recorded as credit inflows the daily withdrawal limit would add to its maximum,
-            // dated by the Core block that mined each asset lock (the mock Core reports height
-            // 0, so they count until Core height 552) rather than by the block time.
-            let inflows_of = |key: &[u8; 1]| {
-                outcome
-                    .abci_app
-                    .platform
-                    .drive
-                    .grove_get_sum_tree_total_value(
-                        (&get_withdrawal_root_path()).into(),
-                        key,
-                        DirectQueryType::StatefulDirectQuery,
-                        None,
-                        &mut vec![],
-                        &platform_version.drive,
-                    )
-                    .expect("expected to get the credit inflows")
-            };
+            // recorded as credit inflows the daily withdrawal limit would add to its maximum.
+            let credit_inflows = outcome
+                .abci_app
+                .platform
+                .drive
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to get the credit inflows");
 
-            assert_eq!(
-                inflows_of(&WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY),
-                1010000000000000
-            );
-            assert_eq!(inflows_of(&WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY), 0);
+            assert_eq!(credit_inflows, 1010000000000000);
 
             outcome
         };
@@ -2591,34 +2586,23 @@ mod tests {
             )
             .await;
 
-            // The funding inflows were minted before the day-old base snapshot, so they are
-            // inside the base and nothing extends the daily maximum any more: it is the
-            // percentage of the unchanged total alone. (The Core height never moves in this
-            // test, so the Core-dated entries stay stored until Core height 552; they no
-            // longer count.)
-            let platform = &outcome.abci_app.platform;
-            let last_block_info = platform.state.load().last_block_info().clone();
-            let total_credits_in_platform = platform
+            // The funding inflows are 25 hours old and pruned; nothing extends the daily
+            // maximum any more.
+            let credit_inflows = outcome
+                .abci_app
+                .platform
                 .drive
-                .grove_get_raw_value_u64_from_encoded_var_vec(
-                    (&misc_path()).into(),
-                    TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
                     DirectQueryType::StatefulDirectQuery,
                     None,
                     &mut vec![],
                     &platform_version.drive,
                 )
-                .expect("expected to get total credits in platform")
-                .expect("expected total credits in platform");
-            let limit = platform
-                .drive
-                .calculate_current_withdrawal_limit(&last_block_info, None, platform_version)
-                .expect("expected the withdrawal limit");
-            assert_eq!(
-                limit.daily_maximum,
-                daily_withdrawal_limit(Some(total_credits_in_platform), platform_version)
-                    .expect("expected the base")
-            );
+                .expect("expected to get the credit inflows");
+
+            assert_eq!(credit_inflows, 0);
 
             outcome
         };
@@ -3069,6 +3053,255 @@ mod tests {
             .unwrap();
 
         assert_eq!(withdrawal_documents_broadcasted.len(), 80);
+    }
+
+    #[tokio::test]
+    async fn should_hold_back_withdrawals_over_the_core_anchored_limit() {
+        // Latest protocol version, and a Core whose credit pool holds 120 Dash at every
+        // height. The chain is so young that every window start Core may measure an unlock
+        // from lies before it, an empty pool, so Core admits unlocks up to the pool itself.
+        // Platform's own daily limit (the flat 2,000 Dash while no recorded total is a day old,
+        // plus the 10,000 Dash of funding inflows) is far above that, so the Core-anchored
+        // side alone decides what is pooled.
+        let platform_version = PlatformVersion::latest();
+        let start_strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 10..11,
+                        chance_per_block: None,
+                    },
+                    start_keys: 3,
+                    extra_keys: [(
+                        Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                    )]
+                    .into(),
+                    start_balance_range: dash_to_duffs!(500)..=dash_to_duffs!(500),
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let minute_in_ms = 1000 * 60;
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: minute_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        // Replace the default Core answers (a credit pool of 10 million Dash) with the small
+        // pool; Core has mined none of the unlocks.
+        platform.core_rpc.checkpoint();
+        platform
+            .core_rpc
+            .expect_get_block_hash()
+            .returning(|_| Ok(BlockHash::all_zeros()));
+        platform
+            .core_rpc
+            .expect_get_block_json()
+            .returning(|_| Ok(serde_json::json!({ "tx": [] })));
+        platform
+            .core_rpc
+            .expect_get_credit_pool_balance()
+            .returning(|_| Ok(dash_to_duffs!(120)));
+        platform
+            .core_rpc
+            .expect_get_transactions_mined_heights()
+            .returning(|tx_ids| Ok(vec![None; tx_ids.len()]));
+        platform
+            .core_rpc
+            .expect_send_raw_transaction()
+            .returning(move |_| Ok(Txid::all_zeros()));
+        platform
+            .core_rpc
+            .expect_get_asset_unlock_statuses()
+            .returning(|indices, _| {
+                Ok(indices
+                    .iter()
+                    .map(|index| AssetUnlockStatusResult {
+                        index: *index,
+                        status: AssetUnlockStatus::Unknown,
+                    })
+                    .collect())
+            });
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(|| {
+                Ok(ChainLock {
+                    block_height: 1,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: BLSSignature::from([2; 96]),
+                })
+            });
+
+        // Blocks 1 and 2 create 20 identities of 500 Dash.
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            addresses_with_balance,
+            signer,
+            ..
+        } = run_chain_for_strategy(
+            &mut platform,
+            2,
+            start_strategy,
+            config.clone(),
+            1,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        let continue_strategy_only_withdrawal = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityWithdrawal(
+                        dash_to_credits!(50)..=dash_to_credits!(50),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 4..5, // 50 Dash x 4 Withdrawals = 200 Dash
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: Some(signer),
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        // Blocks 3 to 5 withdraw 200 Dash each.
+        let outcome = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: 3,
+                core_height_start: 1,
+                block_count: 3,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
+            },
+            continue_strategy_only_withdrawal,
+            config,
+            StrategyRandomness::SeedEntropy(2),
+        )
+        .await;
+
+        for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+            assert_eq!(tx_results_per_block.len(), 4);
+            for (state_transition, result) in tx_results_per_block {
+                assert_eq!(
+                    result.code, 0,
+                    "state transition got code {} : {:?}",
+                    result.code, state_transition
+                );
+            }
+        }
+
+        let documents_with_status = |status: withdrawals_contract::WithdrawalStatus| {
+            outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    status.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch withdrawal documents")
+                .len()
+        };
+
+        // The first withdrawal block pools two (100 Dash) of its four into the 120 Dash Core
+        // admits; after that what is pooled and not mined leaves under 50 Dash, so the other
+        // ten wait in the queue although Platform's own limit has thousands left.
+        assert_eq!(
+            documents_with_status(withdrawals_contract::WithdrawalStatus::POOLED)
+                + documents_with_status(withdrawals_contract::WithdrawalStatus::BROADCASTED),
+            2
+        );
+        assert_eq!(
+            documents_with_status(withdrawals_contract::WithdrawalStatus::QUEUED),
+            10
+        );
+
+        let locked_amount = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove_get_sum_tree_total_value(
+                (&get_withdrawal_root_path()).into(),
+                &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to get locked amount");
+        assert_eq!(locked_amount, dash_to_credits!(100) as i64);
     }
 
     #[tokio::test]

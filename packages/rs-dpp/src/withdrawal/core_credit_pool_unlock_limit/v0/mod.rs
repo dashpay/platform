@@ -8,10 +8,10 @@ use platform_version::version::PlatformVersion;
 ///
 /// `limit = min(max(0, allowed_drop - (window_start_balance - balance)), balance)`
 ///
-/// Core v24 applies the same shape with 20% and a 2000 Dash floor over its 576-block window;
-/// the system limits of protocol version 14 set a lower percent and floor, and the caller picks
-/// the highest window start balance of a band around Core's window, so the result never
-/// exceeds what Core admits. Integer arithmetic in u128 throughout; truncation only ever makes
+/// Core v24 applies the same shape with 20% and a 2000 Dash floor over its window (576 blocks,
+/// 100 on regtest); the system limits of protocol version 14 set a lower percent and floor, and
+/// the caller picks the highest balance among the window starts Core may use, so the result
+/// never exceeds what Core admits. Integer arithmetic in u128 throughout; truncation only ever makes
 /// the limit stricter.
 pub(super) fn core_credit_pool_unlock_limit_v0(
     balance: Credits,

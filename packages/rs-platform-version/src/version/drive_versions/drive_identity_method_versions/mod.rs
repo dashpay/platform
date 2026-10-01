@@ -27,12 +27,9 @@ pub struct DriveIdentityWithdrawalMethodVersions {
     /// tree the net daily withdrawal limit reads back. The subtree exists from protocol
     /// version 14.
     pub record_credit_inflows: OptionalFeatureVersion,
-    /// Record a Core block's credit pool balance and date the consumed asset locks it mined,
-    /// for the Core-anchored withdrawal limit. The subtrees exist from protocol version 14.
+    /// Record a Core block's credit pool balance for the Core-anchored withdrawal limit. The
+    /// subtree exists from protocol version 14.
     pub record_core_credit_pool_block: OptionalFeatureVersion,
-    /// Record the credits an asset lock minted as a credit inflow dated by the Core block that
-    /// mined it, or as pending until Core mines it. Exists from protocol version 14.
-    pub record_asset_lock_credit_inflow: OptionalFeatureVersion,
     /// Read the recorded Core credit pool balances. Exists from protocol version 14.
     pub fetch_core_credit_pool_balances: OptionalFeatureVersion,
     /// Sum what the queued and broadcast withdrawal transactions take out of Core's credit

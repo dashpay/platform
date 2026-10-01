@@ -64,7 +64,6 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
@@ -86,11 +85,6 @@ mod tests {
                 .record_core_credit_pool_block(
                     core_height,
                     balance,
-                    &[],
-                    &BlockInfo {
-                        core_height,
-                        ..Default::default()
-                    },
                     Some(&transaction),
                     platform_version,
                 )

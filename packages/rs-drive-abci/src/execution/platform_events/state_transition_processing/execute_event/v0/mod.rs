@@ -44,11 +44,16 @@ where
         block_info: &BlockInfo,
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
+        // Changed in place from `&mut Credits`, inert for protocol versions 1 to 13 (all that
+        // select this generation): the total is the same saturating sum of `credit_mints`, and
+        // the per-asset-lock part is read only by `record_credit_inflows_for_withdrawals`,
+        // which is `None` before 14.
         block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
+            // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
             let credit_mints = BlockCreditMints::of_operations(&operations);
             //todo: make this into an atomic event with partial batches
             let mut individual_fee_result = self
@@ -121,11 +126,16 @@ where
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
         mut address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+        // Changed in place from `&mut Credits`, inert for protocol versions 1 to 13 (all that
+        // select this generation): the total is the same saturating sum of `credit_mints`, and
+        // the per-asset-lock part is read only by `record_credit_inflows_for_withdrawals`,
+        // which is `None` before 14.
         block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
+            // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
             let credit_mints = BlockCreditMints::of_operations(&operations);
             // Apply the drive operations first to calculate the fee
             let mut individual_fee_result = self
@@ -379,6 +389,10 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+        // Changed in place from `&mut Credits`, inert for protocol versions 1 to 13 (all that
+        // select this generation): the total is the same saturating sum of `credit_mints`, and
+        // the per-asset-lock part is read only by `record_credit_inflows_for_withdrawals`,
+        // which is `None` before 14.
         block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
@@ -501,6 +515,7 @@ where
                 processing_fees,
                 operations,
             } => {
+                // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
                 let credit_mints = BlockCreditMints::of_operations(&operations);
                 self.drive
                     .apply_drive_operations(
@@ -533,6 +548,7 @@ where
                 fees_to_add_to_pool,
             } => {
                 if consensus_errors.is_empty() {
+                    // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
                     let credit_mints = BlockCreditMints::of_operations(&operations);
                     self.drive
                         .apply_drive_operations(
@@ -586,6 +602,7 @@ where
                     return Ok(UnpaidConsensusExecutionError(consensus_errors));
                 }
 
+                // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
                 let credit_mints = BlockCreditMints::of_operations(&operations);
                 let applied_fees = self
                     .drive
@@ -648,6 +665,7 @@ where
                 all_errors.extend(consensus_errors);
 
                 if all_errors.is_empty() {
+                    // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
                     let credit_mints = BlockCreditMints::of_operations(&operations);
                     let applied_fees = self
                         .drive
@@ -728,6 +746,7 @@ where
                 )
             }
             ExecutionEvent::Free { operations } => {
+                // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
                 let credit_mints = BlockCreditMints::of_operations(&operations);
                 self.drive
                     .apply_drive_operations(

@@ -1,8 +1,27 @@
 use crate::fee::Credits;
 use crate::ProtocolError;
+use dashcore::Network;
 use platform_version::version::PlatformVersion;
 
 mod v0;
+
+/// Core's credit pool window: how many Core blocks before an asset unlock's block lies the
+/// balance Core v24 measures the unlock limit from (`CreditPoolPeriodBlocks` in Dash Core's
+/// chain parameters).
+pub trait NetworkCoreCreditPoolWindow {
+    fn core_credit_pool_window_blocks(&self) -> u32;
+}
+
+impl NetworkCoreCreditPoolWindow for Network {
+    fn core_credit_pool_window_blocks(&self) -> u32 {
+        match self {
+            Network::Mainnet => 576,
+            Network::Testnet => 576,
+            Network::Devnet => 576,
+            Network::Regtest => 100,
+        }
+    }
+}
 
 /// Returns how much Core's credit pool may still give up to asset unlocks, given its balance
 /// now and its balance at the start of the window the limit is measured over, both in credits.
@@ -50,6 +69,14 @@ pub fn core_credit_pool_unlock_limit(
 mod tests {
     use super::*;
     use crate::dash_to_credits;
+
+    #[test]
+    fn should_use_cores_window_of_each_network() {
+        assert_eq!(Network::Mainnet.core_credit_pool_window_blocks(), 576);
+        assert_eq!(Network::Testnet.core_credit_pool_window_blocks(), 576);
+        assert_eq!(Network::Devnet.core_credit_pool_window_blocks(), 576);
+        assert_eq!(Network::Regtest.core_credit_pool_window_blocks(), 100);
+    }
 
     #[test]
     fn should_only_exist_from_protocol_version_14() {

@@ -1,6 +1,5 @@
 use crate::drive::identity::withdrawals::paths::{
-    WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY, WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
-    WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY, WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY,
+    WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
     WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
     WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY, WITHDRAWAL_TRANSACTIONS_QUEUE_KEY,
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
@@ -184,57 +183,6 @@ pub(crate) fn structure() -> StructureNode {
             .kind(ElementKind::Item)
             .value("credits, u64 big endian")
             .describe("The credit pool balance after that Core block."),
-        ),
-        StructureNode::fixed(
-            "pending_asset_lock_inflows",
-            &WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY,
-            "PendingAssetLockInflows",
-            "WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY",
-        )
-        .kind(ElementKind::Tree)
-        .since(14)
-        .source("packages/rs-drive/src/drive/identity/withdrawals/paths.rs")
-        .describe(
-            "Asset locks consumed before Core mined them, \
-             waiting to be dated by the Core block that does.",
-        )
-        .child(
-            StructureNode::dynamic(
-                "asset_lock",
-                "txid",
-                KeyMatcher::Len(32),
-                KeyEncoding::Hash32,
-                "The asset lock transaction id",
-            )
-            .kind(ElementKind::Item)
-            .value("credits u64, block time u64 and Core height u32, big endian")
-            .describe("The credits the asset lock minted, and the block that minted them first."),
-        ),
-        StructureNode::fixed(
-            "core_dated_credit_inflows",
-            &WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
-            "CoreDatedCreditInflows",
-            "WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY",
-        )
-        .kind(ElementKind::SumTree)
-        .since(14)
-        .source("packages/rs-drive/src/drive/identity/withdrawals/paths.rs")
-        .describe(
-            "Asset lock credit inflows, dated by the Core block \
-             that mined them, which raise the relative withdrawal limit.",
-        )
-        .child(
-            StructureNode::dynamic(
-                "inflow",
-                "expiry_and_time",
-                KeyMatcher::Len(12),
-                KeyEncoding::Composite,
-                "The Core height the entry stops counting at (u32 big endian), then the block \
-                 time in milliseconds it was recorded at (u64 big endian)",
-            )
-            .kind(ElementKind::SumItem)
-            .value("credits")
-            .describe("Credits asset locks minted, counting until that Core height."),
         ),
     ])
 }

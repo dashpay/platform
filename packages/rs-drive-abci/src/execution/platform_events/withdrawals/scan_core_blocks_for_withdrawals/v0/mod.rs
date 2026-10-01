@@ -1,11 +1,10 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::hashes::Hash;
+use dpp::identity::convert_duffs_to_credits;
 use dpp::version::PlatformVersion;
+use dpp::withdrawal::core_credit_pool_unlock_limit::NetworkCoreCreditPoolWindow;
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
@@ -26,19 +25,12 @@ where
             return Ok(());
         }
 
-        let window_max_blocks = platform_version
-            .system_limits
-            .core_credit_pool_window_max_blocks
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "scan_core_blocks_for_withdrawals v0 requires system_limits.core_credit_pool_window_max_blocks",
-            )))?;
-
         let chain_locked_height = block_info.core_height;
 
         // Nothing older than the band the limit reads is worth reading: its balance is never
-        // read again, and an asset lock it mined is out of the window anyway (the pending
-        // entry is dropped by the cleanup).
-        let oldest_useful_height = chain_locked_height.saturating_sub(window_max_blocks);
+        // read again.
+        let oldest_useful_height = chain_locked_height
+            .saturating_sub(self.config.network.core_credit_pool_window_blocks());
 
         let first_height = match self
             .drive
@@ -59,26 +51,12 @@ where
             chain_locked_height.min(first_height.saturating_add(u32::from(limit) - 1));
 
         for core_height in first_height..=last_height {
-            let core_block = self.core_rpc.get_credit_pool_block(core_height)?;
-
-            let credit_pool_balance = core_block
-                .credit_pool_balance
-                .checked_mul(CREDITS_PER_DUFF)
-                .ok_or(Error::Execution(ExecutionError::Overflow(
-                    "core credit pool balance in credits",
-                )))?;
-
-            let asset_lock_txids: Vec<[u8; 32]> = core_block
-                .asset_lock_txids
-                .iter()
-                .map(|txid| txid.to_byte_array())
-                .collect();
+            let credit_pool_balance =
+                convert_duffs_to_credits(self.core_rpc.get_credit_pool_balance(core_height)?)?;
 
             self.drive.record_core_credit_pool_block(
                 core_height,
                 credit_pool_balance,
-                &asset_lock_txids,
-                block_info,
                 transaction,
                 platform_version,
             )?;
@@ -90,35 +68,24 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::rpc::core::{CoreCreditPoolBlock, MockCoreRPCLike};
+    use crate::error::execution::ExecutionError;
+    use crate::error::Error;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::Txid;
     use dpp::version::PlatformVersion;
-    use drive::drive::identity::withdrawals::paths::{
-        get_withdrawal_root_path, WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
-    };
-    use drive::util::grove_operations::DirectQueryType;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
     /// The Core heights read, in order, by a mock that answers every height with a balance of
-    /// `height * 1000` duffs and, at height 1003, one asset lock.
+    /// `height * 1000` duffs.
     fn recording_core(read: Arc<Mutex<Vec<u32>>>) -> MockCoreRPCLike {
         let mut core_rpc = MockCoreRPCLike::new();
         core_rpc
-            .expect_get_credit_pool_block()
+            .expect_get_credit_pool_balance()
             .returning(move |core_height| {
                 read.lock().expect("lock").push(core_height);
-                Ok(CoreCreditPoolBlock {
-                    credit_pool_balance: u64::from(core_height) * 1000,
-                    asset_lock_txids: if core_height == 1003 {
-                        vec![Txid::from_byte_array([3; 32])]
-                    } else {
-                        vec![]
-                    },
-                })
+                Ok(u64::from(core_height) * 1000)
             });
         core_rpc
     }
@@ -138,18 +105,19 @@ mod tests {
             ..Default::default()
         };
 
-        // First run: starts at the far edge of the band (1000 - 600) and reads 32 blocks.
+        // First run: starts at the far edge of the band (1000 - 576, Core's mainnet window)
+        // and reads 32 blocks.
         platform
             .scan_core_blocks_for_withdrawals(&block(1000), Some(&transaction), platform_version)
             .expect("expected to scan");
-        assert_eq!(*read.lock().expect("lock"), (400..=431).collect::<Vec<_>>());
+        assert_eq!(*read.lock().expect("lock"), (424..=455).collect::<Vec<_>>());
 
         // It goes on from the next unread block.
         read.lock().expect("lock").clear();
         platform
             .scan_core_blocks_for_withdrawals(&block(1000), Some(&transaction), platform_version)
             .expect("expected to scan");
-        assert_eq!(*read.lock().expect("lock"), (432..=463).collect::<Vec<_>>());
+        assert_eq!(*read.lock().expect("lock"), (456..=487).collect::<Vec<_>>());
 
         // A jump past the band skips what is too old to matter.
         read.lock().expect("lock").clear();
@@ -158,16 +126,16 @@ mod tests {
             .expect("expected to scan");
         assert_eq!(
             *read.lock().expect("lock"),
-            (1400..=1431).collect::<Vec<_>>()
+            (1424..=1455).collect::<Vec<_>>()
         );
 
         // Balances are recorded in credits.
         assert_eq!(
             platform
                 .drive
-                .fetch_core_credit_pool_balances(1400..=1401, Some(&transaction), platform_version)
+                .fetch_core_credit_pool_balances(1424..=1425, Some(&transaction), platform_version)
                 .expect("expected the balances"),
-            BTreeMap::from([(1400, 1_400_000_000), (1401, 1_401_000_000)])
+            BTreeMap::from([(1424, 1_424_000_000), (1425, 1_425_000_000)])
         );
     }
 
@@ -205,70 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn should_date_a_pending_asset_lock_by_the_core_block_that_holds_it() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
-            .build_with_mock_rpc()
-            .set_initial_state_structure();
-        let platform_version = PlatformVersion::latest();
-        let read = Arc::new(Mutex::new(vec![]));
-        platform.core_rpc = recording_core(read.clone());
-        let transaction = platform.drive.grove.start_transaction();
-        let block = |core_height: u32| BlockInfo {
-            time_ms: 5_000,
-            core_height,
-            ..Default::default()
-        };
-
-        // Caught up to Core height 1001, then the asset lock is consumed before Core mines it.
-        platform
-            .drive
-            .record_core_credit_pool_block(
-                1001,
-                0,
-                &[],
-                &block(1001),
-                Some(&transaction),
-                platform_version,
-            )
-            .expect("expected to record the block");
-        platform
-            .drive
-            .record_asset_lock_credit_inflow(
-                [3; 32],
-                700,
-                None,
-                &block(1001),
-                Some(&transaction),
-                platform_version,
-            )
-            .expect("expected to record the pending inflow");
-
-        let core_dated_inflows = |transaction| {
-            platform
-                .drive
-                .grove_get_sum_tree_total_value(
-                    (&get_withdrawal_root_path()).into(),
-                    &WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
-                    DirectQueryType::StatefulDirectQuery,
-                    Some(transaction),
-                    &mut vec![],
-                    &platform_version.drive,
-                )
-                .expect("expected the sum")
-        };
-        assert_eq!(core_dated_inflows(&transaction), 0);
-
-        // Core height 1003 mined it.
-        platform
-            .scan_core_blocks_for_withdrawals(&block(1003), Some(&transaction), platform_version)
-            .expect("expected to scan");
-        assert_eq!(*read.lock().expect("lock"), vec![1002, 1003]);
-        assert_eq!(core_dated_inflows(&transaction), 700);
-    }
-
-    #[test]
-    fn should_do_nothing_before_the_feature_exists() {
+    fn should_not_exist_before_protocol_version_14() {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
             .build_with_mock_rpc()
@@ -279,16 +184,18 @@ mod tests {
         platform.core_rpc = recording_core(read.clone());
         let transaction = platform.drive.grove.start_transaction();
 
-        platform
-            .scan_core_blocks_for_withdrawals(
-                &BlockInfo {
-                    core_height: 1000,
-                    ..Default::default()
-                },
-                Some(&transaction),
-                platform_version,
-            )
-            .expect("expected the event to be a no-op before v14");
+        let result = platform.scan_core_blocks_for_withdrawals(
+            &BlockInfo {
+                core_height: 1000,
+                ..Default::default()
+            },
+            Some(&transaction),
+            platform_version,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Execution(ExecutionError::VersionNotActive { .. }))
+        ));
         assert!(read.lock().expect("lock").is_empty());
     }
 }

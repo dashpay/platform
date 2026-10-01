@@ -1,7 +1,8 @@
 use crate::drive::{Drive, RootTree};
+use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
-use grovedb::Element;
+use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
 
 /// constant key for transaction counter
@@ -27,19 +28,6 @@ pub const WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY: [u8; 1] = [5];
 /// big-endian). The Core-anchored withdrawal limit reads the balance at the chain locked height
 /// and at the start of Core's unlock window. Exists from protocol version 14.
 pub const WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY: [u8; 1] = [6];
-/// constant id for the subtree of asset locks Platform consumed before Core mined them (key:
-/// the asset lock transaction id; value: a [`PendingAssetLockCreditInflow`]). Their credits
-/// count as an inflow only once a Core block that holds them is read, dated by that block.
-/// Exists from protocol version 14.
-///
-/// [`PendingAssetLockCreditInflow`]: crate::drive::identity::withdrawals::PendingAssetLockCreditInflow
-pub const WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY: [u8; 1] = [7];
-/// constant id for the sum tree of credit inflows from asset locks, dated by the Core block that
-/// mined them (key: the Core height the entry stops counting at, big-endian, then the block time
-/// in milliseconds it was recorded at, big-endian; value: credits, as a sum item). The daily
-/// withdrawal limit adds the unexpired entries recorded after its day-old base snapshot to the
-/// daily maximum. Exists from protocol version 14.
-pub const WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY: [u8; 1] = [8];
 
 impl Drive {
     /// Add operations for creating initial withdrawal state structure
@@ -68,29 +56,40 @@ impl Drive {
                 WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY.to_vec(),
             );
         }
+    }
 
-        if platform_version.protocol_version >= 14 {
-            batch.add_insert_empty_tree(
-                vec![vec![RootTree::WithdrawalTransactions as u8]],
-                WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY.to_vec(),
-            );
-            batch.add_insert_empty_sum_tree(
-                vec![vec![RootTree::WithdrawalTransactions as u8]],
-                WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY.to_vec(),
-            );
-            batch.add_insert_empty_tree(
-                vec![vec![RootTree::WithdrawalTransactions as u8]],
-                WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY.to_vec(),
-            );
-            batch.add_insert_empty_tree(
-                vec![vec![RootTree::WithdrawalTransactions as u8]],
-                WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY.to_vec(),
-            );
-            batch.add_insert_empty_sum_tree(
-                vec![vec![RootTree::WithdrawalTransactions as u8]],
-                WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY.to_vec(),
-            );
+    /// Inserts the withdrawal limit trees of protocol version 14 under the withdrawals tree,
+    /// one after the other: the total credits history, the credit inflows sum tree and the
+    /// Core credit pool balances. Genesis (`create_initial_state_structure` 4, after its batch)
+    /// and the upgrade (`Platform::transition_to_version_14`) both call it, so the withdrawals
+    /// Merk is built by the same sequence of inserts on both node populations: adding the
+    /// trees to the genesis batch would root it at another key than the upgrade does.
+    pub fn insert_withdrawal_limit_trees(
+        &self,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        for (key, tree) in [
+            (WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, Element::empty_tree()),
+            (
+                WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+                Element::empty_sum_tree(),
+            ),
+            (
+                WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+                Element::empty_tree(),
+            ),
+        ] {
+            self.grove_insert_if_not_exists(
+                (&get_withdrawal_root_path()).into(),
+                &key,
+                tree,
+                transaction,
+                None,
+                &platform_version.drive,
+            )?;
         }
+        Ok(())
     }
 }
 
@@ -197,37 +196,5 @@ pub fn get_withdrawal_core_credit_pool_balances_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
         &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
-    ]
-}
-
-/// Helper function to get the pending asset lock inflows path as Vec
-pub fn get_withdrawal_pending_asset_lock_inflows_path_vec() -> Vec<Vec<u8>> {
-    vec![
-        vec![RootTree::WithdrawalTransactions as u8],
-        WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY.to_vec(),
-    ]
-}
-
-/// Helper function to get the pending asset lock inflows path as [u8]
-pub fn get_withdrawal_pending_asset_lock_inflows_path() -> [&'static [u8]; 2] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
-        &WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY,
-    ]
-}
-
-/// Helper function to get the Core-dated credit inflows sum tree path as Vec
-pub fn get_withdrawal_core_dated_credit_inflows_sum_tree_path_vec() -> Vec<Vec<u8>> {
-    vec![
-        vec![RootTree::WithdrawalTransactions as u8],
-        WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY.to_vec(),
-    ]
-}
-
-/// Helper function to get the Core-dated credit inflows sum tree path as [u8]
-pub fn get_withdrawal_core_dated_credit_inflows_sum_tree_path() -> [&'static [u8]; 2] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
-        &WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
     ]
 }
