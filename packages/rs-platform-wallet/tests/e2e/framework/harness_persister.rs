@@ -21,8 +21,8 @@
 //! For the tests it also:
 //!
 //! - captures the wallet-level Core records the manager stores
-//!   (`CoreChangeSet::records`, the folded row a host displays), for the
-//!   live accounting checks, and
+//!   (`CoreChangeSet::records`, the folded row a host displays), every one
+//!   in store order, for the live accounting checks, and
 //! - reopens a disk snapshot of the store to read a row back as a host
 //!   would after a restart.
 
@@ -47,7 +47,9 @@ pub struct HarnessPersister {
     /// Private directory holding the tee store and its snapshots; removed
     /// on drop.
     dir: Option<TempDir>,
-    records: Mutex<BTreeMap<(WalletId, Txid), TransactionRecord>>,
+    /// Every wallet-level Core record stored, per `(wallet, txid)`, in
+    /// store order.
+    records: Mutex<BTreeMap<(WalletId, Txid), Vec<TransactionRecord>>>,
 }
 
 /// The capabilities the harness serves back to the wallet; see the module
@@ -105,7 +107,19 @@ impl HarnessPersister {
             .lock()
             .expect("harness persister records poisoned")
             .get(&(wallet_id, *txid))
+            .and_then(|history| history.last())
             .cloned()
+    }
+
+    /// Every wallet-level record stored for `txid` in `wallet_id`, oldest
+    /// first.
+    pub fn stored_records(&self, wallet_id: WalletId, txid: &Txid) -> Vec<TransactionRecord> {
+        self.records
+            .lock()
+            .expect("harness persister records poisoned")
+            .get(&(wallet_id, *txid))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Read the row for `txid` back from a freshly opened snapshot of the
@@ -174,7 +188,10 @@ impl PlatformWalletPersistence for HarnessPersister {
             .lock()
             .expect("harness persister records poisoned");
         for record in records {
-            captured.insert((wallet_id, record.txid), record);
+            captured
+                .entry((wallet_id, record.txid))
+                .or_default()
+                .push(record);
         }
         Ok(())
     }

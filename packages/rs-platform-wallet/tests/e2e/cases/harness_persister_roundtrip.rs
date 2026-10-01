@@ -98,7 +98,36 @@ async fn harness_persister_round_trips_a_wallet_record() {
                 ..Default::default()
             },
         )
-        .expect("the harness persister never fails a store");
+        .expect("store the record through the harness persister");
+
+    // A later store of the same txid becomes the live record; the earlier
+    // one stays in the store-order history the every-record checks read.
+    let mut later = record.clone();
+    later.context = TransactionContext::InBlock(key_wallet::transaction_checking::BlockInfo::new(
+        1_000,
+        dashcore::BlockHash::from([7u8; 32]),
+        1_234_567_890,
+    ));
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![later.clone()],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store the later record");
+    let history = persister.stored_records(wallet_id, &txid);
+    assert_eq!(
+        history.len(),
+        2,
+        "every stored record is kept, oldest first"
+    );
+    assert_eq!(history[0].context, record.context);
+    assert_eq!(history[1].context, later.context);
 
     let live = persister
         .live_record(wallet_id, &txid)

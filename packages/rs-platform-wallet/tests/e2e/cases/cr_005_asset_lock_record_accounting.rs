@@ -58,7 +58,9 @@ use crate::framework::harness_persister::private_temp_dir;
 use crate::framework::prelude::*;
 use crate::framework::signer::SeedBackedCoreSigner;
 use crate::framework::spv::{self, MnListErrorObserver};
-use crate::framework::tx_accounting::assert_asset_lock_accounting;
+use crate::framework::tx_accounting::{
+    assert_asset_lock_accounting, assert_every_asset_lock_record,
+};
 
 /// Core duffs the bank sends to the case's own wallet.
 const WALLET_CORE_FUNDING: u64 = 20_000_000;
@@ -89,13 +91,18 @@ struct CapturingPersister {
 impl CapturingPersister {
     /// The latest stored wallet-level record for `txid`, if any.
     fn latest_record(&self, txid: &Txid) -> Option<TransactionRecord> {
+        self.stored_records(txid).pop()
+    }
+
+    /// Every stored wallet-level record for `txid`, oldest first.
+    fn stored_records(&self, txid: &Txid) -> Vec<TransactionRecord> {
         self.records
             .lock()
             .expect("captured records poisoned")
             .iter()
-            .rev()
-            .find(|r| r.txid == *txid)
+            .filter(|r| r.txid == *txid)
             .cloned()
+            .collect()
     }
 }
 
@@ -264,6 +271,8 @@ async fn cr_005_asset_lock_record_accounting() {
     // Step 4 (live): the wallet-level record the manager stored.
     let live = wait_for_captured_record(&persister, &lock_txid, RECORD_TIMEOUT).await;
     assert_asset_lock_accounting(&live, ASSET_LOCK_AMOUNT);
+    // Every stored row, not only the latest: a host shows each as it lands.
+    assert_every_asset_lock_record(&persister.stored_records(&lock_txid), ASSET_LOCK_AMOUNT);
 
     // Step 5 (reload): reopen the store from a disk snapshot and read the
     // persisted row back.
