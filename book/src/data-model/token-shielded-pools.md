@@ -19,8 +19,9 @@ One pool per token is what makes the arrangement safe, and it is also what it co
 pool hides a spend among the other notes in the same pool, so splitting the pools splits that
 crowd with them: a token's anonymity set is its own holders, not everyone on Platform who uses a
 shielded pool. A pool that holds one note hides nothing — the spend of that note names the shield
-that created it. Because `minimum_token_pool_notes_for_outgoing` defaults to 0, a new pool is
-spendable from its first note, and that is where it is weakest rather than where it is strongest.
+that created it. A token's `minimumPoolNotesForOutgoing` is absent unless its issuer sets one, and
+absent reads as no threshold, so a new pool is spendable from its first note: that is where it is
+weakest rather than where it is strongest.
 
 So the flag isolates a token's balances; on its own it does not make that token's transfers
 anonymous. An issuer turning it on is choosing a pool whose privacy grows with its use, and can
@@ -55,8 +56,9 @@ trees are created when a contract with the flag is inserted or updated.
 
 ## Configuration
 
-`TokenConfiguration` gains a format version 1 whose only addition over version 0 is
-`hasShieldedPool: bool`. A version 0 configuration behaves as `hasShieldedPool: false`.
+`TokenConfiguration` gains a format version 1. It adds `hasShieldedPool: bool`, the optional
+`minimumPoolNotesForOutgoing` and the `minimumPoolNotesForOutgoingChangeRules` that govern it.
+A version 0 configuration behaves as `hasShieldedPool: false`.
 The format version is admitted by
 `dpp.contract_versions.token_versions.token_configuration_format`: protocol versions 13 and
 below allow only version 0, protocol version 14 allows versions 0 and 1. Contract create and
@@ -214,12 +216,22 @@ Structure validation checks the amount bounds, the action count against
 `SystemLimits::max_shielded_transition_actions`, the encrypted note sizes, a non-empty proof and
 a non-zero anchor.
 
-Unlike the credit pool, which refuses an outgoing spend until it holds
-`minimum_pool_notes_for_outgoing` (250) notes, a token pool has no such floor:
-`minimum_token_pool_notes_for_outgoing` is 0, so a pool with a single note lets that note be
-spent at once. The floor was left out so that a small token's pool is usable from its first
-note; the price is that a spend from a nearly empty pool is linkable to the shield that filled
-it. The constant lives in the event constants and can be raised by a later protocol version.
+The credit pool refuses an outgoing spend until it holds `minimum_pool_notes_for_outgoing`
+(250) notes, one floor for the whole network. A token pool's floor is the issuer's to choose:
+`minimumPoolNotesForOutgoing` is optional, and absent reads as 0, so by default a pool with a
+single note lets that note be spent at once. The price of that default is that a spend from a
+nearly empty pool is linkable to the shield that filled it; the price of a floor is that it
+traps a new pool's first depositors until enough notes accumulate, which is why none is set
+unless asked for. An issuer may set at most `SystemLimits::max_token_pool_notes_for_outgoing`
+(250), so no issuer can name a floor its pool never reaches and strand every shielded balance,
+and may change it later through `TokenConfigUpdate` under
+`minimumPoolNotesForOutgoingChangeRules`, which authorize no one when absent.
+
+The floor counts note commitments, not holders. One bundle carries several actions, so a single
+depositor can reach a threshold alone: it tells holders how busy the pool should be before they
+leave it and guarantees no anonymity set. It applies to outflows with a visible destination —
+unshielding to an identity, burning from the pool, paying a document's token cost from the pool
+— and not to transfers inside the pool.
 
 State validation runs in this order, and the first failure is returned:
 
