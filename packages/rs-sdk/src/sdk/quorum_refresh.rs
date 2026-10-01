@@ -29,13 +29,21 @@ pub type QuorumRefreshFn = Arc<dyn Fn() -> BoxFuture<'static, Result<(), String>
 
 type RefreshFuture = Shared<BoxFuture<'static, Result<(), String>>>;
 
-/// A [`QuorumRefreshFn`] that runs at most one refresh at a time.
+/// How long a refresh answers every miss after it starts. Quorums rotate far
+/// less often than this, and a node is never banned for naming an unknown
+/// quorum, so without the window a node that keeps doing so would cost a
+/// refresh on every request it serves.
+const REFRESH_COOLDOWN: chrono::TimeDelta = chrono::TimeDelta::seconds(10);
+
+/// A [`QuorumRefreshFn`] that runs at most one refresh at a time and at most
+/// one per [`REFRESH_COOLDOWN`].
 pub(crate) struct QuorumRefresher {
     refresh: QuorumRefreshFn,
-    /// The latest refresh. A request that misses a key while it is still
-    /// running waits for it instead of starting another, so a burst of
-    /// requests that all meet the new quorum costs a single refresh.
-    latest: Mutex<Option<RefreshFuture>>,
+    /// The latest refresh and when it started. A miss while it is running, or
+    /// within the cooldown after it started, gets its result instead of
+    /// starting another, so a burst of requests that all meet the new quorum
+    /// costs a single refresh.
+    latest: Mutex<Option<(RefreshFuture, chrono::DateTime<chrono::Utc>)>>,
 }
 
 impl QuorumRefresher {
@@ -49,8 +57,13 @@ impl QuorumRefresher {
     async fn refresh(&self) -> Result<(), String> {
         let refresh = {
             let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
+            let now = chrono::Utc::now();
             match latest.as_ref() {
-                Some(running) if running.peek().is_none() => running.clone(),
+                Some((refresh, started))
+                    if refresh.peek().is_none() || now - *started < REFRESH_COOLDOWN =>
+                {
+                    refresh.clone()
+                }
                 _ => {
                     // `Shared` re-raises a panic on every later poll and `peek`,
                     // so a hook that panicked once would break every later miss.
@@ -61,7 +74,7 @@ impl QuorumRefresher {
                         })
                         .boxed()
                         .shared();
-                    *latest = Some(started.clone());
+                    *latest = Some((started.clone(), now));
                     started
                 }
             }
@@ -143,6 +156,15 @@ mod tests {
     use crate::SdkBuilder;
     use rs_dapi_client::{CanRetry, ExecutionResponse};
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    impl QuorumRefresher {
+        /// Let the next miss start a new refresh, as if the cooldown had passed.
+        fn expire_cooldown(&self) {
+            if let Some((_, started)) = self.latest.lock().unwrap().as_mut() {
+                *started -= REFRESH_COOLDOWN;
+            }
+        }
+    }
 
     fn missing_quorum() -> Error {
         Error::Proof(drive_proof_verifier::Error::ContextProviderError(
@@ -295,6 +317,7 @@ mod tests {
             refresher.refresh().await,
             Err("quorum refresh panicked".to_string())
         );
+        refresher.expire_cooldown();
         assert_eq!(refresher.refresh().await, Ok(()));
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
@@ -352,7 +375,12 @@ mod tests {
         assert!(results.iter().all(Result::is_ok));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        // Once that refresh has finished, the next miss starts a new one.
+        // Within the cooldown a finished refresh answers later misses too.
+        refresher.refresh().await.expect("cached refresh");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // After it, the next miss starts a new one.
+        refresher.expire_cooldown();
         refresher.refresh().await.expect("second refresh");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
