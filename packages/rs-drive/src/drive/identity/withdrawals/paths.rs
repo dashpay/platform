@@ -22,6 +22,24 @@ pub const WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY: [u8; 1] = [4];
 /// that entered Platform within the window may leave again without consuming the budget of
 /// other users. Exists from protocol version 14.
 pub const WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY: [u8; 1] = [5];
+/// constant id for the subtree recording Core's credit pool balance after each Core block
+/// Platform read (key: Core block height, big-endian; value: the balance in credits,
+/// big-endian). The Core-anchored withdrawal limit reads the balance at the chain locked height
+/// and at the start of Core's unlock window. Exists from protocol version 14.
+pub const WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY: [u8; 1] = [6];
+/// constant id for the subtree of asset locks Platform consumed before Core mined them (key:
+/// the asset lock transaction id; value: a [`PendingAssetLockCreditInflow`]). Their credits
+/// count as an inflow only once a Core block that holds them is read, dated by that block.
+/// Exists from protocol version 14.
+///
+/// [`PendingAssetLockCreditInflow`]: crate::drive::identity::withdrawals::PendingAssetLockCreditInflow
+pub const WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY: [u8; 1] = [7];
+/// constant id for the sum tree of credit inflows from asset locks, dated by the Core block that
+/// mined them (key: the Core height the entry stops counting at, big-endian, then the block time
+/// in milliseconds it was recorded at, big-endian; value: credits, as a sum item). The daily
+/// withdrawal limit adds the unexpired entries recorded after its day-old base snapshot to the
+/// daily maximum. Exists from protocol version 14.
+pub const WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY: [u8; 1] = [8];
 
 impl Drive {
     /// Add operations for creating initial withdrawal state structure
@@ -59,6 +77,18 @@ impl Drive {
             batch.add_insert_empty_sum_tree(
                 vec![vec![RootTree::WithdrawalTransactions as u8]],
                 WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY.to_vec(),
+            );
+            batch.add_insert_empty_tree(
+                vec![vec![RootTree::WithdrawalTransactions as u8]],
+                WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY.to_vec(),
+            );
+            batch.add_insert_empty_tree(
+                vec![vec![RootTree::WithdrawalTransactions as u8]],
+                WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY.to_vec(),
+            );
+            batch.add_insert_empty_sum_tree(
+                vec![vec![RootTree::WithdrawalTransactions as u8]],
+                WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY.to_vec(),
             );
         }
     }
@@ -151,5 +181,53 @@ pub fn get_withdrawal_credit_inflows_sum_tree_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
         &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+    ]
+}
+
+/// Helper function to get the Core credit pool balances path as Vec
+pub fn get_withdrawal_core_credit_pool_balances_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::WithdrawalTransactions as u8],
+        WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY.to_vec(),
+    ]
+}
+
+/// Helper function to get the Core credit pool balances path as [u8]
+pub fn get_withdrawal_core_credit_pool_balances_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
+        &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+    ]
+}
+
+/// Helper function to get the pending asset lock inflows path as Vec
+pub fn get_withdrawal_pending_asset_lock_inflows_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::WithdrawalTransactions as u8],
+        WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY.to_vec(),
+    ]
+}
+
+/// Helper function to get the pending asset lock inflows path as [u8]
+pub fn get_withdrawal_pending_asset_lock_inflows_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
+        &WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY,
+    ]
+}
+
+/// Helper function to get the Core-dated credit inflows sum tree path as Vec
+pub fn get_withdrawal_core_dated_credit_inflows_sum_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::WithdrawalTransactions as u8],
+        WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY.to_vec(),
+    ]
+}
+
+/// Helper function to get the Core-dated credit inflows sum tree path as [u8]
+pub fn get_withdrawal_core_dated_credit_inflows_sum_tree_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
+        &WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
     ]
 }

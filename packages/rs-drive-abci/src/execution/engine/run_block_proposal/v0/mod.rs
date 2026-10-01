@@ -487,9 +487,8 @@ where
         // inflows younger than its day-old base to the daily maximum, so it limits net outflow.
         // A system event, so nobody pays fees for the write.
         self.record_credit_inflows_for_withdrawals(
-            state_transitions_result
-                .credit_mints()
-                .saturating_add(processed_block_fees.credit_mints),
+            state_transitions_result.credit_mints(),
+            processed_block_fees.credit_mints,
             &block_info,
             transaction,
             platform_version,

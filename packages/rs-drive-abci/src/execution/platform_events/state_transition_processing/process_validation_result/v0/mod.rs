@@ -1,5 +1,6 @@
 use super::super::StateTransitionAwareError;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -7,7 +8,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
 use dpp::util::hash::hash_single;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -33,7 +33,7 @@ where
         mut validation_result: ConsensusValidationResult<ExecutionEvent>,
         block_info: &BlockInfo,
         transaction: &Transaction,
-        block_credit_mints: &mut Credits,
+        block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {

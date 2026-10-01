@@ -1,8 +1,11 @@
 use crate::drive::identity::withdrawals::calculate_current_withdrawal_limit::WithdrawalLimitInfo;
 use crate::drive::identity::withdrawals::paths::{
+    get_withdrawal_core_dated_credit_inflows_sum_tree_path_vec,
     get_withdrawal_credit_inflows_sum_tree_path_vec, get_withdrawal_transactions_sum_tree_path_vec,
 };
-use crate::drive::identity::withdrawals::DAY_AND_A_HOUR_IN_MS;
+use crate::drive::identity::withdrawals::{
+    core_dated_credit_inflow_key, decode_core_dated_credit_inflow_key, DAY_AND_A_HOUR_IN_MS,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -49,17 +52,23 @@ impl Drive {
     ///   other users. Only inflows younger than the snapshot count — an older one is already
     ///   inside the base, and adding it again would allow the pool level to drop below the
     ///   guaranteed share of the day-old total — and only unexpired ones, so an entry the
-    ///   bounded cleanup has not deleted yet cannot outlive its 25 hours here. The base
-    ///   stays capped by `max_daily_withdrawal_amount` (Core's unlock capacity per day) but
-    ///   the inflows ride above the cap: capping the sum would hand the whole capped budget
-    ///   back to a deposit-withdraw cycle whenever the base reaches the cap, and outflow
-    ///   funded by same-window deposits mirrors the net credit pool rule Core adopts
-    ///   alongside this;
+    ///   bounded cleanup has not deleted yet cannot outlive its 25 hours here. When the
+    ///   protocol version caps the base (`max_daily_withdrawal_amount`; protocol version 14
+    ///   sets no cap) the inflows ride above the cap: capping the sum would hand the whole
+    ///   capped budget back to a deposit-withdraw cycle whenever the base reaches the cap.
+    ///   Outflow funded by same-window deposits mirrors Core v24's net credit pool rule;
     /// * the withdrawal reservations are bounded the same way: one pooled at or before the
     ///   snapshot describes an outflow the base already reflects (the history is recorded
     ///   after state transitions executed), so subtracting it again would deny budget the
     ///   guarantee does not require — a deposit-withdraw cycle would stay debited for the
-    ///   hour its reservation outlives the snapshot instead of cancelling exactly.
+    ///   hour its reservation outlives the snapshot instead of cancelling exactly;
+    /// * asset lock inflows are dated by the Core block that mined them, the way Core counts
+    ///   them, not by the Platform block that consumed them: they sit in their own tree and
+    ///   count while the chain locked height is below the Core height they stop counting at
+    ///   (`core_credit_pool_window_min_blocks` after the mining block) and only when recorded
+    ///   after the snapshot, for the same reason as the other inflows. An asset lock published
+    ///   to Platform long after Core mined it therefore adds nothing. This tree is written from
+    ///   protocol version 14 only, the one version that selects this generation.
     ///
     /// The formula stays `daily_maximum - withdrawals_amount`, floored at zero, with both
     /// sides counted over the interval after the snapshot.
@@ -106,14 +115,23 @@ impl Drive {
 
         let total_credits_a_day_ago = recorded_a_day_ago.map(|recorded| recorded.total_credits);
 
-        // The base is capped at Core's unlock capacity inside `daily_withdrawal_limit`; the
-        // inflows ride on top of the capped base, not under the cap. Capping the sum would
-        // discard the inflows exactly when the base reaches the cap — at that point a
-        // deposit-withdraw cycle would consume the whole capped budget again (#4471 under
-        // mainnet totals). Outflow funded by same-window deposits mirrors the net credit
-        // pool rule Core adopts alongside this (see #4471), so it may exceed the cap.
+        // A cap on the base, when the protocol version sets one, applies inside
+        // `daily_withdrawal_limit`; the inflows ride on top of the capped base, not under the
+        // cap. Capping the sum would discard the inflows exactly when the base reaches the
+        // cap — at that point a deposit-withdraw cycle would consume the whole capped budget
+        // again (#4471). What Core will mine bounds pooling separately, through the
+        // Core-anchored limit.
+        let core_dated_credit_inflows_since_the_snapshot = self
+            .sum_core_dated_credit_inflows_counting_at(
+                block_info.core_height,
+                recorded_a_day_ago.as_ref().map(|recorded| recorded.time_ms),
+                transaction,
+                platform_version,
+            )?;
+
         let daily_maximum = daily_withdrawal_limit(total_credits_a_day_ago, platform_version)?
-            .saturating_add(credit_inflows_since_the_snapshot);
+            .saturating_add(credit_inflows_since_the_snapshot)
+            .saturating_add(core_dated_credit_inflows_since_the_snapshot);
 
         let withdrawals_since_the_snapshot = self.sum_expiry_keyed_entries_at_or_after(
             get_withdrawal_transactions_sum_tree_path_vec(),
@@ -127,6 +145,61 @@ impl Drive {
             daily_maximum,
             withdrawals_amount: withdrawals_since_the_snapshot,
         })
+    }
+
+    /// Sums the Core-dated credit inflows still counting at `core_height` (their key's Core
+    /// height is above it) that were recorded after the base snapshot taken at
+    /// `snapshot_time_ms` (all of them while no snapshot exists yet). The tree holds the
+    /// inflows of one window plus whatever the bounded cleanup has not deleted yet.
+    fn sum_core_dated_credit_inflows_counting_at(
+        &self,
+        core_height: u32,
+        snapshot_time_ms: Option<u64>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, Error> {
+        let Some(first_counting_height) = core_height.checked_add(1) else {
+            return Ok(0);
+        };
+
+        let path_query = PathQuery::new_unsized(
+            get_withdrawal_core_dated_credit_inflows_sum_tree_path_vec(),
+            Query::new_single_query_item(QueryItem::RangeFrom(
+                core_dated_credit_inflow_key(first_counting_height, 0)..,
+            )),
+        );
+
+        let (results, _) = self.grove_get_raw_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+
+        let mut total: u64 = 0;
+        for (key, element) in results.to_key_elements() {
+            let (_, recorded_at_time_ms) = decode_core_dated_credit_inflow_key(&key)?;
+            if snapshot_time_ms.is_some_and(|snapshot| recorded_at_time_ms <= snapshot) {
+                // Minted at or before the snapshot: already inside the base.
+                continue;
+            }
+            let Element::SumItem(amount, _) = element else {
+                return Err(Error::Drive(DriveError::CorruptedElementType(
+                    "core-dated credit inflow entry is not a sum item",
+                )));
+            };
+            let amount: u64 = amount.try_into().map_err(|_| {
+                Error::Drive(DriveError::CriticalCorruptedState(
+                    "core-dated credit inflow entry is negative",
+                ))
+            })?;
+            total = total.checked_add(amount).ok_or(Error::Drive(
+                DriveError::CriticalCorruptedState("core-dated credit inflow entries overflow"),
+            ))?;
+        }
+
+        Ok(total)
     }
 
     /// Sums the sum-item entries of `path` whose expiration key is at or after
@@ -183,6 +256,8 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::identity::withdrawals::fetch_total_credits_in_platform_a_day_ago::DAY_IN_MS;
+
+    const HOUR_IN_MS: u64 = DAY_IN_MS / 24;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
@@ -364,11 +439,11 @@ mod tests {
         assert_eq!(info.available(), dash_to_credits!(1500));
     }
 
-    /// Inflows extend the daily maximum past the capped base: the cap bounds what Core mines
-    /// out of the standing pool per day, and capping the sum instead would hand the whole
-    /// capped budget back to a deposit-withdraw cycle whenever the base reaches the cap —
-    /// #4471 under mainnet totals. At a 30,000 Dash total the base is capped at 4,000; a
-    /// 4,000 Dash deposit-withdraw cycle must leave the full 4,000 available to others.
+    /// Inflows extend the daily maximum past a capped base: capping the sum instead would hand
+    /// the whole capped budget back to a deposit-withdraw cycle whenever the base reaches the
+    /// cap — #4471. Protocol version 14 sets no cap, but the rule holds for any that does: at a
+    /// 30,000 Dash total a base capped at 4,000 must leave the full 4,000 available to others
+    /// after a 4,000 Dash deposit-withdraw cycle.
     #[test]
     fn a_cycle_at_the_capped_base_should_not_consume_the_budget_of_others() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -376,6 +451,7 @@ mod tests {
         platform_version
             .system_limits
             .daily_withdrawal_limit_percent = Some(15);
+        platform_version.system_limits.max_daily_withdrawal_amount = Some(dash_to_credits!(4000));
         let transaction = drive.grove.start_transaction();
 
         let t0 = 10 * DAY_IN_MS;
@@ -697,5 +773,263 @@ mod tests {
         assert_eq!(info.daily_maximum, dash_to_credits!(3000));
         assert_eq!(info.withdrawals_amount, 0);
         assert_eq!(info.available(), dash_to_credits!(3000));
+    }
+
+    /// An asset lock counts from the Core block that mined it, for
+    /// `core_credit_pool_window_min_blocks` (552) Core blocks, the way Core's own limit counts
+    /// it, not for a day after the Platform block that consumed it.
+    #[test]
+    fn an_asset_lock_inflow_should_count_until_a_window_after_the_core_block_that_mined_it() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        let t0 = 10 * DAY_IN_MS;
+        let t1 = t0 + DAY_IN_MS;
+        let block = |time_ms: u64, core_height: u32| BlockInfo {
+            time_ms,
+            core_height,
+            ..Default::default()
+        };
+        let limit = |time_ms: u64, core_height: u32| {
+            drive
+                .calculate_current_withdrawal_limit(
+                    &block(time_ms, core_height),
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the limit")
+                .daily_maximum
+        };
+
+        drive
+            .add_to_system_credits(
+                dash_to_credits!(20000),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to add credits");
+        drive
+            .record_total_credits_history(&block(t0, 400), 64, Some(&transaction), platform_version)
+            .expect("expected to record");
+        assert_eq!(limit(t1, 1000), dash_to_credits!(3000));
+
+        // Consumed on Platform at Core height 1000, mined by Core at 990: it counts until Core
+        // height 990 + 552.
+        drive
+            .record_asset_lock_credit_inflow(
+                [1; 32],
+                dash_to_credits!(500),
+                Some(990),
+                &block(t1, 1000),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the inflow");
+        assert_eq!(limit(t1, 1000), dash_to_credits!(3500));
+        assert_eq!(limit(t1 + HOUR_IN_MS, 1541), dash_to_credits!(3500));
+        assert_eq!(limit(t1 + HOUR_IN_MS, 1542), dash_to_credits!(3000));
+    }
+
+    /// The edge case the Core dating closes: an asset lock published to Platform a whole
+    /// window after Core mined it sits in the balance Core's limit starts from, so it must not
+    /// add budget on Platform's side either.
+    #[test]
+    fn an_asset_lock_published_a_window_after_core_mined_it_should_add_nothing() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        let t0 = 10 * DAY_IN_MS;
+        let t1 = t0 + DAY_IN_MS;
+        let block = |time_ms: u64, core_height: u32| BlockInfo {
+            time_ms,
+            core_height,
+            ..Default::default()
+        };
+
+        drive
+            .add_to_system_credits(
+                dash_to_credits!(20000),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to add credits");
+        drive
+            .record_total_credits_history(&block(t0, 400), 64, Some(&transaction), platform_version)
+            .expect("expected to record");
+
+        // Mined at Core height 400, consumed at 1000: 400 + 552 is already behind.
+        drive
+            .record_asset_lock_credit_inflow(
+                [1; 32],
+                dash_to_credits!(5000),
+                Some(400),
+                &block(t1, 1000),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the inflow");
+
+        let info = drive
+            .calculate_current_withdrawal_limit(
+                &block(t1, 1000),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the limit");
+        assert_eq!(info.daily_maximum, dash_to_credits!(3000));
+    }
+
+    /// An asset lock Platform consumed before Core mined it adds nothing until a Core block
+    /// holding it is read, and then counts from that block.
+    #[test]
+    fn a_pending_asset_lock_inflow_should_count_once_a_core_block_holding_it_is_read() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        let t0 = 10 * DAY_IN_MS;
+        let t1 = t0 + DAY_IN_MS;
+        let block = |time_ms: u64, core_height: u32| BlockInfo {
+            time_ms,
+            core_height,
+            ..Default::default()
+        };
+        let limit = |time_ms: u64, core_height: u32| {
+            drive
+                .calculate_current_withdrawal_limit(
+                    &block(time_ms, core_height),
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the limit")
+                .daily_maximum
+        };
+
+        drive
+            .add_to_system_credits(
+                dash_to_credits!(20000),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to add credits");
+        drive
+            .record_total_credits_history(&block(t0, 400), 64, Some(&transaction), platform_version)
+            .expect("expected to record");
+
+        drive
+            .record_asset_lock_credit_inflow(
+                [7; 32],
+                dash_to_credits!(500),
+                None,
+                &block(t1, 1000),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the inflow");
+        assert_eq!(limit(t1, 1000), dash_to_credits!(3000));
+
+        // A Core block that does not hold it changes nothing.
+        drive
+            .record_core_credit_pool_block(
+                1001,
+                dash_to_credits!(30000),
+                &[[9; 32]],
+                &block(t1 + 1, 1001),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the block");
+        assert_eq!(limit(t1 + 1, 1001), dash_to_credits!(3000));
+
+        // The block that mined it dates it: it counts until 1002 + 552.
+        drive
+            .record_core_credit_pool_block(
+                1002,
+                dash_to_credits!(30500),
+                &[[7; 32]],
+                &block(t1 + 2, 1002),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the block");
+        assert_eq!(limit(t1 + 2, 1002), dash_to_credits!(3500));
+        assert_eq!(limit(t1 + HOUR_IN_MS, 1553), dash_to_credits!(3500));
+        assert_eq!(limit(t1 + HOUR_IN_MS, 1554), dash_to_credits!(3000));
+
+        // Reading the same block again finds nothing pending: no double count.
+        drive
+            .record_core_credit_pool_block(
+                1002,
+                dash_to_credits!(30500),
+                &[[7; 32]],
+                &block(t1 + 3, 1002),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the block");
+        assert_eq!(limit(t1 + 3, 1002), dash_to_credits!(3500));
+    }
+
+    /// Like the other inflows, a Core-dated one minted at or before the day-old snapshot is
+    /// inside the base and must not count a second time, even while Core still counts it.
+    #[test]
+    fn a_core_dated_inflow_inside_the_day_old_base_should_not_count_again() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        let t0 = 10 * DAY_IN_MS;
+        let t1 = t0 + HOUR_IN_MS;
+        let block = |time_ms: u64, core_height: u32| BlockInfo {
+            time_ms,
+            core_height,
+            ..Default::default()
+        };
+        let limit = |time_ms: u64, core_height: u32| {
+            drive
+                .calculate_current_withdrawal_limit(
+                    &block(time_ms, core_height),
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the limit")
+                .daily_maximum
+        };
+
+        drive
+            .add_to_system_credits(
+                dash_to_credits!(20000),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to add credits");
+        drive
+            .record_total_credits_history(&block(t0, 100), 64, Some(&transaction), platform_version)
+            .expect("expected to record");
+
+        drive
+            .add_to_system_credits(dash_to_credits!(500), Some(&transaction), platform_version)
+            .expect("expected to add the deposit");
+        drive
+            .record_asset_lock_credit_inflow(
+                [1; 32],
+                dash_to_credits!(500),
+                Some(120),
+                &block(t1, 120),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the inflow");
+        drive
+            .record_total_credits_history(&block(t1, 120), 64, Some(&transaction), platform_version)
+            .expect("expected to record");
+
+        // Before the deposit block is the snapshot the inflow counts: 15% of 20,000 + 500.
+        assert_eq!(limit(t1 + 23 * HOUR_IN_MS, 600), dash_to_credits!(3500));
+        // Once it is the snapshot the 500 Dash sit inside the 20,500 base; Core still counts
+        // it (120 + 552 is ahead), Platform does not count it twice.
+        assert_eq!(limit(t1 + DAY_IN_MS, 610), dash_to_credits!(3075));
     }
 }

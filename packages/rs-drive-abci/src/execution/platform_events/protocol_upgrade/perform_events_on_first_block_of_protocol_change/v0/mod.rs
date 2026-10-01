@@ -19,9 +19,10 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-    WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
-    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_root_path, WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+    WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+    WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY, WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+    WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use drive::drive::saved_block_transactions::{
@@ -791,6 +792,34 @@ impl<C> Platform<C> {
             None,
             &platform_version.drive,
         )?;
+
+        // The Core-anchored withdrawal limit: Core's credit pool balance per Core block read,
+        // the asset locks consumed before Core mined them, and the asset lock credit inflows
+        // dated by the Core block that mined them. Created in the same order as the initial
+        // structure creates them.
+        for (key, tree) in [
+            (
+                WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+                Element::empty_tree(),
+            ),
+            (
+                WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY,
+                Element::empty_tree(),
+            ),
+            (
+                WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
+                Element::empty_sum_tree(),
+            ),
+        ] {
+            self.drive.grove_insert_if_not_exists(
+                get_withdrawal_root_path().as_slice().into(),
+                &key,
+                tree,
+                Some(transaction),
+                None,
+                &platform_version.drive,
+            )?;
+        }
 
         // Contract version items: from this version the storage writer stores every
         // contract's version as a four-byte item beside it, and
@@ -2309,6 +2338,9 @@ mod tests {
         for key in [
             &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
             &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+            &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+            &WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY,
+            &WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
         ] {
             assert!(platform
                 .drive
@@ -2358,6 +2390,26 @@ mod tests {
             .value
             .expect("credit inflows sum tree should exist after the v14 transition");
         assert!(element.is_sum_tree());
+
+        for (key, is_sum_tree) in [
+            (&WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY, false),
+            (&WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY, false),
+            (&WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY, true),
+        ] {
+            let element = platform
+                .drive
+                .grove
+                .get(
+                    SubtreePath::from(&get_withdrawal_root_path()),
+                    key,
+                    Some(&transaction),
+                    &platform_version.drive.grove_version,
+                )
+                .value
+                .expect("the Core-anchored withdrawal limit trees should exist after the v14 transition");
+            assert!(element.is_any_tree());
+            assert_eq!(element.is_sum_tree(), is_sum_tree);
+        }
 
         // Running it again is harmless and the tree stays usable
         platform

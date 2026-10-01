@@ -4,6 +4,8 @@ use crate::execution::validation::state_transition::check_tx_verification::state
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
     StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0,
 };
+#[cfg(test)]
+use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::check_tx_proof_verifier::IdentityProofVerification;
 
 #[cfg(test)]
@@ -72,8 +74,8 @@ where
                 errors,
                 state_read_guard.last_block_info(),
                 transaction,
-                None,   // address_balances_in_update not needed for check_tx
-                &mut 0, // check_tx's transaction is discarded, its mints are never recorded
+                None, // address_balances_in_update not needed for check_tx
+                &mut BlockCreditMints::default(), // check_tx's transaction is discarded, its mints are never recorded
                 platform_ref.state.current_platform_version()?,
                 platform_ref.state.previous_fee_versions(),
             )

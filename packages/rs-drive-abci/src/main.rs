@@ -364,7 +364,7 @@ mod snapshot_bake_main {
     use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformConfig;
     use drive_abci::platform_types::platform::Platform;
-    use drive_abci::rpc::core::CoreRPCLike;
+    use drive_abci::rpc::core::{CoreCreditPoolBlock, CoreRPCLike};
     use serde_json::Value;
 
     /// Stub CoreRPCLike — Platform::open_with_client requires a CoreRPCLike,
@@ -449,6 +449,12 @@ mod snapshot_bake_main {
             unreachable!()
         }
         fn send_raw_transaction(&self, _: &[u8]) -> Result<Txid, Error> {
+            unreachable!()
+        }
+        fn get_credit_pool_block(&self, _: u32) -> Result<CoreCreditPoolBlock, Error> {
+            unreachable!()
+        }
+        fn get_transactions_mined_heights(&self, _: &[Txid]) -> Result<Vec<Option<u32>>, Error> {
             unreachable!()
         }
     }

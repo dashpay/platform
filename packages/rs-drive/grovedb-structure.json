@@ -3832,6 +3832,126 @@
                 "children": []
               }
             ]
+          },
+          {
+            "id": "withdrawals.core_credit_pool_balances",
+            "key": {
+              "type": "fixed",
+              "hex": "06",
+              "label": "CoreCreditPoolBalances",
+              "constant": "WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY"
+            },
+            "kinds": [
+              "Tree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+            "description": "Core's credit pool balance after each Core block read, for the Core-anchored withdrawal limit.",
+            "children": [
+              {
+                "id": "withdrawals.core_credit_pool_balances.balance",
+                "key": {
+                  "type": "dynamic",
+                  "name": "core_height",
+                  "matcher": {
+                    "type": "len",
+                    "len": 4
+                  },
+                  "encoding": "u32_be",
+                  "description": "The Core block height"
+                },
+                "kinds": [
+                  "Item"
+                ],
+                "value": "credits, u64 big endian",
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+                "description": "The credit pool balance after that Core block.",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "withdrawals.pending_asset_lock_inflows",
+            "key": {
+              "type": "fixed",
+              "hex": "07",
+              "label": "PendingAssetLockInflows",
+              "constant": "WITHDRAWAL_PENDING_ASSET_LOCK_INFLOWS_KEY"
+            },
+            "kinds": [
+              "Tree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+            "description": "Asset locks consumed before Core mined them, waiting to be dated by the Core block that does.",
+            "children": [
+              {
+                "id": "withdrawals.pending_asset_lock_inflows.asset_lock",
+                "key": {
+                  "type": "dynamic",
+                  "name": "txid",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "hash32",
+                  "description": "The asset lock transaction id"
+                },
+                "kinds": [
+                  "Item"
+                ],
+                "value": "credits u64, block time u64 and Core height u32, big endian",
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+                "description": "The credits the asset lock minted, and the block that minted them first.",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "withdrawals.core_dated_credit_inflows",
+            "key": {
+              "type": "fixed",
+              "hex": "08",
+              "label": "CoreDatedCreditInflows",
+              "constant": "WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY"
+            },
+            "kinds": [
+              "SumTree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+            "description": "Asset lock credit inflows, dated by the Core block that mined them, which raise the relative withdrawal limit.",
+            "children": [
+              {
+                "id": "withdrawals.core_dated_credit_inflows.inflow",
+                "key": {
+                  "type": "dynamic",
+                  "name": "expiry_and_time",
+                  "matcher": {
+                    "type": "len",
+                    "len": 12
+                  },
+                  "encoding": "composite",
+                  "description": "The Core height the entry stops counting at (u32 big endian), then the block time in milliseconds it was recorded at (u64 big endian)"
+                },
+                "kinds": [
+                  "SumItem"
+                ],
+                "value": "credits",
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+                "description": "Credits asset locks minted, counting until that Core height.",
+                "children": []
+              }
+            ]
           }
         ]
       },
@@ -6006,20 +6126,29 @@
     "withdrawals": {
       "origin": "genesis@14",
       "tree": {
-        "hex": "03",
+        "hex": "04",
         "left": {
-          "hex": "01",
+          "hex": "02",
           "left": {
-            "hex": "00"
+            "hex": "01",
+            "left": {
+              "hex": "00"
+            }
           },
           "right": {
-            "hex": "02"
+            "hex": "03"
           }
         },
         "right": {
-          "hex": "05",
+          "hex": "07",
           "left": {
-            "hex": "04"
+            "hex": "06",
+            "left": {
+              "hex": "05"
+            }
+          },
+          "right": {
+            "hex": "08"
           }
         }
       }

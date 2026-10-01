@@ -1223,6 +1223,42 @@ mod fixtures {
         conformance_of(&drive, "address_balances", run);
     }
 
+    /// The Core-anchored withdrawal accounting: a recorded Core credit pool balance, an asset
+    /// lock waiting for Core to mine it, and one dated by the Core block that mined it.
+    fn core_anchored_withdrawal_accounting(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let block_info = BlockInfo {
+            time_ms: 1_000,
+            core_height: 100,
+            ..Default::default()
+        };
+        drive
+            .record_core_credit_pool_block(100, 5_000_000, &[], &block_info, None, platform_version)
+            .expect("expected to record a Core block");
+        drive
+            .record_asset_lock_credit_inflow(
+                [21; 32],
+                300_000,
+                None,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to record a pending asset lock");
+        drive
+            .record_asset_lock_credit_inflow(
+                [22; 32],
+                400_000,
+                Some(99),
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to record a dated asset lock");
+        conformance_of(&drive, "core_anchored_withdrawal_accounting", run);
+    }
+
     /// An epoch while it runs, then after it was paid out: payout deletes the
     /// proposers and both fee items and keeps the epoch tree. The finished
     /// epoch info is written at payout, so no epoch ever holds all nine keys.
@@ -1793,6 +1829,7 @@ mod fixtures {
         contract_with_team_actions(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
+        core_anchored_withdrawal_accounting(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
         token_distributions(&mut run);

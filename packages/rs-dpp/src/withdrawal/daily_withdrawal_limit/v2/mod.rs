@@ -12,9 +12,10 @@ use platform_version::version::PlatformVersion;
 /// * it is never below `max_withdrawal_amount`, so every withdrawal Platform
 ///   accepts eventually fits the daily maximum and cannot block the pooling
 ///   queue behind it;
-/// * it is never above `max_daily_withdrawal_amount`, Core's credit-pool unlock
-///   capacity per day: pooling more than Core will mine only cycles those
-///   unlocks through expiry and re-signing;
+/// * it is never above `max_daily_withdrawal_amount` when the protocol version
+///   sets one. Protocol version 14 sets none: pooling more than Core will mine
+///   is prevented instead by the Core-anchored limit pooling also applies,
+///   which follows Core's own credit pool rather than a fixed figure;
 /// * while the total credits a day ago are not known (`None`: the history is
 ///   younger than a day, i.e. right after this rule activates), the flat limit
 ///   of version 1 applies, so the lag cannot be skipped by inflating the total
@@ -37,23 +38,19 @@ pub fn daily_withdrawal_limit_v2(
             )
         })?;
 
-    let max_daily_withdrawal_amount = platform_version
-        .system_limits
-        .max_daily_withdrawal_amount
-        .ok_or_else(|| {
-            ProtocolError::CorruptedCodeExecution(
-                "daily_withdrawal_limit v2 requires system_limits.max_daily_withdrawal_amount"
-                    .to_string(),
-            )
-        })?;
+    // Optional: protocol version 14 leaves it unset, and this generation is selected by no
+    // shipped protocol version, so making the cap optional changes no replayed block.
+    let max_daily_withdrawal_amount = platform_version.system_limits.max_daily_withdrawal_amount;
 
     let max_withdrawal_amount = platform_version.system_limits.max_withdrawal_amount;
-    if max_daily_withdrawal_amount < max_withdrawal_amount {
-        // A cap below one maximal withdrawal would let an accepted withdrawal never fit the
-        // daily maximum; that is a contradictory configuration, not a limit to apply.
-        return Err(ProtocolError::CorruptedCodeExecution(format!(
-            "daily_withdrawal_limit v2 requires system_limits.max_daily_withdrawal_amount ({max_daily_withdrawal_amount}) to be at least max_withdrawal_amount ({max_withdrawal_amount})"
-        )));
+    if let Some(max_daily_withdrawal_amount) = max_daily_withdrawal_amount {
+        if max_daily_withdrawal_amount < max_withdrawal_amount {
+            // A cap below one maximal withdrawal would let an accepted withdrawal never fit the
+            // daily maximum; that is a contradictory configuration, not a limit to apply.
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "daily_withdrawal_limit v2 requires system_limits.max_daily_withdrawal_amount ({max_daily_withdrawal_amount}) to be at least max_withdrawal_amount ({max_withdrawal_amount})"
+            )));
+        }
     }
 
     // u128 keeps `total * percent` from overflowing for any u64 total.
@@ -61,9 +58,12 @@ pub fn daily_withdrawal_limit_v2(
     let relative_limit = Credits::try_from(relative_limit)
         .map_err(|_| ProtocolError::Overflow("daily withdrawal limit overflow"))?;
 
-    Ok(relative_limit
-        .max(max_withdrawal_amount)
-        .min(max_daily_withdrawal_amount))
+    let relative_limit = relative_limit.max(max_withdrawal_amount);
+
+    Ok(match max_daily_withdrawal_amount {
+        Some(max_daily_withdrawal_amount) => relative_limit.min(max_daily_withdrawal_amount),
+        None => relative_limit,
+    })
 }
 
 #[cfg(test)]
@@ -121,10 +121,10 @@ mod tests {
     }
 
     #[test]
-    fn should_never_exceed_cores_unlock_capacity_per_day() {
+    fn should_never_exceed_the_cap_when_one_is_set() {
         let platform_version = platform_version_with(Some(15));
 
-        // 15% of 30000 Dash is 4500 Dash, above what Core mines per day.
+        // 15% of 30000 Dash is 4500 Dash, above the configured 4000 Dash cap.
         assert_eq!(
             daily_withdrawal_limit_v2(Some(dash_to_credits!(30000)), &platform_version)
                 .expect("expected limit"),
@@ -154,19 +154,46 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_when_the_percent_or_the_cap_is_not_configured() {
+    fn should_fail_when_the_percent_is_not_configured() {
         let platform_version = platform_version_with(None);
         assert!(matches!(
             daily_withdrawal_limit_v2(Some(dash_to_credits!(100)), &platform_version),
             Err(ProtocolError::CorruptedCodeExecution(_))
         ));
+    }
 
+    #[test]
+    fn should_apply_no_cap_when_none_is_configured() {
         let mut platform_version = platform_version_with(Some(15));
         platform_version.system_limits.max_daily_withdrawal_amount = None;
-        assert!(matches!(
-            daily_withdrawal_limit_v2(Some(dash_to_credits!(100)), &platform_version),
-            Err(ProtocolError::CorruptedCodeExecution(_))
-        ));
+
+        // 15% of 30000 Dash is 4500 Dash, uncapped.
+        assert_eq!(
+            daily_withdrawal_limit_v2(Some(dash_to_credits!(30000)), &platform_version)
+                .expect("expected limit"),
+            dash_to_credits!(4500)
+        );
+        // The floor still applies.
+        assert_eq!(
+            daily_withdrawal_limit_v2(Some(dash_to_credits!(100)), &platform_version)
+                .expect("expected limit"),
+            dash_to_credits!(500)
+        );
+    }
+
+    #[test]
+    fn should_leave_the_latest_relative_limit_uncapped() {
+        let platform_version = PlatformVersion::latest();
+
+        assert_eq!(
+            platform_version.system_limits.max_daily_withdrawal_amount,
+            None
+        );
+        assert_eq!(
+            daily_withdrawal_limit_v2(Some(dash_to_credits!(100000)), platform_version)
+                .expect("expected limit"),
+            dash_to_credits!(15000)
+        );
     }
 
     #[test]

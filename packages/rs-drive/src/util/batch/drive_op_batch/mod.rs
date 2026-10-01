@@ -391,6 +391,37 @@ impl DriveOperation<'_> {
             .fold(0u64, |total, amount| total.saturating_add(amount))
     }
 
+    /// The asset lock transaction a batch's mints came from, with those mints: every state
+    /// transition that mints credits spends exactly one asset lock and records it as used
+    /// (`AddUsedAssetLock`) in the same batch. `None` when the batch mints nothing, or does not
+    /// name exactly one asset lock (no such batch exists today), so the caller treats its mints
+    /// as it treats any other.
+    pub fn asset_lock_credit_mints(operations: &[DriveOperation]) -> Option<([u8; 32], Credits)> {
+        let minted = Self::credit_mints(operations);
+        if minted == 0 {
+            return None;
+        }
+
+        let mut used_asset_locks = operations.iter().filter_map(|operation| match operation {
+            DriveOperation::SystemOperation(SystemOperationType::AddUsedAssetLock {
+                asset_lock_outpoint,
+                ..
+            }) => Some(asset_lock_outpoint),
+            _ => None,
+        });
+
+        let outpoint = used_asset_locks.next()?;
+        if used_asset_locks.next().is_some() {
+            return None;
+        }
+
+        // An outpoint is the transaction id (32 bytes, in the order `Txid` holds it) followed
+        // by the output index.
+        let mut txid = [0u8; 32];
+        txid.copy_from_slice(&outpoint.as_slice()[..32]);
+        Some((txid, minted))
+    }
+
     /// Merges every write of one identity balance, of one contract fee pot, and of one
     /// prefunded specialized balance, into a single net operation.
     ///
@@ -1717,5 +1748,39 @@ mod tests {
             add_to_pot(ContractFeePot::Owner, 2),
         ];
         assert_eq!(merged(operations.clone()), format!("{operations:?}"));
+    }
+
+    #[test]
+    fn should_attribute_a_batch_mint_to_the_one_asset_lock_it_spends() {
+        use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+        use dpp::dashcore::hashes::Hash;
+        use dpp::dashcore::{OutPoint, Txid};
+        use dpp::platform_value::Bytes36;
+
+        let platform_version = PlatformVersion::latest();
+        let txid = Txid::from_byte_array([3; 32]);
+        let used = |vout: u32| {
+            DriveOperation::SystemOperation(SystemOperationType::AddUsedAssetLock {
+                asset_lock_outpoint: Bytes36::new(OutPoint::new(txid, vout).into()),
+                asset_lock_value: AssetLockValue::new(10, vec![], 0, vec![], platform_version)
+                    .expect("expected an asset lock value"),
+            })
+        };
+        let mint = |amount: u64| {
+            DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits { amount })
+        };
+
+        // The txid comes back in the byte order `Txid` holds, whatever the output index.
+        assert_eq!(
+            DriveOperation::asset_lock_credit_mints(&[mint(500), used(1)]),
+            Some((txid.to_byte_array(), 500))
+        );
+        // Nothing minted, or no single asset lock named: no attribution.
+        assert_eq!(DriveOperation::asset_lock_credit_mints(&[used(0)]), None);
+        assert_eq!(DriveOperation::asset_lock_credit_mints(&[mint(500)]), None);
+        assert_eq!(
+            DriveOperation::asset_lock_credit_mints(&[mint(500), used(0), used(1)]),
+            None
+        );
     }
 }

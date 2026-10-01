@@ -28,6 +28,10 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
     max_daily_withdrawal_amount: None,
+    core_credit_pool_unlock_limit_percent: None,
+    core_credit_pool_unlock_limit_floor: None,
+    core_credit_pool_window_min_blocks: None,
+    core_credit_pool_window_max_blocks: None,
     min_withdrawal_amount: 1_000_000, //1000 duffs (raised from 190 in v12)
     core_dust_relay_fee_per_kb: None, // expired dust withdrawals fail from v14
     max_core_fee_per_byte: None,

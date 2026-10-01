@@ -127,13 +127,41 @@ pub struct SystemLimits {
     /// version 1 applied a flat 2000 Dash. Versioned: see `daily_withdrawal_limit_percent` in
     /// each `SYSTEM_LIMITS_V*`.
     pub daily_withdrawal_limit_percent: Option<u8>,
-    /// Upper bound (in credits) of the relative daily withdrawal limit from protocol version 14:
-    /// Core's credit-pool unlock capacity per day, `LimitAmountV24` = 4000 Dash per 576-block
-    /// window (Core v24). Platform cannot usefully pool more than Core will mine — the excess
-    /// only cycles through expiry and re-signing — so the limit never exceeds this whatever the
-    /// total credits are; raise it together with Core. Must be at least `max_withdrawal_amount`.
-    /// `None` for the protocol versions that predate the relative rule.
+    /// Optional upper bound (in credits) of the relative daily withdrawal limit
+    /// (`daily_withdrawal_limit` method version 2). `None` leaves the relative limit uncapped,
+    /// which is what protocol version 14 does: what Core will mine is bounded instead by the
+    /// Core-anchored limit (`core_credit_pool_unlock_limit_percent` and the fields after it),
+    /// read from Core's own credit pool balances. When set it must be at least
+    /// `max_withdrawal_amount`. `None` too for the protocol versions that predate the relative
+    /// rule, which never read it.
     pub max_daily_withdrawal_amount: Option<u64>,
+    /// Allowed drop of Core's credit pool per window, as a percentage of its balance at the
+    /// window start, in the Core-anchored withdrawal limit of protocol version 14
+    /// (`core_credit_pool_unlock_limit` method version 0). Platform pools a withdrawal only
+    /// while it also fits this limit, a stricter copy of Core v24's own unlock rule (20%, at
+    /// least 2000 Dash), so it never pools more than Core will mine. `None` for the protocol
+    /// versions that predate the Core-anchored limit.
+    pub core_credit_pool_unlock_limit_percent: Option<u8>,
+    /// Smallest allowed drop (in credits) of Core's credit pool per window in the Core-anchored
+    /// withdrawal limit, applied when `core_credit_pool_unlock_limit_percent` of the window start
+    /// balance is less. Below Core v24's own 2000 Dash floor, so small pools keep a margin too,
+    /// and at least `max_withdrawal_amount` so a queued withdrawal always fits eventually.
+    /// `None` for the protocol versions that predate the Core-anchored limit.
+    pub core_credit_pool_unlock_limit_floor: Option<u64>,
+    /// The nearest window start, in Core blocks before the chain locked height, the
+    /// Core-anchored withdrawal limit considers; with `core_credit_pool_window_max_blocks` it
+    /// bounds a band around Core's own 576-block window, and the limit takes the highest pool
+    /// balance among those window starts. The nearer edge covers the blocks an unlock may take
+    /// to be mined after it is pooled. An asset lock counts as a credit inflow for this many
+    /// Core blocks after the block that mined it. `None` for the protocol versions that predate
+    /// the Core-anchored limit.
+    pub core_credit_pool_window_min_blocks: Option<u32>,
+    /// The farthest window start, in Core blocks before the chain locked height, the
+    /// Core-anchored withdrawal limit considers (see `core_credit_pool_window_min_blocks`).
+    /// Also how many Core blocks an asset lock consumed before Core mined it waits to be dated
+    /// before it is dropped and never counts as a credit inflow. `None` for the protocol
+    /// versions that predate the Core-anchored limit.
+    pub core_credit_pool_window_max_blocks: Option<u32>,
     /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
     /// transparent (identity + address) and shielded withdrawal paths. The dust floor that
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`

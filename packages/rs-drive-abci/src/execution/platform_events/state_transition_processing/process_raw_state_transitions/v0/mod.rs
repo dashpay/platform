@@ -1,10 +1,10 @@
 use crate::error::Error;
+use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
-use dpp::fee::Credits;
 
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
@@ -141,7 +141,7 @@ where
         // Credits the block's applied operations mint into Platform (asset locks), summed
         // across state transitions and recorded once per block as a credit inflow the net
         // daily withdrawal limit adds to its daily maximum.
-        let mut block_credit_mints: Credits = 0;
+        let mut block_credit_mints = BlockCreditMints::default();
 
         for decoded_state_transition in state_transition_container.into_iter() {
             // If we propose state transitions, we need to check if we have a time limit for processing
@@ -186,7 +186,8 @@ where
                         if rollback_dropped_transitions {
                             transaction.set_savepoint();
                         }
-                        let credit_mints_at_savepoint = block_credit_mints;
+                        let credit_mints_at_savepoint =
+                            rollback_dropped_transitions.then(|| block_credit_mints.clone());
 
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
@@ -238,7 +239,11 @@ where
                                     // its mints with them, or the block would record a
                                     // credit inflow for a transition the proposal omits and
                                     // validators re-executing it would compute other state.
-                                    block_credit_mints = credit_mints_at_savepoint;
+                                    if let Some(credit_mints_at_savepoint) =
+                                        credit_mints_at_savepoint
+                                    {
+                                        block_credit_mints = credit_mints_at_savepoint;
+                                    }
                                     // Any contract the transition rewrote was re-seeded into
                                     // the block cache as it was applied, and the rollback
                                     // just reverted it in state. Drop those copies so the

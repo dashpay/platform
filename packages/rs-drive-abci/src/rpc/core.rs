@@ -1,5 +1,6 @@
 use crate::rpc::prefetch::CorePrefetcher;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
+use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
@@ -15,6 +16,54 @@ use std::time::Duration;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
+
+/// The most transaction ids Core's `gettxchainlocks` answers in one call.
+const MAX_TRANSACTIONS_PER_CHAIN_LOCK_STATUS_REQUEST: usize = 100;
+
+/// What one Core block tells the Core-anchored withdrawal limit.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CoreCreditPoolBlock {
+    /// Core's credit pool balance after the block, in duffs, as its coinbase records it; `0`
+    /// when the block has no credit pool (before the credit pool existed), which is how Core's
+    /// own unlock limit reads such a block.
+    pub credit_pool_balance: u64,
+    /// The ids of the asset lock transactions the block holds.
+    pub asset_lock_txids: Vec<Txid>,
+}
+
+impl CoreCreditPoolBlock {
+    /// Reads the credit pool balance from the block's coinbase payload and collects its asset
+    /// lock transactions.
+    pub fn from_block(block: &Block) -> Self {
+        let credit_pool_balance = block
+            .txdata
+            .first()
+            .and_then(|coinbase| match &coinbase.special_transaction_payload {
+                Some(TransactionPayload::CoinbasePayloadType(payload)) => {
+                    payload.asset_locked_amount
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        let asset_lock_txids = block
+            .txdata
+            .iter()
+            .filter(|transaction| {
+                matches!(
+                    transaction.special_transaction_payload,
+                    Some(TransactionPayload::AssetLockPayloadType(_))
+                )
+            })
+            .map(Transaction::txid)
+            .collect();
+
+        CoreCreditPoolBlock {
+            credit_pool_balance,
+            asset_lock_txids,
+        }
+    }
+}
 
 /// Core height must be of type u32 (Platform heights are u64)
 pub type CoreHeight = u32;
@@ -126,6 +175,20 @@ pub trait CoreRPCLike {
 
     /// Sends raw transaction to the network
     fn send_raw_transaction(&self, transaction: &[u8]) -> Result<Txid, Error>;
+
+    /// Get Core's credit pool balance after the block at `height` and the asset lock
+    /// transactions it holds. Only ask for a chain locked height: the answer is then the same
+    /// on every node.
+    fn get_credit_pool_block(&self, height: CoreHeight) -> Result<CoreCreditPoolBlock, Error>;
+
+    /// Get the height of the active chain block each transaction was mined in, in the order of
+    /// `tx_ids`; `None` for one Core does not know, or holds in its mempool only. A height is
+    /// the same on every node only when it is at or below a chain locked height, so callers
+    /// treat anything above theirs as not mined yet.
+    fn get_transactions_mined_heights(
+        &self,
+        tx_ids: &[Txid],
+    ) -> Result<Vec<Option<CoreHeight>>, Error>;
 }
 
 #[derive(Debug)]
@@ -386,5 +449,35 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self
             .inner
             .get_asset_unlock_statuses(indices, Some(core_chain_locked_height)))
+    }
+
+    fn get_credit_pool_block(&self, height: CoreHeight) -> Result<CoreCreditPoolBlock, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        let block = self.get_block(&block_hash)?;
+        Ok(CoreCreditPoolBlock::from_block(&block))
+    }
+
+    fn get_transactions_mined_heights(
+        &self,
+        tx_ids: &[Txid],
+    ) -> Result<Vec<Option<CoreHeight>>, Error> {
+        let mut heights = Vec::with_capacity(tx_ids.len());
+        for chunk in tx_ids.chunks(MAX_TRANSACTIONS_PER_CHAIN_LOCK_STATUS_REQUEST) {
+            let statuses: Vec<_> = retry!(self.inner.get_transaction_are_locked(chunk))?;
+            if statuses.len() != chunk.len() {
+                return Err(Error::UnexpectedStructure(format!(
+                    "gettxchainlocks answered {} of {} transactions",
+                    statuses.len(),
+                    chunk.len()
+                )));
+            }
+            // Core reports -1 for a transaction it does not know or holds in its mempool only.
+            heights.extend(
+                statuses.into_iter().map(|status| {
+                    status.and_then(|status| CoreHeight::try_from(status.height).ok())
+                }),
+            );
+        }
+        Ok(heights)
     }
 }

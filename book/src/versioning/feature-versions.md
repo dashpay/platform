@@ -333,6 +333,10 @@ pub struct SystemLimits {
     /// `None` for the protocol versions that predate the relative rule.
     pub daily_withdrawal_limit_percent: Option<u8>,
     pub max_daily_withdrawal_amount: Option<u64>,
+    pub core_credit_pool_unlock_limit_percent: Option<u8>,
+    pub core_credit_pool_unlock_limit_floor: Option<u64>,
+    pub core_credit_pool_window_min_blocks: Option<u32>,
+    pub core_credit_pool_window_max_blocks: Option<u32>,
     pub min_withdrawal_amount: u64,
     pub max_contract_group_size: u16,
     pub max_token_redemption_cycles: u32,
@@ -355,6 +359,7 @@ pub struct DriveAbciWithdrawalConstants {
     pub core_expiration_blocks: u32,
     pub cleanup_expired_locks_of_withdrawal_amounts_limit: u16,
     pub total_credits_history_prune_limit: u16,
+    pub core_blocks_scanned_per_block_limit: u16,
 }
 
 // drive_abci_versions/drive_abci_validation_versions/mod.rs

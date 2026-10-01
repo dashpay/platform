@@ -4,6 +4,7 @@ mod v1;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
 use std::collections::BTreeMap;
@@ -14,7 +15,6 @@ use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -54,7 +54,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
-        block_credit_mints: &mut Credits,
+        block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {

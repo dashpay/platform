@@ -11,14 +11,15 @@ mod tests {
     use dpp::dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::data_contracts::withdrawals_contract;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::withdrawal::daily_withdrawal_limit::daily_withdrawal_limit;
     use dpp::withdrawal::WithdrawalTransactionIndex;
     use dpp::{dash_to_credits, dash_to_duffs};
     use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
     use drive::drive::identity::withdrawals::fetch_total_credits_in_platform_a_day_ago::DAY_IN_MS;
     use drive::drive::identity::withdrawals::paths::{
-        get_withdrawal_root_path, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-        WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+        get_withdrawal_root_path, WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY,
+        WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
     };
     use drive::drive::system::misc_path;
     use drive::util::grove_operations::DirectQueryType;
@@ -26,6 +27,7 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::mocks::v3_test::TEST_PLATFORM_V3;
     use platform_version::version::PlatformVersion;
@@ -2446,22 +2448,30 @@ mod tests {
             assert_eq!(total_credits_in_platform, Some(1010000000000000));
 
             // Every credit entered through an asset lock, so the whole 10,100 Dash is
-            // recorded as credit inflows the daily withdrawal limit would add to its maximum.
-            let credit_inflows = outcome
-                .abci_app
-                .platform
-                .drive
-                .grove_get_sum_tree_total_value(
-                    (&get_withdrawal_root_path()).into(),
-                    &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-                    DirectQueryType::StatefulDirectQuery,
-                    None,
-                    &mut vec![],
-                    &platform_version.drive,
-                )
-                .expect("expected to get the credit inflows");
+            // recorded as credit inflows the daily withdrawal limit would add to its maximum,
+            // dated by the Core block that mined each asset lock (the mock Core reports height
+            // 0, so they count until Core height 552) rather than by the block time.
+            let inflows_of = |key: &[u8; 1]| {
+                outcome
+                    .abci_app
+                    .platform
+                    .drive
+                    .grove_get_sum_tree_total_value(
+                        (&get_withdrawal_root_path()).into(),
+                        key,
+                        DirectQueryType::StatefulDirectQuery,
+                        None,
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to get the credit inflows")
+            };
 
-            assert_eq!(credit_inflows, 1010000000000000);
+            assert_eq!(
+                inflows_of(&WITHDRAWAL_CORE_DATED_CREDIT_INFLOWS_SUM_TREE_KEY),
+                1010000000000000
+            );
+            assert_eq!(inflows_of(&WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY), 0);
 
             outcome
         };
@@ -2581,23 +2591,34 @@ mod tests {
             )
             .await;
 
-            // The funding inflows are 25 hours old and pruned; nothing extends the daily
-            // maximum any more.
-            let credit_inflows = outcome
-                .abci_app
-                .platform
+            // The funding inflows were minted before the day-old base snapshot, so they are
+            // inside the base and nothing extends the daily maximum any more: it is the
+            // percentage of the unchanged total alone. (The Core height never moves in this
+            // test, so the Core-dated entries stay stored until Core height 552; they no
+            // longer count.)
+            let platform = &outcome.abci_app.platform;
+            let last_block_info = platform.state.load().last_block_info().clone();
+            let total_credits_in_platform = platform
                 .drive
-                .grove_get_sum_tree_total_value(
-                    (&get_withdrawal_root_path()).into(),
-                    &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+                .grove_get_raw_value_u64_from_encoded_var_vec(
+                    (&misc_path()).into(),
+                    TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
                     DirectQueryType::StatefulDirectQuery,
                     None,
                     &mut vec![],
                     &platform_version.drive,
                 )
-                .expect("expected to get the credit inflows");
-
-            assert_eq!(credit_inflows, 0);
+                .expect("expected to get total credits in platform")
+                .expect("expected total credits in platform");
+            let limit = platform
+                .drive
+                .calculate_current_withdrawal_limit(&last_block_info, None, platform_version)
+                .expect("expected the withdrawal limit");
+            assert_eq!(
+                limit.daily_maximum,
+                daily_withdrawal_limit(Some(total_credits_in_platform), platform_version)
+                    .expect("expected the base")
+            );
 
             outcome
         };
