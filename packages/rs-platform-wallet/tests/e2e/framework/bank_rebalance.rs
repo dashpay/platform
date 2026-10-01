@@ -364,14 +364,23 @@ pub async fn provision_transfer_key_if_missing(
     }
 }
 
+/// Credits a drain moves off a bank identity holding `pre`: everything
+/// above `max(keep_credits, BANK_IDENTITY_DRAIN_FEE_RESERVE)`, or `None`.
+fn identity_drain_amount(pre: Credits, keep_credits: Credits) -> Option<Credits> {
+    pre.checked_sub(keep_credits.max(BANK_IDENTITY_DRAIN_FEE_RESERVE))
+        .filter(|amount| *amount > 0)
+}
+
 /// Drain the bank identity's Platform credits back to
 /// [`BankWallet::primary_receive_address`] via the fast Platform-only
 /// `transfer_credits_to_addresses_with_external_signer` primitive.
 ///
-/// Leaves [`BANK_IDENTITY_DRAIN_FEE_RESERVE`] on the identity to cover
-/// the transfer fee plus a small headroom for any follow-up cost (e.g.
-/// the core-refill chain firing immediately afterwards). No-op when the
-/// bank identity's balance is at or below that reserve.
+/// Leaves `keep_credits` on the identity (the bank plan passes the
+/// identity floor, which its model of the drain assumes stays), and never
+/// less than [`BANK_IDENTITY_DRAIN_FEE_RESERVE`], which covers the
+/// transfer fee plus headroom for a follow-up cost (e.g. the core-refill
+/// chain firing immediately afterwards). No-op when the balance is at or
+/// below what it keeps.
 ///
 /// Returns the amount drained (0 if no-op). Best-effort: failures are
 /// logged at WARN and surfaced to the caller for context — the harness
@@ -379,6 +388,7 @@ pub async fn provision_transfer_key_if_missing(
 pub async fn drain_bank_identity_to_addresses(
     bank: &BankWallet,
     bank_identity: &BankIdentity,
+    keep_credits: Credits,
 ) -> FrameworkResult<Credits> {
     let bank_wallet = bank.platform_wallet();
     let sdk = bank_wallet.sdk();
@@ -439,18 +449,17 @@ pub async fn drain_bank_identity_to_addresses(
         }
     };
 
-    if pre <= BANK_IDENTITY_DRAIN_FEE_RESERVE {
+    let Some(amount) = identity_drain_amount(pre, keep_credits) else {
         tracing::debug!(
             target: "platform_wallet::e2e::bank_rebalance",
             bank_identity_id = %bank_identity.id,
             pre,
+            keep_credits,
             reserve = BANK_IDENTITY_DRAIN_FEE_RESERVE,
-            "drain no-op: bank identity at or below fee reserve"
+            "drain no-op: bank identity at or below what it keeps"
         );
         return Ok(0);
-    }
-
-    let amount = pre - BANK_IDENTITY_DRAIN_FEE_RESERVE;
+    };
     let outputs: BTreeMap<_, _> =
         std::iter::once((*bank.primary_receive_address(), amount)).collect();
 
@@ -919,6 +928,26 @@ mod tests {
     #[test]
     fn bootstrap_asset_lock_fee_reserve_is_pinned() {
         assert_eq!(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE, 150_000_000);
+    }
+
+    #[test]
+    fn identity_drain_keeps_the_floor_and_the_fee_reserve() {
+        // The live failure: 96.16M on the identity, 100M floor. The old
+        // drain kept only the 30M fee reserve and moved 70M off.
+        assert_eq!(identity_drain_amount(96_164_640, 100_000_000), None);
+        assert_eq!(
+            identity_drain_amount(250_000_000, 100_000_000),
+            Some(150_000_000)
+        );
+        // A floor below the fee reserve still keeps the reserve.
+        assert_eq!(
+            identity_drain_amount(100_000_000, 0),
+            Some(100_000_000 - BANK_IDENTITY_DRAIN_FEE_RESERVE)
+        );
+        assert_eq!(
+            identity_drain_amount(BANK_IDENTITY_DRAIN_FEE_RESERVE, 0),
+            None
+        );
     }
 
     #[test]

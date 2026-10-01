@@ -326,7 +326,15 @@ pub async fn execute(
     for mv in plan {
         match mv {
             Move::DrainIdentity => {
-                match bank_rebalance::drain_bank_identity_to_addresses(bank, bank_identity).await {
+                // Keep the identity floor: the plan's model of the drain
+                // (Step 1) reclaims only the surplus above it.
+                match bank_rebalance::drain_bank_identity_to_addresses(
+                    bank,
+                    bank_identity,
+                    config.min_identity_credits,
+                )
+                .await
+                {
                     Ok(0) => {}
                     Ok(drained) => tracing::info!(
                         target: "platform_wallet::e2e::bank_plan",
