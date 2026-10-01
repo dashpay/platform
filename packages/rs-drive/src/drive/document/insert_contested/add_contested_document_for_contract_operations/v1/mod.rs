@@ -15,7 +15,7 @@ use crate::query::vote_poll_vote_state_query::{
 use crate::query::GroveError;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
-use crate::util::object_size_info::DocumentAndContractInfo;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::ContestedIndexResolution;
@@ -96,7 +96,16 @@ impl Drive {
             platform_version,
         )?;
 
-        let owner_id = document_and_contract_info.owned_document_info.owner_id;
+        // The vote poll's end date entries are paid for with the document, so they name whoever
+        // its storage flags name: its creator, or the gas sponsor of a sponsored creation
+        // (protocol version 14, `record_gas_sponsor_as_storage_owner`), so that their refund,
+        // when a second contender's arrival moves the end date, goes to whoever paid.
+        let end_date_storage_owner_id = document_and_contract_info
+            .owned_document_info
+            .document_info
+            .get_storage_flags_ref()
+            .and_then(|storage_flags| storage_flags.owner_id().copied())
+            .or(document_and_contract_info.owned_document_info.owner_id);
 
         if !contest_already_existed {
             if let Some(vote_poll_stored_start_info) = also_insert_vote_poll_stored_info {
@@ -129,7 +138,7 @@ impl Drive {
             };
 
             self.add_vote_poll_end_date_query_operations(
-                owner_id,
+                end_date_storage_owner_id,
                 VotePoll::ContestedDocumentResourceVotePoll(
                     contested_document_resource_vote_poll.into(),
                 ),
@@ -246,7 +255,7 @@ impl Drive {
                     )?;
 
                     self.add_vote_poll_end_date_query_operations(
-                        owner_id,
+                        end_date_storage_owner_id,
                         vote_poll,
                         vote_end,
                         block_info,

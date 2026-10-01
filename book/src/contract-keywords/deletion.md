@@ -42,7 +42,7 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 ### How it works
 
 - The owner deletes a document with a delete transition that names its id. Anyone else is refused (`DocumentOwnerIdMismatchError`, 40102), and a document that does not exist is `DocumentNotFoundError` (40101).
-- The owner is refunded the part of the document's storage fee that has not yet been paid out to past epochs. A document of a type with a `ttl` refunds nothing. See [Refunds](../fees/overview.md#refunds).
+- The owner is refunded the part of the document's storage fee that has not yet been paid out to past epochs. Storage the contract owner paid for as the document's [gas sponsor](token-cost.md#who-pays-the-gas-gasfeespaidby) is refunded to them instead. A document of a type with a `ttl` refunds nothing. See [Refunds](../fees/overview.md#refunds).
 - A delete may carry a token cost or an action fee, like any document action. See [Token Costs](token-cost.md) and [Action Fees](action-fees.md).
 - An identity that is banned or suspended on a moderated contract may still delete its own documents. See [Contract Moderation](../data-model/contract-moderation.md#the-model).
 - `false` binds only the owner. The contract's moderators, when the type allows them, and the platform, when the type has a `ttl`, still delete such documents.
@@ -297,7 +297,7 @@ Whether the owner of a document a moderator deletes is refunded its storage. By 
 
 ### How it works
 
-- With `true`, the owner is refunded as for their own deletion: the part of the storage fee not yet paid out to past epochs. The refund goes to the owner, not to the moderator, who still pays for the transition and the record. A document of a type with a `ttl` refunds nothing either way.
+- With `true`, the storage is refunded as for the owner's own deletion: the part of the storage fee not yet paid out to past epochs, to the owner, or to the contract owner for storage they paid for as the document's [gas sponsor](token-cost.md#who-pays-the-gas-gasfeespaidby). The deleting moderator gets none of it as moderator, and still pays for the transition and the record. A document of a type with a `ttl` refunds nothing either way.
 - With `false`, the credits stay in the storage pools they were paid into.
 
 ### Rules at registration

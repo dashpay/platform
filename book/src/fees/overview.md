@@ -225,13 +225,42 @@ and a batch that prefers falls back to the signer's balance. Execution v1 then
 charges whoever fee validation admitted. A batch that fails validation is never
 sponsored: its signer pays for the work that ran, and a request the document
 type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
-40129). Storage refunds still go to the document's owner, whoever paid the
-storage: a sponsored document refunds its owner when it is deleted or replaced
-by a smaller one, even when the sponsor pays for that transition too. Each
-token the sponsor hands out is therefore worth up to the storage fee of the
-largest document the type allows, so a document type that offers sponsorship
-should bound its documents' size (`maxLength`, `maxItems`) and price the
-action accordingly.
+40129).
+
+Storage refunds go to whoever paid for the storage. Execution v1 names the
+sponsor it charges as the owner in the storage flags of everything the batch's
+documents write (`record_gas_sponsor_as_storage_owner`; the owner's 32 bytes
+are there either way and the estimate reads no owner, so no fee changes), and
+Drive's contested document insert v1 names whoever the document's flags name
+on the contest's end date entries. A sponsored document therefore refunds the
+sponsor when it is deleted or shrinks. A document of a type with a `ttl` is
+stored without storage flags and refunds nobody, sponsored or not. The sponsor
+still pays the storage fee of every document it sponsors, up to the largest
+the type allows, and gets back only the part not yet paid out to past epochs,
+so a document type that offers sponsorship should bound its documents' size
+(`maxLength`, `maxItems`, `maxBytes`) and price the action accordingly.
+
+A stored element names one owner. An update that grows an element, or shrinks
+it, hands the whole element to the owner the update names, except that an
+element holding the bytes of one epoch only keeps its flags when it shrinks in
+a later epoch; an update at the same size keeps the flags too. Two rules
+follow:
+
+- A sponsored update takes over every element it resizes so, with the refund
+  of what the document's owner paid for it before.
+- An update that is not sponsored leaves a stored document the sponsor holds
+  with the sponsor. Drive's document update v1 reads the stored flags: when
+  they name the contract owner, the document is someone else's, and the
+  document type's token costs offer sponsorship, the stored document it writes
+  names the contract owner, a transfer's included. Otherwise one small replace
+  paid by the document's owner would hand them the whole element, and its
+  refund. The new index entries such an update adds are paid for by its signer
+  and name whom the update names.
+
+A document the contract owner gave away by a transfer that kept its size still
+names the contract owner in its flags, and is treated alike: they paid for it.
+A moderator's restore on such a type names the contract owner too (see
+[Contract Moderation](../data-model/contract-moderation.md)).
 
 The signer's minimum balance pre-check runs before the contracts are loaded;
 its v1 asks a batch that requests sponsorship for its principal only

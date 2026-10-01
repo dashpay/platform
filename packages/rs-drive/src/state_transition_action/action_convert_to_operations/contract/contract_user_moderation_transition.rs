@@ -5,6 +5,7 @@ use crate::drive::contract::moderation::types::{
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
+use crate::state_transition_action::batch::document_type_offers_gas_sponsorship;
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
     ContractDocumentRemovalRecordContext, ContractDocumentRestorationContext,
@@ -266,22 +267,36 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         // restoration and nothing else
                         let replaced_record_size = removal_record_size(&removal)?
                             .saturating_sub(CONTRACT_DOCUMENT_RESTORATION_SIZE as u32);
+                        let document_type = data_contract_fetch_info
+                            .contract
+                            .document_type_for_name(&document_type_name)?;
                         let estimated_kept_fields_size =
                             estimated_document_removal_kept_fields_size(
-                                data_contract_fetch_info
-                                    .contract
-                                    .document_type_for_name(&document_type_name)?,
+                                document_type,
                                 platform_version,
                             )?;
                         // The document goes back the way a create puts it in, every index and
-                        // aggregate of its type included. Its storage flags name its owner, as
-                        // they did before the deletion: the moderator pays for the bytes, and
-                        // the refund of a later deletion is the owner's, as it always was. Then
-                        // the record, marked restored in place: two operations on one key
+                        // aggregate of its type included. Its storage flags name its owner: the
+                        // moderator pays for the bytes, and the refund of a later deletion is
+                        // the owner's. On a type that offers gas sponsorship they name the
+                        // contract owner instead (protocol version 14): its documents' storage
+                        // is the sponsor's as a rule (`record_gas_sponsor_as_storage_owner`),
+                        // the restore is paid for by the contract owner or one of their
+                        // moderators, and the document's owner, who paid for none of it, keeps
+                        // it with them through their own updates (Drive's document update v1).
+                        // Then the record, marked restored in place: two operations on one key
                         // would fail the batch, so it is replaced rather than deleted and
                         // written again, and it is never deleted.
-                        let storage_flags =
-                            StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
+                        let storage_owner_id =
+                            if document_type_offers_gas_sponsorship(document_type) {
+                                data_contract_fetch_info.contract.owner_id()
+                            } else {
+                                owner_id
+                            };
+                        let storage_flags = StorageFlags::new_single_epoch(
+                            epoch.index,
+                            Some(storage_owner_id.to_buffer()),
+                        );
                         operations.push(DocumentOperation(DocumentOperationType::AddDocument {
                             owned_document_info: OwnedDocumentInfo {
                                 document_info: DocumentOwnedInfo((
@@ -324,7 +339,10 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         // The document is updated the way a replace updates it, every index and
                         // aggregate of its type included. Its storage flags name its owner, as a
                         // replace's do: the moderator pays for the bytes the change adds, and a
-                        // refund of the document's storage stays the owner's, as it always was.
+                        // refund of the document's storage goes to whoever its stored flags
+                        // name, its owner, or the contract owner for a document whose storage
+                        // they hold as its gas sponsor (Drive's document update v1 keeps it
+                        // with them).
                         let owner_id = document.owner_id();
                         let storage_flags =
                             StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));

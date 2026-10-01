@@ -289,7 +289,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     requests sponsorship. A failed batch is never sponsored, so check tx
 ///     validates the state of a sponsored batch whose signer is under the fee
 ///     minimum in full, on the first check and on every recheck (mempool
-///     policy, not consensus).
+///     policy, not consensus). Storage refunds go to whoever paid for the
+///     storage: `execute_event` v1 names the sponsor it charges as the owner in
+///     the storage flags of everything the batch's documents write
+///     (`record_gas_sponsor_as_storage_owner`), contested document insert v1
+///     names whoever the document's flags name on the contest's end date
+///     entries, document update v1 (`storage_held_by_gas_sponsor`) writes the
+///     stored document of a document whose flags name the contract owner, on a
+///     type whose token costs offer sponsorship, with the contract owner when an
+///     update that is not sponsored rewrites it, a transfer included, and a
+///     moderator's restore on such a type names the contract owner.
 /// 12. **Optional token costs**: a document type's token cost may declare
 ///     `optional: true` (v3 meta-schema). A transition that leaves
 ///     `$tokenPaymentInfo` out then pays no token and its signer pays the gas
