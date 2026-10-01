@@ -1670,6 +1670,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 self.build_contact_accounts(&identity_id, candidate).await;
             }
 
+            // (3b) Our receiving account for every contact we sent a request
+            //      that has not reciprocated: our xpub is in that request, so
+            //      they can already pay us on it.
+            self.enqueue_receiving_only_builds(&identity_id).await;
+
             // (4) Enqueue DIP-15 auto-accept for inbound requests carrying a
             //     proof. Signerless: verify + accept happen later in
             //     `drain_auto_accepts` at a signer-present moment.
@@ -1908,6 +1913,132 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             });
         }
         out
+    }
+
+    /// Collect every contact (for `identity_id`) that we sent a contact
+    /// request to, that has not sent one back, and that has no
+    /// `DashpayReceivingFunds` account yet — the receiving-only build
+    /// candidates for this sweep. Runs under the caller's guard; performs
+    /// no awaits and no lock re-acquisition.
+    ///
+    /// DIP-15 puts our receiving xpub in the request WE send, so its
+    /// recipient can pay us on that chain whether or not they ever
+    /// reciprocate. [`Self::collect_account_build_candidates`] walks only
+    /// established contacts, so without this a one-way contact never got a
+    /// receival account and its payments to us were never seen, at any
+    /// rescan depth. The live send path registers the account itself; this
+    /// covers a sent request the sweep learned from Platform (restore from
+    /// seed, a second device) and a live registration that failed after the
+    /// request was saved.
+    ///
+    /// Only the receiving side can be built: the external account needs the
+    /// contact's xpub, which exists only in a request they send us. Once
+    /// they do, the contact is established and the regular candidates take
+    /// over. Identities without an HD slot are skipped — there is no seed
+    /// path to derive our receiving xpub from.
+    fn collect_receiving_only_candidates(
+        info: &crate::wallet::platform_wallet::PlatformWalletInfo,
+        identity_id: &Identifier,
+    ) -> Vec<Identifier> {
+        use key_wallet::account::account_collection::DashpayAccountKey;
+
+        let Some(managed) = info.identity_manager.managed_identity(identity_id) else {
+            return Vec::new();
+        };
+        if managed.identity_index.is_none() {
+            return Vec::new();
+        }
+
+        managed
+            .dashpay()
+            .sent_contact_requests()
+            .keys()
+            // A sent request moves into `established_contacts` when the pair
+            // completes, so an overlap here is transient; the established
+            // candidates own that contact.
+            .filter(|contact_id| {
+                !managed
+                    .dashpay()
+                    .established_contacts()
+                    .contains_key(contact_id)
+            })
+            .filter(|contact_id| {
+                let key = DashpayAccountKey {
+                    index: 0,
+                    user_identity_id: identity_id.to_buffer(),
+                    friend_identity_id: contact_id.to_buffer(),
+                };
+                !info
+                    .core_wallet
+                    .accounts
+                    .dashpay_receival_accounts
+                    .contains_key(&key)
+            })
+            .copied()
+            .collect()
+    }
+
+    /// Queue `RegisterReceiving` for every receiving-only candidate of
+    /// `identity_id` (see [`Self::collect_receiving_only_candidates`]) for
+    /// the signer-backed drain. Collection and enqueue share one write
+    /// guard, so identity removal cannot interleave between them.
+    ///
+    /// Idempotent per `(owner, contact, kind)`, like
+    /// [`Self::enqueue_deferred_contact_crypto`]. The queue is not restored
+    /// on load, so this re-discovery every sweep is what carries a pending
+    /// build across a relaunch.
+    async fn enqueue_receiving_only_builds(&self, identity_id: &Identifier) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+            PlatformWalletChangeSet,
+        };
+
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let contacts = Self::collect_receiving_only_candidates(info, identity_id);
+        if contacts.is_empty() {
+            return;
+        }
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return;
+        };
+
+        let enqueued_at_ms = crate::util::now_ms();
+        let entries: Vec<PendingContactCrypto> = contacts
+            .iter()
+            .map(|contact_id| PendingContactCrypto {
+                owner_identity_id: *identity_id,
+                contact_id: *contact_id,
+                op: PendingContactCryptoOp::RegisterReceiving,
+                enqueued_at_ms,
+            })
+            .collect();
+        for entry in &entries {
+            upsert_pending_contact_crypto(
+                managed.dashpay_pending_contact_crypto_mut(),
+                entry.clone(),
+            );
+        }
+
+        // Best-effort, as in `enqueue_deferred_contact_crypto`: the next
+        // sweep re-discovers these if the store fails.
+        let changeset = PlatformWalletChangeSet {
+            pending_contact_crypto_added: entries,
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                identity = %identity_id, contacts = contacts.len(), error = %e,
+                "failed to persist receiving-only contact-crypto enqueue; will re-enqueue next sweep"
+            );
+        }
+        tracing::info!(
+            identity = %identity_id,
+            contacts = contacts.len(),
+            "Deferred DashPay receiving-account build for one-way contacts: enqueued for the signer-backed drain"
+        );
     }
 
     /// Queue the two DashPay account builds for one established contact.
@@ -5275,6 +5406,387 @@ mod sweep_tests {
             .get(&Identifier::from([contact; 32]))
             .unwrap();
         assert_eq!(stored.incoming_request.account_reference, 7);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// One-way contacts: we sent a request, the contact never sent one back.
+//
+// Our receiving xpub travels in the request we send, so the contact can pay us
+// on that chain without reciprocating. These pin that such a contact gets a
+// receiving account from the sweep, which watches the chain.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod one_way_contact_tests {
+    use super::*;
+    use crate::broadcaster::SpvBroadcaster;
+    use crate::changeset::{PendingContactCryptoKind, PendingContactCryptoOp};
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+    use dash_sdk::drive::query::{OrderClause, SelectProjection, WhereClause, WhereOperator};
+    use dash_sdk::error::ContextProviderError;
+    use dash_sdk::platform::{ContextProvider, DocumentQuery};
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::version::PlatformVersion;
+    use key_wallet::account::account_collection::DashpayAccountKey;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+    use std::sync::Arc;
+
+    const SEED: [u8; 64] = [42; 64];
+
+    struct NoopEvents;
+    impl EventHandler for NoopEvents {}
+    impl PlatformEventHandler for NoopEvents {}
+
+    fn id(b: u8) -> Identifier {
+        Identifier::from([b; 32])
+    }
+
+    fn request(sender: Identifier, recipient: Identifier, core_height: u32) -> ContactRequest {
+        ContactRequest::new(sender, recipient, 1, 2, 0, vec![7u8; 96], core_height, 0)
+    }
+
+    fn receival_key(owner: &Identifier, contact: &Identifier) -> DashpayAccountKey {
+        DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        }
+    }
+
+    fn has_receival_account(
+        info: &PlatformWalletInfo,
+        owner: &Identifier,
+        contact: &Identifier,
+    ) -> bool {
+        info.core_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .contains_key(&receival_key(owner, contact))
+    }
+
+    /// One page of the contact-request sweep's document query, built as
+    /// `Sdk::fetch_contact_requests_paginated` builds it for a first sweep
+    /// (no high-water cursor yet). A mock expectation is keyed by the encoded
+    /// request, so this must match it exactly; the sweep test asserts the
+    /// received fetch was answered, so a drifted copy fails loudly.
+    fn contact_request_query(
+        contract: Arc<dpp::prelude::DataContract>,
+        filter_field: &str,
+        identity_id: Identifier,
+    ) -> DocumentQuery {
+        DocumentQuery {
+            select: SelectProjection::documents(),
+            data_contract: contract,
+            document_type_name: "contactRequest".to_string(),
+            where_clauses: vec![WhereClause {
+                field: filter_field.to_string(),
+                operator: WhereOperator::Equal,
+                value: dpp::platform_value::platform_value!(identity_id),
+            }],
+            time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![OrderClause {
+                field: "$createdAt".to_string(),
+                ascending: true,
+            }],
+            limit: 100,
+            offset: None,
+            start: None,
+        }
+    }
+
+    /// Serves the bundled DashPay contract. The sweep resolves it through the
+    /// SDK's context provider first, and the mock's default provider errors
+    /// without a dump directory.
+    struct DashPayContractProvider(Arc<dpp::prelude::DataContract>);
+
+    impl ContextProvider for DashPayContractProvider {
+        fn get_data_contract(
+            &self,
+            id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<dpp::prelude::DataContract>>, ContextProviderError> {
+            Ok((*id == SystemDataContract::Dashpay.id()).then(|| Arc::clone(&self.0)))
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<dpp::data_contract::TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::Config(
+                "no quorum keys in this test".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, ContextProviderError> {
+            Ok(0)
+        }
+    }
+
+    /// A mock SDK on which Platform holds no new contact request in either
+    /// direction for `owner`: the sweep then works only from local state.
+    async fn sdk_with_no_new_contact_requests(owner: Identifier) -> dash_sdk::Sdk {
+        // Pinned: expectations are keyed by the encoded request, and an
+        // unpinned mock re-encodes later queries after the first response.
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        let contract = Arc::new(
+            dpp::system_data_contracts::load_system_data_contract(
+                SystemDataContract::Dashpay,
+                PlatformVersion::latest(),
+            )
+            .expect("bundled DashPay contract"),
+        );
+        sdk.set_context_provider(DashPayContractProvider(Arc::clone(&contract)));
+        for filter_field in ["toUserId", "$ownerId"] {
+            sdk.mock()
+                .expect_fetch_many::<Identifier, dpp::document::Document, _, dash_sdk::query_types::Documents>(
+                    contact_request_query(Arc::clone(&contract), filter_field, owner),
+                    Some(Default::default()),
+                )
+                .await
+                .expect("contact-request expectation");
+        }
+        sdk
+    }
+
+    /// A wallet-owned identity `owner` (HD slot 0) on a wallet built from
+    /// [`SEED`], served by `sdk`.
+    async fn wallet_with_owner(
+        sdk: dash_sdk::Sdk,
+        owner: Identifier,
+    ) -> (
+        crate::PlatformWalletManager<NoPlatformPersistence>,
+        IdentityWallet<SpvBroadcaster>,
+    ) {
+        let persistence = Arc::new(NoPlatformPersistence);
+        let manager = crate::PlatformWalletManager::new(
+            Arc::new(sdk),
+            Arc::clone(&persistence),
+            Arc::new(NoopEvents),
+        );
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &SEED,
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .expect("wallet");
+        let iw = wallet.identity().clone();
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&iw.wallet_id)
+                .expect("info")
+                .identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: Default::default(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    iw.wallet_id,
+                    &WalletPersister::new(iw.wallet_id, persistence),
+                )
+                .expect("add owner");
+        }
+        (manager, iw)
+    }
+
+    /// Seed local contact state on `owner` with the state-machine entry
+    /// points the sweep's own ingest uses.
+    async fn seed_requests(
+        iw: &IdentityWallet<SpvBroadcaster>,
+        owner: &Identifier,
+        sent: &[ContactRequest],
+        received: &[ContactRequest],
+    ) {
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&iw.wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity_mut(owner)
+            .expect("managed");
+        for r in received {
+            managed
+                .add_incoming_contact_request(r.clone(), &iw.persister)
+                .expect("setup persists");
+        }
+        for r in sent {
+            managed
+                .add_sent_contact_request(r.clone(), &iw.persister)
+                .expect("setup persists");
+        }
+    }
+
+    async fn queued_kinds(
+        iw: &IdentityWallet<SpvBroadcaster>,
+        owner: &Identifier,
+        contact: &Identifier,
+    ) -> Vec<PendingContactCryptoKind> {
+        let wm = iw.wallet_manager.read().await;
+        wm.get_wallet_info(&iw.wallet_id)
+            .and_then(|info| info.identity_manager.managed_identity(owner))
+            .map(|m| {
+                m.dashpay()
+                    .pending_contact_crypto
+                    .iter()
+                    .filter(|e| e.contact_id == *contact)
+                    .map(|e| e.op.kind())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The candidate set: a contact we sent an unreciprocated request is a
+    /// receiving-only candidate; a contact that only sent us one is not (it
+    /// never received our xpub, so it cannot pay us on a chain of ours);
+    /// and an established contact belongs to the regular candidates.
+    #[tokio::test]
+    async fn should_collect_only_unreciprocated_sent_requests_as_receiving_only_candidates() {
+        let owner = id(0xAA);
+        let one_way_out = id(0xB1);
+        let one_way_in = id(0xB2);
+        let established = id(0xB3);
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let (_manager, iw) = wallet_with_owner(sdk, owner).await;
+        seed_requests(
+            &iw,
+            &owner,
+            &[
+                request(owner, one_way_out, 100),
+                request(owner, established, 100),
+            ],
+            &[
+                request(one_way_in, owner, 100),
+                request(established, owner, 100),
+            ],
+        )
+        .await;
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&iw.wallet_id).expect("info");
+        assert_eq!(
+            DashPayView::<SpvBroadcaster>::collect_receiving_only_candidates(info, &owner),
+            vec![one_way_out]
+        );
+        let regular: Vec<Identifier> =
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(info, &owner)
+                .into_iter()
+                .map(|c| c.contact_id)
+                .collect();
+        assert_eq!(regular, vec![established]);
+    }
+
+    /// **The one-way receival gap, through the sweep's public entry point.**
+    /// A wallet that learned of its sent request from Platform (restore from
+    /// seed, a second device) holds it in `sent_contact_requests` with no
+    /// receiving account. Before the fix the sweep walked established
+    /// contacts only, so it queued nothing, the receiving chain was never
+    /// watched, and the contact's payments to us were never seen. The sweep
+    /// must queue `RegisterReceiving` (only — there is no xpub of theirs to
+    /// decrypt), and the drain must then register the account.
+    #[tokio::test]
+    async fn should_build_receiving_account_for_one_way_contact_on_sweep() {
+        let owner = id(0xAA);
+        let contact = id(0xBB);
+        let sdk = sdk_with_no_new_contact_requests(owner).await;
+        let (_manager, iw) = wallet_with_owner(sdk, owner).await;
+        seed_requests(&iw, &owner, &[request(owner, contact, 1_475_801)], &[]).await;
+
+        let report = iw
+            .dashpay()
+            .sync_contact_requests_reporting()
+            .await
+            .expect("sweep");
+        // Both mocked fetches must be answered, or the sweep never reached
+        // the build step and the assertions below would test nothing.
+        assert_eq!(
+            report.failed_identities,
+            Vec::<Identifier>::new(),
+            "received fetch"
+        );
+        assert_eq!(
+            report.degraded_identities,
+            Vec::<Identifier>::new(),
+            "sent fetch"
+        );
+        assert_eq!(
+            queued_kinds(&iw, &owner, &contact).await,
+            vec![PendingContactCryptoKind::RegisterReceiving],
+            "a one-way contact needs our receiving account, and only that"
+        );
+
+        let provider = SeedCryptoProvider::from_seed(SEED, Network::Testnet);
+        let drained = iw
+            .dashpay()
+            .drain_pending_contact_crypto_until(&provider, None)
+            .await;
+        assert_eq!(drained, 1);
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&iw.wallet_id).expect("info");
+            assert!(has_receival_account(info, &owner, &contact));
+            assert!(
+                DashPayView::<SpvBroadcaster>::collect_receiving_only_candidates(info, &owner)
+                    .is_empty(),
+                "a built account is no longer a candidate"
+            );
+        }
+        assert!(queued_kinds(&iw, &owner, &contact).await.is_empty());
+    }
+
+    /// Queued ops carry no payload a one-way contact could supply, so the
+    /// entry must be exactly the payload-free receiving op.
+    #[tokio::test]
+    async fn should_queue_a_payload_free_receiving_op_for_one_way_contact() {
+        let owner = id(0xAA);
+        let contact = id(0xBB);
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let (_manager, iw) = wallet_with_owner(sdk, owner).await;
+        seed_requests(&iw, &owner, &[request(owner, contact, 100)], &[]).await;
+
+        iw.dashpay().enqueue_receiving_only_builds(&owner).await;
+        iw.dashpay().enqueue_receiving_only_builds(&owner).await;
+
+        let wm = iw.wallet_manager.read().await;
+        let queue = &wm
+            .get_wallet_info(&iw.wallet_id)
+            .and_then(|info| info.identity_manager.managed_identity(&owner))
+            .expect("managed")
+            .dashpay()
+            .pending_contact_crypto;
+        assert_eq!(queue.len(), 1, "re-enqueueing is idempotent");
+        assert_eq!(queue[0].owner_identity_id, owner);
+        assert_eq!(queue[0].contact_id, contact);
+        assert!(matches!(
+            queue[0].op,
+            PendingContactCryptoOp::RegisterReceiving
+        ));
     }
 }
 
