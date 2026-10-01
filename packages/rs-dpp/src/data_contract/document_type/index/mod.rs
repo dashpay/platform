@@ -1,3 +1,7 @@
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -25,12 +29,25 @@ use std::cmp::Ordering;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
+mod bucketing;
+mod derived_index_property;
 mod extract_contested_values;
+pub mod integer_range;
+#[cfg(test)]
+mod integer_range_parse_tests;
+mod outlives_delete;
 pub mod preallocation;
 pub mod random_index;
 pub mod time_range;
 
+pub use bucketing::IndexBucketing;
+pub(crate) use derived_index_property::{
+    parse_derived_index_property_name, DerivedIndexPropertyName,
+};
+pub use derived_index_property::{DerivedIndexField, DerivedIndexProperty};
 pub use extract_contested_values::contested_index_identifier;
+pub use integer_range::{IntegerRangeKeyType, IntegerRangeTransform};
+pub use outlives_delete::index_only_row_commits_created_at;
 pub use preallocation::{PreallocatedKeySource, PreallocationBinding};
 pub use time_range::TimeRangeTransform;
 
@@ -60,6 +77,12 @@ pub const RANKED_AVERAGEABLE: &str = "rankedAverageable";
 /// every range containing its timestamp. See [`TimeRangeTransform`].
 /// Meta-schema v3+ (protocol version 14).
 pub const TIME_RANGE: &str = "timeRange";
+/// Index-level keyword bucketing the index's first property (a required
+/// integer property) into fixed-length, regularly-spaced, possibly
+/// overlapping value windows; a document is indexed under every window
+/// containing its value. The integer counterpart of [`TIME_RANGE`]. See
+/// [`IntegerRangeTransform`]. Meta-schema v3+ (protocol version 14).
+pub const INTEGER_RANGE: &str = "integerRange";
 /// Upper bound (exclusive) on `timeRange.phase`, in seconds: one 365-day
 /// year. The phase aligns window boundaries within one step, and combined
 /// with `phase < step` this cap is what makes the uncovered region before
@@ -94,29 +117,47 @@ pub const TERMINAL: &str = "terminal";
 /// one (an item insert into existing trees). Only meaningful when the whole
 /// index path is a pure function of the referenced document: every index
 /// property must be either the referring property itself (it equals the
-/// referenced document's `$id`) or a key of that property's `refersTo`
-/// `propertyAgreement` (consensus-enforced equal to a referenced-document
+/// referenced document's `$id`) or a referring value of that property's
+/// `refersTo` `where` (consensus-enforced equal to a referenced-document
 /// property, its `$ownerId` and `$creatorId` included). Only allowed on
-/// indexOnly document types with a same-contract
-/// `permanentDocument` reference; the doc-type-level validation rejects every
-/// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
+/// indexOnly document types with a same-contract `permanentDocument`
+/// reference, or a `moderatedDocument` one whose removal record keeps every
+/// key of the path; the doc-type-level and whole-contract validation reject
+/// every other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
 pub const PREALLOCATED: &str = "preallocated";
-/// Index-level keyword opting the index into **conditional participation**
-/// on an `indexOnly` document type: when `true`, a document that omits the
-/// index's first property writes no entry into this index, and a delete
-/// recomputes the same skip from its carried values. The first property is
-/// the *skip trigger*: it must be a top-level (non-dotted) schema property
-/// NOT listed in `required` — the only way an indexOnly property may be
-/// optional — and every index involving an optional property must be
-/// `skipIfAbsent` with that property first, which is what keeps the write
-/// walkers' required-derived skip and the probes' flag-derived skip
-/// provably equivalent. Every non-trigger property must still appear in at
-/// least one non-skip index (only indexed values exist on an indexOnly
-/// type, and a skip index cannot carry a value for every document), and at
+/// Index-level keyword letting the index's entries **outlive a delete of
+/// their document**: a delete removes the document's entries in every other
+/// index and leaves this one's to expire with their window, and a create
+/// whose entry here already exists (left by a deleted document with the same
+/// key) writes over it rather than being refused as a duplicate. The index's
+/// key must hold the key of an index a delete clears, so no two documents in
+/// state share an entry. A value
+/// only such indexes use (`$createdAt`, when only they involve it) is then
+/// neither carried by a delete nor part of the row commitment. Only allowed
+/// on a `timeRange` index with a `ttl` of an indexOnly document type, so a
+/// left entry expires with its window; not with a sum, and not on a type
+/// with `entryPayload` (a kept entry keeps its own values). Meta-schema v3+
+/// (protocol version 14).
+pub const OUTLIVES_DELETE: &str = "outlivesDelete";
+/// Index-level keyword opting the index into **conditional participation**:
+/// a document that omits any property of the index's *skip set* writes no
+/// entry into this index, and a delete (or, on a stored type, a replace)
+/// recomputes the same skip from the document's values. The value is `true`
+/// (the skip set is every optional property of the index) or an array naming
+/// the skip set. A skip property may sit at any position of the index; it
+/// must be a top-level (non-dotted), non-system property that is NOT listed
+/// in `required`.
+///
+/// On an `indexOnly` type the skip set is always every optional property of
+/// the index (an index path has no representation for an absent value, so an
+/// optional property that did not skip would have nothing to write), every
+/// optional property needs a skip index whose skip set is that property
+/// alone (so its value is stored whenever the document carries it), and at
 /// least one `$createdAt`-free index must remain non-skip to serve as the
-/// executed-transition proof index. Only allowed on indexOnly document
-/// types; the doc-type-level validation rejects every other shape.
-/// Meta-schema v3+ (protocol version 14).
+/// executed-transition proof index. On a stored type the array may name any
+/// subset of the index's optional properties; the others keep the null
+/// layout. The doc-type-level validation enforces all of this. Meta-schema
+/// v3+ (protocol version 14).
 pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 
 #[repr(u8)]
@@ -703,6 +744,17 @@ pub struct Index {
     // JSON must still deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub time_range: Option<TimeRangeTransform>,
+    /// When set, the index's first property is an integer that is bucketed
+    /// into fixed-length, regularly-spaced (possibly overlapping) value
+    /// windows. The stored key for that property is the window *start*,
+    /// encoded like the property itself, and a document is indexed under
+    /// every window containing its value. See [`IntegerRangeTransform`].
+    /// Never set together with [`Self::time_range`]. Part of the
+    /// meta-schema-v3 grammar (protocol version 14 and later).
+    //
+    // `serde(default)`: same reasoning as `time_range`.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub integer_range: Option<IntegerRangeTransform>,
     /// On an `indexOnly` document type, the property — or the ordered list
     /// of properties, for a composite terminal — whose encoded value(s),
     /// concatenated, form this index's member key: the terminal key under
@@ -729,7 +781,8 @@ pub struct Index {
     )]
     pub terminal: Option<Vec<String>>,
     /// On an indexOnly document type whose index path is fully determined by
-    /// a same-contract `permanentDocument` reference (see [`PREALLOCATED`]):
+    /// a same-contract `permanentDocument` reference, or a `moderatedDocument`
+    /// one whose removal record keeps every key of it (see [`PREALLOCATED`]):
     /// when `true`, inserting a referenced document also creates this index's
     /// dynamic trees for entries referencing it, and deleting the last entry
     /// keeps them (the delete walker skips upward pruning for this index), so
@@ -741,19 +794,38 @@ pub struct Index {
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub preallocated: bool,
-    /// On an indexOnly document type: when `true`, a document that omits this
-    /// index's first property — the skip trigger, which must be an optional
-    /// top-level schema property (see [`SKIP_IF_ABSENT`]) — writes no entry
-    /// into this index, and a delete recomputes the same skip from the
-    /// carried values. The index then holds exactly the documents carrying
-    /// the trigger. An absent trigger is distinct from a present-but-empty
-    /// value, which indexes normally.
+    /// Whether the index's entries outlive a delete of their document (see
+    /// [`OUTLIVES_DELETE`]): a delete leaves them to expire with their
+    /// window, and a create writes over an entry already there.
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub outlives_delete: bool,
+    /// Whether the index skips documents that omit a property of its skip
+    /// set ([`Self::skip_if_absent_properties`]; see [`SKIP_IF_ABSENT`]).
+    /// `true` for both spellings of the keyword. A present-but-empty value is
+    /// present, and indexes normally.
     //
     // `serde(default)`: added after the struct's serde shape was in the wild
     // (see the note on `countable` above), so pre-existing JSON must still
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub skip_if_absent: bool,
+    /// The skip set of a `skipIfAbsent` index, in index-property order: a
+    /// document takes part in the index exactly when it carries every one of
+    /// these properties. On a parsed document type this is empty exactly when
+    /// `skip_if_absent` is `false`. The index parser alone cannot resolve
+    /// `skipIfAbsent: true` (the set is the index's optional properties, and
+    /// optionality is a document-type fact), so it leaves the set empty for
+    /// that spelling and the document type parser fills it in before the
+    /// index structure is built. Both spellings of one skip set therefore
+    /// parse to equal indexes.
+    //
+    // `serde(default)`: see `skip_if_absent`.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub skip_if_absent_properties: Vec<String>,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -769,12 +841,17 @@ pub(crate) struct IndexGrammarAdmissions {
     pub(crate) ranked: bool,
     /// The `timeRange` keyword (generation 3 and later).
     pub(crate) time_range: bool,
+    /// The `integerRange` keyword (generation 3 and later).
+    pub(crate) integer_range: bool,
     /// The `terminal` keyword (indexOnly document types; generation 3 and
     /// later).
     pub(crate) terminal: bool,
     /// The `preallocated` keyword (indexOnly document types with a
     /// determining refersTo; generation 3 and later).
     pub(crate) preallocated: bool,
+    /// The `outlivesDelete` keyword (indexOnly document types, `timeRange`
+    /// indexes with a `ttl`; generation 3 and later).
+    pub(crate) outlives_delete: bool,
     /// The `skipIfAbsent` keyword (indexOnly document types; generation 3
     /// and later).
     pub(crate) skip_if_absent: bool,
@@ -798,8 +875,10 @@ impl IndexGrammarAdmissions {
         Self {
             ranked: generation >= 3,
             time_range: generation >= 3,
+            integer_range: generation >= 3,
             terminal: generation >= 3,
             preallocated: generation >= 3,
+            outlives_delete: generation >= 3,
             skip_if_absent: generation >= 3,
             range_countable_implies_countable: generation >= 3,
             no_locking_resolution: generation >= 3,
@@ -832,6 +911,172 @@ fn bucketed_timestamps_conflict(
     }
 }
 
+/// Whether two values of an integer-bucketed property occupy a common index
+/// slot: they share a containing window (a validated unique integer-range
+/// index has overlap factor 1, so each value has one). A non-integer value
+/// is stored under its raw key, so raw equality applies.
+fn bucketed_integers_conflict(
+    transform: &IntegerRangeTransform,
+    value1: &Value,
+    value2: &Value,
+) -> bool {
+    match (value1.as_integer::<i128>(), value2.as_integer::<i128>()) {
+        (Some(integer1), Some(integer2)) => {
+            let starts2 = transform.containing_starts(integer2);
+            transform
+                .containing_starts(integer1)
+                .iter()
+                .any(|start| starts2.contains(start))
+        }
+        _ => value1 == value2,
+    }
+}
+
+/// The grid a bucketing keyword (`timeRange` or `integerRange`) declares,
+/// in its own units, for the rules both kinds share.
+struct BucketGridDeclaration<'a> {
+    keyword: &'static str,
+    source: &'a str,
+    range: u64,
+    step: u64,
+    phase: u64,
+}
+
+/// What of the declaring index the shared bucketing rules read.
+struct BucketedIndexShape<'a> {
+    unique: bool,
+    contested: bool,
+    any_ranked_axis: bool,
+    ranked_countable_at: &'a [String],
+    null_searchable: bool,
+    index_properties: &'a [IndexProperty],
+}
+
+/// The structural rules every bucketing grid obeys, whatever it buckets:
+/// one definition, so the `timeRange` and `integerRange` grammars cannot
+/// drift apart. Each keyword's parse adds its own rules on top (the time
+/// grid's `$createdAt`-only uniqueness, `ttl`, millisecond scaling and phase
+/// cap). The rules that need the schema or the platform version (the source
+/// property, the overlap cap) live in `try_from_schema`.
+fn validate_bucket_grid(
+    grid: BucketGridDeclaration,
+    index: &BucketedIndexShape,
+) -> Result<(), DataContractError> {
+    let keyword = grid.keyword;
+    // Uniqueness and bucketing only compose when the windows *partition* the
+    // values. With `range == step` (overlap factor 1) every document lands
+    // in exactly one window, so "at most one document per window per
+    // remaining key tuple" is a coherent constraint — one report per author
+    // per day, one bid per owner per price band. With `range > step` a single
+    // document is indexed under `range / step` window keys at once, so it
+    // would occupy the unique slot of several windows while two documents
+    // with different values would collide in the windows they happen to
+    // share: there is no constraint left to enforce.
+    //
+    // Compared before the zero-step / multiple checks below because it only
+    // reads the declared numbers; a malformed grid still gets its own, more
+    // specific rejection there.
+    if index.unique && grid.range != grid.step {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a {keyword} index cannot be unique unless range equals step (non-overlapping \
+             windows): with overlapping windows one document is indexed under several bucket \
+             keys at once, which uniqueness cannot express"
+        )));
+    }
+    if index.contested {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a {keyword} index cannot be a contested resource"
+        )));
+    }
+    // Ranked axes compose with bucketing BELOW the bucketed level: a ranked
+    // level's per-prefix secondaries live inside their prefix's subtree, and
+    // a window start is just another prefix value — within any single
+    // window's subtree a document appears exactly once, so per-window
+    // rankings are exact regardless of window overlap (a document in several
+    // windows raises each window's own honest aggregate; that is the meaning
+    // of overlapping windows, not double counting). Ranked queries pin the
+    // window the same way they pin every other leading property — through a
+    // resolved window selection.
+    //
+    // What has no designed semantics yet is ranking the bucketed level
+    // ITSELF — ordering the windows by their aggregates. That needs its own
+    // routing shape (no prefix pin above the first level, a grid named by
+    // the query), so exactly that is still rejected, in its two spellings:
+    // - every ranked flag ranks the terminal level, so on a single-property
+    //   bucketed index the only rankable level IS the bucketed one;
+    // - an `at` chain naming the grid's source ranks the bucketed level
+    //   explicitly.
+    if index.any_ranked_axis && index.index_properties.len() == 1 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a single-property {keyword} index cannot be ranked: its only level is the bucketed \
+             one, and ranking the windows themselves (ordering bucket starts by their \
+             aggregates) is not supported yet — add the property to rank below the bucketed \
+             property, e.g. [bucketed property, hashtag]"
+        )));
+    }
+    if index.ranked_countable_at.iter().any(|at| at == grid.source) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "rankedCountable.at cannot name \"{}\", a {keyword} index's bucketed source: \
+             ranking the windows themselves (ordering bucket starts by their aggregates) is not \
+             supported yet — rank the levels below the bucketed property instead",
+            grid.source
+        )));
+    }
+    // Same reasoning as the ranked `nullSearchable` rejection, plus a
+    // write-path invariant: the insert, delete and update walkers all agree
+    // that a null source keeps a single ordinary null entry with its real
+    // reference. `nullSearchable: false` would suppress that reference on
+    // insert while the set-diff update path maintains it, so the combination
+    // is rejected.
+    if !index.null_searchable {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a {keyword} index is not supported with nullSearchable: false: documents with a \
+             null source keep a single ordinary null entry; leave nullSearchable at its default \
+             (true)"
+        )));
+    }
+    if grid.step == 0 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.step must be greater than zero"
+        )));
+    }
+    // The phase is a pure alignment offset: shifting the grid by a whole
+    // number of steps reproduces the identical grid, so any value >= step is
+    // a second spelling of a smaller phase. One grid, one spelling — reject
+    // rather than normalize, so the contract, the transform and the storage
+    // key all carry the same number.
+    if grid.phase >= grid.step {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.phase ({}) must be less than {keyword}.step ({}): the phase only aligns \
+             the grid within one step, and a larger value would be a redundant spelling of \
+             phase % step",
+            grid.phase, grid.step
+        )));
+    }
+    if grid.range == 0 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.range must be greater than zero"
+        )));
+    }
+    if !grid.range.is_multiple_of(grid.step) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.range must be an exact multiple of {keyword}.step so the number of \
+             overlapping windows per document is deterministic"
+        )));
+    }
+    match index.index_properties.first() {
+        Some(first) if first.name == grid.source => Ok(()),
+        Some(first) => Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.on (\"{}\") must name the first index property (\"{}\"); the windows \
+             partition the index by the bucketed property, so it has to be the leading one",
+            grid.source, first.name
+        ))),
+        None => Err(DataContractError::InvalidContractStructure(format!(
+            "an index declaring {keyword} must have at least one property"
+        ))),
+    }
+}
+
 impl Index {
     /// Check to see if two objects are conflicting
     pub fn objects_are_conflicting(&self, object1: &ValueMap, object2: &ValueMap) -> bool {
@@ -846,13 +1091,52 @@ impl Index {
             let Some(value2) = Value::get_optional_from_map(object2, property.name.as_str()) else {
                 return false;
             };
-            match self.time_range.as_ref() {
-                Some(transform) if property.name == transform.source => {
+            match (self.time_range.as_ref(), self.integer_range.as_ref()) {
+                (Some(transform), _) if property.name == transform.source => {
                     bucketed_timestamps_conflict(transform, value1, value2)
+                }
+                (_, Some(transform)) if property.name == transform.source => {
+                    bucketed_integers_conflict(transform, value1, value2)
                 }
                 _ => value1 == value2,
             }
         })
+    }
+
+    /// How this index buckets its first property, when it does: the
+    /// `timeRange` or `integerRange` grid, owned.
+    pub fn bucketing(&self) -> Option<IndexBucketing> {
+        match (&self.time_range, &self.integer_range) {
+            (Some(transform), _) => Some(IndexBucketing::Time(transform.clone())),
+            (None, Some(transform)) => Some(IndexBucketing::Integer(transform.clone())),
+            (None, None) => None,
+        }
+    }
+
+    /// Whether this index buckets its first property (`timeRange` or
+    /// `integerRange`). A bucketed index stores window starts, not the
+    /// property's values, so only a resolved window selection may read it.
+    pub fn is_bucketed(&self) -> bool {
+        self.time_range.is_some() || self.integer_range.is_some()
+    }
+
+    /// Whether this index buckets its first property with exactly `bucketing`:
+    /// the same kind, source and grid.
+    pub fn is_bucketed_by(&self, bucketing: &IndexBucketing) -> bool {
+        match bucketing {
+            IndexBucketing::Time(transform) => self.time_range.as_ref() == Some(transform),
+            IndexBucketing::Integer(transform) => self.integer_range.as_ref() == Some(transform),
+        }
+    }
+
+    /// The grid-qualified storage key of the bucketed first property, when
+    /// the index buckets it.
+    fn bucketed_storage_key(&self, property_name: &str) -> Option<String> {
+        match (&self.time_range, &self.integer_range) {
+            (Some(transform), _) => Some(transform.storage_key(property_name)),
+            (None, Some(transform)) => Some(transform.storage_key(property_name)),
+            (None, None) => None,
+        }
     }
     /// The field names of the index
     pub fn property_names(&self) -> Vec<String> {
@@ -863,10 +1147,10 @@ impl Index {
     }
 
     /// The GroveDB index-level key for `property_name` at `position` in this
-    /// index's property list. The first property of a time-range index is
-    /// keyed by [`TimeRangeTransform::storage_key`] — the name qualified with
-    /// the grid, so several grids over one timestamp fork into sibling
-    /// subtrees; every other property keeps its bare name.
+    /// index's property list. The first property of a time-range or
+    /// integer-range index is keyed by the grid's `storage_key` — the name
+    /// qualified with the grid, so several grids over one property fork into
+    /// sibling subtrees; every other property keeps its bare name.
     ///
     /// Every place that turns this index's properties into GroveDB path
     /// segments — contract setup, the document walkers (via `IndexLevel`,
@@ -874,21 +1158,31 @@ impl Index {
     /// probe and proof verification — must derive the segment through this
     /// rule, or one logical index splits into two trees.
     pub fn level_key(&self, position: usize, property_name: &str) -> String {
-        match (&self.time_range, position) {
-            (Some(transform), 0) => transform.storage_key(property_name),
-            _ => property_name.to_string(),
+        if position == 0 {
+            if let Some(key) = self.bucketed_storage_key(property_name) {
+                return key;
+            }
         }
+        property_name.to_string()
     }
 
     /// Name-keyed variant of [`Self::level_key`] for callers that hold a
-    /// property name rather than its position: the transform's source is
+    /// property name rather than its position: a transform's source is
     /// validated to be the index's first property, so matching the name
-    /// against `time_range.source` identifies the grid-qualified level.
+    /// against the source identifies the grid-qualified level.
     pub fn level_key_for_property(&self, property_name: &str) -> String {
-        match &self.time_range {
-            Some(transform) if transform.source == property_name => {
-                transform.storage_key(property_name)
-            }
+        let bucketed_source = self
+            .time_range
+            .as_ref()
+            .map(|transform| transform.source.as_str())
+            .or(self
+                .integer_range
+                .as_ref()
+                .map(|transform| transform.source.as_str()));
+        match bucketed_source {
+            Some(source) if source == property_name => self
+                .bucketed_storage_key(property_name)
+                .unwrap_or_else(|| property_name.to_string()),
             _ => property_name.to_string(),
         }
     }
@@ -905,6 +1199,12 @@ impl Index {
         self.terminal_components()
             .iter()
             .any(|component| component == name)
+    }
+
+    /// Whether the index involves `name`: as one of its properties or a
+    /// component of its terminal.
+    pub fn involves(&self, name: &str) -> bool {
+        self.terminal_contains(name) || self.properties.iter().any(|property| property.name == name)
     }
 
     /// The terminal's single component; `None` on a composite terminal or a
@@ -1339,8 +1639,10 @@ impl TryFrom<&[(Value, Value)]> for Index {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: false,
+                integer_range: false,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -1380,8 +1682,10 @@ impl Index {
         let IndexGrammarAdmissions {
             ranked: ranked_aggregates_allowed,
             time_range: time_range_allowed,
+            integer_range: integer_range_allowed,
             terminal: terminal_allowed,
             preallocated: preallocated_allowed,
+            outlives_delete: outlives_delete_allowed,
             skip_if_absent: skip_if_absent_allowed,
             range_countable_implies_countable,
             no_locking_resolution: no_locking_resolution_allowed,
@@ -1447,9 +1751,15 @@ impl Index {
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
         let mut time_range: Option<TimeRangeTransform> = None;
+        let mut integer_range: Option<IntegerRangeTransform> = None;
         let mut terminal: Option<Vec<String>> = None;
         let mut preallocated = false;
+        let mut outlives_delete = false;
         let mut skip_if_absent = false;
+        // The array form of `skipIfAbsent`, held raw until after the loop:
+        // checking that each name is one of the index's properties, and
+        // sorting the set into index order, needs the parsed property list.
+        let mut skip_if_absent_properties: Vec<String> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -1884,6 +2194,81 @@ impl Index {
                         ttl_seconds,
                     });
                 }
+                // `integerRange` joined the grammar with `timeRange`, at
+                // meta-schema v3; below that the key falls through to the
+                // unknown-property arm.
+                INTEGER_RANGE if integer_range_allowed => {
+                    let integer_range_map =
+                        value_value
+                            .as_map()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "integerRange value should be a map".to_string(),
+                            ))?;
+
+                    let mut source: Option<String> = None;
+                    let mut range: Option<u64> = None;
+                    let mut step: Option<u64> = None;
+                    let mut phase: u64 = 0;
+
+                    for (ir_key_value, ir_value) in integer_range_map {
+                        let ir_key = ir_key_value
+                            .to_str()
+                            .map_err(|e| DataContractError::ValueDecodingError(e.to_string()))?;
+                        let integer = |name: &str| {
+                            ir_value.to_integer::<u64>().map_err(|_| {
+                                DataContractError::ValueWrongType(format!(
+                                    "integerRange.{} should be a non-negative integer",
+                                    name
+                                ))
+                            })
+                        };
+                        match ir_key {
+                            "on" => {
+                                source = Some(
+                                    ir_value
+                                        .as_text()
+                                        .ok_or(DataContractError::ValueWrongType(
+                                            "integerRange.on should be a string".to_string(),
+                                        ))?
+                                        .to_owned(),
+                                );
+                            }
+                            "range" => range = Some(integer("range")?),
+                            "step" => step = Some(integer("step")?),
+                            "phase" => phase = integer("phase")?,
+                            other => {
+                                return Err(DataContractError::InvalidContractStructure(format!(
+                                    "unexpected integerRange field: {}",
+                                    other
+                                )));
+                            }
+                        }
+                    }
+
+                    let source = source.ok_or(DataContractError::InvalidContractStructure(
+                        "integerRange requires an `on` field naming the integer property to \
+                         bucket"
+                            .to_string(),
+                    ))?;
+                    let range = range.ok_or(DataContractError::InvalidContractStructure(
+                        "integerRange requires a `range` field (window length)".to_string(),
+                    ))?;
+                    let step = step.ok_or(DataContractError::InvalidContractStructure(
+                        "integerRange requires a `step` field (interval between window starts)"
+                            .to_string(),
+                    ))?;
+
+                    // The key type is resolved from the document schema by
+                    // the document-type parser; see
+                    // `IntegerRangeTransform::key_type`.
+                    integer_range = Some(IntegerRangeTransform {
+                        source,
+                        range,
+                        step,
+                        phase,
+                        key_type: IntegerRangeKeyType::default(),
+                    });
+                }
                 // `terminal` is guarded the same way as the ranking keywords
                 // above: it joined the grammar at meta-schema v3, so below
                 // that the key falls through to the unknown-property arm.
@@ -1953,22 +2338,61 @@ impl Index {
                                 "preallocated value must be a boolean".to_string(),
                             ))?;
                 }
-                // `skipIfAbsent` is guarded the same way as `terminal` and
-                // `preallocated` above: it joined the grammar at meta-schema
-                // v3, so below that the key falls through to the
-                // unknown-property arm. Whether the declaring document type
-                // is indexOnly and the first property is a legal skip
-                // trigger are doc-type facts this parser cannot see;
-                // `apply_index_only` in `try_from_schema::common` enforces
-                // both.
-                SKIP_IF_ABSENT if skip_if_absent_allowed => {
-                    skip_if_absent =
+                // `outlivesDelete` is guarded like `preallocated`: it joined
+                // the grammar at meta-schema v3. Whether the declaring type is
+                // indexOnly, and the index a `timeRange` one with a `ttl`, are
+                // checked by `apply_index_only` in `try_from_schema::common`.
+                OUTLIVES_DELETE if outlives_delete_allowed => {
+                    outlives_delete =
                         value_value
                             .as_bool()
                             .ok_or(DataContractError::ValueWrongType(
-                                "skipIfAbsent value must be a boolean".to_string(),
+                                "outlivesDelete value must be a boolean".to_string(),
                             ))?;
                 }
+                // `skipIfAbsent` is guarded the same way as `terminal` and
+                // `preallocated` above: it joined the grammar at meta-schema
+                // v3, so below that the key falls through to the
+                // unknown-property arm. Whether each skip property is
+                // optional, top-level and not a system property are doc-type
+                // facts this parser cannot see; `apply_index_only` in
+                // `try_from_schema::common` enforces them, and
+                // `parse_indices` resolves the `true` spelling.
+                SKIP_IF_ABSENT if skip_if_absent_allowed => match value_value {
+                    Value::Bool(flag) => {
+                        // A repeated key keeps its last value, as the
+                        // meta-schema's JSON view does: the flag and the set
+                        // are replaced together, so they can never disagree.
+                        skip_if_absent = *flag;
+                        skip_if_absent_properties.clear();
+                    }
+                    Value::Array(names) => {
+                        if names.is_empty() {
+                            return Err(DataContractError::InvalidContractStructure(
+                                "skipIfAbsent must name at least one property, or be a boolean"
+                                    .to_string(),
+                            ));
+                        }
+                        skip_if_absent = true;
+                        skip_if_absent_properties = names
+                            .iter()
+                            .map(|name| {
+                                name.as_text().map(str::to_string).ok_or(
+                                    DataContractError::ValueWrongType(
+                                        "skipIfAbsent array items must be property names"
+                                            .to_string(),
+                                    ),
+                                )
+                            })
+                            .collect::<Result<_, _>>()?;
+                    }
+                    _ => {
+                        return Err(DataContractError::ValueWrongType(
+                            "skipIfAbsent value must be a boolean or an array of property names"
+                                .to_string(),
+                        ));
+                    }
+                },
                 "properties" => {
                     let properties =
                         value_value
@@ -2000,6 +2424,41 @@ impl Index {
             return Err(DataContractError::InvalidContractStructure(
                 "contest supported only for unique indexes".to_string(),
             ));
+        }
+
+        // Resolve the array form of `skipIfAbsent` against the property list:
+        // every name is one of the index's own properties (a terminal
+        // component is a member key and can never be absent), named once, and
+        // the set is sorted into index-property order so every spelling of one
+        // set parses identically.
+        if !skip_if_absent_properties.is_empty() {
+            for (position, skip_property) in skip_if_absent_properties.iter().enumerate() {
+                if skip_if_absent_properties[..position].contains(skip_property) {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "skipIfAbsent names \"{}\" twice",
+                        skip_property
+                    )));
+                }
+            }
+            let mut skip_positions: Vec<(usize, String)> = Vec::new();
+            for skip_property in skip_if_absent_properties.drain(..) {
+                let Some(position) = index_properties
+                    .iter()
+                    .position(|property| property.name == skip_property)
+                else {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "skipIfAbsent names \"{}\", which is not one of the index's \
+                         properties",
+                        skip_property
+                    )));
+                };
+                skip_positions.push((position, skip_property));
+            }
+            skip_positions.sort_by_key(|(position, _)| *position);
+            skip_if_absent_properties = skip_positions
+                .into_iter()
+                .map(|(_, skip_property)| skip_property)
+                .collect();
         }
 
         // Resolve the object form of `rankedCountable` against the property
@@ -2303,34 +2762,35 @@ impl Index {
             ));
         }
 
-        // A time-range transform buckets the index's *first* property. Validate
-        // the structural constraints that don't need document-type context here
-        // (the source must be a timestamp/Date field — which does need the
-        // schema — is checked in `try_from_schema`). Uniqueness is admitted
-        // only for the narrow shape where it has a meaning: non-overlapping
-        // windows over an immutable timestamp.
+        let any_ranked_axis = ranked_countable
+            || !ranked_countable_at.is_empty()
+            || ranked_summable
+            || ranked_averageable;
+        let bucketed_index_shape = BucketedIndexShape {
+            unique,
+            contested: contested_index.is_some(),
+            any_ranked_axis,
+            ranked_countable_at: &ranked_countable_at,
+            null_searchable,
+            index_properties: &index_properties,
+        };
+
+        // A time-range transform buckets the index's *first* property. The
+        // rules every bucketing grid shares run in `validate_bucket_grid`;
+        // the ones below are the time grid's own. The rule that needs the
+        // schema (the source is a required system timestamp) is checked in
+        // `try_from_schema`.
         if let Some(transform) = &time_range {
-            // Uniqueness and bucketing only compose when the windows
-            // *partition* time. With `range == step` (overlap factor 1) every
-            // document lands in exactly one bucket, so "at most one document
-            // per window per remaining key tuple" is a coherent constraint —
-            // one report per author per day. With `range > step` a single
-            // document is indexed under `range / step` bucket keys at once, so
-            // it would occupy the unique slot of several windows while two
-            // documents with different timestamps would collide in the windows
-            // they happen to share: there is no constraint left to enforce.
-            //
-            // Compared before the zero-step / multiple checks below because it
-            // only reads the declared numbers; a malformed transform still
-            // gets its own, more specific rejection there.
-            if unique && transform.range_seconds != transform.step_seconds {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a timeRange index cannot be unique unless range equals step \
-                     (non-overlapping windows): with overlapping ranges one document is indexed \
-                     under several bucket keys at once, which uniqueness cannot express"
-                        .to_string(),
-                ));
-            }
+            validate_bucket_grid(
+                BucketGridDeclaration {
+                    keyword: TIME_RANGE,
+                    source: &transform.source,
+                    range: transform.range_seconds,
+                    step: transform.step_seconds,
+                    phase: transform.phase_seconds,
+                },
+                &bucketed_index_shape,
+            )?;
             // Non-overlapping windows are still only safe over an *immutable*
             // source. Uniqueness validation probes the bucket the candidate
             // document's timestamp falls into and leans on `allow_original`:
@@ -2359,54 +2819,6 @@ impl Index {
                     property_names::CREATED_AT
                 )));
             }
-            if contested_index.is_some() {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a timeRange index cannot be a contested resource".to_string(),
-                ));
-            }
-            // Ranked axes compose with bucketing BELOW the bucketed level:
-            // a ranked level's per-prefix secondaries live inside their
-            // prefix's subtree, and a bucket start is just another prefix
-            // value — within any single bucket's subtree a document appears
-            // exactly once, so per-window rankings are exact regardless of
-            // window overlap (a document in several windows raises each
-            // window's own honest aggregate; that is the meaning of
-            // overlapping windows, not double counting). Ranked queries pin
-            // the bucket the same way they pin every other leading property
-            // — through a resolved time-range selection.
-            //
-            // What has no designed semantics yet is ranking the bucketed
-            // level ITSELF — ordering the windows by their aggregates. That
-            // needs its own routing shape (no prefix pin above the first
-            // level, a grid named by the query), so exactly that is still
-            // rejected, in its two spellings:
-            // - every ranked flag ranks the terminal level, so on a
-            //   single-property bucketed index the only rankable level IS
-            //   the bucketed one;
-            // - an `at` chain naming the transform's source ranks the
-            //   bucketed level explicitly.
-            let any_ranked_axis = ranked_countable
-                || !ranked_countable_at.is_empty()
-                || ranked_summable
-                || ranked_averageable;
-            if any_ranked_axis && index_properties.len() == 1 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a single-property timeRange index cannot be ranked: its only level is \
-                     the bucketed one, and ranking the windows themselves (ordering bucket \
-                     starts by their aggregates) is not supported yet — add the property to \
-                     rank below the bucketed timestamp, e.g. [timestamp, hashtag]"
-                        .to_string(),
-                ));
-            }
-            if ranked_countable_at.iter().any(|at| at == &transform.source) {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "rankedCountable.at cannot name \"{}\", a timeRange index's bucketed \
-                     source: ranking the windows themselves (ordering bucket starts by \
-                     their aggregates) is not supported yet — rank the levels below the \
-                     bucketed timestamp instead",
-                    transform.source
-                )));
-            }
             // A TTL below the window length would expire a bucket that can
             // still receive writes: `$createdAt` is consensus-assigned from
             // block time, so a document entering the grid lands in every
@@ -2425,20 +2837,6 @@ impl Index {
                         ttl_seconds, transform.range_seconds
                     )));
                 }
-            }
-            // Same reasoning as the ranked `nullSearchable` rejection above,
-            // plus a write-path invariant: the insert, delete and update
-            // walkers all agree that a null timestamp keeps a single ordinary
-            // null entry with its real reference. `nullSearchable: false`
-            // would suppress that reference on insert while the set-diff
-            // update path maintains it, so the combination is rejected.
-            if !null_searchable {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a timeRange index is not supported with nullSearchable: false: documents \
-                     with a null timestamp keep a single ordinary null entry; leave \
-                     nullSearchable at its default (true)"
-                        .to_string(),
-                ));
             }
             // The window is declared in seconds but every quantity it is
             // measured against — the source timestamps, the bucket starts, the
@@ -2459,25 +2857,6 @@ impl Index {
                         field, seconds
                     )));
                 }
-            }
-            if transform.step_seconds == 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "timeRange.step must be greater than zero".to_string(),
-                ));
-            }
-            // The phase is a pure alignment offset: shifting the grid by a
-            // whole number of steps reproduces the identical grid, so any
-            // value >= step is a second spelling of a smaller phase. One
-            // grid, one spelling — reject rather than normalize, so the
-            // contract, the transform and the storage key all carry the same
-            // number.
-            if transform.phase_seconds >= transform.step_seconds {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "timeRange.phase ({} seconds) must be less than timeRange.step ({} \
-                     seconds): the phase only aligns the grid within one step, and a larger \
-                     value would be a redundant spelling of phase % step",
-                    transform.phase_seconds, transform.step_seconds
-                )));
             }
             // `phase < step` alone is not enough: the region `[0, phase)` is
             // outside every window (bucket starts are `phase + k*step`,
@@ -2501,40 +2880,41 @@ impl Index {
                     transform.phase_seconds, MAX_TIME_RANGE_PHASE_SECONDS
                 )));
             }
-            if transform.range_seconds == 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "timeRange.range must be greater than zero".to_string(),
-                ));
-            }
-            if transform.range_seconds % transform.step_seconds != 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "timeRange.range must be an exact multiple of timeRange.step so the number \
-                     of overlapping ranges per document is deterministic"
-                        .to_string(),
-                ));
-            }
             // The overlap-factor cap is NOT checked here: it is a versioned
             // system limit (`SystemLimits::max_time_range_overlap_factor`),
             // and this parser has no platform version. It is enforced at
             // contract registration in `try_from_schema`, like the other
             // versioned index limits; this function keeps only the structural
             // rules that hold at every version.
-            match index_properties.first() {
-                Some(first) if first.name == transform.source => {}
-                Some(first) => {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "timeRange.on (\"{}\") must name the first index property (\"{}\"); a \
-                         time range partitions the index by time, so it has to be the leading \
-                         property",
-                        transform.source, first.name
-                    )));
-                }
-                None => {
-                    return Err(DataContractError::InvalidContractStructure(
-                        "an index with a timeRange must have at least one property".to_string(),
-                    ));
-                }
+        }
+
+        // An integer-range transform buckets the index's first property by
+        // value. The rules that need the document schema (the source is a
+        // required integer property of at most 64 bits) or the platform
+        // version (the overlap cap) live in `try_from_schema`. There is no
+        // `ttl`: windows over values never age. Unlike a time-range source, a
+        // mutable integer source may be unique: the uniqueness probe reads
+        // the document's new value, and a document found alone in its new
+        // window is the one being updated (see `validate_uniqueness_of_data`
+        // v1).
+        if let Some(transform) = &integer_range {
+            if time_range.is_some() {
+                return Err(DataContractError::InvalidContractStructure(
+                    "an index cannot declare both timeRange and integerRange: each buckets the \
+                     index's first property"
+                        .to_string(),
+                ));
             }
+            validate_bucket_grid(
+                BucketGridDeclaration {
+                    keyword: INTEGER_RANGE,
+                    source: &transform.source,
+                    range: transform.range,
+                    step: transform.step,
+                    phase: transform.phase,
+                },
+                &bucketed_index_shape,
+            )?;
         }
 
         // If the index didn't have a name, derive one deterministically from
@@ -2583,9 +2963,12 @@ impl Index {
             ranked_summable,
             ranked_averageable,
             time_range,
+            integer_range,
             terminal,
             preallocated,
+            outlives_delete,
             skip_if_absent,
+            skip_if_absent_properties,
         })
     }
 }
@@ -2658,9 +3041,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -2740,8 +3126,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2759,8 +3147,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2778,8 +3168,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2801,8 +3193,10 @@ mod tests {
         let admitted = IndexGrammarAdmissions {
             ranked: false,
             time_range: false,
+            integer_range: false,
             terminal: false,
             preallocated: true,
+            outlives_delete: false,
             skip_if_absent: false,
             range_countable_implies_countable: false,
             no_locking_resolution: false,
@@ -2833,8 +3227,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: false,
+                integer_range: false,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2866,8 +3262,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2891,8 +3289,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2916,8 +3316,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2942,8 +3344,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2969,8 +3373,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -2992,8 +3398,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3020,8 +3428,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3048,8 +3458,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3074,8 +3486,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3105,8 +3519,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3131,8 +3547,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3153,8 +3571,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3179,8 +3599,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3236,8 +3658,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -3275,8 +3699,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3307,8 +3733,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3341,8 +3769,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3369,8 +3799,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: true,
+                integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3392,8 +3824,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: false,
+                integer_range: false,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4633,8 +5067,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4662,8 +5098,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4707,8 +5145,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4740,8 +5180,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4774,8 +5216,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4806,8 +5250,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4835,8 +5281,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4866,8 +5314,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4897,8 +5347,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4930,8 +5382,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4969,8 +5423,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4998,8 +5454,10 @@ mod tests {
                 IndexGrammarAdmissions {
                     ranked: true,
                     time_range: true,
+                    integer_range: true,
                     terminal: true,
                     preallocated: false,
+                    outlives_delete: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
@@ -5033,8 +5491,10 @@ mod tests {
                     IndexGrammarAdmissions {
                         ranked: false,
                         time_range: false,
+                        integer_range: false,
                         terminal: false,
                         preallocated: false,
+                        outlives_delete: false,
                         skip_if_absent: false,
                         range_countable_implies_countable: false,
                         no_locking_resolution: false,
@@ -5107,8 +5567,10 @@ mod tests {
         IndexGrammarAdmissions {
             ranked: true,
             time_range: true,
+            integer_range: true,
             terminal: true,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             range_countable_implies_countable: true,
             no_locking_resolution: true,
@@ -5569,8 +6031,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: false,
                 time_range: false,
+                integer_range: false,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -5634,8 +6098,10 @@ mod tests {
                 IndexGrammarAdmissions {
                     ranked: true,
                     time_range: true,
+                    integer_range: true,
                     terminal: true,
                     preallocated: false,
+                    outlives_delete: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
@@ -5665,8 +6131,10 @@ mod tests {
                 IndexGrammarAdmissions {
                     ranked: true,
                     time_range: true,
+                    integer_range: true,
                     terminal: true,
                     preallocated: false,
+                    outlives_delete: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
@@ -5692,8 +6160,10 @@ mod tests {
                 IndexGrammarAdmissions {
                     ranked: true,
                     time_range: true,
+                    integer_range: true,
                     terminal: true,
                     preallocated: false,
+                    outlives_delete: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
@@ -5717,8 +6187,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5737,8 +6209,10 @@ mod tests {
             IndexGrammarAdmissions {
                 ranked: true,
                 time_range: true,
+                integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -6076,8 +6550,10 @@ mod tests {
         IndexGrammarAdmissions {
             ranked: false,
             time_range: false,
+            integer_range: false,
             terminal: false,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             range_countable_implies_countable: false,
             no_locking_resolution: false,
@@ -6168,46 +6644,46 @@ mod tests {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for OrderBy {}
+impl JsonConvertible for OrderBy {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for OrderBy {}
+impl ValueConvertible for OrderBy {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ContestedIndexResolution {}
+impl JsonConvertible for ContestedIndexResolution {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ContestedIndexResolution {}
+impl ValueConvertible for ContestedIndexResolution {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ContestedIndexFieldMatch {}
+impl JsonConvertible for ContestedIndexFieldMatch {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ContestedIndexFieldMatch {}
+impl ValueConvertible for ContestedIndexFieldMatch {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ContestedIndexInformation {}
+impl JsonConvertible for ContestedIndexInformation {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ContestedIndexInformation {}
+impl ValueConvertible for ContestedIndexInformation {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for Index {}
+impl JsonConvertible for Index {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for Index {}
+impl ValueConvertible for Index {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for IndexProperty {}
+impl JsonConvertible for IndexProperty {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for IndexProperty {}
+impl ValueConvertible for IndexProperty {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for IndexCountability {}
+impl JsonConvertible for IndexCountability {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for IndexCountability {}
+impl ValueConvertible for IndexCountability {}
 
 #[cfg(all(
     test,
@@ -6365,9 +6841,12 @@ mod json_convertible_tests {
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -6399,9 +6878,12 @@ mod json_convertible_tests {
                 "ranked_summable": false,
                 "ranked_averageable": true,
                 "time_range": serde_json::Value::Null,
+                "integer_range": serde_json::Value::Null,
                 "terminal": serde_json::Value::Null,
                 "preallocated": false,
+                "outlives_delete": false,
                 "skip_if_absent": false,
+                "skip_if_absent_properties": serde_json::json!([]),
             })
         );
         let recovered = Index::from_json(json).expect("from_json");

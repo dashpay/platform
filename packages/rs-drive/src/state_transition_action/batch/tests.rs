@@ -254,6 +254,10 @@ fn make_create_v0() -> DocumentCreateTransitionActionV0 {
         prefunded_voting_balance: None,
         current_store_contest_info: None,
         should_store_contest_info: None,
+        property_constraint_aggregates: Default::default(),
+        moderated: false,
+        consumed_documents: Vec::new(),
+        derived_index_values: None,
     }
 }
 
@@ -400,10 +404,12 @@ fn make_replace_v0() -> DocumentReplaceTransitionActionV0 {
         transferred_at_core_block_height: Some(300),
         data: BTreeMap::from([("field".to_string(), Value::U64(42))]),
         changed_data_fields: BTreeSet::from(["field".to_string()]),
-        added_data_fields: BTreeSet::new(),
         removed_identifier_fields: BTreeMap::new(),
         stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
+        moderated_at: None,
+        moderated_by: None,
+        property_constraint_aggregates: Default::default(),
     }
 }
 
@@ -517,6 +523,7 @@ fn make_transfer_v0() -> DocumentTransferTransitionActionV0 {
     DocumentTransferTransitionActionV0 {
         base: test_document_base(),
         document: test_document(),
+        property_constraint_aggregates: Default::default(),
     }
 }
 
@@ -559,6 +566,7 @@ fn make_purchase_v0() -> DocumentPurchaseTransitionActionV0 {
         document: test_document(),
         original_owner_id: Identifier::from([0xDD; 32]),
         price: 5000,
+        property_constraint_aggregates: Default::default(),
     }
 }
 
@@ -611,6 +619,7 @@ fn make_update_price_v0() -> DocumentUpdatePriceTransitionActionV0 {
     DocumentUpdatePriceTransitionActionV0 {
         base: test_document_base(),
         document: test_document(),
+        property_constraint_aggregates: Default::default(),
     }
 }
 
@@ -2649,6 +2658,7 @@ fn test_all_purchases_amount_multiple_document_purchases() {
             document: test_document(),
             original_owner_id: Identifier::from([0xDD; 32]),
             price: 3000,
+            property_constraint_aggregates: Default::default(),
         })
         .into();
     batch.set_transitions(vec![
@@ -2948,6 +2958,10 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         prefunded_voting_balance: None,
         current_store_contest_info: None,
         should_store_contest_info: None,
+        property_constraint_aggregates: Default::default(),
+        moderated: false,
+        consumed_documents: Vec::new(),
+        derived_index_values: None,
     })
 }
 
@@ -2976,10 +2990,12 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         transferred_at_core_block_height: Some(300),
         data: BTreeMap::from([("field".to_string(), Value::U64(42))]),
         changed_data_fields: BTreeSet::from(["field".to_string()]),
-        added_data_fields: BTreeSet::new(),
         removed_identifier_fields: BTreeMap::new(),
         stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
+        moderated_at: None,
+        moderated_by: None,
+        property_constraint_aggregates: Default::default(),
     })
 }
 

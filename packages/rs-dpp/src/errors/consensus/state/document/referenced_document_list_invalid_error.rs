@@ -7,7 +7,7 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-/// A `refersTo: listElement` whose list lives in a document type of another
+/// A `refersTo` with `inList` whose list lives in a document type of another
 /// contract cannot be served by it: the document type's documents can be
 /// deleted, the list is not a stored typed array of identifiers of it, or a
 /// replace could change it. Reported at contract registration and update; a
@@ -26,7 +26,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("invalid refersTo listElement into inList {in_list} declared at {path}: {reason}")]
+#[error("invalid refersTo inList {in_list} declared at {path}: {reason}")]
 #[platform_serialize(unversioned)]
 pub struct ReferencedDocumentListInvalidError {
     /*

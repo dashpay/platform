@@ -367,14 +367,11 @@ impl SeatedModerationCharter {
             transaction,
             platform_version,
         )?;
-        // The leader, the elected members and the additions the target allows.
-        let team_bound = u16::try_from(self.charter.members.len())
-            .unwrap_or(u16::MAX)
-            .saturating_add(max_added_moderators)
-            .saturating_add(1);
+        // At most one count per seat the team holds (`ElectedCharter::seats`)
+        let seats = self.charter.seats(max_added_moderators);
         let (fee, action_counts) = drive.fetch_contract_moderation_action_counts_with_fee(
             contract_id,
-            team_bound,
+            seats,
             epoch,
             transaction,
             platform_version,
@@ -489,6 +486,7 @@ fn query_charter_documents<const N: usize>(
         processing_fee: outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     }));
     Ok(outcome.documents_owned())
 }

@@ -159,6 +159,13 @@ impl Value {
     ///   stored at a narrower width, or an object whose members were
     ///   reordered by schema position, still compares equal.
     /// * Otherwise falls back to normal `==` (`PartialEq`) behaviour.
+    ///
+    /// Shipped generations call this at every protocol version: the document
+    /// replace transition transformer v0 uses it to decide which fields a
+    /// replace changed, and `is_equal_ignoring_timestamps` v0 uses it when a
+    /// client verifies a state transition proof. A change to its result for
+    /// some pair of values changes their output everywhere; make such a change
+    /// a new versioned method instead of editing this function.
     pub fn equal_underlying_data(&self, other: &Value) -> bool {
         // 1) bytes-like cross-variant equality
         if let (Ok(a), Ok(b)) = (self.as_bytes_slice(), other.as_bytes_slice()) {
@@ -205,6 +212,82 @@ impl Value {
             }
             // 4) default
             _ => self == other,
+        }
+    }
+
+    /// Returns `true` when two single values hold the same data:
+    /// [`equal_underlying_data`](Self::equal_underlying_data) for values that
+    /// are not containers, with floats compared by their bits.
+    ///
+    /// * All "bytes-like" variants (`Bytes`, `Bytes20`, `Bytes32`, `Bytes36`,
+    ///   `Identifier`) compare equal when their byte sequences match, so an
+    ///   identifier equals the same 32 bytes carried as `Bytes32` or `Bytes`.
+    ///   `Text` is not bytes-like: a string never equals bytes.
+    /// * All integer variants (`U*`, `I*`) compare equal when they represent
+    ///   the same numeric value, whatever width each is carried at. A `U128`
+    ///   past `i128::MAX` equals only the same `U128`.
+    /// * When either side is a `Float`, both sides are read as an `f64` and
+    ///   compared by bits (`f64::to_bits`), not with `==`: `-0.0` is not
+    ///   `0.0`, as their document tree keys are not, and a NaN equals a NaN
+    ///   of the same bits, itself included. This is bit equality, not tree
+    ///   key equality: the tree key encoding maps a few distinct bit patterns
+    ///   (a negative NaN and a negative subnormal) to one key.
+    ///   An integer on the other side is read as the `f64` it converts to, as
+    ///   [`as_float`](Self::as_float) reads it: a document stores `date` and
+    ///   `number` properties as floats while a transition may carry one as an
+    ///   integer. Past 2^53 an integer rounds to the nearest `f64`, as it does
+    ///   when stored, so the comparison is not transitive there: `2^53 + 1`
+    ///   and `2^53` both equal the float `2^53` but not each other.
+    /// * An `Array` whose every element is a `U8` holds the bytes it lists, as
+    ///   [`to_identifier_bytes`](Self::to_identifier_bytes) reads it, so it
+    ///   equals the same bytes carried as bytes, an identifier, or another
+    ///   such array: a transition may carry an identifier or a byte array
+    ///   that way. Any other `Array`, and a `Map` on either side, is not a
+    ///   single value and never compares equal, not even to an equal
+    ///   container.
+    /// * Otherwise the two must be the same variant and compare with `==`:
+    ///   two `Null`s are equal and a `Null` equals nothing else, text compares
+    ///   as text (so `""` is not `"\0"`, though a tree key encodes both as
+    ///   `[0]`), and booleans as booleans.
+    ///
+    /// A value of any size compares: two equal strings or byte arrays longer
+    /// than the 255 bytes a tree key holds are equal.
+    ///
+    /// From protocol version 14, document reference validation 0 judges each
+    /// `propertyAgreement` pair of a `refersTo` reference with it. A change to
+    /// its result for some pair of values changes which documents are
+    /// accepted; make such a change a new method instead of editing this one.
+    pub fn same_scalar_data(&self, other: &Value) -> bool {
+        /// The bytes `value` holds: a bytes-like variant's, or those an array
+        /// of `U8`s lists. `None` for anything else.
+        fn held_bytes(value: &Value) -> Option<Vec<u8>> {
+            match value {
+                Value::Array(items) => items
+                    .iter()
+                    .map(|item| match item {
+                        Value::U8(byte) => Some(*byte),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => value.as_bytes_slice().ok().map(<[u8]>::to_vec),
+            }
+        }
+
+        match (self, other) {
+            // 1) an array is a single value only as the bytes it lists
+            (Value::Array(_), _) | (_, Value::Array(_)) => matches!(
+                (held_bytes(self), held_bytes(other)),
+                (Some(this), Some(that)) if this == that
+            ),
+            // 2) a map is no single value
+            (Value::Map(_), _) | (_, Value::Map(_)) => false,
+            // 3) floats by bits, an integer read as the float it converts to
+            (Value::Float(_), _) | (_, Value::Float(_)) => matches!(
+                (self.as_float(), other.as_float()),
+                (Some(this), Some(that)) if this.to_bits() == that.to_bits()
+            ),
+            // 4) bytes by bytes, integers by value, anything else by `==`
+            _ => self.equal_underlying_data(other),
         }
     }
 }
@@ -318,6 +401,204 @@ mod underlying_data_tests {
 
         assert!(!a_map.equal_underlying_data(&Value::Text("a".into())));
         assert!(!a_map.equal_underlying_data(&Value::Array(vec![])));
+    }
+}
+
+#[cfg(test)]
+mod same_scalar_data_tests {
+    use crate::Value;
+
+    /// Compares both ways, checking the two directions agree.
+    fn same(left: &Value, right: &Value) -> bool {
+        let forward = left.same_scalar_data(right);
+        assert_eq!(
+            forward,
+            right.same_scalar_data(left),
+            "{left:?} and {right:?} compare differently each way"
+        );
+        forward
+    }
+
+    /// A tree key encodes both as `[0]`; as values they differ.
+    #[test]
+    fn should_not_equate_the_empty_string_with_a_nul_character() {
+        let empty = Value::Text(String::new());
+        let nul = Value::Text("\0".to_string());
+
+        assert!(!same(&empty, &nul));
+        assert!(same(&empty, &empty.clone()));
+        assert!(same(&nul, &nul.clone()));
+    }
+
+    /// A transition may carry an integer at another width than the stored
+    /// document decodes it at.
+    #[test]
+    fn should_equate_the_same_integer_carried_at_different_widths() {
+        assert!(same(&Value::U64(513), &Value::U16(513)));
+        assert!(same(&Value::I64(-7), &Value::I32(-7)));
+        assert!(same(&Value::U8(100), &Value::I128(100)));
+        assert!(!same(&Value::U64(514), &Value::U16(513)));
+        assert!(!same(&Value::I8(-1), &Value::U64(255)));
+    }
+
+    #[test]
+    fn should_equate_a_u128_past_i128_only_with_the_same_u128() {
+        let past_i128 = u128::MAX;
+
+        assert!(same(&Value::U128(past_i128), &Value::U128(past_i128)));
+        assert!(!same(&Value::U128(past_i128), &Value::U128(past_i128 - 1)));
+        assert!(!same(
+            &Value::U128(i128::MAX as u128 + 1),
+            &Value::I128(i128::MAX)
+        ));
+        assert!(!same(&Value::U128(past_i128), &Value::U64(u64::MAX)));
+        assert!(same(
+            &Value::U128(i128::MAX as u128),
+            &Value::I128(i128::MAX)
+        ));
+    }
+
+    #[test]
+    fn should_equate_an_identifier_with_the_same_32_bytes() {
+        let id = [7u8; 32];
+
+        assert!(same(&Value::Identifier(id), &Value::Bytes32(id)));
+        assert!(same(&Value::Bytes(id.to_vec()), &Value::Identifier(id)));
+        assert!(!same(&Value::Identifier(id), &Value::Identifier([8u8; 32])));
+        assert!(!same(&Value::Identifier(id), &Value::Bytes(vec![7u8; 31])));
+    }
+
+    /// No tree key holds more than 255 bytes; a value of any size compares.
+    #[test]
+    fn should_equate_equal_strings_and_byte_arrays_longer_than_a_tree_key() {
+        let long_ascii = Value::Text("a".repeat(256));
+        // 280 bytes of UTF-8 in 70 characters
+        let long_emoji = Value::Text("\u{1F600}".repeat(70));
+
+        assert!(same(&long_ascii, &long_ascii.clone()));
+        assert!(same(&long_emoji, &long_emoji.clone()));
+        assert!(!same(&long_ascii, &Value::Text("a".repeat(257))));
+        assert!(same(
+            &Value::Bytes(vec![9; 300]),
+            &Value::Bytes(vec![9; 300])
+        ));
+        assert!(!same(
+            &Value::Bytes(vec![9; 300]),
+            &Value::Bytes(vec![9; 301])
+        ));
+    }
+
+    /// Floats compare by bits, where `equal_underlying_data` compares them
+    /// with `==`.
+    #[test]
+    fn should_compare_floats_by_their_bits() {
+        let quiet_nan = Value::Float(f64::NAN);
+        let other_nan = Value::Float(f64::from_bits(f64::NAN.to_bits() | 1));
+
+        assert!(!same(&Value::Float(-0.0), &Value::Float(0.0)));
+        assert!(Value::Float(-0.0).equal_underlying_data(&Value::Float(0.0)));
+        assert!(same(&Value::Float(1.5), &Value::Float(1.5)));
+        assert!(!same(&Value::Float(1.5), &Value::Float(2.5)));
+        assert!(same(&quiet_nan, &quiet_nan.clone()));
+        assert!(!quiet_nan.equal_underlying_data(&quiet_nan.clone()));
+        assert!(!same(&quiet_nan, &other_nan));
+    }
+
+    /// A document stores a date as a float; a transition may carry it as an
+    /// integer.
+    #[test]
+    fn should_read_an_integer_against_a_float_as_the_float_it_converts_to() {
+        assert!(same(&Value::U64(1_700_000_000_000), &Value::Float(1.7e12)));
+        assert!(!same(&Value::U64(1_700_000_000_001), &Value::Float(1.7e12)));
+        assert!(same(&Value::I32(-3), &Value::Float(-3.0)));
+        assert!(same(&Value::U64(0), &Value::Float(0.0)));
+        assert!(!same(&Value::U64(0), &Value::Float(-0.0)));
+        assert!(!same(&Value::Text("1".to_string()), &Value::Float(1.0)));
+        assert!(!same(&Value::Bool(true), &Value::Float(1.0)));
+    }
+
+    /// Past 2^53 an integer rounds to the nearest `f64`, as storage rounds
+    /// it, so two integers that differ can both equal one float.
+    #[test]
+    fn should_round_an_integer_past_2_pow_53_to_the_nearest_float() {
+        let two_pow_53 = 1u64 << 53;
+        let float_two_pow_53 = Value::Float(two_pow_53 as f64);
+
+        assert!(same(&Value::U64(two_pow_53 + 1), &float_two_pow_53));
+        assert!(same(&Value::U64(two_pow_53), &float_two_pow_53));
+        assert!(!same(&Value::U64(two_pow_53 + 1), &Value::U64(two_pow_53)));
+
+        assert!(same(
+            &Value::I128(i128::MIN),
+            &Value::Float(-(2.0f64.powi(127)))
+        ));
+        assert!(same(
+            &Value::U128(u128::MAX),
+            &Value::Float(2.0f64.powi(128))
+        ));
+        assert!(!same(&Value::U128(u128::MAX), &Value::Float(f64::INFINITY)));
+    }
+
+    #[test]
+    fn should_never_equate_a_map_or_an_array_of_anything_but_bytes() {
+        let empty_map = Value::Map(vec![]);
+        let one_entry_map = Value::Map(vec![(Value::Text("a".into()), Value::U8(1))]);
+        let wide_integers = Value::Array(vec![Value::U64(1), Value::U64(2)]);
+        let texts = Value::Array(vec![Value::Text("a".into())]);
+
+        assert!(!same(&empty_map, &empty_map.clone()));
+        assert!(!same(&one_entry_map, &one_entry_map.clone()));
+        assert!(one_entry_map.equal_underlying_data(&one_entry_map.clone()));
+        assert!(!same(&wide_integers, &wide_integers.clone()));
+        assert!(!same(&wide_integers, &Value::Bytes(vec![1, 2])));
+        assert!(!same(&texts, &texts.clone()));
+        assert!(!same(&empty_map, &Value::Null));
+        assert!(!same(&empty_map, &Value::Array(vec![])));
+    }
+
+    /// A transition may carry an identifier or a byte array as an array of
+    /// `U8`s, which `to_identifier_bytes` reads as those bytes.
+    #[test]
+    fn should_read_an_array_of_u8_as_the_bytes_it_lists() {
+        let id = [7u8; 32];
+        let listed = Value::Array(id.iter().copied().map(Value::U8).collect());
+
+        assert!(same(&listed, &Value::Identifier(id)));
+        assert!(same(&listed, &Value::Bytes32(id)));
+        assert!(same(&listed, &Value::Bytes(id.to_vec())));
+        assert!(same(&listed, &listed.clone()));
+        assert!(same(&Value::Array(vec![]), &Value::Bytes(vec![])));
+        assert!(!same(&listed, &Value::Identifier([8u8; 32])));
+        assert!(!same(&Value::Array(vec![Value::U8(1)]), &Value::Float(1.0)));
+        assert!(!same(&Value::Array(vec![Value::U8(1)]), &Value::U8(1)));
+        assert!(!same(
+            &Value::Array(vec![Value::U8(97)]),
+            &Value::Text("a".into())
+        ));
+        assert!(!same(&Value::Array(vec![Value::U8(1)]), &Value::Null));
+    }
+
+    #[test]
+    fn should_equate_two_nulls_and_nothing_else_with_a_null() {
+        assert!(same(&Value::Null, &Value::Null));
+        assert!(!same(&Value::Null, &Value::Text(String::new())));
+        assert!(!same(&Value::Null, &Value::Bytes(vec![])));
+        assert!(!same(&Value::Null, &Value::U64(0)));
+        assert!(!same(&Value::Null, &Value::Bool(false)));
+        assert!(!same(&Value::Null, &Value::Float(0.0)));
+    }
+
+    #[test]
+    fn should_not_equate_values_of_different_kinds() {
+        assert!(!same(&Value::Text("1".to_string()), &Value::U64(1)));
+        assert!(!same(&Value::Bool(true), &Value::U8(1)));
+        assert!(!same(&Value::U64(1), &Value::Bool(true)));
+        assert!(!same(
+            &Value::Text("abc".to_string()),
+            &Value::Bytes(b"abc".to_vec())
+        ));
+        assert!(same(&Value::Bool(true), &Value::Bool(true)));
+        assert!(!same(&Value::Bool(true), &Value::Bool(false)));
     }
 }
 

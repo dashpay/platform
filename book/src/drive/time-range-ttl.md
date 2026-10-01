@@ -7,6 +7,9 @@ shares. The storage primitive underneath is grovedb's flat-subtree drop
 landed in grovedb PR #849); see
 [the storage section](#grovedb-dependency-flat-subtree-drop).
 
+A document type can also expire whole documents with its own `ttl` keyword; that is a
+different mechanism, described in [Document Time To Live](../data-model/document-ttl.md).
+
 ## Motivation
 
 A `timeRange` index stores every document once per containing window, and
@@ -88,7 +91,10 @@ That single property pays off three times:
   contract validation.
 - Composes with everything the grid already composes with: `countable`,
   the range axes, ranked levels below the bucket, `unique`
-  (`range == step`, `$createdAt`), indexOnly document types.
+  (`range == step`, `$createdAt`), indexOnly document types, and
+  `skipIfAbsent` on a property below the bucket (a skipped document builds
+  no window under a grid only skip indexes use, and no branch of its own in
+  a window it shares).
   `preallocated` stays banned with `timeRange` for the pre-existing
   structural reason.
 
@@ -130,6 +136,10 @@ dangling references. Every check is deterministic — it reads consensus
 state plus the carried `$createdAt` and block time. Writes never target
 expired windows, so an update of a fully expired document simply leaves
 it without entries under the TTL'd index.
+An index-only window declaring `outlivesDelete` is not touched by a user
+delete at all: its entries stay until this cleanup drops their bucket, and
+the delete carries no `$createdAt` when only such windows involve it (see
+[Index-Only Document Types](index-only-document-types.md#entries-that-outlive-a-delete-outlivesdelete)).
 
 **Per-index semantics** — TTL removes entries from *this index only*.
 An indexOnly like whose windowed entries expire keeps counting in the

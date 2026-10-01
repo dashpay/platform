@@ -147,9 +147,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
                 wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to create set price transition: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to create set price transition", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -286,7 +284,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
             .document_set_price(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to update document price and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to update document price and wait", e)
             })?;
 
         let dash_sdk::platform::documents::transitions::DocumentSetPriceResult::Document(
@@ -351,6 +349,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Box::new(document)

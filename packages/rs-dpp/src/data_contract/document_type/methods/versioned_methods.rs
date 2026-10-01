@@ -3,6 +3,9 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, PropertyConstraint, SystemChange,
+};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -190,6 +193,8 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                     updated_at_core_block_height,
                     transferred_at_core_block_height,
                     creator_id,
+                    moderated_at: None,
+                    moderated_by: None,
                 };
 
                 document
@@ -351,6 +356,8 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -639,10 +646,26 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// Generation 0 plus the document serialization format 3
     /// contract-version stamp varint. Selected together with format 3 by
     /// the version table.
+    ///
+    /// Each property is sized by
+    /// [`DocumentPropertyType::saturating_middle_byte_size_ceil`]: a string
+    /// of 16384 or more characters without `maxBytes` has a byte bound past
+    /// `u16::MAX`, which generation 0 fails on with an overflow and this
+    /// generation holds at `u16::MAX`. Every other type is sized as
+    /// generation 0 sizes it, and the total saturates as generation 0's does.
     fn estimated_size_v1(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        Ok(self
-            .estimated_size_v0(platform_version)?
-            .saturating_add(CONTRACT_VERSION_STAMP_MAX_SIZE))
+        let mut total_size = 0u16;
+
+        for document_property in self.flattened_properties().values() {
+            if let Some(size) = document_property
+                .property_type
+                .saturating_middle_byte_size_ceil(platform_version)?
+            {
+                total_size = total_size.saturating_add(size);
+            }
+        }
+
+        Ok(total_size.saturating_add(CONTRACT_VERSION_STAMP_MAX_SIZE))
     }
 
     fn max_size_v0(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
@@ -711,7 +734,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         value: &Value,
     ) -> Result<Vec<u8>, ProtocolError> {
         match key {
-            "$ownerId" | "$id" | "$creatorId" => {
+            "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
                 let bytes = value
                     .to_identifier_bytes()
                     .map_err(ProtocolError::ValueError)?;
@@ -725,7 +748,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                     Ok(bytes)
                 }
             }
-            "$createdAt" | "$updatedAt" | "$transferredAt" => {
+            "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
                 Ok(DocumentPropertyType::encode_date_timestamp(
                     value.to_integer().map_err(ProtocolError::ValueError)?,
                 ))
@@ -741,10 +764,15 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 value.to_integer().map_err(ProtocolError::ValueError)?,
             )),
             _ => {
-                let property = self.flattened_properties().get(key).ok_or_else(|| {
-                    DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
-                })?;
-                let bytes = property.property_type.encode_value_for_tree_keys(value)?;
+                // A derived index property (protocol version 14) takes the type of the field it
+                // reads on the referenced document; no property of the type carries its name
+                let property_type = match self.flattened_properties().get(key) {
+                    Some(property) => &property.property_type,
+                    None => self.derived_index_property_type(key).ok_or_else(|| {
+                        DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
+                    })?,
+                };
+                let bytes = property_type.encode_value_for_tree_keys(value)?;
                 if bytes.len() > MAX_INDEX_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(
@@ -764,11 +792,11 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         value: &[u8],
     ) -> Result<Value, ProtocolError> {
         match key {
-            "$ownerId" | "$id" | "$creatorId" => {
+            "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
                 let bytes = Identifier::from_bytes(value)?;
                 Ok(Value::Identifier(bytes.to_buffer()))
             }
-            "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(Value::U64(
+            "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => Ok(Value::U64(
                 DocumentPropertyType::decode_date_timestamp(value).ok_or(
                     ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
                         "value must be 8 bytes long".to_string(),
@@ -792,10 +820,13 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 )?))
             }
             _ => {
-                let property = self.flattened_properties().get(key).ok_or_else(|| {
-                    DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
-                })?;
-                property.property_type.decode_value_for_tree_keys(value)
+                let property_type = match self.flattened_properties().get(key) {
+                    Some(property) => &property.property_type,
+                    None => self.derived_index_property_type(key).ok_or_else(|| {
+                        DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
+                    })?,
+                };
+                property_type.decode_value_for_tree_keys(value)
             }
         }
     }
@@ -846,24 +877,88 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
 
     /// `validate_property_constraints` version 0: every rule of the document type's
     /// `propertyConstraints` is evaluated against `data` in name order, and the first one
-    /// broken is reported. A type without rules costs nothing.
-    fn validate_property_constraints_v0(&self, data: &Value) -> SimpleConsensusValidationResult
+    /// broken is reported. A type without rules costs nothing. A rule reading a total
+    /// consensus did not read ([`PropertyConstraint::unread_aggregate`]) is an error.
+    fn validate_property_constraints_v0(
+        &self,
+        data: &Value,
+        system: &DocumentSystemValues,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
     where
         Self: DocumentTypeV2Getters,
     {
         for (name, constraint) in self.property_constraints() {
-            if let Some(violation) = constraint.violation(data) {
-                return SimpleConsensusValidationResult::new_with_error(
+            self.expect_every_aggregate_read(name, constraint, system)?;
+            if let Some(violation) = constraint.violation(data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),
                         name.clone(),
                         violation,
                     )
                     .into(),
-                );
+                ));
             }
         }
-        SimpleConsensusValidationResult::default()
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
+    /// An error when `system` holds consensus's totals and lacks one the rule `name`
+    /// reads, which would otherwise leave the rule unjudged.
+    fn expect_every_aggregate_read(
+        &self,
+        name: &str,
+        constraint: &PropertyConstraint,
+        system: &DocumentSystemValues,
+    ) -> Result<(), ProtocolError> {
+        match constraint.unread_aggregate(system) {
+            None => Ok(()),
+            Some(read) => Err(ProtocolError::CorruptedCodeExecution(format!(
+                "rule {name} of document type {} reads a {} of {} that consensus did not read: \
+                 {read:?}",
+                self.name(),
+                read.wire_name(),
+                read.document_type
+            ))),
+        }
+    }
+
+    /// `validate_property_constraints_for_system_change` version 0: every rule of the
+    /// document type's `propertyConstraints` that `change` can break is evaluated against
+    /// `data` with `system`, in name order, and the first one broken is reported. The data
+    /// is copied into a map value only when such a rule exists.
+    fn validate_property_constraints_for_system_change_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        system: &DocumentSystemValues,
+        change: SystemChange,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        let mut changed_rules = self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.reads_change(change))
+            .peekable();
+        if changed_rules.peek().is_none() {
+            return Ok(SimpleConsensusValidationResult::default());
+        }
+        let data = Value::from(data.clone());
+        for (name, constraint) in changed_rules {
+            self.expect_every_aggregate_read(name, constraint, system)?;
+            if let Some(violation) = constraint.violation(&data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
     }
 }
 

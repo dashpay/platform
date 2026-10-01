@@ -72,6 +72,47 @@ internal object QueriesNative {
         serializedContracts: Array<ByteArray>,
     )
 
+    /**
+     * The `propertyConstraints` rules (protocol version 14) of [documentType]
+     * as a JSON array in name order, each
+     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem", "readsTotals"}`:
+     * `kind` is `value`, `presence`, `text`, `identifier`, `length`, `count`
+     * or `elements`, `readsSystem` names the system times and heights the
+     * rule reads (`$createdAt`, `$updatedAtBlockHeight`, ...), and
+     * `readsTotals` lists its `countOf` and `sumOf` totals as
+     * `{"kind", "documentType", "property" (a sumOf only), "filter"}`.
+     * [serializedContract] is the contract's platform serialization (what
+     * [dataContractFetchWithSerialization] returns), read by Rust at the SDK's
+     * protocol version; no network call. Throws on error (unknown document
+     * type, bytes that are not a contract, empty input).
+     */
+    external fun dataContractGetPropertyConstraints(
+        sdk: Long,
+        serializedContract: ByteArray,
+        documentType: String,
+    ): String?
+
+    /**
+     * The first `propertyConstraints` rule a document to create would break,
+     * as `{"rule", "violation", "message"}`, or the JSON text `null` when it
+     * meets every rule. [propertiesJson] is what the create would send and
+     * [ownerId] the 32-byte owner `$ownerId` reads; [serializedContract] as
+     * for [dataContractGetPropertyConstraints]. The device clock stands in for
+     * the block time the create records (`$createdAt`, `$updatedAt`,
+     * `$transferredAt`), and a rule reading a block height is not judged, the
+     * height being unknown until the block, nor is one reading a `countOf` or
+     * `sumOf` total, which only the platform reads from state. No network call. Throws on
+     * error (as above, plus an owner id that is not 32 bytes or properties
+     * that are not a JSON object).
+     */
+    external fun dataContractCheckPropertyConstraints(
+        sdk: Long,
+        serializedContract: ByteArray,
+        documentType: String,
+        propertiesJson: String,
+        ownerId: ByteArray,
+    ): String?
+
     /** JSON array of documents. whereJson/orderByJson may be null. */
     external fun documentSearch(
         sdk: Long,

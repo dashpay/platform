@@ -1,5 +1,6 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
@@ -89,6 +90,64 @@ fn prepared_proposal_difference(
 }
 
 pub fn process_proposal<'a, A, C>(
+    app: &A,
+    request: proto::RequestProcessProposal,
+) -> Result<proto::ResponseProcessProposal, Error>
+where
+    A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
+    C: CoreRPCLike,
+{
+    let response = execute_proposal(app, request)?;
+
+    if response.status == proto::response_process_proposal::ProposalStatus::Accept as i32 {
+        keep_withdrawals_of_accepted_proposal(app)?;
+    }
+
+    Ok(response)
+}
+
+/// Keeps the vote extensions validators precommitting the proposal just accepted sign for its
+/// unsigned withdrawal transactions. A later round replaces the block execution context, and
+/// votes of this round can still arrive after that.
+fn keep_withdrawals_of_accepted_proposal<A>(app: &A) -> Result<(), Error>
+where
+    A: BlockExecutionApplication,
+{
+    let block_execution_context_guard = app
+        .block_execution_context()
+        .read()
+        .expect("poisoned only after a panic, which stops the node");
+    let block_execution_context =
+        block_execution_context_guard
+            .as_ref()
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "an accepted proposal must leave a block execution context",
+            )))?;
+
+    let block_state_info = block_execution_context.block_state_info();
+    let block_hash = block_state_info.block_hash().ok_or(Error::Execution(
+        ExecutionError::CorruptedCodeExecution("an accepted proposal must have a block hash"),
+    ))?;
+
+    app.unsigned_withdrawal_txs_by_round()
+        .write()
+        .expect("poisoned only after a panic, which stops the node")
+        .insert(
+            block_state_info.height(),
+            block_state_info.round(),
+            block_hash,
+            block_execution_context
+                .unsigned_withdrawal_transactions()
+                .into(),
+        );
+
+    Ok(())
+}
+
+/// Executes the proposal `request` describes, unless the block execution context already holds
+/// its result, and leaves the block execution context and the transaction of an accepted proposal
+/// for `finalize_block`. `finalize_block` also calls it to execute a committed block again.
+pub(super) fn execute_proposal<'a, A, C>(
     app: &A,
     request: proto::RequestProcessProposal,
 ) -> Result<proto::ResponseProcessProposal, Error>
@@ -222,6 +281,10 @@ where
         }
     }
 
+    // Even when the proposal is refused below, the block accepted in an earlier round of this
+    // height loses its block execution context, its transaction and the drive block caches its
+    // execution filled. Tenderdash can still commit that block without asking for it to be
+    // processed again, and `finalize_block` then executes it again.
     if drop_block_execution_context {
         block_execution_context_guard.take();
     }

@@ -441,6 +441,24 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_contract_team_actions,
+        dapi_grpc::platform::v0::GetContractTeamActionsRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionsResponse
+    );
+
+    drive_method!(
+        get_contract_team_action_signers,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersResponse
+    );
+
+    drive_method!(
+        get_contract_moderation_action_counts,
+        dapi_grpc::platform::v0::GetContractModerationActionCountsRequest,
+        dapi_grpc::platform::v0::GetContractModerationActionCountsResponse
+    );
+
+    drive_method!(
         get_contract_fee_pots,
         dapi_grpc::platform::v0::GetContractFeePotsRequest,
         dapi_grpc::platform::v0::GetContractFeePotsResponse

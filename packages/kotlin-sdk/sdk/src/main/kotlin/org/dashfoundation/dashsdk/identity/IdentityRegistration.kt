@@ -489,15 +489,30 @@ class IdentityRegistration internal constructor(
     /**
      * Register a DPNS name for [identityId] (32 bytes), signed via
      * [signerHandle]. Returns the full domain name (e.g. `"alice.dash"`).
+     *
+     * @param maxContestFund the most, in credits, the identity pays into
+     *   the contest a contested name joins, and the identity must hold it;
+     *   `null` states the current fund to join, read just before signing. A name that joins no contest
+     *   ignores it. Mirrors Swift `ManagedPlatformWallet.registerDpnsName`.
      */
     suspend fun registerDpnsName(
         walletHandle: Long,
         identityId: ByteArray,
         label: String,
         signerHandle: Long,
+        maxContestFund: Long? = null,
     ): String = gate.op {
+        require(maxContestFund == null || maxContestFund >= 0) {
+            "maxContestFund must be non-negative, got $maxContestFund"
+        }
         mapNativeErrors {
-            IdentityNative.registerDpnsName(walletHandle, identityId, label, signerHandle)
+            IdentityNative.registerDpnsName(
+                walletHandle,
+                identityId,
+                label,
+                maxContestFund ?: 0L,
+                signerHandle,
+            )
         }
     }
 }

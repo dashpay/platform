@@ -3463,6 +3463,11 @@ export namespace GetContractDocumentRemovalsResponse {
     getRestoration(): GetContractDocumentRemovalsResponse.ContractDocumentRestoration | undefined;
     setRestoration(value?: GetContractDocumentRemovalsResponse.ContractDocumentRestoration): void;
 
+    getKeptFields(): Uint8Array | string;
+    getKeptFields_asU8(): Uint8Array;
+    getKeptFields_asB64(): string;
+    setKeptFields(value: Uint8Array | string): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractDocumentRemoval.AsObject;
     static toObject(includeInstance: boolean, msg: ContractDocumentRemoval): ContractDocumentRemoval.AsObject;
@@ -3482,6 +3487,7 @@ export namespace GetContractDocumentRemovalsResponse {
       reason?: ContractModerationReason.AsObject,
       documentHash: Uint8Array | string,
       restoration?: GetContractDocumentRemovalsResponse.ContractDocumentRestoration.AsObject,
+      keptFields: Uint8Array | string,
     }
   }
 
@@ -3544,6 +3550,625 @@ export namespace GetContractDocumentRemovalsResponse {
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       REMOVALS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContractTeamActionsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractTeamActionsRequest.GetContractTeamActionsRequestV0 | undefined;
+  setV0(value?: GetContractTeamActionsRequest.GetContractTeamActionsRequestV0): void;
+
+  getVersionCase(): GetContractTeamActionsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractTeamActionsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractTeamActionsRequest): GetContractTeamActionsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractTeamActionsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractTeamActionsRequest;
+  static deserializeBinaryFromReader(message: GetContractTeamActionsRequest, reader: jspb.BinaryReader): GetContractTeamActionsRequest;
+}
+
+export namespace GetContractTeamActionsRequest {
+  export type AsObject = {
+    v0?: GetContractTeamActionsRequest.GetContractTeamActionsRequestV0.AsObject,
+  }
+
+  export class StartAtActionId extends jspb.Message {
+    getStartActionId(): Uint8Array | string;
+    getStartActionId_asU8(): Uint8Array;
+    getStartActionId_asB64(): string;
+    setStartActionId(value: Uint8Array | string): void;
+
+    getStartActionIdIncluded(): boolean;
+    setStartActionIdIncluded(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): StartAtActionId.AsObject;
+    static toObject(includeInstance: boolean, msg: StartAtActionId): StartAtActionId.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: StartAtActionId, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): StartAtActionId;
+    static deserializeBinaryFromReader(message: StartAtActionId, reader: jspb.BinaryReader): StartAtActionId;
+  }
+
+  export namespace StartAtActionId {
+    export type AsObject = {
+      startActionId: Uint8Array | string,
+      startActionIdIncluded: boolean,
+    }
+  }
+
+  export class GetContractTeamActionsRequestV0 extends jspb.Message {
+    getContractId(): Uint8Array | string;
+    getContractId_asU8(): Uint8Array;
+    getContractId_asB64(): string;
+    setContractId(value: Uint8Array | string): void;
+
+    getStatus(): GetContractTeamActionsRequest.ActionStatusMap[keyof GetContractTeamActionsRequest.ActionStatusMap];
+    setStatus(value: GetContractTeamActionsRequest.ActionStatusMap[keyof GetContractTeamActionsRequest.ActionStatusMap]): void;
+
+    hasStartAtActionId(): boolean;
+    clearStartAtActionId(): void;
+    getStartAtActionId(): GetContractTeamActionsRequest.StartAtActionId | undefined;
+    setStartAtActionId(value?: GetContractTeamActionsRequest.StartAtActionId): void;
+
+    hasCount(): boolean;
+    clearCount(): void;
+    getCount(): number;
+    setCount(value: number): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractTeamActionsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractTeamActionsRequestV0): GetContractTeamActionsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractTeamActionsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractTeamActionsRequestV0;
+    static deserializeBinaryFromReader(message: GetContractTeamActionsRequestV0, reader: jspb.BinaryReader): GetContractTeamActionsRequestV0;
+  }
+
+  export namespace GetContractTeamActionsRequestV0 {
+    export type AsObject = {
+      contractId: Uint8Array | string,
+      status: GetContractTeamActionsRequest.ActionStatusMap[keyof GetContractTeamActionsRequest.ActionStatusMap],
+      startAtActionId?: GetContractTeamActionsRequest.StartAtActionId.AsObject,
+      count: number,
+      prove: boolean,
+    }
+  }
+
+  export interface ActionStatusMap {
+    ACTIVE: 0;
+    CLOSED: 1;
+  }
+
+  export const ActionStatus: ActionStatusMap;
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContractTeamActionsResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractTeamActionsResponse.GetContractTeamActionsResponseV0 | undefined;
+  setV0(value?: GetContractTeamActionsResponse.GetContractTeamActionsResponseV0): void;
+
+  getVersionCase(): GetContractTeamActionsResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractTeamActionsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractTeamActionsResponse): GetContractTeamActionsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractTeamActionsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractTeamActionsResponse;
+  static deserializeBinaryFromReader(message: GetContractTeamActionsResponse, reader: jspb.BinaryReader): GetContractTeamActionsResponse;
+}
+
+export namespace GetContractTeamActionsResponse {
+  export type AsObject = {
+    v0?: GetContractTeamActionsResponse.GetContractTeamActionsResponseV0.AsObject,
+  }
+
+  export class DeleteSettledDocument extends jspb.Message {
+    getDocumentTypeName(): string;
+    setDocumentTypeName(value: string): void;
+
+    getDocumentId(): Uint8Array | string;
+    getDocumentId_asU8(): Uint8Array;
+    getDocumentId_asB64(): string;
+    setDocumentId(value: Uint8Array | string): void;
+
+    getDocumentLastModifiedAt(): number;
+    setDocumentLastModifiedAt(value: number): void;
+
+    hasDocumentRevision(): boolean;
+    clearDocumentRevision(): void;
+    getDocumentRevision(): number;
+    setDocumentRevision(value: number): void;
+
+    hasReason(): boolean;
+    clearReason(): void;
+    getReason(): ContractModerationReason | undefined;
+    setReason(value?: ContractModerationReason): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DeleteSettledDocument.AsObject;
+    static toObject(includeInstance: boolean, msg: DeleteSettledDocument): DeleteSettledDocument.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DeleteSettledDocument, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DeleteSettledDocument;
+    static deserializeBinaryFromReader(message: DeleteSettledDocument, reader: jspb.BinaryReader): DeleteSettledDocument;
+  }
+
+  export namespace DeleteSettledDocument {
+    export type AsObject = {
+      documentTypeName: string,
+      documentId: Uint8Array | string,
+      documentLastModifiedAt: number,
+      documentRevision: number,
+      reason?: ContractModerationReason.AsObject,
+    }
+  }
+
+  export class ContractTeamAction extends jspb.Message {
+    getActionId(): Uint8Array | string;
+    getActionId_asU8(): Uint8Array;
+    getActionId_asB64(): string;
+    setActionId(value: Uint8Array | string): void;
+
+    getProposerId(): Uint8Array | string;
+    getProposerId_asU8(): Uint8Array;
+    getProposerId_asB64(): string;
+    setProposerId(value: Uint8Array | string): void;
+
+    getProposedAt(): number;
+    setProposedAt(value: number): void;
+
+    hasDeleteSettledDocument(): boolean;
+    clearDeleteSettledDocument(): void;
+    getDeleteSettledDocument(): GetContractTeamActionsResponse.DeleteSettledDocument | undefined;
+    setDeleteSettledDocument(value?: GetContractTeamActionsResponse.DeleteSettledDocument): void;
+
+    getApprovalCount(): number;
+    setApprovalCount(value: number): void;
+
+    getEventCase(): ContractTeamAction.EventCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractTeamAction.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractTeamAction): ContractTeamAction.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractTeamAction, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractTeamAction;
+    static deserializeBinaryFromReader(message: ContractTeamAction, reader: jspb.BinaryReader): ContractTeamAction;
+  }
+
+  export namespace ContractTeamAction {
+    export type AsObject = {
+      actionId: Uint8Array | string,
+      proposerId: Uint8Array | string,
+      proposedAt: number,
+      deleteSettledDocument?: GetContractTeamActionsResponse.DeleteSettledDocument.AsObject,
+      approvalCount: number,
+    }
+
+    export enum EventCase {
+      EVENT_NOT_SET = 0,
+      DELETE_SETTLED_DOCUMENT = 4,
+    }
+  }
+
+  export class ContractTeamActions extends jspb.Message {
+    clearActionsList(): void;
+    getActionsList(): Array<GetContractTeamActionsResponse.ContractTeamAction>;
+    setActionsList(value: Array<GetContractTeamActionsResponse.ContractTeamAction>): void;
+    addActions(value?: GetContractTeamActionsResponse.ContractTeamAction, index?: number): GetContractTeamActionsResponse.ContractTeamAction;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractTeamActions.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractTeamActions): ContractTeamActions.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractTeamActions, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractTeamActions;
+    static deserializeBinaryFromReader(message: ContractTeamActions, reader: jspb.BinaryReader): ContractTeamActions;
+  }
+
+  export namespace ContractTeamActions {
+    export type AsObject = {
+      actionsList: Array<GetContractTeamActionsResponse.ContractTeamAction.AsObject>,
+    }
+  }
+
+  export class GetContractTeamActionsResponseV0 extends jspb.Message {
+    hasActions(): boolean;
+    clearActions(): void;
+    getActions(): GetContractTeamActionsResponse.ContractTeamActions | undefined;
+    setActions(value?: GetContractTeamActionsResponse.ContractTeamActions): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetContractTeamActionsResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractTeamActionsResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractTeamActionsResponseV0): GetContractTeamActionsResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractTeamActionsResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractTeamActionsResponseV0;
+    static deserializeBinaryFromReader(message: GetContractTeamActionsResponseV0, reader: jspb.BinaryReader): GetContractTeamActionsResponseV0;
+  }
+
+  export namespace GetContractTeamActionsResponseV0 {
+    export type AsObject = {
+      actions?: GetContractTeamActionsResponse.ContractTeamActions.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ACTIONS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContractTeamActionSignersRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0 | undefined;
+  setV0(value?: GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0): void;
+
+  getVersionCase(): GetContractTeamActionSignersRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractTeamActionSignersRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractTeamActionSignersRequest): GetContractTeamActionSignersRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractTeamActionSignersRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractTeamActionSignersRequest;
+  static deserializeBinaryFromReader(message: GetContractTeamActionSignersRequest, reader: jspb.BinaryReader): GetContractTeamActionSignersRequest;
+}
+
+export namespace GetContractTeamActionSignersRequest {
+  export type AsObject = {
+    v0?: GetContractTeamActionSignersRequest.GetContractTeamActionSignersRequestV0.AsObject,
+  }
+
+  export class GetContractTeamActionSignersRequestV0 extends jspb.Message {
+    getContractId(): Uint8Array | string;
+    getContractId_asU8(): Uint8Array;
+    getContractId_asB64(): string;
+    setContractId(value: Uint8Array | string): void;
+
+    getStatus(): GetContractTeamActionSignersRequest.ActionStatusMap[keyof GetContractTeamActionSignersRequest.ActionStatusMap];
+    setStatus(value: GetContractTeamActionSignersRequest.ActionStatusMap[keyof GetContractTeamActionSignersRequest.ActionStatusMap]): void;
+
+    getActionId(): Uint8Array | string;
+    getActionId_asU8(): Uint8Array;
+    getActionId_asB64(): string;
+    setActionId(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractTeamActionSignersRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractTeamActionSignersRequestV0): GetContractTeamActionSignersRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractTeamActionSignersRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractTeamActionSignersRequestV0;
+    static deserializeBinaryFromReader(message: GetContractTeamActionSignersRequestV0, reader: jspb.BinaryReader): GetContractTeamActionSignersRequestV0;
+  }
+
+  export namespace GetContractTeamActionSignersRequestV0 {
+    export type AsObject = {
+      contractId: Uint8Array | string,
+      status: GetContractTeamActionSignersRequest.ActionStatusMap[keyof GetContractTeamActionSignersRequest.ActionStatusMap],
+      actionId: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export interface ActionStatusMap {
+    ACTIVE: 0;
+    CLOSED: 1;
+  }
+
+  export const ActionStatus: ActionStatusMap;
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContractTeamActionSignersResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0 | undefined;
+  setV0(value?: GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0): void;
+
+  getVersionCase(): GetContractTeamActionSignersResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractTeamActionSignersResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractTeamActionSignersResponse): GetContractTeamActionSignersResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractTeamActionSignersResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractTeamActionSignersResponse;
+  static deserializeBinaryFromReader(message: GetContractTeamActionSignersResponse, reader: jspb.BinaryReader): GetContractTeamActionSignersResponse;
+}
+
+export namespace GetContractTeamActionSignersResponse {
+  export type AsObject = {
+    v0?: GetContractTeamActionSignersResponse.GetContractTeamActionSignersResponseV0.AsObject,
+  }
+
+  export class ContractTeamActionSigners extends jspb.Message {
+    clearSignerIdsList(): void;
+    getSignerIdsList(): Array<Uint8Array | string>;
+    getSignerIdsList_asU8(): Array<Uint8Array>;
+    getSignerIdsList_asB64(): Array<string>;
+    setSignerIdsList(value: Array<Uint8Array | string>): void;
+    addSignerIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractTeamActionSigners.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractTeamActionSigners): ContractTeamActionSigners.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractTeamActionSigners, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractTeamActionSigners;
+    static deserializeBinaryFromReader(message: ContractTeamActionSigners, reader: jspb.BinaryReader): ContractTeamActionSigners;
+  }
+
+  export namespace ContractTeamActionSigners {
+    export type AsObject = {
+      signerIdsList: Array<Uint8Array | string>,
+    }
+  }
+
+  export class GetContractTeamActionSignersResponseV0 extends jspb.Message {
+    hasSigners(): boolean;
+    clearSigners(): void;
+    getSigners(): GetContractTeamActionSignersResponse.ContractTeamActionSigners | undefined;
+    setSigners(value?: GetContractTeamActionSignersResponse.ContractTeamActionSigners): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetContractTeamActionSignersResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractTeamActionSignersResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractTeamActionSignersResponseV0): GetContractTeamActionSignersResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractTeamActionSignersResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractTeamActionSignersResponseV0;
+    static deserializeBinaryFromReader(message: GetContractTeamActionSignersResponseV0, reader: jspb.BinaryReader): GetContractTeamActionSignersResponseV0;
+  }
+
+  export namespace GetContractTeamActionSignersResponseV0 {
+    export type AsObject = {
+      signers?: GetContractTeamActionSignersResponse.ContractTeamActionSigners.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      SIGNERS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContractModerationActionCountsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractModerationActionCountsRequest.GetContractModerationActionCountsRequestV0 | undefined;
+  setV0(value?: GetContractModerationActionCountsRequest.GetContractModerationActionCountsRequestV0): void;
+
+  getVersionCase(): GetContractModerationActionCountsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractModerationActionCountsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractModerationActionCountsRequest): GetContractModerationActionCountsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractModerationActionCountsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractModerationActionCountsRequest;
+  static deserializeBinaryFromReader(message: GetContractModerationActionCountsRequest, reader: jspb.BinaryReader): GetContractModerationActionCountsRequest;
+}
+
+export namespace GetContractModerationActionCountsRequest {
+  export type AsObject = {
+    v0?: GetContractModerationActionCountsRequest.GetContractModerationActionCountsRequestV0.AsObject,
+  }
+
+  export class GetContractModerationActionCountsRequestV0 extends jspb.Message {
+    getContractId(): Uint8Array | string;
+    getContractId_asU8(): Uint8Array;
+    getContractId_asB64(): string;
+    setContractId(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractModerationActionCountsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractModerationActionCountsRequestV0): GetContractModerationActionCountsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractModerationActionCountsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractModerationActionCountsRequestV0;
+    static deserializeBinaryFromReader(message: GetContractModerationActionCountsRequestV0, reader: jspb.BinaryReader): GetContractModerationActionCountsRequestV0;
+  }
+
+  export namespace GetContractModerationActionCountsRequestV0 {
+    export type AsObject = {
+      contractId: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContractModerationActionCountsResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractModerationActionCountsResponse.GetContractModerationActionCountsResponseV0 | undefined;
+  setV0(value?: GetContractModerationActionCountsResponse.GetContractModerationActionCountsResponseV0): void;
+
+  getVersionCase(): GetContractModerationActionCountsResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractModerationActionCountsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractModerationActionCountsResponse): GetContractModerationActionCountsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractModerationActionCountsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractModerationActionCountsResponse;
+  static deserializeBinaryFromReader(message: GetContractModerationActionCountsResponse, reader: jspb.BinaryReader): GetContractModerationActionCountsResponse;
+}
+
+export namespace GetContractModerationActionCountsResponse {
+  export type AsObject = {
+    v0?: GetContractModerationActionCountsResponse.GetContractModerationActionCountsResponseV0.AsObject,
+  }
+
+  export class ContractModerationActionCount extends jspb.Message {
+    getIdentityId(): Uint8Array | string;
+    getIdentityId_asU8(): Uint8Array;
+    getIdentityId_asB64(): string;
+    setIdentityId(value: Uint8Array | string): void;
+
+    getCount(): number;
+    setCount(value: number): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractModerationActionCount.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractModerationActionCount): ContractModerationActionCount.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractModerationActionCount, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractModerationActionCount;
+    static deserializeBinaryFromReader(message: ContractModerationActionCount, reader: jspb.BinaryReader): ContractModerationActionCount;
+  }
+
+  export namespace ContractModerationActionCount {
+    export type AsObject = {
+      identityId: Uint8Array | string,
+      count: number,
+    }
+  }
+
+  export class ContractModerationActionCounts extends jspb.Message {
+    clearCountsList(): void;
+    getCountsList(): Array<GetContractModerationActionCountsResponse.ContractModerationActionCount>;
+    setCountsList(value: Array<GetContractModerationActionCountsResponse.ContractModerationActionCount>): void;
+    addCounts(value?: GetContractModerationActionCountsResponse.ContractModerationActionCount, index?: number): GetContractModerationActionCountsResponse.ContractModerationActionCount;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractModerationActionCounts.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractModerationActionCounts): ContractModerationActionCounts.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractModerationActionCounts, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractModerationActionCounts;
+    static deserializeBinaryFromReader(message: ContractModerationActionCounts, reader: jspb.BinaryReader): ContractModerationActionCounts;
+  }
+
+  export namespace ContractModerationActionCounts {
+    export type AsObject = {
+      countsList: Array<GetContractModerationActionCountsResponse.ContractModerationActionCount.AsObject>,
+    }
+  }
+
+  export class GetContractModerationActionCountsResponseV0 extends jspb.Message {
+    hasCounts(): boolean;
+    clearCounts(): void;
+    getCounts(): GetContractModerationActionCountsResponse.ContractModerationActionCounts | undefined;
+    setCounts(value?: GetContractModerationActionCountsResponse.ContractModerationActionCounts): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetContractModerationActionCountsResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractModerationActionCountsResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractModerationActionCountsResponseV0): GetContractModerationActionCountsResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractModerationActionCountsResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractModerationActionCountsResponseV0;
+    static deserializeBinaryFromReader(message: GetContractModerationActionCountsResponseV0, reader: jspb.BinaryReader): GetContractModerationActionCountsResponseV0;
+  }
+
+  export namespace GetContractModerationActionCountsResponseV0 {
+    export type AsObject = {
+      counts?: GetContractModerationActionCountsResponse.ContractModerationActionCounts.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      COUNTS = 1,
       PROOF = 2,
     }
   }
@@ -4616,6 +5241,62 @@ export namespace GetDocumentsRequest {
     export const Selector: SelectorMap;
   }
 
+  export class IntegerRangeSelection extends jspb.Message {
+    hasStart(): boolean;
+    clearStart(): void;
+    getStart(): GetDocumentsRequest.DocumentFieldValue | undefined;
+    setStart(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+    hasGrid(): boolean;
+    clearGrid(): void;
+    getGrid(): GetDocumentsRequest.IntegerRangeSelection.Grid | undefined;
+    setGrid(value?: GetDocumentsRequest.IntegerRangeSelection.Grid): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): IntegerRangeSelection.AsObject;
+    static toObject(includeInstance: boolean, msg: IntegerRangeSelection): IntegerRangeSelection.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: IntegerRangeSelection, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): IntegerRangeSelection;
+    static deserializeBinaryFromReader(message: IntegerRangeSelection, reader: jspb.BinaryReader): IntegerRangeSelection;
+  }
+
+  export namespace IntegerRangeSelection {
+    export type AsObject = {
+      start?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+      grid?: GetDocumentsRequest.IntegerRangeSelection.Grid.AsObject,
+    }
+
+    export class Grid extends jspb.Message {
+      getRange(): string;
+      setRange(value: string): void;
+
+      getStep(): string;
+      setStep(value: string): void;
+
+      getPhase(): string;
+      setPhase(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Grid.AsObject;
+      static toObject(includeInstance: boolean, msg: Grid): Grid.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Grid, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Grid;
+      static deserializeBinaryFromReader(message: Grid, reader: jspb.BinaryReader): Grid;
+    }
+
+    export namespace Grid {
+      export type AsObject = {
+        range: string,
+        step: string,
+        phase: string,
+      }
+    }
+  }
+
   export class WhereClause extends jspb.Message {
     getField(): string;
     setField(value: string): void;
@@ -4633,6 +5314,11 @@ export namespace GetDocumentsRequest {
     getTimeRange(): GetDocumentsRequest.TimeRangeSelection | undefined;
     setTimeRange(value?: GetDocumentsRequest.TimeRangeSelection): void;
 
+    hasIntegerRange(): boolean;
+    clearIntegerRange(): void;
+    getIntegerRange(): GetDocumentsRequest.IntegerRangeSelection | undefined;
+    setIntegerRange(value?: GetDocumentsRequest.IntegerRangeSelection): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WhereClause.AsObject;
     static toObject(includeInstance: boolean, msg: WhereClause): WhereClause.AsObject;
@@ -4649,6 +5335,7 @@ export namespace GetDocumentsRequest {
       operator: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap],
       value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
       timeRange?: GetDocumentsRequest.TimeRangeSelection.AsObject,
+      integerRange?: GetDocumentsRequest.IntegerRangeSelection.AsObject,
     }
   }
 
@@ -5114,6 +5801,7 @@ export namespace GetDocumentsRequest {
     IN: 9;
     STARTS_WITH: 10;
     IN_TIME_RANGE: 11;
+    IN_INTEGER_RANGE: 12;
   }
 
   export const WhereOperator: WhereOperatorMap;
@@ -5753,6 +6441,11 @@ export namespace GetDocumentsResponse {
       setMissingOuterIdsList(value: Array<Uint8Array | string>): void;
       addMissingOuterIds(value: Uint8Array | string, index?: number): Uint8Array | string;
 
+      clearRemovedOuterDocumentsList(): void;
+      getRemovedOuterDocumentsList(): Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval>;
+      setRemovedOuterDocumentsList(value: Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval>): void;
+      addRemovedOuterDocuments(value?: GetContractDocumentRemovalsResponse.ContractDocumentRemoval, index?: number): GetContractDocumentRemovalsResponse.ContractDocumentRemoval;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): ChainedDocuments.AsObject;
       static toObject(includeInstance: boolean, msg: ChainedDocuments): ChainedDocuments.AsObject;
@@ -5768,6 +6461,7 @@ export namespace GetDocumentsResponse {
         innerDocumentsList: Array<Uint8Array | string>,
         outerDocumentsList: Array<Uint8Array | string>,
         missingOuterIdsList: Array<Uint8Array | string>,
+        removedOuterDocumentsList: Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval.AsObject>,
       }
     }
 
@@ -5818,6 +6512,11 @@ export namespace GetDocumentsResponse {
         setMissingIdsList(value: Array<Uint8Array | string>): void;
         addMissingIds(value: Uint8Array | string, index?: number): Uint8Array | string;
 
+        clearRemovedList(): void;
+        getRemovedList(): Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval>;
+        setRemovedList(value: Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval>): void;
+        addRemoved(value?: GetContractDocumentRemovalsResponse.ContractDocumentRemoval, index?: number): GetContractDocumentRemovalsResponse.ContractDocumentRemoval;
+
         getResultCase(): SubQueryResult.ResultCase;
         serializeBinary(): Uint8Array;
         toObject(includeInstance?: boolean): SubQueryResult.AsObject;
@@ -5834,6 +6533,7 @@ export namespace GetDocumentsResponse {
           documents?: GetDocumentsResponse.GetDocumentsResponseV1.Documents.AsObject,
           counts?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.AsObject,
           missingIdsList: Array<Uint8Array | string>,
+          removedList: Array<GetContractDocumentRemovalsResponse.ContractDocumentRemoval.AsObject>,
         }
 
         export enum ResultCase {

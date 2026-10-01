@@ -2,6 +2,7 @@
 //! the reads and proofs over them, and the storage refund a moderated deletion forfeits.
 
 use crate::drive::contract::moderation::types::{
+    document_removal_encoded_size, estimated_document_removal_kept_fields_size,
     ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
 };
 use crate::drive::contract::paths::{
@@ -26,14 +27,14 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
-    ContractModerationReason, ContractModerators,
+    encode_kept_fields, ContractDocumentRemoval, ContractDocumentRestoration,
+    ContractModerationConfig, ContractModerationReason, ContractModerators,
 };
 use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
-use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
@@ -63,7 +64,7 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
         },
         "required": ["text"],
         "additionalProperties": false,
-        "canBeDeletedByModerators": deletable_by_moderators,
+        "moderatorAbilities": { "delete": deletable_by_moderators },
     })
 }
 
@@ -149,6 +150,7 @@ fn removal(owner: u8, moderator: u8, text: &str, removed_at: u64) -> ContractDoc
         removed_at,
         document_hash: [removed_at as u8; 32],
         restoration: None,
+        kept_fields: Default::default(),
     }
 }
 
@@ -162,25 +164,30 @@ fn record<'a>(
         contract_id,
         document_type_name: POST.to_string(),
         document_id,
-        removal,
-        replaces_existing: false,
+        removal: Box::new(removal),
+        replaced_record_size: None,
+        estimated_kept_fields_size: 0,
         moderator_id,
     })
 }
 
-/// The replacement of `document_id`'s record by `removal`, paid for by `moderator_id`
+/// The replacement of `document_id`'s record, `replaced`, by `removal`, paid for by
+/// `moderator_id`
 fn replace_record<'a>(
     contract_id: Identifier,
     document_id: Identifier,
     removal: ContractDocumentRemoval,
+    replaced: &ContractDocumentRemoval,
     moderator_id: Identifier,
 ) -> DriveOperation<'a> {
+    let replaced_record_size = document_removal_encoded_size(replaced).expect("expected a size");
     ContractModerationOperation(ContractModerationOperationType::AddDocumentRemoval {
         contract_id,
         document_type_name: POST.to_string(),
         document_id,
-        removal,
-        replaces_existing: true,
+        removal: Box::new(removal),
+        replaced_record_size: Some(replaced_record_size as u32),
+        estimated_kept_fields_size: 0,
         moderator_id,
     })
 }
@@ -633,6 +640,240 @@ fn should_estimate_a_record_at_no_less_than_it_costs() {
     }
 }
 
+/// The fixture contract with a `post` type whose moderators' removal records keep its long
+/// text, an object of tags and a note, and its creation time
+fn contract_keeping_fields() -> DataContract {
+    let mut contract = contract_with(true, false, &[]);
+    contract
+        .set_document_schema(
+            POST,
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 1000, "position": 0 },
+                    "meta": {
+                        "type": "object",
+                        "position": 1,
+                        "properties": {
+                            "tags": {
+                                "type": "array",
+                                "items": { "type": "string", "maxLength": 20 },
+                                "maxItems": 5,
+                                "position": 0,
+                            },
+                            "note": { "type": "string", "maxLength": 200, "position": 1 },
+                        },
+                        "additionalProperties": false,
+                    },
+                },
+                "required": ["text", "$createdAt"],
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": ["$createdAt", "meta", "text"],
+                },
+            }),
+            true,
+            &mut vec![],
+            PlatformVersion::latest(),
+        )
+        .expect("expected to add the post type keeping fields");
+    contract
+}
+
+#[test]
+fn should_estimate_records_keeping_fields_at_no_less_than_they_cost() {
+    // Records that keep values, a text as long as the type admits and a whole object among
+    // them, written into a tree other records already fill: the estimate of a fresh record and
+    // of a restore's replacement is no lower than what applying costs, storage and processing
+    // alike, whether the record keeps the most or nothing but its creation time.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_keeping_fields();
+    insert(&drive, &contract);
+    let document_type = contract
+        .document_type_for_name(POST)
+        .expect("expected the post type");
+    let estimated_kept_fields_size =
+        estimated_document_removal_kept_fields_size(document_type, platform_version)
+            .expect("expected an estimate");
+    let kept = |text_length: usize, with_meta: bool| {
+        let mut properties =
+            BTreeMap::from([("text".to_string(), Value::Text("x".repeat(text_length)))]);
+        if with_meta {
+            properties.insert(
+                "meta".to_string(),
+                Value::Map(vec![
+                    (
+                        Value::Text("tags".to_string()),
+                        Value::Array(vec![Value::Text("t".repeat(20)); 5]),
+                    ),
+                    (
+                        Value::Text("note".to_string()),
+                        Value::Text("n".repeat(200)),
+                    ),
+                ]),
+            );
+        }
+        let document = Document::V0(DocumentV0 {
+            id: identity(1),
+            owner_id: identity(2),
+            properties,
+            created_at: Some(1_700_000_000_000),
+            ..Default::default()
+        });
+        encode_kept_fields(&document, document_type).expect("expected to encode")
+    };
+    let keeping = |document_id: Identifier, removal: ContractDocumentRemoval| {
+        let moderator_id = removal.moderator_id;
+        ContractModerationOperation(ContractModerationOperationType::AddDocumentRemoval {
+            contract_id: contract.id(),
+            document_type_name: POST.to_string(),
+            document_id,
+            removal: Box::new(removal),
+            replaced_record_size: None,
+            estimated_kept_fields_size,
+            moderator_id,
+        })
+    };
+
+    // A tree other records already fill, keeping the most and the least
+    for seed in 10u8..40 {
+        let kept_fields = if seed % 2 == 0 {
+            kept(1_000, true)
+        } else {
+            kept(0, false)
+        };
+        apply(
+            &drive,
+            vec![keeping(
+                identity(seed),
+                ContractDocumentRemoval {
+                    kept_fields,
+                    ..removal(1, 2, "spam", u64::from(seed))
+                },
+            )],
+            true,
+        );
+    }
+
+    for (seed, kept_fields) in [(100, kept(1_000, true)), (101, kept(0, false))] {
+        let removal = ContractDocumentRemoval {
+            kept_fields,
+            ..removal(1, 2, "spam", 50)
+        };
+        let operations = || vec![keeping(identity(seed), removal.clone())];
+        let estimated = apply(&drive, operations(), false);
+        let applied = apply(&drive, operations(), true);
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "a fresh record: estimated storage {} < applied {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "a fresh record: estimated processing {} < applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
+
+        // Its restore: the replacement adds the restoration, and is priced by what it adds
+        let restored = ContractDocumentRemoval {
+            restoration: Some(ContractDocumentRestoration {
+                moderator_id: identity(3),
+                restored_at: 60,
+            }),
+            ..removal.clone()
+        };
+        let replaced_record_size =
+            document_removal_encoded_size(&removal).expect("expected a size") as u32;
+        let operations = || {
+            vec![ContractModerationOperation(
+                ContractModerationOperationType::AddDocumentRemoval {
+                    contract_id: contract.id(),
+                    document_type_name: POST.to_string(),
+                    document_id: identity(seed),
+                    removal: Box::new(restored.clone()),
+                    replaced_record_size: Some(replaced_record_size),
+                    estimated_kept_fields_size,
+                    moderator_id: identity(3),
+                },
+            )]
+        };
+        let estimated = apply(&drive, operations(), false);
+        let applied = apply(&drive, operations(), true);
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "a restore: estimated storage {} < applied {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "a restore: estimated processing {} < applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
+    }
+}
+
+#[test]
+fn should_estimate_a_replacement_by_what_it_adds() {
+    // A restore adds its restoration to a record that keeps a long text: the estimate prices
+    // the bytes it adds, never less than the replace costs, and not the text again.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(true, false, &[POST]);
+    insert(&drive, &contract);
+    let document_id = identity(9);
+    let restorer = identity(3);
+    let kept = ContractDocumentRemoval {
+        kept_fields: [&[1u8][..], &[0xd0, 0x0f], &[b'x'; 2_000]].concat(),
+        ..removal(1, 2, "spam", 10)
+    };
+    apply(
+        &drive,
+        vec![record(contract.id(), document_id, kept.clone())],
+        true,
+    );
+    let restored = ContractDocumentRemoval {
+        restoration: Some(ContractDocumentRestoration {
+            moderator_id: restorer,
+            restored_at: 20,
+        }),
+        ..kept.clone()
+    };
+    let operations = || {
+        vec![replace_record(
+            contract.id(),
+            document_id,
+            restored.clone(),
+            &kept,
+            restorer,
+        )]
+    };
+    let whole_record = apply(
+        &drive,
+        vec![record(contract.id(), identity(10), restored.clone())],
+        false,
+    );
+    let estimated = apply(&drive, operations(), false);
+    let applied = apply(&drive, operations(), true);
+    assert!(
+        estimated.storage_fee >= applied.storage_fee,
+        "estimated {} < applied {}",
+        estimated.storage_fee,
+        applied.storage_fee
+    );
+    assert!(
+        estimated.storage_fee * 4 < whole_record.storage_fee,
+        "estimated {} prices the kept text again (a whole record is {})",
+        estimated.storage_fee,
+        whole_record.storage_fee
+    );
+}
+
 fn add_post(drive: &Drive, contract: &DataContract, owner_id: Identifier) -> Document {
     let platform_version = PlatformVersion::latest();
     let document_type = contract
@@ -679,7 +920,7 @@ fn delete_post_by_moderator<'a>(
     contract: &'a DataContract,
     document_id: Identifier,
 ) -> DriveOperation<'a> {
-    DocumentOperation(DocumentOperationType::DeleteDocumentByModerator {
+    DocumentOperation(DocumentOperationType::ForceDeleteDocument {
         document_id,
         contract_info: DataContractInfo::BorrowedDataContract(contract),
         document_type_info: DocumentTypeInfo::DocumentTypeName(POST.to_string()),
@@ -734,6 +975,7 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                     removed_at: 10,
                     document_hash: [0x43; 32],
                     restoration: None,
+                    kept_fields: Default::default(),
                 },
             ),
             forfeit(),
@@ -779,6 +1021,7 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                 removed_at: 10,
                 document_hash: [0x43; 32],
                 restoration: None,
+                kept_fields: Default::default(),
             },
         }],
     );
@@ -834,6 +1077,7 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
         removed_at: 10,
         document_hash: [0x44; 32],
         restoration: None,
+        kept_fields: Default::default(),
     };
     apply(
         &drive,
@@ -858,7 +1102,13 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
     let operations = || {
         vec![
             restore_post(&contract, &post),
-            replace_record(contract.id(), post.id(), restored.clone(), restorer),
+            replace_record(
+                contract.id(),
+                post.id(),
+                restored.clone(),
+                &removal,
+                restorer,
+            ),
         ]
     };
     let estimated = apply(&drive, operations(), false);
@@ -886,7 +1136,9 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
     );
 
     // Deleted again by a moderator: a fresh record in place of the restored one, the author
-    // refunded nothing again.
+    // refunded nothing again. The fresh record is shorter than the restored one it replaces,
+    // and the restorer, who paid for the bytes that frees, keeps that refund: the forfeiture
+    // takes the document's removals alone.
     let again = ContractDocumentRemoval {
         moderator_id: restorer,
         removed_at: 30,
@@ -897,12 +1149,17 @@ fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_
         &drive,
         vec![
             delete_post_by_moderator(&contract, post.id()),
-            replace_record(contract.id(), post.id(), again.clone(), restorer),
+            replace_record(contract.id(), post.id(), again.clone(), &restored, restorer),
             forfeit(),
         ],
         true,
     );
-    assert!(applied.fee_refunds.0.is_empty());
+    assert!(applied.fee_refunds.get(author.as_bytes()).is_none());
+    assert!(
+        applied.fee_refunds.get(restorer.as_bytes()).is_some(),
+        "the restorer is refunded the bytes the record gives up"
+    );
+    assert_eq!(applied.fee_refunds.0.len(), 1);
     assert!(applied.removed_bytes_from_system > 0);
     assert!(!post_is_stored(&drive, &contract, post.id()));
     assert_removals(
@@ -943,13 +1200,19 @@ fn should_refund_the_author_who_deletes_a_restored_document() {
             moderator_id: moderator,
             restored_at: 20,
         }),
-        ..removal
+        ..removal.clone()
     };
     apply(
         &drive,
         vec![
             restore_post(&contract, &post),
-            replace_record(contract.id(), post.id(), restored.clone(), moderator),
+            replace_record(
+                contract.id(),
+                post.id(),
+                restored.clone(),
+                &removal,
+                moderator,
+            ),
         ],
         true,
     );
@@ -1049,4 +1312,57 @@ fn should_keep_refunding_a_batch_without_the_forfeiture_before_protocol_version_
             .apply_drive_operations,
         1
     );
+}
+
+#[test]
+fn should_price_a_forfeiting_deletion_as_one_batch_when_it_rewrites_no_record() {
+    let platform_version = PlatformVersion::latest();
+    let author = identity(0x41);
+    let moderator = identity(0x42);
+    let contract = contract_with(true, false, &[POST]);
+    // A moderator's deletion with a fresh record, with or without the forfeiture: nothing but
+    // the document frees bytes, so the forfeiting batch is applied as one, as the other is,
+    // and costs the same, estimated and applied; only the refund differs.
+    let fees = |forfeiting: bool| {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        insert(&drive, &contract);
+        let post = add_post(&drive, &contract, author);
+        let operations = || {
+            let mut operations = vec![
+                delete_post_by_moderator(&contract, post.id()),
+                record(
+                    contract.id(),
+                    post.id(),
+                    ContractDocumentRemoval {
+                        document_owner_id: author,
+                        moderator_id: moderator,
+                        reason: ContractModerationReason::from_text("spam"),
+                        removed_at: 10,
+                        document_hash: [0x43; 32],
+                        restoration: None,
+                        kept_fields: Default::default(),
+                    },
+                ),
+            ];
+            if forfeiting {
+                operations.push(forfeit());
+            }
+            operations
+        };
+        (
+            apply(&drive, operations(), false),
+            apply(&drive, operations(), true),
+        )
+    };
+    let (estimated_forfeiting, forfeiting) = fees(true);
+    let (estimated, refunding) = fees(false);
+    assert_eq!(
+        estimated_forfeiting.processing_fee,
+        estimated.processing_fee
+    );
+    assert_eq!(estimated_forfeiting.storage_fee, estimated.storage_fee);
+    assert_eq!(forfeiting.processing_fee, refunding.processing_fee);
+    assert_eq!(forfeiting.storage_fee, refunding.storage_fee);
+    assert!(forfeiting.fee_refunds.0.is_empty());
+    assert!(refunding.fee_refunds.get(author.as_bytes()).is_some());
 }

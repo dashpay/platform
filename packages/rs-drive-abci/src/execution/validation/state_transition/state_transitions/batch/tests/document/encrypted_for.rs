@@ -455,10 +455,12 @@ mod encrypted_for_tests {
                 ("encryptedMessage".to_string(), Value::Bytes(vec![0xAB; 47])),
             ]),
             changed_data_fields: BTreeSet::new(),
-            added_data_fields: BTreeSet::new(),
             removed_identifier_fields: BTreeMap::new(),
             stored_changed_values: BTreeMap::new(),
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
+            property_constraint_aggregates: Default::default(),
         });
 
         let before = action

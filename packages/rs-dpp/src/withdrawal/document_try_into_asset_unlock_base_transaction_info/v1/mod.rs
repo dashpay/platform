@@ -118,6 +118,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into()
     }
@@ -126,10 +128,7 @@ mod tests {
     fn stamped_withdrawal_reserves_output_and_core_fee_from_one_amount() {
         let amount = 2_000_000_000u64;
         let tx = withdrawal_document(Some(1), amount)
-            .try_into_asset_unlock_base_transaction_info(
-                1,
-                PlatformVersion::get(14).expect("platform version 14"),
-            )
+            .try_into_asset_unlock_base_transaction_info(1, PlatformVersion::latest())
             .expect("asset unlock info");
 
         assert_eq!(
@@ -143,10 +142,7 @@ mod tests {
     fn unstamped_queued_withdrawal_is_bounded_by_its_reserved_amount() {
         let amount = 1_000_000u64;
         let tx = withdrawal_document(None, amount)
-            .try_into_asset_unlock_base_transaction_info(
-                1,
-                PlatformVersion::get(14).expect("platform version 14"),
-            )
+            .try_into_asset_unlock_base_transaction_info(1, PlatformVersion::latest())
             .expect("asset unlock info");
 
         assert_eq!(
@@ -202,10 +198,7 @@ mod tests {
         // 500 duffs: below the 546-duff P2PKH dust threshold, legal under the pre-v12 floor.
         let amount = 500_000u64;
         let tx = withdrawal_document(None, amount)
-            .try_into_asset_unlock_base_transaction_info(
-                1,
-                PlatformVersion::get(14).expect("platform version 14"),
-            )
+            .try_into_asset_unlock_base_transaction_info(1, PlatformVersion::latest())
             .expect("a legacy dust amount must convert rather than abort the block");
 
         assert_eq!(tx.base_payload.fee, 0);

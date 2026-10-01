@@ -78,7 +78,8 @@ Platform uses data contracts to define application data schemas:
 - Run linters: `yarn lint`
 
 ## Coding Style & Naming Conventions
-- Follow `.editorconfig`: 2-space indent by default; 4 spaces for `*.rs` and
+- Follow `.editorconfig`: 2-space indent by default; 4 spaces for `*.rs`,
+  Swift and Kotlin (`*.swift`, `*.kt`, `*.kts`), and
   `packages/swift-sdk/scripts/*.py`, preserving the existing Python script style.
   Use LF, UTF‑8, and a final newline.
 - JS/TS: ESLint (Airbnb/TypeScript rules via package configs). Use camelCase for variables/functions, PascalCase for classes; prefer kebab-case filenames within JS packages.

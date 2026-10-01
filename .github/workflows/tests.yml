@@ -61,6 +61,7 @@ jobs:
       js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
+      arm64-image-changed: ${{ steps.filter-rs-workflows.outputs.arm64-image }}
       rs-scope: ${{ steps.rs-scope.outputs.scope }}
       shielded-changed: ${{ steps.override.outputs.shielded-changed || steps.filter-shielded.outputs.shielded-changed }}
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
@@ -75,6 +76,11 @@ jobs:
 
       - name: Verify self-hosted Swift runner policy
         run: python3 .github/scripts/check-swift-self-hosted-runner.py
+
+      - name: Verify candidate-image routing and manifest inputs
+        run: |
+          python3 .github/scripts/runner-image.py env
+          python3 -m unittest discover -s .github/scripts/tests -v
 
       - uses: dorny/paths-filter@v4
         id: filter-js
@@ -104,6 +110,12 @@ jobs:
               - .github/workflows/tests-rs-wallet.yml
               - .github/workflows/tests.yml
               - .github/scripts/check-wallet-closure.py
+              - .github/runner-requirements.json
+              - .github/runner-requirements.arm64.json
+              - .github/scripts/runner-image.py
+              - .github/actions/rust/**
+            arm64-image:
+              - .github/runner-requirements.arm64.json
 
       - uses: dorny/paths-filter@v4
         id: filter-e2e
@@ -286,7 +298,7 @@ jobs:
             exit 0
           fi
 
-          if echo "$CHANGED" | grep -qE '(^|/)Cargo\.(toml|lock)$|^rust-toolchain\.toml$|^\.github/actions/rust/|^\.github/workflows/tests\.yml$|^\.github/workflows/tests-rs-workspace\.yml$'; then
+          if echo "$CHANGED" | grep -qE '(^|/)Cargo\.(toml|lock)$|^rust-toolchain\.toml$|^\.github/runner-requirements(\.arm64)?\.json$|^\.github/scripts/runner-image\.py$|^\.github/actions/rust/|^\.github/workflows/tests\.yml$|^\.github/workflows/tests-rs-workspace\.yml$'; then
             echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
             echo "Build configuration changed — shielded tests will run"
             exit 0
@@ -468,6 +480,23 @@ jobs:
       # Code coverage runs nightly only. PR and push runs execute the same
       # test phases without instrumentation and upload nothing to Codecov.
       coverage: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.coverage == true) }}
+
+  # The AMD64 candidate publisher cannot prove an ARM64 image. Changes to
+  # its separate manifest need a real full workspace job on that architecture,
+  # in addition to any ordinary/AMD64 candidate job above. Provision the exact
+  # ARM64 image before merging; a hosted build or skipped fork job is not proof.
+  rs-arm64-image-tests:
+    name: ARM64 runner image validation
+    needs: changes
+    if: ${{ needs.changes.outputs.arm64-image-changed == 'true' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-workspace.yml
+    with:
+      runner-architecture: ARM64
+      validate-arm64-image: true
+      doctests-changed: true
+      shielded-changed: true
+      coverage: false
 
   # Fast path: only wallet crates changed, so run the scoped wallet suite
   # instead of the full workspace job above (the two are mutually exclusive

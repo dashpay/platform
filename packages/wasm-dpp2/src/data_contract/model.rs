@@ -1,3 +1,8 @@
+#[cfg(feature = "validation")]
+use crate::block::BlockInfoWasm;
+#[cfg(feature = "validation")]
+use crate::consensus_error::ConsensusErrorWasm;
+use crate::data_contract::DocumentWasm;
 use crate::data_contract::document_type_distinct_from::{
     DocumentPropertyDistinctFromArrayJs, DocumentPropertyDistinctFromMapJs,
     distinct_from_for_document_type,
@@ -9,6 +14,11 @@ use crate::data_contract::document_type_encryption::{
 use crate::data_contract::document_type_immutability::{
     DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
     immutable_properties_for_document_type,
+};
+use crate::data_contract::document_type_property_constraints::{
+    DocumentPropertyConstraintArrayJs, DocumentPropertyConstraintMapJs,
+    DocumentPropertyConstraintViolationJs, check_property_constraints,
+    property_constraints_for_document_type,
 };
 use crate::data_contract::document_type_reference::{
     DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs, references_for_document_type,
@@ -30,6 +40,8 @@ use crate::utils::{
     try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16, try_to_u32,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
+#[cfg(feature = "validation")]
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -41,9 +53,12 @@ use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+#[cfg(feature = "validation")]
+use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 use dpp::data_contract::{
     DataContract, GroupContractPosition, TokenConfiguration, TokenContractPosition,
 };
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::platform_value::{Value, ValueMap};
@@ -141,8 +156,9 @@ export interface DataContractConfig {
  * team is seated (no election exists yet) the contract is moderated by its `interim`
  * moderators, or by nobody: with the moderated document types not yet usable (every
  * document transition of one is refused) or used unmoderated meanwhile. Windows and the
- * cool-down are in seconds: the windows one day to four weeks (one week when left out), the
- * cool-down of a contestable seat two weeks to three years.
+ * cool-down are in seconds: the windows at most four weeks, at least one day on mainnet and
+ * 0 on any other network (one week when left out), the cool-down of a contestable seat two
+ * weeks to three years.
  */
 export type ContractModerators =
   | { $type: "contractOwner" }
@@ -165,7 +181,8 @@ export type ContractModerators =
       /**
        * The moderated document types of the contract, each with the non-empty abilities a
        * charter may claim on it: `ban`, `suspend` and `warn` need the list the contract
-       * keeps, `deleteDocuments` the type flagged `canBeDeletedByModerators`. The lists stay
+       * keeps, `deleteDocuments` the type setting `moderatorAbilities.delete`,
+       * `changeDocumentFields` the type listing `moderatorAbilities.changeFields`. The lists stay
        * contract-wide. A charter does not price actions: a type's `actionFees.moderators`
        * amount is the most a team may charge.
        */
@@ -187,7 +204,7 @@ export type ElectedModerationSeat =
   | { seatContestable: false; challengeCoolDown?: never };
 
 /** What a charter may claim on an elected contract. */
-export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn";
+export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn" | "changeDocumentFields";
 
 /** Who moderates an elected contract until its first team is seated. */
 export type InterimModerators =
@@ -198,8 +215,9 @@ export type InterimModerators =
 
 /**
  * The moderation a data contract declares. At least one list must be kept, unless a document
- * type sets `canBeDeletedByModerators`: moderators that only delete documents need no list. A
- * list that is kept can never be turned off by a contract update.
+ * type gives its moderators an ability (`moderatorAbilities`): moderators that only delete
+ * documents or change the fields kept for them need no list. A list that is kept can never be
+ * turned off by a contract update.
  */
 export interface ContractModerationConfig {
     banlist: boolean;
@@ -244,6 +262,12 @@ impl From<DataContract> for DataContractWasm {
 impl From<DataContractWasm> for DataContract {
     fn from(v: DataContractWasm) -> Self {
         v.0
+    }
+}
+
+impl AsRef<DataContract> for DataContractWasm {
+    fn as_ref(&self) -> &DataContract {
+        &self.0
     }
 }
 
@@ -814,6 +838,150 @@ impl DataContractWasm {
         Ok(JsValue::from(map).into())
     }
 
+    /// All `propertyConstraints` rules of one document type, in name order,
+    /// the order consensus checks them in: each rule's name, the rule as the
+    /// schema declares it, every property it reads and how, and whether it
+    /// reads `$ownerId` (then a transfer or a purchase is judged against it
+    /// too).
+    ///
+    /// Returns an empty array when the document type declares none. Throws
+    /// when the contract has no document type by that name, so "no such
+    /// type" and "no rules" stay distinguishable.
+    ///
+    /// The keyword is only parsed from protocol version 14 onward. A
+    /// contract deserialized against an earlier platform version reports
+    /// none, which is exactly what consensus enforced at that version, while
+    /// `toJSON()` still shows the raw keyword either way.
+    #[wasm_bindgen(js_name = "documentTypePropertyConstraints")]
+    pub fn document_type_property_constraints(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentPropertyConstraintArrayJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let rules = property_constraints_for_document_type(document_type)?;
+        Ok(JsValue::from(rules).into())
+    }
+
+    /// Every document type that declares `propertyConstraints`, keyed by
+    /// document type name.
+    ///
+    /// Document types with no rules are omitted, so an empty `Map` means
+    /// "this contract declares no propertyConstraints at all".
+    #[wasm_bindgen(getter = "documentPropertyConstraints")]
+    pub fn document_property_constraints(&self) -> WasmDppResult<DocumentPropertyConstraintMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            let rules = property_constraints_for_document_type(document_type.as_ref())?;
+            if rules.length() > 0 {
+                map.set(&JsValue::from_str(name), &rules.into());
+            }
+        }
+
+        Ok(JsValue::from(map).into())
+    }
+
+    /// The first `propertyConstraints` rule `document` breaks, in name order,
+    /// evaluated with the same code consensus runs on a create or replace: its
+    /// properties, its owner for `$ownerId`, and for the system times the
+    /// device clock in place of the block time the write will record (the
+    /// document's stored creation and transfer times when it has them). A
+    /// rule reading a block height the write records is not judged, since the
+    /// height is unknown until the block, and neither is a rule reading a
+    /// `countOf` or `sumOf` total, which only the platform reads from state
+    /// (a rule's `readsTotals` lists them).
+    /// `undefined` when it meets every rule of its document type.
+    ///
+    /// A pre-check, so an app can refuse a document before paying for a
+    /// transition consensus would refuse with
+    /// `DocumentPropertyConstraintViolatedError` (code 10422). It judges the
+    /// rules alone, not the document's JSON schema. Throws when the document
+    /// belongs to another contract or names a document type this one lacks.
+    #[wasm_bindgen(js_name = "checkDocumentPropertyConstraints")]
+    pub fn check_document_property_constraints(
+        &self,
+        document: &DocumentWasm,
+    ) -> WasmDppResult<DocumentPropertyConstraintViolationJs> {
+        let document_contract_id: Identifier = document.data_contract_id.into();
+        if document_contract_id != self.0.id() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "the document belongs to contract {}, not this one",
+                document_contract_id.to_string(Encoding::Base58)
+            )));
+        }
+        let document_type_name = &document.document_type_name;
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name)
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        Ok(check_property_constraints(document_type, &document.document)?.into())
+    }
+
+    /// Whether `newContract` is an update of this contract the platform
+    /// accepts, judged with the code consensus runs on a data contract update
+    /// transition (`DataContract::validate_update`): the owner may not change,
+    /// the version must rise by exactly one, the config and every existing
+    /// document type follow their update rules, `schemaDefs` stay compatible,
+    /// groups and tokens are kept, and an added token's pre-programmed
+    /// distributions may not start before the block time.
+    ///
+    /// Returns the consensus errors a refused update would carry, each with
+    /// the `code` a rejected transition reaches JS with, or an empty array
+    /// when the update is valid. Most checks stop at the first failure, so a
+    /// refused update usually reports one error.
+    ///
+    /// The two contracts are compared whatever their ids; the platform judges
+    /// an update against the stored contract with the new contract's id.
+    /// Build `newContract` with full validation
+    /// (`DataContract.fromJSON(json, true, platformVersion)`): the transition's
+    /// structural checks run there, not here. No state is read, so what the
+    /// platform checks against state on top is not covered: that the contract
+    /// exists, that group members, identities named by token configurations
+    /// and appointed moderators exist, that references into other contracts
+    /// resolve, and the signature, nonce and fees.
+    ///
+    /// `blockInfo` is the block the update would be executed in; only its
+    /// time is read. `undefined` lets the device clock stand in for it.
+    #[cfg(feature = "validation")]
+    #[wasm_bindgen(js_name = "validateUpdate")]
+    pub fn validate_update(
+        &self,
+        #[wasm_bindgen(js_name = "newContract")] new_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "blockInfo", unchecked_param_type = "BlockInfo | undefined")]
+        block_info: JsValue,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<Vec<ConsensusErrorWasm>> {
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
+        let block_info = if block_info.is_undefined() || block_info.is_null() {
+            BlockInfo::default_with_time(js_sys::Date::now() as u64)
+        } else {
+            BlockInfo::from(&*block_info.to_wasm::<BlockInfoWasm>("BlockInfo")?)
+        };
+
+        let result =
+            self.0
+                .validate_update(&new_contract.0, &block_info, &platform_version.into())?;
+
+        Ok(result
+            .errors
+            .into_iter()
+            .map(ConsensusErrorWasm::from)
+            .collect())
+    }
+
     /// All `encryptedFor` declarations of one document type, in schema
     /// property order: which byte array properties are encrypted, for whom,
     /// under which key ids and under which scheme.
@@ -863,11 +1031,12 @@ impl DataContractWasm {
         Ok(JsValue::from(map).into())
     }
 
-    /// The `immutable` / `immutableAllowSetting` declarations of one
-    /// document type: `{ immutable: string[], immutableAllowSetting:
-    /// string[] }`, both sorted by property name.
+    /// The `immutable` declarations of one document type: `{ immutable:
+    /// string[], immutableWhen: Record<string, condition> }`, the properties
+    /// frozen at creation and those frozen under a condition, each sorted by
+    /// property name.
     ///
-    /// Both arrays are empty when the document type declares nothing (the
+    /// Both are empty when the document type declares nothing (the
     /// normal case, and the only case for a type whose documents are not
     /// mutable). Throws when the contract has no document type by that
     /// name, so "no such type" and "nothing frozen" stay distinguishable.
@@ -898,8 +1067,9 @@ impl DataContractWasm {
     /// Every document type that freezes at least one property, keyed by
     /// document type name.
     ///
-    /// Document types with an empty `immutable` list are omitted, so an
-    /// empty `Map` means "nothing in this contract is frozen per property".
+    /// Document types whose `immutable` keyword lists nothing are omitted, so
+    /// an empty `Map` means "nothing in this contract is frozen per
+    /// property".
     #[wasm_bindgen(getter = "documentImmutableProperties")]
     pub fn document_immutable_properties(
         &self,
@@ -907,7 +1077,9 @@ impl DataContractWasm {
         let map = js_sys::Map::new();
 
         for (name, document_type) in self.0.document_types() {
-            if document_type.immutable_fields().is_empty() {
+            if document_type.immutable_fields().is_empty()
+                && document_type.immutable_field_conditions().is_empty()
+            {
                 continue;
             }
             let properties = immutable_properties_for_document_type(document_type.as_ref(), name)?;

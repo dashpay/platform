@@ -47,18 +47,30 @@ pub struct SystemLimits {
     pub max_reference_expression_depth: u16,
     /// Maximum number of named rules one document type's `propertyConstraints` may
     /// declare. Every rule is evaluated on each create and replace of a document of the
-    /// type, and no rule reads state, so this and `max_property_constraint_nodes` are what
-    /// bound the arithmetic one document write causes. Refused under full validation only,
+    /// type, so this and `max_property_constraint_nodes` are what bound the arithmetic one
+    /// document write causes, and `max_property_constraint_aggregates` the state it reads. Refused under full validation only,
     /// like `max_typed_array_items`. Read by document type parser generation 3 (protocol
     /// version 14), the only generation that parses `propertyConstraints`, and never
     /// reached before.
     pub max_property_constraints: u16,
-    /// Maximum number of nodes in one `propertyConstraints` rule: its comparison, every
-    /// arithmetic operator and every operand, an integer value or a property. An `ifAbsent`
-    /// operand is one node, the default it gives included. Refused under full validation
+    /// Maximum number of nodes in one `propertyConstraints` rule: every comparison, every
+    /// `in` and each value it lists (a `notIn` costing what its `in` costs), every
+    /// `contains`, `startsWith`, `endsWith`, `present` or `absent`, every `anyOf`, `allOf`,
+    /// `not`, `ifThen` or `ifThenElse`, every arithmetic operator (`min`, `max` and `abs`
+    /// included) and every operand: an integer value, a `const`, a property, a size
+    /// (`length`, `byteLength`, `count`) or a system time or height. An `ifAbsent` operand
+    /// is one node, the default it gives included.
+    /// Refused under full validation only, like `max_property_constraints`. Read by document
+    /// type parser generation 3 (protocol version 14) and never reached before.
+    pub max_property_constraint_nodes: u16,
+    /// Maximum number of distinct `countOf` and `sumOf` totals the `propertyConstraints`
+    /// rules of one document type read. Each is a billed read of a count or sum tree on
+    /// every create or replace of a document of the type, and on a transfer, a purchase or
+    /// a price update judged against a rule reading it, so this bounds the state one
+    /// document write reads for its rules. A total two rules read alike counts once. Refused under full validation
     /// only, like `max_property_constraints`. Read by document type parser generation 3
     /// (protocol version 14) and never reached before.
-    pub max_property_constraint_nodes: u16,
+    pub max_property_constraint_aggregates: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
@@ -177,9 +189,11 @@ pub struct SystemLimits {
     /// version 14) and never reached before.
     pub max_contract_moderation_reason_documents: u16,
     /// Shortest join window and vote window, in seconds, an elected moderation team
-    /// declaration (`ContractModerators::Elected`) may set: one day. Read by the contract's
-    /// `validate_moderation_config` v0 (protocol version 14) and never reached before.
-    pub min_contract_moderation_election_window_seconds: u32,
+    /// declaration (`ContractModerators::Elected`) may set on mainnet: one day. Every other
+    /// network has no floor, a window of 0 included, so test elections resolve at once. Read
+    /// by the contract's `validate_moderation_config` v0 (protocol version 14) and never
+    /// reached before.
+    pub min_mainnet_contract_moderation_election_window_seconds: u32,
     /// Longest join window and vote window, in seconds, such a declaration may set: four
     /// weeks.
     pub max_contract_moderation_election_window_seconds: u32,
@@ -197,6 +211,21 @@ pub struct SystemLimits {
     /// after the election (`maxAddedModerators`). Read by the declaration's validation
     /// (protocol version 14) and never reached before.
     pub max_contract_moderation_added_moderators: u16,
+    /// Most members a moderation charter elects beside its leader: the `maxItems` of the
+    /// moderation charters contract's `electedCharter.members`, which must stay equal to it.
+    /// With the leader and the members an elected declaration lets the leader add
+    /// (`maxAddedModerators`), it bounds how many members of a seated team a document type's
+    /// `moderatorAbilities.deleteSettled` may require to approve the deletion of a settled
+    /// document. Refused under full validation only, so a stored contract stays readable if it
+    /// ever shrinks. Read by the document type parser (protocol version 14) and never reached
+    /// before.
+    pub max_moderation_charter_elected_members: u16,
+    /// Most contenders one contested document resource vote poll accepts: a document that
+    /// would add one more is refused. The end of a poll tallies, and cleans up, every
+    /// contender in one block, so this bounds that work; `maximum_contenders_to_consider`
+    /// must stay at least this where it is read. Read by the contested document create
+    /// state validation v2 (protocol version 14) and never reached before.
+    pub max_contenders_per_contest: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
@@ -244,6 +273,42 @@ pub struct SystemLimits {
     /// including shared grids and deep suffixes. Each drop is O(1).
     /// `None` disables cleanup on versions predating the `ttl` key.
     pub min_time_range_ttl_drop_operations_per_write: Option<u16>,
+    /// Minimum time to live, in seconds, a document type may declare with its `ttl`
+    /// keyword, enforced when a contract is registered or updated (full validation only,
+    /// like `max_document_ttl_seconds`). A document the cleanup deletes before its writer
+    /// has fetched the proof of its create would fail that proof's verification (it proves
+    /// the document present); the floor keeps every document well past that point. Read by
+    /// document type parser generation 3 (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the keyword.
+    pub min_document_ttl_seconds: Option<u32>,
+    /// Maximum time to live, in seconds, a document type may declare with its `ttl`
+    /// keyword, enforced when a contract is registered or updated (full validation only,
+    /// like `max_typed_array_items`). Documents of a type with a `ttl` are deleted by the
+    /// platform once `$createdAt + ttl` has passed; the cap bounds how long the flagless,
+    /// prepaid storage of such a document can live, which is what the per-period price of
+    /// the fee schedule's `document_ttl` group is calibrated for. Read by document type
+    /// parser generation 3 (protocol version 14), the only generation that parses `ttl`.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the keyword
+    /// (nothing to bound: it does not parse there).
+    pub max_document_ttl_seconds: Option<u32>,
+    /// Maximum number of expired documents the platform deletes in one block, after the
+    /// block's state transitions (`expire_documents` v0). Expirations beyond it wait for
+    /// the next block, oldest first. Bounds the unbilled work the cleanup adds to a block.
+    ///
+    /// 0 on protocol versions that predate document expiry, where the event does not run
+    /// (`expire_documents` is `None` in their method tables).
+    pub max_document_expirations_per_block: u16,
+    /// The most work the document expiry cleanup does in one block, beside
+    /// `max_document_expirations_per_block`: each deleted document weighs 1 plus the weighted
+    /// index levels of its type (every index counts its properties, times the overlapping
+    /// windows of a `timeRange` index), the measure its prepaid deletion fee is sized by.
+    /// The cleanup stops before a document that would pass it, except the block's first, so
+    /// the backlog always drains.
+    ///
+    /// 0 on protocol versions that predate document expiry, where the event does not run.
+    pub max_document_expiration_weight_per_block: u32,
     /// Lowest GroveDB proof envelope version a client accepts from a
     /// current-state response.
     ///

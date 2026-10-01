@@ -12,6 +12,10 @@ use crate::fee::Credits;
 use crate::group::group_action_status::GroupActionStatus;
 use crate::identity::{Identity, PartialIdentity};
 use crate::prelude::AddressNonce;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::info::IdentityTokenInfo;
 use crate::tokens::status::TokenStatus;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -161,6 +165,15 @@ pub enum StateTransitionProofResult {
     /// and carries the transition's reason. A document id is produced at most once, so the
     /// record is of this document and of no other.
     VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
+    /// Returned by a `ContractUserModeration` that proposes the deletion of a settled document
+    /// or approves a team action: the contract, the team action and whether it is still active
+    /// or closed. The proof shows the signer's approval among the action's, active or closed,
+    /// the action's id computed from the transition for a proposal. Closed means the approvals
+    /// met the rule and the action ran, by this approval or a later one: the document is
+    /// deleted. An approval stays where it is until its action closes, and then moves with it,
+    /// so the proof holds while the approval stands: one deleted because its member left the
+    /// team no longer proves.
+    VerifiedContractTeamActionSignature(Identifier, Identifier, GroupActionStatus),
 }
 
 /// The guarantee a verified state-transition proof establishes.
@@ -326,10 +339,10 @@ mod json_safe_address_info_map {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for StateTransitionProofResult {}
+impl JsonConvertible for StateTransitionProofResult {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for StateTransitionProofResult {}
+impl ValueConvertible for StateTransitionProofResult {}
 
 #[cfg(all(
     test,

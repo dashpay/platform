@@ -170,6 +170,8 @@ impl ErrorWithCode for BasicError {
             Self::InvalidEncryptedPropertyShapeError(_) => 10420,
             Self::DocumentPropertyMaxBytesExceededError(_) => 10421,
             Self::DocumentPropertyConstraintViolatedError(_) => 10422,
+            Self::DocumentReferencePreimageInvalidError(_) => 10423,
+            Self::DocumentPropertyNotGeneratedError(_) => 10424,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
@@ -274,6 +276,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentActionFeesWithoutModerationError(_) => 10902,
             Self::ContractModerationReasonTooLongError(_) => 10903,
             Self::InvalidContractModerationReasonDocumentsError(_) => 10904,
+            Self::InvalidContractModerationDocumentFieldsError(_) => 10905,
 
             // Moderation Team Errors: 11000-11099
             Self::ModerationCharterMalformedFieldError(_) => 11000,
@@ -371,6 +374,12 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentLookupInvalidError(_) => 40137,
             Self::ReferencedDocumentListInvalidError(_) => 40138,
             Self::DocumentActionFeeModeratorsShareMismatchError(_) => 40139,
+            Self::DocumentExpiredError(_) => 40140,
+            Self::DocumentContestMaximumContendersReachedError(_) => 40141,
+            Self::ReferencedDocumentRequirementNotMetError(_) => 40142,
+            Self::ReferencedDocumentTypeNotModeratedError(_) => 40143,
+            Self::ReferencedDocumentTypeModeratedError(_) => 40144,
+            Self::ReferencedDocumentRemovedError(_) => 40145,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -488,12 +497,22 @@ impl ErrorWithCode for StateError {
             Self::DocumentRestoreWindowElapsedError(_) => 41120,
             Self::DocumentRestoreHashMismatchError(_) => 41121,
             Self::ContractDocumentAlreadyRestoredError(_) => 41122,
+            Self::DocumentFieldNotChangeableByModeratorsError(_) => 41123,
+            Self::DocumentModeratorFieldNotWritableError(_) => 41124,
 
             // Contract moderation team errors: 41200-41299
             Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,
             Self::ContractModerationAbilityNotGrantedError(_) => 41201,
             Self::ModerationCharterAddedModeratorLimitReachedError(_) => 41202,
             Self::ModerationReasonNotListedError(_) => 41203,
+            Self::DocumentTypeNotDeletableOnceSettledError(_) => 41204,
+            Self::ContractModerationTeamNotSeatedError(_) => 41205,
+            Self::DocumentNotSettledError(_) => 41206,
+            Self::ContractTeamActionDoesNotExistError(_) => 41207,
+            Self::ContractTeamActionAlreadySignedError(_) => 41208,
+            Self::SettledDeletionNotRestorableError(_) => 41209,
+            Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
+            Self::ContractTeamActionDocumentChangedError(_) => 41211,
         }
     }
 }

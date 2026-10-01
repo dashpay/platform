@@ -29,6 +29,15 @@ impl DriveDocumentHavingQuery<'_> {
     /// # Arguments
     /// * `proof` — raw grovedb proof bytes.
     /// * `platform_version` — selects the method version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((RootHash, Vec<RankedEntry>))` with the proof's root hash and the groups whose
+    ///   aggregate falls in the bounds, at most `limit` of them, in axis order in the walk
+    ///   direction; empty when no group matches.
+    /// * `Err(Error)` when the method version is unknown, the index path cannot be resolved,
+    ///   the proof does not verify against the rebuilt traversal, or its entries have the
+    ///   wrong axis shape or exceed the limit.
     pub fn verify_having_range_proof(
         &self,
         proof: &[u8],
