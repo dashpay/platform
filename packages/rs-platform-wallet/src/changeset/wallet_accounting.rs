@@ -15,6 +15,8 @@
 //! moves Core duffs into its own Platform credits, so only the fee
 //! leaves the wallet.
 
+use std::collections::BTreeSet;
+
 use key_wallet::managed_account::transaction_record::{
     OutputRole, TransactionDirection, TransactionRecord,
 };
@@ -88,18 +90,19 @@ pub fn wallet_accounting(record: &TransactionRecord) -> (i128, TransactionDirect
         .map(|d| i128::from(d.value))
         .sum();
     let has_ours = record.output_details.iter().any(|d| is_owned(d.role));
+    // Indexed once so the per-output check below stays linear.
+    let accounted: BTreeSet<usize> = record
+        .output_details
+        .iter()
+        .filter(|d| is_owned(d.role) || d.role == OutputRole::Unspendable)
+        .map(|d| d.index as usize)
+        .collect();
     let has_external = record
         .transaction
         .output
         .iter()
         .enumerate()
-        .any(|(index, output)| {
-            !output.script_pubkey.is_op_return()
-                && !record.output_details.iter().any(|d| {
-                    d.index as usize == index
-                        && (is_owned(d.role) || d.role == OutputRole::Unspendable)
-                })
-        });
+        .any(|(index, output)| !output.script_pubkey.is_op_return() && !accounted.contains(&index));
     let direction = wallet_direction(
         record.transaction_type,
         !record.input_details.is_empty(),
