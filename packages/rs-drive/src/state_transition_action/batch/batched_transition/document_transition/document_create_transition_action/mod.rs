@@ -133,6 +133,20 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
+    fn derived_index_values(&self) -> Option<&BTreeMap<String, Value>> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.derived_index_values.as_deref(),
+        }
+    }
+
+    fn set_derived_index_values(&mut self, values: BTreeMap<String, Value>) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => {
+                v0.derived_index_values = (!values.is_empty()).then(|| Box::new(values))
+            }
+        }
+    }
+
     fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0

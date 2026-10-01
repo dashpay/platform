@@ -2180,6 +2180,7 @@ mod range_countable_picker_tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }
@@ -3686,6 +3687,7 @@ mod time_range_picker_tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }

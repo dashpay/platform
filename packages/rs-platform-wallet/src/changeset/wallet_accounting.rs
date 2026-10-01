@@ -1,5 +1,11 @@
-//! Wallet-level accounting of a Core transaction record: the one
-//! direction rule and the one net formula every Rust path applies.
+//! Wallet-level accounting of a Core transaction record: the ownership
+//! predicate ([`is_owned`]), the direction rule ([`wallet_direction`]) and
+//! the net formula ([`wallet_accounting`]). The live projection
+//! (`fold_same_txid_records`) and the SQLite repair
+//! (`platform-wallet-storage`'s `core_history`) both call them, so a row
+//! cannot change accounting when storage repairs it; they differ only on
+//! an `i64` overflow (live saturates, repair errors). The frozen V019
+//! migration keeps its own self-contained copy.
 //!
 //! Upstream `key-wallet` classifies each matched account on its own, and
 //! its account-local views disagree for an asset lock: the funding
@@ -7,10 +13,7 @@
 //! is not an owned output), while the keys account holding the credit
 //! keys reads it as `Internal`. From the wallet's side an asset lock
 //! moves Core duffs into its own Platform credits, so only the fee
-//! leaves the wallet. The live projection (`fold_same_txid_records`) and
-//! the SQLite repair (`platform-wallet-storage`'s `core_history`) both
-//! use [`wallet_direction`], so a row cannot change direction when
-//! storage repairs it.
+//! leaves the wallet.
 
 use key_wallet::managed_account::transaction_record::{
     OutputRole, TransactionDirection, TransactionRecord,
@@ -49,12 +52,7 @@ pub fn wallet_direction(
 }
 
 /// Recompute a record's wallet-level `net_amount` and `direction` from
-/// its input and output details.
-///
-/// The net is `Σ owned outputs − Σ owned inputs`: the change in the
-/// wallet's Core balance. A keys-account marker's `+credit` (Platform
-/// credits, not Core funds) is therefore not part of it, so an asset lock
-/// nets `−(credit + fee)`, as the SQLite repair computes.
+/// its input and output details, saturating a net that does not fit `i64`.
 ///
 /// A record with no details carries no accounting evidence (a keys-account
 /// marker that met no funding slice), so it is left as upstream emitted
@@ -63,6 +61,21 @@ pub(crate) fn apply_wallet_accounting(record: &mut TransactionRecord) {
     if record.input_details.is_empty() && record.output_details.is_empty() {
         return;
     }
+    let (net, direction) = wallet_accounting(record);
+    // Unreachable for real amounts (the whole supply fits i64 many times
+    // over); saturate rather than panic on a corrupt record.
+    record.net_amount = i64::try_from(net).unwrap_or(if net < 0 { i64::MIN } else { i64::MAX });
+    record.direction = direction;
+}
+
+/// Wallet-level net amount and direction of `record`, from its details.
+///
+/// The net is `Σ owned outputs − Σ owned inputs`: the change in the
+/// wallet's Core balance. A keys-account marker's `+credit` (Platform
+/// credits, not Core funds) is therefore not part of it, so an asset lock
+/// nets `−(credit + fee)`. The net is returned as `i128` so each caller
+/// picks its own policy for a value outside `i64`.
+pub fn wallet_accounting(record: &TransactionRecord) -> (i128, TransactionDirection) {
     let owned: i128 = record
         .output_details
         .iter()
@@ -74,11 +87,6 @@ pub(crate) fn apply_wallet_accounting(record: &mut TransactionRecord) {
         .iter()
         .map(|d| i128::from(d.value))
         .sum();
-    // Unreachable for real amounts (the whole supply fits i64 many times
-    // over); saturate rather than panic on a corrupt record.
-    let net = owned - spent;
-    record.net_amount = i64::try_from(net).unwrap_or(if net < 0 { i64::MIN } else { i64::MAX });
-
     let has_ours = record.output_details.iter().any(|d| is_owned(d.role));
     let has_external = record
         .transaction
@@ -92,14 +100,16 @@ pub(crate) fn apply_wallet_accounting(record: &mut TransactionRecord) {
                         && (is_owned(d.role) || d.role == OutputRole::Unspendable)
                 })
         });
-    record.direction = wallet_direction(
+    let direction = wallet_direction(
         record.transaction_type,
         !record.input_details.is_empty(),
         has_ours,
         has_external,
     );
+    (owned - spent, direction)
 }
 
-fn is_owned(role: OutputRole) -> bool {
+/// Whether an output with this role belongs to the wallet.
+pub fn is_owned(role: OutputRole) -> bool {
     matches!(role, OutputRole::Received | OutputRole::Change)
 }

@@ -824,8 +824,10 @@ pub enum DocumentPropertyReferenceTarget {
         )]
         key_requirements: IdentityKeyReferenceRequirements,
     },
-    /// A document of a document type whose documents CAN be deleted: the
-    /// counterpart of [`Self::PermanentDocument`], disjoint from it, so a
+    /// A document of a document type whose documents can leave state
+    /// without a record: deleted by their owner, removed by a moderator
+    /// keeping no record, or expired by a `ttl`. Disjoint from
+    /// [`Self::PermanentDocument`] and [`Self::ModeratedDocument`], so a
     /// declaration always states which guarantee the reference carries.
     /// The declaration shape and the write-time validation are the same:
     /// the referenced document must exist, and every `property_agreement`
@@ -962,10 +964,83 @@ pub enum DocumentPropertyReferenceTarget {
         /// How the referenced document is found.
         lookup: DocumentReferenceLookup,
     },
+    /// A document of a document type whose documents leave state only when
+    /// the contract's moderators remove them, on the record: its owner can not
+    /// delete one (`canBeDeleted: false`), no `ttl` expires one, and
+    /// `moderatorAbilities.delete` keeps a removal record
+    /// (`deleteKeepsRecord`, true unless declared false) under the contract
+    /// for every document a moderator deletes. Between
+    /// [`Self::PermanentDocument`] and [`Self::DeletableDocument`], and
+    /// disjoint from both: each document type admits exactly one of the three.
+    ///
+    /// The referenced document must exist, and every `property_agreement`
+    /// pair must hold, when the referring document is written. Afterwards the
+    /// reference never dangles silently: the document is in state, or the
+    /// contract holds the removal record of that id (who owned it, which
+    /// moderator removed it, when, why, and a hash of the document), which a
+    /// restore can bring the document back from, byte for byte. A replace
+    /// therefore treats it as a permanent reference: it is re-validated only
+    /// when the value or a property it binds changes, or always for a writer
+    /// gate, and an unchanged value whose document was removed resolves to
+    /// its removal record. A removed document has no values to compare but
+    /// those its record keeps: its owner, its id, and the fields its type lists
+    /// under `moderatorAbilities.deleteKeepsFields`; a re-check of a `where`
+    /// entry on any other of its properties refuses the replace until the
+    /// reference is repointed or the document restored. A join through it reports each
+    /// removed document by its proven removal record.
+    ///
+    /// The id form only: no `findBy` (a removal frees the unique index keys a
+    /// lookup finds by, so a key could come to find another document), no
+    /// `inList`, and no operand of a reference expression. Appended, so every
+    /// earlier variant keeps its consensus encoding.
+    #[serde(rename = "moderatedDocument")]
+    ModeratedDocument {
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
+        document_type_name: String,
+        /// See [`Self::PermanentDocument`]'s `property_agreement`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
+    },
+}
+
+/// Which of the three document reference kinds a declaration is, and so what
+/// its target document type must promise about its documents leaving state.
+/// Each document type admits exactly one ([`DocumentTypeV2Getters::document_reference_kind`](crate::data_contract::document_type::accessors::DocumentTypeV2Getters::document_reference_kind)),
+/// and a declaration of another kind is refused against it.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
+pub enum DocumentReferenceKind {
+    /// `permanentDocument`: the documents never leave state.
+    Permanent,
+    /// `moderatedDocument`: the documents leave state only when the contract's
+    /// moderators remove them, each removal leaving a removal record.
+    Moderated,
+    /// `deletableDocument`: the documents may leave state without a record,
+    /// deleted by their owner, by a moderator or when their `ttl` passes.
+    Deletable,
+}
+
+impl DocumentReferenceKind {
+    /// The `refersTo` `type` a declaration of this kind is written with.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            DocumentReferenceKind::Permanent => "permanentDocument",
+            DocumentReferenceKind::Moderated => "moderatedDocument",
+            DocumentReferenceKind::Deletable => "deletableDocument",
+        }
+    }
+
+    /// Whether a referenced document of this kind is always in state: a
+    /// missing one is corrupted state, or an invalid proof.
+    pub const fn is_permanent(self) -> bool {
+        matches!(self, DocumentReferenceKind::Permanent)
+    }
 }
 
 /// The declaration content every document reference target shares:
-/// [`DocumentPropertyReferenceTarget::PermanentDocument`] and
+/// [`DocumentPropertyReferenceTarget::PermanentDocument`],
+/// [`DocumentPropertyReferenceTarget::ModeratedDocument`] and
 /// [`DocumentPropertyReferenceTarget::DeletableDocument`], whose value is the
 /// referenced document's id, [`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]
 /// (`lookup` set, from `findBy`), whose value is one part of a key, and
@@ -982,10 +1057,11 @@ pub struct DocumentReferenceDeclaration<'a> {
     pub document_type_name: &'a str,
     /// The `{referring property: referenced property}` equalities
     pub property_agreement: &'a BTreeMap<String, String>,
-    /// Whether the referenced document type must forbid deletion
-    /// (`permanentDocument`, by id, by `findBy` or with `inList`)
-    /// or must allow it (`deletableDocument`)
-    pub permanent: bool,
+    /// What the referenced document type must promise about its documents
+    /// leaving state: never (`permanentDocument`, by id, by `findBy` or with
+    /// `inList`), only through a moderator's recorded removal
+    /// (`moderatedDocument`), or nothing (`deletableDocument`)
+    pub kind: DocumentReferenceKind,
     /// How the referenced document is found when the value is not its id
     /// ([`DocumentPropertyReferenceTarget::PermanentDocumentLookup`] and
     /// [`DocumentPropertyReferenceTarget::DeletableDocumentLookup`]); `None`
@@ -1003,7 +1079,7 @@ pub struct DocumentReferenceDeclaration<'a> {
 
 impl DocumentPropertyReferenceTarget {
     /// The declaration of a reference whose value is a DOCUMENT's id, of
-    /// either kind; `None` for every other target, one found by `findBy` or
+    /// any kind; `None` for every other target, one found by `findBy` or
     /// with `inList` included, whose value is not a document id. This is the
     /// accessor for code that treats the value as the referenced document's
     /// `$id` (by-id joins); code that validates every kind of document
@@ -1013,7 +1089,7 @@ impl DocumentPropertyReferenceTarget {
             .filter(|declaration| declaration.lookup.is_none() && declaration.in_list.is_none())
     }
 
-    /// The declaration of any reference to a DOCUMENT: of either kind, and
+    /// The declaration of any reference to a DOCUMENT: of any kind, and
     /// found by its id, by `findBy` (then `lookup` is `Some`, and the value is
     /// not the document's id) or by a `findBy` `$id` with the value an
     /// element of its list (then `in_list` is `Some`). `None` for
@@ -1028,7 +1104,7 @@ impl DocumentPropertyReferenceTarget {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
-                permanent: true,
+                kind: DocumentReferenceKind::Permanent,
                 lookup: None,
                 in_list: None,
             }),
@@ -1041,7 +1117,7 @@ impl DocumentPropertyReferenceTarget {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
-                permanent: true,
+                kind: DocumentReferenceKind::Permanent,
                 lookup: Some(lookup),
                 in_list: None,
             }),
@@ -1053,7 +1129,7 @@ impl DocumentPropertyReferenceTarget {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
-                permanent: false,
+                kind: DocumentReferenceKind::Deletable,
                 lookup: None,
                 in_list: None,
             }),
@@ -1066,8 +1142,20 @@ impl DocumentPropertyReferenceTarget {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
-                permanent: false,
+                kind: DocumentReferenceKind::Deletable,
                 lookup: Some(lookup),
+                in_list: None,
+            }),
+            DocumentPropertyReferenceTarget::ModeratedDocument {
+                contract_id,
+                document_type_name,
+                property_agreement,
+            } => Some(DocumentReferenceDeclaration {
+                contract_id: *contract_id,
+                document_type_name,
+                property_agreement,
+                kind: DocumentReferenceKind::Moderated,
+                lookup: None,
                 in_list: None,
             }),
             DocumentPropertyReferenceTarget::ListElement(reference) => {
@@ -1075,7 +1163,7 @@ impl DocumentPropertyReferenceTarget {
                     contract_id: reference.contract_id,
                     document_type_name: &reference.document_type_name,
                     property_agreement: &reference.property_agreement,
-                    permanent: true,
+                    kind: DocumentReferenceKind::Permanent,
                     lookup: None,
                     in_list: Some(&reference.in_list),
                 })
@@ -1367,16 +1455,40 @@ pub fn is_referring_system_agreement_property(name: &str) -> bool {
     REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
 }
 
+/// The property at the dotted `path` of `properties`, an object or a member of
+/// one included, `None` when the path names none.
+pub fn property_at_path<'a>(
+    properties: &'a IndexMap<String, DocumentProperty>,
+    path: &str,
+) -> Option<&'a DocumentProperty> {
+    let mut segments = path.split('.');
+    let mut property = properties.get(segments.next()?)?;
+    for segment in segments {
+        let DocumentPropertyType::Object(members) = &property.property_type else {
+            return None;
+        };
+        property = members.get(segment)?;
+    }
+    Some(property)
+}
+
+/// Whether the dotted `path` is one of `paths`, or inside an object one of
+/// them names: the rule every list of property paths a type declares is read
+/// by (its transient fields, the fields a moderator's removal record keeps),
+/// and the one a write's changed fields are matched by.
+pub fn is_path_listed(paths: &BTreeSet<String>, path: &str) -> bool {
+    path.match_indices('.')
+        .map(|(end, _)| &path[..end])
+        .chain(std::iter::once(path))
+        .any(|prefix| paths.contains(prefix))
+}
+
 /// Whether the property at the dotted `path` of `document_type`, or an object
 /// around it, is transient: either way its value is never stored.
 /// `transient_fields()` holds the paths as declared, so a leaf of a transient
 /// object is found only through the object's path, a prefix of its own.
 pub fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
-    let transient_fields = document_type.transient_fields();
-    path.match_indices('.')
-        .map(|(end, _)| &path[..end])
-        .chain(std::iter::once(path))
-        .any(|prefix| transient_fields.contains(prefix))
+    is_path_listed(document_type.transient_fields(), path)
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {
@@ -1462,6 +1574,11 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 document_type_name,
                 ..
             } => write_document_reference(f, "deletable", *contract_id, document_type_name, None),
+            DocumentPropertyReferenceTarget::ModeratedDocument {
+                contract_id,
+                document_type_name,
+                ..
+            } => write_document_reference(f, "moderated", *contract_id, document_type_name, None),
             DocumentPropertyReferenceTarget::ListElement(reference) => reference.fmt(f),
             DocumentPropertyReferenceTarget::AnyOf(operands)
             | DocumentPropertyReferenceTarget::AllOf(operands) => {
@@ -10329,10 +10446,15 @@ mod tests {
     }
 
     #[test]
-    fn should_expose_the_shared_declaration_of_both_document_references() {
+    fn should_expose_the_shared_declaration_of_every_document_reference() {
         let agreement: BTreeMap<String, String> =
             [("hashtag".to_string(), "hashtag".to_string())].into();
         let permanent = DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: agreement.clone(),
+        };
+        let moderated = DocumentPropertyReferenceTarget::ModeratedDocument {
             contract_id: None,
             document_type_name: "note".to_string(),
             property_agreement: agreement.clone(),
@@ -10344,10 +10466,12 @@ mod tests {
         };
 
         let permanent = permanent.as_document_reference().expect("a document");
+        let moderated = moderated.as_document_reference().expect("a document");
         let deletable = deletable.as_document_reference().expect("a document");
-        assert!(permanent.permanent);
-        assert!(!deletable.permanent);
-        for declaration in [permanent, deletable] {
+        assert_eq!(permanent.kind, DocumentReferenceKind::Permanent);
+        assert_eq!(moderated.kind, DocumentReferenceKind::Moderated);
+        assert_eq!(deletable.kind, DocumentReferenceKind::Deletable);
+        for declaration in [permanent, moderated, deletable] {
             assert_eq!(declaration.contract_id, None);
             assert_eq!(declaration.document_type_name, "note");
             assert_eq!(declaration.property_agreement, &agreement);
@@ -10378,7 +10502,7 @@ mod tests {
         let declaration = target
             .as_any_document_reference()
             .expect("a document reference");
-        assert!(declaration.permanent);
+        assert_eq!(declaration.kind, DocumentReferenceKind::Permanent);
         assert_eq!(declaration.document_type_name, "joinRequest");
         assert_eq!(declaration.lookup, Some(&lookup));
 
@@ -10733,6 +10857,11 @@ mod tests {
                     consume: false,
                 },
             },
+            DocumentPropertyReferenceTarget::ModeratedDocument {
+                contract_id: None,
+                document_type_name: "post".to_string(),
+                property_agreement: Default::default(),
+            },
         ];
 
         for target in &targets {
@@ -10750,6 +10879,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => {
                     "deletableDocument"
                 }
+                DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
                 // Not a `type`: the schema declares them under their own keys
                 DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
                 DocumentPropertyReferenceTarget::AnyOf(_) => "anyOf",

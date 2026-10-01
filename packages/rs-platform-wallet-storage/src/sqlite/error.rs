@@ -422,10 +422,11 @@ pub enum WalletStorageError {
         blob_height: Option<u32>,
     },
 
-    /// An incoming transaction record reuses a stored txid with a different
-    /// raw transaction body; neither copy is trusted to replace the other.
+    /// An incoming transaction record reuses a stored txid with a body whose
+    /// txid-committed content differs (witness-only differences are not a
+    /// conflict); neither copy is trusted to replace the other.
     #[error(
-        "transaction {txid} in wallet {} arrived with a raw body that differs from the stored one",
+        "transaction {txid} in wallet {} arrived with a body whose txid differs from the stored one",
         hex::encode(wallet_id)
     )]
     TransactionBodyConflict {

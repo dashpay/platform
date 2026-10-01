@@ -8,7 +8,7 @@ use key_wallet::managed_account::transaction_record::{
     InputDetail, OutputDetail, OutputRole, TransactionRecord,
 };
 use key_wallet::transaction_checking::TransactionContext;
-use platform_wallet::changeset::{wallet_direction, CoreChangeSet};
+use platform_wallet::changeset::{is_owned, wallet_accounting, CoreChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, Transaction};
 
@@ -28,12 +28,15 @@ pub(super) fn preserve_known_details(
     let Some(previous) = prior_record(tx, wallet_id, &incoming.txid)? else {
         return Ok(merged);
     };
-    if previous.transaction != incoming.transaction {
+    // Compare only txid-committed content: a peer may attach BIP144 witnesses
+    // to a known txid, and that must neither conflict nor replace the stored body.
+    if previous.transaction.txid() != incoming.transaction.txid() {
         return Err(WalletStorageError::TransactionBodyConflict {
             wallet_id: *wallet_id,
             txid: incoming.txid,
         });
     }
+    merged.transaction = previous.transaction;
     let mut inputs: BTreeMap<_, _> = previous
         .input_details
         .into_iter()
@@ -50,8 +53,8 @@ pub(super) fn preserve_known_details(
     for detail in &incoming.output_details {
         let keep_previous = outputs
             .get(&detail.index)
-            .is_some_and(|old| matches!(old.role, OutputRole::Received | OutputRole::Change))
-            && !matches!(detail.role, OutputRole::Received | OutputRole::Change);
+            .is_some_and(|old| is_owned(old.role))
+            && !is_owned(detail.role);
         if !keep_previous {
             outputs.insert(detail.index, detail.clone());
         }
@@ -270,45 +273,17 @@ fn repair_record(
     if inputs.is_empty() && outputs.is_empty() {
         return Ok(());
     }
-    let received: i128 = outputs
-        .values()
-        .filter(|d| matches!(d.role, OutputRole::Received | OutputRole::Change))
-        .map(|d| i128::from(d.value))
-        .sum();
-    let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
-    let net = received - spent;
+    record.input_details = inputs.into_values().collect();
+    record.output_details = outputs.into_values().collect();
+    // The live projection computes the same accounting, so repair never
+    // flips a row it just wrote; only the overflow policy differs.
+    let (net, direction) = wallet_accounting(&record);
     record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
         wallet_id: *wallet_id,
         txid: *txid,
         value: net,
     })?;
-    let has_ours = outputs
-        .values()
-        .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
-    let has_external = record
-        .transaction
-        .output
-        .iter()
-        .enumerate()
-        .any(|(i, output)| {
-            !output.script_pubkey.is_op_return()
-                && !outputs.get(&(i as u32)).is_some_and(|d| {
-                    matches!(
-                        d.role,
-                        OutputRole::Received | OutputRole::Change | OutputRole::Unspendable
-                    )
-                })
-        });
-    // The live projection classifies with the same rule, so repair never
-    // flips a row it just wrote.
-    record.direction = wallet_direction(
-        record.transaction_type,
-        !inputs.is_empty(),
-        has_ours,
-        has_external,
-    );
-    record.input_details = inputs.into_values().collect();
-    record.output_details = outputs.into_values().collect();
+    record.direction = direction;
     let repaired = blob::encode(&record)?;
     if repaired != original {
         // Append-only: the first pre-repair blob is kept verbatim and never
@@ -338,6 +313,7 @@ mod tests {
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::TransactionDirection;
     use key_wallet::transaction_checking::TransactionType;
+    use platform_wallet::changeset::wallet_direction;
     use platform_wallet::test_support::fold_wallet_records;
 
     use super::*;
@@ -434,6 +410,26 @@ mod tests {
             ),
             "got {err:?}"
         );
+    }
+
+    /// A peer can serve a known txid with BIP144 witnesses attached; the txid
+    /// does not commit to them, so the stored body stands and the flush goes on.
+    #[test]
+    fn should_keep_the_stored_body_when_a_same_txid_body_differs_only_in_witness() {
+        let mut conn = wallet_db("testnet");
+        let mut stored = record(&[1_000], &[]);
+        stored.transaction.input.push(dashcore::TxIn::default());
+        stored.txid = stored.transaction.txid();
+        store(&conn, &stored);
+        let mut incoming = stored.clone();
+        incoming.transaction.input[0].witness = dashcore::Witness::from_slice(&[[0xAB]]);
+        assert_eq!(incoming.transaction.txid(), stored.txid);
+        assert_ne!(incoming.transaction, stored.transaction);
+
+        let tx = conn.transaction().unwrap();
+        let merged = preserve_known_details(&tx, &WALLET_ID, &incoming).unwrap();
+
+        assert_eq!(merged.transaction, stored.transaction);
     }
 
     #[test]
@@ -557,7 +553,7 @@ mod tests {
             .collect();
         let owned: u64 = details
             .iter()
-            .filter(|d| matches!(d.role, OutputRole::Received | OutputRole::Change))
+            .filter(|d| is_owned(d.role))
             .map(|d| d.value)
             .sum();
         let has_sent = details.iter().any(|d| d.role == OutputRole::Sent);

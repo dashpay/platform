@@ -401,6 +401,33 @@ mod moderation_charters_tests {
             .errors
     }
 
+    /// The members a charter elects bound how many approvals a `deleteSettled` rule may ask
+    /// for, through `SystemLimits::max_moderation_charter_elected_members`: the limit and the
+    /// schema must agree.
+    #[test]
+    fn should_elect_as_many_members_as_the_system_limit_says() {
+        let contract = contract();
+        let members = document_type(&contract, ELECTED_CHARTER_DOCUMENT_TYPE_NAME)
+            .schema()
+            .get_optional_value("properties")
+            .ok()
+            .flatten()
+            .and_then(|properties| properties.get_optional_value("members").ok().flatten())
+            .and_then(|members| {
+                members
+                    .get_optional_integer::<u16>("maxItems")
+                    .ok()
+                    .flatten()
+            })
+            .expect("electedCharter.members declares maxItems");
+        assert_eq!(
+            members,
+            PlatformVersion::latest()
+                .system_limits
+                .max_moderation_charter_elected_members
+        );
+    }
+
     #[test]
     fn should_spell_the_same_id_in_the_crate_and_in_dpp() {
         assert_eq!(
