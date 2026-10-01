@@ -335,6 +335,8 @@ pub struct SystemLimits {
     pub core_credit_pool_unlock_limit_percent: Option<u8>,
     pub core_credit_pool_unlock_limit_floor: Option<u64>,
     pub core_credit_pool_unlock_mining_delay_blocks: Option<u32>,
+    pub core_credit_pool_window_blocks: Option<u32>,
+    pub regtest_core_credit_pool_window_blocks: Option<u32>,
     pub min_withdrawal_amount: u64,
     pub max_contract_group_size: u16,
     pub max_token_redemption_cycles: u32,

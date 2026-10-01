@@ -8,7 +8,7 @@ use dpp::fee::Credits;
 use dpp::identity::convert_duffs_to_credits;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::core_credit_pool_unlock_limit::{
-    core_credit_pool_unlock_limit, NetworkCoreCreditPoolWindow,
+    core_credit_pool_unlock_limit, core_credit_pool_window_blocks,
 };
 use dpp::withdrawal::WithdrawalTransactionIndex;
 use drive::grovedb::TransactionArg;
@@ -32,7 +32,7 @@ where
             .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "calculate_core_anchored_withdrawal_limit v0 requires system_limits.core_credit_pool_unlock_mining_delay_blocks",
             )))?;
-        let window_blocks = self.config.network.core_credit_pool_window_blocks();
+        let window_blocks = core_credit_pool_window_blocks(self.config.network, platform_version)?;
 
         let chain_locked_height = block_info.core_height;
 

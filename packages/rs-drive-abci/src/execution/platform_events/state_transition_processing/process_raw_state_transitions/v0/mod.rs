@@ -184,15 +184,17 @@ where
                         }
 
                         // Mark the state we can return to if this transition's result strips
-                        // it from the block (see `rollback_dropped_transitions` above). The
-                        // mint accumulator mirrors applied state, so it rewinds with it.
+                        // it from the block (see `rollback_dropped_transitions` above).
                         if rollback_dropped_transitions {
                             transaction.set_savepoint();
                         }
-                        // In place and inert: the savepoint is only restored when
-                        // `rollback_dropped_transitions` holds, so it is only taken then.
-                        let credit_mints_at_savepoint =
-                            rollback_dropped_transitions.then(|| block_credit_mints.clone());
+                        // This transition's mints, merged into the block's below unless a
+                        // rollback drops its writes: the mint accumulator mirrors applied
+                        // state. Changed in place from a snapshot of the block's total, inert
+                        // for protocol versions 1 to 14: merging one transition's saturating
+                        // sum adds up to the same saturating total, and a dropped transition
+                        // contributes nothing either way.
+                        let mut transition_credit_mints = BlockCreditMints::default();
 
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
@@ -211,7 +213,7 @@ where
                                 validation_result,
                                 block_info,
                                 transaction,
-                                &mut block_credit_mints,
+                                &mut transition_credit_mints,
                                 platform_version,
                                 platform_ref.state.previous_fee_versions(),
                             )
@@ -244,11 +246,7 @@ where
                                     // its mints with them, or the block would record a
                                     // credit inflow for a transition the proposal omits and
                                     // validators re-executing it would compute other state.
-                                    if let Some(credit_mints_at_savepoint) =
-                                        credit_mints_at_savepoint
-                                    {
-                                        block_credit_mints = credit_mints_at_savepoint;
-                                    }
+                                    transition_credit_mints = BlockCreditMints::default();
                                     // Any contract the transition rewrote was re-seeded into
                                     // the block cache as it was applied, and the rollback
                                     // just reverted it in state. Drop those copies so the
@@ -281,6 +279,8 @@ where
                                 }
                             }
                         }
+
+                        block_credit_mints.add(transition_credit_mints);
 
                         // Store metrics
                         let elapsed_time = start_time.elapsed() + decoding_elapsed_time;

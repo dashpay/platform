@@ -151,6 +151,18 @@ pub struct SystemLimits {
     /// `record_credit_inflows_for_withdrawals` method version 0. `None` for the protocol
     /// versions that predate the Core-anchored limit.
     pub core_credit_pool_unlock_mining_delay_blocks: Option<u32>,
+    /// Core's credit pool window on mainnet, testnet and devnets (`CreditPoolPeriodBlocks` in
+    /// Dash Core's chain parameters): how many Core blocks before an asset unlock's block lies
+    /// the balance Core v24 measures the unlock limit from. The Core-anchored withdrawal limit
+    /// reads its window starts this far back, an asset lock Core mined this far back (less
+    /// `core_credit_pool_unlock_mining_delay_blocks`) adds no credit inflow, and recorded
+    /// balances older than it are pruned. Read through `core_credit_pool_window_blocks` in dpp.
+    /// `None` for the protocol versions that predate the Core-anchored limit.
+    pub core_credit_pool_window_blocks: Option<u32>,
+    /// Core's credit pool window on regtest, which Dash Core shortens; see
+    /// `core_credit_pool_window_blocks`. `None` for the protocol versions that predate the
+    /// Core-anchored limit.
+    pub regtest_core_credit_pool_window_blocks: Option<u32>,
     /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
     /// transparent (identity + address) and shielded withdrawal paths. The dust floor that
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`

@@ -1873,8 +1873,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     balances at chain locked heights: the pool may drop by at most
 ///     `core_credit_pool_unlock_limit_percent` (15; Core allows 20) of its
 ///     highest balance at a window start Core may use for the unlock (Core's
-///     window, 576 blocks or 100 on regtest, back from the chain locked height,
-///     up to `core_credit_pool_unlock_mining_delay_blocks`, 48, later), at least
+///     window, `core_credit_pool_window_blocks` 576 or
+///     `regtest_core_credit_pool_window_blocks` 100, back from the chain locked
+///     height, up to `core_credit_pool_unlock_mining_delay_blocks`, 48, later), at least
 ///     `core_credit_pool_unlock_limit_floor` (1500 Dash; Core's floor is 2000),
 ///     less what is queued or broadcast and not mined yet. The formula is
 ///     `core_credit_pool_unlock_limit` 0 in `DPP_METHOD_VERSIONS_V3`. Before

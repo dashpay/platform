@@ -8,7 +8,7 @@ use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::Txid;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::core_credit_pool_unlock_limit::NetworkCoreCreditPoolWindow;
+use dpp::withdrawal::core_credit_pool_unlock_limit::core_credit_pool_window_blocks;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -51,9 +51,7 @@ where
             // Mined at or below this height, Core already counts the asset lock in the window
             // start balance of an unlock pooled now (or soon will).
             let stale_at_or_below = block_info.core_height.checked_sub(
-                self.config
-                    .network
-                    .core_credit_pool_window_blocks()
+                core_credit_pool_window_blocks(self.config.network, platform_version)?
                     .saturating_sub(mining_delay_blocks),
             );
 

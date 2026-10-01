@@ -30,7 +30,7 @@ const COINBASE_TRANSACTION_TYPE: u16 = 5;
 /// within its own length: Core adds fields after it (version 4 appends
 /// `merkleRootAssetUnlocks`) and new transaction types to blocks that a full block decoder of
 /// an older Platform release cannot read.
-pub fn credit_pool_balance_from_raw_block(block: &[u8]) -> Result<u64, String> {
+pub(crate) fn credit_pool_balance_from_raw_block(block: &[u8]) -> Result<u64, String> {
     let mut reader = RawReader(block);
     reader.skip(80)?; // the header
 

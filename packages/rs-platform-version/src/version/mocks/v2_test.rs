@@ -601,6 +601,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         core_credit_pool_unlock_limit_percent: None,
         core_credit_pool_unlock_limit_floor: None,
         core_credit_pool_unlock_mining_delay_blocks: None,
+        core_credit_pool_window_blocks: None,
+        regtest_core_credit_pool_window_blocks: None,
         min_withdrawal_amount: 190_000,
         core_dust_relay_fee_per_kb: None,
         max_core_fee_per_byte: None,

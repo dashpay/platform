@@ -5,22 +5,31 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 
-/// Core's credit pool window: how many Core blocks before an asset unlock's block lies the
-/// balance Core v24 measures the unlock limit from (`CreditPoolPeriodBlocks` in Dash Core's
-/// chain parameters).
-pub trait NetworkCoreCreditPoolWindow {
-    fn core_credit_pool_window_blocks(&self) -> u32;
-}
-
-impl NetworkCoreCreditPoolWindow for Network {
-    fn core_credit_pool_window_blocks(&self) -> u32 {
-        match self {
-            Network::Mainnet => 576,
-            Network::Testnet => 576,
-            Network::Devnet => 576,
-            Network::Regtest => 100,
+/// Core's credit pool window on `network`: how many Core blocks before an asset unlock's block
+/// lies the balance Core v24 measures the unlock limit from (`CreditPoolPeriodBlocks` in Dash
+/// Core's chain parameters), as the protocol version's system limits pin it
+/// (`core_credit_pool_window_blocks`, `regtest_core_credit_pool_window_blocks` on regtest).
+///
+/// # Errors
+///
+/// `ProtocolError::CorruptedCodeExecution` when the protocol version predates the
+/// Core-anchored withdrawal limit and sets no window.
+pub fn core_credit_pool_window_blocks(
+    network: Network,
+    platform_version: &PlatformVersion,
+) -> Result<u32, ProtocolError> {
+    let system_limits = &platform_version.system_limits;
+    let window_blocks = match network {
+        Network::Mainnet | Network::Testnet | Network::Devnet => {
+            system_limits.core_credit_pool_window_blocks
         }
-    }
+        Network::Regtest => system_limits.regtest_core_credit_pool_window_blocks,
+    };
+    window_blocks.ok_or_else(|| {
+        ProtocolError::CorruptedCodeExecution(
+            "the protocol version sets no Core credit pool window".to_string(),
+        )
+    })
 }
 
 /// Returns how much Core's credit pool may still give up to asset unlocks, given its balance
@@ -72,10 +81,21 @@ mod tests {
 
     #[test]
     fn should_use_cores_window_of_each_network() {
-        assert_eq!(Network::Mainnet.core_credit_pool_window_blocks(), 576);
-        assert_eq!(Network::Testnet.core_credit_pool_window_blocks(), 576);
-        assert_eq!(Network::Devnet.core_credit_pool_window_blocks(), 576);
-        assert_eq!(Network::Regtest.core_credit_pool_window_blocks(), 100);
+        let v14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        for (network, window_blocks) in [
+            (Network::Mainnet, 576),
+            (Network::Testnet, 576),
+            (Network::Devnet, 576),
+            (Network::Regtest, 100),
+        ] {
+            assert_eq!(
+                core_credit_pool_window_blocks(network, v14).expect("expected the window"),
+                window_blocks
+            );
+        }
+
+        let v13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        assert!(core_credit_pool_window_blocks(Network::Mainnet, v13).is_err());
     }
 
     #[test]

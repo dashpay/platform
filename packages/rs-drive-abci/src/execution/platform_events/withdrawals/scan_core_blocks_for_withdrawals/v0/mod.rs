@@ -4,7 +4,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::convert_duffs_to_credits;
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::core_credit_pool_unlock_limit::NetworkCoreCreditPoolWindow;
+use dpp::withdrawal::core_credit_pool_unlock_limit::core_credit_pool_window_blocks;
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
@@ -29,8 +29,9 @@ where
 
         // Nothing older than the band the limit reads is worth reading: its balance is never
         // read again.
-        let oldest_useful_height = chain_locked_height
-            .saturating_sub(self.config.network.core_credit_pool_window_blocks());
+        let oldest_useful_height = chain_locked_height.saturating_sub(
+            core_credit_pool_window_blocks(self.config.network, platform_version)?,
+        );
 
         let first_height = match self
             .drive

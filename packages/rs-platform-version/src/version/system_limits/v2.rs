@@ -28,6 +28,8 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     core_credit_pool_unlock_limit_percent: None,
     core_credit_pool_unlock_limit_floor: None,
     core_credit_pool_unlock_mining_delay_blocks: None,
+    core_credit_pool_window_blocks: None,
+    regtest_core_credit_pool_window_blocks: None,
     min_withdrawal_amount: 1_000_000, //1000 duffs (raised from 190 in v12)
     core_dust_relay_fee_per_kb: None, // expired dust withdrawals fail from v14
     max_core_fee_per_byte: None,

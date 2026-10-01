@@ -5,7 +5,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::core_credit_pool_unlock_limit::NetworkCoreCreditPoolWindow;
+use dpp::withdrawal::core_credit_pool_unlock_limit::core_credit_pool_window_blocks;
 use drive::drive::identity::withdrawals::paths::{
     get_withdrawal_core_credit_pool_balances_path_vec,
     get_withdrawal_credit_inflows_sum_tree_path_vec, get_withdrawal_transactions_sum_tree_path_vec,
@@ -67,9 +67,13 @@ where
         }
 
         // The Core-anchored limit never reads a balance older than its farthest window start.
-        if let Some(oldest_read_height) = block_info
-            .core_height
-            .checked_sub(self.config.network.core_credit_pool_window_blocks())
+        if let Some(oldest_read_height) =
+            block_info
+                .core_height
+                .checked_sub(core_credit_pool_window_blocks(
+                    self.config.network,
+                    platform_version,
+                )?)
         {
             let mut path_query = PathQuery::new_single_query_item(
                 get_withdrawal_core_credit_pool_balances_path_vec(),
