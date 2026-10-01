@@ -873,8 +873,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // backfill record round carries it as that round's cursor, and no
         // coverage reaches disk beside a durable cursor this reset retracted
         // in memory only (dashpay/platform#4302 review).
-        let owed = &mut info.dashpay_backfill.unpersisted_cursor;
-        *owed = Some(owed.map_or(from_height, |cursor| cursor.min(from_height)));
+        let epoch = info.rewind_barrier.epoch();
+        info.dashpay_backfill.owe_cursor(from_height, epoch);
         tracing::info!(
             wallet_id = %hex::encode(wallet_id),
             from_height,

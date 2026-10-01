@@ -292,7 +292,35 @@ where
 ///
 /// Lock order is this mutex, then the wallet manager — never the reverse.
 /// Seeded with the cursor each wallet was loaded or created with.
-pub type DurableCursors = Arc<tokio::sync::Mutex<BTreeMap<WalletId, u32>>>;
+pub type DurableCursors = Arc<tokio::sync::Mutex<BTreeMap<WalletId, DurableCursor>>>;
+
+/// What one wallet's host holds, as [`DurableCursors`] records it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DurableCursor {
+    /// The `synced_height` the host last accepted.
+    pub height: u32,
+    /// The [`RewindBarrier`] epoch of the scan advance that put `height`
+    /// there, when it was one; `None` for a cursor seeded at load or
+    /// creation, or written by a backfill round as a rewind.
+    ///
+    /// A cursor owed to the host after an in-memory lowering is paid in full
+    /// once the host accepts an advance from the lowering's epoch or later:
+    /// that advance was reached by the scan that restarted from the lowered
+    /// cursor, so the host already tracks it, and writing the owed height
+    /// afterwards would only drag the host back below the scan
+    /// (dashpay/platform#4302 device check).
+    pub advance_epoch: Option<u64>,
+}
+
+impl DurableCursor {
+    /// A cursor the host holds without a known scan advance behind it.
+    pub fn at(height: u32) -> Self {
+        Self {
+            height,
+            advance_epoch: None,
+        }
+    }
+}
 
 /// Orders one wallet's `SyncHeightAdvanced` events against in-memory rewinds
 /// of its scan cursor, so an advance the engine emitted *before* a rewind is
@@ -963,12 +991,18 @@ fn commit_batch_under_writer_lock<P>(
     sync_fault: &AtomicBool,
     freeze_logged: &AtomicBool,
     settled: &mut Vec<WalletId>,
-    cursors: &mut BTreeMap<WalletId, u32>,
+    cursors: &mut BTreeMap<WalletId, DurableCursor>,
 ) -> BatchDiagnostics
 where
     P: PlatformWalletPersistence + ?Sized,
 {
     let mut diag = BatchDiagnostics::new(folded, batch.len());
+    // The epoch each wallet's advance was projected in, for the cursor
+    // entry its accepted height lands in.
+    let advance_epochs: BTreeMap<WalletId, Option<u64>> = batch
+        .iter()
+        .map(|(wallet_id, wallet_batch)| (*wallet_id, wallet_batch.advance_epoch))
+        .collect();
     let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         for (wallet_id, wallet_batch) in batch {
             commit_wallet(
@@ -985,7 +1019,13 @@ where
     }));
     // What each host now holds, for the next writer to measure against.
     for (wallet_id, height) in &diag.persisted_by_wallet {
-        cursors.insert(*wallet_id, *height);
+        cursors.insert(
+            *wallet_id,
+            DurableCursor {
+                height: *height,
+                advance_epoch: advance_epochs.get(wallet_id).copied().flatten(),
+            },
+        );
     }
     if let Err(panic) = unwound {
         for wallet_id in batch_wallet_ids {
@@ -5179,14 +5219,23 @@ mod tests {
             ..Default::default()
         };
         let mut batch = BTreeMap::new();
-        batch.insert(a, watermark(1_000));
+        batch.insert(
+            a,
+            super::WalletBatch {
+                advance_epoch: Some(3),
+                ..watermark(1_000)
+            },
+        );
         batch.insert(b, watermark(500));
 
         let mut fault = super::AdapterFaultState::default();
         let sync_fault = AtomicBool::new(false);
         let freeze_logged = AtomicBool::new(false);
         let mut settled = Vec::new();
-        let mut cursors: BTreeMap<WalletId, u32> = BTreeMap::from([(a, 100), (b, 100)]);
+        let mut cursors: BTreeMap<WalletId, super::DurableCursor> = BTreeMap::from([
+            (a, super::DurableCursor::at(100)),
+            (b, super::DurableCursor::at(100)),
+        ]);
         let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             super::commit_batch_under_writer_lock(
                 &persister,
@@ -5203,10 +5252,17 @@ mod tests {
         assert!(unwound.is_err(), "the panic still propagates");
         assert_eq!(
             cursors.get(&a),
-            Some(&1_000),
-            "A's accepted cursor is recorded"
+            Some(&super::DurableCursor {
+                height: 1_000,
+                advance_epoch: Some(3),
+            }),
+            "A's accepted cursor is recorded with the epoch its advance was projected in"
         );
-        assert_eq!(cursors.get(&b), Some(&100), "B's store never returned");
+        assert_eq!(
+            cursors.get(&b).map(|cursor| cursor.height),
+            Some(100),
+            "B's store never returned"
+        );
         assert!(
             fault.is_faulted(&b),
             "B is faulted before the lock is released"

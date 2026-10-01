@@ -5374,6 +5374,7 @@ fn decode_dashpay_backfill(
         rewound_from: entry.dashpay_backfill_rewound_from,
         covered,
         unpersisted_cursor: None,
+        unpersisted_cursor_epoch: None,
         unpersisted_extent: None,
     }
 }

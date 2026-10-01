@@ -120,6 +120,12 @@ pub struct DashPayBackfillRecord {
     /// behind. `None` when nothing is owed.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub unpersisted_cursor: Option<u32>,
+    /// In-memory only: the `RewindBarrier` epoch the latest contribution to
+    /// [`unpersisted_cursor`](Self::unpersisted_cursor) was recorded in. The
+    /// debt is paid once the host accepts a scan advance from this epoch or
+    /// later — see [`owe_cursor`](Self::owe_cursor).
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub unpersisted_cursor_epoch: Option<u64>,
     /// In-memory only, like [`unpersisted_cursor`](Self::unpersisted_cursor):
     /// the `(floor, rewound_from)` a rewind whose record round failed to
     /// store still has to contribute. The retry folds it back in, so the
@@ -130,6 +136,38 @@ pub struct DashPayBackfillRecord {
 }
 
 impl DashPayBackfillRecord {
+    /// Owe the host `cursor`, lowered in memory during rewind epoch `epoch`.
+    /// Folds into any debt already owed: the lower cursor, and the later
+    /// epoch — the debt is paid only by an advance the host accepts after the
+    /// latest lowering.
+    pub fn owe_cursor(&mut self, cursor: u32, epoch: u64) {
+        self.unpersisted_cursor = Some(
+            self.unpersisted_cursor
+                .map_or(cursor, |owed| owed.min(cursor)),
+        );
+        self.unpersisted_cursor_epoch = Some(
+            self.unpersisted_cursor_epoch
+                .map_or(epoch, |owed| owed.max(epoch)),
+        );
+    }
+
+    /// Forget the owed cursor once the host has accepted a scan advance from
+    /// the epoch it was owed in or later (`host_advance_epoch`): the host
+    /// then tracks the scan that restarted from the lowered cursor, and
+    /// writing the owed height would only drag it back below that scan.
+    /// Returns whether a debt was dropped.
+    pub fn settle_owed_cursor(&mut self, host_advance_epoch: Option<u64>) -> bool {
+        let paid = self.unpersisted_cursor.is_some()
+            && host_advance_epoch
+                .zip(self.unpersisted_cursor_epoch)
+                .is_some_and(|(host, owed)| host >= owed);
+        if paid {
+            self.unpersisted_cursor = None;
+            self.unpersisted_cursor_epoch = None;
+        }
+        paid
+    }
+
     /// Whether no backfill has ever been recorded for this wallet.
     pub fn is_empty(&self) -> bool {
         self.covered.is_empty()
@@ -322,6 +360,7 @@ impl DashPayBackfillRecord {
             rewound_from,
             covered,
             unpersisted_cursor: None,
+            unpersisted_cursor_epoch: None,
             unpersisted_extent: None,
         })
     }
@@ -476,6 +515,31 @@ mod tests {
         assert!(record.retain(|_, contact, _| *contact != id(3)));
         assert_eq!(record.covered_from(&id(1), &id(3), 0), None);
         assert_eq!(record.covered_from(&id(1), &id(2), 0), Some(100));
+    }
+
+    /// A debt folds to the lower cursor and the later epoch, and is settled
+    /// only by a host advance from that epoch or later.
+    #[test]
+    fn an_owed_cursor_is_settled_only_by_a_host_advance_from_its_epoch_or_later() {
+        let mut record = DashPayBackfillRecord::default();
+        assert!(!record.settle_owed_cursor(Some(9)), "nothing owed");
+        record.owe_cursor(500, 2);
+        record.owe_cursor(300, 1);
+        assert_eq!(record.unpersisted_cursor, Some(300));
+        assert_eq!(record.unpersisted_cursor_epoch, Some(2));
+
+        assert!(
+            !record.settle_owed_cursor(None),
+            "a seeded host cursor proves nothing"
+        );
+        assert!(
+            !record.settle_owed_cursor(Some(1)),
+            "an advance from before the latest lowering"
+        );
+        assert_eq!(record.unpersisted_cursor, Some(300));
+        assert!(record.settle_owed_cursor(Some(2)));
+        assert_eq!(record.unpersisted_cursor, None);
+        assert_eq!(record.unpersisted_cursor_epoch, None);
     }
 
     /// `retain` can empty the cover set while the backfill those entries rode

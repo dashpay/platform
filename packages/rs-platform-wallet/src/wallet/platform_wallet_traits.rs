@@ -349,8 +349,8 @@ impl PlatformWalletInfo {
         let after = self.core_wallet.metadata.synced_height;
         if after < before {
             self.rewind_barrier.arm();
-            let owed = &mut self.dashpay_backfill.unpersisted_cursor;
-            *owed = Some(owed.map_or(after, |cursor| cursor.min(after)));
+            let epoch = self.rewind_barrier.epoch();
+            self.dashpay_backfill.owe_cursor(after, epoch);
         }
     }
 }

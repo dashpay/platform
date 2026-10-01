@@ -505,11 +505,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // that, so the coverage stays true.
                 info.dashpay_backfill = host_backfill;
                 if created_cursor < host_cursor {
-                    let owed = &mut info.dashpay_backfill.unpersisted_cursor;
-                    *owed = Some(owed.map_or(created_cursor, |cursor| cursor.min(created_cursor)));
+                    // Owed from this wallet's first epoch: any advance the
+                    // host accepts from its own scan pays it.
+                    let epoch = info.rewind_barrier.epoch();
+                    info.dashpay_backfill.owe_cursor(created_cursor, epoch);
                 }
             }
-            durable_cursors.insert(wallet_id, host_cursor);
+            durable_cursors.insert(wallet_id, crate::changeset::DurableCursor::at(host_cursor));
             self.inherit_rewind_barrier(&mut wm, &wallet_id);
             wallet_id
         };
@@ -1390,7 +1392,7 @@ mod register_wallet_duplicate_tests {
 
         let mut gate = manager.durable_cursors.lock().await;
         // What a removed registration might leave behind.
-        gate.insert(wallet_id, 777);
+        gate.insert(wallet_id, crate::changeset::DurableCursor::at(777));
         let registering = tokio::spawn(create(Arc::clone(&manager)));
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(
@@ -1422,7 +1424,7 @@ mod register_wallet_duplicate_tests {
                 .lock()
                 .await
                 .get(&wallet_id)
-                .copied(),
+                .map(|cursor| cursor.height),
             Some(created_cursor),
             "the seed is the created cursor, not the leftover entry"
         );

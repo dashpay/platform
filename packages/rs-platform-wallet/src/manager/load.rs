@@ -294,7 +294,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     )));
                     break 'load;
                 }
-                durable_cursors.insert(wallet_id, loaded_cursor);
+                durable_cursors.insert(
+                    wallet_id,
+                    crate::changeset::DurableCursor::at(loaded_cursor),
+                );
                 self.inherit_rewind_barrier(&mut wm, &wallet_id);
             }
             inserted_in_manager.push(wallet_id);
