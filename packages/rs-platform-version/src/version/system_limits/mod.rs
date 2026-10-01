@@ -324,6 +324,17 @@ pub struct SystemLimits {
     /// version 3 (protocol version 13), so every live network already serves
     /// V1 by the time the floor applies.
     pub minimum_grovedb_proof_envelope_version: u32,
+    /// The largest magnitude a summed property may admit on a document type with a
+    /// contested index, enforced when a contract is registered or updated (full validation
+    /// only, like `max_document_ttl_seconds`): the property's schema must declare a
+    /// `maximum` of at most this and a `minimum` of at least its negation. The end of a
+    /// contest writes the winner's document into the type's sums with no transition to
+    /// refuse, so the values must be small enough that the sums stay in `i64`: with every
+    /// value this small, a sum of fewer than 2^36 documents does. Read by document type
+    /// parser generation 3 (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers do not read it.
+    pub max_contested_summed_value_magnitude: Option<u64>,
 }
 
 #[cfg(test)]
