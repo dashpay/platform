@@ -340,4 +340,22 @@ mod tests {
         expected.state.payouts = None;
         assert_eq!(stored_and_loaded(&multi_payout), expected);
     }
+
+    /// Zero bytes stand for an absent address in the stored list, so an address of zero bytes
+    /// reads back as absent. Core never prints one: it refuses a null owner key for every
+    /// masternode but a shared one, and nothing reads a stored payout or collateral address.
+    #[test]
+    fn should_reload_an_address_of_zero_bytes_as_absent() {
+        let zero = masternode(
+            MasternodeType::Regular,
+            Some([0u8; 20]),
+            Some([0u8; 20]),
+            Some([0u8; 20]),
+            None,
+        );
+        let reloaded = stored_and_loaded(&zero);
+        assert_eq!(reloaded.collateral_address, None);
+        assert_eq!(reloaded.state.owner_address, None);
+        assert_eq!(reloaded.state.payout_address, None);
+    }
 }
