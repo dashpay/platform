@@ -59,6 +59,14 @@ trees are created when a contract with the flag is inserted or updated.
 `TokenConfiguration` gains a format version 1. It adds `hasShieldedPool: bool`, the optional
 `minimumPoolNotesForOutgoing` and the `minimumPoolNotesForOutgoingChangeRules` that govern it.
 A version 0 configuration behaves as `hasShieldedPool: false`.
+
+`minimumPoolNotesForOutgoing` is how many notes a pool must hold before tokens may leave it.
+It is optional and absent by default, and absent reads as 0, no threshold. An issuer may set at
+most `SystemLimits::max_token_pool_notes_for_outgoing` (250), so none can name a floor its pool
+never reaches and strand every shielded balance. Unlike the flag, it is not immutable: it
+changes through `TokenConfigUpdate` under `minimumPoolNotesForOutgoingChangeRules`, which
+authorize no one when absent, so an issuer who wants to raise it later has to say so when the
+token is created.
 The format version is admitted by
 `dpp.contract_versions.token_versions.token_configuration_format`: protocol versions 13 and
 below allow only version 0, protocol version 14 allows versions 0 and 1. Contract create and
@@ -229,9 +237,10 @@ and may change it later through `TokenConfigUpdate` under
 
 The floor counts note commitments, not holders. One bundle carries several actions, so a single
 depositor can reach a threshold alone: it tells holders how busy the pool should be before they
-leave it and guarantees no anonymity set. It applies to outflows with a visible destination —
-unshielding to an identity, burning from the pool, paying a document's token cost from the pool
-— and not to transfers inside the pool.
+leave it and guarantees no anonymity set. It applies to outflows with a visible destination:
+an unshield inside a batch, the identity-less `TokenUnshieldWithShieldedFee`, a burn from the
+pool, and a document's token cost paid from the pool. Transfers inside the pool are not
+limited.
 
 State validation runs in this order, and the first failure is returned:
 
@@ -282,9 +291,12 @@ the token pools BigSumTree and the block end conservation check requires
 
 ## Block end
 
-Every successful or paid token pool transition, document paid from a pool and identity-less
-token pool transition records its pool in
-`StateTransitionsProcessingResult::token_shielded_pools_touched`. At block end
+Every successfully executed token pool transition, document paid from a pool and
+identity-less token pool transition records its pool in
+`StateTransitionsProcessingResult::token_shielded_pools_touched`. A paid refusal records
+nothing: it bumps a nonce and writes to no pool, and the pool it named may not even exist,
+so letting one through would hand the anchor recorder a pool the chain does not hold. At
+block end
 `record_token_shielded_pool_anchors` (enabled by `DRIVE_ABCI_METHOD_VERSIONS_V10`) records
 each touched pool's current anchor if the commitment tree changed and prunes that pool's
 anchors older than `shielded_anchor_retention_blocks`, always keeping the newest one. Pruning
