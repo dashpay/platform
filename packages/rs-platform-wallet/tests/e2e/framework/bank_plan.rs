@@ -237,15 +237,18 @@ pub fn plan(balances: Balances, mins: Mins) -> Result<Vec<Move>, InsufficientFun
     }
 
     // Step 6 (E1): Platform → Core withdrawal, last resort, real Core
-    // deficit only. Sized to `core_target_duff`; the source is Platform
-    // surplus expressed in credits.
+    // deficit only. Sized to the shortfall to `core_target_duff`, capped by
+    // the Platform surplus; the run is only doomed when the surplus cannot
+    // lift Core to its min.
     if balances.core_duff < mins.core_duff {
-        let withdraw_credits = mins.core_target_duff.saturating_mul(CREDITS_PER_DUFF);
-        if platform_surplus < withdraw_credits {
+        let affordable_duff = platform_surplus / CREDITS_PER_DUFF;
+        let min_shortfall_duff = mins.core_duff - balances.core_duff;
+        if affordable_duff < min_shortfall_duff {
             return Err(insufficiency(balances, mins));
         }
+        let withdraw_duff = core_target_shortfall_duff(&balances, &mins).min(affordable_duff);
         moves.push(Move::WithdrawToCore {
-            target_duff: mins.core_target_duff,
+            target_duff: balances.core_duff + withdraw_duff,
         });
     }
 
@@ -264,13 +267,19 @@ fn leaf_platform_outflow(balances: &Balances, mins: &Mins) -> Credits {
         0
     };
     let withdraw_credits = if balances.core_duff < mins.core_duff {
-        mins.core_target_duff.saturating_mul(CREDITS_PER_DUFF)
+        core_target_shortfall_duff(balances, mins).saturating_mul(CREDITS_PER_DUFF)
     } else {
         0
     };
     identity_deficit
         .saturating_add(shielded_deficit)
         .saturating_add(withdraw_credits)
+}
+
+/// Duffs the E1 withdrawal would add to reach `core_target_duff` from the
+/// current Core balance.
+fn core_target_shortfall_duff(balances: &Balances, mins: &Mins) -> u64 {
+    mins.core_target_duff.saturating_sub(balances.core_duff)
 }
 
 /// Build the full per-type shortfall report (native units) for the
@@ -598,6 +607,44 @@ mod tests {
                 .any(|m| matches!(m, Move::WithdrawToCore { .. })),
             "no E1 withdrawal when Core is above min; plan={plan:?}"
         );
+    }
+
+    /// A small Core deficit with Platform surplus below the full target:
+    /// the withdrawal is capped by the surplus instead of failing the run
+    /// (the live failure: ~5.4M duffs short, ~2.8e12 credits on Platform).
+    #[test]
+    fn core_deficit_withdrawal_is_capped_by_platform_surplus() {
+        let mins = Mins {
+            core_duff: 1_300_000_000,
+            ..legacy_mins()
+        };
+        let bal = Balances {
+            platform: 2_820_903_125_167,
+            identity: 30_000_000,
+            shielded: 0,
+            core_duff: 1_294_561_070,
+        };
+        let plan = plan(bal, mins).expect("a capped withdrawal still lifts Core to its min");
+        let surplus_duff = (bal.platform - mins.platform) / CREDITS_PER_DUFF;
+        assert_eq!(
+            plan.last(),
+            Some(&Move::WithdrawToCore {
+                target_duff: bal.core_duff + surplus_duff
+            }),
+            "plan={plan:?}"
+        );
+    }
+
+    /// The run is doomed only when the surplus cannot reach the Core min.
+    #[test]
+    fn core_deficit_beyond_platform_surplus_is_insufficient() {
+        let bal = Balances {
+            platform: 500_000_000 + 1_000 * CREDITS_PER_DUFF,
+            identity: 30_000_000,
+            shielded: 0,
+            core_duff: 2_000_000_000 - 1_001,
+        };
+        assert!(plan(bal, legacy_mins()).is_err());
     }
 
     /// Partial deficit: Platform funded, identity funded, but Core below
