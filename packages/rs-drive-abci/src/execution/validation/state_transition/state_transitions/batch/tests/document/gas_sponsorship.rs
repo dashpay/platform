@@ -1341,13 +1341,9 @@ pub(crate) mod gas_sponsorship_tests {
         );
     }
 
-    #[tokio::test]
-    async fn should_keep_a_sponsored_history_version_with_the_contract_owner_when_rewritten_in_its_block(
-    ) {
-        // A type keeping history stores each version under the block's time, so a second
-        // update in the same block rewrites the version the first wrote. The version the
-        // contract owner paid for stays theirs when the user grows it at their own expense, so
-        // the user's later shrink in that block refunds the contract owner.
+    /// The card game with a card type that keeps history, its creation and replacement
+    /// offering the contract owner's gas
+    fn history_card_game() -> Sponsorship {
         let setup = Sponsorship::build_customized(
             PlatformVersion::latest(),
             GasFeesPaidBy::ContractOwner,
@@ -1384,6 +1380,17 @@ pub(crate) mod gas_sponsorship_tests {
             .document_type_for_name("card")
             .expect("expected the card document type")
             .documents_keep_history());
+        setup
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_sponsored_history_version_with_the_contract_owner_when_rewritten_in_its_block(
+    ) {
+        // A type keeping history stores each version under the block's time, so a second
+        // update in the same block rewrites the version the first wrote. The version the
+        // contract owner paid for stays theirs when the user grows it at their own expense, so
+        // the user's later shrink in that block refunds the contract owner.
+        let setup = history_card_game();
         setup.give_the_user_game_tokens(5);
         let block = BlockInfo::default();
         let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
@@ -1404,6 +1411,40 @@ pub(crate) mod gas_sponsorship_tests {
             refunded_to_contract_owner.is_some_and(|refund| refund > 0),
             "the version the contract owner paid for refunds them what the shrink frees"
         );
+    }
+
+    #[tokio::test]
+    async fn should_leave_a_history_version_the_user_paid_for_with_the_user_in_a_later_block() {
+        // A version written in a later block than the sponsored one is a new element, paid for
+        // by the user: it names the user, so the user's shrink of it in that block refunds
+        // the user.
+        let setup = history_card_game();
+        setup.give_the_user_game_tokens(5);
+        let creation_block = BlockInfo::default();
+        let later_block = BlockInfo {
+            time_ms: 1_000,
+            height: 1,
+            ..Default::default()
+        };
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &creation_block, true);
+
+        let growth = setup
+            .card_replacement_describing(2, 3, 200, GasFeesPaidBy::DocumentOwner)
+            .await;
+        assert_eq!(settle(&setup, &growth, &later_block, false), (None, None));
+
+        let shrink = setup
+            .card_replacement_describing(3, 4, 10, GasFeesPaidBy::DocumentOwner)
+            .await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &shrink, &later_block, false);
+
+        assert!(
+            refunded_to_user.is_some_and(|refund| refund > 0),
+            "the user is refunded what the shrink frees of the version they paid for"
+        );
+        assert_eq!(refunded_to_contract_owner, None);
     }
 
     #[tokio::test]

@@ -47,7 +47,7 @@ use crate::drive::document::paths::{
 };
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{
-    DocumentTypeRef, Index, IndexBucketing, IndexCountability, IndexLevel,
+    DocumentPropertyType, DocumentTypeRef, Index, IndexBucketing, IndexCountability, IndexLevel,
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -359,15 +359,28 @@ impl Drive {
         // the sponsor. A sponsored update names the sponsor already. A reference the update
         // refreshes keeps its stored flags, and every other element it writes is new, paid for
         // by the signer, and names whom the update names. A type keeping history stores each
-        // version under the block's time, so a second update in the same block rewrites the
-        // version the first wrote; its versions are never deleted, so naming the sponsor on a
-        // new one moves no refund but that rewrite's.
-        let sponsor_held_primary_storage = storage_held_by_gas_sponsor(
+        // version under the block's time: only a second update in the same block rewrites the
+        // version the first wrote, so only then does the version keep naming the sponsor, and a
+        // version written in a later block is new and names whom the update names.
+        let sponsor_held_primary_storage = (storage_held_by_gas_sponsor(
             contract.owner_id(),
             document_type,
             &old_document,
             old_storage_flags.as_ref(),
-        )
+        ) && (!document_type.documents_keep_history()
+            || self.grove_has_raw(
+                (&contract_documents_keeping_history_primary_key_path_for_document_id(
+                    contract.id_ref().as_bytes(),
+                    document_type.name().as_str(),
+                    document_id.as_slice(),
+                ))
+                    .into(),
+                DocumentPropertyType::encode_date_timestamp(block_info.time_ms).as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                &mut batch_operations,
+                drive_version,
+            )?))
         .then(|| DocumentAndContractInfo {
             owned_document_info: OwnedDocumentInfo {
                 document_info: document_and_contract_info
