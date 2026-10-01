@@ -745,7 +745,7 @@ impl Context<'_> {
     /// contract) whose entries will reference the document, created with it
     /// and charged to its creator (`add_preallocated_index_tree_operations`).
     fn preallocations(&mut self, contract: &DataContract) -> Result<(), Error> {
-        let target_name = self.document_type.name().clone();
+        let target = self.document_type;
         // Preallocated trees are only deleted with the contract, so they
         // carry flags only when it can be.
         let flags = self
@@ -765,7 +765,7 @@ impl Context<'_> {
                 for binding in index.preallocation_bindings_for_target(
                     referring.flattened_properties(),
                     contract.id(),
-                    &target_name,
+                    target,
                 ) {
                     self.referring_type = Some(referring.name().clone());
                     let result =

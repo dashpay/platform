@@ -1732,7 +1732,6 @@ mod property_constraints_tests {
                 ("deposit".to_string(), Value::U64(1)),
             ]),
             changed_data_fields: BTreeSet::new(),
-            added_data_fields: BTreeSet::new(),
             removed_identifier_fields: BTreeMap::new(),
             stored_changed_values: BTreeMap::new(),
             creator_id: None,

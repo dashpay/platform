@@ -28,9 +28,10 @@ use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
-    ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
+    ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationActionCounts, ContractModerationEntries,
     ContractModerationEntry, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationReason, ContractWarning,
+    ContractModerationListStatuses, ContractModerationReason, ContractTeamAction,
+    ContractTeamActionEntry, ContractTeamActionSigners, ContractTeamActions, ContractWarning,
 };
 use drive_proof_verifier::types::contract_groups::{
     ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
@@ -487,8 +488,8 @@ impl MockResponse for ContractModerationEntries {
 }
 
 /// One removal record as a fixture holds it: the document id, its owner, the moderator, when
-/// the removal happened, why, what the document hashed to, and who restored it and when if
-/// anyone did.
+/// the removal happened, why, what the document hashed to, who restored it and when if anyone
+/// did, and the values it keeps of the document.
 type EncodedContractDocumentRemoval = (
     Identifier,
     Identifier,
@@ -497,6 +498,7 @@ type EncodedContractDocumentRemoval = (
     ContractModerationReason,
     [u8; 32],
     Option<(Identifier, u64)>,
+    Vec<u8>,
 );
 
 /// One removal record in its mock wire shape.
@@ -513,12 +515,22 @@ fn encode_removal_entry(entry: &ContractDocumentRemovalEntry) -> EncodedContract
             .restoration
             .as_ref()
             .map(|restoration| (restoration.moderator_id, restoration.restored_at)),
+        entry.removal.kept_fields.clone(),
     )
 }
 
 /// One removal record back from its mock wire shape.
 fn decode_removal_entry(
-    (document_id, document_owner_id, moderator_id, removed_at, reason, document_hash, restoration): EncodedContractDocumentRemoval,
+    (
+        document_id,
+        document_owner_id,
+        moderator_id,
+        removed_at,
+        reason,
+        document_hash,
+        restoration,
+        kept_fields,
+    ): EncodedContractDocumentRemoval,
 ) -> ContractDocumentRemovalEntry {
     ContractDocumentRemovalEntry {
         document_id,
@@ -534,6 +546,7 @@ fn decode_removal_entry(
                     restored_at,
                 }
             }),
+            kept_fields,
         },
     }
 }
@@ -553,6 +566,77 @@ impl MockResponse for ContractDocumentRemovals {
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode ContractDocumentRemovals");
         ContractDocumentRemovals(removals.into_iter().map(decode_removal_entry).collect())
+    }
+}
+
+impl MockResponse for ContractTeamActions {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // An action has a bincode encoding of its own; the action id is the key it is stored
+        // under, and the approval count the sum of its approvals.
+        let actions: Vec<(Identifier, ContractTeamAction, u32)> = self
+            .actions()
+            .iter()
+            .map(|entry| (entry.action_id, entry.action.clone(), entry.approval_count))
+            .collect();
+        bincode::encode_to_vec(actions, BINCODE_CONFIG).expect("encode ContractTeamActions")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (actions, _): (Vec<(Identifier, ContractTeamAction, u32)>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode ContractTeamActions");
+        ContractTeamActions(
+            actions
+                .into_iter()
+                .map(
+                    |(action_id, action, approval_count)| ContractTeamActionEntry {
+                        action_id,
+                        action,
+                        approval_count,
+                    },
+                )
+                .collect(),
+        )
+    }
+}
+
+impl MockResponse for ContractTeamActionSigners {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self.signers(), BINCODE_CONFIG)
+            .expect("encode ContractTeamActionSigners")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (signers, _): (Vec<Identifier>, _) = bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode ContractTeamActionSigners");
+        ContractTeamActionSigners(signers)
+    }
+}
+
+impl MockResponse for ContractModerationActionCounts {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let counts: Vec<(Identifier, u32)> = self
+            .counts()
+            .iter()
+            .map(|(identity_id, count)| (*identity_id, *count))
+            .collect();
+        bincode::encode_to_vec(counts, BINCODE_CONFIG)
+            .expect("encode ContractModerationActionCounts")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (counts, _): (Vec<(Identifier, u32)>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractModerationActionCounts");
+        ContractModerationActionCounts(counts.into_iter().collect())
     }
 }
 

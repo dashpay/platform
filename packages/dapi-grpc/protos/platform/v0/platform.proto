@@ -53,6 +53,13 @@ service Platform {
       returns (GetContractModerationEntriesResponse);
   rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest)
       returns (GetContractDocumentRemovalsResponse);
+  rpc getContractTeamActions(GetContractTeamActionsRequest)
+      returns (GetContractTeamActionsResponse);
+  rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest)
+      returns (GetContractTeamActionSignersResponse);
+  rpc getContractModerationActionCounts(
+      GetContractModerationActionCountsRequest)
+      returns (GetContractModerationActionCountsResponse);
   rpc getContractFeePots(GetContractFeePotsRequest)
       returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
@@ -882,6 +889,13 @@ message GetContractDocumentRemovalsResponse {
     ContractDocumentRestoration restoration =
         7; // Set once a moderator restored the document, which is then live
            // again as it was; absent while the removal stands
+    bytes kept_fields =
+        8; // The values the record keeps of the document, as the record stores
+           // them: for each path its document type lists under
+           // moderatorAbilities.deleteKeepsFields, in the list's order, 0 when
+           // the document held no value there, or 1 and the value encoded as
+           // the document encodes its properties. Read under the contract's
+           // document type, as a document is. Empty when the type keeps none
   }
 
   message ContractDocumentRemovals {
@@ -897,6 +911,147 @@ message GetContractDocumentRemovalsResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetContractDocumentRemovalsResponseV0 v0 = 1; }
+}
+
+message GetContractTeamActionsRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // Actions still gathering approvals
+    CLOSED = 1; // Actions whose approvals met their rule, which ran
+  }
+
+  message StartAtActionId {
+    bytes start_action_id = 1;        // 32-byte action id the page starts at
+    bool start_action_id_included = 2; // Whether the page includes that action
+  }
+
+  message GetContractTeamActionsRequestV0 {
+    bytes contract_id =
+        1; // The 32-byte id of the elected contract whose seated moderation
+           // team votes on the actions
+    ActionStatus status = 2; // Active or closed actions
+    optional StartAtActionId start_at_action_id =
+        3; // Where the page starts, in action id order; absent means the first
+    optional uint32 count =
+        4; // Maximum number of actions to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractTeamActionsRequestV0 v0 = 1; }
+}
+
+message GetContractTeamActionsResponse {
+  // The deletion of a settled document: one past its type's deleteWithin
+  // window, which its type's moderatorAbilities.deleteSettled lets the team
+  // delete together
+  message DeleteSettledDocument {
+    string document_type_name = 1; // The document's type
+    bytes document_id = 2;         // The 32-byte id of the document
+    uint64 document_last_modified_at =
+        3; // The document's $updatedAt (or $createdAt) when proposed: the
+           // approvals are of the document as it was then
+    optional uint64 document_revision =
+        4; // The document's $revision when proposed, absent on a type whose
+           // documents carry none: an approval of a document changed since is
+           // refused
+    ContractModerationReason reason = 5; // Why, as the proposer gave it
+  }
+
+  // One action the seated team votes on: proposed by one member, approved by
+  // the others by its id, run once the approvals meet its rule
+  message ContractTeamAction {
+    bytes action_id = 1;   // The 32-byte id of the action
+    bytes proposer_id = 2; // The 32-byte id of the member that proposed it
+    uint64 proposed_at =
+        3; // The time of the block of the proposal, in milliseconds
+    oneof event {
+      DeleteSettledDocument delete_settled_document = 4; // What it does
+    }
+    uint32 approval_count =
+        5; // How many approvals it holds, the proposer's among them; an active
+           // action's is an upper bound, counting a member who left the team
+           // until a later approval reads the team and drops it; the exact
+           // figure is its signers still on the team
+  }
+
+  message ContractTeamActions {
+    repeated ContractTeamAction actions = 1; // The actions, in action id order
+  }
+
+  message GetContractTeamActionsResponseV0 {
+    oneof result {
+      ContractTeamActions actions = 1; // The actions read
+      Proof proof = 2; // Cryptographic proof of the actions, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractTeamActionsResponseV0 v0 = 1; }
+}
+
+message GetContractTeamActionSignersRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // An action still gathering approvals
+    CLOSED = 1; // An action whose approvals met its rule, which ran
+  }
+
+  message GetContractTeamActionSignersRequestV0 {
+    bytes contract_id =
+        1; // The 32-byte id of the elected contract whose seated moderation
+           // team votes on the action
+    ActionStatus status = 2; // Whether the action is active or closed
+    bytes action_id = 3;     // The 32-byte id of the action
+    bool prove = 4;          // Flag to request a proof as the response
+  }
+  oneof version { GetContractTeamActionSignersRequestV0 v0 = 1; }
+}
+
+message GetContractTeamActionSignersResponse {
+  message ContractTeamActionSigners {
+    repeated bytes signer_ids =
+        1; // The 32-byte ids of the members that approved, the proposer among
+           // them unless it left the team and its approval was dropped, in id
+           // order; none when there is no such action
+  }
+
+  message GetContractTeamActionSignersResponseV0 {
+    oneof result {
+      ContractTeamActionSigners signers = 1; // The approvals read
+      Proof proof = 2; // Cryptographic proof of the approvals, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractTeamActionSignersResponseV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsRequest {
+  message GetContractModerationActionCountsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the elected contract whose
+                           // seated moderation team's actions are counted
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationActionCountsRequestV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsResponse {
+  // How many counted moderation actions (a ban, a suspension, a warning or a
+  // document deletion) one member of the seated team signed since the
+  // moderators pot was last paid out, which resets every count
+  message ContractModerationActionCount {
+    bytes identity_id = 1; // The 32-byte id of the member
+    uint32 count = 2;      // How many
+  }
+  message ContractModerationActionCounts {
+    repeated ContractModerationActionCount counts =
+        1; // The counts, in identity id order; a member that did not act since
+           // the last payout has none
+  }
+  message GetContractModerationActionCountsResponseV0 {
+    oneof result {
+      ContractModerationActionCounts counts = 1; // The counts read
+      Proof proof = 2; // Cryptographic proof of the counts, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationActionCountsResponseV0 v0 = 1; }
 }
 
 message GetContractFeePotsRequest {

@@ -35,6 +35,7 @@ mod extract_contested_values;
 pub mod integer_range;
 #[cfg(test)]
 mod integer_range_parse_tests;
+mod outlives_delete;
 pub mod preallocation;
 pub mod random_index;
 pub mod time_range;
@@ -46,6 +47,7 @@ pub(crate) use derived_index_property::{
 pub use derived_index_property::{DerivedIndexField, DerivedIndexProperty};
 pub use extract_contested_values::contested_index_identifier;
 pub use integer_range::{IntegerRangeKeyType, IntegerRangeTransform};
+pub use outlives_delete::index_only_row_commits_created_at;
 pub use preallocation::{PreallocatedKeySource, PreallocationBinding};
 pub use time_range::TimeRangeTransform;
 
@@ -118,10 +120,25 @@ pub const TERMINAL: &str = "terminal";
 /// referenced document's `$id`) or a referring value of that property's
 /// `refersTo` `where` (consensus-enforced equal to a referenced-document
 /// property, its `$ownerId` and `$creatorId` included). Only allowed on
-/// indexOnly document types with a same-contract
-/// `permanentDocument` reference; the doc-type-level validation rejects every
-/// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
+/// indexOnly document types with a same-contract `permanentDocument`
+/// reference, or a `moderatedDocument` one whose removal record keeps every
+/// key of the path; the doc-type-level and whole-contract validation reject
+/// every other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
 pub const PREALLOCATED: &str = "preallocated";
+/// Index-level keyword letting the index's entries **outlive a delete of
+/// their document**: a delete removes the document's entries in every other
+/// index and leaves this one's to expire with their window, and a create
+/// whose entry here already exists (left by a deleted document with the same
+/// key) writes over it rather than being refused as a duplicate. The index's
+/// key must hold the key of an index a delete clears, so no two documents in
+/// state share an entry. A value
+/// only such indexes use (`$createdAt`, when only they involve it) is then
+/// neither carried by a delete nor part of the row commitment. Only allowed
+/// on a `timeRange` index with a `ttl` of an indexOnly document type, so a
+/// left entry expires with its window; not with a sum, and not on a type
+/// with `entryPayload` (a kept entry keeps its own values). Meta-schema v3+
+/// (protocol version 14).
+pub const OUTLIVES_DELETE: &str = "outlivesDelete";
 /// Index-level keyword opting the index into **conditional participation**:
 /// a document that omits any property of the index's *skip set* writes no
 /// entry into this index, and a delete (or, on a stored type, a replace)
@@ -764,7 +781,8 @@ pub struct Index {
     )]
     pub terminal: Option<Vec<String>>,
     /// On an indexOnly document type whose index path is fully determined by
-    /// a same-contract `permanentDocument` reference (see [`PREALLOCATED`]):
+    /// a same-contract `permanentDocument` reference, or a `moderatedDocument`
+    /// one whose removal record keeps every key of it (see [`PREALLOCATED`]):
     /// when `true`, inserting a referenced document also creates this index's
     /// dynamic trees for entries referencing it, and deleting the last entry
     /// keeps them (the delete walker skips upward pruning for this index), so
@@ -776,6 +794,15 @@ pub struct Index {
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub preallocated: bool,
+    /// Whether the index's entries outlive a delete of their document (see
+    /// [`OUTLIVES_DELETE`]): a delete leaves them to expire with their
+    /// window, and a create writes over an entry already there.
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub outlives_delete: bool,
     /// Whether the index skips documents that omit a property of its skip
     /// set ([`Self::skip_if_absent_properties`]; see [`SKIP_IF_ABSENT`]).
     /// `true` for both spellings of the keyword. A present-but-empty value is
@@ -822,6 +849,9 @@ pub(crate) struct IndexGrammarAdmissions {
     /// The `preallocated` keyword (indexOnly document types with a
     /// determining refersTo; generation 3 and later).
     pub(crate) preallocated: bool,
+    /// The `outlivesDelete` keyword (indexOnly document types, `timeRange`
+    /// indexes with a `ttl`; generation 3 and later).
+    pub(crate) outlives_delete: bool,
     /// The `skipIfAbsent` keyword (indexOnly document types; generation 3
     /// and later).
     pub(crate) skip_if_absent: bool,
@@ -848,6 +878,7 @@ impl IndexGrammarAdmissions {
             integer_range: generation >= 3,
             terminal: generation >= 3,
             preallocated: generation >= 3,
+            outlives_delete: generation >= 3,
             skip_if_absent: generation >= 3,
             range_countable_implies_countable: generation >= 3,
             no_locking_resolution: generation >= 3,
@@ -1168,6 +1199,12 @@ impl Index {
         self.terminal_components()
             .iter()
             .any(|component| component == name)
+    }
+
+    /// Whether the index involves `name`: as one of its properties or a
+    /// component of its terminal.
+    pub fn involves(&self, name: &str) -> bool {
+        self.terminal_contains(name) || self.properties.iter().any(|property| property.name == name)
     }
 
     /// The terminal's single component; `None` on a composite terminal or a
@@ -1605,6 +1642,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 integer_range: false,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -1647,6 +1685,7 @@ impl Index {
             integer_range: integer_range_allowed,
             terminal: terminal_allowed,
             preallocated: preallocated_allowed,
+            outlives_delete: outlives_delete_allowed,
             skip_if_absent: skip_if_absent_allowed,
             range_countable_implies_countable,
             no_locking_resolution: no_locking_resolution_allowed,
@@ -1715,6 +1754,7 @@ impl Index {
         let mut integer_range: Option<IntegerRangeTransform> = None;
         let mut terminal: Option<Vec<String>> = None;
         let mut preallocated = false;
+        let mut outlives_delete = false;
         let mut skip_if_absent = false;
         // The array form of `skipIfAbsent`, held raw until after the loop:
         // checking that each name is one of the index's properties, and
@@ -2296,6 +2336,18 @@ impl Index {
                             .as_bool()
                             .ok_or(DataContractError::ValueWrongType(
                                 "preallocated value must be a boolean".to_string(),
+                            ))?;
+                }
+                // `outlivesDelete` is guarded like `preallocated`: it joined
+                // the grammar at meta-schema v3. Whether the declaring type is
+                // indexOnly, and the index a `timeRange` one with a `ttl`, are
+                // checked by `apply_index_only` in `try_from_schema::common`.
+                OUTLIVES_DELETE if outlives_delete_allowed => {
+                    outlives_delete =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "outlivesDelete value must be a boolean".to_string(),
                             ))?;
                 }
                 // `skipIfAbsent` is guarded the same way as `terminal` and
@@ -2914,6 +2966,7 @@ impl Index {
             integer_range,
             terminal,
             preallocated,
+            outlives_delete,
             skip_if_absent,
             skip_if_absent_properties,
         })
@@ -2991,6 +3044,7 @@ mod tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }
@@ -3075,6 +3129,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3095,6 +3150,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3115,6 +3171,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3139,6 +3196,7 @@ mod tests {
             integer_range: false,
             terminal: false,
             preallocated: true,
+            outlives_delete: false,
             skip_if_absent: false,
             range_countable_implies_countable: false,
             no_locking_resolution: false,
@@ -3172,6 +3230,7 @@ mod tests {
                 integer_range: false,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3206,6 +3265,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3232,6 +3292,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3258,6 +3319,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3285,6 +3347,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3313,6 +3376,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3337,6 +3401,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3366,6 +3431,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3395,6 +3461,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3422,6 +3489,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3454,6 +3522,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3481,6 +3550,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3504,6 +3574,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3531,6 +3602,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3589,6 +3661,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -3629,6 +3702,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3662,6 +3736,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3697,6 +3772,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3726,6 +3802,7 @@ mod tests {
                 integer_range: true,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -3750,6 +3827,7 @@ mod tests {
                 integer_range: false,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -4992,6 +5070,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5022,6 +5101,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5068,6 +5148,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5102,6 +5183,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5137,6 +5219,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5170,6 +5253,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5200,6 +5284,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5232,6 +5317,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5264,6 +5350,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5298,6 +5385,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5338,6 +5426,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -5368,6 +5457,7 @@ mod tests {
                     integer_range: true,
                     terminal: true,
                     preallocated: false,
+                    outlives_delete: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
@@ -5404,6 +5494,7 @@ mod tests {
                         integer_range: false,
                         terminal: false,
                         preallocated: false,
+                        outlives_delete: false,
                         skip_if_absent: false,
                         range_countable_implies_countable: false,
                         no_locking_resolution: false,
@@ -5479,6 +5570,7 @@ mod tests {
             integer_range: true,
             terminal: true,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             range_countable_implies_countable: true,
             no_locking_resolution: true,
@@ -5942,6 +6034,7 @@ mod tests {
                 integer_range: false,
                 terminal: false,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
@@ -6008,6 +6101,7 @@ mod tests {
                     integer_range: true,
                     terminal: true,
                     preallocated: false,
+                    outlives_delete: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
@@ -6040,6 +6134,7 @@ mod tests {
                     integer_range: true,
                     terminal: true,
                     preallocated: false,
+                    outlives_delete: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
@@ -6068,6 +6163,7 @@ mod tests {
                     integer_range: true,
                     terminal: true,
                     preallocated: false,
+                    outlives_delete: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
@@ -6094,6 +6190,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -6115,6 +6212,7 @@ mod tests {
                 integer_range: true,
                 terminal: true,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
@@ -6455,6 +6553,7 @@ mod tests {
             integer_range: false,
             terminal: false,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             range_countable_implies_countable: false,
             no_locking_resolution: false,
@@ -6745,6 +6844,7 @@ mod json_convertible_tests {
             integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
         }
@@ -6781,6 +6881,7 @@ mod json_convertible_tests {
                 "integer_range": serde_json::Value::Null,
                 "terminal": serde_json::Value::Null,
                 "preallocated": false,
+                "outlives_delete": false,
                 "skip_if_absent": false,
                 "skip_if_absent_properties": serde_json::json!([]),
             })

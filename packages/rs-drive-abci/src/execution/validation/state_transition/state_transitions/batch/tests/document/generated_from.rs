@@ -896,7 +896,6 @@ mod generated_from_tests {
                     ("normalizedLabel".to_string(), text("b1b")),
                 ]),
                 changed_data_fields: BTreeSet::new(),
-                added_data_fields: BTreeSet::new(),
                 removed_identifier_fields: BTreeMap::new(),
                 stored_changed_values: BTreeMap::new(),
                 creator_id: None,

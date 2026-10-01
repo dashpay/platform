@@ -13,6 +13,10 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
     ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
+    ContractModerationTeamNotSeatedError, DocumentNotSettledError,
+    ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
+    ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    DocumentTypeNotDeletableOnceSettledError, SettledDeletionNotRestorableError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
@@ -668,6 +672,33 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedDocumentRemovedError(ReferencedDocumentRemovedError),
+
+    // The deletion of a settled document by the approvals of a seated moderation team,
+    // `moderatorAbilities.deleteSettled`, and the team actions that carry them (protocol
+    // version 14).
+    #[error(transparent)]
+    DocumentTypeNotDeletableOnceSettledError(DocumentTypeNotDeletableOnceSettledError),
+
+    #[error(transparent)]
+    ContractModerationTeamNotSeatedError(ContractModerationTeamNotSeatedError),
+
+    #[error(transparent)]
+    DocumentNotSettledError(DocumentNotSettledError),
+
+    #[error(transparent)]
+    ContractTeamActionDoesNotExistError(ContractTeamActionDoesNotExistError),
+
+    #[error(transparent)]
+    ContractTeamActionAlreadySignedError(ContractTeamActionAlreadySignedError),
+
+    #[error(transparent)]
+    SettledDeletionNotRestorableError(SettledDeletionNotRestorableError),
+
+    #[error(transparent)]
+    ContractTeamActionAlreadyCompletedError(ContractTeamActionAlreadyCompletedError),
+
+    #[error(transparent)]
+    ContractTeamActionDocumentChangedError(ContractTeamActionDocumentChangedError),
 
     // A token shielded pool refuses a transition (protocol version 14).
     #[error(transparent)]
@@ -1406,7 +1437,7 @@ mod tests {
             154
         );
         // A commitment a `findBy` function found that does not meet the reference's
-        // `minimumAgeSeconds` (protocol version 14): the tail of the enum.
+        // `minimumAgeSeconds` (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentRequirementNotMetError(
                 ReferencedDocumentRequirementNotMetError::new(
@@ -1418,8 +1449,7 @@ mod tests {
             )),
             155
         );
-        // The third kind of document reference, `moderatedDocument` (protocol version 14):
-        // the tail of the enum.
+        // The third kind of document reference, `moderatedDocument` (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentTypeNotModeratedError(
                 ReferencedDocumentTypeNotModeratedError::new(
@@ -1450,12 +1480,62 @@ mod tests {
             )),
             158
         );
+        // The deletion of a settled document by the approvals of a seated moderation team
+        // (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotDeletableOnceSettledError(
+                DocumentTypeNotDeletableOnceSettledError::new(group_id, "post".to_string())
+            )),
+            159
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTeamNotSeatedError(
+                ContractModerationTeamNotSeatedError::new(group_id)
+            )),
+            160
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentNotSettledError(
+                DocumentNotSettledError::new(group_id, identity_id, 1_000, 60, 2_000)
+            )),
+            161
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionDoesNotExistError(
+                ContractTeamActionDoesNotExistError::new(group_id, identity_id)
+            )),
+            162
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionAlreadySignedError(
+                ContractTeamActionAlreadySignedError::new(group_id, identity_id, identity_id)
+            )),
+            163
+        );
+        assert_eq!(
+            discriminant_of(StateError::SettledDeletionNotRestorableError(
+                SettledDeletionNotRestorableError::new(group_id, identity_id, 1_000)
+            )),
+            164
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionAlreadyCompletedError(
+                ContractTeamActionAlreadyCompletedError::new(group_id, identity_id)
+            )),
+            165
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionDocumentChangedError(
+                ContractTeamActionDocumentChangedError::new(group_id, identity_id, identity_id)
+            )),
+            166
+        );
         // Token shielded pools (protocol version 14): the tail of the enum.
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
                 TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
             )),
-            159
+            167
         );
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPaymentAmountMismatchError(
@@ -1466,7 +1546,7 @@ mod tests {
                     "create".to_string(),
                 )
             )),
-            160
+            168
         );
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPaymentNotRequiredError(
@@ -1475,7 +1555,7 @@ mod tests {
                     "create".to_string(),
                 )
             )),
-            161
+            169
         );
     }
 }

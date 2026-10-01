@@ -71,7 +71,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithShieldedNullifiers, VerifiedTokenGroupActionWithShieldedPoolBalance, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule, VerifiedTokenShieldedPoolBalance, VerifiedShieldedNullifiers};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedContractTeamActionSignature, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedShieldedNullifiers, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithShieldedNullifiers, VerifiedTokenGroupActionWithShieldedPoolBalance, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule, VerifiedTokenShieldedPoolBalance};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1480,6 +1480,18 @@ impl Drive {
                     platform_version,
                 )
             }
+            // A contract user moderation exists from protocol version 14 only, so no earlier
+            // proof changes.
+            StateTransition::ContractUserModeration(transition)
+                if transition.team_action_id().is_some() =>
+            {
+                verify_contract_team_action_execution(
+                    proof,
+                    transition,
+                    carries_owner_balance,
+                    platform_version,
+                )
+            }
             StateTransition::ContractUserModeration(transition)
                 if transition.action().changed_document().is_some() =>
             {
@@ -1529,9 +1541,12 @@ impl Drive {
                     }
                     ContractUserModerationAction::DeleteDocument { .. }
                     | ContractUserModerationAction::RestoreDocument { .. }
-                    | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                    | ContractUserModerationAction::ChangeDocumentFields { .. }
+                    | ContractUserModerationAction::DeleteSettledDocument { .. }
+                    | ContractUserModerationAction::ApproveTeamAction { .. } => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
-                            "a document deletion, restore or field change is verified above"
+                            "a document deletion, restore, field change or team action is \
+                             verified above"
                                 .to_string(),
                         )))
                     }
@@ -1576,7 +1591,9 @@ impl Drive {
                     }
                     ContractUserModerationAction::DeleteDocument { .. }
                     | ContractUserModerationAction::RestoreDocument { .. }
-                    | ContractUserModerationAction::ChangeDocumentFields { .. } => false,
+                    | ContractUserModerationAction::ChangeDocumentFields { .. }
+                    | ContractUserModerationAction::DeleteSettledDocument { .. }
+                    | ContractUserModerationAction::ApproveTeamAction { .. } => false,
                 };
                 if !as_expected {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -3248,8 +3265,9 @@ impl Drive {
 }
 
 /// A moderator's document deletion is proved by the record it left: the one of the document
-/// named, saying that the transition's signer removed it for the transition's reason. When is
-/// the block's to say, and whose the document was only the record knows. A document id is
+/// named, saying that the transition's signer removed it for the transition's reason, and not
+/// marked restored. When is the block's to say, and whose the document was only the record
+/// knows. A document id is
 /// produced at most once, so the record is of that document and of no other.
 ///
 /// On a type whose moderators' deletions keep no record
@@ -3323,10 +3341,13 @@ fn verify_contract_document_deletion_execution(
             platform_version,
         )?;
         match (entries.pop(), entries.is_empty()) {
+            // A record marked restored says the document is live again: it proves an
+            // earlier deletion, undone since, not this one
             (Some(entry), true)
                 if entry.document_id == *document_id
                     && entry.removal.moderator_id == transition.owner_id()
-                    && entry.removal.reason == *reason =>
+                    && entry.removal.reason == *reason
+                    && entry.removal.restoration.is_none() =>
             {
                 Ok((
                     root_hash,
@@ -3371,6 +3392,40 @@ fn verify_contract_document_deletion_execution(
         }
         Ok(Some(_)) => record_error,
     })
+}
+
+/// A seated moderation team member's proposal of a settled document's deletion, or approval of a
+/// team action, is proved by the member's approval of the action wherever it is: active, or
+/// closed once the approvals met the rule and the action ran. The action's id is the one the
+/// proposal computes from its contract, signer, nonce, document and reason, or the one the
+/// approval carries, so the query is rebuilt from the transition alone: no contract is needed,
+/// and a proposal the same but for its reason is another action. An approval is never
+/// rewritten and moves only with its action, so the proof holds while the approval stands; one
+/// deleted because its member left the team no longer proves.
+fn verify_contract_team_action_execution(
+    proof: &[u8],
+    transition: &ContractUserModerationTransition,
+    verify_subset_of_proof: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let contract_id = transition.data_contract_id();
+    let Some(action_id) = transition.team_action_id() else {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "only a team action's proposal or approval is verified by its approval".to_string(),
+        )));
+    };
+    let (root_hash, status) = Drive::verify_contract_team_action_signature(
+        proof,
+        contract_id,
+        action_id,
+        transition.owner_id(),
+        verify_subset_of_proof,
+        platform_version,
+    )?;
+    Ok((
+        root_hash,
+        VerifiedContractTeamActionSignature(contract_id, action_id, status),
+    ))
 }
 
 /// A moderator's document restore is proved by the document's removal record, now marked

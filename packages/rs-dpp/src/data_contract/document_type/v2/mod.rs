@@ -8,6 +8,7 @@ use crate::data_contract::document_type::property::{
 };
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
@@ -48,17 +49,18 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
     /// The transient fields on the document type
     pub(in crate::data_contract) transient_fields: BTreeSet<String>,
-    /// The top-level properties frozen at document creation on a mutable
-    /// document type (`immutable` keyword, protocol version 14): a replace
-    /// that changes, adds or removes any of them is rejected. Always empty
-    /// when `documents_mutable` is false, where every property is already
-    /// immutable.
+    /// The top-level properties the `immutable` keyword (protocol version 14)
+    /// lists by name on a mutable document type: frozen at document creation,
+    /// so a replace that changes, adds or removes any of them is rejected.
+    /// Always empty when `documents_mutable` is false, where every property is
+    /// already immutable.
     pub(in crate::data_contract) immutable_fields: BTreeSet<String>,
-    /// The subset of `immutable_fields` a replace may still set while the
-    /// stored document has no value for them (`immutableAllowSetting`
-    /// keyword, protocol version 14). Once present they are frozen like the
-    /// rest of the list. Every entry is also in `immutable_fields`.
-    pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
+    /// The top-level properties the `immutable` keyword lists with a condition
+    /// (`{ "property": ..., "when": ... }`): a replace may not change, add or
+    /// remove one while its condition holds, judged on the document the
+    /// replace writes, with the stored one read through `$old.`. None is also
+    /// in `immutable_fields`.
+    pub(in crate::data_contract) immutable_field_conditions: BTreeMap<String, PropertyConstraint>,
     /// The dotted paths of the properties that declare `distinctFrom`
     /// (protocol version 14), in schema order, so a document write finds
     /// them without walking every property. Empty on every pre-PV14 contract.
@@ -168,6 +170,20 @@ pub struct DocumentTypeV2 {
     /// out, the owner then forfeiting it). Only ever `true` beside
     /// `documents_can_be_deleted_by_moderators`.
     pub(in crate::data_contract) moderator_deletions_refund_owner: bool,
+    /// Who must approve a moderator's deletion of a document of this type once it is settled,
+    /// past `documents_can_be_deleted_by_moderators_for` (`moderatorAbilities.deleteSettled`,
+    /// protocol version 14): the seated team's leader, and so many of its members. `None`
+    /// when no moderator deletes a settled document, and on every type that predates the
+    /// keyword. Only ever `Some` beside a window, on a contract whose moderators are an
+    /// elected team (`apply_moderator_abilities`).
+    pub(in crate::data_contract) moderator_settled_deletion: Option<SettledDeletionRule>,
+    /// The property paths whose values a moderator's removal record keeps, copied from the
+    /// document as it was deleted (`moderatorAbilities.deleteKeepsFields`, protocol version
+    /// 14): what of the document stays public once it is gone. Empty on types that list none.
+    /// Only ever non-empty beside `moderator_deletions_keep_records`. The parser
+    /// (`apply_moderator_abilities`) only admits paths to declared, stored properties at any
+    /// depth and the timestamps and block heights the type requires.
+    pub(in crate::data_contract) moderator_deletion_kept_fields: BTreeSet<String>,
     /// The top-level properties only the contract's moderators write
     /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
     /// changes them with a `ContractUserModeration` transition, and a document's
@@ -308,7 +324,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
-            immutable_fields_allow_setting: BTreeSet::new(),
+            immutable_field_conditions: BTreeMap::new(),
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),
@@ -340,6 +356,8 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_can_be_deleted_by_moderators_for: None,
             moderator_deletions_keep_records: false,
             moderator_deletions_refund_owner: false,
+            moderator_settled_deletion: None,
+            moderator_deletion_kept_fields: BTreeSet::new(),
             moderator_changeable_fields: BTreeSet::new(),
             owner_reference: None,
             creator_reference: None,
@@ -366,7 +384,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
-            immutable_fields_allow_setting: BTreeSet::new(),
+            immutable_field_conditions: BTreeMap::new(),
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),
@@ -398,6 +416,8 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_can_be_deleted_by_moderators_for: None,
             moderator_deletions_keep_records: false,
             moderator_deletions_refund_owner: false,
+            moderator_settled_deletion: None,
+            moderator_deletion_kept_fields: BTreeSet::new(),
             moderator_changeable_fields: BTreeSet::new(),
             owner_reference: None,
             creator_reference: None,

@@ -144,6 +144,7 @@ async fn should_fetch_composite_documents_with_the_unified_query() {
                     removed_at: 1_700_000_000_000,
                     document_hash: [5u8; 32],
                     restoration: None,
+                    kept_fields: Default::default(),
                 },
             }],
         ],

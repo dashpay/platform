@@ -754,9 +754,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     refuses an `immutable` property holding a `deletableDocument`
 ///     reference no replace could clear (a typed array of them, or a single
 ///     one inside an immutable object), which could never be replaced once
-///     a target is deleted, and a single top-level one that is also listed
-///     under `immutableAllowSetting`, which a replace could clear once its
-///     target is deleted and the next one set to another document. A changed
+///     a target is deleted, and a single top-level one frozen only under a
+///     condition (see 66), which a replace could clear once its target is
+///     deleted and a later one the condition leaves free set to another
+///     document. A changed
 ///     element `refersTo` is an incompatible schema change on update.
 ///
 /// 31. **Token shielded pools**: a token configuration in format version 1
@@ -1263,7 +1264,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     ban, suspension, warning or deletion must name a `reason` document its
 ///     proposal lists (`ModerationReasonNotListedError`, 41203). No table moves
 ///     but the four
-///     new Drive method slots, `0` at every version.
+///     new Drive method slots, `0` at every version. The counts are read with
+///     the `getContractModerationActionCounts` query (an elected contract
+///     only), whose proof reads the whole counts tree; it adds a fifth contract
+///     method slot (`prove_contract_moderation_action_counts`), a verify slot
+///     (`verify_contract_moderation_action_counts`) and the query's bounds
+///     (`contract_moderation_action_counts`), `0` at every version as well.
 ///
 /// 42. **Repaid identity debt reaches the processing fee pool**: an identity
 ///     whose fee the balance could not fully cover keeps the unpaid processing
@@ -1532,7 +1538,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (41119) and the deletion is proved by the document's absence, which the
 ///     verifier learns from the contract. `deleteRefundsOwner` (default false)
 ///     says whether the owner is refunded its storage instead of forfeiting it
-///     (the batch then carries no `ForfeitStorageRefunds`). A listed property must be declared,
+///     (the batch then carries no `ForfeitStorageRefunds`). `deleteKeepsFields`
+///     lists property paths at any depth, and the timestamps and block heights
+///     the type requires, whose values the removal record keeps, copied from
+///     the document as it was deleted: what stays public once it is gone. It
+///     needs a record, and is fixed with the type. A record keeping any
+///     carries them behind bit 1 of its tag byte, encoded as the document
+///     encodes its properties (a presence byte and the value per kept path,
+///     the paths themselves not written) and read under the document's type,
+///     and a record keeping none is written as before; the removals
+///     response carries the bytes as `kept_fields` (field 8), and a
+///     `moderatedDocument` reference's `where` pair on a kept property is
+///     checked against the record's value. A property `changeFields` lists must be declared,
 ///     optional, stored, not immutable, neither a reference nor read by one,
 ///     neither generated nor a generation parameter, and in no contested index,
 ///     on a type that is not indexOnly; a type listing any keeps `$revision` even
@@ -1715,7 +1732,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     moderation charters system contract is written in the new keywords;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
-///
 /// 64. **`refersTo: moderatedDocument`**: a third kind of document reference,
 ///     between `permanentDocument` and `deletableDocument` and disjoint from
 ///     both (`DocumentReferenceKind`, `DocumentTypeV2Getters::document_reference_kind`),
@@ -1760,10 +1776,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     keys a document of such a type, on insert (`add_document` 1), update (`update_document`
 ///     1, one read for both versions) and delete (`delete_read_document`, shared by owner and
 ///     moderator deletes and `ttl` expiry), it reads the referenced document, billed with the
-///     write, or, for a `moderatedDocument` target a moderator removed, the owner its removal
-///     record keeps, and puts the values into the document's properties under the derived
-///     names, where `get_raw_for_document_type` 0 reads them (a missing one is refused, never
-///     keyed under null) and the serialization ignores them. A create reads nothing more: the
+///     write, or, for a `moderatedDocument` target a moderator removed, the owner and the
+///     values its removal record keeps (`ContractDocumentRemoval::kept_values`, read at a
+///     path by `kept_value_at`), and puts the values into the document's properties under
+///     the derived names, where `get_raw_for_document_type` 0 reads them (a missing one is
+///     refused, never keyed under null) and the serialization ignores them. A create reads nothing more: the
 ///     document reference validation 0, given a map, records the values from the documents it
 ///     fetched, and the create action carries them to Drive. A dry run keys the document
 ///     under a value of each field's type. `serialize_value_for_key` 0,
@@ -1773,12 +1790,132 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `permanentDocument` or `moderatedDocument` reference by id, on a reference property
 ///     fixed once written; `$ownerId` of a type that can not change hands, `$creatorId` of a
 ///     type recording it, or a stored schema property fixed once written and indexable;
-///     through `moderatedDocument`, `$ownerId` only; not `$id`; not in a unique or contested
+///     through `moderatedDocument`, `$ownerId` or a schema property the referenced type keeps
+///     under `moderatorAbilities.deleteKeepsFields` (a kept path or one inside a kept object,
+///     `is_path_listed`, checked in every build); not `$id`; not in a unique or contested
 ///     index, as a `timeRange` or `integerRange` source or a `skipIfAbsent` property; not on
 ///     an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
 ///     document stores, is refused on an index whose derived properties the query does not fix
 ///     with `==`. Every step is inert without a derived index property, which only generation 3
 ///     declares.
+///
+/// 66. **Properties frozen under a condition**: an `immutable` entry of
+///     meta-schema v3 and parser generation 3, in place, may be
+///     `{ "property", "when" }` beside a property name. The condition takes
+///     the grammar of a `propertyConstraints` rule, reads no `countOf` or
+///     `sumOf`, and is judged on the document the replace writes (its
+///     `$updatedAt` the replace's block time, so `$updatedAt - $createdAt`
+///     is the document's age), with the stored document's properties read
+///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), which only such a
+///     condition may read. Document replace state validation 1, extended in
+///     place, refuses a replace changing, adding or removing a property whose
+///     condition holds, or faults, with `DocumentImmutablePropertyChangedError`
+///     (40128); the stored properties are rebuilt from the written ones and
+///     `stored_changed_values`, and the replace action's `added_data_fields`
+///     is gone. `immutableAllowSetting`, which `{ "present": "$old.<p>" }`
+///     now says, is refused on every parse, naming its replacement. A
+///     conditional property is not fixed once written
+///     (`schema_property_is_fixed_once_written`), a `deletableDocument`
+///     reference by id may be listed only without a condition, and on
+///     contract update (document type update validation 1) a condition is
+///     kept as it is or dropped for listing the property without one.
+///
+/// 67. **A seated team deletes a settled document together**: past a type's
+///     `deleteWithin` window no moderator deletes a document alone (41116); the
+///     new `moderatorAbilities.deleteSettled: { leader, approvals }` (meta-schema
+///     v3, `DocumentTypeV2::moderator_settled_deletion`, fixed with the type,
+///     40212) lets the members of an elected contract's seated team delete it
+///     once `approvals` of them approve, the leader among them when `leader` is
+///     set. It needs `deleteWithin` and an elected declaration giving the team
+///     `deleteDocuments` on the type (10231, 10900), `approvals` from 1 to the
+///     members the declared team can hold (its leader,
+///     `SystemLimits::max_moderation_charter_elected_members` and the
+///     declaration's `maxAddedModerators`), the upper bound checked at
+///     registration only; a seated team whose charter elects fewer members,
+///     and so holds fewer than the rule asks for, must have all it can hold
+///     approve.
+///     `ContractUserModeration` gains two actions (appended), shaped like a
+///     token group's action: `DeleteSettledDocument` proposes the deletion, kept
+///     under the contract as a team action (other tree key `24`, `M` active and
+///     `X` closed, each `action id -> { I: the action, S: SumTree(member ->
+///     SumItem(1)) }`, created with the contract) by an id computed from the
+///     contract, the proposer, its nonce, the document and the reason,
+///     naming the document as it is (its last modification and `$revision`)
+///     and the reason; and
+///     `ApproveTeamAction { action_id }` approves it. Nothing lapses, but an
+///     approval of a document changed since (its `$revision` moved, a
+///     moderator's change of its fields included) is refused. Each approval is
+///     its own sum item, never rewritten; when the approvals given could meet
+///     the rule the team is read and the approvals of members who left are
+///     dropped, refunded to them, and the one whose counted approvals meet it
+///     deletes the document as `DeleteDocument` does, moves the action with the
+///     approvals that counted to the closed actions (refunding each), and counts
+///     toward the action share for every counted approver. The storage refund
+///     forfeiture of a moderator's deletion now takes the document operations
+///     alone (the document's bytes and any index subtree the deletion empties,
+///     whoever paid for them), applied as a GroveDB batch of their own when the
+///     batch also frees moderation storage someone is owed (a restored removal
+///     record replaced, approvals moved or dropped), which is refunded as ever.
+///     The proof is the signer's approval, active or closed
+///     (`VerifiedContractTeamActionSignature`, appended); the new
+///     `getContractTeamActions` (each action with its approval count, the sum
+///     of its approvals tree) and `getContractTeamActionSigners` queries read
+///     them. New errors, appended: `DocumentTypeNotDeletableOnceSettledError`
+///     (41204), `ContractModerationTeamNotSeatedError` (41205),
+///     `DocumentNotSettledError` (41206), `ContractTeamActionDoesNotExistError`
+///     (41207), `ContractTeamActionAlreadySignedError` (41208),
+///     `SettledDeletionNotRestorableError` (41209): a deletion the team approved
+///     is never restored, by the leader or any member,
+///     `ContractTeamActionAlreadyCompletedError` (41210) and
+///     `ContractTeamActionDocumentChangedError` (41211).
+///
+/// 68. **A preallocated index may be bound through `moderatedDocument`**:
+///     `Index::preallocation_bindings`, in place, binds through a same-contract
+///     `moderatedDocument` reference as through a `permanentDocument` one, and a
+///     binding records its kind (`PreallocationBinding::kind`). Through a moderated
+///     reference a binding holds only when the removal record of the referenced
+///     document keeps every key it binds, the referenced `$id`, `$ownerId` or a property
+///     the referenced type lists under `moderatorAbilities.deleteKeepsFields`
+///     (`is_path_listed`), never `$creatorId`
+///     (`PreallocationBinding::is_kept_on_removal`). `create_document_types_from_document_schemas`
+///     1 and `set_document_schema` refuse, under full validation, a preallocated index
+///     with no binding that holds (`validate_preallocated_indexes_kept_on_removal`,
+///     `InvalidContractStructure`); the reference validation 0 checks the key width of a
+///     `where` pair only through a binding that holds; and the Drive insert of a referenced document
+///     (`add_document_for_contract_operations` 1) and the document cost model
+///     preallocate only through one that holds
+///     (`Index::preallocation_bindings_for_target`, now given the referenced type).
+///     A moderator's removal leaves the trees, like its record, and a restore,
+///     which puts the document back through the create path, finds them in place.
+///     Inert for every contract that could be registered before: a moderated
+///     reference never bound a preallocated index.
+///
+/// 69. **Index entries that outlive a delete (`outlivesDelete`)**: an index
+///     keyword of meta-schema v3 and parser generation 3, in place
+///     (`Index::outlives_delete`, `IndexLevelTypeInfo::outlives_delete`,
+///     `IndexLevel::outlives_delete_at_or_below`), admitted only on a
+///     `timeRange` index with a `ttl` of an indexOnly type, without a sum and
+///     on a type without `entryPayload`; every schema property must also sit
+///     in an index that neither skips nor outlives deletes, the proof index
+///     may not outlive deletes (`index_only_proof_index`), and the flag is
+///     fixed with the index (`find_first_outlives_delete_change`). A delete
+///     leaves such an index's entries to expire with their window: document
+///     index-only delete state validation 0 and Drive's row-integrity gate do
+///     not probe it, and the delete walkers (top and index level 2) skip it
+///     (`level_removes_entry`, with `IndexLevel::cleared_on_delete_at_or_below`). The row commitment leaves `$createdAt` out when
+///     every index involving it outlives deletes
+///     (`index_only_row_commits_created_at`, read off the index structure's
+///     root, `IndexLevel::created_at_indexed_only_by_outliving`, and shared by
+///     the commitment, the delete transition's construction, advanced
+///     structure validation 0, which then refuses a carried `$createdAt`, and
+///     Drive's indexOnly delete, which refuses one too). Document create state
+///     validation 1 and the within-batch collision tracker do not probe such
+///     an index, and the indexOnly terminal insert writes over an entry
+///     already standing there, without reading it. Registration requires the
+///     index's key (its properties but `$createdAt`, and its terminal) to hold
+///     the key of an index a delete clears that skips nothing, so no two
+///     documents in state share one of its entries. Inert for every contract
+///     without the keyword, which every earlier grammar refuses.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -1861,7 +1998,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody unless its type sets `deleteRefundsOwner`; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list

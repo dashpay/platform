@@ -279,7 +279,9 @@ impl Drive {
             // moderators' deletions keep no record, it proves the document gone. A document
             // restore proves the same record, now marked restored; the document's id is inside
             // the bytes the transition carries, read under the contract's document type. A
-            // document field change proves the document itself, holding the fields it set.
+            // document field change proves the document itself, holding the fields it set. An
+            // proposal of a settled document's deletion or the approval of a team action proves
+            // the signer's approval, active or closed.
             StateTransition::ContractUserModeration(st) => {
                 let contract_id = st.data_contract_id();
                 if let Some((document_type_name, document_id)) = st.action().document() {
@@ -350,6 +352,18 @@ impl Drive {
                                 document.id(),
                             ]),
                         },
+                    )
+                } else if let Some(action_id) = st.team_action_id() {
+                    // The proposal of a settled document's deletion, or the approval of a team
+                    // action, proves the signer's approval wherever it is, active or closed:
+                    // whether it closed the action and ran it is where it is. The verifier
+                    // rebuilds the query from the transition alone. Only a contract user
+                    // moderation takes this arm, a transition protocol version 14 introduced,
+                    // so no earlier proof changes.
+                    Drive::contract_team_action_signer_query(
+                        contract_id.to_buffer(),
+                        action_id.to_buffer(),
+                        st.owner_id().to_buffer(),
                     )
                 } else if let Some((document_type_name, document_id, _)) =
                     st.action().changed_document()
@@ -423,10 +437,12 @@ impl Drive {
                         }
                         ContractUserModerationAction::DeleteDocument { .. }
                         | ContractUserModerationAction::RestoreDocument { .. }
-                        | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                        | ContractUserModerationAction::ChangeDocumentFields { .. }
+                        | ContractUserModerationAction::DeleteSettledDocument { .. }
+                        | ContractUserModerationAction::ApproveTeamAction { .. } => {
                             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "a document deletion, restore or field change is proved by the \
-                                 arms above",
+                                "a document deletion, restore, field change or team action \
+                                 is proved by the arms above",
                             )))
                         }
                     };
