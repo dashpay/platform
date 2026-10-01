@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::platform::ContextProvider;
+use dash_sdk::sdk::QuorumRefreshFn;
 use dash_sdk::{
     dpp::{data_contract::TokenConfiguration, prelude::CoreBlockHeight, version::PlatformVersion},
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };
+use futures::future::BoxFuture;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -258,6 +260,25 @@ impl WasmTrustedContext {
             .map_err(|e| WasmSdkError::generic(format!("Failed to refresh quorums: {}", e)))
     }
 
+    /// Hook for [`SdkBuilder::with_quorum_refresher`](dash_sdk::SdkBuilder::with_quorum_refresher).
+    ///
+    /// The prefetched quorum keys are never refetched on a miss (that would
+    /// block inside the synchronous `get_quorum_public_key`), so without this a
+    /// read signed by a quorum newer than the prefetch fails on every node and
+    /// bans each one in turn.
+    pub(crate) fn quorum_refresher(&self) -> QuorumRefreshFn {
+        let inner = Arc::clone(&self.inner);
+        Arc::new(move || {
+            let inner = Arc::clone(&inner);
+            into_send(async move {
+                inner
+                    .refresh_quorum_caches()
+                    .await
+                    .map_err(|e| e.to_string())
+            })
+        })
+    }
+
     /// Shared constructor used by every `prefetch*` factory. When `base_url`
     /// is `Some`, it overrides the default URL derived from `network` +
     /// `devnet_name` (the validator inside `new_with_url` still runs).
@@ -379,6 +400,34 @@ impl WasmTrustedContext {
             discovered_addresses,
         }
     }
+}
+
+/// Run a quorum refresh as the `Send` future the SDK's hooks require.
+///
+/// Browser fetches are not `Send`; on wasm the refresh runs on the local
+/// executor and only its result crosses back, the way `rs-dapi-client` wraps
+/// its wasm transport.
+#[cfg(target_arch = "wasm32")]
+fn into_send(
+    refresh: impl std::future::Future<Output = Result<(), String>> + 'static,
+) -> BoxFuture<'static, Result<(), String>> {
+    use futures::FutureExt;
+
+    let (tx, rx) = futures::channel::oneshot::channel();
+    wasm_bindgen_futures::spawn_local(async move {
+        let _ = tx.send(refresh.await);
+    });
+    rx.map(|result| result.unwrap_or_else(|_| Err("quorum refresh task was dropped".to_string())))
+        .boxed()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn into_send(
+    refresh: impl std::future::Future<Output = Result<(), String>> + Send + 'static,
+) -> BoxFuture<'static, Result<(), String>> {
+    use futures::FutureExt;
+
+    refresh.boxed()
 }
 
 #[cfg(test)]

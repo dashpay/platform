@@ -224,42 +224,47 @@ where
         let rich = &owned_rich;
         let wire = &owned_wire;
 
-        let fut = |settings: RequestSettings| async move {
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response,
-            } = wire
-                .clone()
-                .execute(sdk, settings)
+        // A proof signed by a quorum the context provider has not seen yet
+        // refreshes the provider's quorum keys and asks again; see
+        // `SdkBuilder::with_quorum_refresher`.
+        let fut = |settings: RequestSettings| {
+            sdk.with_quorum_refresh(move || async move {
+                let ExecutionResponse {
+                    address,
+                    retries,
+                    inner: response,
+                } = wire
+                    .clone()
+                    .execute(sdk, settings)
+                    .await
+                    .map_err(|e| e.inner_into())?;
+
+                let object_type = std::any::type_name::<Self>().to_string();
+                tracing::trace!(
+                    request = ?wire,
+                    response = ?response,
+                    ?address,
+                    retries,
+                    object_type,
+                    "fetched objects from platform"
+                );
+
+                sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Query, O>(
+                    rich.clone(),
+                    response,
+                    wire.method_name(),
+                )
                 .await
-                .map_err(|e| e.inner_into())?;
-
-            let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(
-                request = ?wire,
-                response = ?response,
-                ?address,
-                retries,
-                object_type,
-                "fetched objects from platform"
-            );
-
-            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Query, O>(
-                rich.clone(),
-                response,
-                wire.method_name(),
-            )
-            .await
-            .map_err(|e| ExecutionError {
-                inner: e,
-                address: Some(address.clone()),
-                retries,
-            })
-            .map(|(o, metadata, proof)| ExecutionResponse {
-                inner: (o.unwrap_or_default(), metadata, proof),
-                retries,
-                address: address.clone(),
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    address: Some(address.clone()),
+                    retries,
+                })
+                .map(|(o, metadata, proof)| ExecutionResponse {
+                    inner: (o.unwrap_or_default(), metadata, proof),
+                    retries,
+                    address: address.clone(),
+                })
             })
         };
 
