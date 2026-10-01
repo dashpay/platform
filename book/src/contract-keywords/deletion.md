@@ -58,7 +58,7 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 
 ### Deleted only when consumed
 
-`"onlyWhenConsumed"` says the owner can not delete a document, as `false` does, but a create of the same contract whose `refersTo` declares [`consume`](refers-to-lookup.md#commit-and-reveal) can. The document then leaves state only by being consumed.
+`"onlyWhenConsumed"` says the owner can not delete a document, as `false` does, but a create of the same contract whose `refersTo` declares [`consume`](refers-to-lookup.md#commit-and-reveal) can. Its owner never removes it: it leaves state when a create consumes it, or, as with `false`, when the contract's moderators delete it where the type allows them (`moderatorAbilities.delete`) or the platform deletes it when its `ttl` passes.
 
 ```json
 "preorder": {
