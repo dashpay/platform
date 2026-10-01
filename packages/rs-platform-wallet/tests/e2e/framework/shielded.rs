@@ -415,15 +415,46 @@ pub async fn teardown_sweep_shielded(
         if balance == 0 {
             continue;
         }
-        // The unshield itself pays a shielded fee, so we can't drain the
-        // full balance — the spend's note-selection folds the fee into
-        // the requirement. Leave a conservative fee headroom; if it's
-        // still short the unshield errors and we swallow it.
-        const FEE_HEADROOM: u64 = 5_000_000;
-        let sweep_amount = balance.saturating_sub(FEE_HEADROOM);
-        if sweep_amount == 0 {
-            continue;
-        }
+        // The unshield pays its fee from the pool, so the sweep is the
+        // unspent total minus the consensus unshield fee for spending
+        // every unspent note.
+        let unspent: Vec<u64> = {
+            let store = handle.coordinator.store().read().await;
+            match store.get_unspent_notes(SubwalletId::new(wallet.id(), account)) {
+                Ok(notes) => notes.iter().map(|n| n.value).collect(),
+                Err(err) => {
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::shielded",
+                        account,
+                        error = %err,
+                        "teardown sweep: unspent-note read failed; skipping account"
+                    );
+                    continue;
+                }
+            }
+        };
+        let platform_version = wallet.platform_wallet().sdk().version();
+        let sweep_amount = match unshield_sweep_amount(&unspent, platform_version) {
+            Ok(Some(amount)) => amount,
+            Ok(None) => {
+                tracing::info!(
+                    target: "platform_wallet::e2e::shielded",
+                    account,
+                    balance,
+                    "teardown sweep: residual does not cover the unshield fee; left in pool"
+                );
+                continue;
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::shielded",
+                    account,
+                    error = %err,
+                    "teardown sweep: unshield fee computation failed; skipping account"
+                );
+                continue;
+            }
+        };
         match wallet
             .platform_wallet()
             .shielded_unshield_to(
@@ -456,6 +487,26 @@ pub async fn teardown_sweep_shielded(
     // registration and per-subwallet store state. The chain-wide tree
     // (the speedup's carried-forward cache) is left intact.
     handle.coordinator.unregister_wallet(wallet.id()).await;
+}
+
+/// Orchard's minimum action count for an Unshield bundle (one spend plus
+/// the change output pad to two actions), as the wallet's own unshield
+/// reservation uses.
+const UNSHIELD_MIN_ACTIONS: usize = 2;
+
+/// Credits an Unshield can move out of a pool holding `unspent` note
+/// values when it spends all of them: the total minus the consensus
+/// unshield fee for that many actions. `None` when the fee eats it all.
+fn unshield_sweep_amount(
+    unspent: &[u64],
+    platform_version: &dpp::version::PlatformVersion,
+) -> Result<Option<u64>, dpp::ProtocolError> {
+    let total: u64 = unspent.iter().sum();
+    let fee = dpp::shielded::compute_shielded_unshield_fee(
+        unspent.len().max(UNSHIELD_MIN_ACTIONS),
+        platform_version,
+    )?;
+    Ok(total.checked_sub(fee).filter(|amount| *amount > 0))
 }
 
 // ---------------------------------------------------------------------------
@@ -989,4 +1040,44 @@ where
         .append_commitment(&cmx, true)
         .map_err(|e| FrameworkError::Wallet(format!("seed_malformed_note: append: {e}")))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use dpp::shielded::compute_shielded_unshield_fee;
+    use dpp::version::PlatformVersion;
+
+    use super::{unshield_sweep_amount, UNSHIELD_MIN_ACTIONS};
+
+    #[test]
+    fn unshield_sweep_leaves_exactly_the_unshield_fee() {
+        let pv = PlatformVersion::latest();
+        // SH-018's residual: one note the old fixed 5M headroom could not sweep.
+        let notes = [1_287_148_800];
+        let fee = compute_shielded_unshield_fee(UNSHIELD_MIN_ACTIONS, pv).expect("fee");
+        assert_eq!(
+            unshield_sweep_amount(&notes, pv).expect("fee"),
+            Some(notes[0] - fee)
+        );
+    }
+
+    #[test]
+    fn unshield_sweep_prices_every_spent_note() {
+        let pv = PlatformVersion::latest();
+        let notes = [400_000_000; 3];
+        let fee = compute_shielded_unshield_fee(3, pv).expect("fee");
+        assert!(fee > compute_shielded_unshield_fee(UNSHIELD_MIN_ACTIONS, pv).expect("fee"));
+        assert_eq!(
+            unshield_sweep_amount(&notes, pv).expect("fee"),
+            Some(1_200_000_000 - fee)
+        );
+    }
+
+    #[test]
+    fn unshield_sweep_skips_a_residual_the_fee_consumes() {
+        let pv = PlatformVersion::latest();
+        let fee = compute_shielded_unshield_fee(UNSHIELD_MIN_ACTIONS, pv).expect("fee");
+        assert_eq!(unshield_sweep_amount(&[fee], pv).expect("fee"), None);
+        assert_eq!(unshield_sweep_amount(&[], pv).expect("fee"), None);
+    }
 }
