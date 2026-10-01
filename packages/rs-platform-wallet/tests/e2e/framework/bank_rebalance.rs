@@ -39,6 +39,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose, SecurityLevel};
+use dpp::version::PlatformVersion;
 use key_wallet::bip32::ExtendedPrivKey;
 
 use super::bank::BankWallet;
@@ -123,12 +124,15 @@ pub const DEFAULT_CORE_REFILL_TARGET_DUFF: u64 = 5_000_000_000;
 /// mid-pass starvation.
 pub const CORE_REFILL_OPERATIONAL_MIN_DUFF: u64 = CORE_BURN_PER_FULL_PASS_DUFF;
 
-/// Identity-side fee reserve added on top of the desired core-refill
-/// credit amount when topping up the bank identity. The withdrawal that
-/// follows the top-up pays its own protocol fee out of the identity's
-/// balance, so the top-up must overshoot the withdrawal target by at
-/// least this much.
-const CORE_REFILL_IDENTITY_FEE_RESERVE: Credits = 50_000_000;
+/// Identity-side credits a core refill reserves on top of the withdrawal:
+/// the protocol's minimum credit-withdrawal fee, which the withdrawal's
+/// estimated-fee check requires in addition to the amount.
+fn core_refill_identity_fee_reserve(platform_version: &PlatformVersion) -> Credits {
+    platform_version
+        .fee_version
+        .state_transition_min_fees
+        .credit_withdrawal
+}
 
 /// Credits left on the bank's primary Platform address when sizing a
 /// core-refill top-up from it: the address-funded top-up's own fee.
@@ -152,17 +156,18 @@ struct CoreRefillSize {
 
 /// Size a core refill to the Core shortfall (`target_duff - core_balance`),
 /// capped by what the primary Platform address can fund after its own fee
-/// and the identity-side withdrawal fee. `None` when nothing is needed or
+/// and `identity_fee_reserve` (the withdrawal's minimum fee). `None` when nothing is needed or
 /// the affordable withdrawal is below [`CORE_REFILL_MIN_WITHDRAW_DUFF`].
 fn core_refill_size(
     core_balance: u64,
     target_duff: u64,
     address_credits: Credits,
+    identity_fee_reserve: Credits,
 ) -> Option<CoreRefillSize> {
     let shortfall_duff = target_duff.checked_sub(core_balance).filter(|d| *d > 0)?;
     let affordable_duff = address_credits
         .saturating_sub(CORE_REFILL_ADDRESS_FEE_RESERVE)
-        .saturating_sub(CORE_REFILL_IDENTITY_FEE_RESERVE)
+        .saturating_sub(identity_fee_reserve)
         / CREDITS_PER_DUFF;
     let withdraw_duff = shortfall_duff.min(affordable_duff);
     if withdraw_duff < CORE_REFILL_MIN_WITHDRAW_DUFF {
@@ -170,7 +175,7 @@ fn core_refill_size(
     }
     Some(CoreRefillSize {
         withdraw_duff,
-        topup_credits: withdraw_duff * CREDITS_PER_DUFF + CORE_REFILL_IDENTITY_FEE_RESERVE,
+        topup_credits: withdraw_duff * CREDITS_PER_DUFF + identity_fee_reserve,
         covers_shortfall: withdraw_duff == shortfall_duff,
     })
 }
@@ -580,7 +585,13 @@ pub async fn refill_core_from_platform_if_below_threshold(
         .cross_check_balance(bank_wallet.sdk())
         .await
         .independent_credits;
-    let Some(size) = core_refill_size(core_balance, target_duff, address_credits) else {
+    let identity_fee_reserve = core_refill_identity_fee_reserve(bank_wallet.sdk().version());
+    let Some(size) = core_refill_size(
+        core_balance,
+        target_duff,
+        address_credits,
+        identity_fee_reserve,
+    ) else {
         tracing::warn!(
             target: "platform_wallet::e2e::bank_rebalance",
             core_balance,
@@ -950,44 +961,84 @@ mod tests {
         );
     }
 
+    /// The live identity-fee reserve: the protocol's minimum credit-withdrawal fee.
+    fn fee_reserve() -> Credits {
+        core_refill_identity_fee_reserve(PlatformVersion::latest())
+    }
+
+    #[test]
+    fn core_refill_reserves_the_minimum_withdrawal_fee() {
+        // The live failure: the top-up reserved 50M, the withdrawal's
+        // estimated-fee check required amount + 400M.
+        assert_eq!(fee_reserve(), 400_000_000);
+        let size = core_refill_size(
+            1_256_497_807,
+            5_000_000_000,
+            3_049_707_681_167,
+            fee_reserve(),
+        )
+        .expect("partial refill");
+        assert_eq!(
+            size.topup_credits - size.withdraw_duff * CREDITS_PER_DUFF,
+            fee_reserve(),
+            "the identity must hold amount + minimum withdrawal fee"
+        );
+    }
+
     #[test]
     fn core_refill_size_covers_only_the_shortfall() {
-        let size = core_refill_size(1_299_592_196, 2_000_000_000, 2_221_771_107_367)
-            .expect("refill needed and affordable");
+        let size = core_refill_size(
+            1_299_592_196,
+            2_000_000_000,
+            2_221_771_107_367,
+            fee_reserve(),
+        )
+        .expect("refill needed and affordable");
         assert_eq!(size.withdraw_duff, 700_407_804);
         assert_eq!(
             size.topup_credits,
-            700_407_804 * CREDITS_PER_DUFF + CORE_REFILL_IDENTITY_FEE_RESERVE
+            700_407_804 * CREDITS_PER_DUFF + fee_reserve()
         );
         assert!(size.covers_shortfall);
     }
 
     #[test]
     fn core_refill_size_is_capped_by_the_address_balance() {
-        // The live failure: a 5e9-duff target against a ~2.2e12-credit address.
+        // The first live failure: a 5e9-duff target against a ~2.2e12-credit address.
         let address = 2_221_771_107_367;
-        let size = core_refill_size(0, DEFAULT_CORE_REFILL_TARGET_DUFF, address)
+        let size = core_refill_size(0, DEFAULT_CORE_REFILL_TARGET_DUFF, address, fee_reserve())
             .expect("partial refill still worthwhile");
         assert!(!size.covers_shortfall);
         assert!(size.topup_credits + CORE_REFILL_ADDRESS_FEE_RESERVE <= address);
         assert_eq!(
             size.withdraw_duff,
-            (address - CORE_REFILL_ADDRESS_FEE_RESERVE - CORE_REFILL_IDENTITY_FEE_RESERVE)
-                / CREDITS_PER_DUFF
+            (address - CORE_REFILL_ADDRESS_FEE_RESERVE - fee_reserve()) / CREDITS_PER_DUFF
         );
     }
 
     #[test]
     fn core_refill_size_skips_when_nothing_needed_or_unaffordable() {
-        assert_eq!(core_refill_size(5_000, 5_000, u64::MAX), None);
-        assert_eq!(core_refill_size(6_000, 5_000, u64::MAX), None);
+        assert_eq!(
+            core_refill_size(5_000, 5_000, u64::MAX, fee_reserve()),
+            None
+        );
+        assert_eq!(
+            core_refill_size(6_000, 5_000, u64::MAX, fee_reserve()),
+            None
+        );
         // Address cannot even cover the fees.
-        assert_eq!(core_refill_size(0, 5_000_000_000, 90_000_000), None);
+        assert_eq!(
+            core_refill_size(0, 5_000_000_000, 400_000_000, fee_reserve()),
+            None
+        );
         // Affordable but below the worthwhile minimum.
         let tiny = CORE_REFILL_ADDRESS_FEE_RESERVE
-            + CORE_REFILL_IDENTITY_FEE_RESERVE
+            + fee_reserve()
             + (CORE_REFILL_MIN_WITHDRAW_DUFF - 1) * CREDITS_PER_DUFF;
-        assert_eq!(core_refill_size(0, 5_000_000_000, tiny), None);
+        assert_eq!(
+            core_refill_size(0, 5_000_000_000, tiny, fee_reserve()),
+            None
+        );
     }
 
     #[test]
