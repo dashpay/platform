@@ -25,7 +25,8 @@ use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::util::object_size_info::{
-    DocumentAndContractInfo, DocumentInfo, DocumentInfoV0Methods, DriveKeyInfo, PathKeyInfo,
+    DocumentAndContractInfo, DocumentInfo, DocumentInfoV0Methods, DriveKeyInfo, OwnedDocumentInfo,
+    PathKeyInfo,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
@@ -357,22 +358,26 @@ impl Drive {
         // single-epoch element in a later epoch, which keeps its flags), so the rewrite names
         // the sponsor. A sponsored update names the sponsor already. A reference the update
         // refreshes keeps its stored flags, and every other element it writes is new, paid for
-        // by the signer, and names whom the update names; a type keeping history writes each
-        // version as a new element too.
-        let sponsor_held_primary_storage = (!document_type.documents_keep_history()
-            && storage_held_by_gas_sponsor(
-                contract.owner_id(),
-                document_type,
-                &old_document,
-                old_storage_flags.as_ref(),
-            ))
-        .then(|| {
-            let mut primary_storage = document_and_contract_info.clone();
-            primary_storage
-                .owned_document_info
-                .document_info
-                .set_storage_flags_owner(contract.owner_id().to_buffer());
-            primary_storage
+        // by the signer, and names whom the update names. A type keeping history stores each
+        // version under the block's time, so a second update in the same block rewrites the
+        // version the first wrote; its versions are never deleted, so naming the sponsor on a
+        // new one moves no refund but that rewrite's.
+        let sponsor_held_primary_storage = storage_held_by_gas_sponsor(
+            contract.owner_id(),
+            document_type,
+            &old_document,
+            old_storage_flags.as_ref(),
+        )
+        .then(|| DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .borrowed_with_storage_flags_owner(contract.owner_id().to_buffer()),
+                owner_id,
+            },
+            contract,
+            document_type,
         });
 
         // we need to store the document for it's primary key

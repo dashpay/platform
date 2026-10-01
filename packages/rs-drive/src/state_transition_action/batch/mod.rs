@@ -238,7 +238,7 @@ pub fn record_gas_sponsor_as_storage_owner(
 /// Whether a document type's token costs let the contract owner pay the gas of some action on
 /// its documents (protocol version 14): only then can the contract owner hold the storage of a
 /// document someone else owns as its gas sponsor.
-pub fn document_type_offers_gas_sponsorship(document_type: DocumentTypeRef) -> bool {
+pub(crate) fn document_type_offers_gas_sponsorship(document_type: DocumentTypeRef) -> bool {
     [
         document_type.document_creation_token_cost(),
         document_type.document_replacement_token_cost(),

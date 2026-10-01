@@ -121,6 +121,44 @@ impl DocumentInfo<'_> {
             storage_flags.to_mut().set_owner_id(owner_id);
         }
     }
+
+    /// The same document, borrowed, with storage flags naming `owner_id`: for one write that
+    /// names a different owner than the others of the same document. Only the flags are
+    /// copied; the document and its serialization are borrowed.
+    pub fn borrowed_with_storage_flags_owner(&self, owner_id: [u8; 32]) -> DocumentInfo<'_> {
+        let with_owner = |storage_flags: &Option<Cow<'_, StorageFlags>>| {
+            storage_flags.as_ref().map(|storage_flags| {
+                let mut storage_flags = storage_flags.clone().into_owned();
+                storage_flags.set_owner_id(owner_id);
+                Cow::Owned(storage_flags)
+            })
+        };
+        match self {
+            DocumentInfo::DocumentOwnedInfo((document, storage_flags)) => {
+                DocumentInfo::DocumentRefInfo((document, with_owner(storage_flags)))
+            }
+            DocumentInfo::DocumentRefInfo((document, storage_flags)) => {
+                DocumentInfo::DocumentRefInfo((document, with_owner(storage_flags)))
+            }
+            DocumentInfo::DocumentRefAndSerialization((document, serialization, storage_flags)) => {
+                DocumentInfo::DocumentRefAndSerialization((
+                    document,
+                    serialization,
+                    with_owner(storage_flags),
+                ))
+            }
+            DocumentInfo::DocumentAndSerialization((document, serialization, storage_flags)) => {
+                DocumentInfo::DocumentRefAndSerialization((
+                    document,
+                    serialization.as_slice(),
+                    with_owner(storage_flags),
+                ))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(size) => {
+                DocumentInfo::DocumentEstimatedAverageSize(*size)
+            }
+        }
+    }
 }
 
 impl DocumentInfoV0Methods for DocumentInfo<'_> {

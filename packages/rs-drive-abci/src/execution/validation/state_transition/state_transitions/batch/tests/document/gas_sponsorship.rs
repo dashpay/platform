@@ -45,6 +45,9 @@ pub(crate) mod gas_sponsorship_tests {
     };
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+    use dpp::document::DocumentV0Setters;
+    use drive::query::DriveDocumentQuery;
     use drive::util::test_helpers::setup_contract;
     use simple_signer::signer::SimpleSigner;
 
@@ -433,6 +436,34 @@ pub(crate) mod gas_sponsorship_tests {
                 .unwrap()
                 .expect("expected to commit the transition");
             result
+        }
+
+        /// The identity the committed storage flags of the user's card name as its storage owner
+        fn stored_card_storage_owner(&self) -> Option<Identifier> {
+            let (card, _) = self.card_of(&self.user);
+            let query = DriveDocumentQuery::new_primary_key_single_item_query(
+                &self.contract,
+                self.contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type"),
+                card.id(),
+            );
+            let mut documents = self
+                .platform
+                .drive
+                .query_documents_with_flags(
+                    query,
+                    None,
+                    false,
+                    None,
+                    Some(self.platform_version.protocol_version),
+                )
+                .expect("expected to query the card")
+                .documents_owned();
+            let (_, storage_flags) = documents.pop().expect("expected the card to be stored");
+            storage_flags
+                .and_then(|storage_flags| storage_flags.owner_id().copied())
+                .map(Identifier::from)
         }
 
         /// The committed credits held in the trees
@@ -1248,6 +1279,130 @@ pub(crate) mod gas_sponsorship_tests {
         assert!(
             refunded_to_contract_owner.is_some_and(|refund| refund > 0),
             "the contract owner is refunded the card"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_sponsored_card_with_the_contract_owner_through_a_transfer() {
+        // The user transfers the card the contract owner paid for, at their own expense: the
+        // stored card stays the contract owner's, and the index entries the transfer moves are
+        // the recipient's.
+        let mut setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+        );
+        let (recipient, _, _) = setup_identity(&mut setup.platform, 571, dash_to_credits!(0.1));
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+        assert_eq!(
+            setup.stored_card_storage_owner(),
+            Some(setup.contract_owner.id())
+        );
+
+        let (mut card, _) = setup.card_of(&setup.user);
+        card.increment_revision()
+            .expect("expected the revision to increment");
+        let transfer = BatchTransition::new_document_transfer_transition_from_document(
+            card,
+            setup
+                .contract
+                .document_type_for_name("card")
+                .expect("expected the card document type"),
+            recipient.id(),
+            &setup.user_key,
+            3,
+            0,
+            Some(Sponsorship::game_token_payment(
+                1,
+                GasFeesPaidBy::DocumentOwner,
+            )),
+            &setup.user_signer,
+            setup.platform_version,
+            None,
+        )
+        .await
+        .expect("expected a batch transition");
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &transfer, &block, false);
+
+        assert_eq!(refunded_to_user, None, "the user is refunded nothing");
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the index entries the transfer moves refund the contract owner"
+        );
+        assert_eq!(
+            setup.stored_card_storage_owner(),
+            Some(setup.contract_owner.id()),
+            "the stored card stays the contract owner's"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_sponsored_history_version_with_the_contract_owner_when_rewritten_in_its_block(
+    ) {
+        // A type keeping history stores each version under the block's time, so a second
+        // update in the same block rewrites the version the first wrote. The version the
+        // contract owner paid for stays theirs when the user grows it at their own expense, so
+        // the user's later shrink in that block refunds the contract owner.
+        let setup = Sponsorship::build_customized(
+            PlatformVersion::latest(),
+            GasFeesPaidBy::ContractOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            None,
+            |contract| {
+                let mut schema = contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type")
+                    .schema()
+                    .clone();
+                schema
+                    .set_value("documentsKeepHistory", true.into())
+                    .expect("expected to keep history");
+                schema
+                    .set_value("canBeDeleted", false.into())
+                    .expect("expected to refuse deletion");
+                contract
+                    .set_document_schema(
+                        "card",
+                        schema,
+                        false,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected the card type to keep history");
+            },
+        );
+        assert!(setup
+            .contract
+            .document_type_for_name("card")
+            .expect("expected the card document type")
+            .documents_keep_history());
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+
+        let growth = setup
+            .card_replacement_describing(2, 3, 200, GasFeesPaidBy::DocumentOwner)
+            .await;
+        assert_eq!(settle(&setup, &growth, &block, false), (None, None));
+
+        let shrink = setup
+            .card_replacement_describing(3, 4, 10, GasFeesPaidBy::DocumentOwner)
+            .await;
+        let (refunded_to_user, refunded_to_contract_owner) = settle(&setup, &shrink, &block, false);
+
+        assert_eq!(refunded_to_user, None, "the user is refunded nothing");
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the version the contract owner paid for refunds them what the shrink frees"
         );
     }
 
