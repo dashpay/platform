@@ -28,12 +28,15 @@ pub(super) fn preserve_known_details(
     let Some(previous) = prior_record(tx, wallet_id, &incoming.txid)? else {
         return Ok(merged);
     };
-    if previous.transaction != incoming.transaction {
+    // Compare only txid-committed content: a peer may attach BIP144 witnesses
+    // to a known txid, and that must neither conflict nor replace the stored body.
+    if previous.transaction.txid() != incoming.transaction.txid() {
         return Err(WalletStorageError::TransactionBodyConflict {
             wallet_id: *wallet_id,
             txid: incoming.txid,
         });
     }
+    merged.transaction = previous.transaction;
     let mut inputs: BTreeMap<_, _> = previous
         .input_details
         .into_iter()
@@ -434,6 +437,26 @@ mod tests {
             ),
             "got {err:?}"
         );
+    }
+
+    /// A peer can serve a known txid with BIP144 witnesses attached; the txid
+    /// does not commit to them, so the stored body stands and the flush goes on.
+    #[test]
+    fn should_keep_the_stored_body_when_a_same_txid_body_differs_only_in_witness() {
+        let mut conn = wallet_db("testnet");
+        let mut stored = record(&[1_000], &[]);
+        stored.transaction.input.push(dashcore::TxIn::default());
+        stored.txid = stored.transaction.txid();
+        store(&conn, &stored);
+        let mut incoming = stored.clone();
+        incoming.transaction.input[0].witness = dashcore::Witness::from_slice(&[[0xAB]]);
+        assert_eq!(incoming.transaction.txid(), stored.txid);
+        assert_ne!(incoming.transaction, stored.transaction);
+
+        let tx = conn.transaction().unwrap();
+        let merged = preserve_known_details(&tx, &WALLET_ID, &incoming).unwrap();
+
+        assert_eq!(merged.transaction, stored.transaction);
     }
 
     #[test]
