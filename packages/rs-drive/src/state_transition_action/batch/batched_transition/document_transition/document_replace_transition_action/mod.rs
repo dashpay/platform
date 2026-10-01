@@ -119,12 +119,6 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
         }
     }
 
-    fn added_data_fields(&self) -> &BTreeSet<String> {
-        match self {
-            DocumentReplaceTransitionAction::V0(v0) => &v0.added_data_fields,
-        }
-    }
-
     fn removed_identifier_fields(&self) -> &BTreeMap<String, Identifier> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => &v0.removed_identifier_fields,

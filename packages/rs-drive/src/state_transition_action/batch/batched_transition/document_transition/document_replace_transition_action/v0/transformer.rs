@@ -128,16 +128,6 @@ impl DocumentReplaceTransitionActionV0 {
         let original_moderated_at = original_document.moderated_at();
         let original_moderated_by = original_document.moderated_by();
 
-        // The fields the stored document had no value for: this replace sets
-        // them for the first time. A subset of the changed fields below, kept
-        // apart because the immutable-property check treats a first-time set
-        // differently from a change or a removal.
-        let added_fields: BTreeSet<String> = data
-            .keys()
-            .filter(|key| !original_document.properties().contains_key(*key))
-            .cloned()
-            .collect();
-
         // The identifier each removed field held. Kept because a removed
         // `deletableDocument` reference is only allowed on an `immutable`
         // property once its target is gone, and after this point nothing
@@ -212,7 +202,6 @@ impl DocumentReplaceTransitionActionV0 {
                         original_document_transferred_at_core_block_height,
                     data,
                     changed_data_fields: changed_fields,
-                    added_data_fields: added_fields,
                     removed_identifier_fields,
                     stored_changed_values,
                     creator_id: original_creator_id,

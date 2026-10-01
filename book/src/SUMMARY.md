@@ -98,6 +98,7 @@
   - [Time-Range Indexes](contract-keywords/time-range.md)
   - [Integer-Range Indexes](contract-keywords/integer-range.md)
   - [Index-Only Types](contract-keywords/index-only.md)
+  - [Values of Referenced Documents](contract-keywords/derived-index-properties.md)
 - [Contract-Level Keys and config](contract-keywords/contract-config.md)
 
 # Drive

@@ -39,17 +39,30 @@ pub(crate) mod tests {
 
     use crate::config::PlatformConfig;
     use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::config::moderation::{
+        ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
+        ContractModerators,
+    };
     use dpp::data_contract::document_type::DocumentTypeRef;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::Value;
     use dpp::prelude::{CoreBlockHeight, TimestampMillis};
-    use drive::util::batch::DriveOperation::{DataContractOperation, DocumentOperation};
-    use drive::util::batch::{DataContractOperationType, DocumentOperationType};
+    use drive::util::batch::DriveOperation::{
+        ContractModerationOperation, DataContractOperation, DocumentOperation,
+    };
+    use drive::util::batch::{
+        ContractModerationOperationType, DataContractOperationType, DocumentOperationType,
+    };
     use drive::util::object_size_info::{
         DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
     };
     use drive::util::storage_flags::StorageFlags;
     use platform_version::version::{PlatformVersion, ProtocolVersion};
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     pub fn setup_platform<'a>(
@@ -119,6 +132,111 @@ pub(crate) mod tests {
                 None,
             )
             .expect("expected to apply drive operations");
+    }
+
+    /// `contract` with its `post` type left to the contract owner's moderators alone, on the
+    /// record (`canBeDeleted: false` beside `moderatorAbilities.delete`, whose removals keep
+    /// a record by default), and every reference to it a `refersTo: moderatedDocument` one.
+    /// `preallocated` indexes, which need a `permanentDocument` edge, are dropped.
+    pub fn with_moderated_posts(
+        mut contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        contract.set_config(contract.config().clone().with_moderation(Some(
+            ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                warnings: false,
+                moderators: ContractModerators::ContractOwner,
+            },
+        )));
+        let mut schemas = BTreeMap::new();
+        for (name, schema) in contract.document_schemas() {
+            let mut json: serde_json::Value = schema.clone().try_into().expect("a JSON schema");
+            if name == "post" {
+                json["canBeDeleted"] = false.into();
+                json["moderatorAbilities"] = serde_json::json!({ "delete": true });
+            }
+            if let Some(properties) = json
+                .get_mut("properties")
+                .and_then(|properties| properties.as_object_mut())
+            {
+                for property in properties.values_mut() {
+                    if property["refersTo"]["documentType"] == "post" {
+                        property["refersTo"]["type"] = "moderatedDocument".into();
+                    }
+                }
+            }
+            if let Some(indices) = json
+                .get_mut("indices")
+                .and_then(|indices| indices.as_array_mut())
+            {
+                for index in indices {
+                    if let Some(index) = index.as_object_mut() {
+                        index.remove("preallocated");
+                    }
+                }
+            }
+            schemas.insert(name, Value::from(json));
+        }
+        let defs = contract.schema_defs().cloned();
+        contract
+            .set_document_schemas(schemas, defs, true, &mut vec![], platform_version)
+            .expect("expected the moderated variant to parse");
+        contract
+    }
+
+    /// The record a moderator's removal of the post `id`, owned by `owner`, leaves.
+    pub fn removal_of(id: [u8; 32], owner: [u8; 32]) -> ContractDocumentRemoval {
+        ContractDocumentRemoval {
+            document_owner_id: Identifier::from(owner),
+            moderator_id: Identifier::from([0x77; 32]),
+            reason: ContractModerationReason::from_text("spam"),
+            removed_at: 1_000 + id[0] as u64,
+            document_hash: id,
+            restoration: None,
+            kept_fields: Default::default(),
+        }
+    }
+
+    /// A moderator's removal of the post `id`, as the moderation transition writes it: the
+    /// post deleted past `canBeDeleted: false`, and its removal record.
+    pub fn remove_post_by_moderator(
+        platform: &Platform<MockCoreRPCLike>,
+        data_contract: &DataContract,
+        id: [u8; 32],
+        removal: ContractDocumentRemoval,
+        platform_version: &PlatformVersion,
+    ) {
+        let moderator_id = removal.moderator_id;
+        let operations = vec![
+            DocumentOperation(DocumentOperationType::ForceDeleteDocument {
+                document_id: Identifier::from(id),
+                contract_info: DataContractInfo::BorrowedDataContract(data_contract),
+                document_type_info: DocumentTypeInfo::DocumentTypeName("post".to_string()),
+            }),
+            ContractModerationOperation(ContractModerationOperationType::AddDocumentRemoval {
+                contract_id: data_contract.id(),
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from(id),
+                removal: Box::new(removal),
+                replaced_record_size: None,
+                estimated_kept_fields_size: 0,
+                moderator_id,
+            }),
+            ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds),
+        ];
+        platform
+            .drive
+            .apply_drive_operations(
+                operations,
+                true,
+                &BlockInfo::genesis(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to remove the post");
     }
 
     pub fn store_document(

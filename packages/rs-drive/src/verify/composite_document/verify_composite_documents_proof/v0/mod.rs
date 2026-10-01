@@ -81,16 +81,21 @@ impl DriveDocumentQuery<'_> {
         // re-merge at the same grove version (identical to the prover's
         // merge by the single-builder rule), and verify the whole
         // composition with succinctness on.
-        let (page_path_query, sub_path_queries) =
+        let (page_path_query, sub_path_queries, removal_path_queries) =
             self.proof_path_queries(&derived, platform_version)?;
-        let merged_query =
-            Self::merged_path_query(&page_path_query, &sub_path_queries, platform_version)?;
+        let merged_query = Self::merged_path_query(
+            &page_path_query,
+            &sub_path_queries,
+            &removal_path_queries,
+            platform_version,
+        )?;
         let (root_hash, proved_trios) = GroveDb::verify_query(proof, &merged_query, grove_version)?;
 
         let result = self.assemble_from_trios(
             &derived,
             &page_path_query,
             &sub_path_queries,
+            &removal_path_queries,
             proved_trios,
             platform_version,
         )?;
