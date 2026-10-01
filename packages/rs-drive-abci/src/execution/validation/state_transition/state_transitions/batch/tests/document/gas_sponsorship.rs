@@ -1414,6 +1414,38 @@ pub(crate) mod gas_sponsorship_tests {
     }
 
     #[tokio::test]
+    async fn should_estimate_a_sponsor_held_history_rewrite_at_no_less_than_it_costs() {
+        // Keeping a history version with its sponsor probes whether the block's version exists:
+        // the estimate charges that probe too, so it never falls short of the execution.
+        let setup = history_card_game();
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+
+        let growth = setup
+            .card_replacement_describing(2, 3, 200, GasFeesPaidBy::DocumentOwner)
+            .await;
+        let result = setup.process_and_commit(&growth);
+
+        let SuccessfulExecution {
+            estimated_fees: Some(estimated_fees),
+            fee_result,
+            ..
+        } = &result
+        else {
+            panic!("expected an execution with an estimated fee, got {result:?}");
+        };
+        assert!(
+            estimated_fees.processing_fee >= fee_result.processing_fee,
+            "estimated {} below the {} the rewrite cost",
+            estimated_fees.processing_fee,
+            fee_result.processing_fee
+        );
+        assert!(estimated_fees.total_base_fee() >= fee_result.total_base_fee());
+    }
+
+    #[tokio::test]
     async fn should_leave_a_history_version_the_user_paid_for_with_the_user_in_a_later_block() {
         // A version written in a later block than the sponsored one is a new element, paid for
         // by the user: it names the user, so the user's shrink of it in that block refunds

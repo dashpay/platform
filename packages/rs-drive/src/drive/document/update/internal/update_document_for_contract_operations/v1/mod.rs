@@ -17,6 +17,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
@@ -45,7 +46,7 @@ use crate::drive::document::paths::{
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path,
 };
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::{
     DocumentPropertyType, DocumentTypeRef, Index, IndexBucketing, IndexCountability, IndexLevel,
 };
@@ -104,6 +105,46 @@ fn storage_held_by_gas_sponsor(
     old_storage_flags.and_then(StorageFlags::owner_id) == Some(contract_owner_id.as_bytes())
         && old_document.owner_id() != contract_owner_id
         && document_type_offers_gas_sponsorship(document_type)
+}
+
+impl Drive {
+    /// Charges the probe of whether a document's history already holds a version at the block's
+    /// time (protocol version 14) at its average-case cost. Execution and the fee estimate both
+    /// charge it this way, so they price the probe alike, whatever the node's state holds.
+    fn add_history_version_probe_cost(
+        &self,
+        contract_id: &[u8],
+        document_type: DocumentTypeRef,
+        document_id: &[u8],
+        block_info: &BlockInfo,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let in_tree_type = if document_type.documents_summable().is_some() {
+            TreeType::SumTree
+        } else {
+            TreeType::NormalTree
+        };
+        self.grove_has_raw(
+            (&contract_documents_keeping_history_primary_key_path_for_document_id(
+                contract_id,
+                document_type.name().as_str(),
+                document_id,
+            ))
+                .into(),
+            DocumentPropertyType::encode_date_timestamp(block_info.time_ms).as_slice(),
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type,
+                query_target: QueryTargetValue(
+                    document_type.estimated_size(platform_version)? as u32
+                ),
+            },
+            None,
+            drive_operations,
+            &platform_version.drive,
+        )?;
+        Ok(())
+    }
 }
 
 /// `[0]`-key reference-bucket `TreeType` dispatch for the
@@ -224,14 +265,37 @@ impl Drive {
             .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
-            return self.estimate_document_change_as_insert_operations_v1(
+            let contract = document_and_contract_info.contract;
+            let document_type = document_and_contract_info.document_type;
+            let document_id = document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_borrowed_document()
+                .map(|document| document.id().to_buffer())
+                .unwrap_or_default();
+            let mut operations = self.estimate_document_change_as_insert_operations_v1(
                 document_and_contract_info,
                 block_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
-            );
+            )?;
+            // An update that may keep a history version with its gas sponsor probes whether
+            // the version exists (below), at the cost charged here too.
+            if document_type.documents_keep_history()
+                && document_type_offers_gas_sponsorship(document_type)
+            {
+                self.add_history_version_probe_cost(
+                    contract.id_ref().as_bytes(),
+                    document_type,
+                    &document_id,
+                    block_info,
+                    &mut operations,
+                    platform_version,
+                )?;
+            }
+            return Ok(operations);
         }
 
         // A type with derived index properties (protocol version 14) keys its documents by
@@ -361,32 +425,46 @@ impl Drive {
         // by the signer, and names whom the update names. A type keeping history stores each
         // version under the block's time: only a second update in the same block rewrites the
         // version the first wrote, so only then does the version keep naming the sponsor, and a
-        // version written in a later block is new and names whom the update names.
-        let sponsor_held_primary_storage = (storage_held_by_gas_sponsor(
-            contract.owner_id(),
-            document_type,
-            &old_document,
-            old_storage_flags.as_ref(),
-        ) && (!document_type.documents_keep_history()
-            || self.grove_has_raw(
-                (&contract_documents_keeping_history_primary_key_path_for_document_id(
+        // version written in a later block is new and names whom the update names. The probe
+        // is charged at its average-case cost, as the fee estimate charges it.
+        let contract_owner_id = contract.owner_id();
+        let sponsor_held_primary_storage = (storage_flags.and_then(StorageFlags::owner_id)
+            != Some(contract_owner_id.as_bytes())
+            && storage_held_by_gas_sponsor(
+                contract_owner_id,
+                document_type,
+                &old_document,
+                old_storage_flags.as_ref(),
+            )
+            && (!document_type.documents_keep_history() || {
+                self.add_history_version_probe_cost(
                     contract.id_ref().as_bytes(),
-                    document_type.name().as_str(),
+                    document_type,
                     document_id.as_slice(),
-                ))
-                    .into(),
-                DocumentPropertyType::encode_date_timestamp(block_info.time_ms).as_slice(),
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut batch_operations,
-                drive_version,
-            )?))
+                    block_info,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+                self.grove_has_raw(
+                    (&contract_documents_keeping_history_primary_key_path_for_document_id(
+                        contract.id_ref().as_bytes(),
+                        document_type.name().as_str(),
+                        document_id.as_slice(),
+                    ))
+                        .into(),
+                    DocumentPropertyType::encode_date_timestamp(block_info.time_ms).as_slice(),
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    drive_version,
+                )?
+            }))
         .then(|| DocumentAndContractInfo {
             owned_document_info: OwnedDocumentInfo {
                 document_info: document_and_contract_info
                     .owned_document_info
                     .document_info
-                    .borrowed_with_storage_flags_owner(contract.owner_id().to_buffer()),
+                    .borrowed_with_storage_flags_owner(contract_owner_id.to_buffer()),
                 owner_id,
             },
             contract,
