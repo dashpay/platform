@@ -3,7 +3,6 @@ import path from 'path';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import getConfigFileMigrationsFactory from '../../../../configs/getConfigFileMigrationsFactory.js';
 import migrateConfigFileFactory from '../../../../src/config/configFile/migrateConfigFileFactory.js';
-import getConfigFormatVersion from '../../../../src/config/configFile/getConfigFormatVersion.js';
 import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 
 describe('Tenderdash image migration', () => {
@@ -39,10 +38,7 @@ describe('Tenderdash image migration', () => {
       expect(migrated.configs.withoutDocker).to.deep.equal({
         platform: { drive: { tenderdash: {} } },
       });
-      // The format this build produces: the newest migration while it is ahead of the
-      // package version, the package version once a release has passed it
-      expect(migrated.configFormatVersion)
-        .to.equal(getConfigFormatVersion(getMigrations(), version));
+      expect(migrated.configFormatVersion).to.equal(version);
       expect(migrateConfigFile(migrated, migrated.configFormatVersion, version)).to.equal(migrated);
     });
   }
