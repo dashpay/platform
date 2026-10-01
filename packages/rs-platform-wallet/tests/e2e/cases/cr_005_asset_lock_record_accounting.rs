@@ -20,8 +20,8 @@
 //!    in-process, `SqlitePersister::open` refuses a double open).
 //!
 //! The shared harness persister (CR-003 / ID-002b / AL-001 check the same
-//! accounting through it) claims no durability, so the manager drives its
-//! non-durable paths. This case covers the durable one: its own manager on
+//! accounting through it) attests only atomic changesets and shielded
+//! viewing keys, so the manager drives its non-durable Core paths. This case covers the durable one: its own manager on
 //! a real SQLite store (capabilities attested), with its own SPV client
 //! (SPV storage under `<workdir>/cr_005/`, the SQLite store in a private
 //! temporary directory), the way

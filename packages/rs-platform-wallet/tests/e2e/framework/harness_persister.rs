@@ -1,31 +1,40 @@
-//! The harness manager's persister: non-durable to the wallet, but
-//! observable by the tests.
+//! The harness manager's persister: a per-process SQLite store the tests
+//! can observe.
 //!
-//! To the wallet it behaves exactly like `NoPlatformPersistence`: it
-//! claims no persistence capabilities, `load` returns an empty start
-//! state and `get_core_tx_record` answers `None`, so every wallet code
-//! path the suite drives is the same as without it. On the side it:
+//! Every changeset is committed to a private SQLite store
+//! ([`SqlitePersister`]) before the call returns, and a failed commit is
+//! returned to the wallet. Toward the wallet it attests only what that
+//! store honours and the harness actually serves back:
+//!
+//! - [`ATOMIC_CHANGESETS`](PersistenceCapabilities::ATOMIC_CHANGESETS):
+//!   the store applies each changeset in one SQLite transaction.
+//! - [`SHIELDED_VIEWING_KEYS`](PersistenceCapabilities::SHIELDED_VIEWING_KEYS):
+//!   Orchard FVKs are written to the store and `load` returns them. This
+//!   is what `bind_shielded` requires.
+//!
+//! Everything else stays session-scoped, as with `NoPlatformPersistence`:
+//! `load` returns no wallets (no `WALLET_RESTORE`), and
+//! `get_core_tx_record` answers `None`, so the wallet's Core, identity and
+//! asset-lock paths are the non-durable ones. Each bit is claimed only when
+//! the store attests it too, and nothing is claimed if it failed to open.
+//!
+//! For the tests it also:
 //!
 //! - captures the wallet-level Core records the manager stores
 //!   (`CoreChangeSet::records`, the folded row a host displays), for the
 //!   live accounting checks, and
-//! - tees every changeset into a per-process SQLite store, so a case can
-//!   reopen a disk snapshot and read a row back as a host would after a
-//!   restart.
-//!
-//! SQLite write failures are logged and counted, never returned: the tee
-//! must not change the suite's behaviour. A reload check that finds no row
-//! reports the count.
+//! - reopens a disk snapshot of the store to read a row back as a host
+//!   would after a restart.
 
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use platform_wallet::changeset::{
-    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::{FlushMode, SqlitePersister, SqlitePersisterConfig};
@@ -39,8 +48,12 @@ pub struct HarnessPersister {
     /// on drop.
     dir: Option<TempDir>,
     records: Mutex<BTreeMap<(WalletId, Txid), TransactionRecord>>,
-    sqlite_store_errors: AtomicU64,
 }
+
+/// The capabilities the harness serves back to the wallet; see the module
+/// docs for why each one is honoured.
+const HONOURED: PersistenceCapabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
+    .union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS);
 
 /// A fresh owner-only temporary directory.
 ///
@@ -55,9 +68,10 @@ pub fn private_temp_dir(prefix: &str) -> std::io::Result<TempDir> {
 }
 
 impl HarnessPersister {
-    /// Open the tee store in a fresh private temporary directory. A store
-    /// that fails to open leaves the tee disabled, so reload checks fail
-    /// with that reason instead of the suite failing to start.
+    /// Open the store in a fresh private temporary directory. A store that
+    /// fails to open leaves the persister non-durable (no capabilities,
+    /// writes discarded), so reload checks fail with that reason instead of
+    /// the suite failing to start.
     pub fn open() -> Self {
         let (dir, sqlite) = match private_temp_dir("platform-wallet-e2e-history-") {
             Ok(dir) => {
@@ -82,7 +96,6 @@ impl HarnessPersister {
             sqlite,
             dir,
             records: Mutex::new(BTreeMap::new()),
-            sqlite_store_errors: AtomicU64::new(0),
         }
     }
 
@@ -119,21 +132,25 @@ impl HarnessPersister {
         let reopened =
             SqlitePersister::open(SqlitePersisterConfig::new(&snapshot).with_auto_backup_dir(None))
                 .map_err(|e| format!("reopen tee snapshot: {e}"))?;
-        let row = reopened
+        reopened
             .get_core_tx_record(wallet_id, txid)
-            .map_err(|e| format!("read row from reopened snapshot: {e}"))?;
-        let errors = self.sqlite_store_errors.load(Ordering::Relaxed);
-        if row.is_none() && errors > 0 {
-            return Err(format!(
-                "no row for {txid}; the tee store rejected {errors} changeset(s), see \
-                 platform_wallet::e2e::harness_persister warnings"
-            ));
-        }
-        Ok(row)
+            .map_err(|e| format!("read row from reopened snapshot: {e}"))
     }
 }
 
 impl PlatformWalletPersistence for HarnessPersister {
+    fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        match &self.sqlite {
+            Ok(store) => store.persistence_capabilities().intersection(HONOURED),
+            Err(_) => PersistenceCapabilities::NONE,
+        }
+    }
+
+    fn store_commits_inline(&self) -> bool {
+        // Opened with `FlushMode::Immediate`: `store` commits before returning.
+        self.sqlite.is_ok()
+    }
+
     fn persists_durably(&self) -> bool {
         false
     }
@@ -143,44 +160,43 @@ impl PlatformWalletPersistence for HarnessPersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
-        if let Some(core) = &changeset.core {
-            let mut records = self
-                .records
-                .lock()
-                .expect("harness persister records poisoned");
-            for record in &core.records {
-                records.insert((wallet_id, record.txid), record.clone());
-            }
-        }
+        let records: Vec<TransactionRecord> = changeset
+            .core
+            .as_ref()
+            .map(|core| core.records.clone())
+            .unwrap_or_default();
+        // Commit first: a changeset the store rejected never happened.
         if let Ok(store) = &self.sqlite {
-            if let Err(error) = store.store(wallet_id, changeset) {
-                self.sqlite_store_errors.fetch_add(1, Ordering::Relaxed);
-                tracing::warn!(
-                    target: "platform_wallet::e2e::harness_persister",
-                    %error,
-                    wallet_id = %hex::encode(wallet_id),
-                    "SQLite tee store rejected a changeset"
-                );
-            }
+            store.store(wallet_id, changeset)?;
+        }
+        let mut captured = self
+            .records
+            .lock()
+            .expect("harness persister records poisoned");
+        for record in records {
+            captured.insert((wallet_id, record.txid), record);
         }
         Ok(())
     }
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
-        if let Ok(store) = &self.sqlite {
-            if let Err(error) = store.flush(wallet_id) {
-                tracing::warn!(
-                    target: "platform_wallet::e2e::harness_persister",
-                    %error,
-                    "SQLite tee flush failed"
-                );
-            }
+        match &self.sqlite {
+            Ok(store) => store.flush(wallet_id),
+            Err(_) => Ok(()),
         }
-        Ok(())
     }
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        Ok(ClientStartState::default())
+        // Only the shielded viewing keys are served back (SHIELDED_VIEWING_KEYS);
+        // wallets stay session-scoped because WALLET_RESTORE is not claimed.
+        let shielded = match &self.sqlite {
+            Ok(store) => store.load()?.shielded,
+            Err(_) => Default::default(),
+        };
+        Ok(ClientStartState {
+            shielded,
+            ..ClientStartState::default()
+        })
     }
 }
 
