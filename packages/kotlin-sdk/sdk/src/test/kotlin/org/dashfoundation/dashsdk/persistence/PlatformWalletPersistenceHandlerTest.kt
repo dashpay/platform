@@ -7237,6 +7237,42 @@ class PlatformWalletPersistenceHandlerTest {
         )
     }
 
+    @Test
+    fun classificationQueriesCarryZeroValuedAccountFields() {
+        // A BIP44 account-0 row is the common case and every field of its
+        // account tuple is 0. kotlinx's default `Json` drops a property
+        // equal to its default, so a defaulted tuple went out as
+        // {"typeTag":0,"txid":…,"vout":…,"scriptHex":…} and the native
+        // side rejected every batch: "malformed outpoint queries: missing
+        // field `standardTag` at line 1 column 162" (int26/int27 devices).
+        val txid = changeTxid.toHexLower()
+        val script = "76a914" + "cd".repeat(20) + "88ac"
+        val json = PlatformWalletPersistenceHandler.encodeOutpointQueries(
+            listOf(
+                PlatformWalletPersistenceHandler.OutpointQuery(
+                    typeTag = 0,
+                    standardTag = 0,
+                    index = 0,
+                    registrationIndex = 0,
+                    keyClass = 0,
+                    txid = txid,
+                    vout = 1,
+                    scriptHex = script,
+                ),
+            ),
+        )
+        val query = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonArray.single().jsonObject
+        for (k in FakeEngine.RUST_REQUIRED_QUERY_KEYS) {
+            assertNotNull("missing field `$k` in $json", query[k])
+        }
+        assertEquals(0, query["standardTag"]!!.jsonPrimitive.int)
+        assertEquals(script, query["scriptHex"]!!.jsonPrimitive.content)
+        // The identity halves are the tuple's only optional fields; absent
+        // is what the native side emits for a non-DashPay account.
+        assertNull(query["userIdentityId"])
+        assertNull(query["friendIdentityId"])
+    }
+
     /**
      * Drive the paged reconcile from one whole-inventory JSON blob — the
      * shape these tests describe an engine in, and the shape the native
@@ -7373,8 +7409,12 @@ class PlatformWalletPersistenceHandlerTest {
                 val q = query.jsonObject
                 // Every query must name the account the store filed the
                 // coin under and the script it recorded — that claim is
-                // the whole reason the engine can answer NOT_OWNED.
-                requireNotNull(q["typeTag"]) { "classification query carries no account tag" }
+                // the whole reason the engine can answer NOT_OWNED. The
+                // real deserializer rejects the WHOLE batch on a missing
+                // key, so this fake does too rather than answering it.
+                for (k in RUST_REQUIRED_QUERY_KEYS) {
+                    requireNotNull(q[k]) { "missing field `$k` in classification query $q" }
+                }
                 requireNotNull(q["scriptHex"]) { "classification query carries no script" }
                 val k = key(
                     q["txid"]!!.jsonPrimitive.content,
@@ -7392,7 +7432,15 @@ class PlatformWalletPersistenceHandlerTest {
 
         private fun key(txidHex: String, vout: Int) = "$txidHex:$vout"
 
-        private companion object {
+        companion object {
+            /** The rs-unified-sdk-jni `OutpointQuery` keys with no serde
+             *  default (its flattened `UtxoAccountTuple` plus the outpoint):
+             *  omitting any one fails the whole classification batch with
+             *  `malformed outpoint queries: missing field …`. */
+            val RUST_REQUIRED_QUERY_KEYS = listOf(
+                "typeTag", "standardTag", "index", "registrationIndex", "keyClass", "txid", "vout",
+            )
+
             /** txid (32 bytes, wire order) + vout (4 bytes, little-endian). */
             const val OUTPOINT_SIZE = 36
         }

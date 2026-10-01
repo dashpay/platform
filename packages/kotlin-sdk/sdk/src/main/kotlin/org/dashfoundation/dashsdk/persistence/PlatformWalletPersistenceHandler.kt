@@ -1241,19 +1241,25 @@ class PlatformWalletPersistenceHandler(
      * trusting them, which is why a bare outpoint cannot ask the question.
      * Serialized against the same field names the Rust `OutpointQuery`
      * deserializes.
+     *
+     * Only the identity halves have defaults. The Rust tuple requires every
+     * other account field, and kotlinx's default `Json` omits a property
+     * equal to its default — so a defaulted `standardTag`/`index`/… went
+     * out missing for the common BIP44 account-0 row and the native side
+     * rejected the whole batch.
      */
     @Serializable
     data class OutpointQuery(
         val typeTag: Int,
-        val standardTag: Int = 0,
-        val index: Int = 0,
-        val registrationIndex: Int = 0,
-        val keyClass: Int = 0,
+        val standardTag: Int,
+        val index: Int,
+        val registrationIndex: Int,
+        val keyClass: Int,
         val userIdentityId: String? = null,
         val friendIdentityId: String? = null,
         val txid: String,
         val vout: Int,
-        val scriptHex: String = "",
+        val scriptHex: String,
     )
 
     /**
@@ -1815,7 +1821,7 @@ class PlatformWalletPersistenceHandler(
             if (classifiable.isEmpty()) continue
 
             val verdicts = classifyOutpoints(
-                engineJson.encodeToString(kotlinx.serialization.builtins.ListSerializer(OutpointQuery.serializer()), queries),
+                encodeOutpointQueries(queries),
             )
             if (verdicts == null || verdicts.size != classifiable.size) {
                 // No verdicts, no classification. Log-only either way, so
@@ -4784,6 +4790,14 @@ class PlatformWalletPersistenceHandler(
          * them must fail the decode, not heal a defaulted row.
          */
         private val engineJson = Json
+
+        /** One classification batch, as `walletManagerClassifyOutpoints`
+         *  deserializes it (rs-unified-sdk-jni `OutpointQuery`). */
+        internal fun encodeOutpointQueries(queries: List<OutpointQuery>): String =
+            engineJson.encodeToString(
+                kotlinx.serialization.builtins.ListSerializer(OutpointQuery.serializer()),
+                queries,
+            )
 
         /** [reconcileTxos] classification verdicts, mirroring
          *  `platform_wallet::manager::accessors::OutpointClass`. Only
