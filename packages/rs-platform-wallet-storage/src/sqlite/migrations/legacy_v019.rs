@@ -5,7 +5,7 @@
 //! evolve, but V019 must keep doing exactly what it did when it shipped. It
 //! shares only these live helpers, which must stay behaviour-stable: the blob
 //! codec and its size/width gates (`blob`), `id32`, `wallets::parse_network`,
-//! `i64_to_u64` and the `WalletStorageError` variants it returns.
+//! `i64_to_u64`, `i64_to_u32` and the `WalletStorageError` variants they return.
 //! `TransactionRecord`'s encoding is owned upstream (key-wallet) and cannot be
 //! frozen here. Do not edit.
 
@@ -22,7 +22,7 @@ use rusqlite::{params, OptionalExtension, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::{blob, id32, wallets};
-use crate::sqlite::util::safe_cast::i64_to_u64;
+use crate::sqlite::util::safe_cast::{i64_to_u32, i64_to_u64};
 
 /// Read a stored record; undecodable bytes are an error the caller classifies.
 fn read_record(
@@ -100,7 +100,8 @@ fn drop_for_resync(
         params![wallet_id.as_slice()],
         |row| row.get(0),
     )?;
-    let rescan_from = (birth_height - 1).max(0);
+    // A corrupt birth height fails the migration instead of choosing a rescan height.
+    let rescan_from = i64_to_u32("wallets.birth_height", birth_height)?.saturating_sub(1);
     tx.execute(
         "DELETE FROM core_transaction_inputs WHERE wallet_id = ?1 AND txid = ?2",
         params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
@@ -419,17 +420,16 @@ mod tests {
         }
     }
 
-    /// An oversize confirmed record fails its length gate before its payload
-    /// is read, and is dropped with a rescan from just below the birth height.
-    #[test]
-    fn should_drop_oversize_confirmed_record_for_resync() {
+    /// A V018 database holding one oversize confirmed record for a wallet born
+    /// at `birth_height`, synced to 900.
+    fn seed_oversize_confirmed_record(birth_height: i64) -> (Connection, WalletId) {
         let mut conn = Connection::open_in_memory().unwrap();
         migrations::run(&mut conn).unwrap();
         let wallet_id = [0xC2u8; 32];
         let txid = Txid::from_byte_array([0x72; 32]);
         conn.execute(
-            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 50)",
-            params![&wallet_id[..]],
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+            params![&wallet_id[..], birth_height],
         )
         .unwrap();
         conn.execute(
@@ -449,22 +449,64 @@ mod tests {
         )
         .unwrap();
         rewind_to_v018(&conn);
+        (conn, wallet_id)
+    }
+
+    /// `(record count, synced_height)` for `wallet_id`.
+    fn records_and_synced_height(conn: &Connection, wallet_id: &WalletId) -> (i64, i64) {
+        conn.query_row(
+            "SELECT (SELECT count(*) FROM core_transactions WHERE wallet_id = ?1), \
+                    (SELECT synced_height FROM core_sync_state WHERE wallet_id = ?1)",
+            params![&wallet_id[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    }
+
+    /// An oversize confirmed record fails its length gate before its payload
+    /// is read, and is dropped with a rescan from just below the birth height.
+    #[test]
+    fn should_drop_oversize_confirmed_record_for_resync() {
+        let (mut conn, wallet_id) = seed_oversize_confirmed_record(50);
 
         migrations::run(&mut conn).unwrap();
 
-        let (records, synced): (i64, i64) = conn
-            .query_row(
-                "SELECT (SELECT count(*) FROM core_transactions WHERE wallet_id = ?1), \
-                        (SELECT synced_height FROM core_sync_state WHERE wallet_id = ?1)",
-                params![&wallet_id[..]],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap();
+        let (records, synced) = records_and_synced_height(&conn, &wallet_id);
         assert_eq!(records, 0, "the oversize record must be dropped");
         assert_eq!(
             synced, 49,
             "the rescan must restart just below the birth height"
         );
+    }
+
+    #[test]
+    fn should_rescan_from_genesis_when_the_wallet_is_born_at_zero() {
+        let (mut conn, wallet_id) = seed_oversize_confirmed_record(0);
+
+        migrations::run(&mut conn).unwrap();
+
+        assert_eq!(records_and_synced_height(&conn, &wallet_id), (0, 0));
+    }
+
+    /// A stored birth height outside `u32` fails the migration with a typed
+    /// error, instead of overflowing, and leaves the record and sync state alone.
+    #[test]
+    fn should_reject_out_of_range_birth_height_before_scheduling_a_rescan() {
+        for birth_height in [i64::MIN, -1, i64::from(u32::MAX) + 1, i64::MAX] {
+            let (mut conn, wallet_id) = seed_oversize_confirmed_record(birth_height);
+
+            let error = migrations::run(&mut conn).unwrap_err();
+
+            assert!(
+                format!("{error:?}").contains("wallets.birth_height"),
+                "birth height {birth_height}: {error:?}"
+            );
+            assert_eq!(
+                records_and_synced_height(&conn, &wallet_id),
+                (1, 900),
+                "birth height {birth_height}: the failed upgrade must roll back"
+            );
+        }
     }
 
     /// Pins V019's observable result on a V018-shaped database: the repaired

@@ -64,6 +64,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     contract_document_restore_window_ms: 604_800_000,                // 7 days
     max_contract_moderation_added_moderators: 15,
+    max_moderation_charter_elected_members: 15,
     max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,
     max_evonode_reward_claim_epochs: 100,

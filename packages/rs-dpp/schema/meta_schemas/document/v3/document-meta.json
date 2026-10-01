@@ -578,7 +578,8 @@
                 "token",
                 "permanentDocument",
                 "identityPublicKey",
-                "deletableDocument"
+                "deletableDocument",
+                "moderatedDocument"
               ]
             },
             "anyOf": {
@@ -621,7 +622,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
+              "description": "The name of the referenced document type, whose documents must leave state only as the reference type says: for permanentDocument never (canBeDeleted: false, no moderatorAbilities.delete and no ttl); for moderatedDocument only through a moderator's recorded removal (canBeDeleted: false, no ttl, moderatorAbilities.delete with deleteKeepsRecord not false), so the reference resolves to the document or to its removal record, which a replace keeps; for deletableDocument in any other way; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -715,7 +716,7 @@
               "additionalProperties": false
             },
             "findBy": {
-              "description": "permanentDocument and deletableDocument references only: how the referenced document is found when the property's value is not its id. Each entry maps a property of the referenced document type (by its name there, system ones such as $ownerId included) to where its value comes from: \".\", the value of the property carrying the reference (on an array element, the element; the writer for ownerRefersTo, the creator for creatorRefersTo), which must be read exactly once; \"$ownerId\", the referring document's owner; a property path of the referring document type; or a function computing it (findByFunction). The entries must name exactly the properties of one unique index of the referenced document type, in any order, that carries no timeRange or integerRange on its first property and does not belong to an indexOnly type: that index finds the document, at most one. Its key must stay with the document it found (every schema property it names fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles. A property an entry reads must be required (and so must every object around it), not transient nor inside a transient object, and hold the same kind of value as the property it fills, so findBy never runs with a missing part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries that index for the key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; where is checked against the document found. A replace re-validates a permanentDocument found by findBy when a property an entry reads changed, and on every replace when an entry reads $ownerId. On a deletableDocument reference findBy says less: once the document it found is deleted the same key may find another filed later, so the reference means a document with this key exists now; every replace re-validates it, as it does a deletableDocument reference by id, and an immutable property may not hold one, except one found by a function, judged when the document is created only, as below. Without findBy the value is the referenced document's $id; { \"$id\": <property> } is the one entry naming $id, with inList: it finds the document holding the list by the id the property holds. A function entry, { referenced property: { \"function\": \"sys.hash.sha256d\", \"params\": [...] } }, fills a byte array property of exactly 32 bytes with the hash of the params' bytes joined in order, for a commit and reveal: the document such a key finds is a commitment made earlier, and the reference is checked when the referring document is created only, never on a replace: every stored property it reads (the function's params, the other entries, the property carrying the reference, the where values) must be fixed once written, and a property carrying it may not be listed under immutableAllowSetting. A param may be transient, being read from the create, and optional, a create missing a param being refused (DocumentReferencePreimageInvalidError, 10423), as is one whose param sits behind a key repeated in an object on the way. So the joined bytes split into the params one way only, every variable-length param (a string, or a byte array without a fixed size) with another variable-length param anywhere after it must be followed directly by a one-byte const, its separator, which its value may not hold (refused the same way). At most one entry is a function; the value carrying the reference is read exactly once, as \".\" or a param of the function, which names a single property carrying the reference by its path and uses \".\" only for a value without one (each element of a typed array, the writer, the creator), except beside a function of an ownerRefersTo or creatorRefersTo, which may leave it out. A string or byte array property may carry a refersTo only this way, its value read by the function: it is not an id. Beside a function the refersTo may declare minimumAgeBlocks and consume. A where entry { \"$ownerId\": \"$ownerId\" } demands that the commitment be the writer's own (ReferencedDocumentPropertyMismatchError, 40127, otherwise); without it anyone who learns the params may reveal them. Available from protocol version 14.",
+              "description": "permanentDocument and deletableDocument references only: how the referenced document is found when the property's value is not its id. Each entry maps a property of the referenced document type (by its name there, system ones such as $ownerId included) to where its value comes from: \".\", the value of the property carrying the reference (on an array element, the element; the writer for ownerRefersTo, the creator for creatorRefersTo), which must be read exactly once; \"$ownerId\", the referring document's owner; a property path of the referring document type; or a function computing it (findByFunction). The entries must name exactly the properties of one unique index of the referenced document type, in any order, that carries no timeRange or integerRange on its first property and does not belong to an indexOnly type: that index finds the document, at most one. Its key must stay with the document it found (every schema property it names fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles. A property an entry reads must be required (and so must every object around it), not transient nor inside a transient object, and hold the same kind of value as the property it fills, so findBy never runs with a missing part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries that index for the key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; where is checked against the document found. A replace re-validates a permanentDocument found by findBy when a property an entry reads changed, and on every replace when an entry reads $ownerId. On a deletableDocument reference findBy says less: once the document it found is deleted the same key may find another filed later, so the reference means a document with this key exists now; every replace re-validates it, as it does a deletableDocument reference by id, and an immutable property may not hold one, except one found by a function, judged when the document is created only, as below. Without findBy the value is the referenced document's $id; { \"$id\": <property> } is the one entry naming $id, with inList: it finds the document holding the list by the id the property holds. A function entry, { referenced property: { \"function\": \"sys.hash.sha256d\", \"params\": [...] } }, fills a byte array property of exactly 32 bytes with the hash of the params' bytes joined in order, for a commit and reveal: the document such a key finds is a commitment made earlier, and the reference is checked when the referring document is created only, never on a replace: every stored property it reads (the function's params, the other entries, the property carrying the reference, the where values) must be fixed once written: a property carrying it or read by it is set when the document is created and never changes, so one listed under immutable with a condition is refused. A param may be transient, being read from the create, and optional, a create missing a param being refused (DocumentReferencePreimageInvalidError, 10423), as is one whose param sits behind a key repeated in an object on the way. So the joined bytes split into the params one way only, every variable-length param (a string, or a byte array without a fixed size) with another variable-length param anywhere after it must be followed directly by a one-byte const, its separator, which its value may not hold (refused the same way). At most one entry is a function; the value carrying the reference is read exactly once, as \".\" or a param of the function, which names a single property carrying the reference by its path and uses \".\" only for a value without one (each element of a typed array, the writer, the creator), except beside a function of an ownerRefersTo or creatorRefersTo, which may leave it out. A string or byte array property may carry a refersTo only this way, its value read by the function: it is not an id. Beside a function the refersTo may declare minimumAgeBlocks and consume. A where entry { \"$ownerId\": \"$ownerId\" } demands that the commitment be the writer's own (ReferencedDocumentPropertyMismatchError, 40127, otherwise); without it anyone who learns the params may reveal them. Available from protocol version 14.",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
@@ -744,7 +745,7 @@
               }
             },
             "where": {
-              "description": "permanentDocument and deletableDocument references only: what the referenced document must hold once found, checked by consensus when the referring document is written. Each entry maps a property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, to the referring document's value it must equal: a schema property of the declaring document type, or \"$ownerId\", the writer, which turns the entry into a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may be compared once. $creatorId needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract), and $ownerId, $creatorId or $id an identifier on the referring side. Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A document found that fails an entry refuses the write with ReferencedDocumentPropertyMismatchError (40127). Beside a findBy function the declaration is judged when the document is created only, so its entries gate the create alone, and every referring value other than $ownerId must be transient or fixed once written (not listed under immutableAllowSetting). where never finds the document: \".\" and functions belong to findBy. Available from protocol version 14.",
+              "description": "permanentDocument, moderatedDocument and deletableDocument references only: what the referenced document must hold once found, checked by consensus when the referring document is written. Each entry maps a property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, to the referring document's value it must equal: a schema property of the declaring document type, or \"$ownerId\", the writer, which turns the entry into a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may be compared once. $creatorId needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract), and $ownerId, $creatorId or $id an identifier on the referring side. Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A document found that fails an entry refuses the write with ReferencedDocumentPropertyMismatchError (40127). Beside a findBy function the declaration is judged when the document is created only, so its entries gate the create alone, and every referring value other than $ownerId must be transient or fixed once written (not listed under immutable with a condition). where never finds the document: \".\" and functions belong to findBy. Available from protocol version 14.",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
@@ -841,7 +842,9 @@
             {
               "if": {
                 "properties": {
-                  "type": { "enum": ["permanentDocument", "deletableDocument"] }
+                  "type": {
+                    "enum": ["permanentDocument", "deletableDocument", "moderatedDocument"]
+                  }
                 },
                 "required": ["type"]
               },
@@ -855,6 +858,16 @@
                   "findBy": false,
                   "where": false
                 }
+              }
+            },
+            {
+              "$comment": "A moderated document is referred to by its id alone: a moderator's removal frees the unique index keys a findBy finds by",
+              "if": {
+                "properties": { "type": { "const": "moderatedDocument" } },
+                "required": ["type"]
+              },
+              "then": {
+                "properties": { "findBy": false }
               }
             },
             {
@@ -2026,7 +2039,11 @@
           },
           "preallocated": {
             "type": "boolean",
-            "description": "Only on indexOnly document types whose index path is fully determined by a same-contract permanentDocument refersTo declaration: every index property must be either the referring property itself (its value is the referenced document's $id) or a referring value of that declaration's where (consensus-equal to a referenced-document property). When true, creating a referenced document also creates this index's dynamic trees for entries referencing it — paid by the referenced document's creator — and deleting the last entry keeps them, so every entry insert costs the same as the first. Available from protocol version 14."
+            "description": "Only on indexOnly document types whose index path is fully determined by a same-contract permanentDocument or moderatedDocument refersTo declaration: every index property must be either the referring property itself (its value is the referenced document's $id) or a referring value of that declaration's where (consensus-equal to a referenced-document property; through moderatedDocument, the referenced $ownerId or a property the referenced type keeps under moderatorAbilities.deleteKeepsFields). When true, creating a referenced document also creates this index's dynamic trees for entries referencing it — paid by the referenced document's creator — and deleting the last entry keeps them, so every entry insert costs the same as the first. Available from protocol version 14."
+          },
+          "outlivesDelete": {
+            "type": "boolean",
+            "description": "Only on a timeRange index with a ttl of an indexOnly document type, without a sum and on a type without entryPayload: a delete of a document leaves its entries in this index to expire with their window, and a create whose entry here already exists writes over it rather than being refused as a duplicate. The index's key (its properties but $createdAt, and its terminal) must hold the whole key of an index a delete clears that skips no document. A value only such indexes use ($createdAt, when every index involving it outlives deletes) is neither carried by a delete nor part of the row commitment. Available from protocol version 14."
           },
           "skipIfAbsent": {
             "oneOf": [
@@ -2208,21 +2225,49 @@
       "properties": {
         "delete": {
           "type": "boolean",
-          "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints, or its seated team) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract, and restore them. Independent of `canBeDeleted`, which rules what a document's own owner may do. Refused on a type that keeps history, is indexOnly, restricts document creation or has a contested index. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it."
+          "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints, or its seated team) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract, and restore them. Independent of `canBeDeleted`, which rules what a document's own owner may do. Refused on a type that keeps history, is indexOnly, restricts document creation or has a contested index. For references a type carrying it is no longer permanent: a permanentDocument reference refuses it; a moderatedDocument reference is the one it takes when canBeDeleted is false, it declares no ttl and deleteKeepsRecord is not false, every document leaving state then leaving a removal record behind; a deletableDocument reference is the one it takes otherwise."
         },
         "deleteWithin": {
           "type": "integer",
           "minimum": 1,
           "maximum": 4294967295,
-          "description": "For how many seconds after a document's last modification the moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer, a purchase or a moderator's field change does not. Absent means no limit. Requires `delete: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Says nothing about what a document's own owner may do."
+          "description": "For how many seconds after a document's last modification the moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it alone any more, the contract owner included; `deleteSettled` may let the members of a seated team delete it together. A replace or a price update moves `$updatedAt` and opens the window again; a transfer, a purchase or a moderator's field change does not. Absent means no limit. Requires `delete: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Says nothing about what a document's own owner may do."
         },
         "deleteKeepsRecord": {
           "type": "boolean",
-          "description": "Whether a moderator's deletion leaves a removal record under the contract: whose document it was, the moderator, the reason, the block time and a hash of the document, readable with getContractDocumentRemovals and never deleted. A deleted document can only be restored from its record, so false also means a deletion can not be undone, and the type has no removal records tree. Default true. Requires `delete: true`."
+          "description": "Whether a moderator's deletion leaves a removal record under the contract: whose document it was, the moderator, the reason, the block time and a hash of the document, readable with getContractDocumentRemovals and never deleted. A deleted document can only be restored from its record, so false also means a deletion can not be undone, and the type has no removal records tree. A type keeping records whose owners can not delete their documents (canBeDeleted: false) and that declares no ttl is referred to by a moderatedDocument reference, which resolves to the record once the document is removed; false makes it a deletableDocument target. Default true. Requires `delete: true`."
         },
         "deleteRefundsOwner": {
           "type": "boolean",
           "description": "Whether the owner of a document a moderator deletes is refunded the part of its storage fee not yet paid out to past epochs, as an owner deleting it themselves is. Default false: the owner forfeits it, and the credits stay in the storage pools. A type with a `ttl` refunds nothing either way. Requires `delete: true`."
+        },
+        "deleteSettled": {
+          "type": "object",
+          "properties": {
+            "leader": {
+              "type": "boolean",
+              "description": "Whether the seated team's leader must be among the approvals. Default false."
+            },
+            "approvals": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31,
+              "description": "How many members of the seated team must approve, the leader counted among them. Default 1. At registration, at most the members the declared team can hold: its leader, the 15 members a charter elects and the elected declaration's maxAddedModerators."
+            }
+          },
+          "additionalProperties": false,
+          "minProperties": 1,
+          "description": "Who must approve a moderator's deletion of a settled document, one past `deleteWithin`: a member of the contract's seated team proposes it with deleteSettledDocument, which is its own approval, the others approve the proposal by its action id with approveTeamAction, and the approval that meets the rule deletes the document, as `delete` would. `{\"leader\": true}` is the leader alone; `{\"leader\": true, \"approvals\": 3}` the leader and two others. The proposals and their approvals are kept under the contract as team actions, readable with getContractTeamActions and getContractTeamActionSigners; nothing lapses, but an approval is refused once the document has changed since the proposal. Requires `deleteWithin` and a contract whose moderators are an elected team, which must give the team `deleteDocuments` on the type; no interim moderator deletes a settled document."
+        },
+        "deleteKeepsFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Property paths whose values a moderator's removal record keeps, copied from the document as it was deleted: what of the document stays public once it is gone (the hashtag of a removed post, say). Each entry names a declared property at any depth (`hashtag`, `meta.tags`, or an object kept whole), or one of the timestamps and block heights the type lists in `required` (`$createdAt`, `$updatedAtBlockHeight`, ...); not a transient property, not `$id` or `$ownerId` (every record holds them already), and not a path inside another listed one. A document without a value at a path leaves it out of the record. The values are read with the record (getContractDocumentRemovals), and the moderator pays for their storage. Requires `delete: true` and a record (`deleteKeepsRecord` not false)."
         },
         "changeFields": {
           "type": "array",
@@ -2237,13 +2282,13 @@
       },
       "additionalProperties": false,
       "minProperties": 1,
-      "description": "What the contract's moderators may do to documents of this type with a contract user moderation transition: delete them (`delete`, within `deleteWithin` seconds of their last modification when given, leaving a removal record unless `deleteKeepsRecord` is false, refunding the owner when `deleteRefundsOwner` is true), and write the fields only they write (`changeFields`). Requires the contract to declare `moderation` in its config. Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
+      "description": "What the contract's moderators may do to documents of this type with a contract user moderation transition: delete them (`delete`, within `deleteWithin` seconds of their last modification when given, leaving a removal record unless `deleteKeepsRecord` is false, keeping in it the values `deleteKeepsFields` lists, refunding the owner when `deleteRefundsOwner` is true), and write the fields only they write (`changeFields`). Requires the contract to declare `moderation` in its config. Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
     },
     "ttl": {
       "type": "integer",
       "minimum": 1,
       "maximum": 4294967295,
-      "description": "Time to live, in seconds: the platform deletes each document of this type once its `$createdAt` plus this many seconds has passed, whoever owns it and whatever `canBeDeleted` says, at most a protocol-versioned number of documents per block (128 at protocol version 14) after the block's state transitions. Its documents are stored without storage flags and refund nothing when deleted: instead of the perpetual storage price, each byte they write pays a price for the time they will live (five tiers up to seven days, then per 9.125 days spanned), paid out as storage fees to the epochs they live in (at most one era of them), and a document prepays its deletion as processing when it is created. From its expiry on, a document can no longer be replaced, transferred, bought, repriced or restored by a moderator; its owner may still delete it where `canBeDeleted` allows. Requires `$createdAt` in `required`; refused together with `documentsKeepHistory`, `indexOnly` and a contested index. A `permanentDocument` reference, one found by `findBy` or with `inList` included, may not target the type; a `deletableDocument` reference, one found by `findBy` included, may. At least and at most protocol-versioned bounds (3600, one hour, and 31536000, one year, at protocol version 14). Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
+      "description": "Time to live, in seconds: the platform deletes each document of this type once its `$createdAt` plus this many seconds has passed, whoever owns it and whatever `canBeDeleted` says, at most a protocol-versioned number of documents per block (128 at protocol version 14) after the block's state transitions. Its documents are stored without storage flags and refund nothing when deleted: instead of the perpetual storage price, each byte they write pays a price for the time they will live (five tiers up to seven days, then per 9.125 days spanned), paid out as storage fees to the epochs they live in (at most one era of them), and a document prepays its deletion as processing when it is created. From its expiry on, a document can no longer be replaced, transferred, bought, repriced or restored by a moderator; its owner may still delete it where `canBeDeleted` allows. Requires `$createdAt` in `required`; refused together with `documentsKeepHistory`, `indexOnly` and a contested index. A `permanentDocument` reference, one found by `findBy` or with `inList` included, and a `moderatedDocument` reference may not target the type; a `deletableDocument` reference, one found by `findBy` included, may. At least and at most protocol-versioned bounds (3600, one hour, and 31536000, one year, at protocol version 14). Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
     },
     "indexOnly": {
       "type": "boolean",
@@ -2381,18 +2426,31 @@
     "immutable": {
       "type": "array",
       "items": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "property": {
+                "type": "string"
+              },
+              "when": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 1
+              }
+            },
+            "required": [
+              "property",
+              "when"
+            ],
+            "additionalProperties": false
+          }
+        ]
       },
-      "uniqueItems": true,
-      "description": "Names of top-level properties whose values are frozen at document creation on a mutable document type: a replace that changes, adds or removes any of them is rejected (DocumentImmutablePropertyChangedError, code 40128), unless the property is listed under immutableAllowSetting and the stored document has no value for it yet, or the replace removes a refersTo deletableDocument reference whose referenced document has been deleted. Only allowed when documentsMutable is true (the default), where the other properties stay replaceable; on an immutable document type every property is already frozen. Every entry must name a declared top-level property that is not transient: system properties ($-prefixed) are excluded because the platform manages them, nested paths are not accepted (list the containing object to freeze it whole), and a transient property is never stored so it could never be written once frozen. On contract update the list may gain entries but never lose one. Available from protocol version 14."
-    },
-    "immutableAllowSetting": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "uniqueItems": true,
-      "description": "The subset of the immutable properties a replace may still set while the stored document has no value for them: a first-time set is accepted, after which the property is frozen like the rest of the immutable list (it can neither change nor be removed). Every entry must also appear in immutable; it is only meaningful for optional properties, since a required one always has a value from creation. On contract update an entry may be dropped (tightening) at any time, but may only be added for a property that becomes immutable in the same update: an already-immutable property cannot start allowing a set. Available from protocol version 14."
+      "description": "The top-level properties of a mutable document type a replace may not change, add or remove. An entry naming a property freezes it at document creation; an entry { \"property\": ..., \"when\": condition } freezes it for any replace the condition holds for, and leaves it free for any other. A condition takes the grammar of a propertyConstraints rule (comparisons, arithmetic, in, present, absent, anyOf, allOf, not, ifThen, ifThenElse, the system times and heights the type requires, $ownerId) and is judged on the document the replace writes: its $updatedAt is the replace's block time, so { \"greaterThan\": [{ \"subtract\": [\"$updatedAt\", \"$createdAt\"] }, 300000] } freezes a property five minutes after the document was created. A path under $old. reads the stored document instead: { \"present\": \"$old.trackingCode\" } lets an absent trackingCode be set once, and { \"equal\": [\"$old.status\", { \"const\": \"published\" }] } freezes a property once the stored document is published. A condition may read no countOf or sumOf total. A replace changing a frozen property is rejected (DocumentImmutablePropertyChangedError, code 40128), except one removing a refersTo deletableDocument reference by id, listed without a condition, whose referenced document has been deleted. Only allowed when documentsMutable is true (the default). Every property must be a declared top-level property that is not transient, listed once: system properties ($-prefixed) are excluded because the platform manages them, and nested paths are not accepted (list the containing object to freeze it whole). A deletableDocument reference by id may be listed only without a condition. On contract update a property may be added, with a condition or without, and one listed with a condition may lose it; one listed without a condition stays, a condition never changes, and no property is dropped. Replaces immutableAllowSetting, which is refused. Available from protocol version 14."
     },
     "ownerRefersTo": {
       "description": "A refersTo declaration whose value is the document's $ownerId, the writer, instead of a property's value: the declaration of an identifier property, with the same keys and the same checks, for the targets a writer can be: identity, a permanentDocument or a deletableDocument found by findBy, where \".\" is the writer, or a permanentDocument with inList, the writer an element of the list, or an anyOf or allOf expression whose every leaf is one of them and \"$ownerId\" names the writer as well. A deletableDocument leaf gates the writer on the document findBy finds existing now: every replace checks it again, so a writer whose document is gone can no longer replace theirs (it may still delete it). contract, token and a document by id are refused, since the writer's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the writer does not carry. A where value is still a property of the document or its $ownerId, the same writer. Only on a document type whose documents can be neither transferred nor traded, so the writer stays the owner; on a type whose documents can, creatorRefersTo checks the creator instead. When a document is created, and when a replace changes a property findBy or where reads (every replace for a where value $ownerId), consensus checks the writer against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $ownerId as the path. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",

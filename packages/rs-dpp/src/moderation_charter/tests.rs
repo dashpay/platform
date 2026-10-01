@@ -159,6 +159,23 @@ fn should_combine_the_elected_members_the_additions_and_the_removals() {
 }
 
 #[test]
+fn should_seat_the_leader_the_elected_members_and_the_additions_allowed() {
+    let id = |byte: u8| Identifier::from([byte; 32]);
+    let charter = ElectedCharter {
+        target_contract_id: id(0xAA),
+        submitted_charter_id: id(0xBB),
+        members: vec![id(2), id(3), id(4)],
+    };
+    // Filled or not: a removed member keeps its seat, and an addition not made yet has one
+    assert_eq!(charter.seats(0), 4);
+    assert_eq!(charter.seats(15), 19);
+    // The arithmetic saturates rather than wrapping
+    assert_eq!(charter.seats(u16::MAX), u16::MAX);
+    // A holder of the count alone gets the same
+    assert_eq!(ElectedCharter::seats_for(3, 15), charter.seats(15));
+}
+
+#[test]
 fn should_read_a_charter_election_target_from_every_accepted_identifier_form() {
     let target = Identifier::new([0x7A; 32]);
     let target_of = |contract_id: &Identifier, document_type_name: &str, value: Value| {

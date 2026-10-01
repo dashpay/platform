@@ -348,18 +348,103 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertTrue(row.isAssetLock)
     }
 
-    func testShouldNotReportStoredAmountWhileInputsArePending() {
+    func testShouldReportSoleWalletsStoredAmountDespitePendingInputs() {
         let walletId = Data(repeating: 1, count: 32)
         let tx = PersistentTransaction(txid: Data(repeating: 3, count: 32), transactionData: Data(), netAmount: 40)
         let change = PersistentTxo(transaction: tx, vout: 0, amount: 40, address: "", height: 1)
         change.walletId = walletId
         tx.outputs = [change]
-        XCTAssertEqual(tx.netAmount(for: walletId), 40)
         tx.pendingInputs = [PersistentPendingInput(
             outpoint: Data(repeating: 9, count: 36), inputIndex: 0,
             spendingTxid: tx.txid, spendingTransaction: tx, walletId: walletId
         )]
-        XCTAssertNil(tx.netAmount(for: walletId), "a missing input makes the stored amount provisional")
+        XCTAssertEqual(tx.netAmount(for: walletId), 40, "the sole wallet's stored amount is Rust's net_amount")
+    }
+
+    func testShouldNotComputeSharedAmountWhileOwnInputsArePending() {
+        let (walletA, walletB) = (Data(repeating: 1, count: 32), Data(repeating: 2, count: 32))
+        let tx = PersistentTransaction(txid: Data(repeating: 3, count: 32), transactionData: Data(), netAmount: 40)
+        let toA = PersistentTxo(transaction: tx, vout: 0, amount: 40, address: "", height: 1)
+        toA.walletId = walletA
+        let toB = PersistentTxo(transaction: tx, vout: 1, amount: 60, address: "", height: 1)
+        toB.walletId = walletB
+        tx.outputs = [toA, toB]
+        tx.pendingInputs = [PersistentPendingInput(
+            outpoint: Data(repeating: 9, count: 36), inputIndex: 0,
+            spendingTxid: tx.txid, spendingTransaction: tx, walletId: walletA
+        )]
+        XCTAssertNil(tx.netAmount(for: walletA), "an unlinked input A recorded may be A's own coin")
+        XCTAssertEqual(tx.netAmount(for: walletB), 60)
+    }
+
+    func testShouldKeepIncomingAmountWhenInputsAreForeign() throws {
+        let container = try DashModelContainer.createInMemory()
+        let walletId = Data(repeating: 1, count: 32)
+        container.mainContext.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try container.mainContext.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        let paymentId = Data(repeating: 3, count: 32)
+        let foreign = Data(repeating: 2, count: 32)
+        persist(handler, walletId: walletId, txid: paymentId,
+                bytes: serializedSpend(inputs: [foreign]), net: 40,
+                inputTxids: [foreign], outputs: [(paymentId, 40)])
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+            .first { $0.txid == paymentId })
+        XCTAssertEqual(row.netAmount, 40)
+        XCTAssertEqual(row.netAmount(for: walletId), 40, "a foreign input is not an unresolved input of ours")
+    }
+
+    func testShouldScopeDirectionAndAmountToEachWalletOfALocalTransfer() {
+        let (walletA, walletB) = (Data(repeating: 1, count: 32), Data(repeating: 2, count: 32))
+        let (amount, fee): (UInt64, UInt64) = (90, 10)
+        let coin = input(amount + fee, wallet: 1)
+        // Whichever wallet recorded last owns the stored scalars; here the sender.
+        let tx = PersistentTransaction(
+            txid: Data(repeating: 3, count: 32), transactionData: Data(),
+            direction: CoreDirectionCode.outgoing, netAmount: -Int64(amount + fee)
+        )
+        let credit = PersistentTxo(transaction: tx, vout: 0, amount: amount, address: "", height: 1)
+        credit.walletId = walletB
+        tx.inputs = [coin]
+        tx.outputs = [credit]
+        XCTAssertEqual(tx.direction(for: walletA), CoreDirectionCode.outgoing)
+        XCTAssertEqual(tx.direction(for: walletB), CoreDirectionCode.incoming)
+        XCTAssertEqual(tx.netAmount(for: walletA), -Int64(amount + fee))
+        XCTAssertEqual(tx.netAmount(for: walletB), Int64(amount))
+        XCTAssertEqual(tx.formattedAmount(for: walletB), "+0.00000090 DASH")
+    }
+
+    func testShouldReportAmountUnavailableOnlyWhenNoWalletAccountingApplies() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let (walletA, walletB) = (Data(repeating: 1, count: 32), Data(repeating: 2, count: 32))
+        func makeAccount(of walletId: Data) -> PersistentAccount {
+            let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+            let account = PersistentAccount(
+                wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "Standard BIP44 Account"
+            )
+            context.insert(wallet)
+            context.insert(account)
+            return account
+        }
+        let (accountA, accountB) = (makeAccount(of: walletA), makeAccount(of: walletB))
+        // Payload-only (no linked TXO), e.g. a provider tx matched by key.
+        let payloadOnly = PersistentTransaction(txid: Data(repeating: 3, count: 32), transactionData: Data())
+        let shared = PersistentTransaction(txid: Data(repeating: 4, count: 32), transactionData: Data(), netAmount: 40)
+        let unrecorded = PersistentTransaction(txid: Data(repeating: 5, count: 32), transactionData: Data(), netAmount: 40)
+        context.insert(payloadOnly)
+        context.insert(shared)
+        context.insert(unrecorded)
+        payloadOnly.involvedAccounts = [accountA]
+        shared.involvedAccounts = [accountA, accountB]
+        try context.save()
+
+        XCTAssertEqual(payloadOnly.netAmount(for: walletA), 0, "the sole recorder's stored amount stands")
+        XCTAssertEqual(payloadOnly.formattedAmount(for: walletA), "+0.00000000 DASH")
+        XCTAssertNil(shared.netAmount(for: walletA), "the stored scalar may be the other recorder's")
+        XCTAssertNil(shared.netAmount(for: walletB))
+        XCTAssertEqual(shared.formattedAmount(for: walletA), "Amount unavailable")
+        XCTAssertNil(unrecorded.netAmount(for: walletA), "a wallet with no stake has no amount")
     }
 
     func testShouldNotCountAnotherLocalWalletsUnlinkedOutputForTheSender() throws {
