@@ -40,7 +40,15 @@ where
             block_info,
             transaction,
             platform_version,
-            |available, daily_maximum| {
+            |available, daily_maximum, oldest_queued_amount| {
+                // Nothing fits Platform's own limit, and the Core side can only lower it: skip
+                // its reads and Core calls.
+                if available < oldest_queued_amount {
+                    gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE).set(available as f64);
+                    gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL).set(daily_maximum as f64);
+                    return Ok(available);
+                }
+
                 let core_anchored_withdrawal_limit = self
                     .calculate_core_anchored_withdrawal_limit(
                         block_info,
@@ -75,6 +83,7 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::epoch::Epoch;
+    use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
@@ -87,20 +96,27 @@ mod tests {
     use dpp::withdrawal::Pooling;
     use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
-    /// Pools two queued withdrawals of 1,000 credits each against a Core whose credit pool
-    /// holds `pool_duffs` at every height, and returns how many were pooled.
-    fn pooled_with_a_core_pool_of(pool_duffs: u64) -> usize {
-        let platform_version = PlatformVersion::latest();
+    /// Pools two queued withdrawals of `amount` credits each through the dispatcher, at
+    /// `platform_version`, against a Core whose credit pool holds `pool_duffs` at every height.
+    /// Returns how many were pooled and how many credit pool balances were asked of Core.
+    fn pool(platform_version: &PlatformVersion, amount: u64, pool_duffs: u64) -> (usize, usize) {
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
+        let balance_reads = Arc::new(AtomicUsize::new(0));
         let mut core_rpc = MockCoreRPCLike::new();
+        let reads = balance_reads.clone();
         core_rpc
             .expect_get_credit_pool_balance()
-            .returning(move |_| Ok(pool_duffs));
+            .returning(move |_| {
+                reads.fetch_add(1, Ordering::SeqCst);
+                Ok(pool_duffs)
+            });
         platform.core_rpc = core_rpc;
 
         let transaction = platform.drive.grove.start_transaction();
@@ -125,7 +141,7 @@ mod tests {
                 &data_contract,
                 Identifier::new([1u8; 32]),
                 platform_value!({
-                    "amount": 1000u64,
+                    "amount": amount,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
@@ -145,15 +161,17 @@ mod tests {
             );
         }
 
+        let platform_state = platform.state.load();
         platform
-            .pool_withdrawals_into_transactions_queue_v2(
+            .pool_withdrawals_into_transactions_queue(
                 &block_info,
+                &platform_state,
                 Some(&transaction),
                 platform_version,
             )
             .expect("to pool withdrawal documents into transactions");
 
-        platform
+        let pooled = platform
             .drive
             .fetch_oldest_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::POOLED.into(),
@@ -162,20 +180,53 @@ mod tests {
                 platform_version,
             )
             .expect("to fetch withdrawal documents")
-            .len()
+            .len();
+        (pooled, balance_reads.load(Ordering::SeqCst))
     }
 
     #[test]
     fn should_pool_what_fits_both_the_daily_limit_and_cores_credit_pool() {
         // Plenty in Core's pool: both withdrawals pool.
-        assert_eq!(pooled_with_a_core_pool_of(1_000_000_000_000), 2);
+        assert_eq!(
+            pool(PlatformVersion::latest(), 1000, 1_000_000_000_000).0,
+            2
+        );
     }
 
     #[test]
     fn should_leave_queued_what_cores_credit_pool_could_not_give_up() {
         // A pool of 1 duff, 1,000 credits: it fits one 1,000 credit withdrawal, not two,
         // although the daily limit (2,000 Dash before any history) would allow both.
-        assert_eq!(pooled_with_a_core_pool_of(1), 1);
-        assert_eq!(pooled_with_a_core_pool_of(0), 0);
+        assert_eq!(pool(PlatformVersion::latest(), 1000, 1).0, 1);
+        assert_eq!(pool(PlatformVersion::latest(), 1000, 0).0, 0);
+    }
+
+    /// Through the dispatcher on both sides of the gate: version 1 (protocol version 13) pools
+    /// on the daily limit alone, version 2 (14) also on Core's credit pool.
+    #[test]
+    fn should_hold_back_on_cores_credit_pool_only_from_protocol_version_14() {
+        let version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        assert_eq!(pool(version_13, 1000, 1), (2, 0));
+        assert_eq!(pool(PlatformVersion::latest(), 1000, 1).0, 1);
+    }
+
+    /// While the oldest queued withdrawal does not fit Platform's own limit nothing pools, so
+    /// the Core side is not read: only the scan asks Core (32 Core blocks from 10,000 - 576),
+    /// not the 18 window starts and chain locked height it has not recorded yet.
+    #[test]
+    fn should_not_read_the_core_side_when_nothing_fits_the_daily_limit() {
+        // 3,000 Dash each, over the flat 2,000 Dash before any history.
+        assert_eq!(
+            pool(
+                PlatformVersion::latest(),
+                dash_to_credits!(3000),
+                1_000_000_000_000
+            ),
+            (0, 32)
+        );
+        assert_eq!(
+            pool(PlatformVersion::latest(), 1000, 1_000_000_000_000),
+            (2, 50)
+        );
     }
 }

@@ -37,7 +37,7 @@ where
             block_info,
             transaction,
             platform_version,
-            |available, daily_maximum| {
+            |available, daily_maximum, _oldest_queued_amount| {
                 let current_withdrawal_limit = available;
 
                 // Store prometheus metrics
@@ -51,17 +51,20 @@ where
     }
 
     /// Version 1's pooling, given the amount to pool up to once the daily withdrawal limit is
-    /// known (`current_withdrawal_limit`, called with its available amount and daily maximum
-    /// only when withdrawals are queued). Extracted in place, unchanged, so version 2 can
-    /// reuse it: for version 1 the closure returns the available daily limit and sets the
-    /// gauges exactly where they were set before, so every protocol version that selects
-    /// version 1 (8 to 13) pools the same documents and writes the same state.
+    /// known (`current_withdrawal_limit`, called with its available amount, its daily maximum
+    /// and the amount of the oldest queued withdrawal, only when withdrawals are queued).
+    /// Extracted in place so version 2 can reuse it, inert for protocol versions 1 to 13 (those
+    /// selecting version 1, and through version 0, which delegates to it, those selecting
+    /// version 0): the closure of version 1 returns the available daily limit and sets the
+    /// gauges exactly where they were set before, and reading the oldest withdrawal's amount
+    /// first can fail only where the loop below fails on that same withdrawal, so every such
+    /// block pools the same documents and writes the same state.
     pub(super) fn pool_withdrawals_up_to_limit_v1(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        current_withdrawal_limit: impl FnOnce(Credits, Credits) -> Result<Credits, Error>,
+        current_withdrawal_limit: impl FnOnce(Credits, Credits, Credits) -> Result<Credits, Error>,
     ) -> Result<(), Error> {
         let documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
@@ -96,8 +99,20 @@ where
             "Calculated withdrawal limit info"
         );
 
-        let current_withdrawal_limit =
-            current_withdrawal_limit(withdrawals_info.available(), withdrawals_info.daily_maximum)?;
+        // Pooling stops at the first queued withdrawal over the limit, so nothing pools while
+        // the oldest one does not fit.
+        let oldest_queued_amount: u64 = match documents.first() {
+            Some(document) => document
+                .properties()
+                .get_integer(withdrawal::properties::AMOUNT)?,
+            None => 0,
+        };
+
+        let current_withdrawal_limit = current_withdrawal_limit(
+            withdrawals_info.available(),
+            withdrawals_info.daily_maximum,
+            oldest_queued_amount,
+        )?;
 
         // Only process documents up to the current withdrawal limit.
         let mut total_withdrawal_amount = 0u64;
@@ -238,8 +253,10 @@ mod tests {
 
     #[test]
     fn test_pooling() {
-        let platform_version = PlatformVersion::latest();
+        // Version 1 is frozen: the last protocol version that selects it.
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 

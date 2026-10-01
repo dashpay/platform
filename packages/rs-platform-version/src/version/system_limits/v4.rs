@@ -29,7 +29,8 @@ use crate::version::system_limits::SystemLimits;
 ///   `core_credit_pool_unlock_limit_percent` (15, Core allows 20) of its highest balance at a
 ///   window start Core may use for the unlock (Core's window, `core_credit_pool_window_blocks`
 ///   576 or `regtest_core_credit_pool_window_blocks` 100, back from the chain locked height,
-///   up to `core_credit_pool_unlock_mining_delay_blocks`, 48, later), at least
+///   up to Core's asset unlock validity, `withdrawal_constants.core_expiration_blocks` 48,
+///   later), at least
 ///   `core_credit_pool_unlock_limit_floor` (1500 Dash, Core's floor is 2000), less what is
 ///   pooled and not yet mined. An asset lock Core mined longer ago than its window minus those
 ///   48 blocks adds no credit inflow.
@@ -123,7 +124,6 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     daily_withdrawal_limit_percent: Some(15), // 15% of the total credits a day ago (replaces the flat 2000 Dash in v14)
     core_credit_pool_unlock_limit_percent: Some(15), // Core v24 allows 20% of the pool a window ago
     core_credit_pool_unlock_limit_floor: Some(150_000_000_000_000), // 1500 Dash; Core v24's floor is 2000 Dash
-    core_credit_pool_unlock_mining_delay_blocks: Some(48), // Core's asset unlock validity past its signing height
     core_credit_pool_window_blocks: Some(576), // Core's credit pool window (CreditPoolPeriodBlocks), mainnet, testnet and devnets
     regtest_core_credit_pool_window_blocks: Some(100), // Core's credit pool window on regtest
     min_withdrawal_amount: 1_000_000,          //1000 duffs (raised from 190 in v12)

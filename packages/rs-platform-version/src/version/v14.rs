@@ -85,8 +85,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    counts net outflow and a matching deposit -> withdraw cycle does not
 ///    consume the budget of other users (#4471), mirroring Core v24's net
 ///    credit-pool rule. An asset lock Core mined longer ago than its window
-///    minus `core_credit_pool_unlock_mining_delay_blocks` adds no inflow: Core
-///    no longer counts it in full either. Both the
+///    minus its asset unlock validity (`core_expiration_blocks`) adds no
+///    inflow: Core no longer counts it in full either. Both the
 ///    inflows and the pooled reservations count over the
 ///    interval after the base snapshot only — an entry the snapshot already
 ///    reflects is neither added nor subtracted again. The base is
@@ -1875,14 +1875,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     highest balance at a window start Core may use for the unlock (Core's
 ///     window, `core_credit_pool_window_blocks` 576 or
 ///     `regtest_core_credit_pool_window_blocks` 100, back from the chain locked
-///     height, up to `core_credit_pool_unlock_mining_delay_blocks`, 48, later), at least
+///     height, up to Core's asset unlock validity, `core_expiration_blocks` 48,
+///     later), at least
 ///     `core_credit_pool_unlock_limit_floor` (1500 Dash; Core's floor is 2000),
 ///     less what is queued or broadcast and not mined yet. The formula is
 ///     `core_credit_pool_unlock_limit` 0 in `DPP_METHOD_VERSIONS_V3`. Before
 ///     pooling, `scan_core_blocks_for_withdrawals` reads the Core blocks the
 ///     chain locked height passed (at most `core_blocks_scanned_per_block_limit`,
 ///     32, per block) and records each one's credit pool balance, read from the
-///     coinbase of the raw block, under the withdrawals tree. The Platform-side
+///     block's coinbase alone (`getspecialtxes`), under the withdrawals tree. The
+///     Platform-side
 ///     accounting can grant more than Core will mine (an asset lock published to
 ///     Platform after Core mined it, a whole epoch of Core rewards minted in one
 ///     block); over Core's limit an unlock waits unmined and is re-signed, and

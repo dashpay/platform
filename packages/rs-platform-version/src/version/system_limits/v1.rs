@@ -44,7 +44,6 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
     core_credit_pool_unlock_limit_percent: None,
     core_credit_pool_unlock_limit_floor: None,
-    core_credit_pool_unlock_mining_delay_blocks: None,
     core_credit_pool_window_blocks: None,
     regtest_core_credit_pool_window_blocks: None,
     // = dpp MIN_WITHDRAWAL_AMOUNT: ASSET_UNLOCK_TX_SIZE(190) * MIN_CORE_FEE_PER_BYTE(1)

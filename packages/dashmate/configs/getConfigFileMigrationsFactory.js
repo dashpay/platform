@@ -1777,6 +1777,20 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '5.0.0-beta.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Drive's withdrawal limit (protocol version 14) reads Core's credit pool
+            // balance from each block's coinbase (getspecialtxes) and asks Core where
+            // asset locks were mined (gettxchainlocks). Core refuses both to the
+            // consensus user until its whitelist names them.
+            if (options.core?.rpc?.users?.drive_consensus) {
+              options.core.rpc.users.drive_consensus.whitelist = base.getStored('core.rpc.users.drive_consensus.whitelist');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

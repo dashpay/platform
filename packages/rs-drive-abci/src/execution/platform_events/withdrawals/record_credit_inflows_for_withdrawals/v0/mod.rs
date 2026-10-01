@@ -42,17 +42,16 @@ where
             .collect();
 
         if !asset_lock_mints.is_empty() {
-            let mining_delay_blocks = platform_version
-                .system_limits
-                .core_credit_pool_unlock_mining_delay_blocks
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "record_credit_inflows_for_withdrawals v0 requires system_limits.core_credit_pool_unlock_mining_delay_blocks",
-                )))?;
-            // Mined at or below this height, Core already counts the asset lock in the window
-            // start balance of an unlock pooled now (or soon will).
+            let unlock_validity_blocks = platform_version
+                .drive_abci
+                .withdrawal_constants
+                .core_expiration_blocks;
+            // Mined at or below the nearest window start the Core-anchored limit reads, the
+            // asset lock is inside the window start balance Core may measure an unlock pooled
+            // now from.
             let stale_at_or_below = block_info.core_height.checked_sub(
                 core_credit_pool_window_blocks(self.config.network, platform_version)?
-                    .saturating_sub(mining_delay_blocks),
+                    .saturating_sub(unlock_validity_blocks),
             );
 
             // Core answers from its active chain and transaction index; one that has not

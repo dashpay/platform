@@ -1,4 +1,3 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -26,22 +25,25 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
-        let mining_delay_blocks = platform_version
-            .system_limits
-            .core_credit_pool_unlock_mining_delay_blocks
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "calculate_core_anchored_withdrawal_limit v0 requires system_limits.core_credit_pool_unlock_mining_delay_blocks",
-            )))?;
+        // Core's asset unlock validity, which `update_broadcasted_withdrawal_statuses` also
+        // expires withdrawals by.
+        let unlock_validity_blocks = platform_version
+            .drive_abci
+            .withdrawal_constants
+            .core_expiration_blocks;
         let window_blocks = core_credit_pool_window_blocks(self.config.network, platform_version)?;
 
         let chain_locked_height = block_info.core_height;
 
-        // Core measures an unlock mined in block M from the balance after M - 1 - window; M is
-        // past the chain locked height and at most `mining_delay_blocks` past it (the unlock
-        // is signed at it or later). A window start before the chain's start has no credit
-        // pool, which Core reads as a balance of 0: it never raises the highest.
+        // An unlock signed at request height r is mined in a block M with r < M <= r + 48 (Core
+        // checks the previous block's height against r + 48) and measured from the balance
+        // after M - 1 - window: a window start from r - window to r + 47 - window. Pooling at
+        // chain locked height h signs at h, or at h + 1 when the chain locked height moves before
+        // the later Platform block that signs it, so the window starts read run from h - window
+        // to h + 48 - window. A window start before the chain's start has no credit pool, which
+        // Core reads as a balance of 0: it never raises the highest.
         let window_start_balance = match chain_locked_height
-            .saturating_add(mining_delay_blocks)
+            .saturating_add(unlock_validity_blocks)
             .checked_sub(window_blocks)
         {
             None => 0,
@@ -235,8 +237,9 @@ mod tests {
         // At 10,000 the window starts are 9,424..=9,472: the deposit counts in full.
         assert_eq!(limit(10_000), dash_to_credits!(10550));
         assert_eq!(limit(10_027), dash_to_credits!(10550));
-        // At 10,028 the nearest window start reaches 9,500: an unlock pooled now may be mined
-        // 48 blocks later, when Core's window no longer holds the deposit.
+        // At 10,028 the nearest window start reaches 9,500: an unlock pooled now and signed one
+        // Core block later may be mined at 10,077, measured from the balance after 9,500, which
+        // already holds the deposit.
         assert_eq!(limit(10_028), dash_to_credits!(6300));
     }
 

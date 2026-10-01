@@ -851,6 +851,8 @@ mod tests {
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::grovedb::operations::proof::{GroveDBProof, ProofBytes};
+    use drive::grovedb::{PathQuery, Query};
     use drive::util::grove_operations::DirectQueryType;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
@@ -2284,8 +2286,8 @@ mod tests {
 
     /// Genesis creates the withdrawal trees of version 14 in one batch, the upgrade adds the
     /// new ones one insert at a time, and Merk's shape depends on insertion order: the
-    /// withdrawals tree element (its root key) and every element below it are the same on a
-    /// chain born at 14 and one upgraded to it.
+    /// withdrawals tree element (its root key), every element below it and the shape of its
+    /// Merk are the same on a chain born at 14 and one upgraded to it.
     #[test]
     fn should_build_the_withdrawal_trees_as_a_chain_born_at_14_does() {
         let platform_version = PlatformVersion::latest();
@@ -2310,8 +2312,7 @@ mod tests {
             .expect("expected version 14 transition to succeed");
 
         let withdrawals_element =
-            |platform: &crate::platform_types::platform::Platform<MockCoreRPCLike>,
-             transaction: Option<&Transaction>| {
+            |platform: &Platform<MockCoreRPCLike>, transaction: Option<&Transaction>| {
                 platform
                     .drive
                     .grove_get_raw(
@@ -2342,6 +2343,58 @@ mod tests {
             "the withdrawal trees differ between a chain born at version 14 and one upgraded \
              to it:\n{}",
             diffs.join("\n"),
+        );
+
+        // Equal elements and an equal root key can still sit in differently shaped Merks (the
+        // same keys inserted in another order). A proof of the whole withdrawals tree encodes
+        // its Merk node by node, so it differs whenever the shape does.
+        upgraded
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+        let withdrawals_merk_proof = |platform: &Platform<MockCoreRPCLike>| {
+            let withdrawals_key = vec![RootTree::WithdrawalTransactions as u8];
+            let mut query = Query::new();
+            query.insert_all();
+            let proof = platform
+                .drive
+                .grove
+                .prove_query_non_serialized(
+                    &PathQuery::new_unsized(vec![withdrawals_key.clone()], query),
+                    None,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to prove the withdrawals tree");
+            match proof {
+                GroveDBProof::V0(proof) => proof
+                    .root_layer
+                    .lower_layers
+                    .get(&withdrawals_key)
+                    .expect("expected the withdrawals layer")
+                    .merk_proof
+                    .clone(),
+                GroveDBProof::V1(proof) => {
+                    match &proof
+                        .root_layer
+                        .lower_layers
+                        .get(&withdrawals_key)
+                        .expect("expected the withdrawals layer")
+                        .merk_proof
+                    {
+                        ProofBytes::Merk(merk_proof) => merk_proof.clone(),
+                        _ => panic!("expected a Merk proof of the withdrawals tree"),
+                    }
+                }
+            }
+        };
+        assert_eq!(
+            withdrawals_merk_proof(&born_at_14),
+            withdrawals_merk_proof(&upgraded),
+            "the withdrawals Merk is shaped differently on a chain born at version 14 and one \
+             upgraded to it"
         );
     }
 
