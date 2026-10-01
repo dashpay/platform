@@ -156,16 +156,19 @@ struct CoreRefillSize {
 
 /// Size a core refill to the Core shortfall (`target_duff - core_balance`),
 /// capped by what the primary Platform address can fund after its own fee
-/// and `identity_fee_reserve` (the withdrawal's minimum fee). `None` when nothing is needed or
+/// and `identity_fee_reserve` (the withdrawal's minimum fee), leaving
+/// `platform_keep` (the bank's Platform floor) on the address. `None` when nothing is needed or
 /// the affordable withdrawal is below [`CORE_REFILL_MIN_WITHDRAW_DUFF`].
 fn core_refill_size(
     core_balance: u64,
     target_duff: u64,
     address_credits: Credits,
+    platform_keep: Credits,
     identity_fee_reserve: Credits,
 ) -> Option<CoreRefillSize> {
     let shortfall_duff = target_duff.checked_sub(core_balance).filter(|d| *d > 0)?;
     let affordable_duff = address_credits
+        .saturating_sub(platform_keep)
         .saturating_sub(CORE_REFILL_ADDRESS_FEE_RESERVE)
         .saturating_sub(identity_fee_reserve)
         / CREDITS_PER_DUFF;
@@ -370,9 +373,11 @@ pub async fn provision_transfer_key_if_missing(
 }
 
 /// Credits a drain moves off a bank identity holding `pre`: everything
-/// above `max(keep_credits, BANK_IDENTITY_DRAIN_FEE_RESERVE)`, or `None`.
+/// above `keep_credits + BANK_IDENTITY_DRAIN_FEE_RESERVE`, or `None`. The
+/// transfer fee is paid from what stays, so the reserve sits on top of
+/// the floor rather than inside it.
 fn identity_drain_amount(pre: Credits, keep_credits: Credits) -> Option<Credits> {
-    pre.checked_sub(keep_credits.max(BANK_IDENTITY_DRAIN_FEE_RESERVE))
+    pre.checked_sub(keep_credits.saturating_add(BANK_IDENTITY_DRAIN_FEE_RESERVE))
         .filter(|amount| *amount > 0)
 }
 
@@ -380,12 +385,11 @@ fn identity_drain_amount(pre: Credits, keep_credits: Credits) -> Option<Credits>
 /// [`BankWallet::primary_receive_address`] via the fast Platform-only
 /// `transfer_credits_to_addresses_with_external_signer` primitive.
 ///
-/// Leaves `keep_credits` on the identity (the bank plan passes the
-/// identity floor, which its model of the drain assumes stays), and never
-/// less than [`BANK_IDENTITY_DRAIN_FEE_RESERVE`], which covers the
-/// transfer fee plus headroom for a follow-up cost (e.g. the core-refill
-/// chain firing immediately afterwards). No-op when the balance is at or
-/// below what it keeps.
+/// Leaves `keep_credits` (the bank plan passes the identity floor, which
+/// its model of the drain assumes stays) plus
+/// [`BANK_IDENTITY_DRAIN_FEE_RESERVE`], which pays the transfer fee and
+/// headroom for a follow-up cost (e.g. the core-refill chain firing
+/// immediately afterwards). No-op when the balance is at or below that.
 ///
 /// Returns the amount drained (0 if no-op). Best-effort: failures are
 /// logged at WARN and surfaced to the caller for context — the harness
@@ -511,7 +515,8 @@ pub async fn drain_bank_identity_to_addresses(
 
 /// Refill the bank's Core (Layer-1) confirmed balance from the Platform
 /// address pool when it dips below `threshold_duff`, targeting
-/// `target_duff` afterwards. Best-effort; never fails harness init.
+/// `target_duff` afterwards, never taking the bank's primary Platform
+/// address below `platform_keep`. Best-effort; never fails harness init.
 ///
 /// Chain: `top_up_from_addresses` (bank address → bank identity)
 /// followed by `withdraw_credits_with_external_signer` (bank identity →
@@ -527,6 +532,7 @@ pub async fn refill_core_from_platform_if_below_threshold(
     bank_identity: &BankIdentity,
     threshold_duff: u64,
     target_duff: u64,
+    platform_keep: Credits,
 ) -> FrameworkResult<u64> {
     if target_duff <= threshold_duff {
         tracing::warn!(
@@ -590,6 +596,7 @@ pub async fn refill_core_from_platform_if_below_threshold(
         core_balance,
         target_duff,
         address_credits,
+        platform_keep,
         identity_fee_reserve,
     ) else {
         tracing::warn!(
@@ -946,11 +953,13 @@ mod tests {
         // The live failure: 96.16M on the identity, 100M floor. The old
         // drain kept only the 30M fee reserve and moved 70M off.
         assert_eq!(identity_drain_amount(96_164_640, 100_000_000), None);
+        // The fee reserve sits on top of the floor: the transfer fee is paid
+        // from what stays, so keeping exactly the floor ends below it.
         assert_eq!(
             identity_drain_amount(250_000_000, 100_000_000),
-            Some(150_000_000)
+            Some(150_000_000 - BANK_IDENTITY_DRAIN_FEE_RESERVE)
         );
-        // A floor below the fee reserve still keeps the reserve.
+        // With no floor the drain still keeps the reserve.
         assert_eq!(
             identity_drain_amount(100_000_000, 0),
             Some(100_000_000 - BANK_IDENTITY_DRAIN_FEE_RESERVE)
@@ -975,6 +984,7 @@ mod tests {
             1_256_497_807,
             5_000_000_000,
             3_049_707_681_167,
+            0,
             fee_reserve(),
         )
         .expect("partial refill");
@@ -991,6 +1001,7 @@ mod tests {
             1_299_592_196,
             2_000_000_000,
             2_221_771_107_367,
+            0,
             fee_reserve(),
         )
         .expect("refill needed and affordable");
@@ -1006,8 +1017,14 @@ mod tests {
     fn core_refill_size_is_capped_by_the_address_balance() {
         // The first live failure: a 5e9-duff target against a ~2.2e12-credit address.
         let address = 2_221_771_107_367;
-        let size = core_refill_size(0, DEFAULT_CORE_REFILL_TARGET_DUFF, address, fee_reserve())
-            .expect("partial refill still worthwhile");
+        let size = core_refill_size(
+            0,
+            DEFAULT_CORE_REFILL_TARGET_DUFF,
+            address,
+            0,
+            fee_reserve(),
+        )
+        .expect("partial refill still worthwhile");
         assert!(!size.covers_shortfall);
         assert!(size.topup_credits + CORE_REFILL_ADDRESS_FEE_RESERVE <= address);
         assert_eq!(
@@ -1017,18 +1034,31 @@ mod tests {
     }
 
     #[test]
+    fn core_refill_leaves_the_platform_floor_on_the_address() {
+        // The live failure: the capped refill took the address to 47M
+        // against a 100M Platform floor.
+        let (address, floor) = (3_079_568_247_187, 100_000_000);
+        let size = core_refill_size(1_221_477_092, 4_300_945_339, address, floor, fee_reserve())
+            .expect("partial refill");
+        assert!(
+            size.topup_credits + CORE_REFILL_ADDRESS_FEE_RESERVE + floor <= address,
+            "the refill must leave the Platform floor on the address"
+        );
+    }
+
+    #[test]
     fn core_refill_size_skips_when_nothing_needed_or_unaffordable() {
         assert_eq!(
-            core_refill_size(5_000, 5_000, u64::MAX, fee_reserve()),
+            core_refill_size(5_000, 5_000, u64::MAX, 0, fee_reserve()),
             None
         );
         assert_eq!(
-            core_refill_size(6_000, 5_000, u64::MAX, fee_reserve()),
+            core_refill_size(6_000, 5_000, u64::MAX, 0, fee_reserve()),
             None
         );
         // Address cannot even cover the fees.
         assert_eq!(
-            core_refill_size(0, 5_000_000_000, 400_000_000, fee_reserve()),
+            core_refill_size(0, 5_000_000_000, 400_000_000, 0, fee_reserve()),
             None
         );
         // Affordable but below the worthwhile minimum.
@@ -1036,7 +1066,7 @@ mod tests {
             + fee_reserve()
             + (CORE_REFILL_MIN_WITHDRAW_DUFF - 1) * CREDITS_PER_DUFF;
         assert_eq!(
-            core_refill_size(0, 5_000_000_000, tiny, fee_reserve()),
+            core_refill_size(0, 5_000_000_000, tiny, 0, fee_reserve()),
             None
         );
     }

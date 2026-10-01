@@ -893,6 +893,7 @@ impl SetupGuard {
             self.ctx.bank_identity(),
             self.ctx.config.core_refill_threshold_duff,
             self.ctx.config.core_refill_target_duff,
+            self.ctx.config.min_bank_credits,
         )
         .await
         {

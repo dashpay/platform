@@ -377,6 +377,7 @@ pub async fn execute(
                     bank_identity,
                     config.core_refill_threshold_duff,
                     *target_duff,
+                    config.min_bank_credits,
                 )
                 .await
                 {
