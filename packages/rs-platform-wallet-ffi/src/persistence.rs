@@ -5112,7 +5112,7 @@ impl Drop for LoadGuard {
 fn decode_unconfirmed_outgoing(
     entry: &WalletRestoreEntryFFI,
 ) -> Vec<dashcore::blockdata::transaction::Transaction> {
-    use dashcore::consensus::Decodable;
+    use dashcore::consensus::deserialize;
     use dashcore::hashes::Hash;
     let recs: &[UnconfirmedOutgoingTxRecordFFI] = if entry.unconfirmed_outgoing_tx_records.is_null()
         || entry.unconfirmed_outgoing_tx_records_count == 0
@@ -5136,7 +5136,7 @@ fn decode_unconfirmed_outgoing(
             continue;
         }
         let bytes = unsafe { slice::from_raw_parts(rec.tx_bytes, rec.tx_bytes_len) };
-        match dashcore::blockdata::transaction::Transaction::consensus_decode(&mut &bytes[..]) {
+        match deserialize::<dashcore::Transaction>(bytes) {
             // The bytes must be the row they were selected from. The
             // replay runs through the ordinary state-update path, so a
             // stale or partially-written `transactionData` would apply a
@@ -5216,7 +5216,7 @@ fn order_unconfirmed_outgoing(
 /// spend is still reserved but the lock's upgrade and conflict sweep wait for
 /// the lock to be observed again.
 fn decode_recorded_transactions(entry: &WalletRestoreEntryFFI) -> RecordedHistory {
-    use dashcore::consensus::Decodable;
+    use dashcore::consensus::deserialize;
     use dashcore::hashes::Hash;
     use key_wallet::managed_account::transaction_record::TransactionDirection;
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -5242,9 +5242,7 @@ fn decode_recorded_transactions(entry: &WalletRestoreEntryFFI) -> RecordedHistor
             dropped_decode += 1;
             continue;
         }
-        let transaction = match dashcore::blockdata::transaction::Transaction::consensus_decode(
-            &mut &bytes[..],
-        ) {
+        let transaction = match deserialize::<dashcore::Transaction>(bytes) {
             Ok(tx) if *tx.txid().as_byte_array() == rec.txid => tx,
             Ok(_) => {
                 dropped_identity += 1;
@@ -11194,13 +11192,30 @@ mod tests {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("runtime");
-        let redeliver = |recorded: &[RecordedTransactionRestoreFFI]| {
+        let mut raw_bytes = [serialize(&funding), serialize(&spending)];
+        let unresolved: Vec<_> = raw_bytes
+            .iter_mut()
+            .enumerate()
+            .map(|(i, bytes)| UnresolvedAssetLockTxRecordFFI {
+                account_index: 0,
+                tx_bytes: bytes.as_mut_ptr(),
+                tx_bytes_len: bytes.len(),
+                context_raw: TX_CONTEXT_RAW_IN_BLOCK,
+                block_height: 100 + i as u32,
+                block_hash: [100 + i as u8; 32],
+                block_timestamp: 100 + i as u64,
+                first_seen: 100 + i as u64,
+            })
+            .collect();
+        let redeliver = |recorded: &[RecordedTransactionRestoreFFI], overlap: bool| {
             let entry = WalletRestoreEntryFFI {
                 wallet_id: wallet.wallet_id,
                 accounts: &spec,
                 accounts_count: 1,
                 utxos: &change,
                 utxos_count: 1,
+                unresolved_asset_lock_tx_records: unresolved.as_ptr(),
+                unresolved_asset_lock_tx_records_count: if overlap { unresolved.len() } else { 0 },
                 recorded_transactions: recorded.as_ptr(),
                 recorded_transactions_count: recorded.len(),
                 ..Default::default()
@@ -11225,18 +11240,19 @@ mod tests {
             info
         };
 
-        let guarded = redeliver(&history);
-        assert!(
-            guarded
-                .accounts
-                .all_funding_accounts()
-                .into_iter()
-                .all(|account| !account.utxos.contains_key(&spent)),
-            "a redelivered funding must not re-credit a confirmed-spent output"
-        );
-        assert_eq!(guarded.balance.total(), 20_000);
-
-        let unguarded = redeliver(&[]);
+        for overlap in [false, true] {
+            let guarded = redeliver(&history, overlap);
+            assert!(
+                guarded
+                    .accounts
+                    .all_funding_accounts()
+                    .into_iter()
+                    .all(|account| !account.utxos.contains_key(&spent)),
+                "a redelivered funding must not re-credit a confirmed-spent output"
+            );
+            assert_eq!(guarded.balance.total(), 20_000);
+        }
+        let unguarded = redeliver(&[], false);
         assert!(
             unguarded
                 .accounts
@@ -11311,6 +11327,37 @@ mod tests {
         );
         assert_eq!(history.transactions[3].stored_direction, None);
         assert!(history.instant_locks.is_empty());
+    }
+
+    #[test]
+    fn should_reject_non_exact_transaction_bytes_on_restore() {
+        use dashcore::hashes::Hash;
+        let tx = synthetic_minimal_tx();
+        let exact = serialize(&tx);
+        for bytes in [
+            [exact.clone(), vec![0]].concat(),
+            [exact.clone(), exact.clone()].concat(),
+            exact[..exact.len() - 1].to_vec(),
+        ] {
+            let mut row = RecordedRow::new(&tx, TX_CONTEXT_RAW_MEMPOOL, 0, None);
+            row.bytes = bytes.clone();
+            let recorded = row.ffi();
+            let outgoing = UnconfirmedOutgoingTxRecordFFI {
+                txid: *tx.txid().as_byte_array(),
+                tx_bytes: bytes.as_ptr().cast_mut(),
+                tx_bytes_len: bytes.len(),
+                first_seen: 0,
+            };
+            let entry = WalletRestoreEntryFFI {
+                recorded_transactions: &recorded,
+                recorded_transactions_count: 1,
+                unconfirmed_outgoing_tx_records: &outgoing,
+                unconfirmed_outgoing_tx_records_count: 1,
+                ..Default::default()
+            };
+            assert!(decode_recorded_transactions(&entry).is_empty());
+            assert!(decode_unconfirmed_outgoing(&entry).is_empty());
+        }
     }
 
     #[test]

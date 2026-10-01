@@ -7139,8 +7139,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // instead of claiming "no history".
         var historyBuckets: [Data: [PersistentTransaction]] = [:]
         do {
+            var historyDescriptor = FetchDescriptor<PersistentTransaction>()
+            historyDescriptor.relationshipKeyPathsForPrefetching = [
+                \.involvedAccounts, \.inputs, \.outputs, \.pendingInputs,
+            ]
             let transactions = try modelFetcher.fetch(
-                FetchDescriptor<PersistentTransaction>(), in: backgroundContext
+                historyDescriptor, in: backgroundContext
             )
             for w in restorable {
                 historyBuckets[w.walletId] = transactions.filter {

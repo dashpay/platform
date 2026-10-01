@@ -13,6 +13,7 @@ use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::{OutPoint, Txid};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -32,9 +33,9 @@ use crate::changeset::{RecordedHistory, StoredTransaction};
 /// A persisted lock upgrades its mempool record to InstantSend, because a lock
 /// that arrived after its transaction was stored never rewrote the record.
 ///
-/// Records whose txid an account already holds are skipped: a persister that
-/// restored them itself (asset-lock funding, provider special transactions)
-/// owns them, and the checker treats a known mempool transaction as a no-op.
+/// Raw restored records are replayed too: their presence alone does not
+/// establish spend guards. Their labels, fees and proof-lookup records survive
+/// replay unless a final conflicting transaction sweeps them.
 ///
 /// Returns how many records were replayed.
 pub async fn replay_recorded_history(
@@ -60,23 +61,19 @@ pub async fn replay_recorded_history(
             account.utxos.keys().map(move |outpoint| (*outpoint, owner))
         })
         .collect();
-    let held: HashSet<Txid> = transactions
-        .iter()
-        .map(|stored| stored.txid)
-        .filter(|txid| {
-            wallet_info
-                .accounts
-                .all_accounts()
-                .into_iter()
-                .any(|account| account.has_transaction(txid))
-        })
-        .collect();
-    if !held.is_empty() {
-        tracing::debug!(
-            wallet_id = %hex::encode(wallet_info.wallet_id),
-            skipped = held.len(),
-            "load replay: skipped records the persister already restored"
-        );
+    let replay_txids: HashSet<Txid> = transactions.iter().map(|stored| stored.txid).collect();
+    let mut held: HashMap<AccountType, Vec<TransactionRecord>> = HashMap::new();
+    // Detach raw records so the checker rebuilds reservations even for known mempool txids.
+    for mut account in wallet_info.accounts.all_accounts_mut() {
+        let owner = account.managed_account_type().to_account_type();
+        account.transactions_mut().retain(|txid, record| {
+            if replay_txids.contains(txid) {
+                held.entry(owner).or_default().push(record.clone());
+                false
+            } else {
+                true
+            }
+        });
     }
     // TODO(bound-load-history-replay): every stored record is replayed on each
     // load; bounding it to records above the last chain lock needs care so
@@ -89,10 +86,9 @@ pub async fn replay_recorded_history(
     let replay = replay_order(transactions);
 
     let mut replayed = 0usize;
+    let mut swept = HashSet::new();
+    let mut final_transactions = Vec::new();
     for stored in replay {
-        if held.contains(&stored.txid) {
-            continue;
-        }
         // The lock set already holds this txid (load marked the restored
         // UTXOs), so a later lock event is deduplicated: the InstantSend
         // context, and the conflict sweep it runs, must come from here.
@@ -105,9 +101,13 @@ pub async fn replay_recorded_history(
             }
             (context, _) => context,
         };
-        wallet_info
-            .check_core_transaction(&stored.transaction, context, wallet, true, false)
+        let result = wallet_info
+            .check_core_transaction(&stored.transaction, context.clone(), wallet, true, false)
             .await;
+        swept.extend(result.swept_transactions);
+        if !held.is_empty() && !matches!(context, TransactionContext::Mempool) {
+            final_transactions.push((stored.transaction, context));
+        }
         replayed += 1;
     }
 
@@ -141,6 +141,29 @@ pub async fn replay_recorded_history(
                 && !spent.contains(outpoint)
                 && !misplaced.contains(&(*outpoint, owner))
         });
+    }
+    let mut restored_fallback = false;
+    for mut account in wallet_info.accounts.all_accounts_mut() {
+        let owner = account.managed_account_type().to_account_type();
+        for original in held.remove(&owner).into_iter().flatten() {
+            if swept.contains(&original.txid) {
+                continue;
+            }
+            if let Some(replayed) = account.transactions_mut().get_mut(&original.txid) {
+                replayed.label = original.label;
+                replayed.fee = original.fee.or(replayed.fee);
+            } else {
+                // Proof lookup can require a record with no currently attributable inputs or outputs.
+                account.transactions_mut().insert(original.txid, original);
+                restored_fallback = true;
+            }
+        }
+    }
+    if restored_fallback {
+        // Unattributable raw records were absent from the checker's conflict sweeps.
+        for (transaction, context) in final_transactions {
+            wallet_info.sweep_conflicts(&transaction, &context);
+        }
     }
     // Finalize replayed records before a sync checkpoint can prune their spend guards.
     if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
@@ -410,29 +433,136 @@ mod tests {
         );
     }
 
-    /// A record the persister already restored itself (asset-lock funding,
-    /// provider special transactions) stays the persister's: the replay must
-    /// not count it, since the checker treats a known mempool transaction as
-    /// a no-op and would mask that as applied.
     #[tokio::test]
-    async fn should_skip_records_an_account_already_holds() {
+    async fn should_rebuild_guards_for_raw_restored_records() {
+        for mempool in [false, true] {
+            let (mut wallet, mut restored, funding, mut records, spent) =
+                confirmed_spend_fixture().await;
+            if mempool {
+                records[1].context = TransactionContext::Mempool;
+            }
+            let mut held = records[1].clone();
+            held.label = "retained label".into();
+            held.fee = Some(1_000);
+            let txid = held.txid;
+            restored
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .transactions_mut()
+                .insert(txid, held);
+
+            let count = replay_recorded_history(
+                &mut restored,
+                &mut wallet,
+                history(records.clone(), BTreeMap::new()),
+            )
+            .await;
+            restored
+                .check_core_transaction(
+                    &funding,
+                    records[0].context.clone(),
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await;
+            let account = &restored.accounts.standard_bip44_accounts[&0];
+            assert!(!account.utxos.contains_key(&spent), "mempool={mempool}");
+            assert_eq!(restored.balance.total(), 20_000);
+            assert_eq!(count, 2);
+            let held = &account.transactions()[&txid];
+            assert_eq!(held.label, "retained label");
+            assert_eq!(held.fee, Some(1_000));
+        }
+    }
+
+    #[tokio::test]
+    async fn should_retain_raw_record_without_matching_utxos() {
         let (mut wallet, mut restored, _, records, _) = confirmed_spend_fixture().await;
-        let held = records[1].clone();
+        let mut held = records[1].clone();
+        held.context = TransactionContext::Mempool;
+        held.label = "proof lookup".into();
+        let txid = held.txid;
         restored
             .accounts
             .standard_bip44_accounts
             .get_mut(&0)
             .unwrap()
             .transactions_mut()
-            .insert(held.txid, held);
-
-        let count = replay_recorded_history(
+            .insert(txid, held.clone());
+        replay_recorded_history(
             &mut restored,
             &mut wallet,
-            history(records, BTreeMap::new()),
+            history(vec![held], BTreeMap::new()),
         )
         .await;
-        assert_eq!(count, 1, "only the record no account held is replayed");
+        assert_eq!(
+            restored.accounts.standard_bip44_accounts[&0].transactions()[&txid].label,
+            "proof lookup"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_drop_raw_conflict_without_matching_utxos() {
+        let (mut wallet, restored, _, records, _) = confirmed_spend_fixture().await;
+        for instant in [false, true] {
+            let mut info = restored.clone();
+            let mut loser = records[1].clone();
+            loser.context = TransactionContext::Mempool;
+            let mut child = loser.clone();
+            child.transaction.input[0].previous_output = OutPoint::new(loser.txid, 0);
+            child.txid = child.transaction.txid();
+            let mut winner = loser.clone();
+            winner.transaction.output[0].value -= 1;
+            winner.txid = winner.transaction.txid();
+            winner.context = if instant {
+                TransactionContext::InstantSend(InstantLock {
+                    txid: winner.txid,
+                    inputs: winner
+                        .transaction
+                        .input
+                        .iter()
+                        .map(|input| input.previous_output)
+                        .collect(),
+                    ..Default::default()
+                })
+            } else {
+                records[1].context.clone()
+            };
+            info.accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .transactions_mut()
+                .insert(loser.txid, loser.clone());
+            info.accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .transactions_mut()
+                .insert(child.txid, child.clone());
+            replay_recorded_history(
+                &mut info,
+                &mut wallet,
+                history(vec![loser.clone(), child.clone(), winner], BTreeMap::new()),
+            )
+            .await;
+            assert!(
+                !info.accounts.standard_bip44_accounts[&0]
+                    .transactions()
+                    .contains_key(&loser.txid),
+                "instant={instant}"
+            );
+            assert!(
+                !info.accounts.standard_bip44_accounts[&0]
+                    .transactions()
+                    .contains_key(&child.txid),
+                "instant={instant}"
+            );
+            assert_eq!(info.balance.total(), 20_000);
+        }
     }
 
     /// An empty history leaves the restored projection untouched.
@@ -656,6 +786,20 @@ mod tests {
 
         // Replayed after a conflicting spend, its lock sweeps that spend.
         let mut contested = ManagedWalletInfo::from_wallet(&wallet, 0);
+        contested
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .transactions_mut()
+            .insert(loser.txid(), record_of(loser.txid()));
+        contested
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .transactions_mut()
+            .insert(winner.txid(), record_of(winner.txid()));
         replay_recorded_history(
             &mut contested,
             &mut wallet,
