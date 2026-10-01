@@ -1866,6 +1866,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     documents in state share one of its entries. Inert for every contract
 ///     without the keyword, which every earlier grammar refuses.
 ///
+/// 70. **Documents deleted only when consumed (`canBeDeleted:
+///     "onlyWhenConsumed"`)**: a third `canBeDeleted` value of meta-schema v3
+///     and parser generation 3, in place
+///     (`ParserGeneration::admit_can_be_deleted_only_when_consumed`,
+///     `DocumentTypeV2Getters::documents_deleted_only_when_consumed`). The
+///     owner's delete reads it as `false` (document delete advanced structure
+///     validation refuses it, 10404), and a `refersTo` with `consume` may
+///     target the type (`DocumentReferenceLookup::referenced_side_error`,
+///     which refused every type its owner can not delete). Its documents can
+///     leave state, so the type is a `deletableDocument` target, never a
+///     `permanentDocument` or `moderatedDocument` one
+///     (`documents_can_disappear`, `document_reference_kind`). Drive's delete
+///     guard (`delete_document_for_contract_operations` 0, in place) lets
+///     such a document go, as the consume's delete needs. Refused on a
+///     type that keeps history or is indexOnly (10231), and fixed on update
+///     (`validate_update` v1, 40212). Inert for every contract without the
+///     value, which every earlier grammar refuses.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

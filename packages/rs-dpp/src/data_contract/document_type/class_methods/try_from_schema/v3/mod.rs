@@ -401,6 +401,9 @@ fn parse_generation_3(
     let moderator_abilities = common::parse_moderator_abilities_keyword(&schema, name)?;
     let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
     let immutable = common::parse_immutable_keyword(&schema, name)?;
+    let deleted_only_when_consumed = schema
+        .to_map()
+        .is_ok_and(|schema_map| common::is_can_be_deleted_only_when_consumed(schema_map));
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -473,6 +476,9 @@ fn parse_generation_3(
             // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
             // moderated reference (`apply_derived_index_properties`).
             admit_derived_index_properties: true,
+            // ONLY WHEN CONSUMED: `canBeDeleted: "onlyWhenConsumed"`, documents only a
+            // `refersTo` with `consume` deletes (`apply_deleted_only_when_consumed`).
+            admit_can_be_deleted_only_when_consumed: true,
         },
         platform_version,
     )?;
@@ -535,6 +541,8 @@ fn parse_generation_3(
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
     common::apply_index_only(&mut v2, index_only, name, platform_version)?;
+    // After `apply_index_only`: an indexOnly type has nothing a reference could consume.
+    common::apply_deleted_only_when_consumed(&mut v2, deleted_only_when_consumed, name)?;
     // After the core parse: the lints read the resolved `documentsMutable`
     // flag (contract default applied) and the parsed top-level properties,
     // and each condition's reads are checked against the parsed properties.
@@ -1545,6 +1553,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderator_abilities_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(test)]
+mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
 #[cfg(all(test, feature = "validation"))]

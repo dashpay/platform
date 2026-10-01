@@ -126,6 +126,8 @@ impl DocumentTypeV1 {
                 // MODERATION STAMPS: generation-3 system properties; not in this grammar.
                 admit_moderation_stamp_indexes: false,
                 admit_derived_index_properties: false,
+                // ONLY WHEN CONSUMED: a generation-3 `canBeDeleted` value; not in this grammar.
+                admit_can_be_deleted_only_when_consumed: false,
             },
             platform_version,
         )

@@ -76,6 +76,14 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate that the type keeps whether only a consume deletes its documents (the
+        // value arrives with protocol version 14, the only version selecting this generation)
+        let result = self.validate_deleted_only_when_consumed_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate that a property the update adds is generated only when one of its
         // params is new too (the keyword arrives with protocol version 14, the only
         // version selecting this generation)
@@ -553,6 +561,46 @@ impl DocumentTypeRef<'_> {
             }
         }
         SimpleConsensusValidationResult::new()
+    }
+
+    /// Whether only a consume deletes the documents of a type (`canBeDeleted:
+    /// "onlyWhenConsumed"`) is fixed when the type is created. Turning it on would let
+    /// documents of a type that promised never to lose them leave state, under the
+    /// `permanentDocument` references made to it; turning it off would strand the
+    /// references that consume them. A change from `true` is already refused as a change of
+    /// whether the owner may delete; this catches the change from `false`, which the owner's
+    /// flag does not see. It runs before the schema compatibility differ, which only freezes
+    /// the key's text, so a real change gets this error.
+    fn validate_deleted_only_when_consumed_unchanged(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        let (old, new) = (
+            self.documents_deleted_only_when_consumed(),
+            new_document_type.documents_deleted_only_when_consumed(),
+        );
+        if old == new {
+            return SimpleConsensusValidationResult::new();
+        }
+        let describe = |only_when_consumed: bool, can_be_deleted: bool| {
+            if only_when_consumed {
+                "\"onlyWhenConsumed\"".to_string()
+            } else {
+                can_be_deleted.to_string()
+            }
+        };
+        SimpleConsensusValidationResult::new_with_error(
+            DocumentTypeUpdateError::new(
+                self.data_contract_id(),
+                self.name(),
+                format!(
+                    "document type can not change whether only a consume deletes its documents: changing canBeDeleted from {} to {}",
+                    describe(old, self.documents_can_be_deleted()),
+                    describe(new, new_document_type.documents_can_be_deleted())
+                ),
+            )
+            .into(),
+        )
     }
 
     /// A document type's time to live is fixed when the type is created. Every document
@@ -1454,6 +1502,93 @@ mod tests {
             .as_ref()
             .validate_update(
                 make_document_type(Some(86400)).as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_return_invalid_result_when_only_a_consume_deleting_documents_is_changed() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        let make_document_type = |can_be_deleted: Value| {
+            let mut schema = platform_value!({
+                "type": "object",
+                "documentsMutable": false,
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                },
+                "additionalProperties": false,
+            });
+            schema
+                .insert("canBeDeleted".to_string(), can_be_deleted)
+                .expect("expected to set canBeDeleted");
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "commitment",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+        let only_when_consumed = || Value::Text("onlyWhenConsumed".to_string());
+
+        // Setting it would let documents leave state under the permanent references made to
+        // a type that promised they never would, and removing it would strand the references
+        // that consume them: both refused, with the error naming the change. From or to
+        // `true` the owner's flag changes too, which the check of the owner's delete reports
+        // first.
+        for (old, new, expected) in [
+            (
+                Value::Bool(false),
+                only_when_consumed(),
+                "document type can not change whether only a consume deletes its documents: changing canBeDeleted from false to \"onlyWhenConsumed\"",
+            ),
+            (
+                only_when_consumed(),
+                Value::Bool(false),
+                "document type can not change whether only a consume deletes its documents: changing canBeDeleted from \"onlyWhenConsumed\" to false",
+            ),
+            (
+                Value::Bool(true),
+                only_when_consumed(),
+                "document type can not change whether its documents can be deleted: changing from true to false",
+            ),
+            (
+                only_when_consumed(),
+                Value::Bool(true),
+                "document type can not change whether its documents can be deleted: changing from false to true",
+            ),
+        ] {
+            let result = make_document_type(old)
+                .as_ref()
+                .validate_update(make_document_type(new).as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message() == expected,
+                "expected {expected:?}, got {:?}",
+                result.errors
+            );
+        }
+
+        // Unchanged, it passes.
+        let result = make_document_type(only_when_consumed())
+            .as_ref()
+            .validate_update(
+                make_document_type(only_when_consumed()).as_ref(),
                 2,
                 platform_version,
             )
