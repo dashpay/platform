@@ -66,6 +66,16 @@ where
                 .collect();
 
             let mined_heights = self.core_rpc.get_transactions_mined_heights(&txids)?;
+            // One height per asset lock, or the pairing below would drop the rest of the mints.
+            if mined_heights.len() != txids.len() {
+                return Err(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                    format!(
+                        "expected {} mined heights, Core returned {}",
+                        txids.len(),
+                        mined_heights.len()
+                    ),
+                )));
+            }
 
             for ((_, amount), mined_height) in asset_lock_mints.into_iter().zip(mined_heights) {
                 // Only a height at or below the chain locked one is final and the same on
@@ -294,6 +304,41 @@ mod tests {
         assert!(platform
             .record_credit_inflows_for_withdrawals(
                 &asset_lock_mints(&[(1, 100)]),
+                0,
+                &BlockInfo {
+                    core_height: 1000,
+                    ..Default::default()
+                },
+                &transaction,
+                platform_version,
+            )
+            .is_err());
+    }
+
+    /// Core answering for fewer asset locks than asked fails the block instead of dropping the
+    /// mints it left out.
+    #[test]
+    fn should_fail_when_core_answers_fewer_mined_heights_than_asked() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let platform_version = PlatformVersion::latest();
+
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc
+            .expect_get_block_hash()
+            .returning(|_| Ok(BlockHash::all_zeros()));
+        core_rpc
+            .expect_get_transactions_mined_heights()
+            .returning(|_| Ok(vec![None]));
+        platform.core_rpc = core_rpc;
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(platform
+            .record_credit_inflows_for_withdrawals(
+                &asset_lock_mints(&[(1, 100), (2, 200)]),
                 0,
                 &BlockInfo {
                     core_height: 1000,
