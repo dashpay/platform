@@ -59,8 +59,12 @@ use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
+#[cfg(feature = "validation")]
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
+#[cfg(feature = "validation")]
+use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
@@ -628,6 +632,7 @@ fn parse_generation_3(
     #[cfg(feature = "validation")]
     if full_validation {
         validate_typed_array_max_items(&v2, name, platform_version)?;
+        validate_contested_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
         validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
@@ -1138,6 +1143,77 @@ fn validate_typed_array_max_items(
     Ok(())
 }
 
+/// A document type with a contested index and a summed property keeps every summed value
+/// within `SystemLimits::max_contested_summed_value_magnitude`: the property's schema
+/// declares a `maximum` of at most the limit and a `minimum` of at least its negation.
+/// Awarding a contest writes the winner's document into the type's sums after any number of
+/// other documents were written, so no check on the contender's create can keep those sums
+/// in `i64`; values this small keep them there short of 2^36 documents.
+///
+/// The bounds are read from the schema rather than from the inferred type, which is `i64`
+/// whatever they are without `sizedIntegerTypes`. `$ref`s are followed into `schema_defs`.
+///
+/// Full validation only, like the typed array cap: a contract stored before the rule was
+/// checked when it was registered, and must stay readable.
+#[cfg(feature = "validation")]
+fn validate_contested_summed_value_bounds(
+    document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_contested_summed_value_magnitude
+    else {
+        return Ok(());
+    };
+    let Some(contested_index) = document_type
+        .indices
+        .values()
+        .find(|index| index.contested_index.is_some())
+    else {
+        return Ok(());
+    };
+    // Every summed declaration of a type names the same property (`apply_doctype_aggregates`)
+    let Some(summed_property) = document_type.documents_summable.as_ref().or_else(|| {
+        document_type
+            .indices
+            .values()
+            .find_map(|index| index.summable.as_ref())
+    }) else {
+        return Ok(());
+    };
+    let bounds = schema_at_path(&document_type.schema, schema_defs, summed_property)
+        .and_then(|property_schema| {
+            property_schema
+                .map(|property_schema| {
+                    Ok::<_, DataContractError>((
+                        property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
+                        property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
+                    ))
+                })
+                .transpose()
+        })
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    let within_limit = matches!(
+        bounds,
+        Some((Some(minimum), Some(maximum))) if minimum >= -limit && maximum <= limit
+    );
+    if !within_limit {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sums \"{}\" and has the contested index \"{}\": \
+                 awarding a contest adds the winner's value to the type's sums, so the \
+                 property must declare a minimum of at least -{} and a maximum of at most {}",
+                name, summed_property, contested_index.name, limit, limit,
+            )),
+        ));
+    }
+    Ok(())
+}
+
 /// Every reference expression (`anyOf` / `allOf`), on an identifier property,
 /// on the elements of a typed array or in the type's `ownerRefersTo` or
 /// `creatorRefersTo`, stays inside the registration limits:
@@ -1524,6 +1600,8 @@ impl DocumentType {
 
 #[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
+#[cfg(all(test, feature = "validation"))]
+mod contested_summed_value_bounds_tests;
 #[cfg(all(test, feature = "validation"))]
 mod derived_index_property_tests;
 #[cfg(test)]

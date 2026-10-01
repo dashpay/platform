@@ -1866,7 +1866,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     documents in state share one of its entries. Inert for every contract
 ///     without the keyword, which every earlier grammar refuses.
 ///
-/// 70. **Documents deleted only when consumed (`canBeDeleted:
+/// 70. **A contested type sums only small values**: parser generation 3, in
+///     place, refuses under full validation a document type with a contested
+///     index and a summed property (`summable`, `averageable`,
+///     `documentsSummable` or `documentsAverageable`) unless the property's
+///     schema declares a `minimum` of at least -2^27 and a `maximum` of at most
+///     2^27 (`SYSTEM_LIMITS_V4.max_contested_summed_value_magnitude`, `None` in
+///     the earlier tables). The end of a contest writes the winner's document
+///     into the type's sums with no transition to refuse, so the values must be
+///     small enough that the sums stay in `i64`, which they do short of 2^36
+///     documents. A stored contract still parses.
+///
+/// 71. **Documents deleted only when consumed (`canBeDeleted:
 ///     "onlyWhenConsumed"`)**: a third `canBeDeleted` value of meta-schema v3
 ///     and parser generation 3, in place
 ///     (`ParserGeneration::admit_can_be_deleted_only_when_consumed`,
