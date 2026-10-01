@@ -233,6 +233,39 @@ export type DocumentPropertyReferenceTarget =
        */
       consume?: true;
     }
+  | {
+      /**
+       * A document of a type whose documents leave state only when the
+       * contract's moderators remove them, each removal leaving a removal
+       * record under the contract (`canBeDeleted: false`, no `ttl`, and
+       * `moderatorAbilities.delete` keeping records). Between
+       * `permanentDocument` and `deletableDocument`, disjoint from both. The
+       * referenced document must exist, and every `where` entry must hold,
+       * when the referring document is written; afterwards the reference
+       * resolves to the document or, once a moderator removed it, to its
+       * removal record, which a restore can bring the document back from. A
+       * replace keeps it, re-validating it only when the value or a property
+       * `where` reads changes (every replace for a `where` value `$ownerId`),
+       * as for `permanentDocument`.
+       */
+      type: 'moderatedDocument';
+      /**
+       * The contract the referenced document type lives in. Always
+       * present, resolved exactly as for `permanentDocument`.
+       */
+      contractId: Identifier;
+      /**
+       * Name of the referenced document type; its documents must leave
+       * state only through a moderator's recorded removal.
+       */
+      documentType: string;
+      /**
+       * What the referenced document must hold, exactly as for
+       * `permanentDocument`. Absent — not `{}`-valued — when the declaration
+       * compares nothing.
+       */
+      where?: DocumentReferenceWhere;
+    }
   | DocumentPropertyReferenceExpression;
 
 /**
@@ -581,6 +614,7 @@ fn set_reference_target_fields(
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
         DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => "deletableDocument",
+        DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
         DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
             return Err(WasmDppError::generic(format!(
                 "the reference expression declared at '{path}' has no single target kind"
@@ -660,6 +694,11 @@ fn set_reference_target_fields(
             document_type_name,
             property_agreement,
             ..
+        }
+        | DocumentPropertyReferenceTarget::ModeratedDocument {
+            contract_id,
+            document_type_name,
+            property_agreement,
         } => {
             let effective = contract_id.unwrap_or(declaring_contract_id);
             set_field(

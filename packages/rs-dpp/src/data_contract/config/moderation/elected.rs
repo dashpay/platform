@@ -14,7 +14,7 @@
 
 use crate::data_contract::config::moderation::{
     document_schema_lets_moderators_change_fields, document_schema_lets_moderators_delete,
-    ContractModerationConfig,
+    document_schema_lets_moderators_delete_settled, ContractModerationConfig,
 };
 use crate::data_contract::DocumentName;
 use crate::prelude::TimestampMillis;
@@ -550,6 +550,22 @@ impl ElectedModerators {
             ));
         }
 
+        // Only a seated team deletes a settled document, so a type that says who of the team
+        // must approve such a deletion must give the team the deletion, or the rule could never
+        // be used.
+        if let Some(document_type_name) = document_schemas
+            .iter()
+            .filter(|(_, schema)| document_schema_lets_moderators_delete_settled(schema))
+            .map(|(name, _)| name)
+            .find(|name| !self.allows(name, ModerationAbility::DeleteDocuments))
+        {
+            return Some(format!(
+                "the document type \"{document_type_name}\" says who of the team must approve the \
+                 deletion of a settled document, but the moderated set does not give the team \
+                 `deleteDocuments` on it, so no team could ever delete one"
+            ));
+        }
+
         None
     }
 }
@@ -890,6 +906,34 @@ mod tests {
                 .expect("refused")
                 .contains("\"report\" keeps fields only moderators write"));
         }
+    }
+
+    #[test]
+    fn should_require_deletions_on_a_type_that_says_who_approves_a_settled_deletion() {
+        let schemas = BTreeMap::from([(
+            "post".to_string(),
+            platform_value!({
+                "type": "object",
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteWithin": 86400,
+                    "deleteSettled": { "leader": true },
+                },
+            }),
+        )]);
+        let refusal = |elected: ElectedModerators| {
+            let result = config(elected)
+                .validate(&schemas, Network::Mainnet, PlatformVersion::latest())
+                .expect("validate");
+            (!result.is_valid()).then(|| rendered(&result.errors))
+        };
+        // Only a seated team deletes a settled document: without the ability, nobody could.
+        assert!(refusal(elected())
+            .expect("refused")
+            .contains("\"post\" says who of the team must approve"));
+        let mut deletions = elected();
+        abilities_of(&mut deletions, "post").insert(ModerationAbility::DeleteDocuments);
+        assert_eq!(refusal(deletions), None);
     }
 
     #[test]

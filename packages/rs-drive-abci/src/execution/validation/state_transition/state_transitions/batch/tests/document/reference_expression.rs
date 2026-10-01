@@ -734,6 +734,7 @@ mod reference_expression_tests {
                 &BlockInfo::default(),
                 &mut Vec::new(),
                 None,
+                None,
                 &mut execution_context,
                 platform_version,
             )
@@ -898,6 +899,7 @@ mod reference_expression_tests {
                 &platform_ref,
                 &BlockInfo::default(),
                 &mut Vec::new(),
+                None,
                 None,
                 &mut execution_context,
                 platform_version,

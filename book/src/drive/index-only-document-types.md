@@ -161,7 +161,10 @@ There is no document beyond that.
 Each entry's 32-byte payload is
 `hash_double(owner ‖ (name ‖ length ‖ raw index bytes)* ‖ [$createdAt])`
 over the document's PRESENT properties in sorted-name order
-(`index_only_row_commitment`) — every required property must be present,
+(`index_only_row_commitment`), `$createdAt` included unless only indexes
+whose entries outlive a delete involve it
+(`index_only_row_commits_created_at`, see
+[below](#entries-that-outlive-a-delete-outlivesdelete)) — every required property must be present,
 and an optional property (a skip property of a `skipIfAbsent` index, the
 only optional kind) contributes nothing when absent, not even its name. It binds the
 independently stored index projections of one document back into one
@@ -299,7 +302,8 @@ sentinel disappears (see the absence-aware `where` below).
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under
-  its system key exactly when the type requires it). Delete-by-id and
+  its system key exactly when the row commits to it:
+  `index_only_row_commits_created_at`). Delete-by-id and
   delete-by-values are different operations — different payload,
   authorization model and validation pipeline — so the factory picks the
   KIND from the doctype's storage mode. Validation and the storage layer
@@ -309,6 +313,50 @@ sentinel disappears (see the absence-aware `where` below).
   basic structure, keeping check_tx behavior aligned with pre-4.2
   software.
 - **Replace / transfer / purchase / price** are structurally impossible.
+
+## Entries that outlive a delete (outlivesDelete)
+
+A delete-by-values recomputes every entry of the document from its values,
+and a time-window entry is keyed by the bucket starts of `$createdAt`, which
+only the block that included the create assigned. A client that did not keep
+that timestamp could not delete the document. `outlivesDelete: true` on a
+`timeRange` index with a `ttl` takes the window out of the delete:
+
+- **Delete.** Neither the state validation probes nor Drive's
+  row-integrity gate check the index, and the delete walkers do not descend
+  into it: `level_removes_entry` skips a level whose indexes all outlive the
+  delete (`IndexLevel::outlives_delete_at_or_below` keeps every other
+  contract on the old path), and the terminating level of such an index
+  removes nothing. Its entries stay until their window is dropped by the TTL
+  cleanup, which drops whole buckets.
+- **Commitment.** When every index involving `$createdAt` outlives deletes,
+  the row commitment leaves the timestamp out, and a delete carries none
+  (structure validation refuses one that does). The executed-transition
+  proof verifier computes the same commitment, so it no longer needs the
+  block time for such a type.
+- **Create.** State validation does not probe the index for a duplicate,
+  and the terminal insert writes over an entry already standing at the same
+  key (left by a deleted document with the same key) without reading it: the
+  count does not move, and the entry carries the commitment of the row
+  writing it. Registration makes the index's key hold the key of an index a
+  delete clears that skips nothing, so no two documents in state share an
+  entry, and the within-batch collision tracker leaves these entries to that
+  index.
+- **Proofs.** `index_only_proof_index` never picks such an index, and the
+  parser requires another one to exist.
+
+Registration admits the keyword only on an indexOnly `timeRange` index with
+a `ttl`, without a sum and on a type without `entryPayload` (a kept entry
+holds the first document's amount or payload), and requires every schema
+property to sit in an index that neither skips nor outlives deletes, and the
+index's key to hold the key of such an index. The flag is fixed with the
+index (`find_first_outlives_delete_change`). The index structure caches the
+decisions a delete reads (`IndexLevel::cleared_on_delete_at_or_below`, and at
+its root `created_at_indexed_only_by_outliving`), and Drive's delete refuses a
+document carrying a `$createdAt` its row does not commit to.
+
+The cost is on the aggregates: a deleted document still counts in the
+windows it wrote until they move past it.
 
 ## Preallocated index paths
 
@@ -321,11 +369,23 @@ may declare `preallocated: true` iff every index property is either the
 referring property itself (its value is the referenced document's `$id`)
 or a referring value of that reference's `where` (consensus-equal to a
 referenced-document property, its `$ownerId` and `$creatorId` included),
-and the reference is a `permanentDocument` one targeting a document type
-of the **same contract**. A `deletableDocument` reference shapes the path
-the same way but does not qualify: its target can be deleted, and the
-trees created alongside it would outlive it with other owners' entries
-inside. `byHashtagPost` (`[hashtag, postId]`) qualifies:
+and the reference is a `permanentDocument` or `moderatedDocument` one
+targeting a document type of the **same contract**. A `deletableDocument`
+reference shapes the path the same way but does not qualify: its target can
+be deleted without a record, and the trees created alongside it would
+outlive it with other owners' entries inside and nothing left to say what
+they were keyed by. A `moderatedDocument` target leaves state only through a
+moderator's removal, whose record is never deleted, so its trees outlive it
+the way the record does, and a restore (which puts the document back through
+the create path) finds them in place. Through such a reference a binding
+counts only when the record keeps every key it binds: the referenced
+`$id` or `$ownerId`, or a property the referenced type lists under
+`moderatorAbilities.deleteKeepsFields` (`PreallocationBinding::is_kept_on_removal`).
+Registration refuses a preallocated index with no such binding
+(`validate_preallocated_indexes_kept_on_removal`, once every document type
+of the contract is parsed), and the insert path preallocates only through
+one (`Index::preallocation_bindings_for_target`, given the referenced
+type). `byHashtagPost` (`[hashtag, postId]`) qualifies:
 `hashtag` through `where`, `postId` as the reference;
 `byLiker` (`[$ownerId]`) cannot, since no referenced document determines
 the liker. An `[authorId, postId]` index whose `authorId` agrees with the

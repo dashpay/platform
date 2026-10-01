@@ -527,6 +527,7 @@ mod contract_owner_requirement_tests {
                 &BlockInfo::default(),
                 &mut Vec::new(),
                 None,
+                None,
                 &mut execution_context,
                 platform_version,
             )
