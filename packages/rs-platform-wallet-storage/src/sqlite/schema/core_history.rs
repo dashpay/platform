@@ -8,7 +8,7 @@ use key_wallet::managed_account::transaction_record::{
     InputDetail, OutputDetail, OutputRole, TransactionRecord,
 };
 use key_wallet::transaction_checking::TransactionContext;
-use platform_wallet::changeset::{wallet_direction, CoreChangeSet};
+use platform_wallet::changeset::{is_owned, wallet_accounting, CoreChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, Transaction};
 
@@ -53,8 +53,8 @@ pub(super) fn preserve_known_details(
     for detail in &incoming.output_details {
         let keep_previous = outputs
             .get(&detail.index)
-            .is_some_and(|old| matches!(old.role, OutputRole::Received | OutputRole::Change))
-            && !matches!(detail.role, OutputRole::Received | OutputRole::Change);
+            .is_some_and(|old| is_owned(old.role))
+            && !is_owned(detail.role);
         if !keep_previous {
             outputs.insert(detail.index, detail.clone());
         }
@@ -273,45 +273,17 @@ fn repair_record(
     if inputs.is_empty() && outputs.is_empty() {
         return Ok(());
     }
-    let received: i128 = outputs
-        .values()
-        .filter(|d| matches!(d.role, OutputRole::Received | OutputRole::Change))
-        .map(|d| i128::from(d.value))
-        .sum();
-    let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
-    let net = received - spent;
+    record.input_details = inputs.into_values().collect();
+    record.output_details = outputs.into_values().collect();
+    // The live projection computes the same accounting, so repair never
+    // flips a row it just wrote; only the overflow policy differs.
+    let (net, direction) = wallet_accounting(&record);
     record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
         wallet_id: *wallet_id,
         txid: *txid,
         value: net,
     })?;
-    let has_ours = outputs
-        .values()
-        .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
-    let has_external = record
-        .transaction
-        .output
-        .iter()
-        .enumerate()
-        .any(|(i, output)| {
-            !output.script_pubkey.is_op_return()
-                && !outputs.get(&(i as u32)).is_some_and(|d| {
-                    matches!(
-                        d.role,
-                        OutputRole::Received | OutputRole::Change | OutputRole::Unspendable
-                    )
-                })
-        });
-    // The live projection classifies with the same rule, so repair never
-    // flips a row it just wrote.
-    record.direction = wallet_direction(
-        record.transaction_type,
-        !inputs.is_empty(),
-        has_ours,
-        has_external,
-    );
-    record.input_details = inputs.into_values().collect();
-    record.output_details = outputs.into_values().collect();
+    record.direction = direction;
     let repaired = blob::encode(&record)?;
     if repaired != original {
         // Append-only: the first pre-repair blob is kept verbatim and never
@@ -341,6 +313,7 @@ mod tests {
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::TransactionDirection;
     use key_wallet::transaction_checking::TransactionType;
+    use platform_wallet::changeset::wallet_direction;
     use platform_wallet::test_support::fold_wallet_records;
 
     use super::*;
@@ -580,7 +553,7 @@ mod tests {
             .collect();
         let owned: u64 = details
             .iter()
-            .filter(|d| matches!(d.role, OutputRole::Received | OutputRole::Change))
+            .filter(|d| is_owned(d.role))
             .map(|d| d.value)
             .sum();
         let has_sent = details.iter().any(|d| d.role == OutputRole::Sent);
