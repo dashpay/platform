@@ -87,4 +87,5 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_expirations_per_block: 0,
     max_document_expiration_weight_per_block: 0,
     minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
+    max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
 };
