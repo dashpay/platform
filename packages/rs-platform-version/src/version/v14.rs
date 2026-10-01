@@ -297,8 +297,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     entries, document update v1 (`storage_held_by_gas_sponsor`) writes the
 ///     stored document of a document whose flags name the contract owner, on a
 ///     type whose token costs offer sponsorship, with the contract owner when an
-///     update that is not sponsored rewrites it, a transfer included, and a
-///     moderator's restore on such a type names the contract owner.
+///     update that is not sponsored rewrites it, a transfer included.
 /// 12. **Optional token costs**: a document type's token cost may declare
 ///     `optional: true` (v3 meta-schema). A transition that leaves
 ///     `$tokenPaymentInfo` out then pays no token and its signer pays the gas

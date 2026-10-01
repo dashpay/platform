@@ -259,8 +259,6 @@ follow:
 
 A document the contract owner gave away by a transfer that kept its size still
 names the contract owner in its flags, and is treated alike: they paid for it.
-A moderator's restore on such a type names the contract owner too (see
-[Contract Moderation](../data-model/contract-moderation.md)).
 
 The signer's minimum balance pre-check runs before the contracts are loaded;
 its v1 asks a batch that requests sponsorship for its principal only
