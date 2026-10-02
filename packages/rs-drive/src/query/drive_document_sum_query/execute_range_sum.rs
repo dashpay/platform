@@ -188,7 +188,7 @@ impl DriveDocumentSumQuery<'_> {
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
             let sum = element.sum_value_or_default();
-            if sum == 0 {
+            if sum == 0 && !options.keep_zero_sums {
                 continue;
             }
             let in_key = if has_in_on_prefix && path.len() > base_path_len {

@@ -108,6 +108,7 @@ impl Drive {
                     walk_mode: RangeSumWalkMode::Aggregate,
                     carrier_outer_limit: None,
                     left_to_right: order_by_ascending,
+                    keep_zero_sums: false,
                 };
                 Ok(DocumentSumResponse::Entries(
                     self.execute_document_sum_per_in_value_no_proof(
@@ -140,6 +141,7 @@ impl Drive {
                     walk_mode,
                     carrier_outer_limit: None,
                     left_to_right: order_by_ascending,
+                    keep_zero_sums: false,
                 };
                 let entries = self.execute_document_sum_range_no_proof(
                     contract_id,

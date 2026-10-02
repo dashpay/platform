@@ -140,6 +140,10 @@ impl DriveDocumentCountQuery<'_> {
                     walk_mode,
                     carrier_outer_limit: None,
                     left_to_right: options.order_by_ascending,
+                    // A preallocated counter at zero is a group the walk's
+                    // limit counted, kept as a count of zero as the proof
+                    // keeps it, so a page ends only at the limit.
+                    keep_zero_sums: true,
                 },
                 transaction,
                 platform_version,

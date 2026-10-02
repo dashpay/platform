@@ -56,14 +56,14 @@ impl DriveDocumentCountQuery<'_> {
         if let Some(sums) = self.counter_sums_query() {
             let (root_hash, entries) =
                 sums.verify_distinct_sum_proof(proof, limit, left_to_right, platform_version)?;
-            // A group no document is in (a preallocated counter at zero) is
-            // left out, as below and as the unproven read leaves it out.
+            // A preallocated counter at zero stays, as a count of zero: the
+            // proof's limit counted it, so dropping it would end a page early
+            // (the unproven read keeps it too).
             return Ok((
                 root_hash,
                 entries
                     .into_iter()
                     .map(counter_sum_entry_as_count_entry)
-                    .filter(|entry| entry.count != Some(0))
                     .collect(),
             ));
         }

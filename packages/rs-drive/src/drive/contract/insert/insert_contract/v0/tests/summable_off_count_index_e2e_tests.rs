@@ -889,49 +889,85 @@ fn should_count_likes_from_the_counters_sums_and_read_posts_through_the_average(
 }
 
 /// A range count over a counter index reads its range sums, so it counts
-/// likes: per post over a range of one author's posts (a post nobody liked
-/// left out) and per author and post across an `IN`, each proved, and the
-/// range's total.
+/// likes: per post over a range of one author's posts (a preallocated post
+/// nobody liked counted at zero, so a page of one ends only at its limit) and
+/// per author and post across an `IN`, each proved.
 #[test]
 fn should_count_likes_over_a_range_of_posts_from_the_counters_sums() {
     let (drive, contract) = setup(true);
     let (a1, a2, b1, _) = liked_posts(&drive, &contract);
-    insert_post(&drive, &contract, AUTHOR_A, "dash", 4);
+    let unliked = insert_post(&drive, &contract, AUTHOR_A, "dash", 4);
     let pv = platform_version();
     let document_type = contract
         .document_type_for_name("like")
         .expect("like doctype exists");
     let drive_config = DriveConfig::default();
+    let count_page =
+        |where_clauses: Vec<WhereClause>, mode: CountMode, limit: Option<u32>, prove: bool| {
+            drive.execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type,
+                    where_clauses,
+                    resolved_time_ranges: vec![],
+                    order_clauses: vec![],
+                    mode,
+                    limit,
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                pv,
+            )
+        };
     let count = |where_clauses: Vec<WhereClause>, mode: CountMode, prove: bool| {
-        drive.execute_document_count_request(
-            DocumentCountRequest {
-                contract: &contract,
-                document_type,
-                where_clauses,
-                resolved_time_ranges: vec![],
-                order_clauses: vec![],
-                mode,
-                limit: None,
-                prove,
-                drive_config: &drive_config,
-            },
-            None,
-            pv,
-        )
+        count_page(where_clauses, mode, None, prove)
     };
     let every_post = WhereClause {
         field: "postId".to_string(),
         operator: WhereOperator::GreaterThan,
         value: Value::Identifier([0; 32]),
     };
-    let mut a_posts = [(a1.to_vec(), 3), (a2.to_vec(), 1)];
+    let mut a_posts = [(a1.to_vec(), 3), (a2.to_vec(), 1), (unliked.to_vec(), 0)];
     a_posts.sort();
     let mut both = [
         (AUTHOR_A.to_vec(), a1.to_vec(), 3),
         (AUTHOR_A.to_vec(), a2.to_vec(), 1),
+        (AUTHOR_A.to_vec(), unliked.to_vec(), 0),
         (AUTHOR_B.to_vec(), b1.to_vec(), 5),
     ];
     both.sort();
+
+    // A page of one at a time walks every post, the unliked one included.
+    let mut paged = Vec::new();
+    let mut after = [0u8; 32];
+    loop {
+        let page = match count_page(
+            vec![
+                equal("postAuthor", Value::Identifier(AUTHOR_A)),
+                WhereClause {
+                    field: "postId".to_string(),
+                    operator: WhereOperator::GreaterThan,
+                    value: Value::Identifier(after),
+                },
+            ],
+            CountMode::GroupByRange,
+            Some(1),
+            false,
+        )
+        .expect("a page of one executes")
+        {
+            DocumentCountResponse::Entries(entries) => entries,
+            other => panic!("expected entries, got {other:?}"),
+        };
+        let Some(entry) = page.first() else {
+            break;
+        };
+        assert_eq!(page.len(), 1);
+        after = entry.key.clone().try_into().expect("a post id");
+        paged.push((entry.key.clone(), entry.count.unwrap_or(0)));
+    }
+    assert_eq!(paged, a_posts.to_vec(), "every page of one");
 
     for (clauses, mode, expected) in [
         (
