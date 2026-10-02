@@ -12,7 +12,6 @@ use dashcore::{Address, OutPoint, PubkeyHash, ScriptBuf, Transaction};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_collection::ManagedAccountCollection;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::managed_account::managed_core_funds_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
@@ -21,9 +20,9 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::Wallet;
-use key_wallet::Account;
 use key_wallet::{DerivationPath, ReservationToken, Utxo};
 
+use super::unresolved::UnresolvedSends;
 use super::{CoreWallet, WalletGeneration};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::wallet::reservations::reservation_expired;
@@ -76,6 +75,40 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
     PlatformWalletError::TransactionBuild(error.to_string())
 }
 
+/// A shortfall that the held coins of an unresolved send (see
+/// [`UnresolvedSends`]) would have covered becomes
+/// [`PlatformWalletError::CoreFundsAwaitingNetwork`], so the host can say the
+/// money is waiting on the network rather than missing. A genuine shortfall —
+/// held coins or not, the funds are not there — stays insufficient funds.
+fn awaiting_network(error: PlatformWalletError, held: u64) -> PlatformWalletError {
+    let (available, required) = match &error {
+        PlatformWalletError::CoreInsufficientFunds {
+            available,
+            required,
+            ..
+        }
+        | PlatformWalletError::CorePooledInsufficientFunds {
+            available,
+            required,
+            ..
+        } => (*available, *required),
+        _ => return error,
+    };
+    let covered = match (available, required) {
+        (Some(available), Some(required)) => available.saturating_add(held) >= required,
+        _ => held > 0,
+    };
+    if held == 0 || !covered {
+        return error;
+    }
+    PlatformWalletError::CoreFundsAwaitingNetwork {
+        available,
+        held,
+        required,
+        outpoint: None,
+    }
+}
+
 /// key-wallet's `FeeRate::calculate_fee`, with the multiplication checked.
 ///
 /// Upstream computes `(sat_per_kb * size_bytes).div_ceil(1000)` unchecked, and
@@ -85,57 +118,6 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
 /// down instead of surfacing as an error the caller can show — and a profile
 /// without overflow checks is worse still, wrapping silently into a fee that
 /// makes the reported maximum nonsense. Both become a typed error here.
-/// Whether `utxo` is the change of one of our sends that the network has not
-/// been seen to accept: our own output (`is_trusted`), neither mined nor
-/// InstantSend-locked, of a send not marked accepted on `generation`.
-///
-/// Such a coin exists only while that send's outcome is unknown. If the send
-/// never reached the network the coin is phantom, and a payment built on it is
-/// an orphan no node accepts — the shape behind "Transaction status unknown"
-/// followed by payments that never land. So it is not offered to a new
-/// payment, and not counted as spendable, until the send is accepted.
-pub(crate) fn is_unresolved_change(utxo: &Utxo, generation: &WalletGeneration) -> bool {
-    utxo.is_trusted
-        && !utxo.is_confirmed
-        && !utxo.is_instantlocked
-        && !generation.is_send_accepted(&utxo.outpoint.txid)
-}
-
-/// [`TransactionBuilder::add_funding`] with the account's unresolved change
-/// (see [`is_unresolved_change`]) withheld from selection.
-///
-/// `add_funding` copies the account's UTXOs into the builder as candidates,
-/// and selection drops a candidate that is locked. So the held coins are
-/// locked for that one call and unlocked right after — the copies keep the
-/// lock, the wallet does not. The caller holds the manager write guard across
-/// it, so no other reader sees the transient lock. A coin already locked for
-/// another reason is left as it is.
-pub(crate) fn add_funding_withholding_unresolved_change(
-    builder: TransactionBuilder,
-    managed: &mut ManagedCoreFundsAccount,
-    account: &Account,
-    generation: &WalletGeneration,
-) -> TransactionBuilder {
-    let held: Vec<OutPoint> = managed
-        .utxos
-        .values()
-        .filter(|utxo| !utxo.is_locked && is_unresolved_change(utxo, generation))
-        .map(|utxo| utxo.outpoint)
-        .collect();
-    for outpoint in &held {
-        if let Some(utxo) = managed.utxos.get_mut(outpoint) {
-            utxo.lock();
-        }
-    }
-    let builder = builder.add_funding(managed, account);
-    for outpoint in &held {
-        if let Some(utxo) = managed.utxos.get_mut(outpoint) {
-            utxo.unlock();
-        }
-    }
-    builder
-}
-
 fn checked_fee(fee_rate: FeeRate, size_bytes: usize) -> Result<u64, PlatformWalletError> {
     fee_rate
         .as_sat_per_kb()
@@ -494,6 +476,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             .get_wallet_and_info(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
         let height = info.core_wallet.last_processed_height();
+        let unresolved = UnresolvedSends::of(info);
 
         // Same resolver, same strictness rule, as the funding path.
         let resolved = resolved_funding_accounts(
@@ -512,7 +495,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             total += managed
                 .spendable_utxos(height)
                 .iter()
-                .filter(|utxo| !is_unresolved_change(utxo, &info.generation))
+                .filter(|utxo| !unresolved.holds(&utxo.outpoint))
                 .map(|utxo| utxo.value())
                 .sum::<u64>();
         }
@@ -567,6 +550,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             .get_wallet_and_info(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
         let height = info.core_wallet.last_processed_height();
+        let unresolved = UnresolvedSends::of(info);
 
         let resolved = resolved_funding_accounts(
             &info.core_wallet.accounts,
@@ -588,7 +572,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 managed
                     .spendable_utxos(height)
                     .iter()
-                    .filter(|utxo| !is_unresolved_change(utxo, &info.generation))
+                    .filter(|utxo| !unresolved.holds(&utxo.outpoint))
                     .map(|utxo| utxo.value())
                     .filter(|value| *value > input_cost),
             );
@@ -698,6 +682,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
 
             let height = info.core_wallet.last_processed_height();
+            let unresolved = UnresolvedSends::of(info);
+            let mut held_value = 0u64;
 
             // Fund from every resolved account, mirroring key-wallet's own
             // multi-source fold (`transaction_building::fund`): dedup overlapping
@@ -746,17 +732,13 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         paths.insert(utxo.address.clone(), path);
                     }
                 }
+                held_value += unresolved.held_value(managed);
                 // `reservation_only` offers no candidates of its own: the
-                // caller seeded its inputs explicitly.
+                // caller seeded its inputs explicitly (checked below).
                 builder = if reservation_only {
                     builder.add_funding_reservation_only(managed, account)
                 } else {
-                    add_funding_withholding_unresolved_change(
-                        builder,
-                        managed,
-                        account,
-                        &info.generation,
-                    )
+                    unresolved.add_funding(builder, managed, account)
                 };
                 offered_accounts.push(at);
             }
@@ -774,9 +756,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             } else {
                 FundingContext::Pooled(sources)
             };
-            let (unsigned, fee, reservation_token) = builder
-                .build_unsigned_reserved()
-                .map_err(|error| map_builder_error(error, funding_context))?;
+            let (unsigned, fee, reservation_token) =
+                builder.build_unsigned_reserved().map_err(|error| {
+                    awaiting_network(map_builder_error(error, funding_context), held_value)
+                })?;
 
             // Release across every contributing account on the error paths
             // below: the pooled reservation lives per account under the one
@@ -814,6 +797,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             if let Some(outpoint) = info.generation.in_broadcast_conflict(&unsigned) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(PlatformWalletError::InputMidBroadcast { outpoint });
+            }
+
+            // Refuse a held coin (see `UnresolvedSends`) the caller seeded
+            // itself — the `reservation_only` path and outpoint-chosen inputs,
+            // which skip the candidate filter above. Selection cannot pick one
+            // otherwise; this is also the backstop for that.
+            if let Some(outpoint) = unresolved.held_input(&unsigned) {
+                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
+                return Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    available: None,
+                    held: held_value,
+                    required: None,
+                    outpoint: Some(outpoint),
+                });
             }
 
             // Map every selected input back to the account that owns it. That
@@ -1065,30 +1062,36 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use async_trait::async_trait;
+    use dashcore::hashes::Hash;
     use dashcore::secp256k1::{ecdsa, PublicKey};
-    use dashcore::{Address as DashAddress, Network};
+    use dashcore::{Address as DashAddress, BlockHash, Network, OutPoint, Transaction, Txid};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::signer::{Signer, SignerMethod};
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
     use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
     use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-    use key_wallet::DerivationPath;
-    use tokio::sync::Barrier;
+    use key_wallet::{DerivationPath, Utxo};
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::{Barrier, RwLock};
 
     use crate::broadcaster::TransactionBroadcaster;
     use crate::test_support::{
-        funded_wallet_manager, funded_wallet_manager_dual_standard,
+        apply_to_wallet, funded_wallet_manager, funded_wallet_manager_dual_standard,
         funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
         AlwaysRejectedBroadcaster, WalletSigner,
     };
     use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 
+    use crate::wallet::core::generation::next_acceptance_seq;
     use crate::wallet::core::transaction::{modeled_output_script, MAX_STANDARD_TX_INPUTS};
-    use crate::wallet::core::CoreWallet;
-    use crate::PlatformWalletError;
+    use crate::wallet::core::{CoreWallet, WalletGeneration};
+    use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+    use crate::{PlatformWalletError, SEND_FUNDING_SOURCES};
 
     fn preference(account_type: StandardAccountType) -> AccountTypePreference {
         match account_type {
@@ -2070,217 +2073,395 @@ mod tests {
         ));
     }
 
-    // ---- Change of a send the network has not been seen to accept -----------
+    // ---- Coins of a send the network has not been seen to accept -----------
 
-    /// Turn the BIP44 fixture UTXO into what a send whose outcome is still
-    /// unknown leaves behind: our own change, in the mempool, neither
-    /// InstantSend-locked nor mined. Returns its outpoint.
-    async fn make_unresolved_change(
-        manager: &Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
-        wallet_id: &crate::wallet::platform_wallet::WalletId,
-    ) -> dashcore::OutPoint {
-        let mut manager = manager.write().await;
-        let info = manager.get_wallet_info_mut(wallet_id).expect("wallet");
-        let managed = info
-            .core_wallet
-            .accounts
-            .funds_account_mut(&key_wallet::account::AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            })
-            .expect("bip44 account");
-        let utxo = managed.utxos.values_mut().next().expect("bip44 utxo");
-        utxo.is_trusted = true;
-        utxo.is_confirmed = false;
-        utxo.is_instantlocked = false;
-        utxo.outpoint
-    }
+    type Manager = Arc<RwLock<WalletManager<PlatformWalletInfo>>>;
 
+    /// BIP44 and BIP32 each funded with one confirmed 700 000-duff coin.
     async fn dual_core(
-        broadcaster_ok: bool,
+        broadcaster: Arc<dyn TransactionBroadcaster>,
     ) -> (
         CoreWallet<dyn TransactionBroadcaster>,
-        Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
-        crate::wallet::platform_wallet::WalletId,
-        Arc<crate::wallet::core::WalletGeneration>,
+        Manager,
+        WalletId,
         WalletSigner,
     ) {
         let (manager, wallet_id, generation, signer) =
             funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let broadcaster: Arc<dyn TransactionBroadcaster> = if broadcaster_ok {
-            Arc::new(AlwaysOkBroadcaster)
-        } else {
-            Arc::new(AlwaysMaybeSentBroadcaster)
-        };
         let core = CoreWallet::new(
             sdk,
             Arc::clone(&manager),
             wallet_id,
             broadcaster,
-            Arc::clone(&generation),
+            generation,
         );
-        (core, manager, wallet_id, generation, signer)
+        (core, manager, wallet_id, signer)
     }
 
-    /// The customer's shape (support ticket 32347): the change of a send whose
-    /// outcome is unknown must not fund the next payment — if that send never
-    /// reached the network, the next one would be an orphan no node accepts.
-    /// It is left out of the spendable figure, of "max", and of selection.
-    #[tokio::test]
-    async fn unresolved_change_is_not_offered_to_a_new_payment() {
-        let (core, manager, wallet_id, _generation, signer) = dual_core(true).await;
-        make_unresolved_change(&manager, &wallet_id).await;
-
-        let gross = core
-            .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+    /// Sign a send of `amount` to `to` and put it in the wallet as SPV would
+    /// on seeing it in a peer's mempool — never echoed back, so its outcome is
+    /// unknown: the shape support ticket 32347 left behind.
+    async fn unresolved_send(
+        core: &CoreWallet<dyn TransactionBroadcaster>,
+        manager: &Manager,
+        wallet_id: &WalletId,
+        signer: &WalletSigner,
+        to: &DashAddress,
+        amount: u64,
+    ) -> Transaction {
+        let finalized = core
+            .finalize_transaction(
+                TransactionBuilder::new().add_output(to, amount),
+                &SEND_FUNDING_SOURCES,
+                0,
+                signer,
+            )
             .await
-            .expect("gross balance");
-        assert_eq!(gross, 700_000, "only the BIP32 coin is spendable");
+            .expect("the send builds");
+        let transaction = finalized.transaction().clone();
+        apply_to_wallet(
+            manager,
+            wallet_id,
+            &transaction,
+            TransactionContext::Mempool,
+        )
+        .await;
+        transaction
+    }
+
+    async fn spendable(core: &CoreWallet<dyn TransactionBroadcaster>) -> u64 {
+        core.pooled_spendable_balance(&SEND_FUNDING_SOURCES, 0)
+            .await
+            .expect("spendable balance")
+    }
+
+    async fn utxo(manager: &Manager, wallet_id: &WalletId, outpoint: OutPoint) -> Utxo {
+        let manager = manager.read().await;
+        let info = manager.get_wallet_info(wallet_id).expect("wallet");
+        info.core_wallet
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .find_map(|managed| managed.utxos.get(&outpoint).cloned())
+            .expect("the wallet holds the coin")
+    }
+
+    async fn record_acceptance(
+        manager: &Manager,
+        wallet_id: &WalletId,
+        txid: Txid,
+        accepted: bool,
+    ) {
+        let manager = manager.read().await;
+        let info = manager.get_wallet_info(wallet_id).expect("wallet");
+        info.generation
+            .record_acceptance(txid, accepted, next_acceptance_seq());
+    }
+
+    fn change_of(transaction: &Transaction, paid: &DashAddress) -> OutPoint {
+        let vout = transaction
+            .output
+            .iter()
+            .position(|output| output.script_pubkey != paid.script_pubkey())
+            .expect("a change output");
+        OutPoint {
+            txid: transaction.txid(),
+            vout: vout as u32,
+        }
+    }
+
+    /// The coins of an unresolved send are not spendable: left out of the
+    /// spendable figure, of "max", and of selection. A payment only they would
+    /// cover is refused as waiting on the network, not as a shortfall.
+    #[tokio::test]
+    async fn should_hold_the_outputs_of_an_unresolved_send() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 80);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let change = utxo(&manager, &wallet_id, change_of(&send, &paid)).await;
+
+        assert_eq!(spendable(&core).await, 700_000, "only the untouched coin");
         let max = core
-            .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+            .pooled_max_sendable(&SEND_FUNDING_SOURCES, 0, None)
             .await
             .expect("max sendable");
-        assert!(max < 700_000 && max > 0, "max draws on the BIP32 coin only, got {max}");
+        assert!(
+            max > 0 && max < 700_000,
+            "max draws on the untouched coin only, got {max}"
+        );
 
-        // 1_000_000 needs both coins: the held one is not there to take.
         let refused = core
-            .finalize_transaction(payment_builder(80), &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction(payment_builder(81), &SEND_FUNDING_SOURCES, 0, &signer)
             .await;
         assert!(
             matches!(
                 refused,
-                Err(PlatformWalletError::CorePooledInsufficientFunds {
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
                     available: Some(700_000),
+                    held,
+                    outpoint: None,
                     ..
-                })
+                }) if held == change.value()
             ),
-            "a payment only the held change could fund must fail as insufficient funds, got {refused:?}"
+            "got {refused:?}"
         );
 
-        // A payment the other coin covers builds, and does not touch the held one.
-        let small = TransactionBuilder::new()
-            .add_output(&DashAddress::dummy(Network::Testnet, 81), 300_000);
-        let finalized = core
-            .finalize_transaction(small, &crate::SEND_FUNDING_SOURCES, 0, &signer)
-            .await
-            .expect("the BIP32 coin covers it");
-        assert_eq!(finalized.transaction().input.len(), 1);
-        core.abandon_transaction(&finalized).await;
-    }
-
-    /// Withholding is not a lock left behind: after a build the held UTXO is
-    /// still unlocked in the wallet, so it reads as ordinary funds to every
-    /// other reader and is offered again the moment its send is accepted.
-    #[tokio::test]
-    async fn withholding_leaves_no_lock_on_the_wallet() {
-        let (core, manager, wallet_id, _generation, signer) = dual_core(true).await;
-        let held = make_unresolved_change(&manager, &wallet_id).await;
         let small = TransactionBuilder::new()
             .add_output(&DashAddress::dummy(Network::Testnet, 82), 300_000);
         let finalized = core
-            .finalize_transaction(small, &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction(small, &SEND_FUNDING_SOURCES, 0, &signer)
             .await
-            .expect("the BIP32 coin covers it");
+            .expect("the untouched coin covers it");
+        assert!(finalized
+            .transaction()
+            .input
+            .iter()
+            .all(|input| input.previous_output.txid != send.txid()));
         core.abandon_transaction(&finalized).await;
-
-        let manager = manager.read().await;
-        let info = manager.get_wallet_info(&wallet_id).expect("wallet");
-        let utxo = info
-            .core_wallet
-            .accounts
-            .funds_account(&key_wallet::account::AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            })
-            .and_then(|managed| managed.utxos.get(&held))
-            .expect("held utxo still recorded");
-        assert!(!utxo.is_locked, "the hold must not persist as a UTXO lock");
     }
 
-    /// Accepted by the network — the resolver's verdict or a peer echo marks
-    /// it — the change funds payments again.
+    /// Held coins or not, a payment the wallet cannot cover is a shortfall.
     #[tokio::test]
-    async fn unresolved_change_is_offered_once_its_send_is_accepted() {
-        let (core, manager, wallet_id, generation, signer) = dual_core(true).await;
-        let held = make_unresolved_change(&manager, &wallet_id).await;
-        generation.mark_send_accepted(held.txid);
+    async fn should_report_a_genuine_shortfall_as_insufficient_funds() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 83);
+        unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let too_much = TransactionBuilder::new()
+            .add_output(&DashAddress::dummy(Network::Testnet, 84), 5_000_000);
 
-        let gross = core
-            .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
-            .await
-            .expect("gross balance");
-        assert_eq!(gross, 1_400_000);
+        let refused = core
+            .finalize_transaction(too_much, &SEND_FUNDING_SOURCES, 0, &signer)
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::CorePooledInsufficientFunds { .. })
+            ),
+            "got {refused:?}"
+        );
+    }
+
+    /// The hold is not a lock left behind: after a build the held coin is
+    /// still unlocked in the wallet.
+    #[tokio::test]
+    async fn should_leave_no_lock_on_the_wallet() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 85);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let small = TransactionBuilder::new()
+            .add_output(&DashAddress::dummy(Network::Testnet, 86), 300_000);
         let finalized = core
-            .finalize_transaction(payment_builder(83), &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction(small, &SEND_FUNDING_SOURCES, 0, &signer)
             .await
-            .expect("both coins fund it once the send is accepted");
-        assert_eq!(finalized.transaction().input.len(), 2);
+            .expect("the untouched coin covers it");
         core.abandon_transaction(&finalized).await;
+
+        let change = utxo(&manager, &wallet_id, change_of(&send, &paid)).await;
+        assert!(!change.is_locked);
     }
 
-    /// An InstantSend lock (or a block) is acceptance the wallet sees for
-    /// itself, with no mark needed.
+    /// Accepted by the network, the send's coins are offered again.
     #[tokio::test]
-    async fn unresolved_change_is_offered_once_instant_locked() {
-        let (core, manager, wallet_id, _generation, _signer) = dual_core(true).await;
-        let held = make_unresolved_change(&manager, &wallet_id).await;
+    async fn should_offer_the_outputs_once_the_send_is_accepted() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 87);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let change = utxo(&manager, &wallet_id, change_of(&send, &paid)).await;
+
+        record_acceptance(&manager, &wallet_id, send.txid(), true).await;
+
+        assert_eq!(spendable(&core).await, 700_000 + change.value());
+    }
+
+    /// Found dead after it was found accepted — evicted, or beaten by a
+    /// conflicting spend — the send's coins are held again. An observation
+    /// older than the last one recorded changes nothing.
+    #[tokio::test]
+    async fn should_hold_again_when_an_accepted_send_is_found_dead() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 88);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let early = next_acceptance_seq();
+
+        record_acceptance(&manager, &wallet_id, send.txid(), true).await;
+        record_acceptance(&manager, &wallet_id, send.txid(), false).await;
+        assert_eq!(spendable(&core).await, 700_000);
+
+        // A late-landing record of an earlier "accepted" loses to "dead".
+        {
+            let manager = manager.read().await;
+            let info = manager.get_wallet_info(&wallet_id).expect("wallet");
+            info.generation.record_acceptance(send.txid(), true, early);
+        }
+        assert_eq!(spendable(&core).await, 700_000);
+    }
+
+    /// Settled — here in a block — the send's coins are ordinary funds.
+    #[tokio::test]
+    async fn should_offer_the_outputs_once_the_send_is_mined() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 89);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let change = utxo(&manager, &wallet_id, change_of(&send, &paid)).await;
+
+        apply_to_wallet(
+            &manager,
+            &wallet_id,
+            &send,
+            TransactionContext::InBlock(BlockInfo::new(2, BlockHash::all_zeros(), 1_700_000_100)),
+        )
+        .await;
+
+        assert_eq!(spendable(&core).await, 700_000 + change.value());
+    }
+
+    /// A transfer to our own receive address is a send like any other: its
+    /// receiving side is as phantom as its change if it never left.
+    #[tokio::test]
+    async fn should_hold_the_receiving_side_of_an_internal_transfer() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let own_receive = utxo_addresses(&manager, &wallet_id).await;
+        let send =
+            unresolved_send(&core, &manager, &wallet_id, &signer, &own_receive, 100_000).await;
+
+        let received = OutPoint {
+            txid: send.txid(),
+            vout: send
+                .output
+                .iter()
+                .position(|output| output.script_pubkey == own_receive.script_pubkey())
+                .expect("the transfer output") as u32,
+        };
+        assert_eq!(utxo(&manager, &wallet_id, received).await.value(), 100_000);
+        assert_eq!(
+            spendable(&core).await,
+            700_000,
+            "neither side of the transfer"
+        );
+    }
+
+    /// A send built on an accepted send is held again, with all its coins,
+    /// once the one under it is found dead: a node that never saw the parent
+    /// refuses the child.
+    #[tokio::test]
+    async fn should_hold_a_send_built_on_one_found_dead() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 90);
+        let parent = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        record_acceptance(&manager, &wallet_id, parent.txid(), true).await;
+        // More than the untouched coin: it must spend the parent's change too.
+        let child = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 1_000_000).await;
+        assert!(child
+            .input
+            .iter()
+            .any(|input| input.previous_output.txid == parent.txid()));
+        record_acceptance(&manager, &wallet_id, child.txid(), true).await;
+        assert!(
+            spendable(&core).await > 0,
+            "the child's change, both accepted"
+        );
+
+        record_acceptance(&manager, &wallet_id, parent.txid(), false).await;
+
+        assert_eq!(
+            spendable(&core).await,
+            0,
+            "the child's change goes with its parent"
+        );
+    }
+
+    /// A held coin the caller chose itself as an input — outpoint-seeded or
+    /// `reservation_only` builds skip selection — is refused, naming it.
+    #[tokio::test]
+    async fn should_refuse_a_held_coin_chosen_as_an_input() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 91);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let held = utxo(&manager, &wallet_id, change_of(&send, &paid)).await;
+
+        let refused = core
+            .finalize_transaction_with_options(
+                TransactionBuilder::new()
+                    .add_output(&DashAddress::dummy(Network::Testnet, 92), 100_000)
+                    .add_inputs([held.clone()]),
+                &[AccountTypePreference::BIP44],
+                0,
+                &signer,
+                true,
+            )
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    outpoint: Some(outpoint),
+                    ..
+                }) if outpoint == held.outpoint
+            ),
+            "got {refused:?}"
+        );
+    }
+
+    /// Acceptance is not persisted. After a restart — a fresh generation over
+    /// the same records — an unsettled send is held again until the network
+    /// is seen to accept it anew.
+    #[tokio::test]
+    async fn should_hold_after_a_restart_until_accepted_again() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 93);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        record_acceptance(&manager, &wallet_id, send.txid(), true).await;
+        assert!(spendable(&core).await > 700_000);
+
         {
             let mut manager = manager.write().await;
             let info = manager.get_wallet_info_mut(&wallet_id).expect("wallet");
-            let managed = info
-                .core_wallet
-                .accounts
-                .funds_account_mut(&key_wallet::account::AccountType::Standard {
-                    index: 0,
-                    standard_account_type: StandardAccountType::BIP44Account,
-                })
-                .expect("bip44 account");
-            managed.utxos.get_mut(&held).expect("utxo").is_instantlocked = true;
+            info.generation = Arc::new(WalletGeneration::new());
         }
-        let gross = core
-            .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
-            .await
-            .expect("gross balance");
-        assert_eq!(gross, 1_400_000);
+
+        assert_eq!(spendable(&core).await, 700_000);
     }
 
-    /// A send built on held change cannot happen through selection, but one
-    /// recorded before this rule (or restored from storage) is itself an
-    /// unresolved send: accepting its parent does not release the child's
-    /// own change.
+    /// A send the network echoed back is accepted on the spot; an ambiguous
+    /// outcome records nothing.
     #[tokio::test]
-    async fn the_change_of_a_child_stays_held_when_only_the_parent_is_accepted() {
-        let (core, manager, wallet_id, generation, _signer) = dual_core(true).await;
-        let child = make_unresolved_change(&manager, &wallet_id).await;
-        generation.mark_send_accepted(<dashcore::Txid as dashcore::hashes::Hash>::from_byte_array([7; 32]));
-        let gross = core
-            .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
-            .await
-            .expect("gross balance");
-        assert_eq!(gross, 700_000, "the child {} is still unresolved", child.txid);
-    }
-
-    /// A send the network echoed back is accepted on the spot: its change can
-    /// fund the next payment before the InstantSend lock arrives. An ambiguous
-    /// outcome marks nothing.
-    #[tokio::test]
-    async fn an_echoed_send_is_marked_accepted_and_an_ambiguous_one_is_not() {
-        for (ok, expected) in [(true, true), (false, false)] {
-            let (core, _manager, _wallet_id, generation, signer) = dual_core(ok).await;
+    async fn should_mark_an_echoed_send_accepted_and_not_an_ambiguous_one() {
+        let broadcasters: [(Arc<dyn TransactionBroadcaster>, bool); 2] = [
+            (Arc::new(AlwaysOkBroadcaster), true),
+            (Arc::new(AlwaysMaybeSentBroadcaster), false),
+        ];
+        for (broadcaster, expected) in broadcasters {
+            let (core, manager, wallet_id, signer) = dual_core(broadcaster).await;
             let small = TransactionBuilder::new()
-                .add_output(&DashAddress::dummy(Network::Testnet, 84), 300_000);
+                .add_output(&DashAddress::dummy(Network::Testnet, 94), 300_000);
             let finalized = core
-                .finalize_transaction(small, &crate::SEND_FUNDING_SOURCES, 0, &signer)
+                .finalize_transaction(small, &SEND_FUNDING_SOURCES, 0, &signer)
                 .await
                 .expect("finalize");
             let txid = finalized.transaction().txid();
             let _ = core.broadcast_finalized_transaction(&finalized).await;
-            assert_eq!(
-                generation.is_send_accepted(&txid),
-                expected,
-                "broadcaster ok={ok}: accepted mark"
-            );
+
+            let manager = manager.read().await;
+            let info = manager.get_wallet_info(&wallet_id).expect("wallet");
+            let accepted = info.generation.accepted_among(&HashSet::from([txid]));
+            assert_eq!(accepted.contains(&txid), expected, "accepted={expected}");
         }
+    }
+
+    /// The address of the wallet's BIP32 coin: one of our own receive
+    /// addresses.
+    async fn utxo_addresses(manager: &Manager, wallet_id: &WalletId) -> DashAddress {
+        let manager = manager.read().await;
+        let info = manager.get_wallet_info(wallet_id).expect("wallet");
+        info.core_wallet
+            .first_bip32_managed_account()
+            .expect("bip32 account")
+            .utxos
+            .values()
+            .next()
+            .expect("bip32 coin")
+            .address
+            .clone()
     }
 }

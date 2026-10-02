@@ -599,6 +599,14 @@ pub enum PlatformWalletFFIResultCode {
     /// Platform returned no balance for a managed identity. Retrying this read
     /// is safe; this does not imply missing ownership or require registration.
     ErrorIdentityBalanceUnavailable = 58,
+    /// A Core payment needs coins held back because they came from one of the
+    /// wallet's own sends whose broadcast outcome is still unknown
+    /// ([`platform_wallet::PlatformWalletError::CoreFundsAwaitingNetwork`]).
+    /// Not a shortfall and nothing was sent: the coins become spendable once
+    /// that send is InstantSend-locked, mined, or found accepted, so the host
+    /// should say the money is waiting on the network and offer a retry
+    /// later — not "insufficient funds".
+    ErrorCoreFundsAwaitingNetwork = 59,
 
     /// The named thing does not exist.
     ///
@@ -965,6 +973,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // string and an FFI retry re-fetches the nonce.
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
+            }
+            PlatformWalletError::CoreFundsAwaitingNetwork { .. } => {
+                PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
             }
             // Both shapes are "the wallet cannot cover this payment"; hosts
             // classify and retry them identically, so the pooled variant rides
@@ -2575,6 +2586,27 @@ mod tests {
         unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()
             .into_owned()
+    }
+}
+
+#[cfg(test)]
+mod core_funds_awaiting_network_tests {
+    use super::*;
+
+    #[test]
+    fn should_give_held_funds_their_own_code_apart_from_insufficient_funds() {
+        let result = PlatformWalletFFIResult::from(PlatformWalletError::CoreFundsAwaitingNetwork {
+            available: Some(700_000),
+            held: 599_000,
+            required: Some(1_000_000),
+            outpoint: None,
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
+        );
+        assert_eq!(result.code as u32, 59);
+        assert!(!result.message.is_null());
     }
 }
 

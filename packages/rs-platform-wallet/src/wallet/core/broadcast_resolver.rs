@@ -86,6 +86,7 @@ use tokio::time::{timeout_at, Instant};
 
 use crate::broadcast_probe::{AcceptanceProbe, ProbeReport, ProbeVerdict, MINED_QUORUM};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
+use crate::wallet::core::generation::next_acceptance_seq;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Blocks from the start of a root's window (see [`ProbeSchedule`]) during
@@ -917,10 +918,12 @@ pub(crate) trait WalletSource: Send + Sync {
         forced: HashSet<Txid>,
     ) -> Option<Option<WalletRead>>;
 
-    /// Record that a probe found these sends of the wallet accepted, so their
-    /// change may fund the next payment
-    /// ([`WalletGeneration::mark_send_accepted`](crate::wallet::core::WalletGeneration::mark_send_accepted)).
-    async fn mark_accepted(&self, wallet_id: WalletId, txids: Vec<Txid>);
+    /// Record what probes found about these sends of the wallet — accepted
+    /// (`true`) or dead (`false`) — observed at `seq`, so the coins of an
+    /// accepted send may fund the next payment and those of a dead one may
+    /// not
+    /// ([`WalletGeneration::record_acceptance`](crate::wallet::core::WalletGeneration::record_acceptance)).
+    async fn record_acceptance(&self, wallet_id: WalletId, verdicts: Vec<(Txid, bool)>, seq: u64);
 }
 
 /// Whether any account of the wallet records `txid` — a map lookup per
@@ -937,13 +940,13 @@ struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
 
 #[async_trait]
 impl WalletSource for ManagerSource {
-    async fn mark_accepted(&self, wallet_id: WalletId, txids: Vec<Txid>) {
+    async fn record_acceptance(&self, wallet_id: WalletId, verdicts: Vec<(Txid, bool)>, seq: u64) {
         let manager = self.0.read().await;
         let Some(info) = manager.get_wallet_info(&wallet_id) else {
             return;
         };
-        for txid in txids {
-            info.generation.mark_send_accepted(txid);
+        for (txid, accepted) in verdicts {
+            info.generation.record_acceptance(txid, accepted, seq);
         }
     }
 
@@ -1638,32 +1641,35 @@ impl Actor {
                     &root,
                     &report,
                 );
-                self.mark_accepted(wallet_id, &events);
+                self.record_acceptance(wallet_id, &events);
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
         }
     }
 
-    /// Hand the sends these events find accepted (or mined) to the wallet, so
-    /// their change is offered to payments again. Off the actor: the mark
-    /// takes the manager lock, and a set insert needs no ordering against
-    /// the actor's own work.
-    fn mark_accepted(&self, wallet_id: WalletId, events: &[Outgoing]) {
-        let txids: Vec<Txid> = events
+    /// Hand the sends these events find accepted (or mined) or dead to the
+    /// wallet, so the coins of an accepted one are offered to payments again
+    /// and those of a dead one are held again. Off the actor: the record
+    /// takes the manager lock. The sequence number is taken here, in the
+    /// actor's order, so a later verdict wins however the records land.
+    fn record_acceptance(&self, wallet_id: WalletId, events: &[Outgoing]) {
+        let verdicts: Vec<(Txid, bool)> = events
             .iter()
             .filter_map(|item| match &item.event {
                 ResolverEvent::Verdict(txid, ProbeVerdict::Accepted | ProbeVerdict::Mined) => {
-                    Some(*txid)
+                    Some((*txid, true))
                 }
+                ResolverEvent::Verdict(txid, ProbeVerdict::Dead { .. }) => Some((*txid, false)),
                 _ => None,
             })
             .collect();
-        if txids.is_empty() {
+        if verdicts.is_empty() {
             return;
         }
+        let seq = next_acceptance_seq();
         let source = Arc::clone(&self.source);
-        tokio::spawn(async move { source.mark_accepted(wallet_id, txids).await });
+        tokio::spawn(async move { source.record_acceptance(wallet_id, verdicts, seq).await });
     }
 
     /// Probe the run's next due root, or end the run.
@@ -2723,8 +2729,8 @@ mod tests {
         /// Reads wait while set, so a test can hold a pass in its read.
         paused: StdMutex<bool>,
         resume: Notify,
-        /// Sends marked accepted, per wallet.
-        accepted: StdMutex<Vec<(WalletId, Txid)>>,
+        /// Acceptance recorded per wallet: (wallet, txid, accepted, seq).
+        acceptance: StdMutex<Vec<(WalletId, Txid, bool, u64)>>,
     }
 
     impl FakeSource {
@@ -2748,9 +2754,18 @@ mod tests {
 
     #[async_trait]
     impl WalletSource for FakeSource {
-        async fn mark_accepted(&self, wallet_id: WalletId, txids: Vec<Txid>) {
-            let mut accepted = self.accepted.lock().expect("accepted");
-            accepted.extend(txids.into_iter().map(|txid| (wallet_id, txid)));
+        async fn record_acceptance(
+            &self,
+            wallet_id: WalletId,
+            verdicts: Vec<(Txid, bool)>,
+            seq: u64,
+        ) {
+            let mut acceptance = self.acceptance.lock().expect("acceptance");
+            acceptance.extend(
+                verdicts
+                    .into_iter()
+                    .map(|(txid, accepted)| (wallet_id, txid, accepted, seq)),
+            );
         }
 
         async fn holders(&self, txid: Txid) -> Vec<WalletId> {
@@ -2907,29 +2922,51 @@ mod tests {
         assert!(rig.sent().is_empty());
     }
 
-    /// A send a probe finds accepted is marked so on the wallet, so its change
-    /// may fund the next payment; an unresolved one is not.
+    /// A probe's verdicts reach the wallet: accepted releases a send's coins,
+    /// dead holds them again; an unresolved verdict records nothing.
     #[tokio::test]
-    async fn should_mark_a_send_found_accepted_and_only_that_one() {
+    async fn should_record_accepted_and_dead_verdicts_and_not_unresolved_ones() {
         let probe = Arc::new(ScriptedProbe::new(&[
             (txid(1), ProbeVerdict::Accepted),
             (txid(2), unresolved()),
+            (txid(3), dead()),
         ]));
         let mut rig = enabled(probe).await;
         rig.views(
             wallet(),
-            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+            vec![
+                send(1, &[outpoint(90, 0)]),
+                send(2, &[outpoint(91, 0)]),
+                send(3, &[outpoint(92, 0)]),
+            ],
         );
-        rig.send(Command::Uncertain(txid(1))).await;
-        rig.send(Command::Uncertain(txid(2))).await;
-        // The mark runs off the actor.
-        for _ in 0..10 {
+        for n in 1..=3 {
+            rig.send(Command::Uncertain(txid(n))).await;
+        }
+        // The record runs off the actor.
+        for _ in 0..20 {
             tokio::task::yield_now().await;
         }
 
-        assert_eq!(
-            *rig.source.accepted.lock().expect("accepted"),
-            vec![(wallet(), txid(1))]
+        let recorded: Vec<(WalletId, Txid, bool)> = rig
+            .source
+            .acceptance
+            .lock()
+            .expect("acceptance")
+            .iter()
+            .map(|(wallet_id, txid, accepted, _)| (*wallet_id, *txid, *accepted))
+            .collect();
+        assert!(
+            recorded.contains(&(wallet(), txid(1), true)),
+            "{recorded:?}"
+        );
+        assert!(
+            recorded.contains(&(wallet(), txid(3), false)),
+            "{recorded:?}"
+        );
+        assert!(
+            !recorded.iter().any(|(_, recorded, _)| *recorded == txid(2)),
+            "{recorded:?}"
         );
     }
 

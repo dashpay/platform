@@ -618,7 +618,12 @@ pub(super) async fn resend_one(
 
     let txid = tx.txid();
     match broadcaster.broadcast(tx).await {
-        Ok(_) => tracing::info!(%txid, "load: re-dispatched unconfirmed send, accepted"),
+        Ok(_) => {
+            // The one acceptance signal for a send still unconfirmed after a
+            // restart; its change may fund payments again (`UnresolvedSends`).
+            generation.mark_send_accepted(txid);
+            tracing::info!(%txid, "load: re-dispatched unconfirmed send, accepted")
+        }
         // Expected for the orphaned case: sent, no acceptance signal, now
         // owned by the rebroadcast timer.
         Err(BroadcastError::MaybeSent { reason }) => tracing::info!(

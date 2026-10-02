@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use dashcore::{OutPoint, Transaction, Txid};
@@ -255,18 +256,37 @@ impl std::fmt::Debug for SettleBoundaryHook {
 #[derive(Debug, Default)]
 pub(crate) struct InBroadcastFences {
     fences: Mutex<HashMap<OutPoint, InBroadcastFence>>,
-    /// Outgoing sends the network has been seen to accept before the wallet
-    /// saw them InstantSend-locked or mined — a peer echoed the broadcast back,
-    /// or the broadcast resolver's probe found them in a node's mempool or a
-    /// block. Their change may fund the next payment; the change of any other
-    /// unconfirmed send of ours may not (see
-    /// [`WalletGeneration::is_send_accepted`]).
+    /// What the network was last seen to say about our unsettled sends: a
+    /// peer echoed the broadcast back or a probe found it accepted or mined
+    /// (accepted), or a probe found it dead. Only an accepted send's outputs
+    /// may fund the next payment before the wallet sees it InstantSend-locked
+    /// or mined (see [`WalletGeneration::accepted_among`]).
     ///
     /// Shared like the fences: acceptance is a fact about the network, not
-    /// about one in-memory instance. Not persisted — after a restart a send
-    /// still unconfirmed and unlocked is held again until the lock, a block or
-    /// a fresh verdict arrives, which only errs on the side of not spending.
-    accepted_sends: Mutex<HashSet<Txid>>,
+    /// about one in-memory instance. Kept to the wallet's unsettled sends —
+    /// every read forgets the rest. Not persisted: after a restart an
+    /// unsettled send is held again until its lock, a block or a fresh
+    /// verdict, which only errs on the side of not spending.
+    acceptance: Mutex<HashMap<Txid, Acceptance>>,
+}
+
+/// The last word on one send, and when it was observed — see
+/// [`next_acceptance_seq`]. A later observation replaces an earlier one, so a
+/// send found dead after it was found accepted is held again.
+#[derive(Debug, Clone, Copy)]
+struct Acceptance {
+    seq: u64,
+    accepted: bool,
+}
+
+static ACCEPTANCE_SEQ: AtomicU64 = AtomicU64::new(1);
+
+/// A sequence number for an acceptance fact, taken where the fact is observed
+/// (a broadcast returning, a probe verdict published). Facts are recorded off
+/// the observing task, so they can land out of order; the number keeps the
+/// later one.
+pub(crate) fn next_acceptance_seq() -> u64 {
+    ACCEPTANCE_SEQ.fetch_add(1, Ordering::Relaxed)
 }
 
 impl InBroadcastFences {
@@ -276,8 +296,10 @@ impl InBroadcastFences {
         self.fences.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn accepted(&self) -> MutexGuard<'_, HashSet<Txid>> {
-        self.accepted_sends.lock().unwrap_or_else(PoisonError::into_inner)
+    fn acceptance(&self) -> MutexGuard<'_, HashMap<Txid, Acceptance>> {
+        self.acceptance
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -413,20 +435,33 @@ impl WalletGeneration {
         }
     }
 
-    /// Record that the network accepted the outgoing send `txid` — see
-    /// [`is_send_accepted`](Self::is_send_accepted).
-    pub(crate) fn mark_send_accepted(&self, txid: Txid) {
-        self.in_broadcast.accepted().insert(txid);
+    /// Record what the network said about our send `txid` (accepted, or
+    /// found dead), observed at `seq` ([`next_acceptance_seq`]). An older
+    /// observation than the one recorded is dropped.
+    pub(crate) fn record_acceptance(&self, txid: Txid, accepted: bool, seq: u64) {
+        let mut acceptance = self.in_broadcast.acceptance();
+        let newer = acceptance.get(&txid).is_none_or(|known| known.seq < seq);
+        if newer {
+            acceptance.insert(txid, Acceptance { seq, accepted });
+        }
     }
 
-    /// Whether the network has been seen to accept the outgoing send `txid`.
-    ///
-    /// Until it has — or the wallet sees it InstantSend-locked or mined — the
-    /// change of that send is not offered to a new payment: if the send never
-    /// reached the network, a payment built on its change is an orphan no node
-    /// accepts, and every later one built on that change is too.
-    pub(crate) fn is_send_accepted(&self, txid: &Txid) -> bool {
-        self.in_broadcast.accepted().contains(txid)
+    /// A broadcast of `txid` returned accepted: a peer echoed it back.
+    pub(crate) fn mark_send_accepted(&self, txid: Txid) {
+        self.record_acceptance(txid, true, next_acceptance_seq());
+    }
+
+    /// The sends among `unsettled` the network was last seen to accept.
+    /// Forgets every recorded send not among them — settled or gone — so the
+    /// record stays the size of the wallet's unsettled sends.
+    pub(crate) fn accepted_among(&self, unsettled: &HashSet<Txid>) -> HashSet<Txid> {
+        let mut acceptance = self.in_broadcast.acceptance();
+        acceptance.retain(|txid, _| unsettled.contains(txid));
+        acceptance
+            .iter()
+            .filter(|(_, known)| known.accepted)
+            .map(|(txid, _)| *txid)
+            .collect()
     }
 
     /// This generation's lock-free balance.

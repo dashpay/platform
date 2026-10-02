@@ -158,7 +158,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         let outcome = self.broadcaster.broadcast(transaction).await;
         // An accepted send — a peer echoed it back — may fund the next payment
         // with its change before the InstantSend lock arrives; an ambiguous one
-        // may not (`is_unresolved_change`).
+        // may not (`UnresolvedSends`).
         if outcome.is_ok() {
             self.generation().mark_send_accepted(transaction.txid());
         }
@@ -290,10 +290,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         &self,
         transaction: &Transaction,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
-        self.broadcaster
-            .broadcast(transaction)
-            .await
-            .map_err(Into::into)
+        let txid = self.broadcaster.broadcast(transaction).await?;
+        // Accepted: its change may fund the next payment before the
+        // InstantSend lock arrives (see `UnresolvedSends`).
+        self.generation().mark_send_accepted(txid);
+        Ok(txid)
     }
 
     /// Broadcast a signed transaction, reconciling the funding account's UTXO
