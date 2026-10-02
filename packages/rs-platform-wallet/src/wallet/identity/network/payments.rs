@@ -162,12 +162,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             );
         }
 
+        // 0 means "scan from genesis / not yet started": a full historical
+        // scan is coming, so nothing is backfilled toward it — but every
+        // candidate is still handled, as forward-covered. Returning early
+        // instead left contacts the startup drain had just registered
+        // unrecorded, and the first sweep after the scan had climbed past
+        // their funding heights rewound mid-session for a range that scan had
+        // watched them through. No checkpoint is below 0, so the path below
+        // rewinds nothing here.
         let synced_height = info.core_wallet.synced_height();
-        // 0 means "scan from genesis / not yet started" — already a full
-        // historical scan, nothing to backfill toward.
-        if synced_height == 0 {
-            return Ok(None);
-        }
 
         // (owner, contact, account_index) of every receival account — we can
         // only watch a contact's incoming addresses once its receival account
@@ -3219,8 +3222,10 @@ mod tests {
     }
 
     /// `synced_height == 0` means "scan from genesis / not started" — already a
-    /// full historical scan, so the rescan is a no-op (the masking path the spec
-    /// warns about).
+    /// full historical scan, so the rescan rewinds nothing (the masking path the
+    /// spec warns about). The contact is still recorded as forward-covered, so
+    /// the sweep does not rewind for it once that scan has climbed past its
+    /// funding height.
     #[tokio::test]
     async fn rescan_is_a_noop_when_synced_height_is_zero() {
         let (manager, persister, wallet_id) = make_wallet().await;
@@ -3242,6 +3247,14 @@ mod tests {
             "synced_height 0 -> no rescan"
         );
         assert_eq!(synced_height(&manager, wallet_id).await, 0);
+        let wm = manager.wallet_manager.read().await;
+        assert!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("info")
+                .dashpay_backfill
+                .covers(&owner, &contact, 0, 100),
+            "recorded as forward-covered by the coming scan"
+        );
     }
 
     /// The persisted half of the rescan guard, captured from a live manager
