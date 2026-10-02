@@ -39,6 +39,9 @@ public struct DecodedTransaction: Sendable, Equatable {
         public let valueDuffs: UInt64
         /// Raw scriptPubKey bytes.
         public let scriptPubkey: Data
+
+        /// `true` for an `OP_RETURN` (0x6a) data-carrier / burn output.
+        var isOpReturn: Bool { scriptPubkey.first == 0x6a }
     }
 
     /// Transaction id in consensus (internal) byte order — reverse for

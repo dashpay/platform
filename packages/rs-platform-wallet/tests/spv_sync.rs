@@ -173,7 +173,7 @@ async fn test_spv_sync_and_balance() {
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
         persister,
-        event_handler,
+        vec![event_handler],
     ));
 
     // --- Create wallet from mnemonic ---

@@ -568,7 +568,7 @@ dependencies = [
  "bitflags 2.13.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1654,7 +1654,7 @@ dependencies = [
 [[package]]
 name = "dash-network"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "cbindgen 0.29.4",
  "grovedb-bincode",
@@ -1665,7 +1665,7 @@ dependencies = [
 [[package]]
 name = "dash-network-seeds"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "dash-network",
 ]
@@ -1692,6 +1692,7 @@ dependencies = [
  "heck 0.5.0",
  "quote",
  "syn 2.0.117",
+ "tokio",
 ]
 
 [[package]]
@@ -1760,7 +1761,7 @@ dependencies = [
 [[package]]
 name = "dash-spv"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1789,7 +1790,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1815,12 +1816,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1833,7 +1834,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "dashcore",
  "grovedb-bincode",
@@ -1848,7 +1849,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "dashcore-private",
  "grovedb-bincode",
@@ -2736,6 +2737,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2922,7 +2933,7 @@ dependencies = [
 [[package]]
 name = "git-state"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 
 [[package]]
 name = "glob"
@@ -4154,7 +4165,7 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "aes",
  "async-trait",
@@ -4183,7 +4194,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-ffi"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "cbindgen 0.29.4",
  "dash-network",
@@ -4199,7 +4210,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-manager"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=e4208c90786a6854bd498315bcb571ef24182c15#e4208c90786a6854bd498315bcb571ef24182c15"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=18f7f3e695e770ea5d2820aa85597d45160d1b8e#18f7f3e695e770ea5d2820aa85597d45160d1b8e"
 dependencies = [
  "async-trait",
  "dashcore",
@@ -5279,21 +5290,28 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "bimap",
+ "bip39",
  "bs58",
  "dash-async",
+ "dash-platform-macros",
  "dash-sdk",
  "dash-spv",
  "dashcore",
+ "dotenvy",
  "dpp",
  "drive-proof-verifier",
+ "fs2",
  "futures",
  "grovedb-commitment-tree",
  "hex",
  "image",
+ "indexmap 2.14.0",
  "key-wallet",
  "key-wallet-manager",
  "log",
+ "parking_lot",
  "platform-encryption",
+ "platform-wallet-storage",
  "rand 0.8.6",
  "rayon",
  "rs-sdk-trusted-context-provider",
@@ -5303,8 +5321,10 @@ dependencies = [
  "sha2",
  "simple-signer",
  "static_assertions",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-shared-rt",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -5326,6 +5346,7 @@ dependencies = [
  "dpp",
  "grovedb-bincode",
  "hex",
+ "indexmap 2.14.0",
  "key-wallet",
  "lazy_static",
  "once_cell",
@@ -5651,7 +5672,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5664,7 +5685,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -7283,6 +7304,8 @@ dependencies = [
  "dpp",
  "grovedb-bincode",
  "hex",
+ "key-wallet",
+ "thiserror 2.0.18",
  "tracing",
  "zeroize",
 ]
@@ -7885,6 +7908,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-shared-rt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a6bb03ec682a0bb16ce93d19301abc5b98a0d7936477175a156a213dcc47d85"
+dependencies = [
+ "once_cell",
+ "tokio",
+ "tokio-shared-rt-macro",
+]
+
+[[package]]
+name = "tokio-shared-rt-macro"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fe49a94e3a984b0d0ab97343dc3dcd52baae1ee13f005bfad39faea47d051dc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "tokio-stream"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7931,6 +7976,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

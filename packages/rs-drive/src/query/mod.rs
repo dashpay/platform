@@ -3340,6 +3340,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // index cannot know.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            use dpp::data_contract::document_type::DocumentPropertyType;
             if self.document_type.index_only() {
                 // By-id and cursor shapes carry dedicated guidance deeper in
                 // the route (no primary-key tree; keyset pagination) — let

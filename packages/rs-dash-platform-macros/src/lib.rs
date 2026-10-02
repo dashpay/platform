@@ -1,11 +1,92 @@
 use heck::AsSnakeCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{DeriveInput, Expr, Ident, ItemFn, parse_macro_input};
+use syn::parse::{Parse, ParseStream};
+use syn::{DeriveInput, Expr, Ident, ItemFn, Token, parse_macro_input};
+
+/// Worker-thread count for the async runtime when `worker_threads = N` is
+/// omitted. Two is the minimum that lets `block_in_place` hand off to another
+/// worker, without spawning tokio's unbounded num_cpus default under `cargo
+/// test` concurrency.
+const DEFAULT_MULTI_THREAD_WORKERS: usize = 2;
+
+/// Parsed arguments of the `#[stack_size(..)]` attribute.
+struct StackSizeArgs {
+    /// Stack size in bytes for the driving thread and the async runtime's
+    /// worker threads.
+    stack_size: Expr,
+    /// Accepted legacy flag. Async bodies always run on a multi-threaded
+    /// runtime, so it no longer affects the runtime; it is still rejected on
+    /// non-`async` functions.
+    multi_thread: bool,
+    /// Worker-thread count for the async runtime; `None` uses
+    /// [`DEFAULT_MULTI_THREAD_WORKERS`]. Valid with or without `multi_thread`.
+    worker_threads: Option<Expr>,
+}
+
+impl Parse for StackSizeArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let stack_size: Expr = input.parse()?;
+        let mut multi_thread = false;
+        let mut worker_threads = None;
+
+        while input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+            let key: Ident = input.parse()?;
+            match key.to_string().as_str() {
+                "multi_thread" => multi_thread = true,
+                "worker_threads" => {
+                    input.parse::<Token![=]>()?;
+                    worker_threads = Some(input.parse()?);
+                }
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!(
+                            "unknown stack_size argument `{other}`; \
+                             expected `multi_thread` or `worker_threads = N`"
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(Self {
+            stack_size,
+            multi_thread,
+            worker_threads,
+        })
+    }
+}
 
 /// Runs the annotated function body on a thread with the provided stack size.
 ///
-/// Annotate your test function with `#[stack_size(size_in_bytes)]` to run it
+/// Annotate your test function with `#[stack_size(size_in_bytes)]` to run its
+/// body on a freshly spawned `std::thread` sized to `size_in_bytes`, sidestepping
+/// the small default thread stack that deep recursion (e.g. proof verification)
+/// would overflow.
+///
+/// # Arguments
+///
+/// - `#[stack_size(EXPR)]` — an `async` body runs on a multi-threaded tokio
+///   runtime with two worker threads; a sync body runs directly on the spawned
+///   thread.
+/// - `#[stack_size(EXPR, worker_threads = N)]` — same, but the async runtime
+///   uses `N` worker threads instead of two.
+///
+/// `multi_thread` is an accepted but optional legacy token: async bodies are
+/// always multi-threaded now, so it has no effect on the runtime and may be
+/// combined with `worker_threads` or omitted entirely. Both `worker_threads`
+/// and `multi_thread` configure the async runtime, so using either on a sync
+/// `#[stack_size]` function is a compile error.
+///
+/// Worker threads inherit `EXPR` as their stack size, so tasks spawned onto the
+/// runtime share the driving thread's recursion budget. Driving async bodies on
+/// a multi-threaded runtime lets nested sync-over-async bridges in the body
+/// (e.g. `tokio::task::block_in_place`) proceed instead of deadlocking (#3535).
 ///
 /// # Example
 ///
@@ -24,7 +105,11 @@ use syn::{DeriveInput, Expr, Ident, ItemFn, parse_macro_input};
 ///
 #[proc_macro_attribute]
 pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let stack_size_expr = parse_macro_input!(attr as Expr);
+    let StackSizeArgs {
+        stack_size: stack_size_expr,
+        multi_thread,
+        worker_threads,
+    } = parse_macro_input!(attr as StackSizeArgs);
     let function = parse_macro_input!(item as ItemFn);
 
     let attrs = function.attrs;
@@ -34,23 +119,41 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_ident = sig.ident.clone();
 
     // If the function is async, we strip async from the outer signature
-    // and run the body on a new tokio current-thread runtime inside the
-    // spawned thread. This keeps the externally-visible function sync so
-    // that it works with `#[test]` (and avoids needing `#[tokio::test]`).
+    // and run the body on a new tokio runtime inside the spawned thread.
+    // This keeps the externally-visible function sync so that it works with
+    // `#[test]` (and avoids needing `#[tokio::test]`).
     let is_async = sig.asyncness.is_some();
     if is_async {
         sig.asyncness = None;
     }
 
-    // TODO(issue #3535): migrate to `dash_async::block_on` — the
-    // inline `Builder::new_current_thread().block_on(...)` pattern can
-    // deadlock inside a running runtime.
+    // `worker_threads`/`multi_thread` configure the async runtime; a sync body
+    // builds no runtime, so passing them there is a mistake worth flagging.
+    if !is_async && (multi_thread || worker_threads.is_some()) {
+        return syn::Error::new_spanned(
+            &fn_ident,
+            "`worker_threads`/`multi_thread` only apply to async `#[stack_size]` functions",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    // Async bodies run on a multi-threaded runtime whose workers inherit the
+    // requested stack size, so nested sync-over-async bridges in the body
+    // (`block_in_place`, nested `block_on`) can't deadlock or panic the way a
+    // single current-thread runtime would (issue #3535). `worker_threads = N`
+    // overrides the default worker count.
     let spawned_body = if is_async {
+        let workers = worker_threads
+            .map(|expr| quote!(#expr))
+            .unwrap_or_else(|| quote!(#DEFAULT_MULTI_THREAD_WORKERS));
         quote! {
             builder
                 .spawn(move || {
-                    ::tokio::runtime::Builder::new_current_thread()
+                    ::tokio::runtime::Builder::new_multi_thread()
                         .enable_all()
+                        .worker_threads(#workers)
+                        .thread_stack_size(#stack_size_expr)
                         .build()
                         .expect("failed to build tokio runtime for stack_size thread")
                         .block_on(async move #block)

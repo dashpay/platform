@@ -29,10 +29,9 @@ struct TransactionListView: View {
     @Query private var walletAccounts: [PersistentAccount]
     @Query private var transactionObservation: [PersistentTransaction]
     /// Per-wallet asset-lock rows. Used to look up the *locked* amount
-    /// for each asset-lock tx — `PersistentTransaction.netAmount` is
-    /// the wallet's input-vs-output diff, which sees the credit
-    /// output as "to-self" and reports ~0 for asset locks. The
-    /// `amountDuffs` on the asset-lock row is the actual L1 burn.
+    /// for each asset-lock tx: `amountDuffs` on the asset-lock row is the
+    /// payload funding amount, while `PersistentTransaction.netAmount` is
+    /// the Core debit, which includes the fee.
     @Query private var assetLocks: [PersistentAssetLock]
     /// This wallet's owning identities. The DashPay payment / contact
     /// join below must be scoped to these — two identities in one store
@@ -169,6 +168,7 @@ struct TransactionListView: View {
         .sheet(item: $selectedTransaction) { transaction in
             TransactionDetailView(
                 transaction: transaction,
+                walletId: walletId,
                 assetLockAmountDuffs: assetLockAmountByTxid[transaction.txidHex]
             )
         }
@@ -202,6 +202,7 @@ struct TransactionListView: View {
             } label: {
                 TransactionRowView(
                     transaction: transaction,
+                    walletId: walletId,
                     assetLockAmountDuffs: assetLockAmounts[transaction.txidHex],
                     dashpayPayment: payment,
                     dashpayCounterpartyName: payment.map {
@@ -219,12 +220,12 @@ struct TransactionListView: View {
 
 struct TransactionRowView: View {
     let transaction: PersistentTransaction
-    /// Override amount displayed for asset-lock rows. The wallet's
-    /// `netAmount` shows ~0 for these (credit output is structurally
-    /// self-owned), so the list view passes the linked
-    /// `PersistentAssetLock.amountDuffs` — the actual L1 DASH burned
-    /// to mint platform credits. `nil` for non-asset-lock rows or
-    /// when no matching row was found.
+    var walletId: Data? = nil
+    /// `nil` while this wallet's amount is unresolved — the same state the
+    /// amount label shows as "Amount unavailable", so fee and amount agree.
+    private var netAmount: Int64? { transaction.displayNetAmount(for: walletId) }
+    private var direction: UInt32 { transaction.displayDirectionCode(for: walletId) }
+    /// Asset-lock payload funding amount, excluding the Core transaction fee.
     var assetLockAmountDuffs: Int64? = nil
     /// The DashPay payment this tx belongs to, if any — joined by `txid` in
     /// `TransactionListView`. When set, the row shows the contact context
@@ -253,14 +254,7 @@ struct TransactionRowView: View {
         // `Internal` — the wallet just sees its own owner/voting/payout
         // keys in the payload — so the self-transfer arrows would lie.
         if transaction.isProviderSpecial { return "server.rack" }
-        // direction: 0=incoming, 1=outgoing, 2=internal, 3=coinJoin
-        switch transaction.direction {
-        case 0: return "arrow.down.circle.fill"
-        case 1: return "arrow.up.circle.fill"
-        case 2: return "arrow.triangle.2.circlepath"
-        case 3: return "shuffle.circle.fill"
-        default: return "questionmark.circle"
-        }
+        return TransactionDirectionStyle.icon(for: direction)
     }
 
     private var typeColor: Color {
@@ -278,12 +272,7 @@ struct TransactionRowView: View {
         if transaction.isProviderSpecial {
             return .orange
         }
-        switch transaction.direction {
-        case 0: return .green
-        case 1, 2: return .red
-        case 3: return .blue
-        default: return .secondary
-        }
+        return TransactionDirectionStyle.color(for: direction)
     }
 
     /// Primary label: the contact context for a DashPay payment, else the
@@ -400,7 +389,7 @@ struct TransactionRowView: View {
                             .font(.headline)
                             .foregroundColor(typeColor)
 
-                        if let fee = transaction.fee, transaction.netAmount < 0 {
+                        if let fee = transaction.fee, let amount = netAmount, amount < 0 {
                             Text("Fee: \(formatFee(fee))")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
@@ -417,35 +406,23 @@ struct TransactionRowView: View {
         return String(format: "%.8f DASH", dash)
     }
 
-    /// Amount label for the row. For asset-lock txs we substitute
-    /// the linked `PersistentAssetLock.amountDuffs` (the L1 DASH
-    /// actually burned to mint platform credits); the wallet's
-    /// `netAmount` is ~0 for these because the credit output is a
-    /// self-owned address. Rendered as a negative (DASH leaving L1).
-    ///
-    /// If we know the row is an asset lock but the linked
-    /// `PersistentAssetLock` is missing (e.g. a historical record
-    /// from before the `Consumed`-status retention change shipped),
-    /// we render "Asset Lock (amount unknown)" instead of falling
-    /// through to `transaction.formattedAmount` — that would say
-    /// `+0.00000000 DASH`, which is misleading for a row the user
-    /// can see was a funding tx.
+    /// Keep asset-lock funding amounts distinct from the Core debit, which includes fees.
     private var displayAmount: String {
         if transaction.isAssetLock {
             if let duffs = assetLockAmountDuffs {
                 let dash = Double(duffs) / 100_000_000.0
                 return String(format: "-%.8f DASH", dash)
             }
-            return "Asset Lock (amount unknown)"
+            return "Asset Lock (amount unavailable)"
         }
         // A payload-only provider special tx moves no wallet balance;
         // `+0.00000000 DASH` reads as a broken zero-value receive, so
         // put the tx kind in the amount slot instead. A provider tx
         // that DOES move value (e.g. this wallet funded the collateral)
         // falls through and shows the real signed amount.
-        if transaction.isProviderSpecial && transaction.netAmount == 0 {
+        if transaction.isProviderSpecial && netAmount == 0 {
             return transaction.providerSpecialName ?? transaction.transactionType
         }
-        return transaction.formattedAmount
+        return transaction.displayFormattedAmount(for: walletId)
     }
 }

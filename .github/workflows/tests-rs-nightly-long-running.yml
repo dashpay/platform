@@ -112,7 +112,7 @@ jobs:
       - name: Run nightly-only upgrade fork tests
         run: |
           ulimit -c unlimited
-          RUST_MIN_STACK=4194304 cargo test \
+          RUST_MIN_STACK=8388608 cargo test \
             --package drive-abci \
             --test strategy_tests \
             --all-features \
