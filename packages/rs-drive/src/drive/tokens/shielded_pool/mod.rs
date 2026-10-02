@@ -133,11 +133,11 @@ impl Drive {
         };
 
         // The total is read from state and written back as an absolute value, so two pool
-        // operations on the same token in one batch would each start from the pre-batch
-        // total and the second write would discard the first. Every state transition applies
-        // in its own batch, and `SystemLimits::max_transitions_in_documents_batch` is 1, so a
-        // batch holds at most one pool operation (a document paid from the pool counts as
-        // one). If that cap is ever raised, this must become a delta on the sum item.
+        // operations on the same token in one batch would each start from the pre-batch total
+        // and the second write would discard the first. Batch application refuses that:
+        // `DriveOperation::refuse_repeated_token_balance_writes` reports the pool total every
+        // pool operation writes and rejects a batch that writes one twice. A batch that has to
+        // carry two of them needs this to become a delta on the sum item instead.
         let new_total_balance = match balance_change {
             TokenPoolBalanceChange::Unchanged => None,
             TokenPoolBalanceChange::Add(amount) => {
