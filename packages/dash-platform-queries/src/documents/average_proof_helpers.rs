@@ -30,8 +30,7 @@ use dpp::{
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
 use drive::query::drive_document_sum_query::index_picker::{
-    find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
-    summable_point_lookup_carries_counts,
+    find_range_summable_index_for_where_clauses, find_summable_index_with_counts_for_where_clauses,
 };
 use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
@@ -214,13 +213,12 @@ pub(super) fn verify_average_query(
                 .to_string(),
         })?
     } else {
-        find_summable_index_for_where_clauses(
+        find_summable_index_with_counts_for_where_clauses(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
             &resolved_time_ranges,
         )
-        .filter(|idx| summable_point_lookup_carries_counts(idx, &request.where_clauses))
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove AVG requires an index that declares BOTH `summable: \
                     \"<prop>\"` AND a countable terminator (`countable: \

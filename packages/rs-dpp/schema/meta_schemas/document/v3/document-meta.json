@@ -2196,6 +2196,21 @@
             "then": { "required": ["rangeAverageable"] }
           },
           {
+            "if": {
+              "anyOf": [
+                {
+                  "properties": { "rankedSummable": { "type": "object" } },
+                  "required": ["rankedSummable"]
+                },
+                {
+                  "properties": { "rankedAverageable": { "type": "object" } },
+                  "required": ["rankedAverageable"]
+                }
+              ]
+            },
+            "then": { "required": ["summableOffCountIndex"] }
+          },
+          {
             "if": { "required": ["summableOffCountIndex"] },
             "then": {
               "properties": { "rangeSummable": { "const": true } },

@@ -812,7 +812,8 @@ pub struct Index {
     /// flowing up through every ranked level above it. Mutually exclusive
     /// with the other ranking axes (`rankedSummable` / `rankedAverageable`)
     /// — the subtree count chain the prefix levels rank by cannot carry a
-    /// sum axis.
+    /// sum axis — except on a `summableOffCountIndex` index, whose counters
+    /// carry counts and sums up every level.
     ///
     /// Requires [`Index::range_countable`], like the terminal form. Levels
     /// from the named property down to the terminal are laid out
@@ -2219,11 +2220,18 @@ impl Index {
                     // `[hashtag, postId]`) declares BOTH rankings on one
                     // index — the nested-secondaries shape the storage layer
                     // maintains as one count-propagation chain.
+                    //
+                    // A repeated key keeps its last spelling, as the
+                    // meta-schema's JSON view does: each branch clears what
+                    // the other one set.
                     if let Some(at_levels) = parse_ranked_at_levels(RANKED_COUNTABLE, value_value)?
                     {
+                        ranked_countable = false;
                         ranked_countable_object_form = true;
                         ranked_countable_at_levels = at_levels;
                     } else {
+                        ranked_countable_object_form = false;
+                        ranked_countable_at_levels = Vec::new();
                         ranked_countable =
                             value_value
                                 .as_bool()
@@ -2660,7 +2668,8 @@ impl Index {
         // spellings of one layout. Any number of levels may be named; the
         // resolved vector is sorted into index-property order so two
         // spellings of one declaration parse identically. (The boolean and
-        // object spellings cannot conflict: they are one JSON key.)
+        // object spellings cannot conflict: a repeated key keeps its last
+        // spelling.)
         if ranked_countable_object_form {
             let (ranks_terminal, at_levels) = resolve_ranked_at_levels(
                 RANKED_COUNTABLE,
@@ -2670,6 +2679,12 @@ impl Index {
             ranked_countable |= ranks_terminal;
             ranked_countable_at = at_levels;
         }
+        // Whether the Sum and Avg axes were written in the object form, read
+        // before the folding below drops a last-property `at` into the
+        // boolean: the form itself is what only a `summableOffCountIndex`
+        // index admits.
+        let ranked_summable_object_form = ranked_summable_at_levels.is_some();
+        let ranked_averageable_object_form = ranked_averageable_at_levels.is_some();
         let mut ranked_summable_at: Vec<String> = Vec::new();
         if let Some(levels) = ranked_summable_at_levels {
             let (ranks_terminal, at_levels) =
@@ -2699,7 +2714,7 @@ impl Index {
         // axes and combines them freely. No other index carries a sum up a
         // chain, so on any other index the Sum and Avg axes stay terminal.
         if summable_off_count_index.is_none() {
-            if !ranked_summable_at.is_empty() || !ranked_averageable_at.is_empty() {
+            if ranked_summable_object_form || ranked_averageable_object_form {
                 return Err(DataContractError::InvalidContractStructure(
                     "rankedSummable's and rankedAverageable's `at` form is only allowed on a \
                      summableOffCountIndex index: only its counters carry a sum up the levels \
@@ -5931,6 +5946,37 @@ mod tests {
             .expect("a terminal-only array must parse as the boolean form");
         assert!(index.ranked_countable);
         assert_eq!(index.ranked_countable_at, Vec::<String>::new());
+    }
+
+    /// A repeated `rankedCountable` key keeps its last spelling, as the
+    /// meta-schema's JSON view does, whichever spelling comes first.
+    #[test]
+    fn test_index_try_from_repeated_ranked_countable_keeps_the_last_spelling() {
+        let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        index_map.push((
+            Value::Text("rankedCountable".to_string()),
+            Value::Bool(true),
+        ));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the repeated key must parse");
+        assert!(index.ranked_countable);
+        assert!(
+            index.ranked_countable_at.is_empty(),
+            "the later boolean replaces the object form"
+        );
+
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map.push((
+            Value::Text("rankedCountable".to_string()),
+            ranked_at("hashtag"),
+        ));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the repeated key must parse");
+        assert!(
+            !index.ranked_countable,
+            "the later object form replaces the boolean"
+        );
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
     }
 
     /// Array-form rejections: a duplicate name, more than one

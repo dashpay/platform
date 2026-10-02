@@ -314,7 +314,7 @@ fn should_price_what_drive_charges() {
 fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
     let platform_version = PlatformVersion::latest();
     let mut ratios = Vec::new();
-    for index in [0usize, 3, 4, 7, 9, 15] {
+    for index in [0usize, 3, 4, 7, 9, 15, 22] {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = apply(&drive, index, CONTRACTS[index]);
         for (name, document_type) in contract.document_types() {
@@ -330,8 +330,13 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
                 let known: Vec<bool> = writes
                     .iter()
                     .map(|write| {
-                        write.ranking.is_none()
-                            && (!write.if_absent || !exists(&drive, &contract, name, write))
+                        // A ranked row moves and a counter is rewritten in
+                        // place whether or not they exist, as
+                        // `processing_costs` counts them.
+                        write.ranking.is_some()
+                            || !write.if_absent
+                            || matches!(write.element, PricedElement::SumItem { .. })
+                            || !exists(&drive, &contract, name, write)
                     })
                     .collect();
                 let mut assumptions = CostAssumptions::new(platform_version);

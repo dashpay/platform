@@ -110,6 +110,12 @@ pub struct SystemLimits {
     ///   the accumulated operations through, so document operations in *that* variant do see
     ///   their siblings — which is why the withdrawal paths batch many documents safely. It is
     ///   not a drop-in for batch transitions: it carries no delete variant.
+    /// * A `summableOffCountIndex` counter is read and rewritten by each document conversion
+    ///   (`Drive::add_summable_off_count_counter_operations`). Two documents of one batch in one
+    ///   counter group, which a source keyed by more than its owner admits (a terminal such as
+    ///   `["$ownerId", "emoji"]`), would each read the stored count and write the same next
+    ///   value, losing one move; the group's last delete would then find the counter at zero
+    ///   and fail. The within-batch entry tracker does not claim counter groups.
     ///
     /// Five cases in `rs-drive`'s `batched_group_drain` suite are `#[ignore]`d for exactly this
     /// reason; the rest of that suite runs. Anyone raising this cap should un-ignore those five

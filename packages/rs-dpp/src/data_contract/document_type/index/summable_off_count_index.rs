@@ -1,4 +1,4 @@
-//! Count-only index derivations.
+//! `summableOffCountIndex` index derivations.
 //!
 //! A summableOffCountIndex index (see [`super::SUMMABLE_OFF_COUNT_INDEX`]) keeps, per group of its own
 //! properties, the number of its source index's entries in that group. The

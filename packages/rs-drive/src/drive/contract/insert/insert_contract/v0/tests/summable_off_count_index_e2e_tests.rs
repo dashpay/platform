@@ -15,6 +15,8 @@ use super::index_only_e2e_tests::{
     assert_grovedb_is_consistent, delete_like, doctype_path, insert_like, platform_version,
     read_grove_element, sum_top_k,
 };
+use super::index_only_scalar_terminal_e2e_tests::equal;
+use super::ranked_index_e2e_tests::avg_top_k;
 use crate::drive::Drive;
 use crate::query::drive_document_average_query::{
     AverageMode, DocumentAverageRequest, DocumentAverageResponse,
@@ -32,7 +34,7 @@ use crate::query::drive_document_sum_query::{
     DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
 };
 use crate::query::projection::SelectProjection;
-use crate::query::{OrderClause, WhereClause, WhereOperator};
+use crate::query::{OrderClause, WhereClause};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -45,6 +47,7 @@ use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_json_value;
+use grovedb::element::indexed::compute_avg_fixed_point;
 use grovedb::element::IndexAxis;
 use grovedb::Element;
 
@@ -192,14 +195,6 @@ fn level(contract: &DataContract, segments: &[&[u8]]) -> Vec<Vec<u8>> {
     path
 }
 
-fn equal(field: &str, value: Value) -> WhereClause {
-    WhereClause {
-        field: field.to_string(),
-        operator: WhereOperator::Equal,
-        value,
-    }
-}
-
 /// Two posts by author A (3 likes and 1 like) and one by author B (5
 /// likes), all under one hashtag.
 fn liked_posts(
@@ -227,35 +222,6 @@ fn liked_posts(
         &[LIKER_1, LIKER_2, LIKER_3, LIKER_4, LIKER_5],
     ));
     (a1, a2, b1, likes)
-}
-
-/// The `axis` keys of the indexed tree at `path`, best first.
-fn axis_keys(drive: &Drive, path: &[Vec<u8>], axis: IndexAxis) -> Vec<Vec<u8>> {
-    let path_query = grovedb::PathQuery::new_axis(
-        path.to_vec(),
-        grovedb_query::AxisQuery::top_k(axis, 10, 0, true).keys_only(),
-    );
-    match drive
-        .grove
-        .run_path_query(
-            &path_query,
-            true,
-            true,
-            true,
-            grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
-            None,
-            &platform_version().drive.grove_version,
-        )
-        .unwrap()
-        .expect("the keys-only axis read must succeed")
-    {
-        grovedb::PathQueryRun::AxisKeys { keys, .. } => match keys {
-            grovedb::AxisKeys::Count(pairs) => pairs.into_iter().map(|(_, key)| key).collect(),
-            grovedb::AxisKeys::Sum(pairs) => pairs.into_iter().map(|(_, key)| key).collect(),
-            grovedb::AxisKeys::Avg(pairs) => pairs.into_iter().map(|(_, key)| key).collect(),
-        },
-        other => panic!("expected axis keys, got {other:?}"),
-    }
 }
 
 /// The ranked tree of each author or hashtag with its axes: the levels rank
@@ -344,8 +310,11 @@ fn should_count_each_post_once_and_sum_its_likes() {
             vec![(5, AUTHOR_B.to_vec()), (4, AUTHOR_A.to_vec())]
         );
         assert_eq!(
-            axis_keys(&drive, &authors, IndexAxis::Avg),
-            vec![AUTHOR_B.to_vec(), AUTHOR_A.to_vec()]
+            avg_top_k(&drive, &authors, 10, true),
+            vec![
+                (compute_avg_fixed_point(5, 1), AUTHOR_B.to_vec()),
+                (compute_avg_fixed_point(4, 2), AUTHOR_A.to_vec()),
+            ]
         );
         // A's posts by likes
         assert_eq!(
@@ -505,24 +474,24 @@ fn should_sum_likes_by_the_source_index_name() {
     }
 }
 
-/// A count reads posts, not likes: author A's count is its 2 posts; and an
-/// average reads likes per post.
+/// A count query counts documents, so it never reads a counter: a post's
+/// likes come from `byPost`, and a filter only a counter index covers is
+/// refused rather than answered with a count of posts. The average reads the
+/// posts and the likes together.
 #[test]
-fn should_count_posts_and_average_likes_per_post() {
+fn should_count_documents_and_read_posts_through_the_average() {
     let (drive, contract) = setup(true);
-    liked_posts(&drive, &contract);
+    let (a1, _, _, _) = liked_posts(&drive, &contract);
     let document_type = contract
         .document_type_for_name("like")
         .expect("like doctype exists");
     let drive_config = crate::config::DriveConfig::default();
-    let clauses = vec![equal("postAuthor", Value::Identifier(AUTHOR_A))];
-
-    match drive
-        .execute_document_count_request(
+    let count = |where_clauses: Vec<WhereClause>| {
+        drive.execute_document_count_request(
             DocumentCountRequest {
                 contract: &contract,
                 document_type,
-                where_clauses: clauses.clone(),
+                where_clauses,
                 resolved_time_ranges: vec![],
                 order_clauses: vec![],
                 mode: CountMode::Aggregate,
@@ -533,11 +502,25 @@ fn should_count_posts_and_average_likes_per_post() {
             None,
             platform_version(),
         )
-        .expect("the count must execute")
-    {
-        DocumentCountResponse::Aggregate(count) => assert_eq!(count, 2, "A's posts"),
+    };
+
+    match count(vec![equal("postId", Value::Identifier(a1))]).expect("byPost counts likes") {
+        DocumentCountResponse::Aggregate(likes) => assert_eq!(likes, 3, "a1's likes"),
         other => panic!("expected an aggregate count, got {other:?}"),
     }
+    for clauses in [
+        vec![equal("postAuthor", Value::Identifier(AUTHOR_A))],
+        vec![
+            equal("postAuthor", Value::Identifier(AUTHOR_A)),
+            equal("postId", Value::Identifier(a1)),
+        ],
+    ] {
+        assert!(
+            count(clauses.clone()).is_err(),
+            "only a counter index covers {clauses:?}, and it counts posts, not likes"
+        );
+    }
+    let clauses = vec![equal("postAuthor", Value::Identifier(AUTHOR_A))];
 
     match drive
         .execute_document_average_request(
@@ -581,9 +564,18 @@ fn should_rank_authors_by_likes_and_likes_per_post_with_proofs() {
         ascending: false,
     }];
 
-    for select in [
-        SelectProjection::sum("byPost"),
-        SelectProjection::avg("byPost"),
+    for (select, values) in [
+        (
+            SelectProjection::sum("byPost"),
+            [RankedEntryValue::Sum(5), RankedEntryValue::Sum(4)],
+        ),
+        (
+            SelectProjection::avg("byPost"),
+            [
+                RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(5, 1)),
+                RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(4, 2)),
+            ],
+        ),
     ] {
         let request = |prove: bool| DocumentRankedRequest {
             contract: &contract,
@@ -606,15 +598,17 @@ fn should_rank_authors_by_likes_and_likes_per_post_with_proofs() {
             DocumentRankedResponse::Entries(page) => page,
             DocumentRankedResponse::Proof(_) => panic!("expected entries"),
         };
-        let keys: Vec<Vec<u8>> = page.entries.iter().map(|entry| entry.key.clone()).collect();
+        let ranking: Vec<(Vec<u8>, RankedEntryValue)> = page
+            .entries
+            .iter()
+            .map(|entry| (entry.key.clone(), entry.value))
+            .collect();
+        let [b, a] = values;
         assert_eq!(
-            keys,
-            vec![AUTHOR_B.to_vec(), AUTHOR_A.to_vec()],
-            "{select:?}"
+            ranking,
+            vec![(AUTHOR_B.to_vec(), b), (AUTHOR_A.to_vec(), a)],
+            "B has 5 likes on 1 post, A 4 on 2 ({select:?})"
         );
-        if let RankedEntryValue::Sum(likes) = page.entries[1].value {
-            assert_eq!(likes, 4, "A's likes");
-        }
 
         let proof = match drive
             .execute_document_ranked_request(request(true), None, pv)

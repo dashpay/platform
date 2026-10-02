@@ -11,6 +11,14 @@ use crate::query::{index_admissible_for_query, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Whether `index` counts documents, which a count query reads. A
+/// `summableOffCountIndex` index is countable too, but its count is the number
+/// of its groups (each counter counts one), not of documents, so it never
+/// answers a count query: the average query reads its group counts.
+fn counts_documents(index: &Index) -> bool {
+    index.countable.is_countable() && !index.is_summable_off_count_index()
+}
+
 impl DriveDocumentCountQuery<'_> {
     /// Finds a `countable: true` index whose properties **exactly match** the
     /// indexable (Equal/In) where-clause fields — every index property has a
@@ -85,7 +93,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.countable.is_countable() {
+            if !counts_documents(index) {
                 continue;
             }
             if index.properties.len() != indexable_fields.len() {
@@ -116,7 +124,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !index.countable.is_countable() {
+            if !index.range_countable || !counts_documents(index) {
                 continue;
             }
             // A ranked axis makes the terminal property-name tree an
@@ -159,7 +167,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.countable.is_countable() {
+            if !counts_documents(index) {
                 continue;
             }
             let pin_depth = indexable_fields.len();
@@ -275,7 +283,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !index.countable.is_countable() {
+            if !index.range_countable || !counts_documents(index) {
                 continue;
             }
 

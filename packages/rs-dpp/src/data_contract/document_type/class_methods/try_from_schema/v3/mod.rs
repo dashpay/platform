@@ -463,7 +463,7 @@ fn parse_generation_3(
             // same shared mapping.
             admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
                 .skip_if_absent,
-            // COUNT OF: the sixth generation-3 index keyword, from the same
+            // SUMMABLE OFF COUNT INDEX: the sixth generation-3 index keyword, from the same
             // shared mapping.
             admit_index_summable_off_count_index: IndexGrammarAdmissions::for_schema_generation(3)
                 .summable_off_count_index,
@@ -1014,7 +1014,7 @@ pub(in crate::data_contract) fn validate_preallocated_indexes_kept_on_removal(
 }
 
 /// Refuses, once every document type of the contract is parsed, a
-/// summableOffCountIndex (`summableOffCountIndex`) index whose groups its source fixes through a
+/// `summableOffCountIndex` index whose groups its source fixes through a
 /// referenced value that can change, or that a moderator's removal drops.
 /// The parse of the declaring type checked that every property the source
 /// lacks is a `where` referring value of a reference a source property holds
@@ -2467,7 +2467,7 @@ mod tests {
 
     /// Avg is strictly tighter than Count/Sum, and an index carrying Avg
     /// *alongside* the other axes has to satisfy the tightest of them: the
-    /// 60-character string that a summableOffCountIndex ranked index accepts is refused
+    /// 60-character string that a count-ranked index accepts is refused
     /// the moment the Avg axis joins.
     #[test]
     fn the_avg_axis_bound_wins_when_several_ranking_axes_are_declared() {

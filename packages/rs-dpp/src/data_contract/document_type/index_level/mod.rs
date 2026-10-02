@@ -162,7 +162,7 @@ pub struct IndexLevelTypeInfo {
 }
 
 impl IndexLevelTypeInfo {
-    /// Whether the terminating index is summableOffCountIndex (`summableOffCountIndex`).
+    /// Whether the terminating index is a `summableOffCountIndex` index.
     pub fn is_summable_off_count_index(&self) -> bool {
         self.summable_off_count_index.is_some()
     }
@@ -852,7 +852,7 @@ impl IndexLevel {
         // `ranked_summable` / `ranked_averageable`). All three are checked
         // together in one helper rather than folded into the count and sum
         // helpers above because the Avg axis straddles both — it is neither a
-        // summableOffCountIndex nor a sum-only property — and because the set of ranking
+        // count-only nor a sum-only property — and because the set of ranking
         // axes is what determines the indexed tree's axis list, which is
         // committed into the parent hash at contract creation. Adding or
         // removing an axis after the fact would require rebuilding the ordered

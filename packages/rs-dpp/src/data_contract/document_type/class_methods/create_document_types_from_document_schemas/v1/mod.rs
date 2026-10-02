@@ -115,7 +115,9 @@ impl DocumentType {
         validate_preallocated_indexes_kept_on_removal(&contract_document_types)?;
         // A summableOffCountIndex index is lossless only if the referenced values fixing its groups
         // never change, and stay on record through a moderator's removal: judged with the
-        // referenced types, which a document type's parse can not see.
+        // referenced types, which a document type's parse can not see. Inert before 14: only
+        // parser generation 3 admits `summableOffCountIndex`, so earlier types have no such index
+        // and the check visits nothing.
         validate_summable_off_count_indexes_lossless(&contract_document_types)?;
 
         for (name, document_type) in &contract_document_types {

@@ -665,11 +665,17 @@ fn processing_costs(
         known_values: credits,
     };
     // A known value's ranked row adds no storage, but it still moves in its
-    // secondary tree (a delete and an insert), which costs processing.
+    // secondary tree (a delete and an insert), which costs processing. A
+    // `summableOffCountIndex` counter (the one sum item written) is rewritten
+    // in place on every create of its group: no storage, but a put.
     let known_with_row_moves: Vec<bool> = writes
         .iter()
         .zip(known)
-        .map(|(write, known)| *known || write.ranking.is_some())
+        .map(|(write, known)| {
+            *known
+                || write.ranking.is_some()
+                || matches!(write.element, PricedElement::SumItem { .. })
+        })
         .collect();
     let mut parts = vec![
         ProcessingCost {

@@ -17,9 +17,7 @@
 //! same on its per-In fan-out branch.
 
 use super::super::super::drive_document_average_query::{AverageEntry, DocumentAverageResponse};
-use super::super::super::drive_document_sum_query::index_picker::{
-    find_summable_index_for_where_clauses, summable_point_lookup_carries_counts,
-};
+use super::super::super::drive_document_sum_query::index_picker::find_summable_index_with_counts_for_where_clauses;
 use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -122,13 +120,12 @@ impl Drive {
                 value: value.clone(),
             });
 
-            let index = find_summable_index_for_where_clauses(
+            let index = find_summable_index_with_counts_for_where_clauses(
                 document_type.indexes(),
                 &clauses_for_value,
                 &sum_property,
                 resolved_time_ranges,
             )
-            .filter(|idx| summable_point_lookup_carries_counts(idx, &clauses_for_value))
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                     "average query requires an index that declares BOTH \

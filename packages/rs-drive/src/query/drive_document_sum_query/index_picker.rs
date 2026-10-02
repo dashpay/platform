@@ -38,6 +38,43 @@ pub fn find_summable_index_for_where_clauses<'b>(
     sum_property: &str,
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
+    find_summable_index_accepted_by(
+        indexes,
+        where_clauses,
+        sum_property,
+        resolved_time_ranges,
+        |_| true,
+    )
+}
+
+/// [`find_summable_index_for_where_clauses`] for an average or count-and-sum
+/// read: only an index whose read element also carries a count
+/// ([`summable_point_lookup_carries_counts`]) is a candidate, so an index that
+/// cannot answer never hides, by name order, one that can.
+pub fn find_summable_index_with_counts_for_where_clauses<'b>(
+    indexes: &'b BTreeMap<String, Index>,
+    where_clauses: &[WhereClause],
+    sum_property: &str,
+    resolved_time_ranges: &[ResolvedTimeRange],
+) -> Option<&'b Index> {
+    find_summable_index_accepted_by(
+        indexes,
+        where_clauses,
+        sum_property,
+        resolved_time_ranges,
+        |index| summable_point_lookup_carries_counts(index, where_clauses),
+    )
+}
+
+/// The first index, in name order, that a point sum over `where_clauses`
+/// reads (exactly covering, or through a sum chain) and that `accepts`.
+fn find_summable_index_accepted_by<'b>(
+    indexes: &'b BTreeMap<String, Index>,
+    where_clauses: &[WhereClause],
+    sum_property: &str,
+    resolved_time_ranges: &[ResolvedTimeRange],
+    accepts: impl Fn(&Index) -> bool,
+) -> Option<&'b Index> {
     // A skip index serves only a query binding every skip property
     // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
     // above a deep one.
@@ -73,7 +110,7 @@ pub fn find_summable_index_for_where_clauses<'b>(
         // Skip if not summable OR if summable property doesn't match. A
         // `summableOffCountIndex` index is addressed by its source index's
         // name, its counters holding that index's entry counts.
-        if index.summed_value_name() != Some(sum_property) {
+        if index.summed_value_name() != Some(sum_property) || !accepts(index) {
             continue;
         }
         if index.properties.len() != indexable_fields.len() {
@@ -99,7 +136,7 @@ pub fn find_summable_index_for_where_clauses<'b>(
         if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
             continue;
         }
-        if index.summed_value_name() != Some(sum_property) {
+        if index.summed_value_name() != Some(sum_property) || !accepts(index) {
             continue;
         }
         let pin_depth = indexable_fields.len();

@@ -301,7 +301,12 @@ fn axis_top_k_keys(
     }
 }
 
-fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
+pub(super) fn avg_top_k(
+    drive: &Drive,
+    path: &[Vec<u8>],
+    k: u16,
+    descending: bool,
+) -> Vec<(i128, Vec<u8>)> {
     match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Avg, k, descending) {
         grovedb::AxisKeys::Avg(pairs) => pairs,
         other => panic!("expected avg keys, got {other:?}"),

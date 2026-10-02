@@ -117,7 +117,7 @@ impl DocumentTypeV1 {
                 admit_index_outlives_delete: false,
                 // SKIP IF ABSENT: also a generation-3 keyword; not in this grammar.
                 admit_index_skip_if_absent: false,
-                // COUNT OF: also a generation-3 keyword; not in this grammar.
+                // SUMMABLE OFF COUNT INDEX: also a generation-3 keyword; not in this grammar.
                 admit_index_summable_off_count_index: false,
                 // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 rule; below it
                 // the parser demands an explicit countable `countable`, as the frozen

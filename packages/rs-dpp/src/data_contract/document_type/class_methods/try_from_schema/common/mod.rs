@@ -1324,7 +1324,7 @@ fn parse_indices(
     // query planner, the update-immutability comparison) reading one
     // canonical spelling: both spellings of the same index parse to equal
     // `Index` values. `apply_index_only` then validates the normalized set.
-    // A summableOffCountIndex index (`summableOffCountIndex`) keeps no entries and so has no member
+    // A `summableOffCountIndex` index keeps no entries and so has no member
     // key: it stays without a terminal.
     let mut indices = indices;
     if ctx.index_only {

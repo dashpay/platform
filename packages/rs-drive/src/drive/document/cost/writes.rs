@@ -742,8 +742,10 @@ impl Context<'_> {
     /// A `summableOffCountIndex` index's counter for the document's group at
     /// `key` under the property-name tree at `path`: inserted the first
     /// time, rewritten in place (at its fixed size, adding no storage) after
-    /// that, so it is written only when absent. Its ranking rows hold the
-    /// group's one count and the document's one entry.
+    /// that, so it adds storage only when absent; the processing of the
+    /// rewrite is counted whether or not it is absent (`processing_costs`).
+    /// Its ranking rows hold the group's one count and the document's one
+    /// entry.
     #[allow(clippy::too_many_arguments)]
     fn counter_write(
         &mut self,

@@ -324,8 +324,9 @@ pub fn encode_prefix_branches(
     // key: a null pin on a skip property would read an empty ranking as if it
     // were complete. (A ranking never sits above a skip property, so every
     // skip property is either pinned here or the ranked property itself; an
-    // indexOnly type has no null values to pin.)
-    if index.skip_if_absent && index.terminal.is_none() {
+    // indexOnly type has no null values to pin: its indexes carry a terminal,
+    // or keep `summableOffCountIndex` counters.)
+    if index.skip_if_absent && index.terminal.is_none() && !index.is_summable_off_count_index() {
         if let Some(pin) = prefix_pins.iter().find(|pin| {
             index.skip_if_absent_properties.contains(&pin.field)
                 && pin.values.iter().any(|value| value.is_null())

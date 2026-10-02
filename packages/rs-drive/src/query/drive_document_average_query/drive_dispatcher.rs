@@ -52,8 +52,7 @@ use crate::query::drive_document_average_query::{
     AverageMode, DocumentAverageRequest, DocumentAverageResponse,
 };
 use crate::query::drive_document_sum_query::index_picker::{
-    find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
-    summable_point_lookup_carries_counts,
+    find_range_summable_index_for_where_clauses, find_summable_index_with_counts_for_where_clauses,
 };
 use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
 use crate::query::{
@@ -371,13 +370,12 @@ impl Drive {
                 AverageMode::Aggregate | AverageMode::GroupByIn
             )
         {
-            let index = find_summable_index_for_where_clauses(
+            let index = find_summable_index_with_counts_for_where_clauses(
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
                 &request.resolved_time_ranges,
             )
-            .filter(|idx| summable_point_lookup_carries_counts(idx, &request.where_clauses))
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                     "prove point-lookup AVG requires an index that declares BOTH \

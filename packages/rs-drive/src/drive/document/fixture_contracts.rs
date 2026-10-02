@@ -31,7 +31,6 @@ pub(crate) const CONTRACTS: [&str; 23] = [
     "tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json",
     "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json",
     "tests/supporting_files/contract/yappr-likes/yappr-likes-author-preallocated-contract.json",
-    "tests/supporting_files/contract/yappr-likes/yappr-likes-summable-off-count-index-contract.json",
     "tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json",
     "tests/supporting_files/contract/index-only-scalar-terminal/index-only-scalar-terminal-contract.json",
     "tests/supporting_files/contract/tally/tally-contract.json",
@@ -42,6 +41,7 @@ pub(crate) const CONTRACTS: [&str; 23] = [
     "tests/supporting_files/contract/skip-if-absent/skip-likes-contract.json",
     "tests/supporting_files/contract/skip-if-absent/skip-posts-contract.json",
     "tests/supporting_files/contract/sibling-nulls/sibling-nulls-contract.json",
+    "tests/supporting_files/contract/yappr-likes/yappr-likes-summable-off-count-index-contract.json",
 ];
 
 /// Leaves out the optional properties of the type's unique indexes, so a

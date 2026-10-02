@@ -190,11 +190,11 @@ Each counter counts one group and adds its entries to the sum, so the index's to
 
 | Aggregate | Reads | `byAuthorPost` |
 |---|---|---|
-| count | the groups | an author's posts |
+| count | the groups, read by an average query (which returns the count and the sum) | an author's posts |
 | sum | the source's entries, named by the source index (`sum(byPost)`) | an author's likes, or one post's |
 | average | entries per group | an author's likes per post |
 
-A ranking at an earlier level orders by these totals: `rankedSummable: { "at": "postAuthor" }` ranks authors by likes, `rankedAverageable: { "at": "postAuthor" }` by likes per post, and `"postId"`, the last property, ranks an author's posts by likes. A sum or average point query may stop at any level from the shallowest sum or average ranking down; a count query at any level from the shallowest count or average ranking down. When the index is `preallocated`, every post has a counter from its creation, so a post without likes counts as a post with zero likes; otherwise a post shows once it is liked and leaves with its last like.
+A ranking at an earlier level orders by these totals: `rankedSummable: { "at": "postAuthor" }` ranks authors by likes, `rankedAverageable: { "at": "postAuthor" }` by likes per post, and `"postId"`, the last property, ranks an author's posts by likes. A sum point query may stop at any level from the shallowest sum or average ranking down, and an average point query at any level that also carries counts (from the shallowest count or average ranking down). A count query counts documents, so it never reads these counters: `count(*)` over the source's properties reads the source. When the index is `preallocated`, every post has a counter from its creation, so a post without likes counts as a post with zero likes; otherwise a post shows once it is liked and leaves with its last like.
 
 Rules at registration:
 

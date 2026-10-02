@@ -281,6 +281,117 @@ fn should_refuse_a_sum_ranking_at_an_earlier_level_of_another_index() {
     );
 }
 
+/// A stored `tip` type whose one index is `index`.
+fn parse_tip(
+    index: Value,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    let indices = vec![index];
+    let tip = platform_value!({
+        "type": "object",
+        "properties": {
+            "recipient": { "type": "string", "minLength": 1, "maxLength": 32, "position": 0 },
+            "amount": { "type": "integer", "minimum": 1, "maximum": 1000, "position": 1 },
+        },
+        "indices": indices,
+        "required": ["recipient", "amount"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version).expect("default config");
+    DocumentType::create_document_types_from_document_schemas(
+        Identifier::new(CONTRACT_ID),
+        1,
+        config.version(),
+        BTreeMap::from([("tip".to_string(), tip)]),
+        None,
+        &BTreeMap::new(),
+        &config,
+        full_validation,
+        false,
+        &mut vec![],
+        platform_version,
+    )
+}
+
+#[test]
+fn should_refuse_the_object_form_of_a_sum_ranking_naming_the_last_property_of_another_index() {
+    // Naming the last property folds into the boolean, but the form itself is
+    // what only a summableOffCountIndex index admits
+    for index in [
+        platform_value!({
+            "name": "byRecipient",
+            "properties": [{ "recipient": "asc" }],
+            "summable": "amount",
+            "rangeSummable": true,
+            "rankedSummable": { "at": "recipient" },
+        }),
+        platform_value!({
+            "name": "byRecipient",
+            "properties": [{ "recipient": "asc" }],
+            "averageable": "amount",
+            "rangeAverageable": true,
+            "rankedAverageable": { "at": ["recipient"] },
+        }),
+    ] {
+        assert_refused(
+            parse_tip(index.clone(), false, PlatformVersion::latest()),
+            "only allowed on a summableOffCountIndex index",
+        );
+        assert!(parse_tip(index, true, PlatformVersion::latest()).is_err());
+    }
+    let boolean = platform_value!({
+        "name": "byRecipient",
+        "properties": [{ "recipient": "asc" }],
+        "summable": "amount",
+        "rangeSummable": true,
+        "rankedSummable": true,
+    });
+    for full_validation in [false, true] {
+        parse_tip(boolean.clone(), full_validation, PlatformVersion::latest())
+            .expect("the boolean form parses on any index");
+    }
+}
+
+#[test]
+fn should_refuse_the_keywords_before_protocol_version_14() {
+    let counter = platform_value!({
+        "name": "byRecipient",
+        "properties": [{ "recipient": "asc" }],
+        "summableOffCountIndex": "byAmount",
+        "rangeSummable": true,
+    });
+    let ranked = platform_value!({
+        "name": "byRecipient",
+        "properties": [{ "recipient": "asc" }],
+        "summable": "amount",
+        "rangeSummable": true,
+        "rankedSummable": { "at": "recipient" },
+    });
+    // Protocol version 13 knows neither: both fall to the unknown-key arm, as
+    // on a node without them
+    let platform_version_13 = PlatformVersion::get(13).expect("PV13 exists");
+    for index in [counter.clone(), ranked.clone()] {
+        let error = parse_tip(index.clone(), false, platform_version_13)
+            .expect_err("PV13 refuses the keyword");
+        assert!(
+            format!("{error:?}").contains("unexpected property name"),
+            "{error:?}"
+        );
+        assert!(parse_tip(index, true, platform_version_13).is_err());
+    }
+    // Protocol version 14 parses them, and refuses them here for the type's
+    // own reasons
+    assert_refused(
+        parse_tip(counter, false, PlatformVersion::latest()),
+        "only allowed on indexOnly document types",
+    );
+    assert_refused(
+        parse_tip(ranked, false, PlatformVersion::latest()),
+        "only allowed on a summableOffCountIndex index",
+    );
+}
+
 #[test]
 fn should_refuse_summable_off_count_index_without_range_summable() {
     let index = platform_value!({

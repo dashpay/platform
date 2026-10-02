@@ -1363,7 +1363,9 @@ pub fn index_admissible_for_skip_if_absent(
     if !index.skip_if_absent {
         return true;
     }
-    let index_only = index.terminal.is_some();
+    // An index of an indexOnly type carries a terminal, except a
+    // `summableOffCountIndex` index, which keeps counters instead of entries.
+    let index_only = index.terminal.is_some() || index.is_summable_off_count_index();
     index.skip_if_absent_properties.iter().all(|skip_property| {
         bindings.iter().any(|binding| {
             binding.field == skip_property.as_str() && (index_only || binding.excludes_missing)

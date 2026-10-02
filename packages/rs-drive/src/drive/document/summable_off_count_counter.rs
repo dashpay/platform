@@ -85,11 +85,14 @@ impl Drive {
     /// estimation call (`estimated_costs_only_with_layer_info` set) reads
     /// nothing and prices the read and the write the change makes: an insert
     /// for a create, a rewrite or the removal for a delete. A counter is
-    /// written at most once per batch: two documents of one batch in one
-    /// group would be duplicate creates of the source, or a delete and a
-    /// create of one document, whose create the state probe refuses against
-    /// the entry the delete has not yet removed. A second write is refused
-    /// rather than folded.
+    /// written at most once per batch because a documents batch carries one
+    /// transition (`max_transitions_in_documents_batch`), not because of the
+    /// source: a source keyed by more than its owner holds several entries of
+    /// one owner in one group. Each document is converted on its own
+    /// (`previous_batch_operations` is empty across documents), so the check
+    /// below catches only a second write within one conversion, refused
+    /// rather than folded; raising the cap needs the counter moves folded
+    /// across documents first (see that limit).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_summable_off_count_counter_operations(
         &self,

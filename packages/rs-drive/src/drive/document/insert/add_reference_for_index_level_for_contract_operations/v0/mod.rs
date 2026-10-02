@@ -65,7 +65,9 @@ impl Drive {
         }
 
         // A summableOffCountIndex index has no entry to write: the walker moves its
-        // counter at the value position instead of descending here.
+        // counter at the value position instead of descending here. Inert before protocol
+        // version 14: only parser generation 3 admits the keyword, and only the v2 walkers,
+        // which no earlier version selects, reach such an index.
         if index_type.is_summable_off_count_index() {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "a summableOffCountIndex index's counter is moved by the walker, never written as an entry",
