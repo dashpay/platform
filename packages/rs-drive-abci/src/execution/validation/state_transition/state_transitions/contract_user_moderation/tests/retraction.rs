@@ -2,9 +2,11 @@
 //! whose documents can not be deleted, the one replace a barred owner may still make.
 
 use super::*;
+use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 
 const MESSAGE: &str = "message";
 const NOTE: &str = "note";
+const TALLY: &str = "tally";
 const DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED: u32 = 10422;
 const DOCUMENT_IMMUTABLE_PROPERTY_CHANGED: u32 = 40128;
 
@@ -40,7 +42,21 @@ fn note_schema() -> Value {
     })
 }
 
-/// A contract keeping both lists, with messages and notes
+/// A tally whose retraction condition can fault: 10 / score above 1 holds for a score of 1 to
+/// 9, not from 10, and divides by zero for a score of 0
+fn tally_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "canBeDeleted": false,
+        "properties": {
+            "score": { "type": "integer", "minimum": 0, "maximum": 100, "position": 0 },
+        },
+        "additionalProperties": false,
+        "retractedWhen": { "greaterThan": [{ "divide": [10, "score"] }, 1] },
+    })
+}
+
+/// A contract keeping both lists, with messages, notes and tallies
 async fn setup() -> Setup {
     Setup::new_at_with(
         Some(moderation(true, true, THE_MODERATOR)),
@@ -48,6 +64,7 @@ async fn setup() -> Setup {
         |contract| {
             add_document_type(contract, MESSAGE, message_schema());
             add_document_type(contract, NOTE, note_schema());
+            add_document_type(contract, TALLY, tally_schema());
         },
     )
     .await
@@ -260,5 +277,81 @@ async fn should_refuse_every_replace_of_a_barred_author_on_a_type_without_retrac
     assert_success(&setup.process(&ban, &transaction));
     let retract = replace(&setup, &setup.user, NOTE, &note, retracted()).await;
     assert_paid_with_code(&setup.process(&retract, &transaction), CONTRACT_USER_BANNED);
+    setup.commit(transaction);
+}
+
+/// A condition that faults (a division by zero) counts as not met: a fault never lifts a bar. The
+/// replace is refused with the bar in the mempool and in a block, paid with the nonce bumped, and
+/// the stored document is left as it was; the same condition met lets the replace through.
+#[tokio::test]
+async fn should_keep_the_bar_when_the_retraction_condition_faults() {
+    let setup = setup().await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (tally, create_tally) = setup
+        .create_document_of_type_with(&setup.user, TALLY, |document| {
+            let properties = document.properties_mut();
+            properties.clear();
+            properties.insert("score".to_string(), Value::U64(50));
+        })
+        .await;
+    assert_success(&setup.process(&create_tally, &transaction));
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+    setup.commit(transaction);
+
+    // 10 / 0 faults
+    let faults = replace(
+        &setup,
+        &setup.user,
+        TALLY,
+        &tally,
+        platform_value!({ "score": 0u64 }),
+    )
+    .await;
+    let refused_nonce = setup.user.next_contract_nonce.get() - 1;
+    let errors = setup.check_tx(&faults);
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.code() == CONTRACT_USER_BANNED),
+        "expected the bar, got {errors:?}"
+    );
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_paid_with_code(&setup.process(&faults, &transaction), CONTRACT_USER_BANNED);
+    let stored = setup
+        .stored_document(TALLY, tally.id(), Some(&transaction))
+        .expect("expected the tally");
+    assert_eq!(stored.revision(), Some(1));
+    // Stored at the width the score's bounds give it
+    assert!(stored
+        .properties()
+        .get("score")
+        .is_some_and(|score| score.equal_underlying_data(&Value::U64(50))));
+    let nonce = setup
+        .platform
+        .drive
+        .fetch_identity_contract_nonce(
+            user_id.to_buffer(),
+            setup.contract.id().to_buffer(),
+            true,
+            Some(&transaction),
+            PlatformVersion::latest(),
+        )
+        .expect("expected to fetch the nonce")
+        .expect("expected a nonce");
+    assert_eq!(nonce & IDENTITY_NONCE_VALUE_FILTER, refused_nonce);
+
+    // 10 / 2 is above 1
+    let met = replace(
+        &setup,
+        &setup.user,
+        TALLY,
+        &tally,
+        platform_value!({ "score": 2u64 }),
+    )
+    .await;
+    assert_success(&setup.process(&met, &transaction));
     setup.commit(transaction);
 }
