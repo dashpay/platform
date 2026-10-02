@@ -147,7 +147,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Creates a `DashpayReceivingFunds` managed account with address pools
     /// so the SPV adapter monitors incoming payments from this contact.
-    /// Call this when a contact is established (mutual requests exist).
+    /// Call this as soon as our outgoing request is known, whether or not the
+    /// contact has reciprocated: that request publishes our receiving xpub,
+    /// so the contact may pay us before replying.
     ///
     /// No-op if the account already exists for this contact relationship.
     pub async fn register_contact_account(

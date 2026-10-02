@@ -1670,10 +1670,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 self.build_contact_accounts(&identity_id, candidate).await;
             }
 
-            // (3b) Our receiving account for every contact we sent a request
-            //      that has not reciprocated: our xpub is in that request, so
-            //      they can already pay us on it.
-            self.enqueue_receiving_only_builds(&identity_id).await;
+            // (3b) Our receiving account for every contact holding a request
+            //      we sent, reciprocated or not: our xpub is in that request,
+            //      so they can already pay us on it. Gated on our side only.
+            self.enqueue_receiving_account_builds(&identity_id).await;
 
             // (4) Enqueue DIP-15 auto-accept for inbound requests carrying a
             //     proof. Signerless: verify + accept happen later in
@@ -1915,28 +1915,40 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         out
     }
 
-    /// Collect every contact (for `identity_id`) that we sent a contact
-    /// request to, that has not sent one back, and that has no
-    /// `DashpayReceivingFunds` account yet — the receiving-only build
-    /// candidates for this sweep. Runs under the caller's guard; performs
-    /// no awaits and no lock re-acquisition.
+    /// Collect every contact (for `identity_id`) that holds a contact request
+    /// WE sent — reciprocated or not — and has no `DashpayReceivingFunds`
+    /// account yet: the receiving-account build candidates for this sweep.
+    /// Runs under the caller's guard; performs no awaits and no lock
+    /// re-acquisition.
     ///
-    /// DIP-15 puts our receiving xpub in the request WE send, so its
-    /// recipient can pay us on that chain whether or not they ever
-    /// reciprocate. [`Self::collect_account_build_candidates`] walks only
-    /// established contacts, so without this a one-way contact never got a
-    /// receival account and its payments to us were never seen, at any
-    /// rescan depth. The live send path registers the account itself; this
-    /// covers a sent request the sweep learned from Platform (restore from
-    /// seed, a second device) and a live registration that failed after the
-    /// request was saved.
+    /// Our receiving account depends on our own request alone. DIP-15 puts
+    /// our receiving xpub in the request we send, so its recipient can pay
+    /// us on that chain whether or not they ever reciprocate, and building
+    /// the account needs only our identity, theirs and the signer.
+    /// [`Self::collect_account_build_candidates`] gates on the counterparty's
+    /// side instead — established only, external account missing, channel
+    /// not broken — so three kinds of contact never got a receival account
+    /// and their payments to us were never seen, at any rescan depth:
     ///
-    /// Only the receiving side can be built: the external account needs the
-    /// contact's xpub, which exists only in a request they send us. Once
-    /// they do, the contact is established and the regular candidates take
-    /// over. Identities without an HD slot are skipped — there is no seed
-    /// path to derive our receiving xpub from.
-    fn collect_receiving_only_candidates(
+    /// * a one-way contact, whose request we sent and who never replied
+    ///   (the live send path registers the account itself; the sweep learns
+    ///   of the request from Platform on a restore from seed or a second
+    ///   device, or after a live registration failed);
+    /// * an established contact whose channel is marked broken, where the
+    ///   failure was in decrypting THEIR xpub, which our receiving side
+    ///   never touches;
+    /// * an established contact whose external account was built but whose
+    ///   receiving build failed once — the external row survives a relaunch
+    ///   and the regular gate then skips the contact for good.
+    ///
+    /// This queues only the receiving side. The external account still needs
+    /// the contact's xpub from a request they send us, and keeps its own
+    /// gate. Overlap with the regular candidates is harmless: enqueueing is
+    /// idempotent per `(owner, contact, kind)`. The broken-channel flag is
+    /// ignored on purpose; `RegisterReceiving` makes no fetch and no
+    /// decrypt, so it cannot retry without bound. Identities without an HD
+    /// slot are skipped — there is no seed path to derive our xpub from.
+    fn collect_receiving_account_candidates(
         info: &crate::wallet::platform_wallet::PlatformWalletInfo,
         identity_id: &Identifier,
     ) -> Vec<Identifier> {
@@ -1949,19 +1961,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Vec::new();
         }
 
-        managed
-            .dashpay()
+        let dashpay = managed.dashpay();
+        // Both maps are keyed by contact and ordered, and a contact sits in
+        // at most one of them outside a transient failed auto-establish, so
+        // the set keeps the result deterministic and free of duplicates.
+        let with_our_request: std::collections::BTreeSet<&Identifier> = dashpay
             .sent_contact_requests()
             .keys()
-            // A sent request moves into `established_contacts` when the pair
-            // completes, so an overlap here is transient; the established
-            // candidates own that contact.
-            .filter(|contact_id| {
-                !managed
-                    .dashpay()
-                    .established_contacts()
-                    .contains_key(contact_id)
-            })
+            .chain(dashpay.established_contacts().keys())
+            .collect();
+
+        with_our_request
+            .into_iter()
             .filter(|contact_id| {
                 let key = DashpayAccountKey {
                     index: 0,
@@ -1978,16 +1989,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .collect()
     }
 
-    /// Queue `RegisterReceiving` for every receiving-only candidate of
-    /// `identity_id` (see [`Self::collect_receiving_only_candidates`]) for
-    /// the signer-backed drain. Collection and enqueue share one write
+    /// Queue `RegisterReceiving` for every receiving-account candidate of
+    /// `identity_id` (see [`Self::collect_receiving_account_candidates`])
+    /// for the signer-backed drain. Collection and enqueue share one write
     /// guard, so identity removal cannot interleave between them.
     ///
     /// Idempotent per `(owner, contact, kind)`, like
     /// [`Self::enqueue_deferred_contact_crypto`]. The queue is not restored
     /// on load, so this re-discovery every sweep is what carries a pending
     /// build across a relaunch.
-    async fn enqueue_receiving_only_builds(&self, identity_id: &Identifier) {
+    async fn enqueue_receiving_account_builds(&self, identity_id: &Identifier) {
         use crate::changeset::{
             upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
             PlatformWalletChangeSet,
@@ -1997,7 +2008,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
             return;
         };
-        let contacts = Self::collect_receiving_only_candidates(info, identity_id);
+        let contacts = Self::collect_receiving_account_candidates(info, identity_id);
         if contacts.is_empty() {
             return;
         }
@@ -2031,13 +2042,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if let Err(e) = self.persister.store(changeset) {
             tracing::warn!(
                 identity = %identity_id, contacts = contacts.len(), error = %e,
-                "failed to persist receiving-only contact-crypto enqueue; will re-enqueue next sweep"
+                "failed to persist receiving-account contact-crypto enqueue; will re-enqueue next sweep"
             );
         }
         tracing::info!(
             identity = %identity_id,
             contacts = contacts.len(),
-            "Deferred DashPay receiving-account build for one-way contacts: enqueued for the signer-backed drain"
+            "Deferred DashPay receiving-account builds: enqueued for the signer-backed drain"
         );
     }
 
@@ -5662,12 +5673,14 @@ mod one_way_contact_tests {
             .unwrap_or_default()
     }
 
-    /// The candidate set: a contact we sent an unreciprocated request is a
-    /// receiving-only candidate; a contact that only sent us one is not (it
-    /// never received our xpub, so it cannot pay us on a chain of ours);
-    /// and an established contact belongs to the regular candidates.
+    /// The candidate set is gated on OUR request alone: a contact we sent a
+    /// request to is a receiving-account candidate whether they replied
+    /// (established) or not (one-way out). A contact that only sent us one
+    /// is not: they never received our xpub, so they cannot pay us on a
+    /// chain of ours. The regular candidates still need the established
+    /// pair; the overlap on the established contact is intended.
     #[tokio::test]
-    async fn should_collect_only_unreciprocated_sent_requests_as_receiving_only_candidates() {
+    async fn should_collect_every_contact_holding_our_request_as_receiving_candidate() {
         let owner = id(0xAA);
         let one_way_out = id(0xB1);
         let one_way_in = id(0xB2);
@@ -5691,8 +5704,8 @@ mod one_way_contact_tests {
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&iw.wallet_id).expect("info");
         assert_eq!(
-            DashPayView::<SpvBroadcaster>::collect_receiving_only_candidates(info, &owner),
-            vec![one_way_out]
+            DashPayView::<SpvBroadcaster>::collect_receiving_account_candidates(info, &owner),
+            vec![one_way_out, established]
         );
         let regular: Vec<Identifier> =
             DashPayView::<SpvBroadcaster>::collect_account_build_candidates(info, &owner)
@@ -5700,6 +5713,52 @@ mod one_way_contact_tests {
                 .map(|c| c.contact_id)
                 .collect();
         assert_eq!(regular, vec![established]);
+    }
+
+    /// A broken payment channel records a failure to decrypt THEIR xpub,
+    /// which our receiving side never touches. The regular candidates skip a
+    /// broken contact for good (no unbounded retry of the decrypt), so
+    /// without this gate such a contact never got a receival account either,
+    /// and payments they sent us were never seen. `RegisterReceiving` makes
+    /// no fetch and no decrypt, so queuing it here cannot retry without
+    /// bound.
+    #[tokio::test]
+    async fn should_still_build_receiving_account_when_channel_is_broken() {
+        let owner = id(0xAA);
+        let contact = id(0xBB);
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let (_manager, iw) = wallet_with_owner(sdk, owner).await;
+        seed_requests(
+            &iw,
+            &owner,
+            &[request(owner, contact, 100)],
+            &[request(contact, owner, 100)],
+        )
+        .await;
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&iw.wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .established_contact_mut(&contact)
+                .expect("established")
+                .payment_channel_broken = true;
+        }
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&iw.wallet_id).expect("info");
+        assert!(
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(info, &owner)
+                .is_empty(),
+            "the regular gate leaves a broken channel alone"
+        );
+        assert_eq!(
+            DashPayView::<SpvBroadcaster>::collect_receiving_account_candidates(info, &owner),
+            vec![contact],
+            "our receiving account does not depend on their xpub"
+        );
     }
 
     /// **The one-way receival gap, through the sweep's public entry point.**
@@ -5752,7 +5811,7 @@ mod one_way_contact_tests {
             let info = wm.get_wallet_info(&iw.wallet_id).expect("info");
             assert!(has_receival_account(info, &owner, &contact));
             assert!(
-                DashPayView::<SpvBroadcaster>::collect_receiving_only_candidates(info, &owner)
+                DashPayView::<SpvBroadcaster>::collect_receiving_account_candidates(info, &owner)
                     .is_empty(),
                 "a built account is no longer a candidate"
             );
@@ -5770,8 +5829,8 @@ mod one_way_contact_tests {
         let (_manager, iw) = wallet_with_owner(sdk, owner).await;
         seed_requests(&iw, &owner, &[request(owner, contact, 100)], &[]).await;
 
-        iw.dashpay().enqueue_receiving_only_builds(&owner).await;
-        iw.dashpay().enqueue_receiving_only_builds(&owner).await;
+        iw.dashpay().enqueue_receiving_account_builds(&owner).await;
+        iw.dashpay().enqueue_receiving_account_builds(&owner).await;
 
         let wm = iw.wallet_manager.read().await;
         let queue = &wm
