@@ -63,7 +63,7 @@
 //! are merged into the next. Every host callback comes from that task, never
 //! from a caller that may hold its own locks.
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::mem;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -87,6 +87,7 @@ use tokio::time::{timeout_at, Instant};
 use crate::broadcast_probe::{AcceptanceProbe, ProbeReport, ProbeVerdict, MINED_QUORUM};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::wallet::core::generation::next_acceptance_seq;
+use crate::wallet::core::InBroadcastFences;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Blocks from the start of a root's window (see [`ProbeSchedule`]) during
@@ -955,8 +956,13 @@ pub(crate) trait WalletSource: Send + Sync {
     /// accepted send may fund the next payment and those of a dead one may
     /// not
     /// ([`WalletGeneration::record_acceptance`](crate::wallet::core::WalletGeneration::record_acceptance)).
-    async fn record_acceptance(&self, wallet_id: WalletId, verdicts: Vec<(Txid, bool)>, seq: u64);
+    fn record_acceptance(&self, wallet_id: WalletId, verdicts: Vec<(Txid, bool)>, seq: u64);
 }
+
+/// Every registered wallet's in-broadcast fences, by id — the manager's map,
+/// shared with the resolver so it records a verdict's acceptance fact without
+/// the wallet manager's lock.
+pub(crate) type FenceRegistry = Arc<std::sync::Mutex<BTreeMap<WalletId, Arc<InBroadcastFences>>>>;
 
 /// Whether any account of the wallet records `txid` — a map lookup per
 /// account, not a walk over the records.
@@ -968,17 +974,25 @@ fn holds(info: &PlatformWalletInfo, txid: &Txid) -> bool {
         .any(|account| account.transactions().contains_key(txid))
 }
 
-struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
+struct ManagerSource(
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    FenceRegistry,
+);
 
 #[async_trait]
 impl WalletSource for ManagerSource {
-    async fn record_acceptance(&self, wallet_id: WalletId, verdicts: Vec<(Txid, bool)>, seq: u64) {
-        let manager = self.0.read().await;
-        let Some(info) = manager.get_wallet_info(&wallet_id) else {
+    fn record_acceptance(&self, wallet_id: WalletId, verdicts: Vec<(Txid, bool)>, seq: u64) {
+        let fences = self
+            .1
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&wallet_id)
+            .cloned();
+        let Some(fences) = fences else {
             return;
         };
         for (txid, accepted) in verdicts {
-            info.generation.record_acceptance(txid, accepted, seq);
+            fences.record_acceptance(txid, accepted, seq);
         }
     }
 
@@ -1327,7 +1341,7 @@ impl Actor {
                         }
                     }
                     let events = self.state.forget_wallet(&wallet_id, "rewound");
-                    deliver(&self.sink, events);
+                    self.publish(events);
                 }
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
@@ -1404,7 +1418,7 @@ impl Actor {
                     }
                 }
                 let events = self.state.settle(wallet_id, &txids);
-                deliver(&self.sink, events);
+                self.publish(events);
                 if next_probe {
                     self.probe_next(wallet_id);
                 }
@@ -1455,7 +1469,7 @@ impl Actor {
                 }
                 if !enabled {
                     let events = self.state.forget_all();
-                    deliver(&self.sink, events);
+                    self.publish(events);
                 }
             }
             Command::WalletAdded(wallet_id) => {
@@ -1475,7 +1489,7 @@ impl Actor {
             run.abort.abort();
         }
         let events = self.state.forget_wallet(wallet_id, trigger);
-        deliver(&self.sink, events);
+        self.publish(events);
     }
 
     /// Start the wallet's pending pass unless one is already running.
@@ -1565,7 +1579,7 @@ impl Actor {
                         // events or an Uncertain wake it.
                         entry.wait_until = Some(u32::MAX);
                         let events = self.state.forget_wallet(&wallet_id, "gone");
-                        deliver(&self.sink, events);
+                        self.publish(events);
                         self.end_run(wallet_id);
                     }
                     Some(None) => self.end_run(wallet_id),
@@ -1609,7 +1623,7 @@ impl Actor {
                         });
                         // Clears and re-published dead verdicts reach the host
                         // before the pass goes out to the network.
-                        deliver(&self.sink, start.events);
+                        self.publish(start.events);
                         self.probe_next(wallet_id);
                     }
                 }
@@ -1673,35 +1687,39 @@ impl Actor {
                     &root,
                     &report,
                 );
-                self.record_acceptance(wallet_id, &events);
-                deliver(&self.sink, events);
+                self.publish(events);
                 self.probe_next(wallet_id);
             }
         }
     }
 
-    /// Hand the sends these events find accepted (or mined) or dead to the
-    /// wallet, so the coins of an accepted one are offered to payments again
-    /// and those of a dead one are held again. Off the actor: the record
-    /// takes the manager lock. The sequence number is taken here, in the
-    /// actor's order, so a later verdict wins however the records land.
-    fn record_acceptance(&self, wallet_id: WalletId, events: &[Outgoing]) {
-        let verdicts: Vec<(Txid, bool)> = events
-            .iter()
-            .filter_map(|item| match &item.event {
+    /// Hand `events` to the host — after handing the sends they find accepted
+    /// (or mined) or dead to their wallets, so the coins of an accepted one
+    /// are offered to payments again and those of a dead one are held again.
+    /// Recorded first and synchronously: a host re-reading spendable or max
+    /// on the verdict sees the figure the verdict implies. Every published
+    /// verdict goes through here, a re-published dead one included. The
+    /// sequence number is taken here, in the actor's order, so a later
+    /// verdict wins.
+    fn publish(&self, events: Vec<Outgoing>) {
+        let mut verdicts: BTreeMap<WalletId, Vec<(Txid, bool)>> = BTreeMap::new();
+        for item in &events {
+            let verdict = match &item.event {
                 ResolverEvent::Verdict(txid, ProbeVerdict::Accepted | ProbeVerdict::Mined) => {
-                    Some((*txid, true))
+                    (*txid, true)
                 }
-                ResolverEvent::Verdict(txid, ProbeVerdict::Dead { .. }) => Some((*txid, false)),
-                _ => None,
-            })
-            .collect();
-        if verdicts.is_empty() {
-            return;
+                ResolverEvent::Verdict(txid, ProbeVerdict::Dead { .. }) => (*txid, false),
+                _ => continue,
+            };
+            verdicts.entry(item.wallet_id).or_default().push(verdict);
         }
-        let seq = next_acceptance_seq();
-        let source = Arc::clone(&self.source);
-        tokio::spawn(async move { source.record_acceptance(wallet_id, verdicts, seq).await });
+        if !verdicts.is_empty() {
+            let seq = next_acceptance_seq();
+            for (wallet_id, verdicts) in verdicts {
+                self.source.record_acceptance(wallet_id, verdicts, seq);
+            }
+        }
+        deliver(&self.sink, events);
     }
 
     /// Probe the run's next due root, or end the run.
@@ -1798,11 +1816,12 @@ impl BroadcastResolver {
     pub(crate) fn new(
         probe: Arc<dyn AcceptanceProbe>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        fences: FenceRegistry,
     ) -> Self {
         let sink = Arc::new(EventSink::default());
         let actor = Actor::new(
             probe,
-            Arc::new(ManagerSource(wallet_manager)),
+            Arc::new(ManagerSource(wallet_manager, fences)),
             Arc::clone(&sink) as Arc<dyn VerdictSink>,
         );
         let (commands, receiver) = mpsc::unbounded_channel();
@@ -2793,12 +2812,7 @@ mod tests {
 
     #[async_trait]
     impl WalletSource for FakeSource {
-        async fn record_acceptance(
-            &self,
-            wallet_id: WalletId,
-            verdicts: Vec<(Txid, bool)>,
-            seq: u64,
-        ) {
+        fn record_acceptance(&self, wallet_id: WalletId, verdicts: Vec<(Txid, bool)>, seq: u64) {
             let mut acceptance = self.acceptance.lock().expect("acceptance");
             acceptance.extend(
                 verdicts
@@ -2846,10 +2860,28 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct CollectSink(StdMutex<Vec<ResolverEvent>>);
+    struct CollectSink(
+        StdMutex<Vec<ResolverEvent>>,
+        /// The rig's source, to check each verdict was recorded before it
+        /// reached the host.
+        std::sync::OnceLock<Arc<FakeSource>>,
+        /// Verdicts delivered before their wallet recorded them.
+        StdMutex<Vec<Txid>>,
+    );
 
     impl VerdictSink for CollectSink {
         fn deliver(&self, item: &Outgoing) {
+            if let (ResolverEvent::Verdict(txid, verdict), Some(source)) =
+                (&item.event, self.1.get())
+            {
+                let records = !matches!(verdict, ProbeVerdict::Unresolved { .. });
+                let recorded = source.acceptance.lock().expect("acceptance").iter().any(
+                    |(wallet_id, recorded, _, _)| *wallet_id == item.wallet_id && recorded == txid,
+                );
+                if records && !recorded {
+                    self.2.lock().expect("unrecorded").push(*txid);
+                }
+            }
             self.0.lock().expect("sink").push(item.event.clone());
         }
     }
@@ -2867,6 +2899,7 @@ mod tests {
 
         fn with_sink(probe: Arc<dyn AcceptanceProbe>, sink: Arc<CollectSink>) -> Self {
             let source = Arc::new(FakeSource::default());
+            let _ = sink.1.set(Arc::clone(&source));
             let actor = Actor::new(
                 probe,
                 Arc::clone(&source) as Arc<dyn WalletSource>,
@@ -2982,10 +3015,6 @@ mod tests {
         for n in 1..=3 {
             rig.send(Command::Uncertain(txid(n))).await;
         }
-        // The record runs off the actor.
-        for _ in 0..20 {
-            tokio::task::yield_now().await;
-        }
 
         let recorded: Vec<(WalletId, Txid, bool)> = rig
             .source
@@ -3006,6 +3035,83 @@ mod tests {
         assert!(
             !recorded.iter().any(|(_, recorded, _)| *recorded == txid(2)),
             "{recorded:?}"
+        );
+    }
+
+    /// A verdict is recorded on the wallet before it reaches the host, so a
+    /// host re-reading spendable or max on the callback sees the new figure.
+    #[tokio::test]
+    async fn should_record_a_verdict_before_delivering_it() {
+        let probe = Arc::new(ScriptedProbe::new(&[
+            (txid(1), ProbeVerdict::Accepted),
+            (txid(2), dead()),
+        ]));
+        let mut rig = enabled(probe).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+        );
+
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.send(Command::Uncertain(txid(2))).await;
+
+        let delivered = rig.sent();
+        assert!(
+            delivered.contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)),
+            "{delivered:?}"
+        );
+        assert!(
+            delivered.contains(&ResolverEvent::Verdict(txid(2), dead())),
+            "{delivered:?}"
+        );
+        let unrecorded = rig.sink.2.lock().expect("unrecorded").clone();
+        assert!(
+            unrecorded.is_empty(),
+            "delivered before recorded: {unrecorded:?}"
+        );
+    }
+
+    /// A dead verdict re-published to a send built on a dead root — at the
+    /// start of a pass, without a probe — is recorded on the wallet too.
+    #[tokio::test]
+    async fn should_record_a_dead_verdict_republished_to_a_later_child() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), dead())]));
+        let mut rig = enabled(probe).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.source.acceptance.lock().expect("acceptance").clear();
+
+        // The new send's record wakes the idle wallet, as the event adapter
+        // reports it; the next block starts a pass.
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
+        );
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: true,
+        })
+        .await;
+        rig.follow(wallet(), 100).await;
+        let delivered = rig.sent();
+        assert!(
+            delivered.contains(&ResolverEvent::Verdict(txid(2), dead())),
+            "{delivered:?}"
+        );
+
+        let recorded: Vec<(Txid, bool)> = rig
+            .source
+            .acceptance
+            .lock()
+            .expect("acceptance")
+            .iter()
+            .map(|(_, txid, accepted, _)| (*txid, *accepted))
+            .collect();
+        assert!(recorded.contains(&(txid(2), false)), "{recorded:?}");
+        let unrecorded = rig.sink.2.lock().expect("unrecorded").clone();
+        assert!(
+            unrecorded.is_empty(),
+            "delivered before recorded: {unrecorded:?}"
         );
     }
 

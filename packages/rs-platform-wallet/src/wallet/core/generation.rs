@@ -320,6 +320,28 @@ impl InBroadcastFences {
         self.fences.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// See [`WalletGeneration::record_acceptance`]. On the fences, so the
+    /// broadcast resolver can record a verdict without the wallet manager's
+    /// lock — synchronously, before the verdict reaches the host.
+    pub(crate) fn record_acceptance(&self, txid: Txid, accepted: bool, seq: u64) {
+        let mut acceptance = self.acceptance();
+        if !self.hold_unresolved.load(Ordering::SeqCst) {
+            acceptance.clear();
+            return;
+        }
+        let newer = acceptance.get(&txid).is_none_or(|known| known.seq < seq);
+        if newer {
+            acceptance.insert(
+                txid,
+                Acceptance {
+                    seq,
+                    accepted,
+                    observed_at: Instant::now(),
+                },
+            );
+        }
+    }
+
     fn acceptance(&self) -> MutexGuard<'_, HashMap<Txid, Acceptance>> {
         self.acceptance
             .lock()
@@ -465,22 +487,7 @@ impl WalletGeneration {
     /// hold is off: only the hold reads these facts, and only its reads prune
     /// them.
     pub(crate) fn record_acceptance(&self, txid: Txid, accepted: bool, seq: u64) {
-        let mut acceptance = self.in_broadcast.acceptance();
-        if !self.holds_unresolved_sends() {
-            acceptance.clear();
-            return;
-        }
-        let newer = acceptance.get(&txid).is_none_or(|known| known.seq < seq);
-        if newer {
-            acceptance.insert(
-                txid,
-                Acceptance {
-                    seq,
-                    accepted,
-                    observed_at: Instant::now(),
-                },
-            );
-        }
+        self.in_broadcast.record_acceptance(txid, accepted, seq);
     }
 
     /// A broadcast of `txid` returned accepted: a peer echoed it back.

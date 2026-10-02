@@ -20,7 +20,8 @@ use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
-use crate::wallet::platform_wallet::WalletId;
+use crate::wallet::core::UnresolvedSends;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
 /// Result of [`PlatformWalletManager::provider_masternode_txs_blocking`]:
@@ -214,6 +215,10 @@ pub struct AccountUtxoSnapshot {
     pub script_pubkey: Vec<u8>,
     pub height: u32,
     pub is_locked: bool,
+    /// An output of a send the network has not been seen to accept (see
+    /// `UnresolvedSends`): no payment spends it until that send resolves, and
+    /// one seeded with it is refused. Always `false` while probing is off.
+    pub is_held: bool,
 }
 
 /// One row of a wallet's UTXO inventory page — see [`wallet_utxos_page`].
@@ -1135,30 +1140,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             return Vec::new();
         };
-        let accounts = info.core_wallet.accounts.all_accounts();
-        let Some(account) = accounts
-            .iter()
-            .find(|a| &a.managed_account_type().to_account_type() == target)
-        else {
-            return Vec::new();
-        };
-        // UTXOs only exist on the funds variant. Keys-only accounts
-        // (identity / asset-lock / provider) never carry UTXOs by
-        // construction, so an empty list is the correct snapshot.
-        let Some(funds) = account.as_funds() else {
-            return Vec::new();
-        };
-        funds
-            .utxos
-            .values()
-            .map(|utxo: &Utxo| AccountUtxoSnapshot {
-                outpoint: utxo.outpoint,
-                value_duffs: utxo.txout.value,
-                script_pubkey: utxo.txout.script_pubkey.as_bytes().to_vec(),
-                height: utxo.height,
-                is_locked: utxo.is_locked,
-            })
-            .collect()
+        account_utxo_snapshots(info, target)
     }
 
     // -----------------------------------------------------------------
@@ -1507,6 +1489,40 @@ fn tx_record_snapshot(rec: &TransactionRecord) -> AccountTransactionSnapshot {
         fee_duffs: rec.fee.unwrap_or(0),
         is_coinbase: rec.transaction.is_coin_base(),
     }
+}
+
+/// Snapshot of every UTXO row on the wallet's `target` account, each flagged
+/// held when it is an output of an unresolved send.
+pub(crate) fn account_utxo_snapshots(
+    info: &PlatformWalletInfo,
+    target: &AccountType,
+) -> Vec<AccountUtxoSnapshot> {
+    let accounts = info.core_wallet.accounts.all_accounts();
+    let Some(account) = accounts
+        .iter()
+        .find(|a| &a.managed_account_type().to_account_type() == target)
+    else {
+        return Vec::new();
+    };
+    // UTXOs only exist on the funds variant. Keys-only accounts
+    // (identity / asset-lock / provider) never carry UTXOs by
+    // construction, so an empty list is the correct snapshot.
+    let Some(funds) = account.as_funds() else {
+        return Vec::new();
+    };
+    let held = UnresolvedSends::of(info);
+    funds
+        .utxos
+        .values()
+        .map(|utxo: &Utxo| AccountUtxoSnapshot {
+            outpoint: utxo.outpoint,
+            value_duffs: utxo.txout.value,
+            script_pubkey: utxo.txout.script_pubkey.as_bytes().to_vec(),
+            height: utxo.height,
+            is_locked: utxo.is_locked,
+            is_held: held.holds(&utxo.outpoint),
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -406,7 +406,8 @@ pub enum PlatformWalletError {
     /// `reservation_only` builds); `None` when selection came up short.
     #[error(
         "Core funds held until an earlier send is accepted by the network: \
-         available {available:?}, held {held}, required {required:?}"
+         available {available:?}, held {held}, required {required:?}{}",
+        refused_input(outpoint)
     )]
     CoreFundsAwaitingNetwork {
         available: Option<u64>,
@@ -1806,4 +1807,12 @@ mod asset_lock_already_consumed_tests {
             &out_point()
         ));
     }
+}
+
+/// The refused input of a `CoreFundsAwaitingNetwork`, for its message: a host
+/// doing coin control learns which coin to leave out.
+fn refused_input(outpoint: &Option<dashcore::OutPoint>) -> String {
+    outpoint
+        .map(|outpoint| format!(", refused input {}:{}", outpoint.txid, outpoint.vout))
+        .unwrap_or_default()
 }

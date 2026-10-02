@@ -957,6 +957,10 @@ pub struct AccountUtxoEntryFFI {
     pub script_pubkey_len: usize,
     pub height: u32,
     pub is_locked: bool,
+    /// An output of a send the network has not been seen to accept: a build
+    /// seeded with it fails with `ErrorCoreFundsAwaitingNetwork`. Coin control
+    /// and drains should leave it out.
+    pub is_held: bool,
 }
 
 /// One transaction row in the per-account paginated drill-down.

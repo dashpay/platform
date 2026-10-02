@@ -1362,6 +1362,7 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -2117,7 +2118,7 @@ mod tests {
         let txid = out_point.txid;
         assert!(info
             .generation
-            .accepted_among(&std::collections::HashSet::from([txid]))
+            .accepted_among(&HashSet::from([txid]))
             .contains(&txid));
     }
 

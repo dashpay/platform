@@ -8,11 +8,11 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use dashcore::{Address, OutPoint, PubkeyHash, ScriptBuf, Transaction, TxOut};
+use dashcore::{Address, OutPoint, PubkeyHash, ScriptBuf, Transaction};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_collection::ManagedAccountCollection;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+use key_wallet::wallet::managed_wallet_info::coin_selection::{SelectionError, SelectionStrategy};
 use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
@@ -42,8 +42,11 @@ enum FundingContext<'a> {
     Pooled(&'a [AccountTypePreference]),
 }
 
-fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> PlatformWalletError {
-    let funds = match error {
+/// The `(available, required)` of a build that failed for want of funds;
+/// `None` for any other failure. `required` is `None` when selection had
+/// nothing to choose from and so never sized the shortfall.
+fn shortfall(error: &BuilderError) -> Option<(Option<u64>, Option<u64>)> {
+    match error {
         BuilderError::InsufficientFunds {
             available,
             required,
@@ -51,11 +54,14 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
         | BuilderError::CoinSelection(SelectionError::InsufficientFunds {
             available,
             required,
-        }) => Some((Some(available), Some(required))),
+        }) => Some((Some(*available), Some(*required))),
         BuilderError::CoinSelection(SelectionError::NoUtxosAvailable) => Some((Some(0), None)),
         _ => None,
-    };
-    if let Some((available, required)) = funds {
+    }
+}
+
+fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> PlatformWalletError {
+    if let Some((available, required)) = shortfall(&error) {
         return match context {
             FundingContext::Single { preference, index } => {
                 PlatformWalletError::CoreInsufficientFunds {
@@ -75,19 +81,82 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
     PlatformWalletError::TransactionBuild(error.to_string())
 }
 
-/// A shortfall that the held coins of an unresolved send (see
-/// [`UnresolvedSends`]) would have covered becomes
-/// [`PlatformWalletError::CoreFundsAwaitingNetwork`], so the host can say the
-/// money is waiting on the network rather than missing. `held` is what those
-/// coins would add, net of the fee their own inputs cost
-/// ([`UnresolvedSends::held_net_value`]). When selection did not report the
-/// size of the shortfall — every candidate was held, say — it is measured
-/// against `requested` ([`requested_amount`]). A genuine shortfall — held
-/// coins or not, the funds are not there — stays insufficient funds.
+/// What telling a shortfall the held coins caused needs from a build: the fee
+/// one input adds at the build's own rate (what spending a held coin costs)
+/// and what selection must cover before any input — the outputs plus the fee
+/// of a transaction carrying them and a change output.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ShortfallBasis {
+    pub(crate) input_cost: u64,
+    pub(crate) requested: u64,
+}
+
+/// The [`ShortfallBasis`] of `builder`, or `None` when its shortfall cannot be
+/// told apart — a drain (`SelectionStrategy::All`, whose output amount is a
+/// placeholder), a special-payload build (whose own outputs and size
+/// `outputs()` does not show), or a fee rate that overflows — and stays
+/// insufficient funds. Infallible, so a caller may take it at any point.
+pub(crate) fn shortfall_basis(builder: &TransactionBuilder) -> Option<ShortfallBasis> {
+    if matches!(builder.selection_strategy(), SelectionStrategy::All)
+        || builder.has_special_payload()
+    {
+        return None;
+    }
+    let fee_rate = builder.fee_rate();
+    let outputs = builder.outputs();
+    let total = outputs
+        .iter()
+        .try_fold(0u64, |total, output| total.checked_add(output.value))?;
+    let base = checked_fee(fee_rate, estimate_tx_size(0, outputs.len() + 1, false)).ok()?;
+    Some(ShortfallBasis {
+        input_cost: input_fee(fee_rate).ok()?,
+        requested: total.checked_add(base)?,
+    })
+}
+
+/// The size one more input adds, from key-wallet's estimator by difference —
+/// the one model [`CoreWallet::pooled_max_sendable`] and [`shortfall_basis`]
+/// both price inputs with.
+fn per_input_size() -> usize {
+    estimate_tx_size(1, 1, false).saturating_sub(estimate_tx_size(0, 1, false))
+}
+
+/// The fee one more input adds at `fee_rate`.
+fn input_fee(fee_rate: FeeRate) -> Result<u64, PlatformWalletError> {
+    checked_fee(fee_rate, per_input_size())
+}
+
+/// [`PlatformWalletError::CoreFundsAwaitingNetwork`] when the held coins of
+/// an unresolved send (see [`UnresolvedSends`]) would cover a shortfall: `held`
+/// is what they would add net of their own inputs' fee
+/// ([`UnresolvedSends::held_net_value`]); a shortfall selection did not size
+/// is measured against the basis' `requested`. `None` — a genuine shortfall,
+/// held coins or not — otherwise.
+fn awaiting(
+    available: Option<u64>,
+    required: Option<u64>,
+    held: u64,
+    basis: Option<ShortfallBasis>,
+) -> Option<PlatformWalletError> {
+    let basis = basis?;
+    let required = required.unwrap_or(basis.requested);
+    let covered = available.unwrap_or(0).saturating_add(held) >= required;
+    (held > 0 && covered).then_some(PlatformWalletError::CoreFundsAwaitingNetwork {
+        available,
+        held,
+        required: Some(required),
+        outpoint: None,
+    })
+}
+
+/// `error`, or [`PlatformWalletError::CoreFundsAwaitingNetwork`] when it is a
+/// shortfall the held coins would have covered (see [`awaiting`]). A genuine
+/// shortfall — held coins or not, the funds are not there — stays
+/// insufficient funds.
 pub(crate) fn awaiting_network(
     error: PlatformWalletError,
     held: u64,
-    requested: u64,
+    basis: Option<ShortfallBasis>,
 ) -> PlatformWalletError {
     let (available, required) = match &error {
         PlatformWalletError::CoreInsufficientFunds {
@@ -102,29 +171,7 @@ pub(crate) fn awaiting_network(
         } => (*available, *required),
         _ => return error,
     };
-    let required = required.unwrap_or(requested);
-    let covered = available.unwrap_or(0).saturating_add(held) >= required;
-    if held == 0 || !covered {
-        return error;
-    }
-    PlatformWalletError::CoreFundsAwaitingNetwork {
-        available,
-        held,
-        required: Some(required),
-        outpoint: None,
-    }
-}
-
-/// What a build asks of selection: its outputs plus the fee of a transaction
-/// carrying them and a change output, before any input — the inputs' share is
-/// already netted out of the held value ([`held_input_cost`]).
-pub(crate) fn requested_amount(outputs: &[TxOut]) -> u64 {
-    let total: u64 = outputs.iter().map(|output| output.value).sum();
-    total.saturating_add(FeeRate::normal().calculate_fee(estimate_tx_size(
-        0,
-        outputs.len() + 1,
-        false,
-    )))
+    awaiting(available, required, held, basis).unwrap_or(error)
 }
 
 /// key-wallet's `FeeRate::calculate_fee`, with the multiplication checked.
@@ -155,27 +202,12 @@ fn checked_fee(fee_rate: FeeRate, size_bytes: usize) -> Result<u64, PlatformWall
 /// have covered the shortfall, the build error unchanged otherwise.
 pub(crate) fn awaiting_network_or_build_error(
     error: BuilderError,
-    sources: &[AccountTypePreference],
     held: u64,
-    requested: u64,
+    basis: Option<ShortfallBasis>,
 ) -> PlatformWalletError {
-    match awaiting_network(
-        map_builder_error(error.clone(), FundingContext::Pooled(sources)),
-        held,
-        requested,
-    ) {
-        awaiting @ PlatformWalletError::CoreFundsAwaitingNetwork { .. } => awaiting,
-        _ => PlatformWalletError::TransactionBuild(error.to_string()),
-    }
-}
-
-/// The fee one more input adds at the default rate: what spending a held coin
-/// would cost, for [`awaiting_network`]'s coverage test. A host on a higher
-/// rate sees that test lean slightly towards "waiting on the network". A fixed
-/// rate and a one-input size, so it cannot overflow.
-pub(crate) fn held_input_cost() -> u64 {
-    let per_input = estimate_tx_size(1, 1, false).saturating_sub(estimate_tx_size(0, 1, false));
-    FeeRate::normal().calculate_fee(per_input)
+    shortfall(&error)
+        .and_then(|(available, required)| awaiting(available, required, held, basis))
+        .unwrap_or_else(|| PlatformWalletError::TransactionBuild(error.to_string()))
 }
 
 /// The output [`CoreWallet::pooled_max_sendable`] prices: one P2PKH, matching
@@ -588,9 +620,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         let fee_rate = fee_rate.unwrap_or_else(FeeRate::normal);
         // Per-input and per-output costs derived from key-wallet's estimator by
         // difference, so this crate never re-declares a size that could drift
-        // from the one the build charges.
+        // from the one the build charges (`input_fee` / `per_input_size`).
         let empty = estimate_tx_size(0, 1, false);
-        let per_input = estimate_tx_size(1, 1, false).saturating_sub(empty);
 
         let manager = self.wallet_manager.read().await;
         let (wallet, info) = manager
@@ -609,7 +640,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
         // A UTXO earns its place only if it brings in more than its own input
         // costs at this rate; the rest are dead weight and are dropped.
-        let input_cost = checked_fee(fee_rate, per_input)?;
+        let input_cost = input_fee(fee_rate)?;
         let mut values: Vec<u64> = Vec::new();
         for at in resolved {
             let Some(managed) = info.core_wallet.accounts.funds_account(&at) else {
@@ -730,8 +761,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
             let height = info.core_wallet.last_processed_height();
             let unresolved = UnresolvedSends::of(info);
-            let held_input_cost = held_input_cost();
-            let requested = requested_amount(builder.outputs());
+            let basis = shortfall_basis(&builder);
             let mut held_value = 0u64;
 
             // Fund from every resolved account, mirroring key-wallet's own
@@ -786,8 +816,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 // never fund it and count for nothing in a shortfall. Either
                 // way the held coins are excluded — a seeded one fails the
                 // build.
-                if !reservation_only {
-                    held_value += unresolved.held_net_value(managed, height, held_input_cost);
+                if let (false, Some(basis)) = (reservation_only, basis) {
+                    held_value += unresolved.held_net_value(managed, height, basis.input_cost);
                 }
                 builder = if reservation_only {
                     builder.add_funding_reservation_only(managed, account)
@@ -828,7 +858,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         error => awaiting_network(
                             map_builder_error(error, funding_context),
                             held_value,
-                            requested,
+                            basis,
                         ),
                     })?;
 
@@ -1127,6 +1157,7 @@ mod tests {
     use dashcore::secp256k1::{ecdsa, PublicKey};
     use dashcore::{Address as DashAddress, BlockHash, Network, OutPoint, Transaction, Txid};
     use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::account::AccountType;
     use key_wallet::signer::{Signer, SignerMethod};
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
     use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
@@ -1137,6 +1168,7 @@ mod tests {
     use tokio::sync::{Barrier, RwLock};
 
     use crate::broadcaster::TransactionBroadcaster;
+    use crate::manager::accessors::account_utxo_snapshots;
     use crate::test_support::{
         apply_to_wallet, funded_wallet_manager, funded_wallet_manager_dual_standard,
         funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
@@ -1146,8 +1178,8 @@ mod tests {
 
     use crate::wallet::core::generation::next_acceptance_seq;
     use crate::wallet::core::transaction::{
-        awaiting_network, awaiting_network_or_build_error, held_input_cost, modeled_output_script,
-        MAX_STANDARD_TX_INPUTS,
+        awaiting_network, awaiting_network_or_build_error, input_fee, modeled_output_script,
+        shortfall_basis, ShortfallBasis, MAX_STANDARD_TX_INPUTS,
     };
     use crate::wallet::core::{CoreWallet, UnresolvedSends, WalletGeneration};
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -2297,7 +2329,7 @@ mod tests {
                     held,
                     outpoint: None,
                     ..
-                }) if held == change.value() - held_input_cost()
+                }) if held == change.value() - input_fee(FeeRate::normal()).expect("fee")
             ),
             "got {refused:?}"
         );
@@ -2496,6 +2528,42 @@ mod tests {
             ),
             "got {refused:?}"
         );
+        // The message names it too: the FFI carries only the message.
+        let message = refused.expect_err("refused").to_string();
+        let named = format!(
+            "refused input {}:{}",
+            held.outpoint.txid, held.outpoint.vout
+        );
+        assert!(message.contains(&named), "{message}");
+    }
+
+    /// The account UTXO listing a host does coin control from flags the held
+    /// coin, and only it.
+    #[tokio::test]
+    async fn should_flag_held_coins_in_the_account_utxo_listing() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 94);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let held = utxo(&manager, &wallet_id, change_of(&send, &paid)).await;
+
+        let listing = {
+            let manager = manager.read().await;
+            let info = manager.get_wallet_info(&wallet_id).expect("wallet");
+            account_utxo_snapshots(
+                info,
+                &AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+            )
+        };
+
+        let flagged: Vec<OutPoint> = listing
+            .iter()
+            .filter(|row| row.is_held)
+            .map(|row| row.outpoint)
+            .collect();
+        assert_eq!(flagged, vec![held.outpoint], "{listing:?}");
     }
 
     /// Acceptance is not persisted. After a restart — a fresh generation over
@@ -2739,29 +2807,67 @@ mod tests {
             required,
         };
         assert!(matches!(
-            awaiting_network(shortfall(Some(400), Some(1_000)), 600, 0),
+            awaiting_network(shortfall(Some(400), Some(1_000)), 600, basis(0)),
             PlatformWalletError::CoreFundsAwaitingNetwork { .. }
         ));
         assert!(matches!(
-            awaiting_network(shortfall(Some(400), Some(1_000)), 599, 0),
+            awaiting_network(shortfall(Some(400), Some(1_000)), 599, basis(0)),
             PlatformWalletError::CorePooledInsufficientFunds { .. }
         ));
         assert!(matches!(
-            awaiting_network(shortfall(Some(400), Some(1_000)), 0, 0),
+            awaiting_network(shortfall(Some(400), Some(1_000)), 0, basis(0)),
             PlatformWalletError::CorePooledInsufficientFunds { .. }
         ));
         // Nothing left to select (every coin held): sized by the request.
         assert!(matches!(
-            awaiting_network(shortfall(Some(0), None), 1_000_000, 900_000),
+            awaiting_network(shortfall(Some(0), None), 1_000_000, basis(900_000)),
             PlatformWalletError::CoreFundsAwaitingNetwork {
                 required: Some(900_000),
                 ..
             }
         ));
         assert!(matches!(
-            awaiting_network(shortfall(Some(0), None), 1_000_000, 10_000_000),
+            awaiting_network(shortfall(Some(0), None), 1_000_000, basis(10_000_000)),
             PlatformWalletError::CorePooledInsufficientFunds { .. }
         ));
+        // A build whose shortfall cannot be told apart stays a shortfall.
+        assert!(matches!(
+            awaiting_network(shortfall(Some(400), Some(1_000)), 600, None),
+            PlatformWalletError::CorePooledInsufficientFunds { .. }
+        ));
+    }
+
+    fn basis(requested: u64) -> Option<ShortfallBasis> {
+        Some(ShortfallBasis {
+            input_cost: 226,
+            requested,
+        })
+    }
+
+    /// The basis is priced at the build's own fee rate; a drain or a
+    /// special-payload build has none.
+    #[test]
+    fn should_price_the_shortfall_basis_at_the_builds_fee_rate() {
+        let output = |builder: TransactionBuilder| {
+            builder.add_output(&DashAddress::dummy(Network::Testnet, 70), 100_000)
+        };
+        let normal = shortfall_basis(&output(TransactionBuilder::new())).expect("basis");
+        let doubled = shortfall_basis(&output(
+            TransactionBuilder::new()
+                .set_fee_rate(FeeRate::new(FeeRate::normal().as_sat_per_kb() * 2)),
+        ))
+        .expect("basis");
+
+        assert_eq!(
+            normal.input_cost,
+            input_fee(FeeRate::normal()).expect("fee")
+        );
+        assert!(doubled.input_cost > normal.input_cost);
+        assert!(doubled.requested > normal.requested);
+        assert!(shortfall_basis(&output(
+            TransactionBuilder::new().set_selection_strategy(SelectionStrategy::All)
+        ))
+        .is_none());
     }
 
     /// The DashPay contact payment's build failure: a shortfall the held coins
@@ -2776,28 +2882,26 @@ mod tests {
             })
         };
         assert!(matches!(
-            awaiting_network_or_build_error(shortfall(), &SEND_FUNDING_SOURCES, 600, 0),
+            awaiting_network_or_build_error(shortfall(), 600, basis(0)),
             PlatformWalletError::CoreFundsAwaitingNetwork { .. }
         ));
         assert!(matches!(
-            awaiting_network_or_build_error(shortfall(), &SEND_FUNDING_SOURCES, 10, 0),
+            awaiting_network_or_build_error(shortfall(), 10, basis(0)),
             PlatformWalletError::TransactionBuild(_)
         ));
         assert!(matches!(
             awaiting_network_or_build_error(
                 BuilderError::CoinSelection(SelectionError::NoUtxosAvailable),
-                &SEND_FUNDING_SOURCES,
                 1_000_000,
-                900_000,
+                basis(900_000),
             ),
             PlatformWalletError::CoreFundsAwaitingNetwork { .. }
         ));
         assert!(matches!(
             awaiting_network_or_build_error(
                 BuilderError::CoinSelection(SelectionError::NoUtxosAvailable),
-                &SEND_FUNDING_SOURCES,
                 1_000_000,
-                10_000_000,
+                basis(10_000_000),
             ),
             PlatformWalletError::TransactionBuild(_)
         ));

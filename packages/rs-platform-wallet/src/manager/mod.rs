@@ -35,7 +35,7 @@ use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
-use crate::wallet::core::broadcast_resolver::BroadcastResolver;
+use crate::wallet::core::broadcast_resolver::{BroadcastResolver, FenceRegistry};
 use crate::wallet::core::{BalanceUpdateHandler, InBroadcastFences, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -472,8 +472,8 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     ///
     /// A `std::sync::Mutex`: touched only at wallet registration and load, for
     /// one map lookup, and never held across an await.
-    pub(super) in_broadcast_fences:
-        std::sync::Mutex<std::collections::BTreeMap<WalletId, Arc<InBroadcastFences>>>,
+    /// Shared with the broadcast resolver ([`FenceRegistry`]).
+    pub(super) in_broadcast_fences: FenceRegistry,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -553,9 +553,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // was unknown (read-only; see its module docs). It publishes through
         // the event manager it is registered with, so it gets a weak handle
         // to it once that exists.
+        let in_broadcast_fences: FenceRegistry = Arc::default();
         let broadcast_resolver = Arc::new(BroadcastResolver::new(
             Arc::new(DapiAcceptanceProbe::new(Arc::clone(&sdk))),
             Arc::clone(&wallet_manager),
+            Arc::clone(&in_broadcast_fences),
         ));
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,
@@ -628,7 +630,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
             registry,
             sync_fault,
-            in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            in_broadcast_fences,
         }
     }
 

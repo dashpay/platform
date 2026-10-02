@@ -69,27 +69,11 @@ impl UnresolvedSends {
         // every unsettled ancestor, unless that ancestor's own record is newer
         // (found dead since).
         let facts = info.generation.acceptance_among(&unsettled_txids);
-        let mut accepted: HashSet<Txid> = HashSet::new();
-        let mut up: VecDeque<(Txid, u64)> = facts
+        let seeds = facts
             .iter()
             .filter(|(_, (was_accepted, _))| *was_accepted)
-            .map(|(txid, (_, seq))| (*txid, *seq))
-            .collect();
-        while let Some((txid, seq)) = up.pop_front() {
-            if !accepted.insert(txid) {
-                continue;
-            }
-            for parent in parents.get(&txid).into_iter().flatten() {
-                let overridden = facts
-                    .get(parent)
-                    .is_some_and(|(parent_accepted, parent_seq)| {
-                        !parent_accepted && *parent_seq > seq
-                    });
-                if !overridden {
-                    up.push_back((*parent, seq));
-                }
-            }
-        }
+            .map(|(txid, (_, seq))| (*txid, *seq));
+        let accepted = accepted_with_ancestors(&facts, &parents, seeds);
 
         // A transaction built on a held output is no better than its parent:
         // a node that has not seen the parent refuses it.
@@ -159,5 +143,77 @@ impl UnresolvedSends {
             .filter(|utxo| self.holds(&utxo.outpoint))
             .map(|utxo| utxo.value().saturating_sub(input_cost))
             .sum()
+    }
+}
+
+/// The accepted transactions plus every unsettled ancestor their acceptance
+/// reaches. An ancestor is reached unless its own record is a newer "dead";
+/// each transaction keeps the highest acceptance seq that reached it and is
+/// walked again when a higher one arrives, so the result is the same whatever
+/// order `seeds` (a `HashMap` walk) come in.
+fn accepted_with_ancestors(
+    facts: &HashMap<Txid, (bool, u64)>,
+    parents: &HashMap<Txid, Vec<Txid>>,
+    seeds: impl IntoIterator<Item = (Txid, u64)>,
+) -> HashSet<Txid> {
+    let mut best: HashMap<Txid, u64> = HashMap::new();
+    let mut up: VecDeque<(Txid, u64)> = seeds.into_iter().collect();
+    while let Some((txid, seq)) = up.pop_front() {
+        if best.get(&txid).is_some_and(|known| *known >= seq) {
+            continue;
+        }
+        best.insert(txid, seq);
+        for parent in parents.get(&txid).into_iter().flatten() {
+            let overridden = facts
+                .get(parent)
+                .is_some_and(|(parent_accepted, parent_seq)| !parent_accepted && *parent_seq > seq);
+            if !overridden {
+                up.push_back((*parent, seq));
+            }
+        }
+    }
+    best.into_keys().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+
+    use dashcore::hashes::Hash;
+    use dashcore::Txid;
+
+    use super::accepted_with_ancestors;
+
+    fn txid(byte: u8) -> Txid {
+        Txid::from_byte_array([byte; 32])
+    }
+
+    /// G <- P <- C: P accepted at seq 2, C accepted at seq 9, G found dead at
+    /// seq 5. C's newer acceptance reaches G past its older death, whichever
+    /// of P and C is walked first.
+    #[test]
+    fn should_propagate_the_newest_acceptance_whatever_the_walk_order() {
+        let (g, p, c) = (txid(1), txid(2), txid(3));
+        let facts = HashMap::from([(p, (true, 2)), (c, (true, 9)), (g, (false, 5))]);
+        let parents = HashMap::from([(c, vec![p]), (p, vec![g])]);
+        let expected = HashSet::from([g, p, c]);
+
+        let p_first = accepted_with_ancestors(&facts, &parents, [(p, 2), (c, 9)]);
+        let c_first = accepted_with_ancestors(&facts, &parents, [(c, 9), (p, 2)]);
+
+        assert_eq!(p_first, expected);
+        assert_eq!(c_first, expected);
+    }
+
+    /// An ancestor found dead after the newest acceptance below it stays out.
+    #[test]
+    fn should_stop_at_an_ancestor_found_dead_after_the_acceptance() {
+        let (g, p, c) = (txid(1), txid(2), txid(3));
+        let facts = HashMap::from([(c, (true, 3)), (g, (false, 7))]);
+        let parents = HashMap::from([(c, vec![p]), (p, vec![g])]);
+
+        let accepted = accepted_with_ancestors(&facts, &parents, [(c, 3)]);
+
+        assert_eq!(accepted, HashSet::from([p, c]));
     }
 }
