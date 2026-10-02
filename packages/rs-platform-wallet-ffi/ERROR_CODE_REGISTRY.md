@@ -172,6 +172,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 56 | `ErrorShieldedRecoveryCorrupted` | #4715 | Proposed — durable shielded recovery data is malformed or invalid; preserved for diagnosis. Rust, Swift and Kotlin preserve this typed error |
 | 57 | `ErrorShieldedRecoveryKeysRequired` | #4715 | Proposed — recovery needs the account and compatible keys; ciphertext damage can produce the same symptom. Rust, Swift and Kotlin preserve this typed error |
 | 58 | `ErrorIdentityBalanceUnavailable` | #4799 | Proposed — Platform returned no balance for a managed identity. Retrying the read is safe; this is distinct from missing wallet ownership and must not trigger registration or funding |
+| 59 | `ErrorCoreFundsAwaitingNetwork` | `fix/resolve-unknown-broadcast` (PR not opened yet) | Proposed — claimed from the frontier (58). A Core payment that only the coins of an earlier send of this wallet would cover, while that send's broadcast outcome is unresolved; those coins become spendable once the network is seen to accept it. Emitted only while the manager probes unresolved broadcasts. Not a shortfall: retry after the earlier payment settles. Rust value + pin test, Swift raw case + typed `coreFundsAwaitingNetwork`, Kotlin typed `PlatformWallet.CoreFundsAwaitingNetwork` + `fromPlatformWalletNative` arm + `DashSdkErrorTest` pin |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged

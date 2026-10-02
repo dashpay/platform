@@ -21,6 +21,7 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::reservations::record_send_accepted;
 
 use super::super::manager::AssetLockManager;
 use super::super::orchestration::UNCONFIRMED_BROADCAST_PROOF_TIMEOUT;
@@ -1174,7 +1175,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .expect("Built resumes hold a cleanup-exclusion claim")
                     .preserve_on_drop();
                 match self.broadcaster.broadcast(&tx).await {
-                    Ok(_) => {}
+                    Ok(txid) => {
+                        record_send_accepted(&self.wallet_manager, &self.wallet_id, txid).await;
+                    }
                     Err(BroadcastError::MaybeSent { reason }) => {
                         tracing::warn!(
                             outpoint = %out_point,
@@ -1488,7 +1491,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // the status advance), which is precisely why the `Built` arm
                 // above reaches the same verdict from the same position.
                 let mut local_proof = None;
-                if let Err(e) = self.broadcaster.broadcast(&tx).await {
+                let rebroadcast = self.broadcaster.broadcast(&tx).await;
+                if let Ok(txid) = &rebroadcast {
+                    record_send_accepted(&self.wallet_manager, &self.wallet_id, *txid).await;
+                }
+                if let Err(e) = rebroadcast {
                     if matches!(e, BroadcastError::Rejected { .. }) {
                         match self.wait_for_proof(out_point, Some(Duration::ZERO)).await {
                             Ok(proof) => {

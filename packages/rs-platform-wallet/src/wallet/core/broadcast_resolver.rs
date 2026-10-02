@@ -182,6 +182,33 @@ pub(crate) fn collect_views(info: &PlatformWalletInfo) -> Vec<OutgoingView> {
     }))
 }
 
+/// This wallet's unsettled transactions, borrowed: for each, whether it spends
+/// the wallet's own coins, and the transaction. The same multi-account rule as
+/// [`merge_records`] — settled if any account holds it settled, own if any
+/// records it spending the wallet's coins — without cloning anything, for a
+/// reader that walks them on every balance or build call.
+pub(crate) fn unsettled_transactions(
+    info: &PlatformWalletInfo,
+) -> HashMap<Txid, (bool, &Transaction)> {
+    let mut settled: HashSet<Txid> = HashSet::new();
+    let mut unsettled: HashMap<Txid, (bool, &Transaction)> = HashMap::new();
+    for account in info.core_wallet.accounts.all_accounts() {
+        for record in account.transactions().values() {
+            if is_settled(record) || account.transaction_is_finalized(&record.txid) {
+                settled.insert(record.txid);
+                continue;
+            }
+            let own = !record.input_details.is_empty();
+            unsettled
+                .entry(record.txid)
+                .and_modify(|(was_own, _)| *was_own |= own)
+                .or_insert((own, &record.transaction));
+        }
+    }
+    unsettled.retain(|txid, _| !settled.contains(txid));
+    unsettled
+}
+
 /// This wallet's unsettled transactions as chains. `views` hold one entry per
 /// transaction (see [`merge_records`]).
 pub(crate) struct ChainGraph<'a> {
@@ -1745,7 +1772,9 @@ enum ActorSlot {
 /// probe sends the signed transaction to evonodes over DAPI, which is a
 /// product decision, not something a wallet should start doing on upgrade.
 pub(crate) struct BroadcastResolver {
-    enabled: AtomicBool,
+    /// Shared with every wallet's fences: the coins of unresolved sends are
+    /// held exactly while probing is on (see `WalletGeneration::holds_unresolved_sends`).
+    enabled: Arc<AtomicBool>,
     /// Held while the flag is stored and the switch is queued, so the flag
     /// and the actor end in the same state under concurrent calls — event
     /// handlers gate on the flag.
@@ -1773,7 +1802,7 @@ impl BroadcastResolver {
         );
         let (commands, receiver) = mpsc::unbounded_channel();
         Self {
-            enabled: AtomicBool::new(false),
+            enabled: Arc::new(AtomicBool::new(false)),
             commands,
             started: AtomicBool::new(false),
             actor: Mutex::new(ActorSlot::NotStarted(Box::new(actor), receiver)),
@@ -1827,6 +1856,11 @@ impl BroadcastResolver {
     /// The last value passed to [`set_enabled`](Self::set_enabled).
     pub(crate) fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::SeqCst)
+    }
+
+    /// The switch itself, for the wallets whose held coins follow it.
+    pub(crate) fn enabled_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.enabled)
     }
 
     /// Forget a removed wallet — call after it has left the wallet manager:

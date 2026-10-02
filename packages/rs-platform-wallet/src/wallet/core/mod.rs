@@ -16,7 +16,9 @@ pub use balance_handler::BalanceUpdateHandler;
 pub use generation::WalletGeneration;
 pub(crate) use generation::{InBroadcastFences, InBroadcastPin};
 pub use spend_observer::SpendObservationHandler;
-pub(crate) use transaction::resolve_source_accounts;
+pub(crate) use transaction::{
+    awaiting_network_or_build_error, held_input_cost, resolve_source_accounts,
+};
 pub use transaction::{SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES};
 pub(crate) use unresolved::UnresolvedSends;
 pub use wallet::CoreWallet;

@@ -78,9 +78,12 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
 /// A shortfall that the held coins of an unresolved send (see
 /// [`UnresolvedSends`]) would have covered becomes
 /// [`PlatformWalletError::CoreFundsAwaitingNetwork`], so the host can say the
-/// money is waiting on the network rather than missing. A genuine shortfall —
-/// held coins or not, the funds are not there — stays insufficient funds.
-fn awaiting_network(error: PlatformWalletError, held: u64) -> PlatformWalletError {
+/// money is waiting on the network rather than missing. `held` is what those
+/// coins would add, net of the fee their own inputs cost
+/// ([`UnresolvedSends::held_net_value`]). A genuine shortfall — held coins or
+/// not, the funds are not there — and one whose size selection did not report
+/// stay insufficient funds.
+pub(crate) fn awaiting_network(error: PlatformWalletError, held: u64) -> PlatformWalletError {
     let (available, required) = match &error {
         PlatformWalletError::CoreInsufficientFunds {
             available,
@@ -96,7 +99,7 @@ fn awaiting_network(error: PlatformWalletError, held: u64) -> PlatformWalletErro
     };
     let covered = match (available, required) {
         (Some(available), Some(required)) => available.saturating_add(held) >= required,
-        _ => held > 0,
+        _ => false,
     };
     if held == 0 || !covered {
         return error;
@@ -129,6 +132,32 @@ fn checked_fee(fee_rate: FeeRate, size_bytes: usize) -> Result<u64, PlatformWall
                 fee_rate.as_sat_per_kb()
             ))
         })
+}
+
+/// A pooled build's failure from a caller that reports build failures as
+/// [`PlatformWalletError::TransactionBuild`] (the DashPay contact payment):
+/// [`PlatformWalletError::CoreFundsAwaitingNetwork`] when the held coins would
+/// have covered the shortfall, the build error unchanged otherwise.
+pub(crate) fn awaiting_network_or_build_error(
+    error: BuilderError,
+    sources: &[AccountTypePreference],
+    held: u64,
+) -> PlatformWalletError {
+    match awaiting_network(
+        map_builder_error(error.clone(), FundingContext::Pooled(sources)),
+        held,
+    ) {
+        awaiting @ PlatformWalletError::CoreFundsAwaitingNetwork { .. } => awaiting,
+        _ => PlatformWalletError::TransactionBuild(error.to_string()),
+    }
+}
+
+/// The fee one more input adds at the default rate: what spending a held coin
+/// would cost, for [`awaiting_network`]'s coverage test. A host on a higher
+/// rate sees that test lean slightly towards "waiting on the network".
+pub(crate) fn held_input_cost() -> Result<u64, PlatformWalletError> {
+    let per_input = estimate_tx_size(1, 1, false).saturating_sub(estimate_tx_size(0, 1, false));
+    checked_fee(FeeRate::normal(), per_input)
 }
 
 /// The output [`CoreWallet::pooled_max_sendable`] prices: one P2PKH, matching
@@ -683,6 +712,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
             let height = info.core_wallet.last_processed_height();
             let unresolved = UnresolvedSends::of(info);
+            let held_input_cost = held_input_cost()?;
             let mut held_value = 0u64;
 
             // Fund from every resolved account, mirroring key-wallet's own
@@ -732,14 +762,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         paths.insert(utxo.address.clone(), path);
                     }
                 }
-                held_value += unresolved.held_value(managed);
+                held_value += unresolved.held_net_value(managed, height, held_input_cost);
                 // `reservation_only` offers no candidates of its own: the
-                // caller seeded its inputs explicitly (checked below).
+                // caller seeded its inputs explicitly. Either way the held
+                // coins are excluded — a seeded one fails the build.
                 builder = if reservation_only {
                     builder.add_funding_reservation_only(managed, account)
                 } else {
-                    unresolved.add_funding(builder, managed, account)
+                    builder.add_funding(managed, account)
                 };
+                builder = unresolved.exclude_from(builder, managed);
                 offered_accounts.push(at);
             }
             if offered_accounts.is_empty() {
@@ -757,9 +789,23 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 FundingContext::Pooled(sources)
             };
             let (unsigned, fee, reservation_token) =
-                builder.build_unsigned_reserved().map_err(|error| {
-                    awaiting_network(map_builder_error(error, funding_context), held_value)
-                })?;
+                builder
+                    .build_unsigned_reserved()
+                    .map_err(|error| match error {
+                        // A coin the caller seeded is held: refused before
+                        // anything was reserved.
+                        BuilderError::ExcludedInput { outpoint } => {
+                            PlatformWalletError::CoreFundsAwaitingNetwork {
+                                available: None,
+                                held: held_value,
+                                required: None,
+                                outpoint: Some(outpoint),
+                            }
+                        }
+                        error => {
+                            awaiting_network(map_builder_error(error, funding_context), held_value)
+                        }
+                    })?;
 
             // Release across every contributing account on the error paths
             // below: the pooled reservation lives per account under the one
@@ -797,20 +843,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             if let Some(outpoint) = info.generation.in_broadcast_conflict(&unsigned) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(PlatformWalletError::InputMidBroadcast { outpoint });
-            }
-
-            // Refuse a held coin (see `UnresolvedSends`) the caller seeded
-            // itself — the `reservation_only` path and outpoint-chosen inputs,
-            // which skip the candidate filter above. Selection cannot pick one
-            // otherwise; this is also the backstop for that.
-            if let Some(outpoint) = unresolved.held_input(&unsigned) {
-                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
-                return Err(PlatformWalletError::CoreFundsAwaitingNetwork {
-                    available: None,
-                    held: held_value,
-                    required: None,
-                    outpoint: Some(outpoint),
-                });
             }
 
             // Map every selected input back to the account that owns it. That
@@ -1088,10 +1120,15 @@ mod tests {
     use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 
     use crate::wallet::core::generation::next_acceptance_seq;
-    use crate::wallet::core::transaction::{modeled_output_script, MAX_STANDARD_TX_INPUTS};
+    use crate::wallet::core::transaction::{
+        awaiting_network, awaiting_network_or_build_error, held_input_cost, modeled_output_script,
+        MAX_STANDARD_TX_INPUTS,
+    };
     use crate::wallet::core::{CoreWallet, WalletGeneration};
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use crate::{PlatformWalletError, SEND_FUNDING_SOURCES};
+    use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+    use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
 
     fn preference(account_type: StandardAccountType) -> AccountTypePreference {
         match account_type {
@@ -2088,6 +2125,8 @@ mod tests {
     ) {
         let (manager, wallet_id, generation, signer) =
             funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
+        // As a manager with broadcast probing on: the hold follows it.
+        generation.set_holds_unresolved_sends(true);
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let core = CoreWallet::new(
             sdk,
@@ -2171,6 +2210,37 @@ mod tests {
         }
     }
 
+    /// With broadcast probing off nothing is held: building behaves exactly as
+    /// it did before the hold — nothing beyond a lock or a block would ever
+    /// release a held send, so a record stuck in mempool context would freeze
+    /// its coins for good.
+    #[tokio::test]
+    async fn should_hold_nothing_while_probing_is_off() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        {
+            let manager = manager.read().await;
+            let info = manager.get_wallet_info(&wallet_id).expect("wallet");
+            info.generation.set_holds_unresolved_sends(false);
+        }
+        let paid = DashAddress::dummy(Network::Testnet, 80);
+        let send = unresolved_send(&core, &manager, &wallet_id, &signer, &paid, 100_000).await;
+        let change = utxo(&manager, &wallet_id, change_of(&send, &paid)).await;
+
+        assert_eq!(
+            spendable(&core).await,
+            700_000 + change.value(),
+            "the change counts as before"
+        );
+        core.finalize_transaction(
+            TransactionBuilder::new().add_output(&paid, 700_000 + change.value() / 2),
+            &SEND_FUNDING_SOURCES,
+            0,
+            &signer,
+        )
+        .await
+        .expect("the change funds a payment as before");
+    }
+
     /// The coins of an unresolved send are not spendable: left out of the
     /// spendable figure, of "max", and of selection. A payment only they would
     /// cover is refused as waiting on the network, not as a shortfall.
@@ -2202,7 +2272,7 @@ mod tests {
                     held,
                     outpoint: None,
                     ..
-                }) if held == change.value()
+                }) if held == change.value() - held_input_cost().expect("input cost")
             ),
             "got {refused:?}"
         );
@@ -2417,7 +2487,10 @@ mod tests {
         {
             let mut manager = manager.write().await;
             let info = manager.get_wallet_info_mut(&wallet_id).expect("wallet");
-            info.generation = Arc::new(WalletGeneration::new());
+            // A restarted host turns probing on again.
+            let fresh = WalletGeneration::new();
+            fresh.set_holds_unresolved_sends(true);
+            info.generation = Arc::new(fresh);
         }
 
         assert_eq!(spendable(&core).await, 700_000);
@@ -2447,6 +2520,126 @@ mod tests {
             let accepted = info.generation.accepted_among(&HashSet::from([txid]));
             assert_eq!(accepted.contains(&txid), expected, "accepted={expected}");
         }
+    }
+
+    /// An acceptance that arrives before the wallet has applied its send — a
+    /// broadcast returning ahead of the record — survives the reads in
+    /// between and releases the send once the record lands.
+    #[tokio::test]
+    async fn should_keep_an_acceptance_that_arrives_before_its_record() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let paid = DashAddress::dummy(Network::Testnet, 95);
+        let send = core
+            .finalize_transaction(
+                TransactionBuilder::new().add_output(&paid, 100_000),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the send builds")
+            .transaction()
+            .clone();
+        record_acceptance(&manager, &wallet_id, send.txid(), true).await;
+        // A balance read before the record lands walks the unsettled records.
+        let _ = spendable(&core).await;
+        apply_to_wallet(&manager, &wallet_id, &send, TransactionContext::Mempool).await;
+
+        let change = utxo(&manager, &wallet_id, change_of(&send, &paid)).await;
+        assert_eq!(
+            spendable(&core).await,
+            700_000 + change.value(),
+            "the echoed send's change is spendable"
+        );
+    }
+
+    /// Only a shortfall the held coins would actually cover is "waiting on the
+    /// network". One they would not cover, or one whose size selection did not
+    /// report, stays insufficient funds.
+    #[test]
+    fn should_report_awaiting_network_only_when_the_held_coins_cover_the_shortfall() {
+        let shortfall = |available, required| PlatformWalletError::CorePooledInsufficientFunds {
+            sources: SEND_FUNDING_SOURCES.to_vec(),
+            available,
+            required,
+        };
+        assert!(matches!(
+            awaiting_network(shortfall(Some(400), Some(1_000)), 600),
+            PlatformWalletError::CoreFundsAwaitingNetwork { .. }
+        ));
+        assert!(matches!(
+            awaiting_network(shortfall(Some(400), Some(1_000)), 599),
+            PlatformWalletError::CorePooledInsufficientFunds { .. }
+        ));
+        assert!(matches!(
+            awaiting_network(shortfall(Some(0), None), 1_000_000),
+            PlatformWalletError::CorePooledInsufficientFunds { .. }
+        ));
+        assert!(matches!(
+            awaiting_network(shortfall(Some(400), Some(1_000)), 0),
+            PlatformWalletError::CorePooledInsufficientFunds { .. }
+        ));
+    }
+
+    /// The DashPay contact payment's build failure: a shortfall the held coins
+    /// cover is "waiting on the network"; any other failure keeps the build
+    /// error that path has always reported.
+    #[test]
+    fn should_map_a_contact_payment_shortfall_the_held_coins_cover() {
+        let shortfall = || {
+            BuilderError::CoinSelection(SelectionError::InsufficientFunds {
+                available: 400,
+                required: 1_000,
+            })
+        };
+        assert!(matches!(
+            awaiting_network_or_build_error(shortfall(), &SEND_FUNDING_SOURCES, 600),
+            PlatformWalletError::CoreFundsAwaitingNetwork { .. }
+        ));
+        assert!(matches!(
+            awaiting_network_or_build_error(shortfall(), &SEND_FUNDING_SOURCES, 10),
+            PlatformWalletError::TransactionBuild(_)
+        ));
+        assert!(matches!(
+            awaiting_network_or_build_error(
+                BuilderError::CoinSelection(SelectionError::NoUtxosAvailable),
+                &SEND_FUNDING_SOURCES,
+                1_000_000,
+            ),
+            PlatformWalletError::TransactionBuild(_)
+        ));
+    }
+
+    /// A broadcast that releases its reservation on a rejection records an
+    /// echoed send as accepted too.
+    #[tokio::test]
+    async fn should_mark_a_send_accepted_when_a_releasing_broadcast_is_echoed() {
+        let (core, manager, wallet_id, signer) = dual_core(Arc::new(AlwaysOkBroadcaster)).await;
+        let finalized = core
+            .finalize_transaction(
+                TransactionBuilder::new()
+                    .add_output(&DashAddress::dummy(Network::Testnet, 96), 300_000),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("finalize");
+        let txid = finalized.transaction().txid();
+        core.broadcast_transaction_releasing_reservation(
+            StandardAccountType::BIP44Account,
+            0,
+            finalized.transaction(),
+        )
+        .await
+        .expect("broadcast");
+
+        let manager = manager.read().await;
+        let info = manager.get_wallet_info(&wallet_id).expect("wallet");
+        assert!(info
+            .generation
+            .accepted_among(&HashSet::from([txid]))
+            .contains(&txid));
     }
 
     /// The address of the wallet's BIP32 coin: one of our own receive

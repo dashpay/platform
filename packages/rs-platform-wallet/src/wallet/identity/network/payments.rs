@@ -12,8 +12,9 @@ use key_wallet_manager::WalletManager;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::core::UnresolvedSends;
+use crate::wallet::core::{awaiting_network_or_build_error, held_input_cost, UnresolvedSends};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::SEND_FUNDING_SOURCES;
 
 // ---------------------------------------------------------------------------
 // Incoming payment recording + reconcile
@@ -1257,6 +1258,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // Coins of our own sends the network has not been seen to accept
             // stay out of selection (see `UnresolvedSends`).
             let unresolved = UnresolvedSends::of(info);
+            let held_input_cost = held_input_cost()?;
+            let mut held_value = 0u64;
 
             // Derivation paths for every offered UTXO, since the signer closure
             // below cannot resolve them from one account.
@@ -1293,7 +1296,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             funding_paths.insert(utxo.address.clone(), path);
                         }
                     }
-                    builder = unresolved.add_funding(builder, managed, account);
+                    held_value +=
+                        unresolved.held_net_value(managed, current_height, held_input_cost);
+                    builder =
+                        unresolved.exclude_from(builder.add_funding(managed, account), managed);
                     offered_accounts.push(at);
                 }
             }
@@ -1342,7 +1348,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     {
                         return_contact_payment_address_to_pool(external_account, &payment_address);
                     }
-                    return Err(PlatformWalletError::TransactionBuild(e.to_string()));
+                    return Err(awaiting_network_or_build_error(
+                        e,
+                        &SEND_FUNDING_SOURCES,
+                        held_value,
+                    ));
                 }
             };
 

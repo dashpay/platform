@@ -649,7 +649,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .entry(*wallet_id)
-                .or_default(),
+                .or_insert_with(|| {
+                    Arc::new(crate::wallet::core::InBroadcastFences::with_hold_flag(
+                        self.broadcast_resolver.enabled_flag(),
+                    ))
+                }),
         )
     }
 
