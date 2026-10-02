@@ -462,6 +462,7 @@ pub(crate) fn restore_recorded_transactions(
 
     // Kept only to undo a replay the checker suspended part-way through.
     let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
+    stage_recorded_spent_inputs(wallet_info, &replay, &placed);
     let completed = poll_ready(async {
         for record in replay {
             // The lock set already holds this txid (load marked the restored
@@ -530,6 +531,50 @@ pub(crate) fn restore_recorded_transactions(
         wallet_info.apply_chain_lock(chain_lock);
     }
     wallet_info.update_balance();
+}
+
+/// Park every owned input a record spends whose funding no replayed record credits.
+///
+/// Persistence excludes spent outputs from the load projection, so without
+/// this a spender of a height-only funding row replays with no owned input and
+/// rebuilds no spent mark; a redelivered funding transaction would then
+/// re-credit the coin once finality prunes the observed spend. The stored
+/// `input_details` are the evidence: wallet-owned by construction and repaired
+/// from persisted outputs. Staged coins are never in `placed`, so the
+/// retention pass drops whatever replay leaves behind.
+fn stage_recorded_spent_inputs(
+    wallet_info: &mut ManagedWalletInfo,
+    records: &[TransactionRecord],
+    placed: &HashMap<OutPoint, AccountType>,
+) {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let replayed: HashSet<Txid> = records.iter().map(|record| record.txid).collect();
+    let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
+    for record in records {
+        for detail in &record.input_details {
+            let Some(input) = record.transaction.input.get(detail.index as usize) else {
+                continue;
+            };
+            let outpoint = input.previous_output;
+            if placed.contains_key(&outpoint) || replayed.contains(&outpoint.txid) {
+                continue;
+            }
+            let Some(account) = accounts
+                .iter_mut()
+                .find(|account| account.contains_address(&detail.address))
+            else {
+                continue;
+            };
+            account.utxos.entry(outpoint).or_insert_with(|| {
+                let txout = dashcore::TxOut {
+                    value: detail.value,
+                    script_pubkey: detail.address.script_pubkey(),
+                };
+                key_wallet::Utxo::new(outpoint, txout, detail.address.clone(), 0, false)
+            });
+        }
+    }
 }
 
 /// Whether `lock` really locks `record`, so upgrading its context is safe.
