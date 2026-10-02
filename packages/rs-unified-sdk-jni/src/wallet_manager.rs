@@ -3218,7 +3218,6 @@ fn core_selection_strategy(
     }
 }
 
-
 // ── TXO-store reconcile transport ─────────────────────────────────────
 //
 // Two exports, each a serialization shim over exactly ONE platform-wallet
@@ -3271,7 +3270,10 @@ impl UtxoAccountTuple {
                 Some(h) => hex::decode(h).ok()?.try_into().ok(),
             }
         }
-        Some((id32(&self.user_identity_id)?, id32(&self.friend_identity_id)?))
+        Some((
+            id32(&self.user_identity_id)?,
+            id32(&self.friend_identity_id)?,
+        ))
     }
 }
 
@@ -3406,10 +3408,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                         key_class: c.account.key_class,
                         user_identity_id,
                         friend_identity_id,
-                        outpoint: platform_wallet_ffi::OutPointFFI {
-                            txid,
-                            vout: c.vout,
-                        },
+                        outpoint: platform_wallet_ffi::OutPointFFI { txid, vout: c.vout },
                     })
                 });
             match parsed {
