@@ -10,7 +10,7 @@ use key_wallet::managed_account::transaction_record::{
 use key_wallet::transaction_checking::TransactionContext;
 use platform_wallet::changeset::{is_owned, wallet_accounting, CoreChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::accounts::DASHPAY_EXTERNAL_LABEL;
 use super::{blob, core_state, wallets};
@@ -145,20 +145,30 @@ fn owned_output(
     outpoint: &OutPoint,
     network: dashcore::Network,
 ) -> Result<Option<(u64, Address)>, WalletStorageError> {
-    let mut stmt = tx.prepare_cached(
-        "SELECT value, length(script), script FROM core_utxos \
-         WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
-    )?;
-    let mut rows = stmt.query(params![
-        wallet_id.as_slice(),
-        blob::encode_outpoint(outpoint)?
-    ])?;
-    let Some(row) = rows.next()? else {
+    let encoded = blob::encode_outpoint(outpoint)?;
+    let key = params![wallet_id.as_slice(), encoded];
+    // Gate the script length in its own statement: SQLite evaluates every
+    // result column before a row is returned.
+    let Some((value, len)) = tx
+        .prepare_cached(
+            "SELECT value, length(script) FROM core_utxos \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+        )?
+        .query_row(key, |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })
+        .optional()?
+    else {
         return Ok(None);
     };
-    let value = i64_to_u64("core_utxos.value", row.get(0)?)?;
-    blob::check_size(row.get(1)?)?;
-    let script: Vec<u8> = row.get(2)?;
+    let value = i64_to_u64("core_utxos.value", value)?;
+    blob::check_size(len)?;
+    let script: Vec<u8> = tx
+        .prepare_cached(
+            "SELECT script FROM core_utxos \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+        )?
+        .query_row(key, |row| row.get(0))?;
     if contact_only_script(tx, wallet_id, &script)? {
         return Ok(None);
     }
@@ -319,6 +329,42 @@ mod tests {
     use super::*;
 
     const WALLET_ID: WalletId = [0x5Au8; 32];
+
+    #[test]
+    fn should_reject_oversize_owned_output_script_before_reading_it() {
+        const WALLET: WalletId = WALLET_ID;
+        let mut conn = wallet_db("testnet");
+
+        use rusqlite::limits::Limit;
+
+        use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
+
+        let outpoint = OutPoint::new(Txid::from_byte_array([0x42; 32]), 0);
+        // Over the connection's length cap, so reading the column itself
+        // fails: only a length-only pre-read reports it as oversize.
+        let script = vec![0u8; SQLITE_MAX_BLOB_BYTES as usize + 1];
+        conn.execute(
+            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 0, ?3, 0)",
+            params![
+                &WALLET[..],
+                blob::encode_outpoint(&outpoint).unwrap(),
+                script
+            ],
+        )
+        .unwrap();
+        drop(script);
+        conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)
+            .unwrap();
+        let tx = conn.transaction().unwrap();
+
+        let err = owned_output(&tx, &WALLET, &outpoint, dashcore::Network::Testnet).unwrap_err();
+
+        assert!(
+            matches!(err, WalletStorageError::BlobTooLarge { .. }),
+            "got {err:?}"
+        );
+    }
 
     fn wallet_db(network: &str) -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
