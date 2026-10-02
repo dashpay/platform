@@ -1284,12 +1284,6 @@ class PlatformWalletPersistenceHandler(
         val engineUtxos: Int,
         val inserted: Int,
         val insertedDuffs: Long,
-        /** Healed TXOs whose pre-existing record's netAmount MAY be short by
-         *  the healed amount. LOG-ONLY: the record can already carry the
-         *  corrected net (a corrective callback racing this sweep), and
-         *  blind addition double-credits. The event pipeline owns net
-         *  correctness. */
-        val netAmountSuspects: Int,
         /** Healed rows whose owning Room account could not be resolved from
          *  the inventory's account tuple — ownership rides on the address
          *  projection alone, and if that row is also missing the healed TXO
@@ -1354,7 +1348,6 @@ class PlatformWalletPersistenceHandler(
         val engineUtxos: Int,
         val inserted: Int,
         val insertedDuffs: Long,
-        val netAmountSuspects: Int,
         val healedUnowned: Int,
         val skippedImmature: Int,
         val skippedNoAddress: Int,
@@ -1418,10 +1411,10 @@ class PlatformWalletPersistenceHandler(
      * beyond coinbase maturity, which the gate guarantees. Fresher holes
      * age into a later sweep.
      *
-     * `netAmount` is reported, never repaired: a record born blind to one
-     * of its own outputs persisted a net short by exactly that output's
-     * value, but the record may equally have been corrected already by a
-     * callback racing this sweep, and blind addition double-credits.
+     * `netAmount` is never repaired: a record born blind to one of its own
+     * outputs persisted a net short by exactly that output's value, but the
+     * record may equally have been corrected already by a callback racing
+     * this sweep, and blind addition double-credits.
      *
      * Returns null when the FIRST engine page is unavailable — there is
      * nothing to reconcile against, so there is no report to make. A page
@@ -1469,7 +1462,6 @@ class PlatformWalletPersistenceHandler(
             engineUtxos = heal.engineUtxos,
             inserted = heal.inserted,
             insertedDuffs = heal.insertedDuffs,
-            netAmountSuspects = heal.netAmountSuspects,
             healedUnowned = heal.healedUnowned,
             skippedImmature = heal.skippedImmature,
             skippedNoAddress = heal.skippedNoAddress,
@@ -1493,7 +1485,6 @@ class PlatformWalletPersistenceHandler(
                 TAG,
                 "txos reconcile: healed ${report.inserted} missing TXO(s) " +
                     "(${report.insertedDuffs} duffs), " +
-                    "${report.netAmountSuspects} netAmount suspect(s) (log-only), " +
                     "healedUnowned=${report.healedUnowned}, " +
                     "wouldFlipSpent=${report.wouldFlipSpent} " +
                     "(${report.wouldFlipSpentDuffs} duffs, log-only), " +
@@ -1541,7 +1532,6 @@ class PlatformWalletPersistenceHandler(
         var engineUtxos = 0
         var inserted = 0
         var insertedDuffs = 0L
-        var netAmountSuspects = 0
         var healedUnowned = 0
         var skippedImmature = 0
         var skippedNoAddress = 0
@@ -1584,17 +1574,6 @@ class PlatformWalletPersistenceHandler(
                                     insertedDuffs += row.amount
                                     healedUnowned++
                                 }
-                                HealOutcome.HEALED_NET_SUSPECT -> {
-                                    inserted++
-                                    insertedDuffs += row.amount
-                                    netAmountSuspects++
-                                }
-                                HealOutcome.HEALED_UNOWNED_NET_SUSPECT -> {
-                                    inserted++
-                                    insertedDuffs += row.amount
-                                    healedUnowned++
-                                    netAmountSuspects++
-                                }
                             }
                         }
                     }
@@ -1607,7 +1586,6 @@ class PlatformWalletPersistenceHandler(
             engineUtxos = engineUtxos,
             inserted = inserted,
             insertedDuffs = insertedDuffs,
-            netAmountSuspects = netAmountSuspects,
             healedUnowned = healedUnowned,
             skippedImmature = skippedImmature,
             skippedNoAddress = skippedNoAddress,
@@ -1623,8 +1601,6 @@ class PlatformWalletPersistenceHandler(
         ALREADY_PRESENT,
         HEALED,
         HEALED_UNOWNED,
-        HEALED_NET_SUSPECT,
-        HEALED_UNOWNED_NET_SUSPECT,
     }
 
     /**
@@ -1696,23 +1672,8 @@ class PlatformWalletPersistenceHandler(
         // correct (a corrective record callback can land while its TXO
         // delivery races this sweep), and adding the healed amount to an
         // already-corrected net double-credits. The event pipeline owns
-        // net correctness; this pass only reports the suspicion.
-        val priorTx = database.transactionDao().getByTxid(txid)
-        val netSuspect = priorTx != null && priorTx.transactionData.isNotEmpty()
-        if (netSuspect) {
-            Log.w(
-                TAG,
-                "txos reconcile: healed TXO ${row.txid}:${row.vout} (${row.amount} duffs) " +
-                    "has a pre-existing record whose netAmount may be short by that " +
-                    "amount — LOG-ONLY, storedNet=${priorTx?.netAmount}",
-            )
-        }
-        return when {
-            ownerAccountId == null && netSuspect -> HealOutcome.HEALED_UNOWNED_NET_SUSPECT
-            ownerAccountId == null -> HealOutcome.HEALED_UNOWNED
-            netSuspect -> HealOutcome.HEALED_NET_SUSPECT
-            else -> HealOutcome.HEALED
-        }
+        // net correctness.
+        return if (ownerAccountId == null) HealOutcome.HEALED_UNOWNED else HealOutcome.HEALED
     }
 
     /**

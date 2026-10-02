@@ -6249,7 +6249,7 @@ class PlatformWalletPersistenceHandlerTest {
     private fun ByteArray.toHexLower() = joinToString("") { "%02x".format(it) }
 
     @Test
-    fun reconcileHealsMissingChangeTxoAndRepairsNetAmount() = runTest {
+    fun reconcileHealsMissingChangeTxoAndLeavesNetAmountAlone() = runTest {
         // A send record born blind to its own change output: netAmount
         // persisted as the full input value (the job-flower 6cef55ab…
         // shape) and NO txos row for the change.
@@ -6269,7 +6269,6 @@ class PlatformWalletPersistenceHandlerTest {
 
         assertEquals(1, report.inserted)
         assertEquals(989_009_773L, report.insertedDuffs)
-        assertEquals(1, report.netAmountSuspects)
 
         val row = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 1))
         assertNotNull(row)
@@ -6279,8 +6278,8 @@ class PlatformWalletPersistenceHandlerTest {
 
         // The stored netAmount is NOT mutated: the record may already carry
         // the corrected net (a corrective callback racing this sweep), and
-        // blind addition double-credits. The suspicion is logged; the event
-        // pipeline owns net correctness.
+        // blind addition double-credits. The event pipeline owns net
+        // correctness.
         assertEquals(
             -1_000_010_000L,
             db.transactionDao().getByTxid(changeTxid)!!.netAmount,
@@ -6807,7 +6806,6 @@ class PlatformWalletPersistenceHandlerTest {
         val second = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
 
         assertEquals(0, second.inserted)
-        assertEquals(0, second.netAmountSuspects)
         assertEquals(
             -1_000_010_000L,
             db.transactionDao().getByTxid(changeTxid)!!.netAmount,
