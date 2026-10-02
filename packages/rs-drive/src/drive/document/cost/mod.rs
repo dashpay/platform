@@ -477,7 +477,12 @@ fn refund(
     credits_per_byte: Credits,
     epochs_later: u16,
 ) -> Result<Option<Scenarios>, Error> {
-    if !document_type.documents_can_be_deleted() {
+    // A document of a type whose owner can not delete it refunds nothing, unless a create
+    // may consume it (`canBeDeleted: "onlyWhenConsumed"`), which refunds its owner as the
+    // owner's delete would
+    if !document_type.documents_can_be_deleted()
+        && !document_type.documents_deleted_only_when_consumed()
+    {
         return Ok(Some(Scenarios::default()));
     }
     let refund = |bytes: u64| -> Result<Credits, Error> {

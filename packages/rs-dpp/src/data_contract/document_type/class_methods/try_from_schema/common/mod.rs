@@ -45,10 +45,11 @@ use crate::data_contract::document_type::property_names::moderator_abilities::{
     DELETE_REFUNDS_OWNER, DELETE_SETTLED, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES,
-    RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_ONLY_WHEN_CONSUMED, CREATION_RESTRICTION_MODE,
+    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
+    DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
+    KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
+    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -271,6 +272,11 @@ pub(super) struct ParserGeneration {
     /// `apply_derived_index_properties` then judges the reference and the index, and the
     /// contract's parse the referenced field.
     pub admit_derived_index_properties: bool,
+    /// Whether `canBeDeleted` may be `"onlyWhenConsumed"` as well as a boolean: the owner
+    /// can not delete a document, and a `refersTo` with `consume` can. Read as `false` for
+    /// the owner's delete here; the generation-3 driver records the consumption on the
+    /// parsed type.
+    pub admit_can_be_deleted_only_when_consumed: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -705,14 +711,20 @@ fn parse_document_type_flags(
         .map_err(consensus_or_protocol_value_error)?
         .unwrap_or(ctx.data_contact_config.documents_mutable_contract_default());
 
-    // Can documents of this type be deleted? (Overrides contract value)
-    let documents_can_be_deleted: bool =
+    // Can documents of this type be deleted by their owners? (Overrides contract value)
+    // `"onlyWhenConsumed"` says they can not: only a `refersTo` with `consume` deletes them
+    let documents_can_be_deleted: bool = if ctx.generation.admit_can_be_deleted_only_when_consumed
+        && is_can_be_deleted_only_when_consumed(schema_map)
+    {
+        false
+    } else {
         Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
             .map_err(consensus_or_protocol_value_error)?
             .unwrap_or(
                 ctx.data_contact_config
                     .documents_can_be_deleted_contract_default(),
-            );
+            )
+    };
 
     // Are documents of this type transferable?
     let documents_transferable_u8: u8 =
@@ -3032,6 +3044,54 @@ pub(super) fn apply_documents_ttl(
     }
 
     document_type.documents_ttl_seconds = Some(seconds);
+    Ok(())
+}
+
+/// Whether a document type schema sets `canBeDeleted: "onlyWhenConsumed"`. The shared flag
+/// parse of a generation admitting the value reads it as `false` for the owner's delete, and
+/// the generation-3 driver records it on the parsed type ([`apply_deleted_only_when_consumed`]).
+pub(super) fn is_can_be_deleted_only_when_consumed(schema_map: &[(Value, Value)]) -> bool {
+    schema_map.iter().any(|(key, value)| {
+        key.as_text() == Some(CAN_BE_DELETED)
+            && value.as_text() == Some(CAN_BE_DELETED_ONLY_WHEN_CONSUMED)
+    })
+}
+
+/// Records `canBeDeleted: "onlyWhenConsumed"` on a generation-3 type: its owner can not delete
+/// a document (the core parse read `documents_can_be_deleted` as `false`), and a create whose
+/// `refersTo` declares `consume` can. Its documents can then leave state, so the type is a
+/// `deletableDocument` target. Runs after `apply_index_only`, and refuses, on every parse as
+/// `ttl` does, a type whose documents nothing could consume: one that keeps history, which
+/// the storage layer never deletes from, and an indexOnly one, which has no stored row a
+/// reference finds.
+pub(super) fn apply_deleted_only_when_consumed(
+    document_type: &mut DocumentTypeV2,
+    deleted_only_when_consumed: bool,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !deleted_only_when_consumed {
+        return Ok(());
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets both `documentsKeepHistory: true` and \
+             `canBeDeleted: \"onlyWhenConsumed\"`, but the storage layer refuses to delete a \
+             document whose type keeps history, so nothing could consume one: set \
+             `canBeDeleted` to false",
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{name}\" must not set `canBeDeleted: \"onlyWhenConsumed\"`: \
+             there is no stored row a reference could find and consume",
+        )));
+    }
+    document_type.documents_deleted_only_when_consumed = true;
     Ok(())
 }
 

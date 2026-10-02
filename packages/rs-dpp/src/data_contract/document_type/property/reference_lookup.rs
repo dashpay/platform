@@ -589,7 +589,8 @@ impl DocumentReferenceLookup {
         }
         // A minimum age is judged against the found document's creation height,
         // so the type must record one; consuming deletes the document as its
-        // own owner would, which the type must allow
+        // own owner would, which the type must allow, or keep for consumption
+        // alone (`canBeDeleted: "onlyWhenConsumed"`)
         if self.minimum_age_blocks.is_some()
             && !referenced
                 .required_fields()
@@ -602,10 +603,14 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
-        if self.consume && !referenced.documents_can_be_deleted() {
+        if self.consume
+            && !referenced.documents_can_be_deleted()
+            && !referenced.documents_deleted_only_when_consumed()
+        {
             return Some(format!(
                 "consume deletes the found document as its owner would, which \"{}\" does not \
-                 allow (`canBeDeleted: false`)",
+                 allow (`canBeDeleted: false`): set `canBeDeleted` to true, or to \
+                 \"onlyWhenConsumed\" for documents only a consume deletes",
                 referenced.name()
             ));
         }

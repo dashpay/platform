@@ -44,6 +44,12 @@ pub trait DocumentTypeV2Getters {
     /// elsewhere.
     fn entry_payload(&self) -> &BTreeSet<String>;
 
+    /// Whether the documents of this type leave state only when a `refersTo` with
+    /// `consume` deletes them (`canBeDeleted: "onlyWhenConsumed"`, protocol version 14):
+    /// their owner can not delete one (`documents_can_be_deleted` is false), a create
+    /// consuming it can. False on document types that predate the value.
+    fn documents_deleted_only_when_consumed(&self) -> bool;
+
     /// Returns whether the contract's moderators may delete documents of this
     /// type (`moderatorAbilities.delete`, protocol version 14). Independent of
     /// `documents_can_be_deleted`, which rules what a document's own owner may
@@ -97,8 +103,9 @@ pub trait DocumentTypeV2Getters {
     fn documents_ttl_seconds(&self) -> Option<u32>;
 
     /// Whether a document of the type can stop existing once written: its owner may delete
-    /// it (`canBeDeleted`), the contract's moderators may (`moderatorAbilities.delete`), or
-    /// the platform deletes it when its `ttl` passes. A `permanentDocument` reference and a
+    /// it (`canBeDeleted`), a create consuming it may (`canBeDeleted: "onlyWhenConsumed"`),
+    /// the contract's moderators may (`moderatorAbilities.delete`), or the platform deletes
+    /// it when its `ttl` passes. A `permanentDocument` reference and a
     /// list element reference may only target a type for which this is false; which of the
     /// other two kinds may target one for which it is true is
     /// [`Self::document_reference_kind`]'s answer.
@@ -108,7 +115,7 @@ pub trait DocumentTypeV2Getters {
     /// can make its documents leave state: `permanentDocument` when nothing can
     /// ([`Self::documents_can_disappear`] is false), `moderatedDocument` when
     /// only the contract's moderators can and every removal leaves a record (its
-    /// owner can not delete one, no `ttl` expires one, and
+    /// owner can not delete one, no create consumes one, no `ttl` expires one, and
     /// `moderatorAbilities.deleteKeepsRecord` holds), `deletableDocument`
     /// otherwise. None of what it reads can change on a contract update, so the
     /// answer holds for good.
