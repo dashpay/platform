@@ -1900,8 +1900,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the source index for the summed value, and a count query reads such
 ///     an index's sums, its document counts: a point read
 ///     (`document_count_of_element`), and a ranked or having-range read on
-///     its Sum secondaries (`read_axis_for`); a range count over it is
-///     refused. Needs grovedb's `GROVE_V4`,
+///     its Sum secondaries (`read_axis_for`), and a range read through the
+///     sum surface's range forms (`counter_sums_query`; a range total needs
+///     an unranked last property). Needs grovedb's `GROVE_V4`,
 ///     which admits a bare `SumItem` under a
 ///     `ProvableCountProvableSumIndexedTree`. Inert for every contract without
 ///     the keyword, which every earlier grammar refuses.

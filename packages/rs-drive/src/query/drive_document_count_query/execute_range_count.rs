@@ -11,6 +11,11 @@
 //!   regular range proof against the `ProvableCountTree`, returning
 //!   per-key `KVCount` ops bound to the merk root.
 //!
+//! Over a `summableOffCountIndex` index each executor reads the index's
+//! range sums instead, through the sum surface's counterpart
+//! ([`DriveDocumentCountQuery::counter_sums_query`]): its count trees count
+//! its counters, one per group, while its sums are its document counts.
+//!
 //! Point-lookup execution (Equal/In with no range) lives in
 //! [`super::execute_point_lookup`](super::execute_point_lookup).
 //!
@@ -18,7 +23,11 @@
 //! `pub mod execute_range_count;` declaration.
 
 use super::super::conditions::{WhereClause, WhereOperator};
-use super::{DriveDocumentCountQuery, SplitCountEntry};
+use super::super::drive_document_sum_query::{RangeSumOptions, RangeSumWalkMode};
+use super::{
+    counter_sum_entry_as_count_entry, refuse_a_counter_range_total_over_a_ranked_tree,
+    DriveDocumentCountQuery, SplitCountEntry,
+};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -113,6 +122,33 @@ impl DriveDocumentCountQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SplitCountEntry>, Error> {
+        // A `summableOffCountIndex` index's documents are its range sums.
+        if let Some(sums) = self.counter_sums_query() {
+            let walk_mode = if options.distinct {
+                RangeSumWalkMode::Distinct(
+                    options
+                        .limit
+                        .map_or(u16::MAX, |limit| u16::try_from(limit).unwrap_or(u16::MAX)),
+                )
+            } else {
+                refuse_a_counter_range_total_over_a_ranked_tree(self.index)?;
+                RangeSumWalkMode::Aggregate
+            };
+            let entries = sums.execute_range_sum_no_proof(
+                drive,
+                &RangeSumOptions {
+                    walk_mode,
+                    carrier_outer_limit: None,
+                    left_to_right: options.order_by_ascending,
+                },
+                transaction,
+                platform_version,
+            )?;
+            return Ok(entries
+                .into_iter()
+                .map(counter_sum_entry_as_count_entry)
+                .collect());
+        }
         let drive_version = &platform_version.drive;
         let has_in_on_prefix = self
             .where_clauses
@@ -362,6 +398,11 @@ impl DriveDocumentCountQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        // A `summableOffCountIndex` index's documents are its range sums.
+        if let Some(sums) = self.counter_sums_query() {
+            refuse_a_counter_range_total_over_a_ranked_tree(self.index)?;
+            return sums.execute_aggregate_sum_with_proof(drive, transaction, platform_version);
+        }
         let drive_version = &platform_version.drive;
         let path_query = self.aggregate_count_path_query(platform_version)?;
         // Destructure rather than `.unwrap()` — see the In fan-out branch
@@ -406,6 +447,16 @@ impl DriveDocumentCountQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        // A `summableOffCountIndex` index's documents are its range sums.
+        if let Some(sums) = self.counter_sums_query() {
+            return sums.execute_distinct_sum_with_proof(
+                drive,
+                limit,
+                left_to_right,
+                transaction,
+                platform_version,
+            );
+        }
         let drive_version = &platform_version.drive;
         let path_query =
             self.distinct_count_path_query(Some(limit), left_to_right, platform_version)?;
@@ -470,6 +521,17 @@ impl DriveDocumentCountQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        // A `summableOffCountIndex` index's documents are its range sums.
+        if let Some(sums) = self.counter_sums_query() {
+            refuse_a_counter_range_total_over_a_ranked_tree(self.index)?;
+            return sums.execute_carrier_aggregate_sum_with_proof(
+                drive,
+                limit,
+                left_to_right,
+                transaction,
+                platform_version,
+            );
+        }
         let drive_version = &platform_version.drive;
         let path_query =
             self.carrier_aggregate_count_path_query(limit, left_to_right, platform_version)?;

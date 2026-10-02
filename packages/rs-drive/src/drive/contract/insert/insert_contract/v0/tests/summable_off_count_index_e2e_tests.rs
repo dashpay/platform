@@ -17,8 +17,10 @@ use super::index_only_e2e_tests::{
 };
 use super::index_only_scalar_terminal_e2e_tests::equal;
 use super::ranked_index_e2e_tests::avg_top_k;
-use crate::config::DriveConfig;
+use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
+use crate::error::Error;
 use crate::query::drive_document_average_query::{
     AverageMode, DocumentAverageRequest, DocumentAverageResponse,
 };
@@ -74,17 +76,24 @@ const LIKER_5: [u8; 32] = [0x55; 32];
 /// The fixture, preallocated as written or with the counters created by the
 /// first like of a post and removed with its last.
 fn setup(preallocated: bool) -> (Drive, DataContract) {
+    if preallocated {
+        setup_with(&[])
+    } else {
+        setup_with(&["preallocated"])
+    }
+}
+
+/// The fixture with the keywords `removed` taken off every like index.
+fn setup_with(removed: &[&str]) -> (Drive, DataContract) {
     let pv = platform_version();
     let mut schema = json_document_to_json_value(FIXTURE).expect("read contract fixture");
-    if !preallocated {
-        for index in schema["documentSchemas"]["like"]["indices"]
-            .as_array_mut()
-            .expect("like indices")
-        {
-            index
-                .as_object_mut()
-                .expect("an index")
-                .remove("preallocated");
+    for index in schema["documentSchemas"]["like"]["indices"]
+        .as_array_mut()
+        .expect("like indices")
+    {
+        let index = index.as_object_mut().expect("an index");
+        for keyword in removed {
+            index.remove(*keyword);
         }
     }
     let contract = DataContract::try_from_platform_versioned(
@@ -674,9 +683,8 @@ fn should_sum_likes_by_the_source_index_name() {
 
 /// A count query counts documents, and a counter index answers it from its
 /// sums: an author's or a hashtag's likes, one post's likes, zero for a
-/// preallocated post nobody liked, proved like any count. A range count over
-/// the counters is refused (it would count posts). The average reads the posts
-/// and the likes together.
+/// preallocated post nobody liked, proved like any count. The average reads
+/// the posts and the likes together.
 #[test]
 fn should_count_likes_from_the_counters_sums_and_read_posts_through_the_average() {
     let (drive, contract) = setup(true);
@@ -760,18 +768,6 @@ fn should_count_likes_from_the_counters_sums_and_read_posts_through_the_average(
         let proved: u64 = entries.iter().filter_map(|entry| entry.count).sum();
         assert_eq!(proved, likes, "proved {clauses:?}");
     }
-    let range = vec![
-        equal("postAuthor", Value::Identifier(AUTHOR_A)),
-        WhereClause {
-            field: "postId".to_string(),
-            operator: WhereOperator::GreaterThan,
-            value: Value::Identifier(a2),
-        },
-    ];
-    assert!(
-        count(range, false).is_err(),
-        "a range count over the counters would count posts"
-    );
     let clauses = vec![equal("postAuthor", Value::Identifier(AUTHOR_A))];
 
     match drive
@@ -798,6 +794,223 @@ fn should_count_likes_from_the_counters_sums_and_read_posts_through_the_average(
         }
         other => panic!("expected an aggregate average, got {other:?}"),
     }
+}
+
+/// A range count over a counter index reads its range sums, so it counts
+/// likes: per post over a range of one author's posts (a post nobody liked
+/// left out) and per author and post across an `IN`, each proved, and the
+/// range's total.
+#[test]
+fn should_count_likes_over_a_range_of_posts_from_the_counters_sums() {
+    let (drive, contract) = setup(true);
+    let (a1, a2, b1, _) = liked_posts(&drive, &contract);
+    insert_post(&drive, &contract, AUTHOR_A, "dash", 4);
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name("like")
+        .expect("like doctype exists");
+    let drive_config = DriveConfig::default();
+    let count = |where_clauses: Vec<WhereClause>, mode: CountMode, prove: bool| {
+        drive.execute_document_count_request(
+            DocumentCountRequest {
+                contract: &contract,
+                document_type,
+                where_clauses,
+                resolved_time_ranges: vec![],
+                order_clauses: vec![],
+                mode,
+                limit: None,
+                prove,
+                drive_config: &drive_config,
+            },
+            None,
+            pv,
+        )
+    };
+    let every_post = WhereClause {
+        field: "postId".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::Identifier([0; 32]),
+    };
+    let mut a_posts = [(a1.to_vec(), 3), (a2.to_vec(), 1)];
+    a_posts.sort();
+    let mut both = [
+        (AUTHOR_A.to_vec(), a1.to_vec(), 3),
+        (AUTHOR_A.to_vec(), a2.to_vec(), 1),
+        (AUTHOR_B.to_vec(), b1.to_vec(), 5),
+    ];
+    both.sort();
+
+    for (clauses, mode, expected) in [
+        (
+            vec![
+                equal("postAuthor", Value::Identifier(AUTHOR_A)),
+                every_post.clone(),
+            ],
+            CountMode::GroupByRange,
+            a_posts
+                .iter()
+                .map(|(post, likes)| (None, post.clone(), *likes))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            vec![
+                WhereClause {
+                    field: "postAuthor".to_string(),
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![
+                        Value::Identifier(AUTHOR_A),
+                        Value::Identifier(AUTHOR_B),
+                    ]),
+                },
+                every_post.clone(),
+            ],
+            CountMode::GroupByCompound,
+            both.iter()
+                .map(|(author, post, likes)| (Some(author.clone()), post.clone(), *likes))
+                .collect(),
+        ),
+    ] {
+        let entries = match count(clauses.clone(), mode, false).expect("the range count executes") {
+            DocumentCountResponse::Entries(entries) => entries,
+            other => panic!("expected entries, got {other:?}"),
+        };
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (
+                    entry.in_key.clone(),
+                    entry.key.clone(),
+                    entry.count.unwrap_or(0)
+                ))
+                .collect::<Vec<_>>(),
+            expected,
+            "{mode:?}"
+        );
+        let proof = match count(clauses.clone(), mode, true).expect("the range count proves") {
+            DocumentCountResponse::Proof(proof) => proof,
+            other => panic!("expected a proof, got {other:?}"),
+        };
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &clauses,
+            &[],
+        )
+        .expect("the counter index answers the range count");
+        assert!(index.is_summable_off_count_index());
+        let (root_hash, verified) = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "like".to_string(),
+            index,
+            where_clauses: clauses,
+        }
+        .verify_distinct_count_proof(&proof, DEFAULT_QUERY_LIMIT, true, pv)
+        .expect("the range count proof verifies");
+        assert_live_root_hash(&drive, root_hash);
+        assert_eq!(verified, entries, "{mode:?}");
+    }
+
+    // The fixture ranks `postId`, an indexed tree grovedb sums no range over.
+    let a_range = vec![equal("postAuthor", Value::Identifier(AUTHOR_A)), every_post];
+    let refused = count(a_range, CountMode::Aggregate, false);
+    assert!(
+        matches!(refused, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+        "got {refused:?}"
+    );
+}
+
+/// Over a counter index that ranks no level, a range count's total is the
+/// range's likes: one total, and one per author across an `IN`, each proved.
+#[test]
+fn should_total_the_likes_of_a_range_of_posts_from_the_counters_sums() {
+    let (drive, contract) = setup_with(&["rankedSummable", "rankedAverageable"]);
+    liked_posts(&drive, &contract);
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name("like")
+        .expect("like doctype exists");
+    let drive_config = DriveConfig::default();
+    let count = |where_clauses: Vec<WhereClause>, mode: CountMode, prove: bool| {
+        drive.execute_document_count_request(
+            DocumentCountRequest {
+                contract: &contract,
+                document_type,
+                where_clauses,
+                resolved_time_ranges: vec![],
+                order_clauses: vec![],
+                mode,
+                limit: None,
+                prove,
+                drive_config: &drive_config,
+            },
+            None,
+            pv,
+        )
+    };
+    let counter_query = |where_clauses: &[WhereClause]| DriveDocumentCountQuery {
+        document_type,
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "like".to_string(),
+        index: DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            where_clauses,
+            &[],
+        )
+        .expect("the counter index answers the range count"),
+        where_clauses: where_clauses.to_vec(),
+    };
+    let every_post = WhereClause {
+        field: "postId".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::Identifier([0; 32]),
+    };
+
+    let a_range = vec![
+        equal("postAuthor", Value::Identifier(AUTHOR_A)),
+        every_post.clone(),
+    ];
+    match count(a_range.clone(), CountMode::Aggregate, false).expect("the range total executes") {
+        DocumentCountResponse::Aggregate(total) => assert_eq!(total, 4, "A's likes"),
+        other => panic!("expected an aggregate count, got {other:?}"),
+    }
+    let proof =
+        match count(a_range.clone(), CountMode::Aggregate, true).expect("the range total proves") {
+            DocumentCountResponse::Proof(proof) => proof,
+            other => panic!("expected a proof, got {other:?}"),
+        };
+    let (root_hash, total) = counter_query(&a_range)
+        .verify_aggregate_count_proof(&proof, pv)
+        .expect("the range total proof verifies");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(total, 4, "A's likes, proved");
+
+    let both_ranges = vec![
+        WhereClause {
+            field: "postAuthor".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Identifier(AUTHOR_A),
+                Value::Identifier(AUTHOR_B),
+            ]),
+        },
+        every_post,
+    ];
+    let proof = match count(both_ranges.clone(), CountMode::GroupByIn, true)
+        .expect("the per-author range totals prove")
+    {
+        DocumentCountResponse::Proof(proof) => proof,
+        other => panic!("expected a proof, got {other:?}"),
+    };
+    let (root_hash, per_author) = counter_query(&both_ranges)
+        .verify_carrier_aggregate_count_proof(&proof, None, true, pv)
+        .expect("the per-author range totals verify");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(
+        per_author,
+        vec![(AUTHOR_A.to_vec(), 4), (AUTHOR_B.to_vec(), 5)],
+        "each author's likes"
+    );
 }
 
 /// "Top creators by likes" and "most engaging creators" through the ranked

@@ -14,12 +14,15 @@ use crate::query::{index_admissible_for_query, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Whether a range count of `index` (grovedb's `AggregateCountOnRange` over
-/// its terminal tree) counts documents. On a `summableOffCountIndex` index it
-/// would count the counters, one per group, so such an index serves no range
-/// count.
+/// Whether a range count of `index` reads documents: a `rangeCountable`
+/// index's terminal tree counts them (grovedb's `AggregateCountOnRange`), and
+/// a `summableOffCountIndex` index's range sums do
+/// ([`DriveDocumentCountQuery::counter_sums_query`]; its count trees would
+/// count the counters, one per group). Such an index is always
+/// `rangeSummable`.
 fn range_count_reads_documents(index: &Index) -> bool {
-    index.countable.is_countable() && !index.is_summable_off_count_index()
+    (index.range_countable && index.countable.is_countable())
+        || (index.is_summable_off_count_index() && index.range_summable)
 }
 
 impl DriveDocumentCountQuery<'_> {
@@ -206,8 +209,8 @@ impl DriveDocumentCountQuery<'_> {
     ///   that is the *last* property of the index (the IndexLevel
     ///   terminator). This is the property whose values get walked.
     /// - The index has `range_countable = true` and `countable.is_countable()`,
-    ///   and is not a `summableOffCountIndex` index, whose range walk would
-    ///   count its counters (groups), not documents.
+    ///   or is a `summableOffCountIndex` index, read through its range sums
+    ///   ([`Self::counter_sums_query`]) since its count trees count groups.
     ///
     /// Returns `None` if no such index exists or if there's more than one
     /// range operator in the where clauses (which would require nested range
@@ -288,7 +291,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !range_count_reads_documents(index) {
+            if !range_count_reads_documents(index) {
                 continue;
             }
 

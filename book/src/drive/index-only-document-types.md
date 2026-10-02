@@ -499,8 +499,7 @@ after:  byAuthorPost → postAuthor → <author> → postId → <post> = SumItem
 ```
 
 The tree of the last property is a count-and-sum tree (`rangeSummable`,
-plus `rangeCountable` for the group count an average divides by; a range
-count over the counters is refused, as it would count groups), so each
+plus `rangeCountable` for the group count an average divides by), so each
 counter counts one group and adds its value to the sum. Every level above reads groups as the count
 and the source's entries as the sum. A level a `{ "at": ... }` ranking
 names, and every level between it and the counters, carries those totals
@@ -540,8 +539,14 @@ sum query names the source index (`sum(byPost)`), a count query takes a
 counter's sum (its group's documents) where another index's read takes a
 count (a ranked or `HAVING` count walks the Sum secondaries, and its
 entries come back as counts), and a point query may stop at a level
-carrying the sums, reading that value tree's element. A range count is refused: grovedb's range count
-over the counters would count them, one per group.
+carrying the sums, reading that value tree's element. A range count reads
+the range sums (`DriveDocumentCountQuery::counter_sums_query`): every range
+count executor and verifier hands the same index and clauses to the sum
+surface's counterpart, summing the source index, and reads the sums back as
+counts, since grovedb's range count over the counters would count them, one
+per group. A range total over an index that ranks its last property is
+refused with a hint to group by it: that tree is indexed, and grovedb's
+`AggregateSumOnRange` reads only provable sum trees.
 
 ## What it costs and what it saves
 

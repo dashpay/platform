@@ -21,6 +21,8 @@
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 
 use super::conditions::WhereClause;
+use super::drive_document_sum_query::{DriveDocumentSumQuery, SumEntry};
+use crate::error::Error;
 
 // Re-exports for the submodules and the `tests` module's
 // `use super::*;`. `WhereOperator` is used by every submodule that
@@ -197,10 +199,51 @@ pub fn point_lookup_count_entries(
 /// meta-schema v3 (protocol version 14) admits.
 pub fn document_count_of_element(index: &Index, element: &grovedb::Element) -> u64 {
     if index.is_summable_off_count_index() {
-        // A counter is never negative: it counts entries.
-        u64::try_from(element.sum_value_or_default()).unwrap_or_default()
+        counter_sum_as_document_count(element.sum_value_or_default())
     } else {
         element.count_value_or_default()
+    }
+}
+
+/// A `summableOffCountIndex` index's sum read as a document count. A
+/// counter is never negative: it counts entries.
+pub fn counter_sum_as_document_count(sum: i64) -> u64 {
+    u64::try_from(sum).unwrap_or_default()
+}
+
+/// A sum entry read through [`DriveDocumentCountQuery::counter_sums_query`],
+/// as the count entry it stands for.
+pub fn counter_sum_entry_as_count_entry(entry: SumEntry) -> SplitCountEntry {
+    SplitCountEntry {
+        in_key: entry.in_key,
+        key: entry.key,
+        count: entry.sum.map(counter_sum_as_document_count),
+    }
+}
+
+impl<'a> DriveDocumentCountQuery<'a> {
+    /// The sum query a range count over a `summableOffCountIndex` index
+    /// reads in its place. Its counters each count one group in its count
+    /// trees, so a range count over them would count groups, while their
+    /// sums are its document counts: the sum of the source index's entries
+    /// (the summed value the index names) over the same index and clauses.
+    /// The count's range forms (aggregate, per value, per `In` branch) and
+    /// their proofs are then the sum surface's, read back as counts. `None`
+    /// on any other index.
+    ///
+    /// Unversioned, so every protocol version reaches it: it is `Some` only
+    /// on a `summableOffCountIndex` index, which only meta-schema v3
+    /// (protocol version 14) admits.
+    pub fn counter_sums_query(&self) -> Option<DriveDocumentSumQuery<'a>> {
+        let source = self.index.summable_off_count_index.as_ref()?;
+        Some(DriveDocumentSumQuery {
+            document_type: self.document_type,
+            contract_id: self.contract_id,
+            document_type_name: self.document_type_name.clone(),
+            index: self.index,
+            where_clauses: self.where_clauses.clone(),
+            sum_property: source.clone(),
+        })
     }
 }
 
@@ -248,9 +291,35 @@ pub(crate) fn point_count_reads_documents(index: &Index) -> bool {
 pub(crate) fn prefix_to_last_count_reads_documents(index: &Index) -> bool {
     let terminal_reads_documents = (index.range_countable && index.countable.is_countable())
         || index.is_summable_off_count_index();
-    let terminal_ranked =
-        index.ranked_countable || index.ranked_summable || index.ranked_averageable;
-    terminal_reads_documents && !terminal_ranked
+    terminal_reads_documents && !ranks_its_last_property(index)
+}
+
+/// Whether `index` ranks its last property, making that property's tree an
+/// indexed tree.
+fn ranks_its_last_property(index: &Index) -> bool {
+    index.ranked_countable || index.ranked_summable || index.ranked_averageable
+}
+
+/// Refuses a range total (one count, or one per `In` branch) over a
+/// `summableOffCountIndex` index that ranks its last property: that
+/// property's tree is then an indexed tree, and grovedb sums a range only
+/// over a provable sum tree (`AggregateSumOnRange`). Grouped by the last
+/// property, the same range reads each value's count.
+pub(crate) fn refuse_a_counter_range_total_over_a_ranked_tree(index: &Index) -> Result<(), Error> {
+    if index.is_summable_off_count_index() && ranks_its_last_property(index) {
+        let last = index
+            .properties
+            .last()
+            .map(|property| property.name.as_str())
+            .unwrap_or_default();
+        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "a range count total over the summableOffCountIndex index `{}` is not available: \
+             it ranks its last property `{last}`, and a range total is read only over an \
+             unranked one; group by `{last}` to count each value in the range",
+            index.name
+        ))));
+    }
+    Ok(())
 }
 
 /// An entry in a split count result, containing the serialized
