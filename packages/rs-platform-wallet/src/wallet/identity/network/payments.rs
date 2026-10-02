@@ -4263,6 +4263,23 @@ mod tests {
         Arc<crate::wallet::PlatformWallet>,
         WalletId,
     ) {
+        recreate_on_host_at(backfill, 1_000, None).await
+    }
+
+    /// [`recreate_on_host`] with the host row at `host_cursor`, and
+    /// optionally a `DurableCursors` entry already under the wallet's id
+    /// before the registration — what a same-id predecessor's commit,
+    /// accepted after the registration read its snapshot, leaves behind.
+    async fn recreate_on_host_at(
+        backfill: crate::changeset::DashPayBackfillRecord,
+        host_cursor: u32,
+        leftover_entry: Option<crate::changeset::DurableCursor>,
+    ) -> (
+        Arc<PlatformWalletManager<ReloadPersister>>,
+        Arc<ReloadPersister>,
+        Arc<crate::wallet::PlatformWallet>,
+        WalletId,
+    ) {
         let (donor, _donor_persister, wallet_id) = make_wallet().await;
         let (wallet, mut managed) = {
             let wm = donor.wallet_manager.read().await;
@@ -4274,7 +4291,7 @@ mod tests {
                     .clone(),
             )
         };
-        managed.metadata.synced_height = 1_000;
+        managed.metadata.synced_height = host_cursor;
         let host = Arc::new(ReloadPersister {
             wallet,
             managed,
@@ -4285,6 +4302,13 @@ mod tests {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
         let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
+        if let Some(entry) = leftover_entry {
+            manager
+                .durable_cursors
+                .lock()
+                .await
+                .insert(wallet_id, entry);
+        }
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
@@ -4398,35 +4422,55 @@ mod tests {
         );
     }
 
-    /// Recreating a wallet keeps the host's backfill record instead of
-    /// starting from an empty one that re-arms every covered contact. With
-    /// every contact covered there is no contact to handle, yet the reset the
-    /// recreation owes must still reach the host: the reconcile runs a
-    /// record-only round for the debt instead of returning early, keeping
-    /// the carried coverage (dashpay/platform#4302 review).
+    /// Coverage for a receival account the recreated wallet does not hold is
+    /// not coverage: the successor's scan does not watch that account's
+    /// scripts, and the account-generation guard only stops batches still in
+    /// flight, not an advance already committed. So recreation keeps the
+    /// host's record only for the accounts it holds — none, from the seed —
+    /// and the account is rewound for when it is registered, even though the
+    /// host's record said it was covered (dashpay/platform#4302 review).
     #[tokio::test]
-    async fn a_recreated_wallet_keeps_the_hosts_record_and_still_pays_its_owed_cursor() {
+    async fn a_recreated_wallet_rearms_coverage_for_receival_accounts_it_does_not_hold() {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
         let mut host_record = crate::changeset::DashPayBackfillRecord::default();
         host_record.record_pass(900, Some(200), [(owner, contact, 0, 200)]);
-        let (manager, host, recreated, wallet_id) = recreate_on_host(host_record.clone()).await;
+        let (manager, host, recreated, wallet_id) = recreate_on_host(host_record).await;
         {
             let wm = manager.wallet_manager.read().await;
             let record = &wm
                 .get_wallet_info(&wallet_id)
                 .expect("info")
                 .dashpay_backfill;
-            assert_eq!(
-                record.covered, host_record.covered,
-                "the host's coverage is kept"
+            assert!(
+                record.is_empty(),
+                "no receival account is held, so nothing is covered"
             );
-            assert_eq!((record.floor, record.rewound_from), (200, 900));
+            assert!(!record.has_extent());
             assert_eq!(record.unpersisted_cursor, Some(100));
         }
 
-        establish_on_recreated(&manager, &host, &recreated, owner, contact, 200).await;
+        // The successor scans 101..1500 before the account exists, and the
+        // host accepts that advance (which also pays the owed 100).
+        {
+            let mut durable = manager.durable_cursors.lock().await;
+            let mut wm = manager.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .core_wallet
+                .update_synced_height(1_500);
+            durable.insert(
+                wallet_id,
+                crate::changeset::DurableCursor {
+                    height: 1_500,
+                    advance_epoch: Some(0),
+                },
+            );
+        }
         host.stores.lock().unwrap().clear();
+        establish_on_recreated(&manager, &host, &recreated, owner, contact, 200).await;
         assert_eq!(
             recreated
                 .identity()
@@ -4434,21 +4478,106 @@ mod tests {
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("reconcile"),
-            None,
-            "the contact is covered by the carried record: no rewind"
+            Some(200),
+            "101..1500 was scanned without the account: the old coverage must not suppress this"
         );
         let stores = host.stores.lock().unwrap();
-        let round = last_stored_record(&stores).expect("a record-only round pays the debt");
-        let core = round.core.as_ref().expect("carrying the owed cursor");
-        assert_eq!(core.synced_height, Some(100));
+        let round = last_stored_record(&stores).expect("the rewind is recorded");
+        let core = round.core.as_ref().expect("the rewind rides the round");
+        assert_eq!(core.synced_height, Some(200));
         assert!(core.synced_height_is_rewind);
+    }
+
+    /// The host snapshot a registration reads comes before it takes the
+    /// durable-cursor lock, and a same-id predecessor still registered then
+    /// can have a commit accepted in between. Under the lock the entry that
+    /// commit left is what the host holds now, so it wins over the snapshot:
+    /// the seed is 1000, not the snapshot's 100, and the built cursor is owed
+    /// against it (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_recreated_wallet_seeds_from_the_cursor_a_predecessor_left_not_the_snapshot() {
+        let (manager, _host, _recreated, wallet_id) = recreate_on_host_at(
+            Default::default(),
+            100,
+            Some(crate::changeset::DurableCursor {
+                height: 1_000,
+                advance_epoch: Some(2),
+            }),
+        )
+        .await;
         assert_eq!(
-            round
+            manager
+                .durable_cursors
+                .lock()
+                .await
+                .get(&wallet_id)
+                .map(|cursor| cursor.height),
+            Some(1_000),
+            "the predecessor's accepted commit, not the stale snapshot"
+        );
+        let wm = manager.wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("info")
                 .dashpay_backfill
-                .as_ref()
-                .unwrap()
-                .covered_from(&owner, &contact, 0),
-            Some(200)
+                .unpersisted_cursor,
+            Some(100),
+            "the built cursor is owed against the host's real cursor"
+        );
+    }
+
+    /// With no host row for the wallet, the host holds nothing: an entry a
+    /// removed wallet left under the id is stale and is discarded, and the
+    /// wallet seeds from its built cursor with nothing owed.
+    #[tokio::test]
+    async fn a_leftover_cursor_entry_without_a_host_row_is_discarded() {
+        let (donor, _, wallet_id) = make_wallet().await;
+        drop(donor);
+        let persister = Arc::new(RecordingPersister::default()); // `load` returns no rows
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        manager.durable_cursors.lock().await.insert(
+            wallet_id,
+            crate::changeset::DurableCursor {
+                height: 1_000,
+                advance_epoch: Some(2),
+            },
+        );
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(101),
+            )
+            .await
+            .expect("create");
+        assert_eq!(wallet.wallet_id(), wallet_id);
+        assert_eq!(
+            manager
+                .durable_cursors
+                .lock()
+                .await
+                .get(&wallet_id)
+                .copied(),
+            Some(crate::changeset::DurableCursor::at(100)),
+            "seeded from the built cursor, the stale entry gone"
+        );
+        let wm = manager.wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("info")
+                .dashpay_backfill
+                .unpersisted_cursor,
+            None
         );
     }
 

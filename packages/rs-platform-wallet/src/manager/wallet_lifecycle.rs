@@ -19,6 +19,7 @@ use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
+use dpp::prelude::Identifier;
 
 use super::PlatformWalletManager;
 
@@ -418,9 +419,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // The same read also yields what the host holds for every persisted
         // wallet: a registration that recreates a wallet the host already has
         // must measure durable writes against the host's cursor, not the one
-        // it just built, and must keep the host's DashPay backfill record
-        // rather than start from an empty one that re-arms every covered
-        // contact (see the seed below).
+        // it just built, and keeps the host's DashPay backfill record for the
+        // receival accounts it holds (see the seed below).
         let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
         let (mut persisted_platform_addresses, mut host_wallets) =
             match super::run_blocking_load(move || load_persister.load()).await {
@@ -470,19 +470,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // The insert makes the wallet visible to the scanner and the event
         // adapter; seeding after it would let an adapter commit or a
         // reconcile record a newer durable height first, only for the seed to
-        // overwrite it with the creation one. An entry a removed or
-        // rolled-back registration left behind is overwritten here the same
-        // way, so it is never read against a live wallet.
+        // overwrite it with the creation one.
         //
         // A registration can recreate a wallet the host already holds (the
         // same seed added again on a fresh manager). The host keeps that
         // row's cursor — registration writes no core cursor, and a host
         // preserves `syncedHeight` on the metadata upsert — so the seed is
-        // the host's cursor, not the freshly built one. When the built cursor
-        // is lower, the wallet is in effect reset in memory only: that
-        // reset is owed to the host like any other, and the next DashPay
-        // backfill record round carries it, so coverage never reaches disk
-        // beside the host's higher cursor (dashpay/platform#4302 review).
+        // the host's cursor, not the freshly built one. The snapshot above
+        // was read before this lock, and a same-id predecessor still
+        // registered then may have had a commit accepted since: the entry
+        // that commit left in `DurableCursors` is what the host holds now,
+        // so it wins over the snapshot. With no host row at all the host
+        // holds nothing, and a leftover entry is discarded. When the built
+        // cursor is lower than the host's, the wallet is in effect reset in
+        // memory only: that reset is owed to the host like any other, and
+        // the next DashPay backfill record round carries it, so coverage
+        // never reaches disk beside the host's higher cursor
+        // (dashpay/platform#4302 review).
+        //
+        // The host's record is kept only for the receival accounts the
+        // recreated wallet actually holds — none, when it is built from the
+        // seed. Coverage for an account that is absent while this wallet
+        // scans is not coverage: the scan does not watch the account's
+        // scripts, and the account-generation guard only stops batches still
+        // in flight, not an advance already committed. Those accounts re-arm
+        // when they are registered, at the cost of one more backfill.
         let created_cursor = platform_info.core_wallet.metadata.synced_height;
         let wallet_id = {
             let mut durable_cursors = self.durable_cursors.lock().await;
@@ -496,14 +508,47 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         other
                     )),
                 })?;
-            let (host_cursor, host_backfill) = host_wallets
-                .remove(&wallet_id)
-                .unwrap_or((created_cursor, Default::default()));
+            let (host_cursor, host_backfill) = match host_wallets.remove(&wallet_id) {
+                Some((snapshot_cursor, record)) => (
+                    durable_cursors
+                        .get(&wallet_id)
+                        .map_or(snapshot_cursor, |entry| entry.height),
+                    record,
+                ),
+                None => {
+                    durable_cursors.remove(&wallet_id);
+                    (created_cursor, Default::default())
+                }
+            };
             if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
-                // The host's record vouches for `[covered_from, host_cursor]`
-                // per account; the recreated wallet scans from no higher than
-                // that, so the coverage stays true.
-                info.dashpay_backfill = host_backfill;
+                let held: Vec<(Identifier, Identifier, u32)> = info
+                    .core_wallet
+                    .accounts
+                    .dashpay_receival_accounts
+                    .keys()
+                    .map(|key| {
+                        (
+                            Identifier::from(key.user_identity_id),
+                            Identifier::from(key.friend_identity_id),
+                            key.index,
+                        )
+                    })
+                    .collect();
+                let mut record = host_backfill;
+                let dropped = record
+                    .retain(|owner, contact, index| held.contains(&(*owner, *contact, index)));
+                if dropped && record.is_empty() {
+                    record = Default::default();
+                }
+                if dropped {
+                    tracing::info!(
+                        wallet_id = %hex::encode(wallet_id),
+                        kept = record.covered.len(),
+                        "wallet recreated: DashPay backfill coverage for receival accounts it \
+                         does not hold is re-armed"
+                    );
+                }
+                info.dashpay_backfill = record;
                 if created_cursor < host_cursor {
                     // Owed from this wallet's first epoch: any advance the
                     // host accepts from its own scan pays it.
@@ -1308,12 +1353,16 @@ mod register_wallet_duplicate_tests {
         );
     }
 
-    /// Removing a wallet keeps its rewind barrier's in-flight state, and a
-    /// same-id registration inherits it in the critical section that
-    /// publishes it, so advances the removed wallet emitted cannot be stored
-    /// against its successor (dashpay/platform#4302 review).
+    /// Removing a wallet keeps its rewind barrier's state, and a same-id
+    /// registration inherits it in the critical section that publishes it:
+    /// advances the removed wallet emitted cannot be stored against its
+    /// successor, and the successor's account generation starts past the
+    /// predecessor's, so no filter batch scanned against the predecessor's
+    /// account set is certified for it (dashpay/platform#4302 review).
     #[tokio::test]
     async fn a_same_id_registration_inherits_the_removed_wallets_barrier() {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
         let manager = make_manager();
         let network = Network::Testnet;
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
@@ -1332,32 +1381,42 @@ mod register_wallet_duplicate_tests {
             .await
             .expect("first create")
             .wallet_id();
-        {
-            // Three advances emitted and not yet drained by the adapter.
+        let predecessor_generation = {
+            // Three advances emitted and not yet drained by the adapter, and
+            // a receival account registered.
             let mut wm = manager.wallet_manager.write().await;
-            let barrier = &mut wm
-                .get_wallet_info_mut(&wallet_id)
-                .expect("info")
-                .rewind_barrier;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
             for _ in 0..3 {
-                barrier.note_emitted();
+                info.rewind_barrier.note_emitted();
             }
-            barrier.arm();
-        }
+            info.rewind_barrier.arm();
+            info.rewind_barrier.note_account_registered();
+            WalletInfoInterface::account_generation(info)
+        };
         manager.remove_wallet(&wallet_id).await.expect("remove");
+        assert_eq!(
+            manager.durable_cursors.retired()[&wallet_id].in_flight,
+            3,
+            "removal retires the barrier under the id"
+        );
 
         create(Arc::clone(&manager)).await.expect("second create");
+        assert!(
+            manager.durable_cursors.retired().get(&wallet_id).is_none(),
+            "the successor took the retired state over"
+        );
         let wm = manager.wallet_manager.read().await;
-        let (in_flight, epoch) = wm
-            .get_wallet_info(&wallet_id)
-            .expect("published")
-            .rewind_barrier
-            .retire();
+        let info = wm.get_wallet_info(&wallet_id).expect("published");
+        let retired = info.rewind_barrier.retire(0);
         assert_eq!(
-            in_flight, 3,
+            retired.in_flight, 3,
             "the predecessor's queued advances are carried"
         );
-        assert!(epoch > 1, "the epoch moves past the predecessor's");
+        assert!(retired.epoch > 1, "the epoch moves past the predecessor's");
+        assert!(
+            WalletInfoInterface::account_generation(info) > predecessor_generation,
+            "the successor's account generation starts past the predecessor's"
+        );
     }
 
     /// The durable cursor is seeded in the critical section that publishes

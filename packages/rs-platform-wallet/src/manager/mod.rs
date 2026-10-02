@@ -445,11 +445,6 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// the wallet-event adapter and the DashPay rescan reconcile — the lock
     /// that orders their cursor writes. See [`DurableCursors`].
     pub(super) durable_cursors: DurableCursors,
-    /// The [`RewindBarrier`](crate::changeset::core_bridge::RewindBarrier)
-    /// state of removed wallets, keyed by id, for a successor registered
-    /// under the same id to inherit: the shared event adapter can still hold
-    /// advances the removed wallet emitted (dashpay/platform#4302 review).
-    pub(super) retired_barriers: std::sync::Mutex<std::collections::BTreeMap<WalletId, (u64, u64)>>,
     /// Per-WALLET in-broadcast fence maps, handed to every
     /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) registered
     /// under each id.
@@ -621,28 +616,32 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             registry,
             sync_fault,
             durable_cursors,
-            retired_barriers: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         }
     }
 
     /// Remove `wallet_id` from the inner manager, keeping its rewind
-    /// barrier's in-flight state for a successor registered under the same
-    /// id (see [`Self::inherit_rewind_barrier`]).
+    /// barrier's state under the id in the shared [`DurableCursors`] for a
+    /// successor registered under the same id (see
+    /// [`Self::inherit_rewind_barrier`]) — and for the adapter, which drops
+    /// the removed wallet's advances while nothing holds the id and counts
+    /// them off this state as it does. Called under the manager write lock,
+    /// which is what makes the hand-off atomic against the adapter.
     pub(super) fn remove_from_wallet_manager(
         &self,
         wm: &mut WalletManager<PlatformWalletInfo>,
         wallet_id: &WalletId,
     ) -> Result<(), key_wallet_manager::WalletError> {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         let (_, info) = wm.remove_wallet(wallet_id)?;
-        let (in_flight, epoch) = info.rewind_barrier.retire();
-        let mut retired = self
-            .retired_barriers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let entry = retired.entry(*wallet_id).or_insert((0, 0));
-        entry.0 = entry.0.saturating_add(in_flight);
-        entry.1 = entry.1.max(epoch);
+        let retiring = info
+            .rewind_barrier
+            .retire(WalletInfoInterface::account_generation(&info));
+        let mut retired = self.durable_cursors.retired();
+        let entry = retired.entry(*wallet_id).or_default();
+        entry.in_flight = entry.in_flight.saturating_add(retiring.in_flight);
+        entry.epoch = entry.epoch.max(retiring.epoch);
+        entry.account_generation = entry.account_generation.max(retiring.account_generation);
         Ok(())
     }
 
@@ -656,11 +655,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wm: &mut WalletManager<PlatformWalletInfo>,
         wallet_id: &WalletId,
     ) {
-        let retired = self
-            .retired_barriers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(wallet_id);
+        let retired = self.durable_cursors.retired().remove(wallet_id);
         if let (Some(retired), Some(info)) = (retired, wm.get_wallet_info_mut(wallet_id)) {
             info.rewind_barrier.inherit(retired);
         }

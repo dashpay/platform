@@ -156,10 +156,16 @@ impl WalletInfoInterface for PlatformWalletInfo {
     /// platform wallet — so a batch in flight across a contact-account
     /// registration could certify coverage the DashPay backfill record then
     /// vouched for (dashpay/platform#4302 review).
+    ///
+    /// Also offset past a removed same-id predecessor's final generation
+    /// (see `RewindBarrier::inherit`): both counters restart with the wallet,
+    /// so without the offset a batch reconciled against the predecessor's
+    /// account set could match this wallet's generation and be certified.
     fn account_generation(&self) -> u64 {
         self.core_wallet
             .account_generation()
             .wrapping_add(self.rewind_barrier.account_registrations())
+            .wrapping_add(self.rewind_barrier.generation_base())
     }
 
     fn synced_height(&self) -> CoreBlockHeight {

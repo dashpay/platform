@@ -279,8 +279,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // event adapter; seeding after it would let an adapter commit or
             // a reconcile record a newer durable height first, and the seed
             // would then overwrite it with the stale loaded one. An entry a
-            // removed or rolled-back registration left behind is overwritten
-            // here the same way, so it is never read against a live wallet.
+            // removed same-id predecessor left behind is what the host holds
+            // now — a commit of its may have been accepted after the start
+            // state was read — so it wins over the loaded cursor.
             {
                 let mut durable_cursors = self.durable_cursors.lock().await;
                 let mut wm = self.wallet_manager.write().await;
@@ -294,10 +295,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     )));
                     break 'load;
                 }
-                durable_cursors.insert(
-                    wallet_id,
-                    crate::changeset::DurableCursor::at(loaded_cursor),
-                );
+                durable_cursors
+                    .entry(wallet_id)
+                    .or_insert(crate::changeset::DurableCursor::at(loaded_cursor));
                 self.inherit_rewind_barrier(&mut wm, &wallet_id);
             }
             inserted_in_manager.push(wallet_id);
