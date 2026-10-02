@@ -6,7 +6,7 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
-    validate_property_constraint_aggregates,
+    validate_property_constraint_aggregates, validate_summable_off_count_indexes_lossless,
 };
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
@@ -113,6 +113,10 @@ impl DocumentType {
         // of the referenced document, a type a document type's parse can not see. Inert
         // before 14: only parser generation 3 admits `preallocated` and `moderatedDocument`.
         validate_preallocated_indexes_kept_on_removal(&contract_document_types)?;
+        // A summableOffCountIndex index is lossless only if the referenced values fixing its groups
+        // never change, and stay on record through a moderator's removal: judged with the
+        // referenced types, which a document type's parse can not see.
+        validate_summable_off_count_indexes_lossless(&contract_document_types)?;
 
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {

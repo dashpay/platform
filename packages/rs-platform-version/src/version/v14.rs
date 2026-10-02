@@ -1877,6 +1877,31 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     small enough that the sums stay in `i64`, which they do short of 2^36
 ///     documents. A stored contract still parses.
 ///
+/// 72. **An index that counts another index's entries
+///     (`summableOffCountIndex`)**: an index keyword of meta-schema v3 and
+///     parser generation 3, in place (`Index::summable_off_count_index`,
+///     `IndexLevelTypeInfo::summable_off_count_index`), admitted only on an
+///     indexOnly type with `rangeSummable`, naming a source index of the type
+///     that holds every document once; its other properties must be fixed by
+///     the source through unchanging `where` values of same-contract
+///     `permanentDocument` or `moderatedDocument` references
+///     (`validate_summable_off_count_indexes_lossless`), and one summed value
+///     per type is kept. Such an index keeps one `Element::SumItem` per group
+///     in place of a value tree and entries: the index walkers (insert and
+///     delete index level 2) and preallocation move it by one per document,
+///     and document create state validation 1, document index-only delete
+///     state validation 0, the within-batch collision tracker and the proof
+///     index never use it. `rankedSummable` and `rankedAverageable` gain the
+///     `{ "at": ... }` form on such an index only, stamped on the index
+///     levels (`IndexLevel::ranked_sum_grouping`, `ranked_average_grouping`,
+///     `sum_propagating`) and laid out by Drive as count-and-sum chains
+///     (`property_name_tree_type_and_ranked_axes_for_level`,
+///     `ranked_chain_value_tree_type`). Sum, average and ranked queries name
+///     the source index for the summed value. Needs grovedb's `GROVE_V4`,
+///     which admits a bare `SumItem` under a
+///     `ProvableCountProvableSumIndexedTree`. Inert for every contract without
+///     the keyword, which every earlier grammar refuses.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

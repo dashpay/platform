@@ -251,6 +251,10 @@ pub(super) struct ParserGeneration {
     /// (conditional-participation indexOnly indexes). Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
     pub admit_index_skip_if_absent: bool,
+    /// Whether the index grammar admits the `summableOffCountIndex` keyword (summableOffCountIndex
+    /// indexOnly indexes). Forwarded to [`Index::try_from_value_map`] exactly
+    /// like the admissions above.
+    pub admit_index_summable_off_count_index: bool,
     /// Whether `rangeCountable: true` promotes an omitted `countable` to
     /// `"countable"` (generation 3 and later), as the doctype-level
     /// `rangeCountable` has always implied `documentsCountable`. Forwarded to
@@ -924,6 +928,9 @@ fn parse_indices(
                             preallocated: ctx.generation.admit_index_preallocated,
                             outlives_delete: ctx.generation.admit_index_outlives_delete,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
+                            summable_off_count_index: ctx
+                                .generation
+                                .admit_index_summable_off_count_index,
                             range_countable_implies_countable: ctx
                                 .generation
                                 .admit_range_countable_implies_countable,
@@ -1317,11 +1324,13 @@ fn parse_indices(
     // query planner, the update-immutability comparison) reading one
     // canonical spelling: both spellings of the same index parse to equal
     // `Index` values. `apply_index_only` then validates the normalized set.
+    // A summableOffCountIndex index (`summableOffCountIndex`) keeps no entries and so has no member
+    // key: it stays without a terminal.
     let mut indices = indices;
     if ctx.index_only {
         use crate::document::property_names::OWNER_ID;
         for index in indices.values_mut() {
-            if index.terminal.is_none() {
+            if index.terminal.is_none() && !index.is_summable_off_count_index() {
                 index.terminal = Some(vec![OWNER_ID.to_string()]);
             }
         }
@@ -3339,6 +3348,130 @@ pub(super) fn apply_immutable_fields(
     Ok(())
 }
 
+/// The `summableOffCountIndex` rules an indexOnly document type checks, for one summableOffCountIndex
+/// index: the reason it is refused, or `None`.
+///
+/// - The source is another index of the type that holds every document
+///   exactly once: it keeps entries (it is not a summableOffCountIndex index itself), skips no
+///   document, outlives no delete and involves no `$createdAt` (no window
+///   fans a document out).
+/// - Every source property is a property of the summableOffCountIndex index, so a group
+///   here never merges several source groups.
+/// - Every other property is fixed by the source: a referring value of a
+///   `where` on a same-contract `permanentDocument` or `moderatedDocument`
+///   reference a source property holds ([`Index::count_index_derivations`]), so
+///   a source group never spreads over several groups here.
+/// - No other index continues below the summableOffCountIndex index's last property:
+///   that value position holds the group's counter, not a tree.
+fn summable_off_count_index_error(
+    index_name: &str,
+    index: &Index,
+    source_name: &str,
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Option<String> {
+    let prefix = format!(
+        "summableOffCountIndex index \"{index_name}\" on indexOnly document type \"{document_type_name}\""
+    );
+    let Some(source) = document_type.indices.get(source_name) else {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is not an index of the \
+             document type"
+        ));
+    };
+    if source.is_summable_off_count_index() {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is a summableOffCountIndex index itself and \
+             keeps no entries"
+        ));
+    }
+    // One summed value per document type, as for property sums: sum queries
+    // name it, and they name this one by the source index.
+    if let Some((other_name, other_property)) = document_type
+        .indices
+        .iter()
+        .find_map(|(other_name, other)| Some((other_name, other.summable.as_deref()?)))
+    {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which must be the only sum of the \
+             document type, but index \"{other_name}\" sums \"{other_property}\""
+        ));
+    }
+    if let Some((other_name, other_source)) =
+        document_type
+            .indices
+            .iter()
+            .find_map(|(other_name, other)| {
+                other
+                    .summable_off_count_index
+                    .as_deref()
+                    .filter(|other_source| *other_source != source_name)
+                    .map(|other_source| (other_name, other_source))
+            })
+    {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", but index \"{other_name}\" sums the \
+             count of \"{other_source}\": a document type keeps one summed value, which sum \
+             queries name"
+        ));
+    }
+    if document_type.flattened_properties.contains_key(source_name) {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is also a property of the \
+             document type: sum queries name the source index for the summed value, so it must \
+             not share its name with a property"
+        ));
+    }
+    if source.skip_if_absent || source.outlives_delete || source.involves(CREATED_AT) {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which must hold every document \
+             exactly once: it may not skip documents (skipIfAbsent), keep the entries of deleted \
+             ones (outlivesDelete) or involve $createdAt"
+        ));
+    }
+    if let Some(missing) = source.properties.iter().find(|source_property| {
+        !index
+            .properties
+            .iter()
+            .any(|property| property.name == source_property.name)
+    }) {
+        return Some(format!(
+            "{prefix} lacks \"{}\", a property of its source \"{source_name}\": every source \
+             property must be a property of the summableOffCountIndex index, or one of its groups would \
+             count several source groups",
+            missing.name
+        ));
+    }
+    if let Err(property) = index.count_index_derivations(
+        source,
+        &document_type.flattened_properties,
+        document_type.data_contract_id,
+    ) {
+        return Some(format!(
+            "{prefix} has \"{property}\", which is neither a property of its source \
+             \"{source_name}\" nor fixed by it: it must be a referring value of a `where` on a \
+             same-contract permanentDocument or moderatedDocument reference held by a property \
+             of \"{source_name}\", or one source group would spread over several groups"
+        ));
+    }
+    let depth = index.properties.len();
+    if let Some((other_name, _)) = document_type.indices.iter().find(|(_, other)| {
+        other.properties.len() > depth
+            && other
+                .properties
+                .iter()
+                .zip(index.properties.iter())
+                .all(|(other_property, property)| other_property.name == property.name)
+    }) {
+        return Some(format!(
+            "{prefix} is continued by index \"{other_name}\", which lists its properties first: \
+             the value position of a summableOffCountIndex index's last property holds the group's \
+             counter, so no other index can continue below it"
+        ));
+    }
+    None
+}
+
 /// The `skipIfAbsent` rules every document type shares, for one index that
 /// declares the keyword: the reason it is refused, or `None`.
 ///
@@ -3401,7 +3534,12 @@ fn skip_if_absent_index_error(
         .rev()
         .find(|(_, property)| index.skip_if_absent_properties.contains(&property.name));
     if let Some((deepest_skip_position, deepest_skip_property)) = deepest_skip {
-        for ranked_at in index.ranked_countable_at.iter() {
+        for ranked_at in index
+            .ranked_countable_at
+            .iter()
+            .chain(index.ranked_summable_at.iter())
+            .chain(index.ranked_averageable_at.iter())
+        {
             let above = index
                 .properties
                 .iter()
@@ -3516,6 +3654,20 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // And for `summableOffCountIndex`: a stored type's index entries are references to
+        // stored rows, whose count its own count trees already keep.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.is_summable_off_count_index())
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" declares `summableOffCountIndex`, which is only \
+                 allowed on indexOnly document types (set `indexOnly: true` on the document \
+                 type, or remove the keyword)",
+                index_name, name,
+            )));
+        }
         // And for `outlivesDelete`: a stored document is deleted by id, its
         // stored row saying where each of its entries is, so a delete never
         // lacks a value to find one by.
@@ -3586,6 +3738,8 @@ pub(super) fn apply_index_only(
             {
                 let last = position + 1 == index.properties.len();
                 let ranks_here = index.ranked_countable_at.contains(&skip_property.name)
+                    || index.ranked_summable_at.contains(&skip_property.name)
+                    || index.ranked_averageable_at.contains(&skip_property.name)
                     || (last
                         && (index.ranked_countable
                             || index.ranked_summable
@@ -3914,11 +4068,13 @@ pub(super) fn apply_index_only(
         // (canonical property, i64-safe integer type, `required`
         // membership) run for every doctype, indexOnly included.
 
-        // `parse_indices` gives every index of an indexOnly type a terminal,
-        // and the index parser refuses an empty one, so a contract cannot get
-        // here: this is the parser failing, not the contract.
+        // `parse_indices` gives every index of an indexOnly type but a
+        // summableOffCountIndex one a terminal, and the index parser refuses an empty
+        // one, so a contract cannot get here: this is the parser failing, not
+        // the contract. A summableOffCountIndex index keeps no entries, so it has no
+        // member key to check.
         let components = index.terminal_components();
-        if components.is_empty() {
+        if components.is_empty() && !index.is_summable_off_count_index() {
             return Err(ProtocolError::CorruptedCodeExecution(format!(
                 "index \"{}\" on indexOnly document type \"{}\" has no terminal after \
                  normalization: internal parser error",
@@ -4085,8 +4241,11 @@ pub(super) fn apply_index_only(
         // documents — its own owner-bearing row and a victim's owner-less
         // row — and remove an entry it never created; binding every entry
         // to its owner closes that, at the cost of the (unneeded) global-
-        // uniqueness-without-owner shape.
-        if !index.terminal_contains(OWNER_ID)
+        // uniqueness-without-owner shape. A summableOffCountIndex index keeps no
+        // entries: a delete takes its count back only once the entries of
+        // the indexes that keep them, its source among them, matched.
+        if !index.is_summable_off_count_index()
+            && !index.terminal_contains(OWNER_ID)
             && !index
                 .properties
                 .iter()
@@ -4195,6 +4354,7 @@ pub(super) fn apply_index_only(
             let keyed_by_a_cleared_index = document_type.indices.values().any(|other| {
                 !other.outlives_delete
                     && !other.skip_if_absent
+                    && !other.is_summable_off_count_index()
                     && other
                         .properties
                         .iter()
@@ -4246,6 +4406,19 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // `summableOffCountIndex`: a summableOffCountIndex index keeps, per group, the number of its
+        // source's entries in that group. The count is lossless when the
+        // source holds every document exactly once and a group here holds
+        // exactly the documents of one source group. That the values fixing
+        // a group never change is judged with the referenced types, by the
+        // parse of the whole contract (`validate_summable_off_count_indexes_lossless`).
+        if let Some(source_name) = &index.summable_off_count_index {
+            if let Some(message) =
+                summable_off_count_index_error(index_name, index, source_name, document_type, name)
+            {
+                return Err(structure_error(message));
+            }
+        }
     }
 
     // At least one index must involve no `$createdAt` at all AND not be
@@ -4262,6 +4435,7 @@ pub(super) fn apply_index_only(
     let has_proof_index = document_type.indices.values().any(|index| {
         !index.skip_if_absent
             && !index.outlives_delete
+            && !index.is_summable_off_count_index()
             && !index.terminal_contains(CREATED_AT)
             && !index
                 .properties
@@ -4301,6 +4475,28 @@ pub(super) fn apply_index_only(
         .flat_map(|index| index.skip_if_absent_properties.iter())
         .map(String::as_str)
         .collect();
+    // A summableOffCountIndex index keeps no value per document, so it covers nothing.
+    // The properties of one that its source lacks are fixed by the source's
+    // references (checked above): a client that lost them reads them back
+    // from the referenced document, so they need no index of their own.
+    let fixed_by_a_source: BTreeSet<&str> = document_type
+        .indices
+        .values()
+        .filter_map(|index| {
+            let source = document_type
+                .indices
+                .get(index.summable_off_count_index.as_deref()?)?;
+            index
+                .count_index_derivations(
+                    source,
+                    &document_type.flattened_properties,
+                    document_type.data_contract_id,
+                )
+                .ok()
+        })
+        .flatten()
+        .map(|derivation| derivation.property)
+        .collect();
     for (property_name, property) in document_type.flattened_properties.iter() {
         if matches!(property.property_type, DocumentPropertyType::Object(_)) {
             // Containers are covered through their flattened leaves.
@@ -4322,13 +4518,17 @@ pub(super) fn apply_index_only(
             )));
         }
         let holds_property = |index: &Index| {
-            index.terminal_contains(property_name)
-                || index
-                    .properties
-                    .iter()
-                    .any(|index_property| index_property.name == *property_name)
+            !index.is_summable_off_count_index()
+                && (index.terminal_contains(property_name)
+                    || index
+                        .properties
+                        .iter()
+                        .any(|index_property| index_property.name == *property_name))
         };
-        if optional {
+        if fixed_by_a_source.contains(property_name.as_str()) {
+            // Covered by its source's reference; the rules every index
+            // holding an optional property follows still apply below.
+        } else if optional {
             // A time-windowed index keeps a value only in its windows, which
             // document queries do not read and a `ttl` drains, so it cannot be
             // where an optional value is kept.

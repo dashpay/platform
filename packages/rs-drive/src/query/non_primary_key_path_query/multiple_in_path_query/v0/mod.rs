@@ -315,7 +315,10 @@ impl<'a> DriveDocumentQuery<'a> {
             // `find_best_index`: a bucketed index only for a query whose
             // resolved equality names its transform source, never for a raw
             // query. See `index_admissible_for_resolved_time_range`.
-            if !index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings) {
+            // A summableOffCountIndex index keeps no entries to read documents from.
+            if index.is_summable_off_count_index()
+                || !index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings)
+            {
                 continue;
             }
             let mut positioned: Vec<(usize, &WhereClause)> = Vec::with_capacity(in_clauses.len());

@@ -153,6 +153,19 @@ pub struct IndexLevelTypeInfo {
     /// share them. Empty on every index that does not skip, which is every
     /// index of every pre-PV14 contract.
     pub skip_if_absent_properties: Vec<String>,
+    /// The source index of a summableOffCountIndex terminating index
+    /// ([`Index::summable_off_count_index`]): the walkers keep one `SumItem` per group at
+    /// this level's value position instead of a value tree, a `0` bucket and
+    /// member entries. `None` on every other index, which is every index of
+    /// every pre-PV14 contract.
+    pub summable_off_count_index: Option<String>,
+}
+
+impl IndexLevelTypeInfo {
+    /// Whether the terminating index is summableOffCountIndex (`summableOffCountIndex`).
+    pub fn is_summable_off_count_index(&self) -> bool {
+        self.summable_off_count_index.is_some()
+    }
 }
 
 impl IndexType {
@@ -206,6 +219,20 @@ pub struct IndexLevel {
     /// `rangeCountable`). Same PV14+ gating and same non-ambiguity argument
     /// as `ranked_count_grouping`.
     count_propagating: bool,
+    /// Sum-axis counterpart of [`Self::ranked_count_grouping`]: the
+    /// property-name tree at this level ranks its values by the sum beneath
+    /// them, for the one index whose [`Index::ranked_summable_at`] names this
+    /// level. Only a `summableOffCountIndex` index declares it, whose
+    /// counters carry the sums up the chain.
+    ranked_sum_grouping: bool,
+    /// Avg-axis counterpart of [`Self::ranked_count_grouping`], from
+    /// [`Index::ranked_averageable_at`]. The level's value trees carry both a
+    /// count and a sum, which the average is read from.
+    ranked_average_grouping: bool,
+    /// Sum-chain counterpart of [`Self::count_propagating`]: this level sits
+    /// below the shallowest level ranking by sum or average and ranks by
+    /// neither itself, so its trees carry the sums up to that level.
+    sum_propagating: bool,
     /// When `true`, this level is the branch point of a PLAIN sibling index
     /// inside another index's prefix-ranking chain: its parent level is a
     /// [`Self::ranked_count_grouping`] or [`Self::count_propagating`] level,
@@ -284,6 +311,43 @@ impl IndexLevel {
     /// docs on [`IndexLevel`].
     pub fn count_propagating(&self) -> bool {
         self.count_propagating
+    }
+
+    /// Whether this level hosts a prefix-level Sum ranking — see the field
+    /// docs on [`IndexLevel`].
+    pub fn ranked_sum_grouping(&self) -> bool {
+        self.ranked_sum_grouping
+    }
+
+    /// Whether this level hosts a prefix-level Avg ranking — see the field
+    /// docs on [`IndexLevel`].
+    pub fn ranked_average_grouping(&self) -> bool {
+        self.ranked_average_grouping
+    }
+
+    /// Whether this level carries sums up to a prefix-level Sum or Avg
+    /// ranking without ranking itself — see the field docs on [`IndexLevel`].
+    pub fn sum_propagating(&self) -> bool {
+        self.sum_propagating
+    }
+
+    /// Whether the value trees of this prefix-ranking chain level carry a
+    /// count: it ranks by count or average, or carries counts up to a level
+    /// that does.
+    pub fn chain_carries_counts(&self) -> bool {
+        self.ranked_count_grouping || self.ranked_average_grouping || self.count_propagating
+    }
+
+    /// Whether the value trees of this prefix-ranking chain level carry a
+    /// sum: it ranks by sum or average, or carries sums up to a level that
+    /// does.
+    pub fn chain_carries_sums(&self) -> bool {
+        self.ranked_sum_grouping || self.ranked_average_grouping || self.sum_propagating
+    }
+
+    /// Whether this level is on a prefix-ranking chain at all.
+    pub fn is_ranked_chain_level(&self) -> bool {
+        self.chain_carries_counts() || self.chain_carries_sums()
     }
 
     /// Whether this level is a plain sibling's branch point inside a
@@ -421,6 +485,9 @@ impl IndexLevel {
             bucketing: None,
             ranked_count_grouping: false,
             count_propagating: false,
+            ranked_sum_grouping: false,
+            ranked_average_grouping: false,
+            sum_propagating: false,
             count_exempt_branch: false,
             skip_at_or_below: false,
             outlives_delete_at_or_below: false,
@@ -453,7 +520,19 @@ impl IndexLevel {
                 .iter()
                 .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
                 .collect();
-            let min_ranked_at_position = ranked_at_positions.iter().copied().min();
+            let positions_of = |levels: &[String]| -> Vec<usize> {
+                levels
+                    .iter()
+                    .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                    .collect()
+            };
+            let sum_at_positions = positions_of(&index.ranked_summable_at);
+            let average_at_positions = positions_of(&index.ranked_averageable_at);
+            // The count chain starts at the shallowest level ranking by count
+            // or average, the sum chain at the shallowest ranking by sum or
+            // average: an average reads both.
+            let min_ranked_at_position = index.shallowest_count_chain_position();
+            let min_sum_at_position = index.shallowest_sum_chain_position();
             // A FLAT indexOnly index has no prefix properties: its entries
             // live directly under one level keyed by the terminal's
             // component names (`flat_level_key_for`, whose zero-byte
@@ -478,6 +557,9 @@ impl IndexLevel {
                                 bucketing: None,
                                 ranked_count_grouping: false,
                                 count_propagating: false,
+                                ranked_sum_grouping: false,
+                                ranked_average_grouping: false,
+                                sum_propagating: false,
                                 count_exempt_branch: false,
                                 skip_at_or_below: false,
                                 outlives_delete_at_or_below: false,
@@ -522,6 +604,9 @@ impl IndexLevel {
                             bucketing: None,
                             ranked_count_grouping: false,
                             count_propagating: false,
+                            ranked_sum_grouping: false,
+                            ranked_average_grouping: false,
+                            sum_propagating: false,
                             count_exempt_branch: false,
                             skip_at_or_below: false,
                             outlives_delete_at_or_below: false,
@@ -557,12 +642,25 @@ impl IndexLevel {
                 // `Index` carrying the terminal name in the vector stamps
                 // nothing rather than marking a level both grouping and
                 // terminating.
-                if let Some(min_at_position) = min_ranked_at_position {
-                    if properties_iter.peek().is_some() {
-                        if ranked_at_positions.contains(&position) {
-                            current_level.ranked_count_grouping = true;
-                        } else if position > min_at_position {
+                //
+                // The Sum and Avg axes (a `summableOffCountIndex` index's
+                // chain) stamp the same way, an average ranking needing both
+                // the count and the sum chain.
+                if properties_iter.peek().is_some() {
+                    let ranks_count = ranked_at_positions.contains(&position);
+                    let ranks_sum = sum_at_positions.contains(&position);
+                    let ranks_average = average_at_positions.contains(&position);
+                    current_level.ranked_count_grouping |= ranks_count;
+                    current_level.ranked_sum_grouping |= ranks_sum;
+                    current_level.ranked_average_grouping |= ranks_average;
+                    if let Some(min_at_position) = min_ranked_at_position {
+                        if !ranks_count && !ranks_average && position > min_at_position {
                             current_level.count_propagating = true;
+                        }
+                    }
+                    if let Some(min_at_position) = min_sum_at_position {
+                        if !ranks_sum && !ranks_average && position > min_at_position {
+                            current_level.sum_propagating = true;
                         }
                     }
                 }
@@ -644,6 +742,8 @@ impl IndexLevel {
             // level's `0` bucket rather than the document type.
             flat: index.is_flat(),
             skip_if_absent_properties: index.skip_if_absent_properties.clone(),
+            // Same PV14+ gating as `terminal`.
+            summable_off_count_index: index.summable_off_count_index.clone(),
         }
     }
 
@@ -660,15 +760,16 @@ impl IndexLevel {
     /// check_tx reach it); the rs-drive tree-type resolver keeps its own
     /// fail-closed guards for the genuinely contradictory shapes.
     fn stamp_count_exempt_branches(level: &mut IndexLevel) {
-        let level_is_chain = level.ranked_count_grouping || level.count_propagating;
+        let level_is_chain = level.is_ranked_chain_level();
         for child in level.sub_index_levels.values_mut() {
             if level_is_chain {
-                let child_continues_chain = child.ranked_count_grouping
-                    || child.count_propagating
+                // A Sum or Avg chain's terminal (a `summableOffCountIndex`
+                // index) is range-summable rather than range-countable.
+                let child_continues_chain = child.is_ranked_chain_level()
                     || child
                         .has_index_with_type
                         .as_ref()
-                        .map(|info| info.range_countable)
+                        .map(|info| info.range_countable || info.range_summable)
                         .unwrap_or(false);
                 child.count_exempt_branch = !child_continues_chain;
             }
@@ -751,7 +852,7 @@ impl IndexLevel {
         // `ranked_summable` / `ranked_averageable`). All three are checked
         // together in one helper rather than folded into the count and sum
         // helpers above because the Avg axis straddles both — it is neither a
-        // count-only nor a sum-only property — and because the set of ranking
+        // summableOffCountIndex nor a sum-only property — and because the set of ranking
         // axes is what determines the indexed tree's axis list, which is
         // committed into the parent hash at contract creation. Adding or
         // removing an axis after the fact would require rebuilding the ordered
@@ -843,6 +944,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -852,6 +955,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -885,6 +989,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -894,6 +1000,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![
@@ -912,6 +1019,8 @@ mod tests {
                 range_summable: false,
                 ranked_countable: false,
                 ranked_countable_at: vec![],
+                ranked_summable_at: Vec::new(),
+                ranked_averageable_at: Vec::new(),
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -921,6 +1030,7 @@ mod tests {
                 outlives_delete: false,
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
+                summable_off_count_index: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -937,6 +1047,8 @@ mod tests {
                 range_summable: false,
                 ranked_countable: false,
                 ranked_countable_at: vec![],
+                ranked_summable_at: Vec::new(),
+                ranked_averageable_at: Vec::new(),
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -946,6 +1058,7 @@ mod tests {
                 outlives_delete: false,
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
+                summable_off_count_index: None,
             },
         ];
 
@@ -988,6 +1101,8 @@ mod tests {
                 range_summable: false,
                 ranked_countable: false,
                 ranked_countable_at: vec![],
+                ranked_summable_at: Vec::new(),
+                ranked_averageable_at: Vec::new(),
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -997,6 +1112,7 @@ mod tests {
                 outlives_delete: false,
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
+                summable_off_count_index: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -1013,6 +1129,8 @@ mod tests {
                 range_summable: false,
                 ranked_countable: false,
                 ranked_countable_at: vec![],
+                ranked_summable_at: Vec::new(),
+                ranked_averageable_at: Vec::new(),
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -1022,6 +1140,7 @@ mod tests {
                 outlives_delete: false,
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
+                summable_off_count_index: None,
             },
         ];
 
@@ -1040,6 +1159,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1049,6 +1170,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1089,6 +1211,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1098,6 +1222,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -1121,6 +1246,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1130,6 +1257,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1176,6 +1304,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1185,6 +1315,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -1202,6 +1333,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1211,6 +1344,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1251,6 +1385,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1260,6 +1396,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -1277,6 +1414,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1286,6 +1425,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1326,6 +1466,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1335,6 +1477,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -1352,6 +1495,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1361,6 +1506,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1401,6 +1547,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1410,6 +1558,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1450,6 +1599,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1459,6 +1610,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -1476,6 +1628,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1485,6 +1639,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1525,6 +1680,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1534,6 +1691,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -1551,6 +1709,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1560,6 +1720,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1606,6 +1767,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1615,6 +1778,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -1638,6 +1802,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1647,6 +1813,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1693,6 +1860,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1702,6 +1871,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -1725,6 +1895,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1734,6 +1906,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let old_index_structure =
@@ -1788,6 +1961,8 @@ mod tests {
             range_summable: true,
             ranked_countable,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable,
             ranked_averageable,
             time_range: None,
@@ -1797,6 +1972,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 
@@ -1857,6 +2033,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![at.to_string()],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1866,6 +2044,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 
@@ -1933,6 +2112,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1942,6 +2123,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 
@@ -2335,6 +2517,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -2344,6 +2528,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }];
 
         let mut new_indices = old_indices.clone();
@@ -2391,6 +2576,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -2400,6 +2587,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {
@@ -2449,6 +2637,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -2458,6 +2648,7 @@ mod tests {
             outlives_delete,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {

@@ -64,31 +64,31 @@ The object form `{ "at": ... }` places the ranking at another level of the index
 
 `"hashtag"` in `at` ranks hashtags by their total posts across all post ids; `"postId"`, the last property, is the same as `true` and ranks the posts under one hashtag. An array declares several rankings on one index; each level named costs one more ordered tree to maintain on every write beneath it. A query addresses a ranking by the property it groups by, with every property before that one fixed.
 
-`at` names only the index's own properties, each once. The object form cannot be combined with `rankedSummable` or `rankedAverageable`: a ranking at an earlier level is fed by a chain of counts that cannot also carry a sum.
+`at` names only the index's own properties, each once. The object form cannot be combined with `rankedSummable` or `rankedAverageable`: a ranking at an earlier level is fed by a chain of counts that cannot also carry a sum. A [`summableOffCountIndex`](index-only.md#summableoffcountindex) index is the exception: its counters carry a count and a sum up every level, so it ranks by any of the three at any level.
 
 ## `rankedSummable`
 
 | | |
 |---|---|
 | **Where** | index |
-| **Value** | boolean |
+| **Value** | boolean, or `{ "at": <property name or array of 1 to 10 names> }` on a `summableOffCountIndex` index |
 | **Default** | `false` |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (10217) |
 
-Ranks the groups of the index's last property by the sum of the index's `summable` property: the recipients who received the most, the products that sold the most units. Needs `rangeSummable: true`, or `rangeAverageable: true`.
+Ranks the groups of the index's last property by the sum of the index's `summable` property: the recipients who received the most, the products that sold the most units. Needs `rangeSummable: true`, or `rangeAverageable: true`. On a [`summableOffCountIndex`](index-only.md#summableoffcountindex) index the sum is the source's entries, and `at` ranks an earlier level by it: authors by the likes their posts received.
 
 ## `rankedAverageable`
 
 | | |
 |---|---|
 | **Where** | index |
-| **Value** | boolean |
+| **Value** | boolean, or `{ "at": <property name or array of 1 to 10 names> }` on a `summableOffCountIndex` index |
 | **Default** | `false` |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (10217) |
 
-Ranks the groups of the index's last property by the average of the `averageable` property. Needs both range totals: `rangeAverageable: true`, or `rangeCountable: true` with `rangeSummable: true`.
+Ranks the groups of the index's last property by the average of the `averageable` property. On a [`summableOffCountIndex`](index-only.md#summableoffcountindex) index the average is entries per group, and `at` ranks an earlier level by it: authors by likes per post. Needs both range totals: `rangeAverageable: true`, or `rangeCountable: true` with `rangeSummable: true`.
 
 The three keywords are independent. `rankedAverageable` does not imply `rankedCountable` or `rankedSummable`, unlike `averageable`, which is shorthand for a count and a sum. Declare each ranking the application will query, and no other.
 

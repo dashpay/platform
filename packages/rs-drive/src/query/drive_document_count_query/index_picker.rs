@@ -166,12 +166,8 @@ impl DriveDocumentCountQuery<'_> {
             if pin_depth == 0 || pin_depth >= index.properties.len() {
                 continue;
             }
-            let Some(min_at_position) = index
-                .ranked_countable_at
-                .iter()
-                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
-                .min()
-            else {
+            // An average ranking's chain carries the counts as well.
+            let Some(min_at_position) = index.shallowest_count_chain_position() else {
                 continue;
             };
             // The deepest pinned property (position pin_depth - 1) must

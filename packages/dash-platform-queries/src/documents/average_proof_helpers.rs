@@ -31,6 +31,7 @@ use dpp::{
 };
 use drive::query::drive_document_sum_query::index_picker::{
     find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
+    summable_point_lookup_carries_counts,
 };
 use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
@@ -219,7 +220,7 @@ pub(super) fn verify_average_query(
             &sum_property,
             &resolved_time_ranges,
         )
-        .filter(|idx| idx.countable.is_countable())
+        .filter(|idx| summable_point_lookup_carries_counts(idx, &request.where_clauses))
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove AVG requires an index that declares BOTH `summable: \
                     \"<prop>\"` AND a countable terminator (`countable: \

@@ -27,7 +27,9 @@
 //! the executor body is the same one sum's `total.rs` carries.
 
 use super::super::super::drive_document_average_query::DocumentAverageResponse;
-use super::super::super::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
+use super::super::super::drive_document_sum_query::index_picker::{
+    find_summable_index_for_where_clauses, summable_point_lookup_carries_counts,
+};
 use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -93,7 +95,7 @@ impl Drive {
             &sum_property,
             resolved_time_ranges,
         )
-        .filter(|idx| idx.countable.is_countable())
+        .filter(|idx| summable_point_lookup_carries_counts(idx, &where_clauses))
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                 "average query requires an index that declares BOTH \

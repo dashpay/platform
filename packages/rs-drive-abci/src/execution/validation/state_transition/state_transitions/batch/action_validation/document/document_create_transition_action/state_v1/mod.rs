@@ -96,11 +96,12 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
             // An index whose entries outlive a delete may hold an entry an
             // earlier document with the same values left: the create keeps
             // it rather than colliding, so it is not probed. The rest of the
-            // create's entries still decide whether it is a duplicate.
+            // create's entries still decide whether it is a duplicate. A
+            // summableOffCountIndex index keeps no entries, so it decides nothing.
             for index in document_type
                 .indexes()
                 .values()
-                .filter(|index| !index.outlives_delete)
+                .filter(|index| !index.outlives_delete && !index.is_summable_off_count_index())
             {
                 let entry_exists = platform
                     .drive

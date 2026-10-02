@@ -1940,18 +1940,86 @@
                 },
                 "required": ["at"],
                 "additionalProperties": false,
-                "description": "Level-addressed form: places Count rankings at the named properties' levels. Cannot be combined with rankedSummable or rankedAverageable when a non-terminal level is named, and no other index of the document type may share a non-terminal ranked level or any level below it."
+                "description": "Level-addressed form: places Count rankings at the named properties' levels. Cannot be combined with rankedSummable or rankedAverageable when a non-terminal level is named, except on a summableOffCountIndex index, and no other index of the document type may share a non-terminal ranked level or any level below it."
               }
             ],
-            "description": "Count ranking axis. Requires `rangeCountable: true`. Independent of the Sum and Avg axes (`rankedSummable` / `rankedAverageable`), which stay terminal-level booleans."
+            "description": "Count ranking axis. Requires `rangeCountable: true`. Independent of the Sum and Avg axes (`rankedSummable` / `rankedAverageable`), which take the level-addressed form only on a summableOffCountIndex index."
           },
           "rankedSummable": {
-            "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's sum of the `summable` property, so \"top / bottom K groups by sum\" queries are O(log n + k) with proofs. Requires `rangeSummable: true` (or `rangeAverageable: true`, which implies it). Adds the Sum ranking axis only."
+            "oneOf": [
+              {
+                "type": "boolean",
+                "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's sum of the `summable` property, so \"top / bottom K groups by sum\" queries are O(log n + k) with proofs. Requires `rangeSummable: true` (or `rangeAverageable: true`, which implies it). Adds the Sum ranking axis only."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "uniqueItems": true
+                      }
+                    ],
+                    "description": "Name of the index property (or array of properties) whose levels carry Sum rankings. Each must be one of the index's properties; naming the last property is equivalent to the boolean form. A non-terminal property ranks that property's values by the total of the counters beneath them."
+                  }
+                },
+                "required": ["at"],
+                "additionalProperties": false,
+                "description": "Level-addressed form, only on a summableOffCountIndex index: places Sum rankings at the named properties' levels."
+              }
+            ],
+            "description": "Sum ranking axis. Requires `rangeSummable: true`. The level-addressed form is only allowed on a summableOffCountIndex index."
           },
           "rankedAverageable": {
-            "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`), or the explicit `rangeCountable: true` + `rangeSummable: true` pair. Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
+            "oneOf": [
+              {
+                "type": "boolean",
+                "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`), or the explicit `rangeCountable: true` + `rangeSummable: true` pair. Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "uniqueItems": true
+                      }
+                    ],
+                    "description": "Name of the index property (or array of properties) whose levels carry Avg rankings. Each must be one of the index's properties; naming the last property is equivalent to the boolean form. A non-terminal property ranks that property's values by the average per group of the counters beneath them."
+                  }
+                },
+                "required": ["at"],
+                "additionalProperties": false,
+                "description": "Level-addressed form, only on a summableOffCountIndex index: places Avg rankings at the named properties' levels."
+              }
+            ],
+            "description": "Avg ranking axis. Requires `rangeCountable: true` and `rangeSummable: true`. The level-addressed form is only allowed on a summableOffCountIndex index."
           },
           "timeRange": {
             "type": "object",
@@ -2063,6 +2131,12 @@
               }
             ],
             "description": "Conditional participation: a document that omits a property of this index's skip set writes no entry into this index (and a delete, or on a stored type a replace, recomputes the same skip), so the index holds only documents carrying every skip property. `true` makes the skip set every optional property of the index; an array names the skip set (each must be one of the index's properties; an index has at most 10, hence maxItems). A skip property may sit at any position of the index, and must be a top-level schema property NOT listed in `required` (system properties are never optional). On an indexOnly type the skip set must hold every optional property of the index (an index path has no representation for an absent value), every optional property needs a skip index whose skip set is that property alone, and at least one $createdAt-free index must remain non-skipIfAbsent (the executed-transition proof index); on a stored type the array may name a subset, the index's other optional properties keeping the null layout, and a skip index cannot be contested or set nullSearchable: false. No rankedCountable `at` level may sit above the deepest skip property. An absent property is distinct from an empty value: absence skips the index, while any present value — empty included — indexes normally. Available from protocol version 14."
+          },
+          "summableOffCountIndex": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Only on indexOnly document types: makes the index sum the count of another index. It names an index of the type, the source, and keeps per group of its own properties one counter holding the number of the source's entries in that group, with no entry per document. In the tree of the last property each group counts one and adds its counter, so the index's count is its number of groups, its sum the source's entries in them (sum queries name the source index), and its average the entries per group. The sums are lossless: the source keeps entries, skips nothing, outlives no delete and involves no $createdAt; every source property is a property of this index; every other property of this index is a referring value of a `where` on a same-contract permanentDocument or moderatedDocument reference held by a source property, to a value that never changes (the referenced $id or $creatorId, an $ownerId that cannot be transferred, or an unconditionally immutable property, kept on removal through moderatedDocument). This index may skip only on those other properties, needs rangeSummable: true, takes no terminal, summable, averageable, timeRange, integerRange or outlivesDelete, and is the only kind of index whose rankedSummable and rankedAverageable take the level-addressed form. Available from protocol version 14."
           }
         },
         "required": [
@@ -2071,12 +2145,17 @@
         "dependentRequired": {
           "rangeAverageable": ["averageable"]
         },
-        "$comment": "Every prerequisite here is sugar-aware, matching the structural parser, which expands `averageable` into `countable` + `summable` and `rangeAverageable` into `rangeCountable` + `rangeSummable` before it checks the same prerequisites on the resolved flags. `rangeSummable` accepts `averageable` in place of `summable`, and each `ranked*` flag accepts `rangeAverageable` in place of its own range axis (`rankedAverageable` also accepts the explicit `rangeCountable` + `rangeSummable` pair). They are `if`/`then` pairs rather than `dependentRequired` rows only because `dependentRequired` cannot express the alternative. `rangeCountable` has no row at all: it implies `countable`, as it does at the doctype level, and the parser promotes an omitted `countable`. The remaining range rows keep the presence semantics they shipped with in v2 (an explicit `\"rangeSummable\": false` still needs a `summable` or an `averageable`); the ranked pairs are value-sensitive so that an explicit `\"rankedCountable\": false`, a written-out opt-out the structural parser accepts as such, demands nothing.",
+        "$comment": "Every prerequisite here is sugar-aware, matching the structural parser, which expands `averageable` into `countable` + `summable` and `rangeAverageable` into `rangeCountable` + `rangeSummable` before it checks the same prerequisites on the resolved flags. `rangeSummable` accepts `averageable` or `summableOffCountIndex` in place of `summable`, and each `ranked*` flag accepts `rangeAverageable` in place of its own range axis (`rankedAverageable` also accepts the explicit `rangeCountable` + `rangeSummable` pair). They are `if`/`then` pairs rather than `dependentRequired` rows only because `dependentRequired` cannot express the alternative. `rangeCountable` has no row at all: it implies `countable`, as it does at the doctype level, and the parser promotes an omitted `countable`. The remaining range rows keep the presence semantics they shipped with in v2 (an explicit `\"rangeSummable\": false` still needs a `summable` or an `averageable`); the ranked pairs are value-sensitive so that an explicit `\"rankedCountable\": false`, a written-out opt-out the structural parser accepts as such, demands nothing.",
         "allOf": [
           {
             "if": {
               "required": ["rangeSummable"],
-              "not": { "required": ["averageable"] }
+              "not": {
+                "anyOf": [
+                  { "required": ["averageable"] },
+                  { "required": ["summableOffCountIndex"] }
+                ]
+              }
             },
             "then": { "required": ["summable"] }
           },
@@ -2094,7 +2173,11 @@
           },
           {
             "if": {
-              "properties": { "rankedSummable": { "const": true } },
+              "properties": {
+                "rankedSummable": {
+                  "anyOf": [{ "const": true }, { "type": "object" }]
+                }
+              },
               "required": ["rankedSummable"],
               "not": { "required": ["rangeAverageable"] }
             },
@@ -2102,11 +2185,29 @@
           },
           {
             "if": {
-              "properties": { "rankedAverageable": { "const": true } },
+              "properties": {
+                "rankedAverageable": {
+                  "anyOf": [{ "const": true }, { "type": "object" }]
+                }
+              },
               "required": ["rankedAverageable"],
               "not": { "required": ["rangeCountable", "rangeSummable"] }
             },
             "then": { "required": ["rangeAverageable"] }
+          },
+          {
+            "if": { "required": ["summableOffCountIndex"] },
+            "then": {
+              "properties": { "rangeSummable": { "const": true } },
+              "required": ["rangeSummable"],
+              "not": {
+                "anyOf": [
+                  { "required": ["terminal"] },
+                  { "required": ["summable"] },
+                  { "required": ["averageable"] }
+                ]
+              }
+            }
           }
         ],
         "additionalProperties": false

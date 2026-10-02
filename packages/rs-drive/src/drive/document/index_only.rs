@@ -305,11 +305,12 @@ impl Drive {
         let estimated_item_value_size =
             index_only_item_estimated_value_size(document_type, platform_version)?;
         // A delete neither checks nor clears the entries of an index that
-        // outlives it, so it reads none of them.
+        // outlives it, so it reads none of them, and a summableOffCountIndex index
+        // keeps none (its counter's read is priced where it moves).
         for index in document_type
             .indexes()
             .values()
-            .filter(|index| !index.outlives_delete)
+            .filter(|index| !index.outlives_delete && !index.is_summable_off_count_index())
         {
             let (paths, member_key) = Self::index_only_entry_paths_and_key(
                 contract_id,

@@ -47,14 +47,18 @@ use crate::drive::document::index_level_tree_types::{
 use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::drive::document::summable_off_count_counter::summable_off_count_counter_layer;
 use crate::drive::document::unique_event_id;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
+use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
+use crate::util::object_size_info::PathKeyElementInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
@@ -64,10 +68,12 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::document_type::{DocumentTypeRef, Index, PreallocatedKeySource};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
+use grovedb::Element;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb_merk::tree_type::SUM_ITEM_COST_SIZE;
 use std::collections::HashMap;
 
 #[cfg(test)]
@@ -376,6 +382,68 @@ impl Drive {
                     path_info
                 }
             };
+
+            // A summableOffCountIndex index keeps its group's counter at the value
+            // position of its last property: preallocating it is creating the
+            // counter at zero, in place of the value tree and its `0` bucket.
+            // Nothing continues below it, so this is the last level.
+            if sub_level
+                .has_index_with_type()
+                .is_some_and(|index_type| index_type.is_summable_off_count_index())
+            {
+                let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    let value_key_estimated_size = document_info
+                        .get_estimated_size_for_document_type(
+                            property_name,
+                            referring_type,
+                            platform_version,
+                        )?;
+                    let max_key_size = u8::try_from(value_key_estimated_size).map_err(|_| {
+                        Error::Fee(FeeError::Overflow(
+                            "document field is too big for being an index",
+                        ))
+                    })?;
+                    estimated_costs_only_with_layer_info.insert(
+                        path_info.clone().convert_to_key_info_path(),
+                        summable_off_count_counter_layer(
+                            property_name_tree_type,
+                            max_key_size,
+                            storage_flags,
+                        ),
+                    );
+                }
+                let counter = Element::new_sum_item_with_flags(
+                    0,
+                    StorageFlags::map_to_some_element_flags(storage_flags),
+                );
+                let key_element_info = match &value_key {
+                    Key(key) => KeyElement((key.as_slice(), counter)),
+                    KeyRef(key) => KeyElement((key, counter)),
+                    KeySize(key_info) => KeyElementSize((key_info.clone(), counter)),
+                };
+                let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                    BatchInsertApplyType::StatefulBatchInsert
+                } else {
+                    BatchInsertApplyType::StatelessBatchInsert {
+                        in_tree_type: property_name_tree_type,
+                        target: QueryTargetValue(SUM_ITEM_COST_SIZE + flags_len),
+                    }
+                };
+                self.batch_insert_if_not_exists(
+                    PathKeyElementInfo::from_path_info_and_key_element(
+                        path_info,
+                        key_element_info,
+                    )?,
+                    apply_type,
+                    transaction,
+                    batch_operations,
+                    drive_version,
+                )?;
+                return Ok(());
+            }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {

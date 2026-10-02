@@ -70,10 +70,11 @@ pub fn find_summable_index_for_where_clauses<'b>(
         if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
             continue;
         }
-        // Skip if not summable OR if summable property doesn't match.
-        match &index.summable {
-            Some(prop) if prop == sum_property => {}
-            _ => continue,
+        // Skip if not summable OR if summable property doesn't match. A
+        // `summableOffCountIndex` index is addressed by its source index's
+        // name, its counters holding that index's entry counts.
+        if index.summed_value_name() != Some(sum_property) {
+            continue;
         }
         if index.properties.len() != indexable_fields.len() {
             continue;
@@ -87,7 +88,60 @@ pub fn find_summable_index_for_where_clauses<'b>(
         }
     }
 
+    // Sum-chain value-tree fallback, the sum counterpart of count's at-chain
+    // fallback: on a `summableOffCountIndex` index ranking by sum or average
+    // at an earlier level, every value tree from the shallowest such level
+    // down sums its whole subtree, so contiguous pins landing at or below
+    // that level are servable by reading the deepest pin's value tree
+    // element. Pins landing above it stay rejected: those levels are plain
+    // trees.
+    for index in indexes.values() {
+        if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
+            continue;
+        }
+        if index.summed_value_name() != Some(sum_property) {
+            continue;
+        }
+        let pin_depth = indexable_fields.len();
+        if pin_depth >= index.properties.len() {
+            continue;
+        }
+        let Some(min_at_position) = index.shallowest_sum_chain_position() else {
+            continue;
+        };
+        if min_at_position > pin_depth - 1 {
+            continue;
+        }
+        let leading_covered = index.properties[..pin_depth]
+            .iter()
+            .all(|prop| indexable_fields.contains(prop.name.as_str()));
+        if leading_covered {
+            return Some(index);
+        }
+    }
+
     None
+}
+
+/// Whether the element a sum point lookup on `index` reads for
+/// `where_clauses` also carries a count, as an average or count-and-sum read
+/// needs: the index is countable, and the read lands either on its terminal
+/// (every property pinned) or on a value tree of its count chain. A sum-chain
+/// level that carries no count holds `SumTree`s, whose count would read as
+/// one.
+pub fn summable_point_lookup_carries_counts(index: &Index, where_clauses: &[WhereClause]) -> bool {
+    if !index.countable.is_countable() {
+        return false;
+    }
+    let pin_depth = index
+        .properties
+        .iter()
+        .take_while(|prop| where_clauses.iter().any(|wc| wc.field == prop.name))
+        .count();
+    pin_depth == index.properties.len()
+        || index
+            .shallowest_count_chain_position()
+            .is_some_and(|min_at_position| pin_depth >= 1 && min_at_position < pin_depth)
 }
 
 /// Find a `rangeSummable: true` index whose properties cover the
@@ -163,11 +217,11 @@ pub fn find_range_summable_index_for_where_clauses<'b>(
         if !index.range_summable {
             continue;
         }
-        // `range_summable: true` requires `summable: Some(_)` per the DPP
-        // schema; verify it matches the caller's sum_property.
-        match &index.summable {
-            Some(prop) if prop == sum_property => {}
-            _ => continue,
+        // `range_summable: true` requires `summable: Some(_)` (or a
+        // `summableOffCountIndex` source) per the DPP schema; verify it
+        // matches the caller's sum_property.
+        if index.summed_value_name() != Some(sum_property) {
+            continue;
         }
 
         if let Some((field_a, field_b)) = outer_range_field {

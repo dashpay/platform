@@ -200,6 +200,7 @@ aggregate keywords follow:
 | non-unique, non-contested, `nullSearchable` default | v1 scope |
 | `preallocated` requires a fully reference-determined, non-bucketed path | see [Preallocated index paths](#preallocated-index-paths) |
 | a skip property is an optional, top-level schema property; no ranking sits above the index's deepest skip property | see [Conditional participation](#conditional-participation-skipifabsent) |
+| a `summableOffCountIndex` index sums a source holding every document once, holds every source property, and fixes its other properties through unchanging `where` values | see [Counters (summableOffCountIndex)](#counters-summableoffcountindex) |
 
 `indexOnly` and the index set (terminals included, `preallocated` and
 `skipIfAbsent` flags included) are immutable across contract updates — a
@@ -484,6 +485,56 @@ Not supported on the read surface: by-`$id` fetches (no primary tree —
 rejected with guidance) and `startAt` cursors (rejected with the keyset
 guidance above); ranked / count / range-aggregate queries work unchanged
 since they never open value trees.
+
+## Counters (summableOffCountIndex)
+
+A `summableOffCountIndex` index keeps no entry per document. At the value
+position of its last property, where another index grows a value tree, a
+`0` bucket and one entry per document, it keeps one `Element::SumItem`
+holding the number of entries its source index keeps for that group:
+
+```text
+before: byAuthorPost → postAuthor → <author> → postId → <post> → 0 → <liker> = Item(commitment)
+after:  byAuthorPost → postAuthor → <author> → postId → <post> = SumItem(likes)
+```
+
+The tree of the last property is a count-and-sum tree (`rangeSummable`,
+plus `rangeCountable` for range counts), so each counter counts one group
+and adds its value to the sum. Every level above reads groups as the count
+and the source's entries as the sum. A level a `{ "at": ... }` ranking
+names, and every level between it and the counters, carries those totals
+up: its value trees are `CountSumTree`s (or `CountTree`s or `SumTree`s when
+only one aggregate is ranked there), and its property-name tree is the
+indexed tree for the axes ranked at it, `ProvableCountProvableSumIndexedTree`
+for `[Sum, Avg]`. Grovedb admits a bare `SumItem` under that tree from
+grove version 4.
+
+The write path (`add_count_only_counter_operations`):
+
+- **Create**: reads the counter and writes it back one higher, or inserts
+  it at one for the first document of the group. The create is refused
+  before it gets here when the source already holds the entry, so the
+  counter equals the source group's entry count.
+- **Delete**: writes it back one lower once the entries of the indexes
+  that keep them matched the row commitment. A preallocated index keeps
+  the counter at zero; any other removes it with its last document and
+  prunes the trees it leaves empty, up to the document type.
+- **Once per batch**: a counter is written at most once per batch. Two
+  documents of one batch in one group would be duplicate creates of the
+  source, or a delete and a create of one document, whose create the state
+  probe refuses against the entry the delete has not yet removed. A second
+  write is refused as corrupted code execution rather than folded.
+- **Storage**: a `SumItem` is charged a fixed 11 bytes plus flags whatever
+  its value, so a rewrite stores nothing new, and it keeps the flags of the
+  first document that paid for it.
+- **Preallocation**: creating the referenced document creates the counter
+  at zero, in place of the value tree and its empty `0` bucket.
+
+The state probes and the duplicate check skip the index (it decides
+nothing about a create), it is never the proof index, and document
+queries never read it. The count, sum, average and ranked queries do: a
+sum query names the source index (`sum(byPost)`), and a point query may
+stop at a level carrying the totals, reading that value tree's element.
 
 ## What it costs and what it saves
 

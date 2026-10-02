@@ -2818,13 +2818,15 @@
                           "Tree",
                           "CountTree",
                           "ProvableCountTree",
+                          "SumTree",
                           "ProvableSumTree",
+                          "CountSumTree",
                           "ProvableCountProvableSumTree",
                           "ProvableCountIndexedTree",
                           "ProvableSumIndexedTree",
                           "ProvableCountProvableSumIndexedTree"
                         ],
-                        "kinds_note": "A plain tree unless the index is range countable, range summable or ranked; see ranked_index_tree_type.rs.",
+                        "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                         "flags": [
                           "EpochOwned",
                           "None"
@@ -2853,9 +2855,10 @@
                               "SumTree",
                               "CountSumTree",
                               "ProvableCountSumTree",
-                              "ProvableCountProvableSumTree"
+                              "ProvableCountProvableSumTree",
+                              "SumItem"
                             ],
-                            "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum.",
+                            "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum. At the last property of a summableOffCountIndex index, a sum item counting the source index's entries for the value, in place of the tree.",
                             "flags": [
                               "EpochOwned",
                               "None"
@@ -2947,13 +2950,15 @@
                                   "Tree",
                                   "CountTree",
                                   "ProvableCountTree",
+                                  "SumTree",
                                   "ProvableSumTree",
+                                  "CountSumTree",
                                   "ProvableCountProvableSumTree",
                                   "ProvableCountIndexedTree",
                                   "ProvableSumIndexedTree",
                                   "ProvableCountProvableSumIndexedTree"
                                 ],
-                                "kinds_note": "A plain tree unless the index is range countable, range summable or ranked; see ranked_index_tree_type.rs.",
+                                "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                                 "flags": [
                                   "EpochOwned",
                                   "None"

@@ -177,6 +177,21 @@ fn flags_len(flags: Option<&StorageFlags>) -> Option<u32> {
     flags.map(|flags| flags.serialized_size())
 }
 
+/// A `summableOffCountIndex` index's counter, a sum item carrying `flags`.
+fn counter(flags: Option<&StorageFlags>) -> PricedElement {
+    PricedElement::SumItem {
+        flags_len: flags_len(flags),
+    }
+}
+
+/// Whether `level` ends a `summableOffCountIndex` index, whose counter
+/// stands at the level's value position in place of a value tree.
+fn ends_summable_off_count_index(level: &IndexLevel) -> bool {
+    level
+        .has_index_with_type()
+        .is_some_and(|info| info.is_summable_off_count_index())
+}
+
 fn empty_tree(tree_type: TreeType, wrapped: bool, flags: Option<&StorageFlags>) -> PricedElement {
     PricedElement::Tree {
         tree_type,
@@ -255,7 +270,12 @@ impl Context<'_> {
     }
 
     /// The document's contribution to the sum of its value trees at `level`.
+    /// On a `summableOffCountIndex` index it adds one to its group's counter,
+    /// and so one to the sum of every level of the chain carrying that sum.
     fn sum_contribution(&self, level: &IndexLevel) -> Result<i64, Error> {
+        if ends_summable_off_count_index(level) || level.chain_carries_sums() {
+            return Ok(1);
+        }
         match level
             .has_index_with_type()
             .and_then(|info| info.summable.as_deref())
@@ -537,6 +557,19 @@ impl Context<'_> {
             self.index_flags.clone()
         };
         for key in keys {
+            if ends_summable_off_count_index(level) {
+                self.counter_write(
+                    &path,
+                    key,
+                    level,
+                    tree_types.property_name_tree_type,
+                    &tree_types.ranked_axes,
+                    &names,
+                    flags.as_ref(),
+                    ephemeral,
+                )?;
+                continue;
+            }
             self.push(Write {
                 path: path.clone(),
                 key: key.clone(),
@@ -654,6 +687,19 @@ impl Context<'_> {
             let null = raw.is_empty();
             let mut property_path = path.to_vec();
             property_path.push(sub_key.as_bytes().to_vec());
+            if ends_summable_off_count_index(sub_level) {
+                self.counter_write(
+                    &property_path,
+                    raw,
+                    sub_level,
+                    sub_tree_types.property_name_tree_type,
+                    &sub_tree_types.ranked_axes,
+                    &sub_names,
+                    flags,
+                    ephemeral,
+                )?;
+                continue;
+            }
             self.push(Write {
                 path: property_path.clone(),
                 key: raw.clone(),
@@ -691,6 +737,50 @@ impl Context<'_> {
             )?;
         }
         Ok(())
+    }
+
+    /// A `summableOffCountIndex` index's counter for the document's group at
+    /// `key` under the property-name tree at `path`: inserted the first
+    /// time, rewritten in place (at its fixed size, adding no storage) after
+    /// that, so it is written only when absent. Its ranking rows hold the
+    /// group's one count and the document's one entry.
+    #[allow(clippy::too_many_arguments)]
+    fn counter_write(
+        &mut self,
+        path: &[Vec<u8>],
+        key: Vec<u8>,
+        level: &IndexLevel,
+        property_name_tree_type: TreeType,
+        ranked_axes: &[IndexAxis],
+        names: &[String],
+        flags: Option<&StorageFlags>,
+        ephemeral: bool,
+    ) -> Result<(), Error> {
+        let indexes = self.writing_indexes(names);
+        // The index ending here writes its counter only for a document it
+        // does not skip.
+        let Some(info) = level.has_index_with_type() else {
+            return Ok(());
+        };
+        if !self.takes_part(&info.skip_if_absent_properties)? {
+            return Ok(());
+        }
+        self.push(Write {
+            path: path.to_vec(),
+            key: key.clone(),
+            element: counter(flags),
+            parent: property_name_tree_type,
+            role: LayoutRole::IndexValue,
+            indexes: indexes.clone(),
+            if_absent: true,
+            ephemeral,
+            ranking: None,
+            referring_type: None,
+            expiration: false,
+            flagged: flags.is_some(),
+        });
+        let sum = self.sum_contribution(level)?;
+        self.ranking_rows(path, &key, ranked_axes, 1, sum, &indexes, ephemeral)
     }
 
     /// A document with a `ttl`'s entry in the documents expirations tree:
@@ -870,6 +960,34 @@ impl Context<'_> {
                 });
             }
             path.push(name.as_bytes().to_vec());
+            // A `summableOffCountIndex` index's counter, created at zero in
+            // place of the value tree and its empty terminal: it counts one
+            // group and nothing towards the sum.
+            if info.is_summable_off_count_index() && position + 1 == index.properties.len() {
+                self.push(Write {
+                    path: path.clone(),
+                    key: raw.clone(),
+                    element: counter(flags),
+                    parent: tree_types.property_name_tree_type,
+                    role: LayoutRole::IndexValue,
+                    indexes: indexes.clone(),
+                    if_absent: true,
+                    ephemeral: false,
+                    ranking: None,
+                    referring_type: None,
+                    expiration: false,
+                    flagged: flags.is_some(),
+                });
+                return self.ranking_rows(
+                    &path,
+                    &raw,
+                    &tree_types.ranked_axes,
+                    1,
+                    0,
+                    &indexes,
+                    false,
+                );
+            }
             self.push(Write {
                 path: path.clone(),
                 key: raw.clone(),

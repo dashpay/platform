@@ -114,35 +114,33 @@ pub fn find_ranked_index_for_axis<'b>(
         if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
             return false;
         }
-        // The positions whose levels host this axis's secondaries — for
-        // the Count axis every `at` level plus the terminal when the
-        // boolean is on (any subset of an index's levels may rank); empty
-        // when the index does not declare the axis (or aggregates a
-        // different field than requested).
-        let candidate_positions: Vec<usize> = match axis {
-            RankedAxis::Count => index
-                .ranked_countable_at
+        // The positions whose levels host this axis's secondaries — every
+        // `at` level of the axis plus the terminal when the boolean is on
+        // (any subset of an index's levels may rank; only a
+        // `summableOffCountIndex` index ranks sums and averages at earlier
+        // levels); empty when the index does not declare the axis (or
+        // aggregates a different field than requested).
+        let positions = |at_levels: &[String], ranks_terminal: bool| -> Vec<usize> {
+            at_levels
                 .iter()
                 .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
                 .chain(
-                    index
-                        .ranked_countable
+                    ranks_terminal
                         .then(|| index.properties.len().checked_sub(1))
                         .flatten(),
                 )
-                .collect(),
-            RankedAxis::Sum => (index.ranked_summable
-                && index.summable.as_deref() == Some(aggregate_field))
-            .then(|| index.properties.len().checked_sub(1))
-            .flatten()
-            .into_iter()
-            .collect(),
-            RankedAxis::Avg => (index.ranked_averageable
-                && index.summable.as_deref() == Some(aggregate_field))
-            .then(|| index.properties.len().checked_sub(1))
-            .flatten()
-            .into_iter()
-            .collect(),
+                .collect()
+        };
+        let sums_requested_field = index.summed_value_name() == Some(aggregate_field);
+        let candidate_positions: Vec<usize> = match axis {
+            RankedAxis::Count => positions(&index.ranked_countable_at, index.ranked_countable),
+            RankedAxis::Sum if sums_requested_field => {
+                positions(&index.ranked_summable_at, index.ranked_summable)
+            }
+            RankedAxis::Avg if sums_requested_field => {
+                positions(&index.ranked_averageable_at, index.ranked_averageable)
+            }
+            RankedAxis::Sum | RankedAxis::Avg => Vec::new(),
         };
         // A candidate matches when its property is the grouping property
         // and every property before it is pinned exactly once (length

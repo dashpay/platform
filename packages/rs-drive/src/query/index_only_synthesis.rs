@@ -190,7 +190,12 @@ impl DriveDocumentQuery<'_> {
         // projection, and an all-unused match inside the difference budget
         // could otherwise slip through (see
         // [`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)).
-        let admissible = |index: &Index| index_admissible_for_query(index, &[], &skip_bindings);
+        // A summableOffCountIndex index keeps no member entries to rebuild documents
+        // from.
+        let admissible = |index: &Index| {
+            !index.is_summable_off_count_index()
+                && index_admissible_for_query(index, &[], &skip_bindings)
+        };
         let matching = |filter: &dyn Fn(&Index) -> bool| {
             self.document_type
                 .index_for_types_matching_including_terminal(
@@ -1110,7 +1115,11 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
                 || index.properties.iter().any(|p| p.name == OWNER_ID);
             let carries_created_at = index.terminal_contains(CREATED_AT)
                 || index.properties.iter().any(|p| p.name == CREATED_AT);
-            carries_owner && !carries_created_at && !index.skip_if_absent && !index.outlives_delete
+            carries_owner
+                && !carries_created_at
+                && !index.skip_if_absent
+                && !index.outlives_delete
+                && !index.is_summable_off_count_index()
         })
         .ok_or(Error::Query(QuerySyntaxError::Unsupported(
             "executed-transition proofs for an indexOnly type need an \

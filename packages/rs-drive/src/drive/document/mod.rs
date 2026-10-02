@@ -116,6 +116,10 @@ pub(crate) mod time_range_ttl;
 #[cfg(feature = "server")]
 pub mod index_only;
 
+/// The counter a summableOffCountIndex index keeps per group
+#[cfg(feature = "server")]
+pub(crate) mod summable_off_count_counter;
+
 /// Unbilled reads of how an index entry is stored, for the walkers that
 /// remove or refresh entries earlier protocol versions laid out otherwise
 #[cfg(feature = "server")]

@@ -44,6 +44,8 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         range_summable: false,
         ranked_countable: false,
         ranked_countable_at: vec![],
+        ranked_summable_at: Vec::new(),
+        ranked_averageable_at: Vec::new(),
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
@@ -53,6 +55,7 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         outlives_delete: false,
         skip_if_absent: false,
         skip_if_absent_properties: Vec::new(),
+        summable_off_count_index: None,
     }
 }
 
@@ -71,6 +74,8 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         range_summable: true,
         ranked_countable: false,
         ranked_countable_at: vec![],
+        ranked_summable_at: Vec::new(),
+        ranked_averageable_at: Vec::new(),
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
@@ -80,6 +85,7 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         outlives_delete: false,
         skip_if_absent: false,
         skip_if_absent_properties: Vec::new(),
+        summable_off_count_index: None,
     }
 }
 

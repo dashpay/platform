@@ -901,12 +901,7 @@ impl DriveDocumentCountQuery<'_> {
                 // whose count IS the whole-subtree total, and the
                 // fully-covered selector below reads them verbatim — the
                 // loop just stops here instead of at the terminal.
-                let min_at_position = self
-                    .index
-                    .ranked_countable_at
-                    .iter()
-                    .filter_map(|at| self.index.properties.iter().position(|p| &p.name == at))
-                    .min();
+                let min_at_position = self.index.shallowest_count_chain_position();
                 let deepest_pin_is_count_bearing =
                     position >= 1 && min_at_position.is_some_and(|min_at| min_at < position);
                 if deepest_pin_is_count_bearing {

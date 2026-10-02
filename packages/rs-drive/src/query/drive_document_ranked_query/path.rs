@@ -45,12 +45,14 @@ pub(crate) fn ranked_level_split(
     let is_at_level = index
         .ranked_countable_at
         .iter()
+        .chain(index.ranked_summable_at.iter())
+        .chain(index.ranked_averageable_at.iter())
         .any(|at| at == &ranked_property.name);
     let is_terminal = pin_count + 1 == index.properties.len();
     if !is_at_level && !is_terminal {
         return Err(Error::Drive(DriveError::NotSupported(
             "ranked and having-range queries must land on a level hosting a ranking \
-             secondary — the index's rankedCountable.at property or its terminal property; \
+             secondary — one of the index's ranking `at` properties or its terminal property; \
              the resolved pin set addresses an intermediate level",
         )));
     }

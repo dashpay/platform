@@ -141,9 +141,14 @@ pub(super) fn validate_no_ranked_prefix_overlap(
         // else can conflict with them once this one is protected. The
         // parser guarantees each `at` name resolves to a non-terminal
         // property; stay defensive for `Index` values built outside it.
+        // A `summableOffCountIndex` index's Sum and Avg rankings chain the
+        // same way (its counters carry counts and sums), so the shallowest
+        // level over all three axes keys the rules.
         let Some(at_position) = ranked
             .ranked_countable_at
             .iter()
+            .chain(ranked.ranked_summable_at.iter())
+            .chain(ranked.ranked_averageable_at.iter())
             .filter_map(|at| ranked.properties.iter().position(|p| &p.name == at))
             .min()
         else {
@@ -189,6 +194,9 @@ pub(super) fn validate_no_ranked_prefix_overlap(
                     && !other.ranked_summable
                     && !other.ranked_averageable
                     && other.ranked_countable_at.is_empty()
+                    && other.ranked_summable_at.is_empty()
+                    && other.ranked_averageable_at.is_empty()
+                    && other.summable_off_count_index.is_none()
                     && other.contested_index.is_none();
                 let continues_below_at = other.properties.len() > at_position + 1;
                 // Continuing below `at` is not enough — the sibling must
@@ -206,8 +214,8 @@ pub(super) fn validate_no_ranked_prefix_overlap(
                     return Err(consensus_or_protocol_data_contract_error(
                         DataContractError::InvalidContractStructure(format!(
                             "prefix-ranked index `{}` conflicts with index `{}`: the levels from \
-                             its rankedCountable.at property (\"{}\") down form the ranking's \
-                             count-propagation chain, and the other index shares the [{}] level. \
+                             its ranking's `at` property (\"{}\") down form the ranking's \
+                             propagation chain, and the other index shares the [{}] level. \
                              Only a plain sibling (no countable/summable/ranked flags) that \
                              continues past the `at` property and branches off the chain can be \
                              laid out count-exempt beside the ranking; diverge the other index \
@@ -234,7 +242,7 @@ pub(super) fn validate_no_ranked_prefix_overlap(
                     return Err(consensus_or_protocol_data_contract_error(
                         DataContractError::InvalidContractStructure(format!(
                             "prefix-ranked index `{}` conflicts with index `{}`: the prefix \
-                             [{}] above its rankedCountable.at property also terminates a \
+                             [{}] above its ranking's `at` property also terminates a \
                              countable/summable index, so the grouping tree would sit inside \
                              aggregating value trees and need a NonCounted/NotSummed shell — \
                              which the storage layer rejects for indexed trees. Drop the \
@@ -280,6 +288,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -289,6 +299,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 

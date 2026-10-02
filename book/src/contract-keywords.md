@@ -273,7 +273,7 @@ Expressions:
 | `averageable` | property name | Shorthand for `countable` plus `summable`. | 12 | [averageable](contract-keywords/aggregates.md#averageable) |
 | `rangeCountable`, `rangeSummable`, `rangeAverageable` | boolean | Provable counts, sums or averages over ranges of the indexed value. | 12 | [Index range keys](contract-keywords/aggregates.md#index-rangecountable-rangesummable-rangeaverageable) |
 | `rankedCountable` | boolean or `{ "at": ... }` | Orders the indexed values by document count, for "top K" queries; `at` names the levels ranked. | 14 | [rankedCountable](contract-keywords/ranked.md#rankedcountable) · [internals](drive/document-ranked-trees.md#contract-grammar) |
-| `rankedSummable`, `rankedAverageable` | boolean | Orders them by sum, or by average. | 14 | [Ranked Indexes](contract-keywords/ranked.md#rankedsummable) |
+| `rankedSummable`, `rankedAverageable` | boolean, or `{ "at": ... }` on a `summableOffCountIndex` index | Orders them by sum, or by average. | 14 | [Ranked Indexes](contract-keywords/ranked.md#rankedsummable) |
 | `timeRange` | `{ "on", "range", "step", "phase", "ttl" }` | Buckets a system timestamp into time windows, for trending queries. | 14 | [Time-Range Indexes](contract-keywords/time-range.md) · [internals](drive/time-range-ttl.md) |
 | `timeRange.on` | `"$createdAt"`, `"$updatedAt"`, `"$transferredAt"` | The timestamp to bucket: the index's first property. | 14 | [The keys](contract-keywords/time-range.md#the-keys) |
 | `timeRange.range`, `.step` | seconds | Each window's length, and the time between window starts. | 14 | [The keys](contract-keywords/time-range.md#the-keys) |
@@ -284,6 +284,7 @@ Expressions:
 | `integerRange.range`, `.step`, `.phase` | integers, `phase` default 0 | Each window's length, the distance between window starts, and the shift of the window boundaries. | 14 | [The keys](contract-keywords/integer-range.md#the-keys) |
 | `terminal` | property name or list | On an index-only type, what keys each entry in place of the document id. | 14 | [terminal](contract-keywords/index-only.md#terminal) |
 | `preallocated` | boolean | On an index-only type, creates the index's trees with the referenced document. | 14 | [preallocated](contract-keywords/index-only.md#preallocated) · [internals](drive/index-only-document-types.md#preallocated-index-paths) |
+| `summableOffCountIndex` | index name | On an index-only type, keeps one counter per group of how many entries the named index keeps for it, in place of an entry per document: the count reads groups, the sum entries. | 14 | [summableOffCountIndex](contract-keywords/index-only.md#summableoffcountindex) |
 | `outlivesDelete` | boolean | On an index-only type's time window with a `ttl`, a delete leaves the index's entries to expire, and a create writes over one already there. | 14 | [outlivesDelete](contract-keywords/index-only.md#outlivesdelete) · [internals](drive/index-only-document-types.md#entries-that-outlive-a-delete-outlivesdelete) |
 | `skipIfAbsent` | `true` or property names | A document missing a property of the skip set writes no entry into the index. | 14 | [skipIfAbsent](contract-keywords/indexes.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |
 

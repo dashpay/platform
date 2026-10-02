@@ -145,6 +145,26 @@ impl IndexLevel {
                 self.count_propagating, new.count_propagating,
             ));
         }
+        // The Sum and Avg chain stamps of a `summableOffCountIndex` index
+        // decide the same layout on the other axes.
+        if self.ranked_sum_grouping != new.ranked_sum_grouping {
+            return Some(format!(
+                "(ranked_sum_grouping: {} -> {})",
+                self.ranked_sum_grouping, new.ranked_sum_grouping,
+            ));
+        }
+        if self.ranked_average_grouping != new.ranked_average_grouping {
+            return Some(format!(
+                "(ranked_average_grouping: {} -> {})",
+                self.ranked_average_grouping, new.ranked_average_grouping,
+            ));
+        }
+        if self.sum_propagating != new.sum_propagating {
+            return Some(format!(
+                "(sum_propagating: {} -> {})",
+                self.sum_propagating, new.sum_propagating,
+            ));
+        }
         // The exempt-branch marker decides whether the level's
         // property-name tree is created `Element::NonCounted`-wrapped
         // inside the chain's value trees or inserted contributing —

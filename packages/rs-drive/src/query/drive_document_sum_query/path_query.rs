@@ -90,20 +90,35 @@ impl<'a> DriveDocumentSumQuery<'a> {
         let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
         let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
 
-        for prop in self.index.properties.iter() {
-            let clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name)
-                .ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+        for (position, prop) in self.index.properties.iter().enumerate() {
+            let Some(clause) = self.where_clauses.iter().find(|wc| wc.field == prop.name) else {
+                // Sum-chain value-tree read: when the deepest pinned
+                // property's level sits at or below the index's shallowest
+                // sum or average `at` level (a `summableOffCountIndex`
+                // index), its value trees sum their whole subtree, and the
+                // selector below reads the deepest pin's value tree as the
+                // terminator's. The pins must form a contiguous prefix.
+                let deepest_pin_is_sum_bearing = position >= 1
+                    && self
+                        .index
+                        .shallowest_sum_chain_position()
+                        .is_some_and(|min_at| min_at < position);
+                let gapped = self.index.properties[position..]
+                    .iter()
+                    .any(|deeper| self.where_clauses.iter().any(|wc| wc.field == deeper.name));
+                if deepest_pin_is_sum_bearing && !gapped {
+                    break;
+                }
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
                         "prove sum requires the where clauses to fully cover the \
                          summable index; one or more index properties have no matching \
                          `==` or `in` clause — define a more specific summable index \
                          (with `summable: \"<prop>\"` whose properties exactly equal \
                          the clauses) or use `prove=false`",
-                    ))
-                })?;
+                    ),
+                ));
+            };
 
             match clause.operator {
                 WhereOperator::Equal => {
@@ -162,8 +177,9 @@ impl<'a> DriveDocumentSumQuery<'a> {
         // to the `[0]` ref bucket. Mirror of count's
         // `count_tree_terminator` gate (uses `is_countable()` on count
         // side; on the sum side, `summable.is_some()` is the right
-        // discriminator).
-        let sum_tree_terminator = self.index.summable.is_some();
+        // discriminator). A `summableOffCountIndex` index keeps a `SumItem`
+        // counter at that key instead, read the same way.
+        let sum_tree_terminator = self.index.summed_value_name().is_some();
 
         match in_outer_keys {
             None => {

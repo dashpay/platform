@@ -49,7 +49,8 @@ impl AggregateRead {
                 && !index.ranked_countable
                 && index.ranked_countable_at.is_empty()
                 && !index.ranked_summable
-                && !index.ranked_averageable;
+                && !index.ranked_averageable
+                && !index.is_summable_off_count_index();
             // An index lists a property once, so equal lengths and every property
             // among the keys make the two the same set
             let keyed_by_filter = index.properties.len() == self.filter.len()

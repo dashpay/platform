@@ -2960,7 +2960,12 @@ impl<'a> DriveDocumentQuery<'a> {
             range_field,
             in_field,
             order_by_keys.as_slice(),
-            |index| index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings),
+            // A summableOffCountIndex index keeps no entries to read
+            // documents from; its source serves the documents it counts.
+            |index| {
+                !index.is_summable_off_count_index()
+                    && index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings)
+            },
             platform_version,
         )?
         else {

@@ -233,6 +233,8 @@ pub enum LayoutElementKind {
     Reference,
     /// A reference that also carries a sum.
     ReferenceWithSumItem,
+    /// A sum: a `summableOffCountIndex` index's counter.
+    SumItem,
 }
 
 impl LayoutElementKind {
@@ -244,6 +246,7 @@ impl LayoutElementKind {
             LayoutElementKind::ItemWithSumItem => "ItemWithSumItem",
             LayoutElementKind::Reference => "Reference",
             LayoutElementKind::ReferenceWithSumItem => "ReferenceWithSumItem",
+            LayoutElementKind::SumItem => "SumItem",
         }
     }
 }
@@ -335,6 +338,13 @@ pub enum LayoutNote {
         /// The most windows one value falls in.
         windows: u64,
     },
+    /// A `summableOffCountIndex` index's counter: one sum item per value,
+    /// holding how many entries the source index keeps for it, in place of
+    /// the value tree and its entries.
+    SummableOffCountIndex {
+        /// The index whose entries the counter counts.
+        source: String,
+    },
 }
 
 impl LayoutNote {
@@ -350,6 +360,7 @@ impl LayoutNote {
             LayoutNote::TimeRangeOverlap { .. } => "timeRangeOverlap",
             LayoutNote::TimeRangeTtl { .. } => "timeRangeTtl",
             LayoutNote::IntegerRangeOverlap { .. } => "integerRangeOverlap",
+            LayoutNote::SummableOffCountIndex { .. } => "summableOffCountIndex",
         }
     }
 
@@ -396,6 +407,10 @@ impl LayoutNote {
             LayoutNote::IntegerRangeOverlap { windows } => {
                 format!("a document lands in every window containing its value: up to {windows}")
             }
+            LayoutNote::SummableOffCountIndex { source } => format!(
+                "summableOffCountIndex: one sum item per value, holding how many entries \
+                 {source} keeps for it; a create adds one and a delete takes one away"
+            ),
         }
     }
 }
@@ -716,6 +731,30 @@ fn value_node(
             property: level_key.to_string(),
         },
     };
+
+    // A `summableOffCountIndex` index keeps its counter at the value
+    // position, where another index grows a value tree, and nothing continues
+    // below it (registration refuses an index that would).
+    if let Some(info) = level
+        .has_index_with_type()
+        .filter(|info| info.is_summable_off_count_index())
+    {
+        notes.push(LayoutNote::SummableOffCountIndex {
+            source: info.summable_off_count_index.clone().unwrap_or_default(),
+        });
+        if info.preallocated {
+            notes.push(LayoutNote::Preallocated);
+        }
+        return Ok(LayoutNode {
+            key,
+            role: LayoutRole::IndexValue,
+            element: element(LayoutElementKind::SumItem),
+            alternative: None,
+            indexes: indexes_through(index_paths, path),
+            notes,
+            children: vec![],
+        });
+    }
 
     let mut children = Vec::new();
     if let Some(info) = level.has_index_with_type() {
