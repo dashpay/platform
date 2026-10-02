@@ -2737,10 +2737,11 @@ pub(super) fn property_equality_kind(
 }
 
 /// A path a condition reads, as the document type names it: `path` itself,
-/// or, with `allow_stored_reads`, what follows the `$old.` a condition of an
-/// `immutable` entry reads the stored document through
-/// ([`STORED_DOCUMENT_PREFIX`]). A rule of `propertyConstraints` judges the
-/// document written, so there is no stored document for it to read.
+/// or, with `allow_stored_reads`, what follows the `$old.` a condition judging
+/// a replace (an `immutable` entry's, or `retractedWhen`) reads the stored
+/// document through ([`STORED_DOCUMENT_PREFIX`]). A rule of
+/// `propertyConstraints` judges the document written, so there is no stored
+/// document for it to read.
 fn stored_path<'a>(
     path: &'a str,
     subject: &str,
@@ -2749,8 +2750,9 @@ fn stored_path<'a>(
     match path.strip_prefix(STORED_DOCUMENT_PREFIX) {
         Some(stored) if allow_stored_reads => Ok(stored),
         Some(_) => Err(format!(
-            "{subject} reads \"{path}\", but only a condition of an `immutable` entry reads \
-             the stored document through `{STORED_DOCUMENT_PREFIX}`"
+            "{subject} reads \"{path}\", but only a condition judging a replace (an \
+             `immutable` entry's, or `retractedWhen`) reads the stored document through \
+             `{STORED_DOCUMENT_PREFIX}`"
         )),
         None => Ok(path),
     }

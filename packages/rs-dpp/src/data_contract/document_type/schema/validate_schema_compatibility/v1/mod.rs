@@ -49,8 +49,8 @@ use crate::data_contract::document_type::property_names::{
     ACTION_FEES, CONTAINS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE,
     ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
     KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
-    PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, TOKEN_COST,
-    TRANSIENT, TTL,
+    PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, RETRACTED_WHEN,
+    TOKEN_COST, TRANSIENT, TTL,
 };
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
@@ -142,7 +142,7 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
 /// A keyword missing from this list is still refused, by the fallback in
 /// [`validate_schema_compatibility_v1`], but only the first change under it is
 /// reported: the list keeps every change reported at its own path.
-const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 18] = [
+const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
     TOKEN_COST,
     TTL,
     ACTION_FEES,
@@ -158,6 +158,7 @@ const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 18] = [
     DOCUMENTS_AVERAGEABLE,
     RANGE_AVERAGEABLE,
     MODERATOR_ABILITIES,
+    RETRACTED_WHEN,
     MIN_PROPERTIES,
     MAX_PROPERTIES,
     CONTAINS,

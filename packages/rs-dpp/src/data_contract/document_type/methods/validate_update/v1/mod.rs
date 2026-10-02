@@ -76,6 +76,14 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate that the type keeps the replace its barred owners may still make (the
+        // keyword arrives with protocol version 14, the only version selecting this generation)
+        let result = self.validate_retracted_when_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate that a property the update adds is generated only when one of its
         // params is new too (the keyword arrives with protocol version 14, the only
         // version selecting this generation)
@@ -587,6 +595,39 @@ impl DocumentTypeRef<'_> {
                     "document type can not change the time to live of its documents: changing from {} to {}",
                     describe(old_ttl),
                     describe(new_ttl)
+                ),
+            )
+            .into(),
+        )
+    }
+
+    /// What a document type's `retractedWhen` lets a banned or suspended owner write is
+    /// fixed when the type is created. Loosening it would let barred owners write what
+    /// their bar was imposed under the promise of refusing, and tightening or removing it
+    /// would take back the one exit an author whose documents can not be deleted was given
+    /// when it wrote them. Whether one condition holds wherever another does can not be
+    /// told in general, so any change is refused. It runs before the schema compatibility
+    /// differ, which only freezes the key's text, so a real change gets this error. A
+    /// document type added by an update declares `retractedWhen` freely.
+    fn validate_retracted_when_unchanged(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        if self.retracted_when() == new_document_type.retracted_when() {
+            return SimpleConsensusValidationResult::new();
+        }
+        let change = match (self.retracted_when(), new_document_type.retracted_when()) {
+            (None, _) => "add",
+            (_, None) => "remove",
+            _ => "change",
+        };
+        SimpleConsensusValidationResult::new_with_error(
+            DocumentTypeUpdateError::new(
+                self.data_contract_id(),
+                self.name(),
+                format!(
+                    "document type can not {change} its `retractedWhen` condition: what a banned \
+                     or suspended owner may still write is fixed when the type is created"
                 ),
             )
             .into(),

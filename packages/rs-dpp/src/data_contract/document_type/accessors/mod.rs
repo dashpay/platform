@@ -1130,6 +1130,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.retracted_when(),
+        }
+    }
+
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         match self {
             DocumentType::V0(_) => None,
@@ -1374,6 +1382,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.retracted_when(),
+        }
+    }
+
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         match self {
             DocumentTypeRef::V0(_) => None,
@@ -1583,6 +1599,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
             DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
             DocumentTypeMutRef::V2(v2) => v2.immutable_field_conditions(),
+        }
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.retracted_when(),
         }
     }
 
