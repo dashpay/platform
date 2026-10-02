@@ -195,6 +195,64 @@ fn should_parse_the_summable_off_count_author_and_hashtag_indexes_of_a_like() {
 }
 
 #[test]
+fn should_parse_a_count_ranking_of_a_counter_index_as_its_sum_ranking() {
+    // A document count is the counters' sums, so `rankedCountable` declares
+    // the ranking `rankedSummable` does, and needs no `rangeCountable`.
+    let mut counted = author_post();
+    counted
+        .remove_value_at_path("rankedSummable")
+        .expect("the sum ranking");
+    let counted = with(
+        counted,
+        "rankedCountable",
+        platform_value!({ "at": ["postAuthor", "postId"] }),
+    );
+    let mut unaveraged = author_post();
+    for keyword in ["rankedSummable", "rankedAverageable", "rangeCountable"] {
+        unaveraged
+            .remove_value_at_path(keyword)
+            .expect("the keyword is declared");
+    }
+    let unaveraged = with(
+        unaveraged,
+        "rankedCountable",
+        platform_value!({ "at": "postAuthor" }),
+    );
+    for full_validation in [false, true] {
+        let summed = parse(
+            post(),
+            like(vec![by_post(), author_post(), hashtag_post()]),
+            full_validation,
+        )
+        .expect("the sum ranking parses");
+        let summed = summed["like"].indexes()["byAuthorPost"].clone();
+        let document_types = parse(
+            post(),
+            like(vec![by_post(), counted.clone(), hashtag_post()]),
+            full_validation,
+        )
+        .expect("the count ranking parses");
+        let index = &document_types["like"].indexes()["byAuthorPost"];
+        assert!(!index.ranked_countable);
+        assert!(index.ranked_countable_at.is_empty());
+        assert_eq!(index, &summed, "the same index as the sum ranking");
+
+        let document_types = parse(
+            post(),
+            like(vec![by_post(), unaveraged.clone(), hashtag_post()]),
+            full_validation,
+        )
+        .expect("a count ranking needs no rangeCountable here");
+        let index = &document_types["like"].indexes()["byAuthorPost"];
+        assert!(!index.ranked_summable, "no ranking at the last property");
+        assert_eq!(index.ranked_summable_at, vec!["postAuthor".to_string()]);
+        assert!(index.ranked_countable_at.is_empty());
+        assert_eq!(index.shallowest_sum_chain_position(), Some(0));
+        assert_eq!(index.shallowest_count_chain_position(), None);
+    }
+}
+
+#[test]
 fn should_stamp_the_sum_and_average_chain_down_to_the_counter() {
     let document_types = parse(
         post(),

@@ -1896,7 +1896,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     levels (`IndexLevel::ranked_sum_grouping`, `ranked_average_grouping`,
 ///     `sum_propagating`) and laid out by Drive as count-and-sum chains
 ///     (`property_name_tree_type_and_ranked_axes_for_level`,
-///     `ranked_chain_value_tree_type`). Sum, average and ranked queries name
+///     `ranked_chain_value_tree_type`); its `rankedCountable` is parsed into
+///     that Sum ranking, since a document count there is its sums (no
+///     `rangeCountable` needed). Sum, average and ranked queries name
 ///     the source index for the summed value, and a count query reads such
 ///     an index's sums, its document counts: a point read
 ///     (`document_count_of_element`), and a ranked or having-range read on

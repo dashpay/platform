@@ -134,8 +134,8 @@ pub fn find_ranked_index_for_axis<'b>(
         let sums_requested_field = index.summed_value_name() == Some(aggregate_field);
         let candidate_positions: Vec<usize> = match axis {
             // A document count over a `summableOffCountIndex` index ranks by
-            // its sums, its document counts (`read_axis_for`); its Count
-            // secondaries count groups.
+            // its sums, its document counts (`read_axis_for`); its
+            // `rankedCountable` levels are parsed into the Sum ranking.
             RankedAxis::Count if read_axis_for(axis, index) == RankedAxis::Sum => {
                 positions(&index.ranked_summable_at, index.ranked_summable)
             }
@@ -276,22 +276,15 @@ pub fn no_covering_index_message(
             pin_fields()
         )
     };
-    // A document count over a `summableOffCountIndex` index ranks by its
-    // sums (`read_axis_for`), so there the keyword is `rankedSummable`.
-    let keyword = match axis {
-        RankedAxis::Count => "`rankedCountable` (`rankedSummable` on a `summableOffCountIndex` \
-                              index, whose sums are its document counts)"
-            .to_string(),
-        RankedAxis::Sum | RankedAxis::Avg => format!("`{}`", axis.required_index_keyword()),
-    };
     format!(
         "no ranked index covers `group_by = [{group_by_property}]`{} on the {axis:?} axis \
-         for this {surface} query: the document type needs {index_shape} declaring {keyword}{}",
+         for this {surface} query: the document type needs {index_shape} declaring `{}`{}",
         if prefix_pins.is_empty() {
             String::new()
         } else {
             format!(" with pins on [{}]", pin_fields())
         },
+        axis.required_index_keyword(),
         if aggregate_field.is_empty() {
             String::new()
         } else {

@@ -814,9 +814,10 @@ pub struct Index {
     /// with the other ranking axes (`rankedSummable` / `rankedAverageable`)
     /// — the subtree count chain the prefix levels rank by cannot carry a
     /// sum axis — except on a `summableOffCountIndex` index, whose counters
-    /// carry counts and sums up every level. There its Count rankings rank
-    /// groups, which no query reads (a ranked document count reads the Sum
-    /// rankings); its levels only give an average its group count.
+    /// carry counts and sums up every level. There a document count is its
+    /// sums, so the parser merges `rankedCountable` into the Sum ranking
+    /// ([`Index::ranked_summable`] / [`Index::ranked_summable_at`]): on such
+    /// an index this field and its boolean stay empty.
     ///
     /// Requires [`Index::range_countable`], like the terminal form. Levels
     /// from the named property down to the terminal are laid out
@@ -2734,6 +2735,24 @@ impl Index {
                         .to_string(),
                 ));
             }
+        } else {
+            // A count ranking orders groups by `count(*)`, the documents in
+            // them. On a `summableOffCountIndex` index those are its sums
+            // (its count trees count groups), so `rankedCountable` declares
+            // the ranking `rankedSummable` does: its levels merge into the
+            // Sum axis, which a ranked `count(*)` and a ranked `sum(<source>)`
+            // both read.
+            ranked_summable |= std::mem::take(&mut ranked_countable);
+            for level in std::mem::take(&mut ranked_countable_at) {
+                if !ranked_summable_at.contains(&level) {
+                    ranked_summable_at.push(level);
+                }
+            }
+            ranked_summable_at.sort_by_key(|level| {
+                index_properties
+                    .iter()
+                    .position(|property| &property.name == level)
+            });
         }
 
         // Desugar `averageable` / `rangeAverageable` into the

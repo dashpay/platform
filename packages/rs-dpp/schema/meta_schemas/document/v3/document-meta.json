@@ -1940,7 +1940,7 @@
                 },
                 "required": ["at"],
                 "additionalProperties": false,
-                "description": "Level-addressed form: places Count rankings at the named properties' levels. Cannot be combined with rankedSummable or rankedAverageable when a non-terminal level is named, except on a summableOffCountIndex index, and no other index of the document type may share a non-terminal ranked level or any level below it."
+                "description": "Level-addressed form: places Count rankings at the named properties' levels. Cannot be combined with rankedSummable or rankedAverageable when a non-terminal level is named, except on a summableOffCountIndex index, and no other index of the document type may share a non-terminal ranked level or any level below it. On a summableOffCountIndex index a document count is its sums, so rankedCountable (either form) declares the same ranking as rankedSummable and needs no rangeCountable."
               }
             ],
             "description": "Count ranking axis. Requires `rangeCountable: true`. Independent of the Sum and Avg axes (`rankedSummable` / `rankedAverageable`), which take the level-addressed form only on a summableOffCountIndex index."
@@ -2167,7 +2167,12 @@
                 }
               },
               "required": ["rankedCountable"],
-              "not": { "required": ["rangeAverageable"] }
+              "not": {
+                "anyOf": [
+                  { "required": ["rangeAverageable"] },
+                  { "required": ["summableOffCountIndex"] }
+                ]
+              }
             },
             "then": { "required": ["rangeCountable"] }
           },

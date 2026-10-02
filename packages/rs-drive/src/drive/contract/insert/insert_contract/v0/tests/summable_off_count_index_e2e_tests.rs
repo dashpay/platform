@@ -61,6 +61,7 @@ use dpp::tests::json_document::json_document_to_json_value;
 use grovedb::element::indexed::compute_avg_fixed_point;
 use grovedb::element::IndexAxis;
 use grovedb::Element;
+use std::cmp::Reverse;
 
 const FIXTURE: &str =
     "tests/supporting_files/contract/yappr-likes/yappr-likes-summable-off-count-index-contract.json";
@@ -76,25 +77,24 @@ const LIKER_5: [u8; 32] = [0x55; 32];
 /// The fixture, preallocated as written or with the counters created by the
 /// first like of a post and removed with its last.
 fn setup(preallocated: bool) -> (Drive, DataContract) {
-    if preallocated {
-        setup_with(&[])
-    } else {
-        setup_with(&["preallocated"])
-    }
+    setup_with(|index| {
+        if !preallocated {
+            index.remove("preallocated");
+        }
+    })
 }
 
-/// The fixture with the keywords `removed` taken off every like index.
-fn setup_with(removed: &[&str]) -> (Drive, DataContract) {
+/// The fixture with every like index edited by `edit`.
+fn setup_with(
+    edit: impl Fn(&mut serde_json::Map<String, serde_json::Value>),
+) -> (Drive, DataContract) {
     let pv = platform_version();
     let mut schema = json_document_to_json_value(FIXTURE).expect("read contract fixture");
     for index in schema["documentSchemas"]["like"]["indices"]
         .as_array_mut()
         .expect("like indices")
     {
-        let index = index.as_object_mut().expect("an index");
-        for keyword in removed {
-            index.remove(*keyword);
-        }
+        edit(index.as_object_mut().expect("an index"));
     }
     let contract = DataContract::try_from_platform_versioned(
         serde_json::from_value(schema).expect("contract serialization format"),
@@ -924,7 +924,10 @@ fn should_count_likes_over_a_range_of_posts_from_the_counters_sums() {
 /// range's likes: one total, and one per author across an `IN`, each proved.
 #[test]
 fn should_total_the_likes_of_a_range_of_posts_from_the_counters_sums() {
-    let (drive, contract) = setup_with(&["rankedSummable", "rankedAverageable"]);
+    let (drive, contract) = setup_with(|index| {
+        index.remove("rankedSummable");
+        index.remove("rankedAverageable");
+    });
     liked_posts(&drive, &contract);
     let pv = platform_version();
     let document_type = contract
@@ -1044,6 +1047,64 @@ fn should_rank_authors_by_likes_and_likes_per_post_with_proofs() {
             "B has 5 likes on 1 post, A 4 on 2 ({select:?})"
         );
     }
+}
+
+/// On a counter index `rankedCountable` declares the ranking `count(*)`
+/// reads, the sum ranking: spelled so, the counter indexes rank authors and
+/// posts by likes, for a ranked `count(*)` and a ranked `sum(byPost)` alike.
+#[test]
+fn should_rank_by_likes_through_a_count_ranking_of_a_counter_index() {
+    let (drive, contract) = setup_with(|index| {
+        if let Some(ranking) = index.remove("rankedSummable") {
+            index.insert("rankedCountable".to_string(), ranking);
+        }
+    });
+    let (a1, a2, b1, _) = liked_posts(&drive, &contract);
+    let by_author = vec!["postAuthor".to_string()];
+    for (select, order_field, [b, a]) in [
+        (
+            SelectProjection::count_star(),
+            RANKED_COUNT_ORDER_KEY,
+            [RankedEntryValue::Count(5), RankedEntryValue::Count(4)],
+        ),
+        (
+            SelectProjection::sum("byPost"),
+            "byPost",
+            [RankedEntryValue::Sum(5), RankedEntryValue::Sum(4)],
+        ),
+    ] {
+        let order_by = vec![OrderClause {
+            field: order_field.to_string(),
+            ascending: false,
+        }];
+        assert_eq!(
+            proved_ranked_page(&drive, &contract, &select, &by_author, &order_by, &[]),
+            vec![(AUTHOR_B.to_vec(), b), (AUTHOR_A.to_vec(), a)],
+            "{select:?}"
+        );
+    }
+    let mut posts = [(a1.to_vec(), 3), (a2.to_vec(), 1), (b1.to_vec(), 5)];
+    posts.sort_by_key(|(_, likes)| Reverse(*likes));
+    let a_posts = vec![equal("postAuthor", Value::Identifier(AUTHOR_A))];
+    assert_eq!(
+        proved_ranked_page(
+            &drive,
+            &contract,
+            &SelectProjection::count_star(),
+            &["postId".to_string()],
+            &[OrderClause {
+                field: RANKED_COUNT_ORDER_KEY.to_string(),
+                ascending: false,
+            }],
+            &a_posts,
+        ),
+        posts
+            .iter()
+            .filter(|(post, _)| post != &b1.to_vec())
+            .map(|(post, likes)| (post.clone(), RankedEntryValue::Count(*likes)))
+            .collect::<Vec<_>>(),
+        "A's posts by likes"
+    );
 }
 
 /// A ranked or bounded document count over a counter index reads its sums,
