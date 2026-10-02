@@ -63,4 +63,4 @@ pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncSta
 pub use traits::{
     ListedCoreTxid, PersistenceError, PersistenceErrorKind, PlatformWalletPersistence,
 };
-pub use wallet_accounting::wallet_direction;
+pub use wallet_accounting::{is_owned, wallet_accounting, wallet_direction};

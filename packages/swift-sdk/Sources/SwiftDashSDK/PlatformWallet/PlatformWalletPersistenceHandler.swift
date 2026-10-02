@@ -112,6 +112,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             && txo.coreAddress?.account?.accountType != dashpayExternalAccountTypeTag
     }
 
+    /// Network of the account's wallet, read through the same Optional cast
+    /// as `resolvedWalletId(of:)`.
+    static func walletNetwork(of account: PersistentAccount?) -> Network? {
+        let wallet: PersistentWallet? = account?.wallet
+        return wallet?.network
+    }
+
     static func walletOwnsTransaction(
         walletId: Data,
         transaction: PersistentTransaction
@@ -6838,9 +6845,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ) throws {
         for transaction in transactions where !transaction.isDeleted {
             guard let transactionNetwork = network
-                ?? transaction.involvedAccounts.first?.wallet.network
-                ?? transaction.inputs.first?.account?.wallet.network
-                ?? transaction.outputs.first?.account?.wallet.network,
+                ?? Self.walletNetwork(of: transaction.involvedAccounts.first)
+                ?? Self.walletNetwork(of: transaction.inputs.first?.account)
+                ?? Self.walletNetwork(of: transaction.outputs.first?.account),
                 let decoded = try? TransactionDecoder.decode(
                     transaction.transactionData, network: transactionNetwork
                 ), !decoded.inputs.isEmpty else { continue }
@@ -6875,9 +6882,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     if let cached = roundIndex?.coreAddressesByAddress[address] { owner = cached }
                     else if let addresses { owner = addresses[address] }
                     else { owner = try modelFetcher.fetch(descriptor, in: backgroundContext).first }
-                    if let account = owner?.account, account.accountType != Self.dashpayExternalAccountTypeTag,
-                       spendingWallets.contains(account.wallet.walletId) {
-                        belongs = true
+                    if let account = owner?.account, account.accountType != Self.dashpayExternalAccountTypeTag {
+                        let ownerWallet: PersistentWallet? = account.wallet
+                        if let ownerWallet, spendingWallets.contains(ownerWallet.walletId) {
+                            belongs = true
+                        }
                     }
                 }
                 if belongs { amounts.append(output.valueDuffs) }
@@ -6952,10 +6961,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let walletIds = Set(wallets.map(\.walletId))
                 let transactions = try modelFetcher.fetch(FetchDescriptor<PersistentTransaction>(), in: backgroundContext)
                     .filter { row in
-                        row.involvedAccounts.contains { walletIds.contains($0.wallet.walletId) }
-                            || (row.inputs + row.outputs).contains {
-                                Self.resolvedWalletId(of: $0).map { walletIds.contains($0) } == true
-                            }
+                        walletIds.contains { Self.walletOwnsTransaction(walletId: $0, transaction: row) }
                     }
                 let txos = try modelFetcher.fetch(FetchDescriptor<PersistentTxo>(), in: backgroundContext)
                 // One read instead of one per unlinked output.

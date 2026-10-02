@@ -5288,6 +5288,13 @@ fn decode_recorded_transactions(entry: &WalletRestoreEntryFFI) -> RecordedHistor
             context,
             stored_net_amount: Some(rec.net_amount),
             stored_direction,
+            // TODO(ffi-recorded-input-details): `RecordedTransactionRestoreFFI`
+            // carries no per-input ownership, so on the FFI/SwiftData path a
+            // spend whose funding survives only as a height row replays with no
+            // owned input and its spent mark (the guard against a redelivered
+            // funding transaction re-crediting the coin) is not rebuilt. Needs
+            // the host to supply per-input ownership across the ABI.
+            owned_inputs: Vec::new(),
         });
     }
     if dropped_decode > 0 || dropped_identity > 0 || dropped_context > 0 {

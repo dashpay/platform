@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::{Transaction, Txid};
-use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
+use key_wallet::managed_account::transaction_record::{
+    InputDetail, TransactionDirection, TransactionRecord,
+};
 use key_wallet::transaction_checking::TransactionContext;
 
 /// Every stored transaction of one wallet, replayed at load to rebuild spend guards.
@@ -53,6 +55,13 @@ pub struct StoredTransaction {
     pub stored_net_amount: Option<i64>,
     /// The wallet-level direction the store holds, when it keeps one.
     pub stored_direction: Option<TransactionDirection>,
+    /// The wallet-owned inputs the store recorded for this transaction.
+    ///
+    /// Load excludes spent outputs, so a spend whose funding survives only as
+    /// a height row replays with no owned input; these let the replay stage
+    /// that input and rebuild its spent mark. Empty when the store keeps no
+    /// per-input ownership: that spend then rebuilds no guard.
+    pub owned_inputs: Vec<InputDetail>,
 }
 
 impl From<TransactionRecord> for StoredTransaction {
@@ -61,6 +70,7 @@ impl From<TransactionRecord> for StoredTransaction {
             txid: record.txid,
             stored_net_amount: Some(record.net_amount),
             stored_direction: Some(record.direction),
+            owned_inputs: record.input_details,
             transaction: record.transaction,
             context: record.context,
         }

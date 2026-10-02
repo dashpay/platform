@@ -66,6 +66,31 @@ impl Fixture {
         funding_context: TransactionContext,
         spend_context: TransactionContext,
     ) -> Self {
+        Self::build(funding_context, spend_context, true).await
+    }
+
+    /// The funding transaction persisted only through its UTXOs: a
+    /// height-only `core_transactions` row with no record to replay.
+    async fn with_height_only_funding(spend_context: TransactionContext) -> Self {
+        let fixture = Self::build(block(100), spend_context, false).await;
+        let (height, has_record): (Option<u32>, bool) = fixture
+            .persister
+            .lock_conn_for_test()
+            .query_row(
+                "SELECT height, record_blob IS NOT NULL FROM core_transactions WHERE txid = ?1",
+                [fixture.funding.txid().as_byte_array().as_slice()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((height, has_record), (Some(100), false));
+        fixture
+    }
+
+    async fn build(
+        funding_context: TransactionContext,
+        spend_context: TransactionContext,
+        store_funding_record: bool,
+    ) -> Self {
         let mut wallet =
             Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
@@ -126,6 +151,9 @@ impl Fixture {
         let mut records = funding_result.new_records;
         records.extend(spending_result.new_records);
         assert_eq!(records.len(), 2);
+        if !store_funding_record {
+            records.retain(|record| record.txid != funding.txid());
+        }
         let (persister, dir, path) = common::fresh_persister();
         persister
             .store(
@@ -255,6 +283,30 @@ async fn should_keep_spent_output_excluded_after_finality_pruning() {
     info.update_synced_height(300);
     assert!(info.observed_spent_outpoints().is_empty());
     fixture.redeliver(&mut wallet, &mut info).await;
+}
+
+#[tokio::test]
+async fn should_keep_spent_output_excluded_after_finality_pruning_with_height_only_funding() {
+    let fixture = Fixture::with_height_only_funding(block(200)).await;
+    let (mut wallet, mut info) = fixture.load().await;
+    fixture.assert_spent_excluded(&info);
+    info.apply_chain_lock(ChainLock {
+        block_height: 300,
+        block_hash: BlockHash::from_byte_array([30; 32]),
+        signature: BLSSignature::from([0; 96]),
+    });
+    info.update_synced_height(300);
+    assert!(info.observed_spent_outpoints().is_empty());
+    fixture.redeliver(&mut wallet, &mut info).await;
+}
+
+#[tokio::test]
+async fn should_keep_unconfirmed_spend_reservation_with_height_only_funding() {
+    let fixture = Fixture::with_height_only_funding(TransactionContext::Mempool).await;
+    let (mut wallet, mut info) = fixture.load().await;
+    fixture.assert_spent_excluded(&info);
+    fixture.redeliver(&mut wallet, &mut info).await;
+    fixture.assert_spent_stored(true);
 }
 
 #[tokio::test]

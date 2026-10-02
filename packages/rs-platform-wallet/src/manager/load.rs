@@ -1259,6 +1259,7 @@ mod idempotent_load_tests {
             context: TransactionContext::Mempool,
             stored_net_amount: None,
             stored_direction: None,
+            owned_inputs: Vec::new(),
         };
         let manager = make_history_manager(RecordedHistoryPersister {
             wallet: ctx.wallet,
