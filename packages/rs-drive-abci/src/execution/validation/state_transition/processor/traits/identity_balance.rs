@@ -392,12 +392,21 @@ mod tests {
                 dpp::state_transition::batch_transition::batched_transition::BatchedTransition,
             >,
         ) -> StateTransition {
+            batch_of_with_fee_increase(transitions, 0)
+        }
+
+        fn batch_of_with_fee_increase(
+            transitions: Vec<
+                dpp::state_transition::batch_transition::batched_transition::BatchedTransition,
+            >,
+            user_fee_increase: dpp::prelude::UserFeeIncrease,
+        ) -> StateTransition {
             use dpp::state_transition::batch_transition::BatchTransitionV1;
 
             StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
                 owner_id: Default::default(),
                 transitions,
-                user_fee_increase: 0,
+                user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }))
@@ -622,6 +631,47 @@ mod tests {
             assert!(st
                 .relies_on_gas_sponsor_to_pay(&identity, platform_version)
                 .expect("sponsor reliance should not error"));
+        }
+
+        #[test]
+        fn should_ask_for_the_fee_increase_the_signer_chose_on_top_of_the_compute_fee() {
+            let platform_version = PlatformVersion::latest();
+            let actions = 2usize;
+
+            // The balance that exactly meets the floor when the signer asked for no increase.
+            let flat_minimum = platform_version
+                .fee_version
+                .state_transition_min_fees
+                .document_batch_sub_transition;
+            let shielded_fee =
+                dpp::shielded::compute_shielded_verification_fee(actions, platform_version)
+                    .expect("shielded compute fee");
+            let exactly_enough = shielded_fee + flat_minimum;
+
+            // Asserted relationally: the same batch and the same balance, differing only in the
+            // increase the signer chose, so the test cannot pass by agreeing with whatever the
+            // floor happens to compute.
+            assert!(
+                batch_of_with_fee_increase(vec![claim_to_pool(actions)], 0)
+                    .validate_identity_minimum_balance_pre_check(
+                        &identity_with_balance(exactly_enough),
+                        platform_version,
+                    )
+                    .expect("pre check should not error")
+                    .is_valid(),
+                "the floor without an increase is the baseline this test moves from"
+            );
+            assert!(
+                !batch_of_with_fee_increase(vec![claim_to_pool(actions)], 50)
+                    .validate_identity_minimum_balance_pre_check(
+                        &identity_with_balance(exactly_enough),
+                        platform_version,
+                    )
+                    .expect("pre check should not error")
+                    .is_valid(),
+                "settlement charges the increase the signer asked for, so the floor has to ask \
+                 for it too: otherwise the proof is verified and then nobody can be charged"
+            );
         }
 
         #[test]

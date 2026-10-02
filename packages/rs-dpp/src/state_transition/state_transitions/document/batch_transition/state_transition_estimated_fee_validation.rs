@@ -11,6 +11,7 @@ use crate::state_transition::batch_transition::batched_transition::BatchedTransi
 use crate::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::BatchTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{
     StateTransitionEstimatedFeeValidation, StateTransitionIdentityEstimatedFeeValidation,
     StateTransitionOwned,
@@ -208,9 +209,20 @@ impl BatchTransition {
             };
 
         // This is just the needed balance to pass this validation step, most likely the actual fees are smaller
+        // Settlement raises the processing fee by the percentage the signer asked for, and then
+        // judges the balance against the raised figure, so a floor that ignored the increase
+        // would admit a signer settlement cannot charge. Raised the same way
+        // `FeeResult::apply_user_fee_increase` raises it, and only over the fee: a document
+        // purchase and a contested collateral are amounts, not fees.
+        let raised_fees = base_fees.saturating_add(
+            ((base_fees as u128)
+                .saturating_mul(self.user_fee_increase() as u128)
+                .saturating_div(100))
+            .min(Credits::MAX as u128) as Credits,
+        );
         let needed_balance = purchases_amount
             .saturating_add(conflicting_indices_collateral_amount)
-            .saturating_add(base_fees);
+            .saturating_add(raised_fees);
 
         if identity_known_balance < needed_balance {
             return Ok(SimpleConsensusValidationResult::new_with_error(
