@@ -89,6 +89,11 @@ impl Drive {
             total_specialized_balances,
             total_in_addresses,
             total_in_shielded_balances,
+            // v2 predates the ContractCredits root tree (introduced at
+            // protocol v17 / drive v10 alongside the v3 calculator). On
+            // pre-v17 chains the tree does not exist, so v2 does not read
+            // it and leaves the field zeroed.
+            total_in_contract_credits: 0,
         })
     }
 }

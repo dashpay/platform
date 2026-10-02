@@ -259,10 +259,20 @@ mod tests {
     fn test_identity_top_up_validation_latest_version() {
         run_test_identity_top_up_validation_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
-            583880,
-            149993611120,
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin.
+            // PROTOCOL_VERSION_17: 1,480 credits more, see the protocol version 14 twin
+            585360,
+            149993609640,
         );
+    }
+
+    /// PROTOCOL_VERSION_14: 1,480 credits less processing than at the latest version. v17
+    /// adds the `ContractCredits` root tree (key 100) as the left child of `Misc` (104), so the
+    /// total system credits write this transition makes under `Misc` hashes one more child.
+    /// Pinned so v14 chain history stays bit-for-bit reproducible.
+    #[test]
+    fn test_identity_top_up_validation_protocol_version_14() {
+        run_test_identity_top_up_validation_at_protocol_version(14, 583880, 149993611120);
     }
 
     /// PROTOCOL_VERSION_13: 4,960 credits more processing than at the latest version. v14

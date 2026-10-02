@@ -199,12 +199,17 @@ pub struct Drive {
 //       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
 //       /      \                           /                     \                                         /                           \                            /                          \
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  AddressBalances 56              SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
-//                                     /                          /                                                                                                                                         \
-//                           Saved Block Transactions 36       ShieldedBalances 52                                                                                                                     ContractGroups 124
+//                                     /                          /                                                                                          /                                  \
+//                           Saved Block Transactions 36       ShieldedBalances 52                                                                        ContractCredits 100               ContractGroups 124
 //
 // This is the shape of a fresh chain. `drive::structure` describes every level below the root as
 // code, and `packages/rs-drive/grovedb-structure.json` records this shape from a real GroveDB
-// (`layer_shapes.root`), so a test fails when the two drift apart.
+// (`layer_shapes.root`), so a test fails when the two drift apart. Keys added after genesis of
+// an earlier protocol version (ShieldedBalances 52, ContractGroups 124, ContractCredits 100)
+// are placed by AVL rebalancing at insertion time, so their exact depth depends on insertion
+// order, and genesis and the protocol upgrade insert them at different points. For
+// ContractCredits the v17 upgrade test compares the root hash of both paths, so a root shape
+// that differs between them fails there.
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -254,6 +259,16 @@ pub enum RootTree {
     /// tokens, with a backwards index from each member contract to its groups (protocol
     /// version 14).
     ContractGroups = 124,
+    /// Contract credits: one sum subtree per contract holding its credit
+    /// buckets as sum items. An ordinary sum tree so the root aggregate is
+    /// the total of live contract credits; a wiped contract's subtree is
+    /// wrapped in a not-summed element and contributes nothing here
+    /// (protocol version 17).
+    ///
+    /// The key value is provisional: the allocation register leaves new
+    /// root keys unallocated, and 100 was chosen as a free value near the
+    /// other balance trees.
+    ContractCredits = 100,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -281,6 +296,7 @@ impl fmt::Display for RootTree {
             RootTree::Votes => "Votes",
             RootTree::GroupActions => "GroupActions",
             RootTree::ContractGroups => "ContractGroups",
+            RootTree::ContractCredits => "ContractCredits",
         };
         write!(f, "{}", variant_name)
     }
@@ -328,6 +344,7 @@ impl TryFrom<u8> for RootTree {
             112 => Ok(RootTree::Votes),
             88 => Ok(RootTree::GroupActions),
             124 => Ok(RootTree::ContractGroups),
+            100 => Ok(RootTree::ContractCredits),
             _ => Err(Error::Drive(DriveError::NotSupported(
                 "unknown root tree item",
             ))),
@@ -357,6 +374,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Votes => &[112],
             RootTree::GroupActions => &[88],
             RootTree::ContractGroups => &[124],
+            RootTree::ContractCredits => &[100],
         }
     }
 }

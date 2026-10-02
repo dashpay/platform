@@ -32,9 +32,21 @@ mod token_selling_tests {
             // reads the total supply even though the token sets no max supply. 12_820 credits
             // less in fees: the documents expirations tree joins `Misc` beside the token
             // supplies tree the purchase rewrites, reshaping the `Misc` Merk
-            699_868_049_840,
+            //
+            // PROTOCOL_VERSION_17: 1_480 credits more in fees, ContractCredits
+            // (100) became the left child of Misc (104), so the total supply
+            // write under Misc hashes one more child
+            699_868_048_360,
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_14: the root Merk has no contract credits key yet, so
+    /// the buyer balance must be exactly what it was before that root tree
+    /// was added. Pinned so v14 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_successful_direct_purchase_single_price_protocol_version_14() {
+        run_successful_direct_purchase_single_price_at_protocol_version(14, 699_868_049_840).await;
     }
 
     /// PROTOCOL_VERSION_13: pre-stamp buyer balance — genesis system documents
