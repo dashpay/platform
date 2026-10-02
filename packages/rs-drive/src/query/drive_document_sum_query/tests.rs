@@ -319,6 +319,37 @@ fn should_pass_over_a_counter_index_without_counts_for_an_average() {
 }
 
 #[test]
+fn should_read_a_sum_chain_pin_for_a_sum_but_not_for_an_average_above_the_count_chain() {
+    // Ranked by sum at `a` and by average at `b`: the sum chain starts at
+    // `a`, the count chain (which an average needs) at `b`.
+    let mut index = summable_off_count_index("byABT", &["a", "b", "t"]);
+    index.countable = IndexCountability::Countable;
+    index.ranked_summable_at = vec!["a".to_string()];
+    index.ranked_averageable_at = vec!["b".to_string()];
+    let indexes = make_index_map(vec![index]);
+    let pinned_a = vec![wc_equal("a")];
+    let pinned_a_b = vec![wc_equal("a"), wc_equal("b")];
+
+    assert_eq!(
+        find_summable_index_for_where_clauses(&indexes, &pinned_a, "byPost", &[])
+            .map(|i| i.name.as_str()),
+        Some("byABT"),
+        "a sum reads the `a` value tree"
+    );
+    assert!(
+        find_summable_index_with_counts_for_where_clauses(&indexes, &pinned_a, "byPost", &[])
+            .is_none(),
+        "the `a` value tree carries no count"
+    );
+    assert_eq!(
+        find_summable_index_with_counts_for_where_clauses(&indexes, &pinned_a_b, "byPost", &[])
+            .map(|i| i.name.as_str()),
+        Some("byABT"),
+        "the `b` value tree carries the count"
+    );
+}
+
+#[test]
 fn should_keep_refusing_a_range_average_whose_first_regular_index_lacks_range_counts() {
     let first = range_summable_index("aByABT", &["a", "b", "t"], "amount");
     let mut second = range_summable_index("bByBAT", &["b", "a", "t"], "amount");

@@ -97,6 +97,15 @@ impl IndexLevel {
                     old_info.range_summable, new_info.range_summable,
                 ));
             }
+            // The source a `summableOffCountIndex` index counts names its
+            // summed value and fixes the properties its groups derive from.
+            // `None` on every index before protocol version 14.
+            if old_info.summable_off_count_index != new_info.summable_off_count_index {
+                return Some(format!(
+                    "(summable_off_count_index: {:?} -> {:?})",
+                    old_info.summable_off_count_index, new_info.summable_off_count_index,
+                ));
+            }
         }
 
         for (key, old_sub) in &self.sub_index_levels {

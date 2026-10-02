@@ -19,6 +19,7 @@ use super::index_only_scalar_terminal_e2e_tests::equal;
 use super::ranked_index_e2e_tests::avg_top_k;
 use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_average_query::{
@@ -46,8 +47,11 @@ use crate::query::having::{
 };
 use crate::query::projection::SelectProjection;
 use crate::query::{DriveDocumentCountQuery, OrderClause, WhereClause, WhereOperator};
+use crate::util::batch::{DocumentOperationType, DriveOperation};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
-use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::object_size_info::{
+    DataContractInfo, DocumentAndContractInfo, DocumentTypeInfo, OwnedDocumentInfo,
+};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
@@ -564,21 +568,32 @@ fn should_take_a_like_back_on_delete() {
     }
 }
 
-/// A dry run of a like prices at least what applying it charges.
+/// A dry run of a like prices at least what applying it charges, in storage
+/// and in processing, for the post's first like and for a later one that
+/// only rewrites the counter, and leaves the counter as it was.
 #[test]
 fn should_upper_bound_a_like_with_its_dry_run() {
     for preallocated in [true, false] {
         let (drive, contract) = setup(preallocated);
         let post = insert_post(&drive, &contract, AUTHOR_A, "dash", 1);
-        let like = build_like(&contract, post, AUTHOR_A, "dash", LIKER_1, 1);
-        let estimated = insert_like(&drive, &contract, &like, false).expect("dry run");
-        let applied = insert_like(&drive, &contract, &like, true).expect("apply");
-        assert!(
-            estimated.storage_fee >= applied.storage_fee,
-            "estimated {} below applied {} (preallocated: {preallocated})",
-            estimated.storage_fee,
-            applied.storage_fee
-        );
+        let a_posts = level(&contract, &[b"postAuthor", &AUTHOR_A, b"postId"]);
+        for (seed, liker) in [LIKER_1, LIKER_2].into_iter().enumerate() {
+            let like = build_like(&contract, post, AUTHOR_A, "dash", liker, seed as u64);
+            let before = read_grove_element(&drive, &a_posts, &post);
+            let estimated = insert_like(&drive, &contract, &like, false).expect("dry run");
+            assert_eq!(
+                read_grove_element(&drive, &a_posts, &post),
+                before,
+                "a dry run moves no counter"
+            );
+            let applied = insert_like(&drive, &contract, &like, true).expect("apply");
+            assert!(
+                estimated.storage_fee >= applied.storage_fee
+                    && estimated.processing_fee >= applied.processing_fee,
+                "estimated {estimated:?} below applied {applied:?} (preallocated: \
+                 {preallocated}, like {seed})"
+            );
+        }
     }
 }
 
@@ -599,8 +614,15 @@ fn should_upper_bound_an_unlike_with_its_dry_run() {
                 "dash",
                 &[LIKER_1, LIKER_2][..liker_count],
             );
+            let a_posts = level(&contract, &[b"postAuthor", &AUTHOR_A, b"postId"]);
+            let before = read_grove_element(&drive, &a_posts, &post);
             let estimated =
                 delete_like(&drive, &contract, likes[0].clone(), false).expect("dry run");
+            assert_eq!(
+                read_grove_element(&drive, &a_posts, &post),
+                before,
+                "a dry run moves no counter"
+            );
             let applied = delete_like(&drive, &contract, likes[0].clone(), true).expect("apply");
             assert!(
                 estimated.processing_fee >= applied.processing_fee,
@@ -610,6 +632,76 @@ fn should_upper_bound_an_unlike_with_its_dry_run() {
             );
         }
     }
+}
+
+/// A Drive operation adding `like`.
+fn add_like<'a>(contract: &'a DataContract, like: &'a Document) -> DriveOperation<'a> {
+    DriveOperation::DocumentOperation(DocumentOperationType::AddDocument {
+        owned_document_info: OwnedDocumentInfo {
+            document_info: DocumentRefInfo((like, None)),
+            owner_id: None,
+        },
+        contract_info: DataContractInfo::BorrowedDataContract(contract),
+        document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("like"),
+        override_document: false,
+    })
+}
+
+/// A Drive batch writing two likes is refused, applied, dry-run or converted:
+/// each like's conversion reads the counter the other moves, so the counter
+/// would move once. One like a batch goes through.
+#[test]
+fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
+    let (drive, contract) = setup(true);
+    let post = insert_post(&drive, &contract, AUTHOR_A, "dash", 1);
+    let likes = [
+        build_like(&contract, post, AUTHOR_A, "dash", LIKER_1, 1),
+        build_like(&contract, post, AUTHOR_A, "dash", LIKER_2, 2),
+    ];
+    let add = |like| add_like(&contract, like);
+    let pv = platform_version();
+    let refused = |result: Result<(), Error>| {
+        matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        )
+    };
+    for apply in [false, true] {
+        let result = drive
+            .apply_drive_operations(
+                likes.iter().map(add).collect(),
+                apply,
+                &BlockInfo::default(),
+                None,
+                pv,
+                None,
+            )
+            .map(|_| ());
+        assert!(refused(result), "apply: {apply}");
+    }
+    let result = drive
+        .convert_drive_operations_to_grove_operations(
+            likes.iter().map(add).collect(),
+            &BlockInfo::default(),
+            None,
+            pv,
+        )
+        .map(|_| ());
+    assert!(refused(result), "converted");
+
+    drive
+        .apply_drive_operations(
+            vec![add(&likes[0])],
+            true,
+            &BlockInfo::default(),
+            None,
+            pv,
+            None,
+        )
+        .expect("one like a batch applies");
+    let a_posts = level(&contract, &[b"postAuthor", &AUTHOR_A, b"postId"]);
+    let counter = read_grove_element(&drive, &a_posts, &post).expect("the counter");
+    assert!(matches!(counter, Element::SumItem(1, _)), "got {counter:?}");
 }
 
 /// The source index's name addresses the summed likes: one post's, one

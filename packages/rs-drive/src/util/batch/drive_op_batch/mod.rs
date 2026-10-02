@@ -52,7 +52,12 @@ use crate::error::fee::FeeError;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
+use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -339,6 +344,132 @@ impl Drive {
         }
         Ok(())
     }
+
+    /// Refuses a batch that writes more than one document of a document type
+    /// keeping a `summableOffCountIndex` index. Each document's conversion
+    /// reads its groups' counters and writes them back moved, and no
+    /// conversion sees another's pending writes, so two documents of one
+    /// group in one batch would move its counter once (grovedb keeps one
+    /// write per key). A documents batch carries one transition
+    /// (`max_transitions_in_documents_batch`) and only transitions write
+    /// indexOnly documents, so no consensus batch holds two; this keeps it so
+    /// for every caller of the batch methods, estimation included. Inert
+    /// before protocol version 14: only meta-schema v3 admits such an index.
+    pub(crate) fn refuse_repeated_counter_moves(
+        &self,
+        operations: &[DriveOperation],
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let writes: Vec<DocumentTypeWrite> =
+            operations.iter().flat_map(document_type_writes).collect();
+        // One document's own conversion refuses a second move of a counter.
+        if writes.len() < 2 {
+            return Ok(());
+        }
+        let mut moved = BTreeSet::new();
+        for write in writes {
+            let (contract_id, document_type_name, keeps_counters) = match write {
+                DocumentTypeWrite::Named(contract_info, document_type_info) => {
+                    let resolved = contract_info.clone().resolve(
+                        self,
+                        block_info,
+                        transaction,
+                        &mut vec![],
+                        platform_version,
+                    )?;
+                    let contract = resolved.as_ref();
+                    let document_type = document_type_info.clone().resolve(contract)?;
+                    (
+                        contract.id(),
+                        document_type.name().clone(),
+                        keeps_counters(document_type),
+                    )
+                }
+                DocumentTypeWrite::Resolved(contract, document_type) => (
+                    contract.id(),
+                    document_type.name().clone(),
+                    keeps_counters(document_type),
+                ),
+            };
+            if keeps_counters && !moved.insert((contract_id, document_type_name)) {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a batch writes more than one document of a type keeping \
+                     summableOffCountIndex counters",
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The document type a document operation writes, named or resolved.
+enum DocumentTypeWrite<'o, 'a> {
+    Named(&'o DataContractInfo<'a>, &'o DocumentTypeInfo<'a>),
+    Resolved(&'a DataContract, DocumentTypeRef<'a>),
+}
+
+/// The document types `operation` writes a document of, once per document. A
+/// plain delete refuses an indexOnly type, and withdrawals and document
+/// history write system types, so they move no counter.
+fn document_type_writes<'o, 'a>(
+    operation: &'o DriveOperation<'a>,
+) -> Vec<DocumentTypeWrite<'o, 'a>> {
+    let DriveOperation::DocumentOperation(operation) = operation else {
+        return vec![];
+    };
+    match operation {
+        DocumentOperationType::AddDocument {
+            contract_info,
+            document_type_info,
+            ..
+        }
+        | DocumentOperationType::AddContestedDocument {
+            contract_info,
+            document_type_info,
+            ..
+        }
+        | DocumentOperationType::UpdateDocument {
+            contract_info,
+            document_type_info,
+            ..
+        }
+        | DocumentOperationType::AddDocumentAndDeleteConsumed {
+            contract_info,
+            document_type_info,
+            ..
+        }
+        | DocumentOperationType::DeleteIndexOnlyDocument {
+            contract_info,
+            document_type_info,
+            ..
+        } => vec![DocumentTypeWrite::Named(contract_info, document_type_info)],
+        DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+            document_operations,
+        } => document_operations
+            .operations
+            .iter()
+            .map(|_| {
+                DocumentTypeWrite::Resolved(
+                    document_operations.contract,
+                    document_operations.document_type,
+                )
+            })
+            .collect(),
+        DocumentOperationType::DeleteDocument { .. }
+        | DocumentOperationType::ForceDeleteDocument { .. }
+        | DocumentOperationType::AddWithdrawalDocument { .. }
+        | DocumentOperationType::DocumentHistory { .. } => vec![],
+    }
+}
+
+/// Whether `document_type` keeps a `summableOffCountIndex` index's counters.
+fn keeps_counters(document_type: DocumentTypeRef) -> bool {
+    document_type
+        .indexes()
+        .values()
+        .any(|index| index.is_summable_off_count_index())
 }
 
 impl DriveOperationFinalizationTasks for DriveOperation<'_> {

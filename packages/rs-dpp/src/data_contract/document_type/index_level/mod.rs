@@ -2452,6 +2452,40 @@ mod tests {
     }
 
     #[test]
+    fn should_return_invalid_result_if_the_counted_source_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+        let counter_index = |source: &str| Index {
+            summable: None,
+            summable_off_count_index: Some(source.to_string()),
+            ..ranked_index(false, false, false)
+        };
+
+        let old_index_structure = IndexLevel::try_from_indices(
+            &[counter_index("byPost")],
+            document_type_name,
+            platform_version,
+        )
+        .expect("failed to create old index level");
+        let new_index_structure = IndexLevel::try_from_indices(
+            &[counter_index("byReply")],
+            document_type_name,
+            platform_version,
+        )
+        .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path()
+                == "first -> second -> (summable_off_count_index: Some(\"byPost\") -> Some(\"byReply\"))"
+        );
+    }
+
+    #[test]
     fn should_return_invalid_result_if_ranked_averageable_changed() {
         let platform_version = PlatformVersion::latest();
         let document_type_name = "test";

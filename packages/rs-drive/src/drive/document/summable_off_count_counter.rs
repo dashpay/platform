@@ -105,8 +105,11 @@ impl Drive {
     /// one owner in one group. Each document is converted on its own
     /// (`previous_batch_operations` is empty across documents), so the check
     /// below catches only a second write within one conversion, refused
-    /// rather than folded; raising the cap needs the counter moves folded
-    /// across documents first (see that limit).
+    /// rather than folded, and the batch methods refuse a batch writing two
+    /// documents of a type keeping counters
+    /// (`Drive::refuse_repeated_counter_moves`), estimation included; raising
+    /// the cap needs the counter moves folded across documents first (see
+    /// that limit).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_summable_off_count_counter_operations(
         &self,
