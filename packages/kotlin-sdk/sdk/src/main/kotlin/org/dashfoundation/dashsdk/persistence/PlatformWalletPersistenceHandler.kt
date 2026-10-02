@@ -240,6 +240,47 @@ class PlatformWalletPersistenceHandler(
          * [collectFinalizedSweptTombstones] once, last.
          */
         var finalityAdvanced: Boolean = false
+
+        /**
+         * The engine's credit verdicts for this round (dashpay/platform#4638)
+         * — every `Received` / `Change` output the round's records carry that
+         * the engine did NOT credit to the owning account — keyed by the hex
+         * of the 36-byte outpoint, valued by the `UTXO_CREDIT_VERDICT_*`
+         * code. Delivered by [onWalletChangesetUtxoVerdicts] BEFORE the
+         * changeset callback, so [onWalletChangesetUtxoAdded] can hand each
+         * row its verdict as it stages it: a row for a coin the engine never
+         * held would otherwise be written unspent, restored into the engine
+         * at the next launch, and show as a phantom balance
+         * (rust-dashcore#992). An outpoint absent here is credited — the
+         * ordinary case. Dies with the buffer, so a rolled-back or abandoned
+         * round leaves nothing behind.
+         */
+        val utxoCreditVerdicts: HashMap<String, Byte> = HashMap()
+
+        /** How [upsertUtxoRow] applied [utxoCreditVerdicts] — logged once, as
+         *  counts, by [onChangesetEnd]. */
+        val utxoCreditTally = UtxoCreditVerdictTally()
+    }
+
+    /**
+     * Per-round tally of how [upsertUtxoRow] applied the engine's credit
+     * verdicts. Logged as counts only: the outpoints themselves are wallet
+     * history and never leave the store.
+     */
+    internal class UtxoCreditVerdictTally {
+        /** Rows written spent on an observed-spent verdict. */
+        var observedSpent = 0
+
+        /** Rows written spent on a doomed verdict. */
+        var doomed = 0
+
+        /** Rows that were already spent when their verdict arrived. */
+        var alreadySpent = 0
+
+        /** Context-free verdicts, which only vetoed the recovery clear. */
+        var uncredited = 0
+
+        val total: Int get() = observedSpent + doomed + alreadySpent + uncredited
     }
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
@@ -485,14 +526,32 @@ class PlatformWalletPersistenceHandler(
             // and the round's pending-key state changes are now true.
             pendingRoundAliases.remove(key)
             publishPendingKeyDeltas(buffer)
+            logUtxoCreditTally(buffer.utxoCreditTally, roundSuccess = true)
         } catch (t: Throwable) {
             // Commit failed: the staged rows never landed, so the round's
             // aliases are orphans exactly like the !success branch — and its
             // pending-key deltas are equally void (discarded with the buffer).
             scrubPendingAliases(key)
+            logUtxoCreditTally(buffer.utxoCreditTally, roundSuccess = false)
             throw t
         }
         0
+    }
+
+    /**
+     * One line per round that applied a credit verdict — the Kotlin twin of
+     * Swift's `persistence_txo_credit_verdicts` event. Counts only: no
+     * txid, outpoint, address or script. A rolled-back round never ran its
+     * staged writes, so it has nothing to report.
+     */
+    private fun logUtxoCreditTally(tally: UtxoCreditVerdictTally, roundSuccess: Boolean) {
+        if (tally.total == 0) return
+        Log.i(
+            TAG,
+            "txo credit verdicts: observedSpent=${tally.observedSpent} " +
+                "doomed=${tally.doomed} alreadySpent=${tally.alreadySpent} " +
+                "uncredited=${tally.uncredited} roundSuccess=$roundSuccess",
+        )
     }
 
 
@@ -1034,6 +1093,40 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `persistWalletChangesetUtxoVerdicts` (dashpay/platform#4638 Part 1):
+     * stage the round's credit verdicts (see
+     * [ChangesetBuffer.utxoCreditVerdicts]). Fired by Rust inside the
+     * begin/end bracket BEFORE the changeset callback, only on rounds that
+     * carry at least one verdict. Nothing is written here — the verdicts
+     * are applied by [upsertUtxoRow] when the round's `utxos_added` entries
+     * arrive, and a verdict for an outpoint no entry names is simply dropped
+     * with the round. A malformed batch fails the round rather than losing
+     * a verdict: a dropped verdict is a phantom coin the store hands back
+     * to the engine at the next load.
+     */
+    override fun onWalletChangesetUtxoVerdicts(
+        walletId: ByteArray,
+        outpoints: ByteArray,
+        verdicts: ByteArray,
+        spentAtHeights: IntArray,
+        count: Int,
+    ): Int = guarded {
+        require(
+            count >= 0 && outpoints.size == count * OUTPOINT_BYTES &&
+                verdicts.size == count && spentAtHeights.size == count,
+        ) { "credit-verdict batch does not match its count ($count)" }
+        // Rust fires this slot only inside a round; with no round open there
+        // is no `utxos_added` delivery for the verdicts to scope.
+        val round = openRound(walletId) ?: return@guarded 0
+        for (i in 0 until count) {
+            val outpoint = outpoints.copyOfRange(i * OUTPOINT_BYTES, (i + 1) * OUTPOINT_BYTES)
+            round.utxoCreditVerdicts[outpoint.toHex()] = verdicts[i]
+        }
+        0
+    }
+
     override fun onWalletChangesetUtxoAdded(
         walletId: ByteArray,
         txid: ByteArray,
@@ -1047,10 +1140,17 @@ class PlatformWalletPersistenceHandler(
         isInstantLocked: Boolean,
         isLocked: Boolean,
     ): Int = guarded {
+        // The round's verdicts all arrived before this callback, so the
+        // engine's verdict on this output (if it did NOT credit it) is
+        // final here and travels with the staged write.
+        val round = openRound(walletId)
+        val creditVerdict = round?.utxoCreditVerdicts?.get(makeOutpoint(txid, vout).toHex())
         stage(walletId) { db ->
             upsertUtxoRow(
                 db, walletId, txid, vout, amount, address, scriptPubKey,
                 height, isCoinbase, isConfirmed, isInstantLocked, isLocked,
+                creditVerdict = creditVerdict,
+                creditTally = round?.utxoCreditTally,
             )
         }
         0
@@ -1092,6 +1192,12 @@ class PlatformWalletPersistenceHandler(
         // existing row's accountId always wins; changeset callbacks pass
         // null and keep their address-projection behavior.
         resolvedAccountId: Long? = null,
+        // The engine's credit verdict on this output for the round
+        // delivering it (see [ChangesetBuffer.utxoCreditVerdicts]), or null
+        // when the engine credited it. Only the changeset callback passes
+        // one; the reconcile heal inserts coins the engine HOLDS.
+        creditVerdict: Byte? = null,
+        creditTally: UtxoCreditVerdictTally? = null,
     ) {
         val outpoint = makeOutpoint(txid, vout)
         // Ensure a parent transaction row exists (stub if missing, so
@@ -1118,7 +1224,30 @@ class PlatformWalletPersistenceHandler(
         // below and the sweep pass own that transition, and a spender
         // that reached a block is confirmed evidence a re-delivery never
         // displaces.
+        //
+        // Any credit verdict vetoes that clear (dashpay/platform#4638): the
+        // wallet is not handing this coin back as unspent — its record
+        // merely still names the output as ours. An observed-spent or
+        // doomed verdict is block-context evidence the coin is not
+        // spendable (a block spent it before the output was recognised —
+        // the spender may never have been recorded, rust-dashcore#992 — or
+        // the record can never confirm), so the row is written spent with
+        // no spender link. `isSpent` is monotonic: a row already spent is
+        // left as it is. An uncredited verdict carries no context and only
+        // keeps the clear from resurrecting the row.
         val linked = existing?.spendingTxid != null
+        val keepSpentState = linked || (existing != null && creditVerdict != null)
+        val alreadySpent = keepSpentState && existing!!.isSpent
+        val bornSpent = creditVerdict == UTXO_CREDIT_VERDICT_OBSERVED_SPENT ||
+            creditVerdict == UTXO_CREDIT_VERDICT_DOOMED
+        if (creditVerdict != null && creditTally != null) {
+            when {
+                !bornSpent -> creditTally.uncredited++
+                alreadySpent -> creditTally.alreadySpent++
+                creditVerdict == UTXO_CREDIT_VERDICT_OBSERVED_SPENT -> creditTally.observedSpent++
+                else -> creditTally.doomed++
+            }
+        }
         val row = TxoEntity(
             outpoint = outpoint,
             vout = vout,
@@ -1130,7 +1259,7 @@ class PlatformWalletPersistenceHandler(
             isConfirmed = isConfirmed,
             isInstantLocked = isInstantLocked,
             isLocked = isLocked,
-            isSpent = linked && existing!!.isSpent,
+            isSpent = alreadySpent || bornSpent,
             walletId = walletId,
             txid = txid,
             spendingTxid = existing?.spendingTxid,
@@ -1139,7 +1268,7 @@ class PlatformWalletPersistenceHandler(
             coreAddressId = existing?.coreAddressId ?: coreAddressIdIfPresent(db, coreAddressId),
             createdAt = existing?.createdAt ?: java.util.Date(),
             lastUpdated = now(),
-            supersededByTxid = if (linked) existing!!.supersededByTxid else null,
+            supersededByTxid = if (keepSpentState) existing!!.supersededByTxid else null,
         )
         db.txoDao().upsert(row)
         // Drain any pending-input rows staged before this funding TXO
@@ -4766,6 +4895,18 @@ class PlatformWalletPersistenceHandler(
          *  the vout as a little-endian `Int`. Also the wire format of the
          *  reconcile's outpoint-classification batch. */
         internal const val OUTPOINT_BYTES = 36
+
+        /** `UTXO_CREDIT_VERDICT_*` codes of the credit-verdict slot
+         *  (rs-platform-wallet-ffi `core_wallet_types.rs`). Observed spent:
+         *  a block spent the outpoint before the output was recognised. */
+        internal const val UTXO_CREDIT_VERDICT_OBSERVED_SPENT: Byte = 1
+
+        /** The record is unconfirmed and a block already spent one of its
+         *  inputs; nothing it created was credited. */
+        internal const val UTXO_CREDIT_VERDICT_DOOMED: Byte = 2
+
+        /** Not credited for a reason the bridge cannot name; no context. */
+        internal const val UTXO_CREDIT_VERDICT_UNCREDITED: Byte = 3
 
         /**
          * Rows per page in both directions of [reconcileTxos] — engine

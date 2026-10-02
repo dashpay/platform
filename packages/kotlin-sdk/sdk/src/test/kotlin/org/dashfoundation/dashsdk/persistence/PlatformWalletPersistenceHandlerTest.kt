@@ -7622,6 +7622,335 @@ class PlatformWalletPersistenceHandlerTest {
             const val OUTPOINT_SIZE = 36
         }
     }
+
+    // ── Credit verdicts at the changeset seam (dashpay/platform#4638 Part 1) ──
+    //
+    // Port of the Swift `BornSpentTxoPersistTests`. The shape the verdicts
+    // exist for (rust-dashcore#992, dashpay/platform#4575): a coin is spent
+    // by a transaction with no wallet-owned output (a CoinJoin collateral
+    // burn — sole `OP_RETURN` output) that the engine processed while the
+    // coin was not yet in its UTXO set, so the spender matched nothing and
+    // was discarded. When the funding record is (re)emitted it still
+    // classifies the output `Received`, a `utxos_added` entry is derived
+    // from that role, and — without the verdict — the row is written
+    // UNSPENT for a coin the engine never held. The restore path then hands
+    // it back to the engine on every launch. With the verdict the row is
+    // written spent at creation and the restore emits nothing for it.
+
+    private val bornSpentFundingTxid = ByteArray(32) { 0x61 }
+    private val bornSpentOtherTxid = ByteArray(32) { 0x62 }
+    private val bornSpentAddress = "yBornSpentFixtureAddr"
+
+    private class CreditVerdict(val txid: ByteArray, val vout: Int, val code: Byte, val height: Int = 0)
+
+    /** The verdict slot alone, inside whatever bracket the caller opened. */
+    private fun stageVerdicts(
+        h: PlatformWalletPersistenceHandler,
+        vararg verdicts: CreditVerdict,
+        wallet: ByteArray = walletId,
+    ): Int {
+        val outpoints = ByteArray(verdicts.size * 36)
+        verdicts.forEachIndexed { i, v ->
+            System.arraycopy(makeOutpoint(v.txid, v.vout), 0, outpoints, i * 36, 36)
+        }
+        return h.onWalletChangesetUtxoVerdicts(
+            wallet,
+            outpoints,
+            ByteArray(verdicts.size) { verdicts[it].code },
+            IntArray(verdicts.size) { verdicts[it].height },
+            verdicts.size,
+        )
+    }
+
+    /** One `utxos_added` entry for `txid:vout`, inside whatever bracket the caller opened. */
+    private fun stageBornSpentUtxo(h: PlatformWalletPersistenceHandler, txid: ByteArray, vout: Int = 0): Int =
+        h.onWalletChangesetUtxoAdded(
+            walletId, txid, vout, 19_549, bornSpentAddress, ByteArray(25) { 6 },
+            2_391_743, false, true, false, false,
+        )
+
+    private fun verdictRound(
+        h: PlatformWalletPersistenceHandler = handler,
+        success: Boolean = true,
+        body: () -> Unit,
+    ) {
+        h.onChangesetBegin(walletId)
+        body()
+        h.onChangesetEnd(walletId, success)
+    }
+
+    private val observedSpent = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_OBSERVED_SPENT
+    private val doomed = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_DOOMED
+    private val uncredited = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_UNCREDITED
+
+    @Test
+    fun observedSpentVerdictWritesTheRowSpentAndKeepsItOutOfTheRestore() = runTest {
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        verdictRound {
+            assertEquals(0, stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, observedSpent, 2_402_896)))
+            assertEquals(0, stageBornSpentUtxo(handler, bornSpentFundingTxid))
+        }
+        val coin = db.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0))!!
+        assertTrue(coin.isSpent)
+        assertNull("the spender was never recorded", coin.spendingTxid)
+        assertNull(coin.spendingInputIndex)
+        assertNull(coin.supersededByTxid)
+        assertEquals(19_549L, coin.amount)
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
+    fun doomedVerdictWritesTheRowSpent() = runTest {
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, doomed))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0))!!.isSpent)
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
+    fun uncreditedVerdictLeavesANewRowUnspent() = runTest {
+        // A context-free verdict never marks the row spent: the engine only
+        // said "not credited", and the spender's own record or the sweep
+        // callback settles it. What it does change is the redelivery clear.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, uncredited))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0))!!.isSpent)
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aVerdictVetoesTheRedeliveryClearAndItsAbsenceDoesNot() = runTest {
+        // Without a verdict, a redelivery of a spent, unlinked row clears
+        // the flag (the wallet is handing the coin back as unspent — the
+        // recovery rule). With ANY verdict the clear is vetoed: the record
+        // merely still names the output as ours, the engine does not hold it.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, observedSpent, 2_402_896))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        assertTrue(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+
+        // Redelivered with a context-free verdict: stays spent.
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, uncredited))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        assertTrue(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+
+        // Redelivered with no verdict at all: the engine credited it again
+        // (a reorg of the spender), and the row follows the wallet.
+        verdictRound { stageBornSpentUtxo(handler, bornSpentFundingTxid) }
+        assertFalse(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aVerdictKeepsASweepStampOnARedeliveredRow() = runTest {
+        // The veto covers the whole clear, the stamp included: a sweep-held
+        // row redelivered with a verdict keeps both its flag and its stamp,
+        // exactly as Swift leaves `supersededByTxid` alone.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        val winner = ByteArray(32) { 0x63 }
+        verdictRound { stageBornSpentUtxo(handler, bornSpentFundingTxid) }
+        db.txoDao().upsert(
+            db.txoDao().getByOutpoint(outpoint)!!.copy(isSpent = true, supersededByTxid = winner),
+        )
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, uncredited))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        val row = db.txoDao().getByOutpoint(outpoint)!!
+        assertTrue(row.isSpent)
+        assertTrue(winner.contentEquals(row.supersededByTxid))
+    }
+
+    @Test
+    fun verdictsDoNotOutliveTheirRound() = runTest {
+        // A verdict for an outpoint the round never delivers is dropped with
+        // the round, and a later round delivering that outpoint without a
+        // verdict writes it unspent as ever.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentOtherTxid, 0, observedSpent, 2_402_896))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0))!!.isSpent)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(bornSpentOtherTxid, 0)))
+
+        verdictRound { stageBornSpentUtxo(handler, bornSpentOtherTxid) }
+        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(bornSpentOtherTxid, 0))!!.isSpent)
+    }
+
+    @Test
+    fun aVerdictForAnUnknownWalletOrOutsideARoundIsAcceptedAndIgnored() = runTest {
+        // The same contract as every other per-kind callback for an unknown
+        // wallet: accepted, nothing written. Rust only fires the slot inside
+        // a round; outside one there is nothing to scope it to.
+        val stranger = ByteArray(32) { 0x7e }
+        assertEquals(
+            0,
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, observedSpent), wallet = stranger),
+        )
+        handler.onChangesetBegin(stranger)
+        assertEquals(
+            0,
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, observedSpent), wallet = stranger),
+        )
+        handler.onChangesetEnd(stranger, success = true)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0)))
+    }
+
+    @Test
+    fun aMalformedVerdictBatchFailsTheCallback() {
+        // A verdict silently dropped is a phantom coin the store hands back
+        // to the engine at the next load, so a batch whose arrays do not
+        // match its count fails the round instead of being half-read.
+        handler.onChangesetBegin(walletId)
+        assertEquals(
+            1,
+            handler.onWalletChangesetUtxoVerdicts(walletId, ByteArray(36), ByteArray(2), IntArray(2), 2),
+        )
+        handler.onChangesetEnd(walletId, success = false)
+    }
+
+    @Test
+    fun aRolledBackRoundLeavesNoRow() = runTest {
+        // A rolled-back round leaves neither the row nor the verdict behind.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        verdictRound(success = false) {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, observedSpent, 2_402_896))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0)))
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+
+        verdictRound { stageBornSpentUtxo(handler, bornSpentFundingTxid) }
+        assertFalse(
+            "the rolled-back verdict did not survive into a later round",
+            db.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0))!!.isSpent,
+        )
+    }
+
+    @Test
+    fun theRoundLogsOneLineOfCountsAndNoOutpoints() = runTest {
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        org.robolectric.shadows.ShadowLog.clear()
+        verdictRound {
+            stageVerdicts(
+                handler,
+                CreditVerdict(bornSpentFundingTxid, 0, observedSpent, 2_402_896),
+                CreditVerdict(bornSpentFundingTxid, 1, doomed),
+                CreditVerdict(bornSpentFundingTxid, 2, uncredited),
+            )
+            stageBornSpentUtxo(handler, bornSpentFundingTxid, 0)
+            stageBornSpentUtxo(handler, bornSpentFundingTxid, 1)
+            stageBornSpentUtxo(handler, bornSpentFundingTxid, 2)
+        }
+        val lines = org.robolectric.shadows.ShadowLog.getLogs()
+            .map { it.msg }
+            .filter { it.startsWith("txo credit verdicts:") }
+        assertEquals(
+            listOf("txo credit verdicts: observedSpent=1 doomed=1 alreadySpent=0 uncredited=1 roundSuccess=true"),
+            lines,
+        )
+        val txidHex = bornSpentFundingTxid.toHex()
+        assertTrue(
+            "no txid, outpoint or address in any persistence log line",
+            org.robolectric.shadows.ShadowLog.getLogs().none {
+                it.msg.contains(txidHex) || it.msg.contains(bornSpentAddress)
+            },
+        )
+
+        // A redelivery of an already-spent row counts as such, not as a new spend.
+        org.robolectric.shadows.ShadowLog.clear()
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, observedSpent, 2_402_896))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid, 0)
+        }
+        assertEquals(
+            listOf("txo credit verdicts: observedSpent=0 doomed=0 alreadySpent=1 uncredited=0 roundSuccess=true"),
+            org.robolectric.shadows.ShadowLog.getLogs().map { it.msg }.filter { it.startsWith("txo credit verdicts:") },
+        )
+
+        // A round with no verdict logs nothing.
+        org.robolectric.shadows.ShadowLog.clear()
+        verdictRound { stageBornSpentUtxo(handler, bornSpentOtherTxid) }
+        assertTrue(
+            org.robolectric.shadows.ShadowLog.getLogs().none { it.msg.startsWith("txo credit verdicts:") },
+        )
+    }
+
+    @Test
+    fun aRestartRestoresNothingForABornSpentRow() = runTest {
+        // The acceptance shape: after the round that wrote the row spent, a
+        // relaunch — a fresh handler over the same ON-DISK store, reopened —
+        // restores zero coins for the wallet, and so does the relaunch after
+        // that. The phantom never comes back.
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "born-spent-restart.db"
+        context.deleteDatabase(name)
+        fun open() = Room.databaseBuilder(context, DashDatabase::class.java, name)
+            .allowMainThreadQueries()
+            .build()
+        fun handlerOver(store: DashDatabase) = PlatformWalletPersistenceHandler(
+            store,
+            Dispatchers.Unconfined,
+            null,
+            storedTransactionInputs = storedInputs,
+        )
+        try {
+            val first = open()
+            try {
+                val h = handlerOver(first)
+                h.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+                h.onPersistAccountRegistration(
+                    walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+                )
+                val account = first.accountDao().observeByWallet(walletId).first().single()
+                first.coreAddressDao().upsert(
+                    CoreAddressEntity(
+                        address = bornSpentAddress,
+                        poolTypeTag = 0,
+                        addressIndex = 0,
+                        derivationPath = "m/44'/1'/0'/0/0",
+                        accountId = account.id,
+                    ),
+                )
+                verdictRound(h) {
+                    stageVerdicts(h, CreditVerdict(bornSpentFundingTxid, 0, observedSpent, 2_402_896))
+                    stageBornSpentUtxo(h, bornSpentFundingTxid)
+                }
+                assertTrue(first.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0))!!.isSpent)
+                assertTrue(h.onLoadWalletList().single().utxos.isEmpty())
+            } finally {
+                first.close()
+            }
+            repeat(2) {
+                val reopened = open()
+                try {
+                    val restore = handlerOver(reopened).onLoadWalletList().single()
+                    assertTrue(
+                        reopened.txoDao().getByOutpoint(makeOutpoint(bornSpentFundingTxid, 0))!!.isSpent,
+                    )
+                    assertTrue("a relaunch restores nothing for the burned coin", restore.utxos.isEmpty())
+                } finally {
+                    reopened.close()
+                }
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
 }
 
 /**
