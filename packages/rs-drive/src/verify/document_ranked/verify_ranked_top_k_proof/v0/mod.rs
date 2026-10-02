@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::query::drive_document_ranked_query::branches::{
     axis_entries_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
+use crate::query::drive_document_ranked_query::present_entries_on_axis;
 use crate::query::{DriveDocumentRankedQuery, RankedPage};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -79,7 +80,7 @@ impl DriveDocumentRankedQuery<'_> {
                 keys.clone(),
                 suffix,
                 AxisQuery::top_k(
-                    self.axis.into(),
+                    self.read_axis().into(),
                     self.k,
                     self.offset as u64,
                     self.descending,
@@ -116,7 +117,10 @@ impl DriveDocumentRankedQuery<'_> {
                     // element.
                     let entries = match entries {
                         None => Vec::new(),
-                        Some(entries) => axis_entries_to_ranked(self.axis, entries)?,
+                        Some(entries) => present_entries_on_axis(
+                            self.axis,
+                            axis_entries_to_ranked(self.read_axis(), entries)?,
+                        ),
                     };
                     if entries.len() > self.k as usize {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
@@ -157,7 +161,7 @@ impl DriveDocumentRankedQuery<'_> {
         let path = self.indexed_property_name_tree_path(branch)?;
         let path_query = PathQuery::new_axis_top_k(
             path,
-            self.axis.into(),
+            self.read_axis().into(),
             self.k,
             self.offset as u64,
             self.descending,
@@ -175,7 +179,10 @@ impl DriveDocumentRankedQuery<'_> {
                 "a ranked top-k proof verified to a different shape".to_string(),
             )));
         };
-        let entries = axis_entries_to_ranked(self.axis, entries)?;
+        let entries = present_entries_on_axis(
+            self.axis,
+            axis_entries_to_ranked(self.read_axis(), entries)?,
+        );
         if entries.len() > self.k as usize {
             return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                 "ranked top-k proof verified to {} entries for k = {}",

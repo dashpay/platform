@@ -76,7 +76,7 @@ The object form `{ "at": ... }` places the ranking at another level of the index
 | **Since** | protocol version 14 |
 | **On update** | Fixed (10217) |
 
-Ranks the groups of the index's last property by the sum of the index's `summable` property: the recipients who received the most, the products that sold the most units. Needs `rangeSummable: true`, or `rangeAverageable: true`. On a [`summableOffCountIndex`](index-only.md#summableoffcountindex) index the sum is the source's entries, and `at` ranks an earlier level by it: authors by the likes their posts received.
+Ranks the groups of the index's last property by the sum of the index's `summable` property: the recipients who received the most, the products that sold the most units. Needs `rangeSummable: true`, or `rangeAverageable: true`. On a [`summableOffCountIndex`](index-only.md#summableoffcountindex) index the sum is the source's entries, and `at` ranks an earlier level by it: authors by the likes their posts received. A ranked `count(*)` over such an index reads this ranking too, since its sums are its document counts.
 
 ## `rankedAverageable`
 

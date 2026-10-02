@@ -24,6 +24,10 @@ use crate::query::drive_document_average_query::{
 use crate::query::drive_document_count_query::{
     CountMode, DocumentCountRequest, DocumentCountResponse,
 };
+use crate::query::drive_document_having_query::mode_detection::detect_having_mode;
+use crate::query::drive_document_having_query::{
+    resolve_having_query_for_mode, DocumentHavingRequest, DocumentHavingResponse,
+};
 use crate::query::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode;
 use crate::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
 use crate::query::drive_document_ranked_query::{
@@ -32,6 +36,9 @@ use crate::query::drive_document_ranked_query::{
 use crate::query::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
 use crate::query::drive_document_sum_query::{
     DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
+};
+use crate::query::having::{
+    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
 };
 use crate::query::projection::SelectProjection;
 use crate::query::{DriveDocumentCountQuery, OrderClause, WhereClause, WhereOperator};
@@ -699,4 +706,160 @@ fn should_rank_authors_by_likes_and_likes_per_post_with_proofs() {
             .expect("the ranked proof verifies");
         assert_eq!(verified.entries, page.entries, "{select:?}");
     }
+}
+
+/// A ranked or bounded document count over a counter index reads its sums,
+/// its likes, where its count secondaries would count posts: `count(*)`
+/// ranks authors B (5 likes) over A (4), and `HAVING count(*) > 4` keeps
+/// only B, both proved.
+#[test]
+fn should_rank_and_bound_a_document_count_by_the_counters_sums() {
+    let (drive, contract) = setup(true);
+    liked_posts(&drive, &contract);
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name("like")
+        .expect("like doctype exists");
+    let group_by = vec!["postAuthor".to_string()];
+    let order_by = vec![OrderClause {
+        field: "$count".to_string(),
+        ascending: false,
+    }];
+    let pagination = RankedPaginationInputs {
+        limit: Some(10),
+        offset: None,
+        has_start_at: false,
+    };
+
+    let ranked = |prove: bool| DocumentRankedRequest {
+        contract: &contract,
+        document_type,
+        group_by: &group_by,
+        select: SelectProjection::count_star(),
+        having: &[],
+        order_by: &order_by,
+        where_clauses: &[],
+        limit: Some(10),
+        offset: None,
+        has_start_at: false,
+        prove,
+        resolved_time_ranges: &[],
+    };
+    let page = match drive
+        .execute_document_ranked_request(ranked(false), None, pv)
+        .expect("the ranked count succeeds")
+    {
+        DocumentRankedResponse::Entries(page) => page,
+        DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+    };
+    let ranking: Vec<(Vec<u8>, RankedEntryValue)> = page
+        .entries
+        .iter()
+        .map(|entry| (entry.key.clone(), entry.value))
+        .collect();
+    assert_eq!(
+        ranking,
+        vec![
+            (AUTHOR_B.to_vec(), RankedEntryValue::Count(5)),
+            (AUTHOR_A.to_vec(), RankedEntryValue::Count(4)),
+        ]
+    );
+    let proof = match drive
+        .execute_document_ranked_request(ranked(true), None, pv)
+        .expect("the ranked count proves")
+    {
+        DocumentRankedResponse::Proof(proof) => proof,
+        DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
+    };
+    let mode = detect_ranked_mode(
+        &SelectProjection::count_star(),
+        &group_by,
+        &[],
+        &order_by,
+        &[],
+        pagination,
+        pv,
+    )
+    .expect("the ranked count is well formed");
+    let (_, verified) = resolve_ranked_query_for_mode(
+        contract.id_ref().to_buffer(),
+        document_type,
+        "like".to_string(),
+        document_type.indexes(),
+        &mode,
+        &[],
+        pv,
+    )
+    .expect("byAuthorPost ranks at postAuthor")
+    .verify_ranked_top_k_proof(&proof, pv)
+    .expect("the ranked count proof verifies");
+    assert_eq!(verified.entries, page.entries);
+
+    let having = vec![HavingClause {
+        aggregate: HavingAggregate {
+            function: HavingAggregateFunction::Count,
+            field: String::new(),
+        },
+        operator: HavingOperator::GreaterThan,
+        right: HavingRightOperand::Value(Value::U64(4)),
+    }];
+    let bounded = |prove: bool| DocumentHavingRequest {
+        contract: &contract,
+        document_type,
+        group_by: &group_by,
+        select: SelectProjection::count_star(),
+        having: &having,
+        order_by: &[],
+        where_clauses: &[],
+        resolved_time_ranges: &[],
+        limit: Some(10),
+        offset: None,
+        has_start_at: false,
+        prove,
+    };
+    let entries = match drive
+        .execute_document_having_request(bounded(false), None, pv)
+        .expect("the bounded count succeeds")
+    {
+        DocumentHavingResponse::Entries(entries) => entries,
+        DocumentHavingResponse::Proof(_) => panic!("expected entries"),
+    };
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| (entry.key.clone(), entry.value))
+            .collect::<Vec<_>>(),
+        vec![(AUTHOR_B.to_vec(), RankedEntryValue::Count(5))],
+        "only B has more than 4 likes"
+    );
+    let proof = match drive
+        .execute_document_having_request(bounded(true), None, pv)
+        .expect("the bounded count proves")
+    {
+        DocumentHavingResponse::Proof(proof) => proof,
+        DocumentHavingResponse::Entries(_) => panic!("expected a proof"),
+    };
+    let mode = detect_having_mode(
+        &SelectProjection::count_star(),
+        &group_by,
+        &having,
+        &[],
+        &[],
+        pagination,
+        pv,
+    )
+    .expect("the bounded count is well formed");
+    let (_, verified) = resolve_having_query_for_mode(
+        contract.id_ref().to_buffer(),
+        document_type,
+        "like".to_string(),
+        document_type.indexes(),
+        &mode,
+        &[],
+        pv,
+    )
+    .expect("byAuthorPost bounds at postAuthor")
+    .verify_having_range_proof(&proof, pv)
+    .expect("the bounded count proof verifies");
+    assert_eq!(verified, entries);
 }

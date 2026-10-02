@@ -133,6 +133,12 @@ pub fn find_ranked_index_for_axis<'b>(
         };
         let sums_requested_field = index.summed_value_name() == Some(aggregate_field);
         let candidate_positions: Vec<usize> = match axis {
+            // A document count over a `summableOffCountIndex` index ranks by
+            // its sums, its document counts (`read_axis_for`); its Count
+            // secondaries count groups.
+            RankedAxis::Count if index.is_summable_off_count_index() => {
+                positions(&index.ranked_summable_at, index.ranked_summable)
+            }
             RankedAxis::Count => positions(&index.ranked_countable_at, index.ranked_countable),
             RankedAxis::Sum if sums_requested_field => {
                 positions(&index.ranked_summable_at, index.ranked_summable)

@@ -76,7 +76,7 @@ use super::drive_document_ranked_query::index_picker::{
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use super::drive_document_ranked_query::{
-    path::indexed_property_name_tree_path_for_index, PrefixPin, RankedAxis,
+    path::indexed_property_name_tree_path_for_index, read_axis_for, PrefixPin, RankedAxis,
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::drive::DriveError;
@@ -319,6 +319,24 @@ pub struct DriveDocumentHavingQuery<'a> {
 
 #[cfg(any(feature = "server", feature = "verify"))]
 impl DriveDocumentHavingQuery<'_> {
+    /// The bounds this query reads with: [`Self::bounds`], except that a
+    /// document count over a `summableOffCountIndex` index reads the Sum
+    /// secondary, whose sums are its document counts (see
+    /// [`read_axis_for`]), with the same bounds as sums.
+    pub fn read_bounds(&self) -> AxisRangeBounds {
+        match self.bounds {
+            AxisRangeBounds::Count { lo, hi }
+                if read_axis_for(RankedAxis::Count, self.index) == RankedAxis::Sum =>
+            {
+                AxisRangeBounds::Sum {
+                    lo: i64::try_from(lo).unwrap_or(i64::MAX),
+                    hi: i64::try_from(hi).unwrap_or(i64::MAX),
+                }
+            }
+            bounds => bounds,
+        }
+    }
+
     /// The resolved prefix branches, in canonical order — one per `IN`
     /// element (a single branch without an `IN`). Read-only: the field is
     /// crate-private so the resolver's encoder invariants cannot be

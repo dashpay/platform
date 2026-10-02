@@ -372,8 +372,49 @@ pub struct DriveDocumentRankedQuery<'a> {
     pub offset: u32,
 }
 
+/// The axis whose secondary a ranked or having read of `index` walks for a
+/// request on `axis`: the requested one, except that a document count
+/// (`Count`) over a `summableOffCountIndex` index walks the Sum secondary.
+/// Such an index's counters each count one group in its count trees and add
+/// their group's documents to its sums, so its sums are its document counts
+/// (`document_count_of_element`).
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn read_axis_for(axis: RankedAxis, index: &Index) -> RankedAxis {
+    if axis == RankedAxis::Count && index.is_summable_off_count_index() {
+        RankedAxis::Sum
+    } else {
+        axis
+    }
+}
+
+/// Entries read on [`read_axis_for`]'s axis, presented on the requested
+/// `axis`: document counts read from sums come back as counts.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn present_entries_on_axis(axis: RankedAxis, entries: Vec<RankedEntry>) -> Vec<RankedEntry> {
+    if axis != RankedAxis::Count {
+        return entries;
+    }
+    entries
+        .into_iter()
+        .map(|entry| match entry.value {
+            // A counter is never negative: it counts entries.
+            RankedEntryValue::Sum(sum) => RankedEntry {
+                value: RankedEntryValue::Count(u64::try_from(sum).unwrap_or_default()),
+                ..entry
+            },
+            _ => entry,
+        })
+        .collect()
+}
+
 #[cfg(any(feature = "server", feature = "verify"))]
 impl DriveDocumentRankedQuery<'_> {
+    /// The axis whose secondary this query walks ([`read_axis_for`]); its
+    /// entries are presented on [`Self::axis`].
+    pub fn read_axis(&self) -> RankedAxis {
+        read_axis_for(self.axis, self.index)
+    }
+
     /// The resolved prefix branches, in canonical order — one per `IN`
     /// element (a single branch without an `IN`). Read-only: the field is
     /// crate-private so the resolver's encoder invariants cannot be

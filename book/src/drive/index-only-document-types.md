@@ -537,8 +537,9 @@ nothing about a create), it is never the proof index, and document
 queries never read it. The count, sum, average and ranked queries do: a
 sum query names the source index (`sum(byPost)`), a count query takes a
 counter's sum (its group's documents) where another index's read takes a
-count, and a point query may stop at a level carrying the sums, reading
-that value tree's element. A range count is refused: grovedb's range count
+count (a ranked or `HAVING` count walks the Sum secondaries, and its
+entries come back as counts), and a point query may stop at a level
+carrying the sums, reading that value tree's element. A range count is refused: grovedb's range count
 over the counters would count them, one per group.
 
 ## What it costs and what it saves

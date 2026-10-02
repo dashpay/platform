@@ -1897,9 +1897,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `sum_propagating`) and laid out by Drive as count-and-sum chains
 ///     (`property_name_tree_type_and_ranked_axes_for_level`,
 ///     `ranked_chain_value_tree_type`). Sum, average and ranked queries name
-///     the source index for the summed value, and a count point query reads
-///     such an index's sums, its document counts (`document_count_of_element`);
-///     a range count over it is refused. Needs grovedb's `GROVE_V4`,
+///     the source index for the summed value, and a count query reads such
+///     an index's sums, its document counts: a point read
+///     (`document_count_of_element`), and a ranked or having-range read on
+///     its Sum secondaries (`read_axis_for`); a range count over it is
+///     refused. Needs grovedb's `GROVE_V4`,
 ///     which admits a bare `SumItem` under a
 ///     `ProvableCountProvableSumIndexedTree`. Inert for every contract without
 ///     the keyword, which every earlier grammar refuses.
