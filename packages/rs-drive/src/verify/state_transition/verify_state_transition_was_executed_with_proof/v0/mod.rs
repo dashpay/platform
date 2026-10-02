@@ -3083,6 +3083,8 @@ impl Drive {
                 // specific transition's execution.
                 Some(BatchedTransitionRef::Document(document_transition)) => {
                     use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+                    use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+                    use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
                     let data_contract_id = document_transition.data_contract_id();
                     let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
                         Error::Proof(ProofError::UnknownContract(format!(
@@ -3090,10 +3092,21 @@ impl Drive {
                             data_contract_id
                         ))),
                     )?;
-                    !contract
+                    let index_only = contract
                         .document_type_for_name(document_transition.document_type_name())
                         .map_err(|e| Error::Proof(ProofError::UnknownContract(e.to_string())))?
-                        .index_only()
+                        .index_only();
+                    // A document whose token cost is paid from a shielded pool is proven by the
+                    // document and, where one is read, the owner's balance — neither of which
+                    // names the bundle that paid. Two different payments leave the same document
+                    // behind, so a proof of the document is not a proof of the payment the
+                    // request carried, and only the state it affects is proven.
+                    let paid_from_a_shielded_pool = document_transition
+                        .base()
+                        .token_payment_info_ref()
+                        .as_ref()
+                        .is_some_and(|info| info.shielded_payment().is_some());
+                    !index_only && !paid_from_a_shielded_pool
                 }
                 Some(BatchedTransitionRef::Token(token_transition)) => {
                     let data_contract_id = token_transition.data_contract_id();
@@ -3191,8 +3204,11 @@ impl Drive {
             StateTransition::AddressFundingFromAssetLock(_) => false,
             StateTransition::AddressCreditWithdrawal(_) => false,
             StateTransition::Shield(_) => false,
-            // Nullifier-spend proofs bind the exact Orchard actions of this
-            // transition.
+            // A withdrawal's document id derives from its first nullifier and its output
+            // script, so that one binds its destination. The two beneath it rest on the
+            // nullifiers alone, which name the notes spent and not the outputs that replace
+            // them; they are classified the way the token families they mirror are not only
+            // because they are reached from released protocol versions.
             StateTransition::Unshield(_) => true,
             StateTransition::ShieldedTransfer(_) => true,
             StateTransition::ShieldedWithdrawal(_) => true,
@@ -3213,7 +3229,6 @@ impl Drive {
             // identity, and the credited identity's balance is a snapshot at
             // the proof's block.
             StateTransition::IdentityTopUpFromShieldedPool(_) => false,
-            // The token pool nullifiers bind the exact token bundle of this transfer.
             // Only the resulting state, for the reason the batched shielded transfer carries:
             // its nullifiers name the notes it spends, not the recipients it pays.
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => false,
@@ -6284,6 +6299,12 @@ mod tests {
         use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
         use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
         use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+        use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
+        use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::v0::TokenShieldedTransferWithShieldedFeeTransitionV0;
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
+        use dpp::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
+        use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 
         let no_contracts: &ContractLookupFn = &|_id| Ok(None);
 
@@ -6339,6 +6360,79 @@ mod tests {
                 StateTransition::AddressCreditWithdrawal(AddressCreditWithdrawalTransition::V0(
                     Default::default(),
                 )),
+            ),
+            // The token pool families whose evidence is a spent nullifier, a balance or a pool
+            // total. A nullifier names the note a spend consumed, never the outputs that replace
+            // it, so it cannot tell one spend of those notes from another; a balance and a pool
+            // total are what the block committed, not a record of which request moved them.
+            // Built field by field because these carry fixed-width signatures, which no derived
+            // default covers; the classifier reads none of the fields.
+            (
+                "token shielded transfer with a shielded fee",
+                StateTransition::TokenShieldedTransferWithShieldedFee(
+                    TokenShieldedTransferWithShieldedFeeTransition::V0(
+                        TokenShieldedTransferWithShieldedFeeTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
+            ),
+            (
+                "token unshield with a shielded fee",
+                StateTransition::TokenUnshieldWithShieldedFee(
+                    TokenUnshieldWithShieldedFeeTransition::V0(
+                        TokenUnshieldWithShieldedFeeTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            recipient_id: Identifier::default(),
+                            amount: 0,
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
+            ),
+            (
+                "token purchase from a shielded pool",
+                StateTransition::TokenPurchaseFromShieldedPool(
+                    TokenPurchaseFromShieldedPoolTransition::V0(
+                        TokenPurchaseFromShieldedPoolTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            token_count: 0,
+                            total_agreed_price: 0,
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
             ),
         ];
 
