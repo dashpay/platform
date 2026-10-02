@@ -16,6 +16,7 @@ use crate::services::platform_service::shielded_proof_failure_budget::{
 };
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
@@ -103,7 +104,7 @@ impl PlatformServiceImpl {
 
             // Attempt to broadcast the transaction; note that both Ok and Err can contain
             // information about the broadcast result, so we need to handle both.
-            let error_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
+            let error_result = match self.tenderdash_client.broadcast_tx(tx_base64).await {
                 Ok(broadcast_result) => {
                     if broadcast_result.code == 0 {
                         trace!(
@@ -264,14 +265,21 @@ fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
     }
 
     // `latest()` is a static upper bound, not the network's active version:
-    // every released version so far shares the same limit, and if a future
-    // version raises it, latest ≥ active keeps this a pure pre-filter —
-    // Drive still enforces the active version's limit authoritatively.
-    let max_size = PlatformVersion::latest()
-        .system_limits
-        .max_state_transition_size as usize;
+    // the caps only ever grow with the protocol version, so latest ≥ active
+    // keeps this a pure pre-filter — Drive still enforces the active
+    // version's limit authoritatively. The cap depends on the family the
+    // wire prefix names: the contract-code capable generations of the
+    // contract transitions get their own, every other family keeps
+    // `max_state_transition_size`.
+    let kind = StateTransition::peek_envelope_kind(tx);
+    let max_size = StateTransition::family_max_size(kind, PlatformVersion::latest()) as usize;
     if tx.len() > max_size {
-        debug!(actual = tx.len(), max_size, "State transition is too large");
+        debug!(
+            actual = tx.len(),
+            max_size,
+            ?kind,
+            "State transition is too large"
+        );
         return Err(DapiError::InvalidArgument(format!(
             "State Transition exceeds maximum size of {max_size} bytes"
         )));
@@ -330,9 +338,13 @@ mod tests {
             .system_limits
             .max_state_transition_size as usize;
 
-        assert!(validate_state_transition_bytes(&vec![1; max_size]).is_ok());
+        // A leading byte of 1 is `DataContractUpdate` and the second byte selects its
+        // generation; keep the fixture in the original generation so the ordinary cap applies.
+        let mut ordinary = vec![1; max_size + 1];
+        ordinary[1] = 0;
+        assert!(validate_state_transition_bytes(&ordinary[..max_size]).is_ok());
         assert!(matches!(
-            validate_state_transition_bytes(&vec![1; max_size + 1]),
+            validate_state_transition_bytes(&ordinary),
             Err(DapiError::InvalidArgument(message)) if message.contains("maximum size")
         ));
         assert!(matches!(
@@ -353,5 +365,48 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("3")
         );
+    }
+
+    #[test]
+    fn contract_code_capable_state_transitions_are_checked_against_the_family_cap() {
+        let limits = &PlatformVersion::latest().system_limits;
+        let family_cap = limits
+            .max_contract_code_state_transition_size
+            .expect("the latest version bounds contract code envelopes")
+            as usize;
+        assert!(family_cap > limits.max_state_transition_size as usize);
+
+        // Outer index 0 (`DataContractCreate`) and 1 (`DataContractUpdate`) with each family's
+        // contract-code capable generation as the inner index: 2 for create (the generation
+        // after the contract-group `V1`), 1 for update.
+        for (outer_index, inner_index) in [(0u8, 2u8), (1u8, 1u8)] {
+            let mut envelope = vec![0; family_cap + 1];
+            envelope[0] = outer_index;
+            envelope[1] = inner_index;
+            assert!(validate_state_transition_bytes(&envelope[..family_cap]).is_ok());
+            assert!(matches!(
+                validate_state_transition_bytes(&envelope),
+                Err(DapiError::InvalidArgument(message)) if message.contains("maximum size")
+            ));
+        }
+    }
+
+    #[test]
+    fn existing_contract_transition_generations_keep_the_ordinary_cap() {
+        let max_size = PlatformVersion::latest()
+            .system_limits
+            .max_state_transition_size as usize;
+
+        // Create `V0` and the contract-group create `V1`, and update `V0`: every generation
+        // that exists today is bounded by the ordinary cap.
+        for prefix in [[0u8, 0u8], [0u8, 1u8], [1u8, 0u8]] {
+            let mut envelope = vec![0xFF; max_size + 1];
+            envelope[..2].copy_from_slice(&prefix);
+            assert!(validate_state_transition_bytes(&envelope[..max_size]).is_ok());
+            assert!(matches!(
+                validate_state_transition_bytes(&envelope),
+                Err(DapiError::InvalidArgument(message)) if message.contains("maximum size")
+            ));
+        }
     }
 }

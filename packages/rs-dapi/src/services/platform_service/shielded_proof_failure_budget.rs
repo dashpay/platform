@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
+use dpp::state_transition::envelope_kind::StateTransitionEnvelopeKind;
 use dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
@@ -30,6 +31,7 @@ use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTra
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::version::PlatformVersion;
 use tonic::Request;
+use tonic::codegen::http::HeaderMap;
 
 /// Consensus code of `InvalidShieldedProofError`, the CheckTx answer for a
 /// bundle whose proof or signatures do not verify.
@@ -51,7 +53,7 @@ const MAX_TRACKED_SOURCES: usize = 16_384;
 /// Where a broadcast comes from. An IPv6 source is its /48, the usual size of
 /// one site's allocation, so a holder cannot rotate through its own /64s.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) enum SourceKey {
+pub(crate) enum SourceKey {
     V4(Ipv4Addr),
     V6Prefix48([u8; 6]),
 }
@@ -77,12 +79,19 @@ impl SourceKey {
     /// trusted only on a request from a loopback or private peer, which is
     /// where the gateway sits; any other peer is the client itself.
     pub(super) fn of_request<T>(request: &Request<T>) -> Option<Self> {
-        let peer = request.remote_addr().map(|address| address.ip());
+        Self::of_parts(
+            request.remote_addr().map(|address| address.ip()),
+            request.metadata().as_ref(),
+        )
+    }
+
+    /// [`SourceKey::of_request`] from the peer address and the HTTP headers,
+    /// for a layer that runs before tonic builds its request.
+    pub(crate) fn of_parts(peer: Option<IpAddr>, headers: &HeaderMap) -> Option<Self> {
         let behind_gateway = peer.is_none_or(is_internal);
         let forwarded = behind_gateway
             .then(|| {
-                request
-                    .metadata()
+                headers
                     .get_all("x-forwarded-for")
                     .iter()
                     .next_back()
@@ -110,8 +119,16 @@ fn last_forwarded_address(header: &str) -> Option<IpAddr> {
 
 /// Orchard actions whose proof Drive verifies before admitting the transition,
 /// or 0 for bytes without any (including bytes that do not decode, which Drive
-/// refuses before any proof work).
+/// refuses before any proof work). A contract-code capable envelope carries no
+/// Orchard actions and may be tens of megabytes, so its wire prefix answers
+/// without decoding it.
 pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
+    if matches!(
+        StateTransition::peek_envelope_kind(state_transition_bytes),
+        StateTransitionEnvelopeKind::ContractCodeCapable { .. }
+    ) {
+        return 0;
+    }
     let Ok(state_transition) =
         StateTransition::deserialize_from_bytes_untrusted(state_transition_bytes)
     else {
@@ -584,5 +601,12 @@ mod tests {
         let bytes = transfer.serialize_to_bytes().unwrap();
         assert_eq!(orchard_action_count(&bytes), 3);
         assert_eq!(orchard_action_count(&[0xff, 0x00]), 0);
+    }
+
+    #[test]
+    fn should_count_no_actions_for_a_contract_code_capable_prefix() {
+        // Create generation 2 and update generation 1.
+        assert_eq!(orchard_action_count(&[0, 2]), 0);
+        assert_eq!(orchard_action_count(&[1, 1]), 0);
     }
 }

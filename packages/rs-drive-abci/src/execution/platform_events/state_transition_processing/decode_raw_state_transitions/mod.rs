@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -15,7 +16,9 @@ where
     /// Processes the given raw state transitions based on the `block_info` and `transaction`.
     ///
     /// Version 0 ignores bytes left over after a transition; version 1 (from protocol version
-    /// 14) refuses them as an invalid encoding.
+    /// 14) refuses them as an invalid encoding; version 2 (from protocol version 17) also reads
+    /// the family of the transition from its wire prefix and bounds a contract-code capable
+    /// envelope by the family cap and decode budget instead of the ordinary ones.
     ///
     /// # Arguments
     ///
@@ -50,9 +53,12 @@ where
             1 => Ok(self
                 .decode_raw_state_transitions_v1(raw_state_transitions, platform_version)
                 .into()),
+            2 => Ok(self
+                .decode_raw_state_transitions_v2(raw_state_transitions, platform_version)
+                .into()),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "decode_raw_state_transitions".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -135,5 +141,130 @@ mod tests {
                 other => panic!("protocol version 14 refuses left over bytes, got {other:?}"),
             }
         }
+    }
+
+    /// The last protocol version whose tables select the v1 decoder (the family cap arrives
+    /// with v2 at protocol version 17).
+    const LAST_V1_DECODER_PROTOCOL_VERSION: u32 = 16;
+
+    /// Both generations reject an ordinary transition above the ordinary cap with the same
+    /// error, and both let one at the cap through to the decode step.
+    #[test]
+    fn should_bound_ordinary_transitions_identically_through_both_generations() {
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let v1_version =
+            PlatformVersion::get(LAST_V1_DECODER_PROTOCOL_VERSION).expect("protocol version 16");
+        let v2_version = PlatformVersion::latest();
+        assert_eq!(
+            v1_version
+                .drive_abci
+                .methods
+                .state_transition_processing
+                .decode_raw_state_transitions,
+            1
+        );
+        assert_eq!(
+            v2_version
+                .drive_abci
+                .methods
+                .state_transition_processing
+                .decode_raw_state_transitions,
+            2
+        );
+        let max_size = v2_version.system_limits.max_state_transition_size as usize;
+        assert_eq!(
+            max_size as u64,
+            v1_version.system_limits.max_state_transition_size
+        );
+
+        // Outer index 2 is Batch: an ordinary family through both generations. The filler is
+        // not zero because bincode decodes trailing zeroes as valid empty fields.
+        let mut oversized = vec![0xFFu8; max_size + 1];
+        oversized[0] = 2;
+        let mut at_limit = vec![0xFFu8; max_size];
+        at_limit[0] = 2;
+        let raw_state_transitions = vec![oversized, at_limit];
+
+        for platform_version in [v1_version, v2_version] {
+            let container = platform
+                .decode_raw_state_transitions(&raw_state_transitions, platform_version)
+                .expect("expected the dispatcher to select a decoder");
+            let decoded: Vec<_> = container.into_iter().collect();
+            assert_eq!(decoded.len(), 2);
+            match &decoded[0] {
+                DecodedStateTransition::InvalidEncoding(invalid) => assert!(matches!(
+                    &invalid.error,
+                    ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(_))
+                )),
+                other => panic!(
+                    "protocol version {}: expected the oversized rejection, got {other:?}",
+                    platform_version.protocol_version
+                ),
+            }
+            match &decoded[1] {
+                DecodedStateTransition::InvalidEncoding(invalid) => assert!(matches!(
+                    &invalid.error,
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )),
+                other => panic!(
+                    "protocol version {}: expected a parsing error, got {other:?}",
+                    platform_version.protocol_version
+                ),
+            }
+        }
+    }
+
+    /// A contract-code capable envelope is bounded by the ordinary cap through v1 (the family
+    /// cap does not exist there) and by the family cap through v2.
+    #[test]
+    fn should_bound_a_contract_code_capable_envelope_only_from_the_v2_generation() {
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let v1_version =
+            PlatformVersion::get(LAST_V1_DECODER_PROTOCOL_VERSION).expect("protocol version 16");
+        let v2_version = PlatformVersion::latest();
+        let ordinary_cap = v2_version.system_limits.max_state_transition_size as usize;
+
+        // Outer index 0 (`DataContractCreate`), inner index 2: the contract-code capable
+        // generation of the create family (index 1 is the existing contract-group generation).
+        let mut envelope = vec![0xFFu8; ordinary_cap + 1];
+        envelope[0] = 0;
+        envelope[1] = 2;
+        let raw_state_transitions = vec![envelope];
+
+        let container = platform
+            .decode_raw_state_transitions(&raw_state_transitions, v1_version)
+            .expect("v1 decoder");
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert!(
+            matches!(
+                &decoded[0],
+                DecodedStateTransition::InvalidEncoding(invalid)
+                    if matches!(
+                        &invalid.error,
+                        ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(_))
+                    )
+            ),
+            "the v1 decoder knows no family cap"
+        );
+
+        let container = platform
+            .decode_raw_state_transitions(&raw_state_transitions, v2_version)
+            .expect("v2 decoder");
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert!(
+            matches!(
+                &decoded[0],
+                DecodedStateTransition::InvalidEncoding(invalid)
+                    if matches!(
+                        &invalid.error,
+                        ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                    )
+            ),
+            "the v2 decoder lets a contract-code envelope above the ordinary cap reach the decode step"
+        );
     }
 }

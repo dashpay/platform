@@ -149,6 +149,8 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
     system_limits: SYSTEM_LIMITS_V1,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
+        block_max_bytes: None,
+        block_max_gas: None,
     },
 };
 ```
@@ -195,6 +197,8 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     system_limits: SYSTEM_LIMITS_V4, // changed: relative daily withdrawal limit + time-range overlap cap
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
+        block_max_bytes: None,
+        block_max_gas: None,
     },
 };
 ```

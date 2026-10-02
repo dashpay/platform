@@ -341,7 +341,7 @@ pub struct SystemLimits {
 }
 ```
 
-There are four `SYSTEM_LIMITS_V*` constants, one for each protocol version at
+There are five `SYSTEM_LIMITS_V*` constants, one for each protocol version at
 which a limit changed. The `Option` fields show the idiom for a parameter that
 did not exist before some version: `None` in the tables of the versions that
 predate the rule, `Some(value)` from the version that introduced it. It is the
@@ -406,8 +406,26 @@ every time the number moves. A new method version is warranted only when the
 *logic* changes. `daily_withdrawal_limit` in `rs-dpp` is the reference case:
 `v0` derives the limit from the current total credits, `v2` reads
 `daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`. Raising the percentage later is a `SYSTEM_LIMITS_V5`, not a
-`v3`.
+`SystemLimits`. Raising the percentage later is a table edit (the next
+`SYSTEM_LIMITS_V*`, or the unreleased version's own table), not a `v3`.
+
+Limits that only exist from a certain protocol version are `Option`s, `None`
+on every table that predates them. `SystemLimits` carries four such fields for
+the contract-code capable contract transitions introduced with protocol
+version 17: `max_contract_code_state_transition_size` (the wire cap of the
+family), `max_contract_code_state_transition_decode_budget` (the bincode budget
+it decodes under), `max_contract_code_bundle_bytes` and
+`max_contract_code_modules_per_bundle` (the bounds of the bundle itself). A
+reader of the family cap falls back to `max_state_transition_size` where the
+option is `None`, so the contract families are bounded like every other one on
+older versions.
+
+`ConsensusVersions` holds the Tenderdash consensus parameters Drive owns. Next
+to `tenderdash_consensus_version` it carries `block_max_bytes` and
+`block_max_gas`, both `None` until protocol version 17; `consensus_params_update`
+v2 pushes them to Tenderdash when the new protocol version sets them and the
+previous one did not carry the same pair, which is how a block size change is
+adopted by every validator at the same height.
 
 ## How Subsystem Version Constants Compose
 
@@ -588,7 +606,7 @@ version/
     storage/, signature/, processing/, ...   # per-group tables, each with its own v*.rs
   system_limits/
     mod.rs                      # SystemLimits struct
-    v1.rs .. v4.rs
+    v1.rs .. v5.rs
   system_data_contract_versions/
     mod.rs
     v1.rs .. v3.rs

@@ -6375,6 +6375,8 @@ dependencies = [
  "envy",
  "futures",
  "hex",
+ "http-body",
+ "http-body-util",
  "once_cell",
  "prometheus",
  "prost-types 0.14.4",

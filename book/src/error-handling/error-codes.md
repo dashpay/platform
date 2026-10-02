@@ -56,7 +56,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10400-10424 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401), `DocumentPropertyNotDistinctError` (10419), `InvalidEncryptedPropertyShapeError` (10420), `DocumentPropertyMaxBytesExceededError` (10421), `DocumentPropertyConstraintViolatedError` (10422), `DocumentPropertyNotGeneratedError` (10424) |
 | 10450-10460 | Tokens | `InvalidTokenIdError` (10450), `TokenTransferToOurselfError` (10456) |
 | 10500-10535 | Identity | `DuplicatedIdentityPublicKeyBasicError` (10500), `InvalidIdentityPublicKeyDataError` (10511) |
-| 10600-10603 | State Transition | `InvalidStateTransitionTypeError` (10600), `StateTransitionMaxSizeExceededError` (10602) |
+| 10600-10604 | State Transition | `InvalidStateTransitionTypeError` (10600), `StateTransitionMaxSizeExceededError` (10602), `StateTransitionFamilyMaxSizeExceededError` (10604, a contract-code capable contract transition above its own family cap) |
 | 10700-10700 | General | `OverflowError` (10700) |
 | 10800-10818 | Address | `TransitionOverMaxInputsError` (10800), `WithdrawalBelowMinAmountError` (10818) |
 | 10819-10827 | Shielded | `ShieldedNoActionsError` (10819), `ShieldedTooManyActionsError` (10825), `ShieldedImplicitFeeCapExceededError` (10826), `ShieldedInvalidDenominationError` (10827 — `IdentityCreateFromShieldedPool` exit amount not a member of the versioned denomination set) |

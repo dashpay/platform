@@ -8,6 +8,7 @@ use tenderdash_abci::proto::types::ConsensusParams;
 
 mod v0;
 mod v1;
+mod v2;
 
 pub(crate) fn consensus_params_update(
     network: Network,
@@ -33,9 +34,15 @@ pub(crate) fn consensus_params_update(
             new_platform_version,
             epoch_info,
         )),
+        2 => Ok(v2::consensus_params_update_v2(
+            network,
+            original_platform_version,
+            new_platform_version,
+            epoch_info,
+        )),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "consensus_params_update".to_string(),
-            known_versions: vec![0, 1],
+            known_versions: vec![0, 1, 2],
             received: version,
         })),
     }
@@ -118,6 +125,18 @@ mod tests {
         }
 
         #[test]
+        fn dispatches_to_v2_when_version_is_2() {
+            // The latest PlatformVersion has consensus_params_update = 2
+            let latest = PlatformVersion::latest();
+            assert_eq!(latest.drive_abci.methods.engine.consensus_params_update, 2);
+            let epoch_info = mid_epoch(5);
+            // Same version for original and new => None
+            let result = consensus_params_update(Network::Mainnet, latest, latest, &epoch_info);
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_none());
+        }
+
+        #[test]
         fn returns_error_for_unknown_version() {
             // Clone a real PlatformVersion and set consensus_params_update to an
             // invalid value so we exercise the actual dispatch error path.
@@ -143,7 +162,7 @@ mod tests {
                     received,
                 })) => {
                     assert_eq!(method, "consensus_params_update");
-                    assert_eq!(known_versions, vec![0, 1]);
+                    assert_eq!(known_versions, vec![0, 1, 2]);
                     assert_eq!(received, 99);
                 }
                 other => panic!("expected UnknownVersionMismatch error, got: {:?}", other),
@@ -510,6 +529,150 @@ mod tests {
             let result =
                 consensus_params_update_v1(Network::Testnet, platform_v3, platform_v3, &epoch_info);
             assert!(result.is_none());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for consensus_params_update_v2
+    // -----------------------------------------------------------------------
+
+    mod v2_tests {
+        use super::*;
+        use crate::execution::engine::consensus_params_update::v2::consensus_params_update_v2;
+        use tenderdash_abci::proto::types::BlockParams;
+
+        /// The last protocol version without block parameters in its tables.
+        fn version_without_block_params() -> &'static PlatformVersion {
+            let platform_version = PlatformVersion::get(16).expect("protocol version 16");
+            assert!(platform_version.consensus.block_max_bytes.is_none());
+            platform_version
+        }
+
+        fn expected_block_params(platform_version: &PlatformVersion) -> BlockParams {
+            BlockParams {
+                max_bytes: platform_version
+                    .consensus
+                    .block_max_bytes
+                    .expect("the version sets the block byte cap")
+                    as i64,
+                max_gas: platform_version
+                    .consensus
+                    .block_max_gas
+                    .expect("the version sets the block gas cap"),
+            }
+        }
+
+        #[test]
+        fn should_push_block_params_when_the_new_version_sets_them() {
+            let previous = version_without_block_params();
+            let latest = PlatformVersion::latest();
+            let epoch_info = mid_epoch(10);
+
+            let params =
+                consensus_params_update_v2(Network::Regtest, previous, latest, &epoch_info)
+                    .expect("a protocol version change returns an update");
+            assert_eq!(params.block, Some(expected_block_params(latest)));
+            let version = params
+                .version
+                .expect("version params travel with the block params");
+            assert_eq!(version.app_version, latest.protocol_version as u64);
+            assert_eq!(
+                version.consensus_version,
+                latest.consensus.tenderdash_consensus_version as i32
+            );
+            assert!(params.evidence.is_none());
+            assert!(params.validator.is_none());
+        }
+
+        #[test]
+        fn should_not_push_block_params_when_unchanged() {
+            let latest = PlatformVersion::latest();
+            let epoch_info = mid_epoch(10);
+
+            // Same version on both sides: no update at all.
+            assert!(
+                consensus_params_update_v2(Network::Regtest, latest, latest, &epoch_info).is_none()
+            );
+
+            // A later version that carries the same pair pushes the version params only.
+            let mut next = latest.clone();
+            next.protocol_version += 1;
+            let params = consensus_params_update_v2(Network::Regtest, latest, &next, &epoch_info)
+                .expect("a protocol version change returns an update");
+            assert!(params.block.is_none());
+            assert_eq!(
+                params.version.expect("version params").app_version,
+                next.protocol_version as u64
+            );
+        }
+
+        #[test]
+        fn should_not_push_block_params_between_versions_that_set_none() {
+            let v15 = PlatformVersion::get(15).expect("protocol version 15");
+            let v16 = version_without_block_params();
+            let epoch_info = mid_epoch(10);
+
+            let params = consensus_params_update_v2(Network::Regtest, v15, v16, &epoch_info)
+                .expect("a protocol version change returns an update");
+            assert!(params.block.is_none());
+        }
+
+        #[test]
+        fn should_never_zero_max_gas() {
+            // A version that sets the byte cap without the gas cap must not push a `Block`
+            // update: Tenderdash would copy a zero gas cap along with it.
+            let previous = version_without_block_params();
+            let mut half_set = PlatformVersion::latest().clone();
+            half_set.consensus.block_max_gas = None;
+            let epoch_info = mid_epoch(10);
+
+            let params =
+                consensus_params_update_v2(Network::Regtest, previous, &half_set, &epoch_info)
+                    .expect("a protocol version change returns an update");
+            assert!(params.block.is_none());
+
+            // And a pushed block update always carries the gas value of the table.
+            let params = consensus_params_update_v2(
+                Network::Regtest,
+                previous,
+                PlatformVersion::latest(),
+                &epoch_info,
+            )
+            .expect("update");
+            let block = params.block.expect("block params");
+            assert!(block.max_gas > 0);
+            assert_eq!(
+                block.max_gas,
+                PlatformVersion::latest()
+                    .consensus
+                    .block_max_gas
+                    .expect("gas cap")
+            );
+        }
+
+        #[test]
+        fn should_keep_the_emergency_updates_ahead_of_the_block_params() {
+            let previous = version_without_block_params();
+            let latest = PlatformVersion::latest();
+
+            for (network, epoch) in [(Network::Mainnet, 3), (Network::Testnet, 1480)] {
+                let params =
+                    consensus_params_update_v2(network, previous, latest, &epoch_change_to(epoch))
+                        .expect("emergency update");
+                assert!(params.block.is_none());
+                assert_eq!(params.version.expect("version").consensus_version, 1);
+            }
+        }
+
+        #[test]
+        fn should_push_block_params_at_genesis_of_a_new_network() {
+            // init_chain diffs the first platform version against the genesis one.
+            let first = PlatformVersion::first();
+            let latest = PlatformVersion::latest();
+            let params =
+                consensus_params_update_v2(Network::Devnet, first, latest, &epoch_change_to(0))
+                    .expect("genesis update");
+            assert_eq!(params.block, Some(expected_block_params(latest)));
         }
     }
 

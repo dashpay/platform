@@ -16,6 +16,8 @@ tokio-util = "0.7.15"
 
 # gRPC framework
 tonic = "0.14.2"
+# Per-method request body limits in front of tonic's service-wide decode cap
+http-body = "1.0"
 
 # HTTP framework for JSON-RPC and metrics endpoints
 axum = "0.8.4"
@@ -96,6 +98,8 @@ zeroize = "1.8"
 
 
 [dev-dependencies]
+# Collects the limited request body in the body limit layer tests
+http-body-util = "0.1"
 tempfile = "3.13.0"
 serial_test = "3.1.1"
 test-case = "3.3.1"

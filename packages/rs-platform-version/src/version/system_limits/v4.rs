@@ -146,4 +146,9 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expirations_per_block: 128, // document ttl (new in v14): expired documents deleted per block
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
+    // contract code bundles arrive with the 5.0 protocol version
+    max_contract_code_state_transition_size: None,
+    max_contract_code_state_transition_decode_budget: None,
+    max_contract_code_bundle_bytes: None,
+    max_contract_code_modules_per_bundle: None,
 };
