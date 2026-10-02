@@ -1888,4 +1888,24 @@ mod identity_insufficient_balance_tests {
             PlatformWalletError::InvalidIdentityData(_)
         ));
     }
+
+    /// The withdrawal and transfer-to-addresses call sites reach code 31
+    /// through this wrapper, so a key-unavailable signer failure must come
+    /// back under `Sdk`, not promoted and not handed to the fallback.
+    #[test]
+    fn keeps_a_key_unavailable_signer_failure_under_sdk() {
+        let err = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+        )));
+        assert!(promote_identity_insufficient_balance(&err).is_none());
+        let mapped = promote_identity_insufficient_balance_or(err, |_| {
+            panic!("a key-unavailable signer failure must not reach the fallback")
+        });
+        match mapped {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))) => {
+                assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
+            }
+            other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
+    }
 }
