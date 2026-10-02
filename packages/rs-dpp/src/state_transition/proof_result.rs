@@ -201,6 +201,20 @@ pub enum StateTransitionProofGuarantee {
 /// owner's credit balance, read from the same state as the result. It is a
 /// snapshot at the proof's block whatever the guarantee, and `None` for a
 /// proof made at an earlier version or for a transition without an owner.
+///
+/// Smart-contract calls keep the same two guarantees. A stored contract
+/// receipt is a record in current state, and proving it proves inclusion of
+/// that record under its key at the signed root: it is neither a
+/// re-execution proof nor a proof of state at the height the call ran. A wait
+/// on a contract call may only report
+/// [`ExecutionProved`](StateTransitionProofGuarantee::ExecutionProved) when
+/// the proved receipt key binds the specific outer invocation; a call whose
+/// contract disabled receipts can at best yield
+/// [`AffectedState`](StateTransitionProofGuarantee::AffectedState) over the
+/// keys it declared. Unproven execution-result text returned by a node never
+/// carries either guarantee. The full vocabulary, the receipt policy and the
+/// requirements on the receipt and client tasks are in the book chapter
+/// `book/src/sdk/results-receipts-and-proofs.md`.
 #[derive(Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde-conversion",
