@@ -706,36 +706,45 @@ mod tests {
         }
 
         #[test]
-        fn should_ask_a_sponsored_signer_for_the_compute_fee_and_no_more() {
+        fn should_hold_a_sponsored_signer_to_the_whole_floor_when_its_batch_carries_a_bundle() {
             use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 
             let platform_version = PlatformVersion::latest();
+            let actions = 2usize;
             let st = batch_of(vec![document_paid_from_pool(
-                2,
+                actions,
                 GasFeesPaidBy::ContractOwner,
             )]);
 
-            // One bundle verification plus two actions, from the event constants this version
-            // carries. The document delete carries no principal, so this is the whole floor.
-            const COMPUTE_FEE: u64 = 40_000_000 + 2 * 22_000_000;
+            let flat_minimum = platform_version
+                .fee_version
+                .state_transition_min_fees
+                .document_batch_sub_transition;
+            let compute_fee =
+                dpp::shielded::compute_shielded_verification_fee(actions, platform_version)
+                    .expect("shielded compute fee");
 
-            assert!(
-                st.validate_identity_minimum_balance_pre_check(
-                    &identity_with_balance(COMPUTE_FEE),
-                    platform_version,
-                )
-                .expect("pre check should not error")
-                .is_valid(),
-                "the compute fee is the whole of what a sponsored signer is asked for"
-            );
+            // The compute fee alone is what a failed event does not cost: dropping the sponsor
+            // leaves the signer owing the signature, the contract reads, the pool reads and the
+            // nonce bump beside it. Holding a sponsored signer to the floor an unsponsored one
+            // meets is what makes the failure chargeable, since that floor already is.
             assert!(
                 !st.validate_identity_minimum_balance_pre_check(
-                    &identity_with_balance(COMPUTE_FEE - 1),
+                    &identity_with_balance(compute_fee),
                     platform_version,
                 )
                 .expect("pre check should not error")
                 .is_valid(),
-                "a credit short of the compute fee is short"
+                "the compute fee alone leaves the rest of a failed event unfunded"
+            );
+            assert!(
+                st.validate_identity_minimum_balance_pre_check(
+                    &identity_with_balance(compute_fee + flat_minimum),
+                    platform_version,
+                )
+                .expect("pre check should not error")
+                .is_valid(),
+                "the whole floor is what it is asked for, the same one an unsponsored batch meets"
             );
         }
 

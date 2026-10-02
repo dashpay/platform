@@ -98,7 +98,24 @@ impl BatchTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let compute_fee = self.shielded_bundle_compute_fee(platform_version)?;
-        self.validate_estimated_principal_and_fees(identity_known_balance, compute_fee)
+        // A batch carrying a bundle is held to the floor an unsponsored one meets, because the
+        // sponsor is not who pays when it fails: a sub-transition replaced by a nonce bump takes
+        // the sponsor off the batch, and the signer then owes the verification that ran together
+        // with the signature, the contract reads, the pool reads and the bump itself. Asking for
+        // the whole floor inherits that floor's own guarantee — an unsponsored batch meeting it
+        // can be charged — instead of guessing at a bound for the failed event. A batch carrying
+        // no bundle has no such work to pay for and keeps the exemption: its signer funds the
+        // principal and fee validation judges the gas against whoever ends up paying.
+        let base_fees = if compute_fee == 0 {
+            0
+        } else {
+            self.calculate_min_required_fee(platform_version)?
+                .saturating_add(compute_fee)
+        };
+        self.validate_estimated_principal_and_fees(
+            identity_known_balance,
+            self.fees_raised_by_the_chosen_increase(base_fees),
+        )
     }
 
     /// The shielded compute fee the batch's Orchard bundles will be charged: one bundle
