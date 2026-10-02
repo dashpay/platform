@@ -249,6 +249,10 @@ public final class PersistentTransaction {
         if participatingWalletIds == [walletId], !hasUnownedTxos { return netAmount }
         // Computed from TXOs alone: a pending input this wallet recorded may be
         // one of its own still-unlinked coins, so the sum is only provisional.
+        // TODO(wallet-scoped-accounting-from-rust): a foreign payment to two
+        // local wallets leaves an unresolvable pending input per wallet, so both
+        // show "Amount unavailable". Store Rust's per-wallet net amount instead
+        // (tracked in #5226).
         guard !pendingInputs.contains(where: { $0.walletId == walletId }) else { return nil }
         let walletInputs = owned(inputs)
         let walletOutputs = owned(outputs)
