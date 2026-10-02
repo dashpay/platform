@@ -43,6 +43,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // contenders and again for every `contested_document_contenders_per_fund_doubling` (50) more
 // (DocumentContestNotPaidForError), and charges one stating more only that fund. Structure
 // validation 1 leaves the amount to it where 0 wanted exactly the contest's fund.
+// Shield and shield from asset lock transform_into_action 1 refuse an action
+// nullifier repeated inside the bundle or already recorded in state
+// (NullifierAlreadySpentError), the same check the spends run.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -353,7 +356,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed: nullifier checks
             },
             shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -377,7 +380,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 1, // changed: the bundle's sighash binds its kind tag and the asset lock it is funded from
+                transform_into_action: 1, // changed: the bundle's sighash binds its kind tag and the asset lock it is funded from, and the nullifiers its actions reveal are checked against the bundle and the state and then recorded
             },
             shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
