@@ -1,0 +1,39 @@
+use crate::drive::identity::withdrawals::paths::get_withdrawal_core_credit_pool_balances_path_vec;
+use crate::drive::Drive;
+use crate::error::Error;
+use crate::util::object_size_info::PathKeyElementInfo;
+use dpp::fee::Credits;
+use grovedb::{Element, TransactionArg};
+use platform_version::version::PlatformVersion;
+
+impl Drive {
+    pub(super) fn record_core_credit_pool_block_v0(
+        &self,
+        core_height: u32,
+        credit_pool_balance: Credits,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let mut drive_operations = vec![];
+
+        self.batch_insert(
+            PathKeyElementInfo::PathKeyElement::<0>((
+                get_withdrawal_core_credit_pool_balances_path_vec(),
+                core_height.to_be_bytes().to_vec(),
+                Element::new_item(credit_pool_balance.to_be_bytes().to_vec()),
+            )),
+            &mut drive_operations,
+            &platform_version.drive,
+        )?;
+
+        self.apply_batch_low_level_drive_operations(
+            None,
+            transaction,
+            drive_operations,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+
+        Ok(())
+    }
+}

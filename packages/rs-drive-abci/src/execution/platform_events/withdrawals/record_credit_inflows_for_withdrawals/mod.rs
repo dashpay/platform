@@ -2,6 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
@@ -14,30 +15,36 @@ where
     C: CoreRPCLike,
 {
     /// Records the credits this block minted into Platform (asset locks funding state
-    /// transitions, and the epoch Core block rewards on an epoch change) as a credit inflow
+    /// transitions, and the epoch Core block rewards on an epoch change) as credit inflows
     /// the net daily withdrawal limit adds to its daily maximum, so money that entered
     /// Platform within the window may leave again without consuming the withdrawal budget of
-    /// other users.
+    /// other users. All are dated by the block, except the credits of an asset lock Core mined
+    /// so long ago that Core's own unlock limit reads it from its window start balance: those
+    /// add no inflow.
     ///
     /// Runs as a system event once per block, so nobody pays fees for the write; a block that
     /// minted nothing writes nothing.
     ///
     /// # Parameters
     ///
-    /// * `credit_mints`: The credits the block minted into Platform.
-    /// * `block_info`: The block being executed; its time sets when the inflow expires.
+    /// * `state_transition_mints`: The credits the block's state transitions minted, per asset
+    ///   lock.
+    /// * `block_fee_mints`: The credits the block's fee processing minted (epoch Core rewards).
+    /// * `block_info`: The block being executed; its time dates the mints, and its Core chain
+    ///   locked height decides which asset locks Core mined a window ago.
     /// * `transaction`: The GroveDB transaction.
     /// * `platform_version`: The platform version.
     ///
     /// # Returns
     ///
-    /// * `Ok(())` once the inflow is recorded, or at once when `credit_mints` is zero or the
+    /// * `Ok(())` once the inflows are recorded, or at once when nothing was minted or the
     ///   protocol version has no credit inflows (the method version is `None`).
-    /// * `Err(Error)` when the method version (or the Drive method it calls) is unknown or not
-    ///   active, or the write fails.
+    /// * `Err(Error)` when the method version (or a Drive method it calls) is unknown or not
+    ///   active, Core cannot be asked, or a write fails.
     pub(in crate::execution) fn record_credit_inflows_for_withdrawals(
         &self,
-        credit_mints: Credits,
+        state_transition_mints: &BlockCreditMints,
+        block_fee_mints: Credits,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -50,7 +57,8 @@ where
         {
             None => Ok(()),
             Some(0) => self.record_credit_inflows_for_withdrawals_v0(
-                credit_mints,
+                state_transition_mints,
+                block_fee_mints,
                 block_info,
                 transaction,
                 platform_version,

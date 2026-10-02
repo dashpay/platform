@@ -451,6 +451,12 @@ mod snapshot_bake_main {
         fn send_raw_transaction(&self, _: &[u8]) -> Result<Txid, Error> {
             unreachable!()
         }
+        fn get_credit_pool_balance(&self, _: u32) -> Result<u64, Error> {
+            unreachable!()
+        }
+        fn get_transactions_mined_heights(&self, _: &[Txid]) -> Result<Vec<Option<u32>>, Error> {
+            unreachable!()
+        }
     }
 
     /// Produce a shielded-pool snapshot at `out_path` from a fresh temporary

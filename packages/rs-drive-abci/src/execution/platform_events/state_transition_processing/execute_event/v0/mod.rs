@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::execution::platform_events::state_transition_processing::record_added_balance_outputs::AddedBalanceOutputsOrigin;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
+use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::event_execution_result::EventExecutionResult::{
     SuccessfulFreeExecution, SuccessfulPaidExecution, UnpaidConsensusExecutionError,
@@ -43,12 +44,17 @@ where
         block_info: &BlockInfo,
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
-        block_credit_mints: &mut Credits,
+        // Changed in place from `&mut Credits`, inert for protocol versions 1 to 13 (all that
+        // select this generation): the total is the same saturating sum of `credit_mints`, and
+        // the per-asset-lock part is read only by `record_credit_inflows_for_withdrawals`,
+        // which is `None` before 14.
+        block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
-            let credit_mints = DriveOperation::credit_mints(&operations);
+            // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
+            let credit_mints = BlockCreditMints::of_operations(&operations);
             //todo: make this into an atomic event with partial batches
             let mut individual_fee_result = self
                 .drive
@@ -62,7 +68,7 @@ where
                 )
                 .map_err(Error::Drive)?;
 
-            *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
+            block_credit_mints.add(credit_mints);
 
             ValidationOperation::add_many_to_fee_result(
                 &execution_operations,
@@ -120,12 +126,17 @@ where
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
         mut address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
-        block_credit_mints: &mut Credits,
+        // Changed in place from `&mut Credits`, inert for protocol versions 1 to 13 (all that
+        // select this generation): the total is the same saturating sum of `credit_mints`, and
+        // the per-asset-lock part is read only by `record_credit_inflows_for_withdrawals`,
+        // which is `None` before 14.
+        block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
-            let credit_mints = DriveOperation::credit_mints(&operations);
+            // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
+            let credit_mints = BlockCreditMints::of_operations(&operations);
             // Apply the drive operations first to calculate the fee
             let mut individual_fee_result = self
                 .drive
@@ -139,7 +150,7 @@ where
                 )
                 .map_err(Error::Drive)?;
 
-            *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
+            block_credit_mints.add(credit_mints);
 
             ValidationOperation::add_many_to_fee_result(
                 &execution_operations,
@@ -378,7 +389,11 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
-        block_credit_mints: &mut Credits,
+        // Changed in place from `&mut Credits`, inert for protocol versions 1 to 13 (all that
+        // select this generation): the total is the same saturating sum of `credit_mints`, and
+        // the per-asset-lock part is read only by `record_credit_inflows_for_withdrawals`,
+        // which is `None` before 14.
+        block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
@@ -500,7 +515,8 @@ where
                 processing_fees,
                 operations,
             } => {
-                let credit_mints = DriveOperation::credit_mints(&operations);
+                // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
+                let credit_mints = BlockCreditMints::of_operations(&operations);
                 self.drive
                     .apply_drive_operations(
                         operations,
@@ -512,7 +528,7 @@ where
                     )
                     .map_err(Error::Drive)?;
 
-                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
+                block_credit_mints.add(credit_mints);
 
                 if consensus_errors.is_empty() {
                     Ok(SuccessfulPaidExecution(
@@ -532,7 +548,8 @@ where
                 fees_to_add_to_pool,
             } => {
                 if consensus_errors.is_empty() {
-                    let credit_mints = DriveOperation::credit_mints(&operations);
+                    // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
+                    let credit_mints = BlockCreditMints::of_operations(&operations);
                     self.drive
                         .apply_drive_operations(
                             operations,
@@ -544,7 +561,7 @@ where
                         )
                         .map_err(Error::Drive)?;
 
-                    *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
+                    block_credit_mints.add(credit_mints);
 
                     Ok(SuccessfulPaidExecution(
                         None,
@@ -585,7 +602,8 @@ where
                     return Ok(UnpaidConsensusExecutionError(consensus_errors));
                 }
 
-                let credit_mints = DriveOperation::credit_mints(&operations);
+                // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
+                let credit_mints = BlockCreditMints::of_operations(&operations);
                 let applied_fees = self
                     .drive
                     .apply_drive_operations(
@@ -598,7 +616,7 @@ where
                     )
                     .map_err(Error::Drive)?;
 
-                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
+                block_credit_mints.add(credit_mints);
 
                 // The ops just applied credited any transparent output address (an Unshield's
                 // recipient, including the chargeable-failure fallback address). Record that credit
@@ -647,7 +665,8 @@ where
                 all_errors.extend(consensus_errors);
 
                 if all_errors.is_empty() {
-                    let credit_mints = DriveOperation::credit_mints(&operations);
+                    // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
+                    let credit_mints = BlockCreditMints::of_operations(&operations);
                     let applied_fees = self
                         .drive
                         .apply_drive_operations(
@@ -660,7 +679,7 @@ where
                         )
                         .map_err(Error::Drive)?;
 
-                    *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
+                    block_credit_mints.add(credit_mints);
 
                     // The ops just applied credited the shield's transparent surplus-output address
                     // (when set). Record that credit so incremental client sync sees it. ShieldedSpend
@@ -727,7 +746,8 @@ where
                 )
             }
             ExecutionEvent::Free { operations } => {
-                let credit_mints = DriveOperation::credit_mints(&operations);
+                // In place, inert for protocol versions 1 to 13: see `block_credit_mints`.
+                let credit_mints = BlockCreditMints::of_operations(&operations);
                 self.drive
                     .apply_drive_operations(
                         operations,
@@ -738,7 +758,7 @@ where
                         Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
-                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
+                block_credit_mints.add(credit_mints);
                 Ok(SuccessfulFreeExecution)
             }
         }
@@ -785,7 +805,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
-                &mut 0,
+                &mut BlockCreditMints::default(),
                 platform_version,
                 &fee_versions,
             )
@@ -831,7 +851,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
-                &mut 0,
+                &mut BlockCreditMints::default(),
                 platform_version,
                 &fee_versions,
             )
@@ -874,7 +894,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
-                &mut 0,
+                &mut BlockCreditMints::default(),
                 platform_version,
                 &fee_versions,
             )

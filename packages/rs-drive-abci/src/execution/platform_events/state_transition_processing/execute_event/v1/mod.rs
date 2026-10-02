@@ -5,6 +5,7 @@ use crate::execution::platform_events::state_transition_processing::validate_fee
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::signing_key_limits::SigningKeyLimits;
+use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::event_execution_result::EventExecutionResult::{
     SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
@@ -17,12 +18,10 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::BalanceChange;
-use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 use drive::grovedb::Transaction;
 use drive::state_transition_action::batch::{action_fee_operations, action_fees_total};
-use drive::util::batch::DriveOperation;
 use std::collections::BTreeMap;
 
 impl<C> Platform<C>
@@ -62,7 +61,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
-        block_credit_mints: &mut Credits,
+        block_credit_mints: &mut BlockCreditMints,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
@@ -162,7 +161,7 @@ where
                 action_fees_total(&identity.id, &action_fees)?
             };
 
-            let credit_mints = DriveOperation::credit_mints(&operations);
+            let credit_mints = BlockCreditMints::of_operations(&operations);
             let mut individual_fee_result = self
                 .drive
                 .apply_drive_operations(
@@ -175,7 +174,7 @@ where
                 )
                 .map_err(Error::Drive)?;
 
-            *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
+            block_credit_mints.add(credit_mints);
 
             ValidationOperation::add_many_to_fee_result(
                 &execution_operations,

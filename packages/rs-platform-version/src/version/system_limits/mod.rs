@@ -127,13 +127,33 @@ pub struct SystemLimits {
     /// version 1 applied a flat 2000 Dash. Versioned: see `daily_withdrawal_limit_percent` in
     /// each `SYSTEM_LIMITS_V*`.
     pub daily_withdrawal_limit_percent: Option<u8>,
-    /// Upper bound (in credits) of the relative daily withdrawal limit from protocol version 14:
-    /// Core's credit-pool unlock capacity per day, `LimitAmountV24` = 4000 Dash per 576-block
-    /// window (Core v24). Platform cannot usefully pool more than Core will mine — the excess
-    /// only cycles through expiry and re-signing — so the limit never exceeds this whatever the
-    /// total credits are; raise it together with Core. Must be at least `max_withdrawal_amount`.
-    /// `None` for the protocol versions that predate the relative rule.
-    pub max_daily_withdrawal_amount: Option<u64>,
+    /// Allowed drop of Core's credit pool per window, as a percentage of its balance at the
+    /// window start, in the Core-anchored withdrawal limit of protocol version 14, read by
+    /// `core_credit_pool_unlock_limit` method version 0. Platform pools a withdrawal only while
+    /// it also fits this limit, a stricter copy of Core v24's own unlock rule (20%, at least
+    /// 2000 Dash), so it does not pool more than Core will mine. `None` for the protocol
+    /// versions that predate the Core-anchored limit.
+    pub core_credit_pool_unlock_limit_percent: Option<u8>,
+    /// Smallest allowed drop (in credits) of Core's credit pool per window in the Core-anchored
+    /// withdrawal limit, applied when `core_credit_pool_unlock_limit_percent` of the window start
+    /// balance is less; read by `core_credit_pool_unlock_limit` method version 0. Below Core
+    /// v24's own 2000 Dash floor, so small pools keep a margin too, and at least
+    /// `max_withdrawal_amount` so a queued withdrawal always fits eventually. `None` for the
+    /// protocol versions that predate the Core-anchored limit.
+    pub core_credit_pool_unlock_limit_floor: Option<u64>,
+    /// Core's credit pool window on mainnet, testnet and devnets (`CreditPoolPeriodBlocks` in
+    /// Dash Core's chain parameters): how many Core blocks before an asset unlock's block lies
+    /// the balance Core v24 measures the unlock limit from. The Core-anchored withdrawal limit
+    /// reads its window starts this far back, an asset lock Core mined this far back (less
+    /// Core's asset unlock validity, `withdrawal_constants.core_expiration_blocks`) adds no
+    /// credit inflow, and recorded balances older than it are pruned. Read through
+    /// `core_credit_pool_window_blocks` in dpp. `None` for the protocol versions that predate
+    /// the Core-anchored limit.
+    pub core_credit_pool_window_blocks: Option<u32>,
+    /// Core's credit pool window on regtest, which Dash Core shortens; see
+    /// `core_credit_pool_window_blocks`. `None` for the protocol versions that predate the
+    /// Core-anchored limit.
+    pub regtest_core_credit_pool_window_blocks: Option<u32>,
     /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
     /// transparent (identity + address) and shielded withdrawal paths. The dust floor that
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`
@@ -429,6 +449,37 @@ mod tests {
                 .max_document_value_depth,
             Some(256)
         );
+    }
+
+    /// The Core-anchored withdrawal limit never drops below its floor, and pooling stops at the
+    /// first queued withdrawal that does not fit: a floor below one maximal withdrawal would let
+    /// a maximal withdrawal wait forever on a small credit pool, with everything queued behind
+    /// it.
+    #[test]
+    fn should_keep_the_core_credit_pool_floor_at_least_one_maximal_withdrawal() {
+        let with_a_floor: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .filter_map(|platform_version| {
+                platform_version
+                    .system_limits
+                    .core_credit_pool_unlock_limit_floor
+                    .map(|floor| (platform_version, floor))
+            })
+            .collect();
+        assert!(
+            !with_a_floor.is_empty(),
+            "no protocol version sets a Core credit pool floor; this test would assert nothing"
+        );
+        for (platform_version, floor) in with_a_floor {
+            assert!(
+                floor >= platform_version.system_limits.max_withdrawal_amount,
+                "protocol version {} sets a Core credit pool floor of {} credits, below one \
+                 maximal withdrawal ({} credits)",
+                platform_version.protocol_version,
+                floor,
+                platform_version.system_limits.max_withdrawal_amount
+            );
+        }
     }
 
     /// The withdrawal structure generations selected from protocol version 14 read the cap

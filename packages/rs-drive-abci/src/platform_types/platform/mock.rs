@@ -34,6 +34,19 @@ impl Platform<MockCoreRPCLike> {
                 "tx": [],
             }))
         });
+
+        // A credit pool of 10 million Dash at every height: the Core-anchored withdrawal limit
+        // never binds unless a test sets its own answers.
+        core_rpc_mock
+            .expect_get_credit_pool_balance()
+            .returning(|_| Ok(1_000_000_000_000_000));
+
+        // Core knows no asset lock, so every asset lock mint counts as a credit inflow, as one
+        // Core mined recently does.
+        core_rpc_mock
+            .expect_get_transactions_mined_heights()
+            .returning(|tx_ids| Ok(vec![None; tx_ids.len()]));
+
         Self::open_with_client(path, config, core_rpc_mock, initial_protocol_version)
     }
 

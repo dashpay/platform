@@ -1,10 +1,10 @@
 use crate::error::Error;
+use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
-use dpp::fee::Credits;
 
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
@@ -140,8 +140,11 @@ where
 
         // Credits the block's applied operations mint into Platform (asset locks), summed
         // across state transitions and recorded once per block as a credit inflow the net
-        // daily withdrawal limit adds to its daily maximum.
-        let mut block_credit_mints: Credits = 0;
+        // daily withdrawal limit adds to its daily maximum. Changed in place from `Credits`,
+        // inert for protocol versions 1 to 14 (all select this generation): its total is the
+        // same sum, and only `record_credit_inflows_for_withdrawals`, `None` before 14, reads
+        // it (from 14 also per asset lock, which is new there).
+        let mut block_credit_mints = BlockCreditMints::default();
 
         for decoded_state_transition in state_transition_container.into_iter() {
             // If we propose state transitions, we need to check if we have a time limit for processing
@@ -181,12 +184,17 @@ where
                         }
 
                         // Mark the state we can return to if this transition's result strips
-                        // it from the block (see `rollback_dropped_transitions` above). The
-                        // mint accumulator mirrors applied state, so it rewinds with it.
+                        // it from the block (see `rollback_dropped_transitions` above).
                         if rollback_dropped_transitions {
                             transaction.set_savepoint();
                         }
-                        let credit_mints_at_savepoint = block_credit_mints;
+                        // This transition's mints, merged into the block's below unless a
+                        // rollback drops its writes: the mint accumulator mirrors applied
+                        // state. Changed in place from a snapshot of the block's total, inert
+                        // for protocol versions 1 to 14: merging one transition's saturating
+                        // sum adds up to the same saturating total, and a dropped transition
+                        // contributes nothing either way.
+                        let mut transition_credit_mints = BlockCreditMints::default();
 
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
@@ -205,7 +213,7 @@ where
                                 validation_result,
                                 block_info,
                                 transaction,
-                                &mut block_credit_mints,
+                                &mut transition_credit_mints,
                                 platform_version,
                                 platform_ref.state.previous_fee_versions(),
                             )
@@ -238,7 +246,7 @@ where
                                     // its mints with them, or the block would record a
                                     // credit inflow for a transition the proposal omits and
                                     // validators re-executing it would compute other state.
-                                    block_credit_mints = credit_mints_at_savepoint;
+                                    transition_credit_mints = BlockCreditMints::default();
                                     // Any contract the transition rewrote was re-seeded into
                                     // the block cache as it was applied, and the rollback
                                     // just reverted it in state. Drop those copies so the
@@ -271,6 +279,8 @@ where
                                 }
                             }
                         }
+
+                        block_credit_mints.add(transition_credit_mints);
 
                         // Store metrics
                         let elapsed_time = start_time.elapsed() + decoding_elapsed_time;

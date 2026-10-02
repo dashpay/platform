@@ -5,4 +5,5 @@ pub const DPP_METHOD_VERSIONS_V2: DPPMethodVersions = DPPMethodVersions {
     deduct_fee_from_outputs_or_remaining_balance_of_inputs: 0,
     compute_minimum_shielded_fee: 0,
     shielded_extra_sighash_data: 0,
+    core_credit_pool_unlock_limit: None,
 };

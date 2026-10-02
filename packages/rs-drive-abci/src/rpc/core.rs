@@ -1,6 +1,9 @@
 use crate::rpc::prefetch::CorePrefetcher;
+use dpp::dashcore::consensus::encode::{self, deserialize_partial};
+use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
+use dpp::dashcore::transaction::special_transaction::coinbase::CoinbasePayload;
+use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, TxIn, TxOut, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
     AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
@@ -15,6 +18,47 @@ use std::time::Duration;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
+
+/// The most transaction ids Core's `gettxchainlocks` answers in one call.
+const MAX_TRANSACTIONS_PER_CHAIN_LOCK_STATUS_REQUEST: usize = 100;
+
+/// The special transaction type of a coinbase (`TRANSACTION_COINBASE` in Dash Core).
+const COINBASE_TRANSACTION_TYPE: u16 = 5;
+
+/// Reads Core's credit pool balance after a block, in duffs, from the block's serialized
+/// coinbase transaction; `0` when its payload predates version 3, before the credit pool
+/// existed, which is how Core's own unlock limit reads such a block.
+///
+/// The parts are read with dashcore's decoders, but not as one `Transaction`: the pinned decoder
+/// ignores the payload's length prefix and cannot read the version 4 payload Core v24 requires,
+/// which appends `merkleRootAssetUnlocks` after the balance. So the payload is taken by its own
+/// length and read only up to the balance. Core has only ever appended fields to it, and its
+/// consensus rules (`CheckCbTx`) refuse versions it does not know, so the balance stays where
+/// version 3 put it unless a Core release moves it, which Platform would have to follow anyway.
+pub(crate) fn credit_pool_balance_from_coinbase(coinbase: &[u8]) -> Result<u64, String> {
+    let decode_error = |e: encode::Error| format!("coinbase cannot be decoded: {e}");
+    let mut reader = coinbase;
+
+    let version_and_type = u32::consensus_decode(&mut reader).map_err(decode_error)?;
+    Vec::<TxIn>::consensus_decode(&mut reader).map_err(decode_error)?;
+    Vec::<TxOut>::consensus_decode(&mut reader).map_err(decode_error)?;
+    u32::consensus_decode(&mut reader).map_err(decode_error)?; // the lock time
+
+    let version = (version_and_type & 0xffff) as u16;
+    let transaction_type = (version_and_type >> 16) as u16;
+    if version < 3 || transaction_type == 0 {
+        return Ok(0);
+    }
+    if transaction_type != COINBASE_TRANSACTION_TYPE {
+        return Err(format!(
+            "coinbase has special transaction type {transaction_type}"
+        ));
+    }
+
+    let payload = Vec::<u8>::consensus_decode(&mut reader).map_err(decode_error)?;
+    let (payload, _) = deserialize_partial::<CoinbasePayload>(&payload).map_err(decode_error)?;
+    Ok(payload.asset_locked_amount.unwrap_or_default())
+}
 
 /// Core height must be of type u32 (Platform heights are u64)
 pub type CoreHeight = u32;
@@ -126,6 +170,20 @@ pub trait CoreRPCLike {
 
     /// Sends raw transaction to the network
     fn send_raw_transaction(&self, transaction: &[u8]) -> Result<Txid, Error>;
+
+    /// Get Core's credit pool balance after the block at `height`, in duffs, read from the
+    /// block's coinbase (only the coinbase is transferred). Only ask for a chain locked height:
+    /// the answer is then the same on every node.
+    fn get_credit_pool_balance(&self, height: CoreHeight) -> Result<u64, Error>;
+
+    /// Get the height of the active chain block each transaction was mined in, in the order of
+    /// `tx_ids`; `None` for one Core does not know, or holds in its mempool only. A height is
+    /// the same on every node only when it is at or below a chain locked height, so callers
+    /// treat anything above theirs as not mined yet.
+    fn get_transactions_mined_heights(
+        &self,
+        tx_ids: &[Txid],
+    ) -> Result<Vec<Option<CoreHeight>>, Error>;
 }
 
 #[derive(Debug)]
@@ -386,5 +444,149 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self
             .inner
             .get_asset_unlock_statuses(indices, Some(core_chain_locked_height)))
+    }
+
+    fn get_credit_pool_balance(&self, height: CoreHeight) -> Result<u64, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        // Only the coinbase, as raw hex: the special transactions of type 5, the first one,
+        // verbosity 1. An empty answer is a coinbase without a payload, before DIP3.
+        let args = [
+            Value::String(block_hash.to_string()),
+            Value::from(COINBASE_TRANSACTION_TYPE),
+            Value::from(1),
+            Value::from(0),
+            Value::from(1),
+        ];
+        let coinbases = retry!(self.inner.call::<Vec<String>>("getspecialtxes", &args))?;
+        let Some(coinbase) = coinbases.first() else {
+            return Ok(0);
+        };
+        let coinbase = hex::decode(coinbase).map_err(|e| {
+            Error::UnexpectedStructure(format!("getspecialtxes answered invalid hex: {e}"))
+        })?;
+        credit_pool_balance_from_coinbase(&coinbase).map_err(Error::UnexpectedStructure)
+    }
+
+    fn get_transactions_mined_heights(
+        &self,
+        tx_ids: &[Txid],
+    ) -> Result<Vec<Option<CoreHeight>>, Error> {
+        let mut heights = Vec::with_capacity(tx_ids.len());
+        for chunk in tx_ids.chunks(MAX_TRANSACTIONS_PER_CHAIN_LOCK_STATUS_REQUEST) {
+            let statuses: Vec<_> = retry!(self.inner.get_transaction_are_locked(chunk))?;
+            if statuses.len() != chunk.len() {
+                return Err(Error::UnexpectedStructure(format!(
+                    "gettxchainlocks answered {} of {} transactions",
+                    statuses.len(),
+                    chunk.len()
+                )));
+            }
+            // Core reports -1 for a transaction it does not know or holds in its mempool only.
+            heights.extend(
+                statuses.into_iter().map(|status| {
+                    status.and_then(|status| CoreHeight::try_from(status.height).ok())
+                }),
+            );
+        }
+        Ok(heights)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::credit_pool_balance_from_coinbase;
+    use dpp::dashcore::bls_sig_utils::BLSSignature;
+    use dpp::dashcore::consensus::serialize;
+    use dpp::dashcore::hash_types::{MerkleRootMasternodeList, MerkleRootQuorums};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::transaction::special_transaction::coinbase::CoinbasePayload;
+    use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+    use dpp::dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut};
+
+    const BALANCE_DUFFS: u64 = 3_700_000_000_000;
+
+    /// A coinbase as the pinned rust-dashcore encodes it.
+    fn coinbase(payload: Option<TransactionPayload>) -> Vec<u8> {
+        serialize(&Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::from(vec![0x51, 0x51]),
+                sequence: u32::MAX,
+                witness: Default::default(),
+            }],
+            output: vec![TxOut {
+                value: 5_000_000,
+                script_pubkey: ScriptBuf::from(vec![0x76; 25]),
+            }],
+            special_transaction_payload: payload,
+        })
+    }
+
+    fn version_3_payload() -> TransactionPayload {
+        TransactionPayload::CoinbasePayloadType(CoinbasePayload {
+            version: 3,
+            height: 1_000,
+            merkle_root_masternode_list: MerkleRootMasternodeList::from_byte_array([1; 32]),
+            merkle_root_quorums: MerkleRootQuorums::from_byte_array([2; 32]),
+            best_cl_height: Some(30),
+            best_cl_signature: Some(BLSSignature::from([3; 96])),
+            asset_locked_amount: Some(BALANCE_DUFFS),
+        })
+    }
+
+    #[test]
+    fn should_read_the_balance_of_a_version_3_coinbase() {
+        assert_eq!(
+            credit_pool_balance_from_coinbase(&coinbase(Some(version_3_payload()))),
+            Ok(BALANCE_DUFFS)
+        );
+    }
+
+    /// Core v24 blocks carry a version 4 payload, which appends `merkleRootAssetUnlocks`
+    /// after the balance; the pinned transaction decoder cannot read it.
+    #[test]
+    fn should_read_the_balance_of_a_version_4_coinbase() {
+        let version_3 = coinbase(Some(version_3_payload()));
+        // The payload is last: its 1-byte length (175), then the payload itself.
+        let payload_start = version_3.len() - 175;
+        assert_eq!(version_3[payload_start - 1], 175);
+        let mut version_4 = version_3[..payload_start - 1].to_vec();
+        version_4.push(175 + 32);
+        version_4.extend_from_slice(&4u16.to_le_bytes());
+        version_4.extend_from_slice(&version_3[payload_start + 2..]);
+        version_4.extend_from_slice(&[0xaa; 32]);
+
+        assert_eq!(
+            credit_pool_balance_from_coinbase(&version_4),
+            Ok(BALANCE_DUFFS)
+        );
+    }
+
+    #[test]
+    fn should_read_no_balance_from_a_coinbase_before_the_credit_pool() {
+        let version_2 = TransactionPayload::CoinbasePayloadType(CoinbasePayload {
+            version: 2,
+            height: 1_000,
+            merkle_root_masternode_list: MerkleRootMasternodeList::from_byte_array([1; 32]),
+            merkle_root_quorums: MerkleRootQuorums::from_byte_array([2; 32]),
+            best_cl_height: None,
+            best_cl_signature: None,
+            asset_locked_amount: None,
+        });
+        assert_eq!(
+            credit_pool_balance_from_coinbase(&coinbase(Some(version_2))),
+            Ok(0)
+        );
+        assert_eq!(credit_pool_balance_from_coinbase(&coinbase(None)), Ok(0));
+    }
+
+    #[test]
+    fn should_fail_on_a_truncated_coinbase() {
+        let full = coinbase(Some(version_3_payload()));
+        // Cut inside the payload, before the balance.
+        assert!(credit_pool_balance_from_coinbase(&full[..full.len() - 60]).is_err());
+        assert!(credit_pool_balance_from_coinbase(&full[..40]).is_err());
     }
 }
