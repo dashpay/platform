@@ -232,6 +232,7 @@ mod tests {
     use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
     use dpp::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
     use dpp::fee::fee_result::{BalanceChange, FeeResult};
+    use dpp::fee::refund_owner::RefundOwner;
     use dpp::fee::Credits;
     use dpp::version::PlatformVersion;
     use nohash_hasher::IntMap;
@@ -245,7 +246,11 @@ mod tests {
                     IntMap::from_iter([(GENESIS_EPOCH_INDEX, credits)]),
                 )
             }));
-        FeeRefunds(refunds_per_epoch_by_identifier)
+        let refund_owners = BTreeMap::from_iter(
+            entries
+                .map(|(identity_id, _)| (identity_id, RefundOwner::Identity(identity_id.into()))),
+        );
+        FeeRefunds(refunds_per_epoch_by_identifier, refund_owners)
     }
 
     #[test]

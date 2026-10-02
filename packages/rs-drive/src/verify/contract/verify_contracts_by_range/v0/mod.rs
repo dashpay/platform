@@ -196,6 +196,7 @@ fn identifier_from_bytes(bytes: Vec<u8>) -> Result<Identifier, Error> {
 mod tests {
     use crate::drive::Drive;
     use crate::error::Error;
+    use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -206,7 +207,6 @@ mod tests {
     use dpp::prelude::Identifier;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
-    use grovedb_epoch_based_storage_flags::StorageFlags;
 
     const PLAIN_CONTRACT: &str = "tests/supporting_files/contract/family/family-contract.json";
     const HISTORY_CONTRACT: &str =
