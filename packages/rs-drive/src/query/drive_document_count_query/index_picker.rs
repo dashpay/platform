@@ -5,17 +5,25 @@
 //! shape, returning `None` if no index can serve the query.
 
 use super::super::conditions::WhereClause;
-use super::DriveDocumentCountQuery;
+use super::{document_count_chain_position, DriveDocumentCountQuery};
 use crate::query::ResolvedTimeRange;
 use crate::query::{index_admissible_for_query, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Whether `index` counts documents, which a count query reads. A
-/// `summableOffCountIndex` index is countable too, but its count is the number
-/// of its groups (each counter counts one), not of documents, so it never
-/// answers a count query: the average query reads its group counts.
-fn counts_documents(index: &Index) -> bool {
+/// Whether a point count read of `index` yields document counts: a countable
+/// index's count trees count its documents, and so do a
+/// `summableOffCountIndex` index's sums, which the read takes instead
+/// ([`super::document_count_of_element`]).
+fn point_reads_document_counts(index: &Index) -> bool {
+    index.countable.is_countable() || index.is_summable_off_count_index()
+}
+
+/// Whether a range count of `index` (grovedb's `AggregateCountOnRange` over
+/// its terminal tree) counts documents. On a `summableOffCountIndex` index it
+/// would count the counters, one per group, so such an index serves no range
+/// count.
+fn range_count_reads_documents(index: &Index) -> bool {
     index.countable.is_countable() && !index.is_summable_off_count_index()
 }
 
@@ -93,7 +101,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !counts_documents(index) {
+            if !point_reads_document_counts(index) {
                 continue;
             }
             if index.properties.len() != indexable_fields.len() {
@@ -124,7 +132,13 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !counts_documents(index) {
+            // The terminal property-name tree's own element: its count on a
+            // range-countable index, its sum on a `summableOffCountIndex`
+            // index (where every index is sum-bearing).
+            let terminal_tree_counts_documents = (index.range_countable
+                && index.countable.is_countable())
+                || index.is_summable_off_count_index();
+            if !terminal_tree_counts_documents {
                 continue;
             }
             // A ranked axis makes the terminal property-name tree an
@@ -167,15 +181,16 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !counts_documents(index) {
+            if !point_reads_document_counts(index) {
                 continue;
             }
             let pin_depth = indexable_fields.len();
             if pin_depth == 0 || pin_depth >= index.properties.len() {
                 continue;
             }
-            // An average ranking's chain carries the counts as well.
-            let Some(min_at_position) = index.shallowest_count_chain_position() else {
+            // An average ranking's chain carries the counts as well, and a
+            // `summableOffCountIndex` index's sum chain its document counts.
+            let Some(min_at_position) = document_count_chain_position(index) else {
                 continue;
             };
             // The deepest pinned property (position pin_depth - 1) must
@@ -283,7 +298,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !counts_documents(index) {
+            if !index.range_countable || !range_count_reads_documents(index) {
                 continue;
             }
 

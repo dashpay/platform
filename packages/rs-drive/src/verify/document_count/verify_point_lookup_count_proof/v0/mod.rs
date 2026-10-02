@@ -102,7 +102,7 @@ impl DriveDocumentCountQuery<'_> {
 
         // The layout decoder lives with the path-query builder — see
         // `point_lookup_count_entries` for the In-value placement.
-        let out = point_lookup_count_entries(base_path_len, has_in_clause, elements);
+        let out = point_lookup_count_entries(self.index, base_path_len, has_in_clause, elements);
         Ok((root_hash, out))
     }
 }

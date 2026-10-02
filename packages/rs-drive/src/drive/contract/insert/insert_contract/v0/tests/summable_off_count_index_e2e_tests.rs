@@ -34,7 +34,7 @@ use crate::query::drive_document_sum_query::{
     DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
 };
 use crate::query::projection::SelectProjection;
-use crate::query::{OrderClause, WhereClause};
+use crate::query::{DriveDocumentCountQuery, OrderClause, WhereClause, WhereOperator};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -474,19 +474,22 @@ fn should_sum_likes_by_the_source_index_name() {
     }
 }
 
-/// A count query counts documents, so it never reads a counter: a post's
-/// likes come from `byPost`, and a filter only a counter index covers is
-/// refused rather than answered with a count of posts. The average reads the
-/// posts and the likes together.
+/// A count query counts documents, and a counter index answers it from its
+/// sums: an author's or a hashtag's likes, one post's likes, zero for a
+/// preallocated post nobody liked, proved like any count. A range count over
+/// the counters is refused (it would count posts). The average reads the posts
+/// and the likes together.
 #[test]
-fn should_count_documents_and_read_posts_through_the_average() {
+fn should_count_likes_from_the_counters_sums_and_read_posts_through_the_average() {
     let (drive, contract) = setup(true);
-    let (a1, _, _, _) = liked_posts(&drive, &contract);
+    let (a1, a2, _, _) = liked_posts(&drive, &contract);
+    let unliked = insert_post(&drive, &contract, AUTHOR_B, "dash", 4);
+    let pv = platform_version();
     let document_type = contract
         .document_type_for_name("like")
         .expect("like doctype exists");
     let drive_config = crate::config::DriveConfig::default();
-    let count = |where_clauses: Vec<WhereClause>| {
+    let count = |where_clauses: Vec<WhereClause>, prove: bool| {
         drive.execute_document_count_request(
             DocumentCountRequest {
                 contract: &contract,
@@ -496,30 +499,80 @@ fn should_count_documents_and_read_posts_through_the_average() {
                 order_clauses: vec![],
                 mode: CountMode::Aggregate,
                 limit: None,
-                prove: false,
+                prove,
                 drive_config: &drive_config,
             },
             None,
-            platform_version(),
+            pv,
         )
     };
 
-    match count(vec![equal("postId", Value::Identifier(a1))]).expect("byPost counts likes") {
-        DocumentCountResponse::Aggregate(likes) => assert_eq!(likes, 3, "a1's likes"),
-        other => panic!("expected an aggregate count, got {other:?}"),
-    }
-    for clauses in [
-        vec![equal("postAuthor", Value::Identifier(AUTHOR_A))],
-        vec![
-            equal("postAuthor", Value::Identifier(AUTHOR_A)),
-            equal("postId", Value::Identifier(a1)),
-        ],
+    for (clauses, likes) in [
+        (vec![equal("postId", Value::Identifier(a1))], 3),
+        (vec![equal("postAuthor", Value::Identifier(AUTHOR_A))], 4),
+        (
+            vec![
+                equal("postAuthor", Value::Identifier(AUTHOR_A)),
+                equal("postId", Value::Identifier(a1)),
+            ],
+            3,
+        ),
+        (vec![equal("hashtag", Value::Text("dash".to_string()))], 9),
+        (
+            vec![
+                equal("hashtag", Value::Text("dash".to_string())),
+                equal("postId", Value::Identifier(a2)),
+            ],
+            1,
+        ),
+        (
+            vec![
+                equal("postAuthor", Value::Identifier(AUTHOR_B)),
+                equal("postId", Value::Identifier(unliked)),
+            ],
+            0,
+        ),
     ] {
-        assert!(
-            count(clauses.clone()).is_err(),
-            "only a counter index covers {clauses:?}, and it counts posts, not likes"
-        );
+        match count(clauses.clone(), false).expect("the count executes") {
+            DocumentCountResponse::Aggregate(counted) => {
+                assert_eq!(counted, likes, "{clauses:?}")
+            }
+            other => panic!("expected an aggregate count, got {other:?}"),
+        }
+        let proof = match count(clauses.clone(), true).expect("the proved count executes") {
+            DocumentCountResponse::Proof(proof) => proof,
+            other => panic!("expected a proof, got {other:?}"),
+        };
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &clauses,
+            &[],
+        )
+        .expect("an index answers the count");
+        let (_, entries) = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "like".to_string(),
+            index,
+            where_clauses: clauses.clone(),
+        }
+        .verify_point_lookup_count_proof(&proof, pv)
+        .expect("the count proof verifies");
+        let proved: u64 = entries.iter().filter_map(|entry| entry.count).sum();
+        assert_eq!(proved, likes, "proved {clauses:?}");
     }
+    let range = vec![
+        equal("postAuthor", Value::Identifier(AUTHOR_A)),
+        WhereClause {
+            field: "postId".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Identifier(a2),
+        },
+    ];
+    assert!(
+        count(range, false).is_err(),
+        "a range count over the counters would count posts"
+    );
     let clauses = vec![equal("postAuthor", Value::Identifier(AUTHOR_A))];
 
     match drive

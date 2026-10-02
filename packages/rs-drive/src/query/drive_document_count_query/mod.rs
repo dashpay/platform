@@ -154,12 +154,12 @@ pub struct DriveDocumentCountQuery<'a> {
 /// `path[base_path_len]` when the walk descended past the base path (the
 /// `In` + trailing `Equal`s shape) and IS the key otherwise (the
 /// `In`-on-terminator shape); `Equal`-only shapes have no per-key
-/// dimension. The element's own count is the per-branch document count
-/// (every countable terminator value tree is a CountTree); an absent
-/// element becomes `count: None`. ONE decoder for every reader of that
-/// layout — the proof verifier, the no-proof executor and composite
-/// queries — so the layout has one owner.
+/// dimension. The element's document count ([`document_count_of_element`])
+/// is the per-branch count; an absent element becomes `count: None`. ONE
+/// decoder for every reader of that layout — the proof verifier, the
+/// no-proof executor and composite queries — so the layout has one owner.
 pub fn point_lookup_count_entries(
+    index: &Index,
     base_path_len: usize,
     has_in_clause: bool,
     elements: impl IntoIterator<Item = (Vec<Vec<u8>>, Vec<u8>, Option<grovedb::Element>)>,
@@ -179,10 +179,38 @@ pub fn point_lookup_count_entries(
             SplitCountEntry {
                 in_key: None,
                 key,
-                count: element.map(|element| element.count_value_or_default()),
+                count: element.map(|element| document_count_of_element(index, &element)),
             }
         })
         .collect()
+}
+
+/// The number of documents an element a count read of `index` reaches
+/// stands for: its count, or, on a `summableOffCountIndex` index, its sum.
+/// Such an index keeps one counter per group, which counts one in its count
+/// trees and adds its group's documents to their sums, and its registration
+/// rules make each counter equal its source group's entries, so its sums are
+/// the document counts.
+pub fn document_count_of_element(index: &Index, element: &grovedb::Element) -> u64 {
+    if index.is_summable_off_count_index() {
+        // A counter is never negative: it counts entries.
+        u64::try_from(element.sum_value_or_default()).unwrap_or_default()
+    } else {
+        element.count_value_or_default()
+    }
+}
+
+/// The position of the shallowest level of `index` whose value trees a
+/// count read may stop at, taking the subtree's document count: the count
+/// chain's ([`Index::shallowest_count_chain_position`]), or on a
+/// `summableOffCountIndex` index the sum chain's, whose sums are its document
+/// counts. `None` without such a chain.
+pub fn document_count_chain_position(index: &Index) -> Option<usize> {
+    if index.is_summable_off_count_index() {
+        index.shallowest_sum_chain_position()
+    } else {
+        index.shallowest_count_chain_position()
+    }
 }
 
 /// An entry in a split count result, containing the serialized

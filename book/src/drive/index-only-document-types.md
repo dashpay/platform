@@ -534,10 +534,12 @@ The write path (`add_summable_off_count_counter_operations`):
 
 The state probes and the duplicate check skip the index (it decides
 nothing about a create), it is never the proof index, and document
-queries never read it. The sum, average and ranked queries do: a sum
-query names the source index (`sum(byPost)`), and a point query may stop at
-a level carrying the totals, reading that value tree's element. Count
-queries do not: a counter counts one group, not its documents.
+queries never read it. The count, sum, average and ranked queries do: a
+sum query names the source index (`sum(byPost)`), a count query takes a
+counter's sum (its group's documents) where another index's read takes a
+count, and a point query may stop at a level carrying the sums, reading
+that value tree's element. A range count is refused: grovedb's range count
+over the counters would count them, one per group.
 
 ## What it costs and what it saves
 

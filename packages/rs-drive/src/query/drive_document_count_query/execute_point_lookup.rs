@@ -15,7 +15,7 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_point_lookup;` declaration.
 
-use super::{DriveDocumentCountQuery, SplitCountEntry};
+use super::{document_count_of_element, DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
@@ -72,7 +72,9 @@ impl DriveDocumentCountQuery<'_> {
             .elements
             .iter()
             .map(|e| match e {
-                QueryResultElement::ElementResultItem(elem) => elem.count_value_or_default(),
+                QueryResultElement::ElementResultItem(elem) => {
+                    document_count_of_element(self.index, elem)
+                }
                 // `QueryElementResultType` only emits `ElementResultItem`;
                 // the other variants belong to `QueryKeyElementPairResultType`
                 // / `QueryPathKeyElementTrioResultType` which we don't

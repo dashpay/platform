@@ -114,7 +114,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentReferenceKind, DocumentTypeRef,
+    DocumentReferenceKind, DocumentTypeRef, Index,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -1507,9 +1507,14 @@ impl<'a> DriveDocumentQuery<'a> {
     /// past the base path when the walk descended through trailing
     /// equalities, and IS the key otherwise (the same layout
     /// `verify_point_lookup_count_proof` reads).
-    fn decode_count_trios(base_path_len: usize, trios: Vec<PresentTrio>) -> Vec<SplitCountEntry> {
+    fn decode_count_trios(
+        index: &Index,
+        base_path_len: usize,
+        trios: Vec<PresentTrio>,
+    ) -> Vec<SplitCountEntry> {
         // A composite count is always bound, so it always carries an `IN`.
         let mut entries = point_lookup_count_entries(
+            index,
             base_path_len,
             true,
             trios
@@ -1910,7 +1915,13 @@ impl<'a> DriveDocumentQuery<'a> {
             let Some(path_query) = &sub_path_queries[index] else {
                 continue;
             };
-            let entries = Self::decode_count_trios(path_query.path.len(), count_trios);
+            let count_query = self.sub_query_count_query(
+                &self.sub_queries[index],
+                &derived[index],
+                platform_version,
+            )?;
+            let entries =
+                Self::decode_count_trios(count_query.index, path_query.path.len(), count_trios);
             sub_results[index] = Some(SubQueryResult::Counts(Self::assemble_counts(
                 &derived[index],
                 entries,
@@ -2155,9 +2166,9 @@ impl<'a> DriveDocumentQuery<'a> {
                 ))
             }
             SubQueryKind::Count => {
-                let path_query = self
-                    .sub_query_count_query(sub_query, values, platform_version)?
-                    .point_lookup_count_path_query(platform_version)?;
+                let count_query =
+                    self.sub_query_count_query(sub_query, values, platform_version)?;
+                let path_query = count_query.point_lookup_count_path_query(platform_version)?;
                 let base_path_len = path_query.path.len();
                 let (results, _skipped) = match drive.grove_get_path_query(
                     &path_query,
@@ -2187,7 +2198,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         _ => None,
                     })
                     .collect();
-                let entries = Self::decode_count_trios(base_path_len, trios);
+                let entries = Self::decode_count_trios(count_query.index, base_path_len, trios);
                 Ok(SubQueryResult::Counts(Self::assemble_counts(
                     values, entries,
                 )?))

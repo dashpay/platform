@@ -15,7 +15,7 @@
 #![cfg(any(feature = "server", feature = "verify"))]
 
 use super::super::conditions::{WhereClause, WhereOperator};
-use super::DriveDocumentCountQuery;
+use super::{document_count_chain_position, DriveDocumentCountQuery};
 use crate::drive::RootTree;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -888,8 +888,10 @@ impl DriveDocumentCountQuery<'_> {
                 let terminal_ranked = self.index.ranked_countable
                     || self.index.ranked_summable
                     || self.index.ranked_averageable;
+                // A `summableOffCountIndex` index's terminal tree is always
+                // sum-bearing, and its sum is the prefix's document count.
                 if position + 1 == self.index.properties.len()
-                    && self.index.range_countable
+                    && (self.index.range_countable || self.index.is_summable_off_count_index())
                     && !terminal_ranked
                 {
                     prefix_to_last_key = Some(level_key.into_bytes());
@@ -901,7 +903,7 @@ impl DriveDocumentCountQuery<'_> {
                 // whose count IS the whole-subtree total, and the
                 // fully-covered selector below reads them verbatim — the
                 // loop just stops here instead of at the terminal.
-                let min_at_position = self.index.shallowest_count_chain_position();
+                let min_at_position = document_count_chain_position(self.index);
                 let deepest_pin_is_count_bearing =
                     position >= 1 && min_at_position.is_some_and(|min_at| min_at < position);
                 if deepest_pin_is_count_bearing {
@@ -1029,7 +1031,11 @@ impl DriveDocumentCountQuery<'_> {
         // index property, so the terminator is always proven; this
         // flag is the only differentiator between the two output
         // shapes.
-        let count_tree_terminator = self.index.countable.is_countable();
+        //
+        // A `summableOffCountIndex` index keeps its counter at that key: the
+        // read takes its sum, the group's document count.
+        let count_tree_terminator =
+            self.index.countable.is_countable() || self.index.is_summable_off_count_index();
 
         // CountTree storage convention for non-countable indexes
         // (defensive — picker upstream filters these out): the count

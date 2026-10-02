@@ -186,15 +186,15 @@ A like counted by post, by author and by hashtag is written three times: once in
 }
 ```
 
-Each counter counts one group and adds its entries to the sum, so the index's totals read:
+Each counter counts one group in the index's count trees and adds its entries to their sums. A count query counts documents, so on this index it reads the sums, which hold the source's entries:
 
-| Aggregate | Reads | `byAuthorPost` |
+| Query | Reads | `byAuthorPost` |
 |---|---|---|
-| count | the groups, read by an average query (which returns the count and the sum) | an author's posts |
-| sum | the source's entries, named by the source index (`sum(byPost)`) | an author's likes, or one post's |
-| average | entries per group | an author's likes per post |
+| `count(*)` | the sums | an author's likes, or one post's |
+| `sum(byPost)`, named by the source index | the sums | the same |
+| `avg(byPost)` | the sums and the group counts | an author's posts and likes, so likes per post |
 
-A ranking at an earlier level orders by these totals: `rankedSummable: { "at": "postAuthor" }` ranks authors by likes, `rankedAverageable: { "at": "postAuthor" }` by likes per post, and `"postId"`, the last property, ranks an author's posts by likes. A sum point query may stop at any level from the shallowest sum or average ranking down, and an average point query at any level that also carries counts (from the shallowest count or average ranking down). A count query counts documents, so it never reads these counters: `count(*)` over the source's properties reads the source. When the index is `preallocated`, every post has a counter from its creation, so a post without likes counts as a post with zero likes; otherwise a post shows once it is liked and leaves with its last like.
+A ranking at an earlier level orders by these totals: `rankedSummable: { "at": "postAuthor" }` ranks authors by likes, `rankedAverageable: { "at": "postAuthor" }` by likes per post, and `"postId"`, the last property, ranks an author's posts by likes. A count or sum point query may stop at any level from the shallowest sum or average ranking down, and an average point query at any level that also carries counts (from the shallowest count or average ranking down). A range count over the counters is refused: it would count the counters, one per post. When the index is `preallocated`, every post has a counter from its creation, so a post without likes counts as a post with zero likes; otherwise a post shows once it is liked and leaves with its last like.
 
 Rules at registration:
 
