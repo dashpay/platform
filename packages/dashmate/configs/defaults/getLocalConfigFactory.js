@@ -105,6 +105,11 @@ export default function getLocalConfigFactory(getBaseConfig) {
             metrics: {
               port: 46660,
             },
+            // A local network genesis starts every node from scratch at the
+            // same time, so there is no populated peer to state sync from.
+            stateSync: {
+              enabled: false,
+            },
           },
           abci: {
             tokioConsole: {
@@ -139,6 +144,11 @@ export default function getLocalConfigFactory(getBaseConfig) {
                 dkgInterval: 24,
                 activeSigners: 2,
                 rotation: false,
+              },
+            },
+            stateSync: {
+              snapshots: {
+                enabled: false,
               },
             },
           },
