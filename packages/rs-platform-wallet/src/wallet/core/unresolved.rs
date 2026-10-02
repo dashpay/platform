@@ -47,20 +47,47 @@ impl UnresolvedSends {
         }
         let unsettled = unsettled_transactions(info);
         let unsettled_txids: HashSet<Txid> = unsettled.keys().copied().collect();
-        let accepted = info.generation.accepted_among(&unsettled_txids);
 
-        // Each unsettled transaction under every unsettled parent it spends,
-        // so the held set is one walk down from the held roots.
+        // Each unsettled transaction's unsettled parents, and the reverse.
+        let mut parents: HashMap<Txid, Vec<Txid>> = HashMap::new();
         let mut children: HashMap<Txid, Vec<Txid>> = HashMap::new();
         for (txid, (_, transaction)) in &unsettled {
-            let parents: HashSet<Txid> = transaction
+            let spent: HashSet<Txid> = transaction
                 .input
                 .iter()
                 .map(|input| input.previous_output.txid)
                 .filter(|parent| unsettled.contains_key(parent))
                 .collect();
-            for parent in parents {
+            for parent in spent {
                 children.entry(parent).or_default().push(*txid);
+                parents.entry(*txid).or_default().push(parent);
+            }
+        }
+
+        // A node that accepted a transaction has its parents: acceptance of a
+        // child — an echo of the startup re-dispatch, say — is acceptance of
+        // every unsettled ancestor, unless that ancestor's own record is newer
+        // (found dead since).
+        let facts = info.generation.acceptance_among(&unsettled_txids);
+        let mut accepted: HashSet<Txid> = HashSet::new();
+        let mut up: VecDeque<(Txid, u64)> = facts
+            .iter()
+            .filter(|(_, (was_accepted, _))| *was_accepted)
+            .map(|(txid, (_, seq))| (*txid, *seq))
+            .collect();
+        while let Some((txid, seq)) = up.pop_front() {
+            if !accepted.insert(txid) {
+                continue;
+            }
+            for parent in parents.get(&txid).into_iter().flatten() {
+                let overridden = facts
+                    .get(parent)
+                    .is_some_and(|(parent_accepted, parent_seq)| {
+                        !parent_accepted && *parent_seq > seq
+                    });
+                if !overridden {
+                    up.push_back((*parent, seq));
+                }
             }
         }
 

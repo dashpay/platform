@@ -36,7 +36,7 @@ use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::broadcast_resolver::BroadcastResolver;
-use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
+use crate::wallet::core::{BalanceUpdateHandler, InBroadcastFences, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
@@ -472,9 +472,8 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     ///
     /// A `std::sync::Mutex`: touched only at wallet registration and load, for
     /// one map lookup, and never held across an await.
-    pub(super) in_broadcast_fences: std::sync::Mutex<
-        std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
-    >,
+    pub(super) in_broadcast_fences:
+        std::sync::Mutex<std::collections::BTreeMap<WalletId, Arc<InBroadcastFences>>>,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -640,17 +639,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// replaces another under the same id inherits its pending-spend fences —
     /// see the [`in_broadcast_fences`](Self#structfield.in_broadcast_fences)
     /// field docs.
-    pub(super) fn in_broadcast_fences_for(
-        &self,
-        wallet_id: &WalletId,
-    ) -> Arc<crate::wallet::core::InBroadcastFences> {
+    pub(super) fn in_broadcast_fences_for(&self, wallet_id: &WalletId) -> Arc<InBroadcastFences> {
         Arc::clone(
             self.in_broadcast_fences
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .entry(*wallet_id)
                 .or_insert_with(|| {
-                    Arc::new(crate::wallet::core::InBroadcastFences::with_hold_flag(
+                    Arc::new(InBroadcastFences::with_hold_flag(
                         self.broadcast_resolver.enabled_flag(),
                     ))
                 }),

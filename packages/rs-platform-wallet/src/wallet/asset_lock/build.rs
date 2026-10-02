@@ -274,6 +274,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // pools the sources, enforces that CoinJoin funding is drain-only and
         // unpooled, and reserves the selected inputs in each contributing
         // account's own set under one owner token).
+        // No unresolved-send hold here (see `UnresolvedSends`): the builder
+        // calls `require_final_inputs`, so only confirmed or InstantSend-locked
+        // coins are ever selected, and an unresolved send's outputs are neither.
         let result = info
             .core_wallet
             .build_asset_lock_with_signer(
@@ -1383,16 +1386,20 @@ mod tests {
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::test_support::{
-        funded_wallet_manager, funded_wallet_manager_dual_standard,
+        apply_to_wallet, funded_wallet_manager, funded_wallet_manager_dual_standard,
         funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
         AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
+    use crate::wallet::core::CoreWallet;
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::wallet::platform_wallet::WalletId;
+    use crate::SEND_FUNDING_SOURCES;
     use crate::{AssetLockFundingType, PlatformWalletError};
+    use dashcore::{Address as DashAddress, Network};
+    use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
 
     /// The zero-spendable-candidate selection error must surface the SAME
     /// typed shortfall as a partial shortfall (not the generic string form),
@@ -2014,16 +2021,85 @@ mod tests {
         );
     }
 
-    /// An *ambiguous* asset-lock broadcast failure must keep both the funding
-    /// reservation and the resumable `Built` row: the transaction may already
-    /// be propagating, so a retry must not double-spend and a resume must
-    /// stay possible.
+    /// An asset lock never funds from the coins of an unresolved send of
+    /// ours: key-wallet's `require_final_inputs` keeps only confirmed or
+    /// InstantSend-locked coins, so with the hold on and the send's change the
+    /// wallet's only coin, the lock is a plain shortfall, never built on it.
+    #[tokio::test]
+    async fn should_never_fund_an_asset_lock_from_an_unresolved_sends_change() {
+        let (wallet_manager, wallet_id, generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        generation.set_holds_unresolved_sends(true);
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+        // Spend the one confirmed coin; its change is all the wallet has left.
+        let finalized = core
+            .finalize_transaction(
+                TransactionBuilder::new()
+                    .add_output(&DashAddress::dummy(Network::Testnet, 95), 1_000_000),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the send builds");
+        apply_to_wallet(
+            &wallet_manager,
+            &wallet_id,
+            finalized.transaction(),
+            TransactionContext::Mempool,
+        )
+        .await;
+        let manager = AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysOkBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(CapturingPersistence::default()) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+
+        let refused = manager
+            .create_funded_asset_lock_proof(
+                100_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "got {:?}",
+            refused.map(|_| ())
+        );
+    }
+
     /// An echoed asset-lock broadcast is recorded as accepted, so its change
     /// is not held as an unresolved send's while its InstantSend lock is due.
     #[tokio::test]
     async fn should_mark_an_echoed_asset_lock_accepted() {
         let (manager, signer, _persistence) =
             funded_asset_lock_manager(Arc::new(AlwaysOkBroadcaster)).await;
+        {
+            // Facts are kept only while the hold is on, as with probing on.
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm.get_wallet_and_info(&manager.wallet_id).expect("wallet");
+            info.generation.set_holds_unresolved_sends(true);
+        }
 
         let (_, out_point) = manager
             .broadcast_funded_asset_lock(
@@ -2045,6 +2121,10 @@ mod tests {
             .contains(&txid));
     }
 
+    /// An *ambiguous* asset-lock broadcast failure must keep both the funding
+    /// reservation and the resumable `Built` row: the transaction may already
+    /// be propagating, so a retry must not double-spend and a resume must
+    /// stay possible.
     #[tokio::test]
     async fn ambiguous_asset_lock_broadcast_keeps_reservation_and_built_row() {
         let (manager, signer, persistence) =

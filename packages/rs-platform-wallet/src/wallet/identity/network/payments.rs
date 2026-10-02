@@ -12,7 +12,9 @@ use key_wallet_manager::WalletManager;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::core::{awaiting_network_or_build_error, held_input_cost, UnresolvedSends};
+use crate::wallet::core::{
+    awaiting_network_or_build_error, held_input_cost, requested_amount, UnresolvedSends,
+};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::SEND_FUNDING_SOURCES;
 
@@ -1258,7 +1260,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // Coins of our own sends the network has not been seen to accept
             // stay out of selection (see `UnresolvedSends`).
             let unresolved = UnresolvedSends::of(info);
-            let held_input_cost = held_input_cost()?;
+            let held_input_cost = held_input_cost();
+            let requested = requested_amount(builder.outputs());
             let mut held_value = 0u64;
 
             // Derivation paths for every offered UTXO, since the signer closure
@@ -1352,6 +1355,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         e,
                         &SEND_FUNDING_SOURCES,
                         held_value,
+                        requested,
                     ));
                 }
             };

@@ -261,7 +261,7 @@ pub(crate) struct InBroadcastFences {
     /// peer echoed the broadcast back or a probe found it accepted or mined
     /// (accepted), or a probe found it dead. Only an accepted send's outputs
     /// may fund the next payment before the wallet sees it InstantSend-locked
-    /// or mined (see [`WalletGeneration::accepted_among`]).
+    /// or mined (see [`WalletGeneration::acceptance_among`]).
     ///
     /// Shared like the fences: acceptance is a fact about the network, not
     /// about one in-memory instance. A fact is kept while its send is among
@@ -461,9 +461,15 @@ impl WalletGeneration {
 
     /// Record what the network said about our send `txid` (accepted, or
     /// found dead), observed at `seq` ([`next_acceptance_seq`]). An older
-    /// observation than the one recorded is dropped.
+    /// observation than the one recorded is dropped. Nothing is kept while the
+    /// hold is off: only the hold reads these facts, and only its reads prune
+    /// them.
     pub(crate) fn record_acceptance(&self, txid: Txid, accepted: bool, seq: u64) {
         let mut acceptance = self.in_broadcast.acceptance();
+        if !self.holds_unresolved_sends() {
+            acceptance.clear();
+            return;
+        }
         let newer = acceptance.get(&txid).is_none_or(|known| known.seq < seq);
         if newer {
             acceptance.insert(
@@ -497,20 +503,31 @@ impl WalletGeneration {
             .store(on, Ordering::SeqCst);
     }
 
-    /// The sends among `unsettled` the network was last seen to accept.
+    /// The latest fact recorded about each send among `unsettled`: whether
+    /// the network was seen to accept it, and the sequence it was observed at.
     /// Forgets a recorded send that is not among them once
     /// [`ACCEPTANCE_GRACE`] has passed since it was observed — settled or gone
     /// by then — so the record stays about the size of the wallet's unsettled
     /// sends, yet a fact that arrived before its send's record is kept.
-    pub(crate) fn accepted_among(&self, unsettled: &HashSet<Txid>) -> HashSet<Txid> {
+    pub(crate) fn acceptance_among(&self, unsettled: &HashSet<Txid>) -> HashMap<Txid, (bool, u64)> {
         let mut acceptance = self.in_broadcast.acceptance();
         acceptance.retain(|txid, known| {
             unsettled.contains(txid) || known.observed_at.elapsed() < ACCEPTANCE_GRACE
         });
         acceptance
             .iter()
-            .filter(|(_, known)| known.accepted)
-            .map(|(txid, _)| *txid)
+            .filter(|(txid, _)| unsettled.contains(*txid))
+            .map(|(txid, known)| (*txid, (known.accepted, known.seq)))
+            .collect()
+    }
+
+    /// The sends among `unsettled` whose latest fact is accepted.
+    #[cfg(test)]
+    pub(crate) fn accepted_among(&self, unsettled: &HashSet<Txid>) -> HashSet<Txid> {
+        self.acceptance_among(unsettled)
+            .into_iter()
+            .filter(|(_, (accepted, _))| *accepted)
+            .map(|(txid, _)| txid)
             .collect()
     }
 

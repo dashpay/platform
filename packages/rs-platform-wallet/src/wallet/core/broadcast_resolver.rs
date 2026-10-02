@@ -124,6 +124,7 @@ impl OutgoingView {
 }
 
 /// One account's record of a transaction, as far as the resolver cares.
+#[derive(Clone, Copy)]
 pub(crate) struct RecordFacts<'a> {
     pub txid: Txid,
     /// In a block, InstantSend-locked, or finalized in this account.
@@ -137,25 +138,47 @@ pub(crate) struct RecordFacts<'a> {
 /// transaction however many accounts record it; it is settled if any account
 /// holds it settled, and the wallet's own send if any account records it
 /// spending the wallet's coins (a transfer between accounts is "incoming" in
-/// the receiving one). Returns the unsettled ones.
+/// the receiving one). Returns the unsettled ones, borrowed: for each, whether
+/// it spends the wallet's own coins, and the transaction.
+///
+/// Two passes over `records()`: the unsettled ones are collected first, then
+/// each settled record only drops a matching entry — no set of the whole
+/// history is built, since a healthy wallet has none or a handful unsettled.
+fn merge_unsettled<'a, I>(records: impl Fn() -> I) -> HashMap<Txid, (bool, &'a Transaction)>
+where
+    I: IntoIterator<Item = RecordFacts<'a>>,
+{
+    let mut unsettled: HashMap<Txid, (bool, &'a Transaction)> = HashMap::new();
+    for record in records() {
+        if !record.settled {
+            unsettled
+                .entry(record.txid)
+                .and_modify(|(own, _)| *own |= record.own)
+                .or_insert((record.own, record.transaction));
+        }
+    }
+    if !unsettled.is_empty() {
+        for record in records() {
+            if record.settled {
+                unsettled.remove(&record.txid);
+            }
+        }
+    }
+    unsettled
+}
+
+/// [`merge_unsettled`] over a list of records, as views.
+#[cfg(test)]
 pub(crate) fn merge_records<'a>(
     records: impl IntoIterator<Item = RecordFacts<'a>>,
 ) -> Vec<OutgoingView> {
-    let mut settled: HashSet<Txid> = HashSet::new();
-    let mut unsettled: HashMap<Txid, (bool, &Transaction)> = HashMap::new();
-    for record in records {
-        if record.settled {
-            settled.insert(record.txid);
-            continue;
-        }
-        unsettled
-            .entry(record.txid)
-            .and_modify(|(own, _)| *own |= record.own)
-            .or_insert((record.own, record.transaction));
-    }
+    let records: Vec<RecordFacts<'a>> = records.into_iter().collect();
+    into_views(merge_unsettled(|| records.iter().copied()))
+}
+
+fn into_views(unsettled: HashMap<Txid, (bool, &Transaction)>) -> Vec<OutgoingView> {
     unsettled
         .into_iter()
-        .filter(|(txid, _)| !settled.contains(txid))
         .map(|(txid, (own, transaction))| OutgoingView {
             txid,
             spends_own_coins: own,
@@ -164,49 +187,31 @@ pub(crate) fn merge_records<'a>(
         .collect()
 }
 
-/// This wallet's unsettled transactions. One walk over the records; only
-/// unsettled ones are cloned — on a healthy wallet there are none or a
-/// handful.
+/// This wallet's unsettled transactions, as views: only those are cloned — on
+/// a healthy wallet there are none or a handful.
 pub(crate) fn collect_views(info: &PlatformWalletInfo) -> Vec<OutgoingView> {
-    let accounts = info.core_wallet.accounts.all_accounts();
-    merge_records(accounts.iter().flat_map(|account| {
-        account
-            .transactions()
-            .values()
-            .map(move |record| RecordFacts {
-                txid: record.txid,
-                settled: is_settled(record) || account.transaction_is_finalized(&record.txid),
-                own: !record.input_details.is_empty(),
-                transaction: &record.transaction,
-            })
-    }))
+    into_views(unsettled_transactions(info))
 }
 
-/// This wallet's unsettled transactions, borrowed: for each, whether it spends
-/// the wallet's own coins, and the transaction. The same multi-account rule as
-/// [`merge_records`] — settled if any account holds it settled, own if any
-/// records it spending the wallet's coins — without cloning anything, for a
-/// reader that walks them on every balance or build call.
+/// This wallet's unsettled transactions, borrowed, under [`merge_unsettled`]'s
+/// rule — for a reader that walks them on every balance or build call.
 pub(crate) fn unsettled_transactions(
     info: &PlatformWalletInfo,
 ) -> HashMap<Txid, (bool, &Transaction)> {
-    let mut settled: HashSet<Txid> = HashSet::new();
-    let mut unsettled: HashMap<Txid, (bool, &Transaction)> = HashMap::new();
-    for account in info.core_wallet.accounts.all_accounts() {
-        for record in account.transactions().values() {
-            if is_settled(record) || account.transaction_is_finalized(&record.txid) {
-                settled.insert(record.txid);
-                continue;
-            }
-            let own = !record.input_details.is_empty();
-            unsettled
-                .entry(record.txid)
-                .and_modify(|(was_own, _)| *was_own |= own)
-                .or_insert((own, &record.transaction));
-        }
-    }
-    unsettled.retain(|txid, _| !settled.contains(txid));
-    unsettled
+    let accounts = info.core_wallet.accounts.all_accounts();
+    merge_unsettled(|| {
+        accounts.iter().flat_map(|account| {
+            account
+                .transactions()
+                .values()
+                .map(move |record| RecordFacts {
+                    txid: record.txid,
+                    settled: is_settled(record) || account.transaction_is_finalized(&record.txid),
+                    own: !record.input_details.is_empty(),
+                    transaction: &record.transaction,
+                })
+        })
+    })
 }
 
 /// This wallet's unsettled transactions as chains. `views` hold one entry per
