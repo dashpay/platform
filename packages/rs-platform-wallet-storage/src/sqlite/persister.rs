@@ -21,6 +21,7 @@ use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
     apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+    restore_recorded_transactions,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
@@ -1849,6 +1850,13 @@ fn load_one_wallet(
                 ))
             })?;
     }
+    let mut wallet = wallet;
+    restore_recorded_transactions(
+        &mut wallet_info,
+        &mut wallet,
+        core_state.records,
+        &core_state.instant_locks_for_non_final_records,
+    );
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
@@ -2402,18 +2410,22 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "dpns_name_states",      // get_dpns_name_state
-            "meta_contact",          // the kv object store
-            "meta_data_versions",    // schema::versions
-            "meta_global",           // the kv object store
-            "meta_identity",         // the kv object store
-            "meta_platform_address", // the kv object store
-            "meta_store_generation", // schema::versions
-            "meta_token",            // the kv object store
-            "meta_wallet",           // the kv object store
-            "tracked_masternodes",   // load_tracked_masternodes
+            "core_transaction_inputs", // core_history::apply repairs indexed consumers
+            "dpns_name_states",        // get_dpns_name_state
+            "meta_contact",            // the kv object store
+            "meta_data_versions",      // schema::versions
+            "meta_global",             // the kv object store
+            "meta_identity",           // the kv object store
+            "meta_platform_address",   // the kv object store
+            "meta_store_generation",   // schema::versions
+            "meta_token",              // the kv object store
+            "meta_wallet",             // the kv object store
+            "tracked_masternodes",     // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
+        // Append-only archive of pre-repair history blobs. Never loaded: it
+        // exists so a wrong history repair can be undone by hand.
+        const RETAINED_FOR_RECOVERY: &[&str] = &["core_transaction_record_originals"];
         // `load()` rehydrates these only with the `shielded` feature on, so
         // the classification follows the build rather than claiming one.
         #[cfg(feature = "shielded")]
@@ -2455,6 +2467,7 @@ mod tests {
                     && !READ_BY_A_DEDICATED_API.contains(&table.as_str())
                     && !LOAD_UNIMPLEMENTED_TABLES.contains(&table.as_str())
                     && !INFRASTRUCTURE.contains(&table.as_str())
+                    && !RETAINED_FOR_RECOVERY.contains(&table.as_str())
                     && !FEATURE_GATED.contains(&table.as_str())
                     && !NOT_REHYDRATED_WITHOUT_FEATURE.contains(&table.as_str())
             })

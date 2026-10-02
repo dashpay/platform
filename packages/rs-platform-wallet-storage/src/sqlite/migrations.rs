@@ -10,6 +10,7 @@ use crate::sqlite::error::WalletStorageError;
 use refinery_core::error::WrapMigrationError;
 
 mod legacy_v008;
+mod legacy_v019;
 
 // Generates a `migrations` module with `runner()`; path is relative to
 // the crate root.
@@ -45,6 +46,7 @@ fn run_with_runner(
         tx,
         registration_sql: hook_sql(8),
         pool_sql: hook_sql(11),
+        history_sql: hook_sql(19),
     };
     // Grouped reports never claim that rolled-back migrations were applied.
     let report = runner.set_grouped(true).run(&mut driver)?;
@@ -59,6 +61,7 @@ struct MigrationTransaction<'conn> {
     tx: rusqlite::Transaction<'conn>,
     registration_sql: String,
     pool_sql: String,
+    history_sql: String,
 }
 
 impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
@@ -75,6 +78,8 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
                 legacy_v008::backfill_registrations(&self.tx)?;
             } else if query == self.pool_sql {
                 legacy_v008::convert_pools(&self.tx)?;
+            } else if query == self.history_sql {
+                legacy_v019::repair_history(&self.tx)?;
             }
             count += 1;
         }
@@ -418,6 +423,16 @@ pub fn embedded_migrations_sql() -> Vec<String> {
                 .to_string()
         })
         .collect()
+}
+
+/// Undo V019 so the next [`run`] replays it over the current rows.
+#[cfg(test)]
+pub(crate) fn rewind_to_v018(conn: &rusqlite::Connection) {
+    conn.execute_batch(
+        "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+         DELETE FROM refinery_schema_history WHERE version >= 19;",
+    )
+    .unwrap();
 }
 
 #[cfg(test)]
