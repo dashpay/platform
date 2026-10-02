@@ -225,6 +225,13 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
             return Ok(None);
         }
 
+        // A refusal and a passed transition share one transformer result only in a batch of
+        // several transitions, which basic structure refuses while
+        // `max_transitions_in_documents_batch` is 1, as it is at every protocol version. Such a
+        // result would be executed as it stands, without the state validation of what passed
+        // (the cap's note in `SYSTEM_LIMITS_V1` names the batch that is not atomic), so raising
+        // the cap must first turn a transition passed next to a refusal into a nonce bump, or
+        // validate it: a deletion, a retraction and what the interim block passes alike.
         let refused = refused_any.then(|| {
             if actions.is_empty() {
                 ConsensusValidationResult::new_with_errors(errors)
