@@ -66,4 +66,5 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_document_expirations_per_block: 0,
     max_document_expiration_weight_per_block: 0,
     minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
+    smart_contract_computation: None, // smart contracts arrive with the 5.0 protocol version
 };

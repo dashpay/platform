@@ -1,4 +1,5 @@
 use crate::error::PlatformVersionError;
+use crate::version::fee::dashvm::FeeDashVmVersion;
 use crate::version::fee::data_contract_registration::v1::FEE_DATA_CONTRACT_REGISTRATION_VERSION1;
 use crate::version::fee::data_contract_registration::FeeDataContractRegistrationVersion;
 use crate::version::fee::data_contract_validation::FeeDataContractValidationVersion;
@@ -20,6 +21,7 @@ use crate::version::fee::vote_resolution_fund_fees::{
 };
 use bincode::{Decode, Encode};
 
+pub mod dashvm;
 pub mod data_contract_registration;
 mod data_contract_validation;
 pub mod document_ttl;
@@ -31,6 +33,7 @@ pub mod storage;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 pub mod vote_resolution_fund_fees;
 
 pub type FeeVersionNumber = u32;
@@ -54,6 +57,16 @@ pub struct FeeVersion {
     /// version 14). Platform states store only `fee_version_number`, so this field does
     /// not touch any stored format; `FeeVersionFieldsBeforeVersion4` must not gain it.
     pub document_ttl: FeeDocumentTtlVersion,
+    /// Prices of smart-contract work; `None` on every schedule that predates smart contracts.
+    /// Like `document_ttl`, never part of a stored format: `FeeVersionFieldsBeforeVersion4`
+    /// must not gain it.
+    ///
+    /// Read from the active protocol version's schedule (`platform_version.fee_version.dashvm`),
+    /// never from the persisted epoch fee history: the history is keyed by `fee_version_number`,
+    /// which this group does not change, and serves only the storage, processing, hashing and
+    /// signature groups, so a schedule looked up by number (`FeeVersion::get`, `as_static`, the
+    /// epoch history) carries no contract pricing. See `dpp::fee::smart_contract_computation`.
+    pub dashvm: Option<FeeDashVmVersion>,
 }
 
 impl FeeVersion {
@@ -155,6 +168,8 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             vote_resolution_fund_fees: value.vote_resolution_fund_fees.into(),
             // Pre-4.2 tables predate the document `ttl` keyword; the group is unread there.
             document_ttl: FEE_DOCUMENT_TTL_VERSION1,
+            // Pre-4.2 tables predate smart contracts; no schedule before 5.0 prices them.
+            dashvm: None,
         }
     }
 }

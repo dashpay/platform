@@ -58,20 +58,20 @@ function version so that execution is deterministic.
 
 ## The Version Array
 
-Each protocol version gets its own constant, defined in a separate file. At
-the time of writing, the platform has fourteen versions:
+Each protocol version gets its own constant, defined in a separate file. On
+the 5.0 development branch the platform has seventeen versions:
 
 ```rust
 // packages/rs-platform-version/src/version/mod.rs
 
 pub type ProtocolVersion = u32;
 
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_14;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_17;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;
 pub const ALL_VERSIONS: RangeInclusive<ProtocolVersion> = 1..=LATEST_VERSION;
 ```
 
-These fourteen snapshots are collected into a single static array in
+These seventeen snapshots are collected into a single static array in
 `protocol_version.rs`:
 
 ```rust
@@ -90,14 +90,17 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V12,
     PLATFORM_V13,
     PLATFORM_V14,
+    PLATFORM_V15,
+    PLATFORM_V16,
+    PLATFORM_V17,
 ];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V14;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V17;
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 ```
 
 The array is indexed by protocol version number minus one (since versions are
-1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V14` at index 13. This
+1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V17` at index 16. This
 simple layout is what makes the `get` function so fast.
 
 One file, one protocol version. `v14.rs` was created when the first consensus
@@ -107,6 +110,30 @@ released the file freezes: from then on it is part of the chain's historical
 record, and the next consensus change creates `v15.rs`. There is never a
 `v14.rs` that means one thing on a node built last month and another on a node
 built today.
+
+Because the array is indexed by number, a version cannot be registered without
+every number below it. The 5.0 development branch therefore carries protocol
+version 17 (its own) together with 15 and 16, which the allocation register
+reserves for the 4.3 and 4.4 releases. Until those branches merge their real
+`v15.rs` and `v16.rs` forward, the two files are placeholders written as
+struct updates over their predecessor
+(`PlatformVersion { protocol_version: PROTOCOL_VERSION_15, ..PLATFORM_V14 }`).
+A forward merge that brings the real file is resolved by taking the incoming
+file; because 16 and 17 are struct updates too, every table the incoming
+version changes flows into them without a second edit, with one exception:
+`PLATFORM_V17` overrides `fee_version` and `system_limits` with its own
+generations (`FEE_VERSION4`, `SYSTEM_LIMITS_V5`), which are built on the
+tables that were current when they were written, not on whatever version 16
+carries. If the incoming version changes either of those two tables, rebase the
+5.0 generation onto the incoming one (`..FEE_VERSION<incoming>`,
+`..SYSTEM_LIMITS_V<incoming>`) and renumber it past the incoming constant. The
+test that pins version 17 to differ from version 16 only in the
+smart-contract computation tables fails until that is done.
+
+`system_limits` is a public module, so `SystemLimits` and the nested limit
+groups it holds (such as `SmartContractComputationLimits` and the
+`ComputationUnits` alias) can be named from `dpp`, `drive-abci` and the
+runtime crates.
 
 ## What a Version Snapshot Looks Like
 
@@ -278,8 +305,8 @@ impl PlatformVersion {
 }
 ```
 
-This is a simple array lookup. Protocol version 1 maps to index 0, version 14
-to index 13. If the version number is out of range, you get a clear error. No
+This is a simple array lookup. Protocol version 1 maps to index 0, version 17
+to index 16. If the version number is out of range, you get a clear error. No
 hash maps, no runtime registration, no dynamic dispatch -- just a static array
 of compile-time constants.
 
