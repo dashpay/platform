@@ -77,12 +77,14 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
                     .validate_estimated_fee(balance, platform_version)
                     .map_err(Error::Protocol),
                 // A batch asking the contract owner to pay its gas cannot be judged before its
-                // contracts are loaded: the signer only has to fund the principal here, and fee
-                // validation judges the gas against whoever ends up paying it. This arm wins
-                // over the shielded floor below, and it should: the compute fee of a bundle a
-                // sponsored document carries is gas like the rest.
+                // contracts are loaded, so the signer funds the principal here and fee
+                // validation judges the gas against whoever ends up paying it. The compute fee
+                // of the bundles it carries is added to that principal, because the sponsor is
+                // not certain to pay it: a sub-transition state validation replaces with a
+                // nonce bump takes the sponsor off the whole batch, and then the signer owes the
+                // verification that already ran. A batch carrying no bundle adds nothing.
                 1 if st.requests_gas_sponsorship() => st
-                    .validate_estimated_principal(balance)
+                    .validate_estimated_principal_with_shielded_compute(balance, platform_version)
                     .map_err(Error::Protocol),
                 // A batch carrying shielded pool bundles also has to hold the compute fee those
                 // bundles will be charged. The flat per-sub-transition minimum is orders of
@@ -592,7 +594,7 @@ mod tests {
         /// shielded compute fee is gas. Reserving it against the signer would refuse a
         /// sponsored document the contract owner was going to pay for.
         #[test]
-        fn should_not_reserve_the_shielded_fee_against_a_signer_who_asked_for_a_gas_sponsor() {
+        fn should_reserve_the_shielded_fee_against_a_sponsored_signer_too() {
             use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 
             let platform_version = PlatformVersion::latest();
@@ -608,8 +610,10 @@ mod tests {
                 )
                 .expect("pre check should not error");
             assert!(
-                result.is_valid(),
-                "a sponsored batch carries no principal, so its signer is asked for nothing"
+                !result.is_valid(),
+                "a sponsor is not certain to pay: a sub-transition replaced by a nonce bump takes \
+                 the sponsor off the batch and leaves the signer owing the verification that \
+                 already ran, so the signer has to hold it"
             );
 
             // The mempool still has to know the signer could not have paid unsponsored, so a
@@ -618,6 +622,40 @@ mod tests {
             assert!(st
                 .relies_on_gas_sponsor_to_pay(&identity, platform_version)
                 .expect("sponsor reliance should not error"));
+        }
+
+        #[test]
+        fn should_ask_a_sponsored_signer_for_the_compute_fee_and_no_more() {
+            use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+
+            let platform_version = PlatformVersion::latest();
+            let st = batch_of(vec![document_paid_from_pool(
+                2,
+                GasFeesPaidBy::ContractOwner,
+            )]);
+
+            // One bundle verification plus two actions, from the event constants this version
+            // carries. The document delete carries no principal, so this is the whole floor.
+            const COMPUTE_FEE: u64 = 40_000_000 + 2 * 22_000_000;
+
+            assert!(
+                st.validate_identity_minimum_balance_pre_check(
+                    &identity_with_balance(COMPUTE_FEE),
+                    platform_version,
+                )
+                .expect("pre check should not error")
+                .is_valid(),
+                "the compute fee is the whole of what a sponsored signer is asked for"
+            );
+            assert!(
+                !st.validate_identity_minimum_balance_pre_check(
+                    &identity_with_balance(COMPUTE_FEE - 1),
+                    platform_version,
+                )
+                .expect("pre check should not error")
+                .is_valid(),
+                "a credit short of the compute fee is short"
+            );
         }
 
         /// Every bundle in a batch is priced, not just the first: the floor asks for the sum,

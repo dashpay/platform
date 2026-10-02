@@ -82,6 +82,24 @@ impl BatchTransition {
         self.validate_estimated_principal_and_fees(identity_known_balance, 0)
     }
 
+    /// The principal a sponsored batch's signer funds, plus the compute fee of the Orchard
+    /// bundles it carries.
+    ///
+    /// A sponsor pays the gas of a batch that executes, but a sub-transition its state
+    /// validation replaces with a nonce bump takes the sponsor off the whole batch, and the
+    /// signer pays for the work that ran on it. So the signer has to hold what the verification
+    /// costs even while a sponsor is expected to pay it: whichever way the batch ends, somebody
+    /// can be charged for the proofs already verified. A batch carrying no bundle adds nothing
+    /// and is asked for its principal alone, as before.
+    pub fn validate_estimated_principal_with_shielded_compute(
+        &self,
+        identity_known_balance: Credits,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let compute_fee = self.shielded_bundle_compute_fee(platform_version)?;
+        self.validate_estimated_principal_and_fees(identity_known_balance, compute_fee)
+    }
+
     /// The shielded compute fee the batch's Orchard bundles will be charged: one bundle
     /// verification plus the per-action work, summed over the sub-transitions that carry a
     /// bundle, each priced exactly as the transformer that builds it prices it.
