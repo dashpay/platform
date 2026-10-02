@@ -32,8 +32,11 @@ export class ModerationChartersFacade {
    * The team that moderates a contract: the seated charter's leader plus its elected members
    * and the members the leader added, less those the leader removed. Undefined when the
    * contract has no seated charter. `seats(maxAddedModerators)`, given the contract's elected
-   * declaration, is the most members the team can hold as consensus counts them: a settled
-   * deletion needs `Math.min(approvals, seats)` approvals.
+   * declaration, is the most members the team can hold as consensus counts them, and
+   * `settledDeletionApprovalsNeeded(approvals, maxAddedModerators)` what a settled deletion needs
+   * of the team, `Math.min(approvals, seats)`. A removed elected member keeps its seat, so the
+   * need does not drop when the team shrinks: with fewer on the team, nothing passes until the
+   * leader adds members or deletes a removal.
    */
   async team(targetContractId: wasm.IdentifierLike): Promise<wasm.ModerationTeam | undefined> {
     const w = await this.sdk.getWasmSdkConnected();

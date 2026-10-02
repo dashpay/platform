@@ -335,7 +335,10 @@ impl ElectedCharter {
     /// each seat filled now or not. A member the leader removed still holds its seat, which the
     /// leader fills again by deleting the removal, so removing members never lowers it. A
     /// `moderatorAbilities.deleteSettled` rule asking for more approvals than this needs every
-    /// seat's.
+    /// seat's. The price of a bar the leader can not lower: an addition's seat is filled again
+    /// by deleting it and adding someone else, but nobody else takes an elected member's, so a
+    /// team whose elected members are gone, removed or no longer approving, can fall short of
+    /// what the rule needs for good.
     pub fn seats(&self, max_added_moderators: u16) -> u16 {
         Self::seats_for(self.members.len(), max_added_moderators)
     }

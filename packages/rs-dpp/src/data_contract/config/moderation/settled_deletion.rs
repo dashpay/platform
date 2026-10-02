@@ -20,7 +20,13 @@ pub struct SettledDeletionRule {
     /// least 1, and at registration at most the members the declared team can hold (its
     /// leader, `SystemLimits::max_moderation_charter_elected_members` elected members and the
     /// declaration's `maxAddedModerators`). A seated team that can hold fewer, its charter
-    /// electing fewer members, must have all it can hold approve.
+    /// electing fewer members, must have all it can hold approve. What a team needs counts its
+    /// seats, not who holds them now ([`ElectedCharter::seats`]): an elected member's seat is
+    /// never filled by anyone else, so once more elected members are gone (removed for good, or
+    /// no longer approving) than the team's seats exceed what it needs, it deletes no settled
+    /// document again. A rule asking for every seat stops at the first.
+    ///
+    /// [`ElectedCharter::seats`]: crate::moderation_charter::ElectedCharter::seats
     pub approvals: u16,
 }
 
