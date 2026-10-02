@@ -270,7 +270,8 @@ public final class PersistentIdentity {
     /// no label rows at all, the identity has not been hydrated yet and the
     /// pick is trusted — unless the label's row, unique per network, now
     /// belongs to another identity: a transfer within the wallet rebinds it,
-    /// leaving the old owner with no rows.
+    /// leaving the old owner with no rows. If that lookup fails, the pick is
+    /// not shown.
     public var ownedMainDpnsName: String? {
         guard let mainDpnsName, !mainDpnsName.isEmpty else { return nil }
         let normalized = PersistentDPNSName.normalize(mainDpnsName)
@@ -289,7 +290,15 @@ public final class PersistentIdentity {
             }
         )
         descriptor.fetchLimit = 1
-        if let row = try? context.fetch(descriptor).first, row.identity.identityId != identityId {
+        // A failed lookup proves nothing about ownership, so it is not
+        // read as "no other owner".
+        let row: PersistentDPNSName?
+        do {
+            row = try context.fetch(descriptor).first
+        } catch {
+            return nil
+        }
+        if let row, row.identity.identityId != identityId {
             return nil
         }
         return mainDpnsName
