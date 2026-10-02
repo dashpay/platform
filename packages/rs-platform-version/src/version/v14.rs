@@ -365,7 +365,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     update state validation (already 1 here) checks the named moderators.
 ///     `batch_state_transition.contract_moderation_gate = Some(0)` makes the
 ///     batch transformer refuse, paid, the document transitions of a banned or
-///     suspended signer, its deletions excepted, and collect a lapsed
+///     suspended signer, its deletions excepted (and its retractions, item 72),
+///     and collect a lapsed
 ///     suspension, which
 ///     `documents_batch_transition` 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`)
 ///     deletes when the batch executes; the same field gates the other
@@ -1876,6 +1877,22 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     into the type's sums with no transition to refuse, so the values must be
 ///     small enough that the sums stay in `i64`, which they do short of 2^36
 ///     documents. A stored contract still parses.
+///
+/// 72. **A barred author may still retract (`retractedWhen`)**: a document
+///     type of meta-schema v3 and parser generation 3, in place, may declare
+///     `retractedWhen`, one condition in the grammar of an `immutable` entry's
+///     `when` (`$old.` reads, no `countOf` or `sumOf`), only on a mutable type
+///     of a contract keeping a banlist or a suspension list (10231 on every
+///     parse), and fixed on update (document type update validation 1, 40212).
+///     `contract_moderation_gate` v0, in place, lets a banned or suspended
+///     signer's replaces on such a type through with its bar
+///     (`ContractModerationRefusal::retraction_bar`, `refused` now optional),
+///     and the shared transformer, after fetching the stored document, refuses
+///     with the bar (41107, 41108), paid with the nonce bumped, each whose
+///     written document does not meet the condition or whose condition
+///     faults. Every other rule of the type still judges the replace. So an
+///     author whose documents can not be deleted can still take one back. Inert
+///     before this version: the gate and the keyword exist only here.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

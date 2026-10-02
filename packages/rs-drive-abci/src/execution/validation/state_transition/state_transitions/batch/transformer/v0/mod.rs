@@ -25,10 +25,12 @@
 mod contract_moderation_gate;
 mod moderator_fields;
 pub(crate) mod property_constraint_aggregates;
+mod retraction;
 
 use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
 use moderator_fields::judge_moderator_field_write;
 use property_constraint_aggregates::attach_property_constraint_aggregates;
+use retraction::judge_barred_replace;
 use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -142,6 +144,7 @@ trait BatchTransitionInternalTransformerV0 {
         owner_id: Identifier,
         document_transitions: &[&DocumentTransition],
         user_fee_increase: UserFeeIncrease,
+        retraction_bar: Option<&ConsensusError>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -185,6 +188,7 @@ trait BatchTransitionInternalTransformerV0 {
         replaced_documents: &[Document],
         user_fee_increase: UserFeeIncrease,
         owner_id: Identifier,
+        retraction_bar: Option<&ConsensusError>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
@@ -452,9 +456,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         };
 
         // Contract moderation (protocol version 14): a moderated contract refuses the document
-        // transitions of a banned or suspended signer, its deletions excepted. The gate is its own versioned helper,
-        // selected by `batch_state_transition.contract_moderation_gate`, so that this shared
-        // transformer does for earlier protocol versions exactly what it did before.
+        // transitions of a banned or suspended signer, its deletions and retractions excepted.
+        // The gate is its own versioned helper, selected by
+        // `batch_state_transition.contract_moderation_gate`, so that this shared transformer
+        // does for earlier protocol versions exactly what it did before.
         let refusal = Self::contract_moderation_gate(
             drive,
             block_info,
@@ -467,15 +472,22 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             platform_version,
         )?;
         // What the gate lets through carries on next to the refusal: a barred signer's
-        // deletions, and everything on the types an elected contract's interim does not block.
-        let (refused, document_transitions) = match refusal {
-            Some(ContractModerationRefusal { refused, passed }) => {
+        // deletions and its replaces on the types declaring `retractedWhen`, judged with the bar
+        // once their stored documents are fetched, and everything on the types an elected
+        // contract's interim does not block.
+        let (refused, document_transitions, retraction_bar) = match refusal {
+            Some(ContractModerationRefusal {
+                refused,
+                passed,
+                retraction_bar,
+            }) => {
                 if passed.is_empty() {
-                    return Ok(refused);
+                    // Everything was refused (the batch is never empty)
+                    return Ok(refused.unwrap_or_default());
                 }
-                (Some(refused), Cow::Owned(passed))
+                (refused, Cow::Owned(passed), retraction_bar)
             }
-            None => (None, Cow::Borrowed(document_transitions)),
+            None => (None, Cow::Borrowed(document_transitions), None),
         };
 
         let mut validation_result = document_transitions
@@ -490,6 +502,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     owner_id,
                     document_transitions,
                     user_fee_increase,
+                    retraction_bar.as_ref(),
                     execution_context,
                     transaction,
                     platform_version,
@@ -513,6 +526,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         owner_id: Identifier,
         document_transitions: &[&DocumentTransition],
         user_fee_increase: UserFeeIncrease,
+        retraction_bar: Option<&ConsensusError>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -597,6 +611,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         &replaced_documents,
                         user_fee_increase,
                         owner_id,
+                        retraction_bar,
                         execution_context,
                         platform_version,
                     )
@@ -789,6 +804,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         replaced_documents: &[Document],
         user_fee_increase: UserFeeIncrease,
         owner_id: Identifier,
+        retraction_bar: Option<&ConsensusError>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
@@ -922,6 +938,24 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                // A banned or suspended owner's replace, let through by the moderation gate as a
+                // retraction, refused with the bar unless it writes a retracted document
+                if let Some(bar) = retraction_bar {
+                    if let Some(error) = judge_barred_replace(
+                        &data_contract_fetch_info.contract,
+                        &document_replace_action,
+                        owner_id,
+                        bar,
+                    ) {
+                        return Self::failed_per_transition_action(
+                            document_replace_transition.base(),
+                            owner_id,
+                            vec![error],
+                            platform_version,
+                        );
+                    }
+                }
 
                 // A field only the contract's moderators write, changed, added or removed by a
                 // writer who does not moderate it, refused; by one who does, stamped

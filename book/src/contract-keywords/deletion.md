@@ -44,7 +44,7 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 - The owner deletes a document with a delete transition that names its id. Anyone else is refused (`DocumentOwnerIdMismatchError`, 40102), and a document that does not exist is `DocumentNotFoundError` (40101).
 - The owner is refunded the part of the document's storage fee that has not yet been paid out to past epochs. A document of a type with a `ttl` refunds nothing. See [Refunds](../fees/overview.md#refunds).
 - A delete may carry a token cost or an action fee, like any document action. See [Token Costs](token-cost.md) and [Action Fees](action-fees.md).
-- An identity that is banned or suspended on a moderated contract may still delete its own documents. See [Contract Moderation](../data-model/contract-moderation.md#the-model).
+- An identity that is banned or suspended on a moderated contract may still delete its own documents. See [Contract Moderation](../data-model/contract-moderation.md#the-model). On a type set to `false` it can retract them instead, when the type declares [`retractedWhen`](#retractedwhen).
 - `false` binds only the owner. The contract's moderators, when the type allows them, and the platform, when the type has a `ttl`, still delete such documents.
 - Drive never deletes a document whose type keeps history (`documentsKeepHistory`). From protocol version 14 a delete of such a document is refused with 10404 whatever `canBeDeleted` says; before it, the delete failed inside Drive as an internal error.
 - Documents of an `indexOnly` type are deleted with an index-only delete transition that carries their values, since there is no stored row to name by id. A delete by id of such a document is refused (10404). See [Index-Only Types](index-only.md).
@@ -53,6 +53,57 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 
 - From protocol version 14, a type with `documentsKeepHistory: true` must set `canBeDeleted: false` (`InvalidContractStructure`, 10231). The default is `true`, so it has to be written out. A contract registered earlier with both flags on stays readable, but its next update is checked like a new contract, so that update must turn `canBeDeleted` off on the type. That is the one change to `canBeDeleted` an update may make.
 - For references, a type whose owner may delete its documents is deletable: a `permanentDocument` reference, `inList` included, may not point at it (`ReferencedDocumentTypeDeletableError`, 40122), and a `deletableDocument` reference may. See [References](refers-to.md).
+
+## `retractedWhen`
+
+The replace that retracts a document: what a banned or suspended author may still do on a type whose documents it can not delete. A barred identity can write nothing new, but deleting what it wrote is never refused. On a type set to `canBeDeleted: false` there is no delete, and the author's only way to take a document back is a replace that blanks it, which a bar refuses like any other write. `retractedWhen` names that replace, and lets it through.
+
+| | |
+|---|---|
+| **Where** | document type |
+| **Value** | one condition, in the grammar of an [`immutable`](mutability.md#immutable) entry's `when` |
+| **Default** | none: a barred author's replaces are all refused |
+| **Since** | protocol version 14 |
+| **On update** | Fixed (`DocumentTypeUpdateError`, 40212): an update may not add it, remove it or change it |
+| **Errors** | `ContractUserBannedError` (41107) or `ContractUserSuspendedError` (41108) for a barred author's replace whose written document does not meet the condition |
+
+### Example
+
+```json
+"post": {
+  "type": "object",
+  "canBeDeleted": false,
+  "properties": {
+    "text": { "type": "string", "maxLength": 500, "position": 0 },
+    "deleted": { "type": "boolean", "position": 1 }
+  },
+  "additionalProperties": false,
+  "retractedWhen": { "present": "deleted" },
+  "propertyConstraints": {
+    "retractedIsBlank": { "anyOf": [{ "absent": "deleted" }, { "absent": "text" }] }
+  },
+  "immutable": [
+    { "property": "deleted", "when": { "present": "$old.deleted" } }
+  ]
+}
+```
+
+Replies point at posts, so a post stays in place. Its author retracts one by replacing it with `{ "deleted": true }`. The three keywords split the work. `retractedWhen` says that a post carrying `deleted` is retracted, so a banned author may still write one. `retractedIsBlank` says that a retracted post carries no text, for every author. The `immutable` entry says that a post stays retracted once it is. A banned author's edit of its text is refused with 41107, and so is a replace that drops `deleted` again.
+
+### How it works
+
+- Only replaces are let through, and only those of a banned or suspended owner are judged. An identity that is not barred replaces its documents under the type's other rules alone.
+- The moderation gate lets every replace of a barred owner on the type through. Once the stored document is fetched, the transformer judges the condition on the document the replace writes, as an `immutable` condition is judged: its properties as the replace sets them, the replace's block as `$updatedAt`, and the stored document under `$old.`. A replace for which the condition does not hold is refused with the bar's error and its nonce bumped, in a block and in the mempool alike. A condition that faults, dividing by zero or overflowing, counts as not holding: a fault never lifts a bar.
+- The condition only picks the replaces a barred owner may make. Every other rule of the type still judges them: the schema, `propertyConstraints`, `immutable`, references, token costs and action fees. What a retracted document may hold is for those rules to say. Without a rule like `retractedIsBlank` above, a barred author could write anything into a document that meets the condition.
+- Creates, transfers, purchases and price updates by a barred owner are refused as before, and deletions pass as before.
+
+### Rules at registration
+
+All refusals below are `InvalidContractStructure` (10231), checked on every parse.
+
+- Only on a type whose documents are mutable: without a replace there is nothing to retract with.
+- Only on a contract that keeps a banlist or a suspension list: otherwise no owner is ever barred.
+- The condition reads what an `immutable` entry's `when` may read: declared properties of the right kind, neither transient nor inside a transient object, the system times and heights the type lists in `required`, and the stored document through `$old.`. It reads no `countOf` or `sumOf`. When a contract is registered or updated, it also stays within the node limit of a rule and lists no condition twice.
 
 ## `moderatorAbilities.delete`
 
@@ -321,6 +372,6 @@ Which reference may point at a type follows from which of the three it allows. A
 - [Moderator Abilities](moderator-abilities.md), for the `moderatorAbilities` object and the fields only moderators write
 - [Time To Live](ttl.md), the third way a document leaves the state
 - [History](history.md), for why a type that keeps history can never delete
-- [Mutability](mutability.md) and [Creation, Transfers and Trading](ownership-and-trading.md)
+- [Mutability](mutability.md), for `immutable` and the conditions `retractedWhen` shares with it, and [Creation, Transfers and Trading](ownership-and-trading.md)
 - [References](refers-to.md), for `permanentDocument`, `moderatedDocument` and `deletableDocument`
 - [Contract-Level Keys and config](contract-config.md), for `documentsCanBeDeletedContractDefault` and `moderation`

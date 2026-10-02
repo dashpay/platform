@@ -79,6 +79,12 @@ pub(crate) mod property_names {
     /// v3+ (protocol version 14). See `apply_immutable_fields` in
     /// `try_from_schema::common` for the structural rules.
     pub const IMMUTABLE: &str = "immutable";
+    /// Doctype-level condition, in the grammar of an [`IMMUTABLE`] entry's
+    /// `when`, under which a replace writes a retracted document: the one
+    /// replace a banned or suspended owner may still make on a moderated
+    /// contract. Meta-schema v3+ (protocol version 14). See
+    /// `apply_retracted_when` in `try_from_schema::common`.
+    pub const RETRACTED_WHEN: &str = "retractedWhen";
     /// Doctype-level object declaring a fixed fee in credits for actions on documents of
     /// the type, split between the contract's owner pot and its moderators pot. Meta-schema
     /// v3+ (protocol version 14). See `parse_action_fees_keyword` in

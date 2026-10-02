@@ -550,6 +550,16 @@ fn parse_generation_3(
         full_validation,
         platform_version,
     )?;
+    // After the core parse, for the same reasons: the resolved `documentsMutable`
+    // flag and the parsed properties the condition reads.
+    common::apply_retracted_when(
+        &mut v2,
+        data_contact_config,
+        schema_defs,
+        name,
+        full_validation,
+        platform_version,
+    )?;
 
     // After the core parse: every property, its transient flag and its schema
     // are known, so each `encryptedFor` declaration can be checked against the
@@ -1635,6 +1645,8 @@ mod reference_expression_tests;
 mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_test_helpers;
+#[cfg(all(test, feature = "validation"))]
+mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
 mod shared_stage_error_tests;
 #[cfg(all(test, feature = "validation"))]
