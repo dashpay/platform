@@ -83,8 +83,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// block is silently missed.
     ///
     /// This lowers the wallet's SPV `synced_height` to the minimum
-    /// `$coreHeightCreatedAt` across established receival contacts that haven't
-    /// been rescanned yet — the filter manager (`dash-spv`) then re-downloads
+    /// `$coreHeightCreatedAt` across receival contacts (established, or holding
+    /// only our unreciprocated request) that haven't been rescanned yet — the
+    /// filter manager (`dash-spv`) then re-downloads
     /// nothing it already has, re-matches the now-larger script set, and
     /// re-requests the matching blocks. Each contact is recorded in
     /// [`DashPayState::rescan_triggered`](crate::wallet::identity::DashPayState) so the recurring sweep does
@@ -130,13 +131,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })
             .collect();
 
-        // Candidates: established receival contacts not yet rescanned this
-        // lifetime whose funding height is below our scan tip. The floor is the
-        // minimum funding height — one rewind covers them all (deeper-funded
-        // contacts are in the watch set, so the backfill matches them too). The
-        // funding height is `min(outgoing, incoming)` of the pair: the channel
-        // is payable only once both requests exist, so the earlier of the two is
-        // the conservative-correct lower bound.
+        // Candidates: receival contacts not yet rescanned this lifetime whose
+        // funding height is below our scan tip. The floor is the minimum
+        // funding height — one rewind covers them all (deeper-funded contacts
+        // are in the watch set, so the backfill matches them too). For an
+        // established pair the funding height is `min(outgoing, incoming)`,
+        // the conservative lower bound. A contact we sent a request that never
+        // reciprocated has only our outgoing request: it carries our receiving
+        // xpub, so the chain is payable from that request's height.
         let mut floor: Option<u32> = None;
         let mut to_mark: Vec<(Identifier, Identifier)> = Vec::new();
         for (owner, contact) in receival_pairs {
@@ -146,13 +148,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             if managed.dashpay().rescan_triggered.contains(&contact) {
                 continue;
             }
-            let Some(established) = managed.dashpay().established_contacts().get(&contact) else {
-                continue;
+            let dashpay = managed.dashpay();
+            let funding = match dashpay.established_contacts().get(&contact) {
+                Some(established) => established
+                    .outgoing_request
+                    .core_height_created_at
+                    .min(established.incoming_request.core_height_created_at),
+                None => match dashpay.sent_contact_requests().get(&contact) {
+                    Some(sent) => sent.core_height_created_at,
+                    None => continue,
+                },
             };
-            let funding = established
-                .outgoing_request
-                .core_height_created_at
-                .min(established.incoming_request.core_height_created_at);
             // Contacts funded below the tip need a backfill — their addresses
             // weren't watched when those blocks were first scanned. Contacts
             // funded at or after the tip are already covered by the ongoing
@@ -2816,6 +2822,70 @@ mod tests {
             .expect("info")
             .core_wallet
             .synced_height()
+    }
+
+    /// **One-way contact.** A receival account for a contact we sent a
+    /// request that never reciprocated is watched from the moment it is
+    /// registered — usually long after SPV scanned past our request. Our
+    /// request carries our receiving xpub, so the contact could pay us from
+    /// its height on; the rescan must rewind there. Before the fix it skipped
+    /// every non-established contact, so those payments stayed missing at
+    /// any scan depth (testnet: a payment 19 blocks after our request).
+    #[tokio::test]
+    async fn rescan_backfills_a_one_way_contact_from_our_sent_request_height() {
+        use crate::wallet::identity::ContactRequest;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        iw.dashpay()
+            .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            .await
+            .expect("register receival account");
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed");
+            managed
+                .add_sent_contact_request(
+                    ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 1_475_801, 0),
+                    &p,
+                )
+                .expect("setup persists");
+            assert!(
+                managed.dashpay().established_contacts().is_empty(),
+                "the contact never reciprocated"
+            );
+        }
+        set_synced_height(&manager, wallet_id, 1_561_776).await;
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan"),
+            Some(1_475_801),
+            "rewinds to the height of the request that carried our xpub"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 1_475_801);
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan 2"),
+            None,
+            "the guard makes it single-shot, as for established contacts"
+        );
     }
 
     /// A contact established while the wallet was still catching up (funded at or
