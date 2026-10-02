@@ -182,12 +182,12 @@ impl Drive {
                 index_only_row_commitment(&document, document_type, platform_version)?;
             // An index whose entries outlive the delete is neither checked
             // nor cleared: its entries stay to expire with their window. A
-            // summableOffCountIndex index keeps no entry to check: its counter moves
-            // once these entries matched.
+            // summableOffCountIndex index keeps no entry to check (it yields no
+            // paths): its counter moves once these entries matched.
             for index in document_type
                 .indexes()
                 .values()
-                .filter(|index| !index.outlives_delete && !index.is_summable_off_count_index())
+                .filter(|index| !index.outlives_delete)
             {
                 let matches = self.index_only_entry_commitment_matches(
                     contract.id(),

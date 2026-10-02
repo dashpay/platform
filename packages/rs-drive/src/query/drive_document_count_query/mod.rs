@@ -191,6 +191,10 @@ pub fn point_lookup_count_entries(
 /// trees and adds its group's documents to their sums, and its registration
 /// rules make each counter equal its source group's entries, so its sums are
 /// the document counts.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain count only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
 pub fn document_count_of_element(index: &Index, element: &grovedb::Element) -> u64 {
     if index.is_summable_off_count_index() {
         // A counter is never negative: it counts entries.
@@ -205,12 +209,48 @@ pub fn document_count_of_element(index: &Index, element: &grovedb::Element) -> u
 /// chain's ([`Index::shallowest_count_chain_position`]), or on a
 /// `summableOffCountIndex` index the sum chain's, whose sums are its document
 /// counts. `None` without such a chain.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain count chain only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
 pub fn document_count_chain_position(index: &Index) -> Option<usize> {
     if index.is_summable_off_count_index() {
         index.shallowest_sum_chain_position()
     } else {
         index.shallowest_count_chain_position()
     }
+}
+
+/// Whether a point count read of `index` yields document counts: a countable
+/// index's count trees count its documents, and so do a
+/// `summableOffCountIndex` index's sums, which the read takes instead
+/// ([`document_count_of_element`]). The picker and the path builder both ask
+/// this, so they agree on the element read.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain `countable` test only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
+pub(crate) fn point_count_reads_documents(index: &Index) -> bool {
+    index.countable.is_countable() || index.is_summable_off_count_index()
+}
+
+/// Whether a count read of `index` may stop at its last property's tree,
+/// reading that tree's own element as the whole prefix's document count: the
+/// tree is count-bearing (`rangeCountable`, which implies `countable`), or
+/// sum-bearing on a `summableOffCountIndex` index, and not ranked. A ranked
+/// axis makes it an INDEXED tree, which grovedb's query dispatch refuses to
+/// return as a result element ("path_queries can not refer to trees"). The
+/// picker and the path builder both ask this, so they agree on the form.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain `rangeCountable` test only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
+pub(crate) fn prefix_to_last_count_reads_documents(index: &Index) -> bool {
+    let terminal_reads_documents = (index.range_countable && index.countable.is_countable())
+        || index.is_summable_off_count_index();
+    let terminal_ranked =
+        index.ranked_countable || index.ranked_summable || index.ranked_averageable;
+    terminal_reads_documents && !terminal_ranked
 }
 
 /// An entry in a split count result, containing the serialized

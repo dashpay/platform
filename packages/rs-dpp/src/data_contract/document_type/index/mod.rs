@@ -168,9 +168,10 @@ pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 ///
 /// Each counter is a `SumItem` in the tree of the index's last property,
 /// rewritten in place by every create and delete. In that tree a group counts
-/// one and adds its counter to the sum, so the index's count is its number of
-/// groups, its sum the source's entries in them, and its average the entries
-/// per group. Sum queries name the source index for the summed value.
+/// one and adds its counter to the sum, so the trees count groups and sum the
+/// source's entries in them. A count query over the index reads those sums,
+/// the source's entries, as does a sum query (which names the source index
+/// for the summed value), and the average is the entries per group.
 ///
 /// The sums are lossless: the source must hold every document exactly once
 /// (it keeps entries, skips nothing, outlives no delete and involves no
@@ -813,7 +814,9 @@ pub struct Index {
     /// with the other ranking axes (`rankedSummable` / `rankedAverageable`)
     /// — the subtree count chain the prefix levels rank by cannot carry a
     /// sum axis — except on a `summableOffCountIndex` index, whose counters
-    /// carry counts and sums up every level.
+    /// carry counts and sums up every level. There its Count rankings rank
+    /// groups, which no query reads (a ranked document count reads the Sum
+    /// rankings); its levels only give an average its group count.
     ///
     /// Requires [`Index::range_countable`], like the terminal form. Levels
     /// from the named property down to the terminal are laid out
@@ -5951,7 +5954,7 @@ mod tests {
     /// A repeated `rankedCountable` key keeps its last spelling, as the
     /// meta-schema's JSON view does, whichever spelling comes first.
     #[test]
-    fn test_index_try_from_repeated_ranked_countable_keeps_the_last_spelling() {
+    fn should_keep_the_last_spelling_of_a_repeated_ranked_countable() {
         let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
         index_map.push((
             Value::Text("rankedCountable".to_string()),

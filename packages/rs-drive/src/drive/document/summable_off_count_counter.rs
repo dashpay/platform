@@ -24,6 +24,7 @@
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
@@ -56,23 +57,36 @@ pub(crate) enum CounterChange {
     },
 }
 
-/// The estimated layer a `summableOffCountIndex` index's counters sit in: the
-/// tree of its last property, whose children are `SumItem`s keyed by that
-/// property's values.
-pub(crate) fn summable_off_count_counter_layer(
+/// Registers the estimated layer a `summableOffCountIndex` index's counters
+/// sit in, at `counter_path`: the tree of its last property, of type
+/// `counter_tree_type`, whose children are `SumItem`s keyed by that
+/// property's values, `estimated_key_size` bytes at most. The insert and
+/// delete walkers and preallocation all register it here.
+pub(crate) fn insert_summable_off_count_counter_layer(
+    estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    counter_path: KeyInfoPath,
     counter_tree_type: TreeType,
-    max_key_size: u8,
+    estimated_key_size: u16,
     storage_flags: Option<&StorageFlags>,
-) -> EstimatedLayerInformation {
-    EstimatedLayerInformation {
-        tree_type: counter_tree_type,
-        estimated_layer_count: PotentiallyAtMaxElements,
-        estimated_layer_sizes: AllItems(
-            max_key_size,
-            SUM_ITEM_COST_SIZE,
-            storage_flags.map(|flags| flags.serialized_size()),
-        ),
-    }
+) -> Result<(), Error> {
+    let max_key_size = u8::try_from(estimated_key_size).map_err(|_| {
+        Error::Fee(FeeError::Overflow(
+            "document field is too big for being an index",
+        ))
+    })?;
+    estimated_costs_only_with_layer_info.insert(
+        counter_path,
+        EstimatedLayerInformation {
+            tree_type: counter_tree_type,
+            estimated_layer_count: PotentiallyAtMaxElements,
+            estimated_layer_sizes: AllItems(
+                max_key_size,
+                SUM_ITEM_COST_SIZE,
+                storage_flags.map(|flags| flags.serialized_size()),
+            ),
+        },
+    );
+    Ok(())
 }
 
 impl Drive {
@@ -145,6 +159,10 @@ impl Drive {
                         ),
                     );
                 }
+                // Priced as the removal also when the stateful path only
+                // rewrites the counter (the group keeps other entries): the
+                // removal costs at least the rewrite
+                // (`should_upper_bound_an_unlike_with_its_dry_run`).
                 CounterChange::Decrement {
                     keep_at_zero: false,
                     stop_path_height,

@@ -106,11 +106,11 @@ impl DocumentIndexOnlyDeleteTransitionActionStateValidationV0
         // A delete leaves the entries of an index that outlives it, and
         // carries no value only such an index is keyed by: it neither
         // checks nor clears them. A summableOffCountIndex index keeps no entry to
-        // check.
+        // check: it yields no paths.
         for index in document_type
             .indexes()
             .values()
-            .filter(|index| !index.outlives_delete && !index.is_summable_off_count_index())
+            .filter(|index| !index.outlives_delete)
         {
             let entry_exists = platform
                 .drive

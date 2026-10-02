@@ -144,7 +144,13 @@ impl Drive {
                 // ranking) makes its top level the grouping tree — the
                 // indexed tree `insert_contract_v0` creates through the
                 // level-aware resolver (Count-axis for a count chain) — even
-                // though no index terminates there.
+                // though no index terminates there. Edited in place in this
+                // generation (protocol versions 12 to 14): no ranking exists
+                // before protocol version 14, so no level is a ranked chain
+                // level there, and a count chain resolves to the
+                // `ProvableCountIndexedTree` it did before; only a
+                // `summableOffCountIndex` index's sum and average chains are
+                // new.
                 let terminator_tree_type = if level.is_ranked_chain_level() {
                     property_name_tree_type_and_ranked_axes_for_level(level)?.0
                 } else {

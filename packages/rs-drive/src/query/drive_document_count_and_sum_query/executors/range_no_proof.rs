@@ -36,7 +36,7 @@
 //! path too.
 
 use super::super::super::drive_document_average_query::{AverageEntry, DocumentAverageResponse};
-use super::super::super::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
+use super::super::super::drive_document_sum_query::index_picker::find_range_summable_index_with_counts_for_where_clauses;
 use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -80,13 +80,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
-        let index = find_range_summable_index_for_where_clauses(
+        let index = find_range_summable_index_with_counts_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
             &sum_property,
             resolved_time_ranges,
         )
-        .filter(|idx| idx.range_countable)
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                 "average range query requires an index that declares BOTH \

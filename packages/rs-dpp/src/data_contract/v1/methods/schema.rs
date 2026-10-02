@@ -83,6 +83,9 @@ impl DataContractSchemaMethodsV0 for DataContractV1 {
         // whole contract judges it
         if full_validation {
             validate_preallocated_indexes_kept_on_removal(&self.document_types)?;
+            // Inert before protocol version 14: it judges only
+            // `summableOffCountIndex` indexes, which only meta-schema v3
+            // admits.
             validate_summable_off_count_indexes_lossless(&self.document_types)?;
         }
 

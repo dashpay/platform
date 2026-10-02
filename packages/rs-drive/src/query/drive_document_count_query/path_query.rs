@@ -15,7 +15,10 @@
 #![cfg(any(feature = "server", feature = "verify"))]
 
 use super::super::conditions::{WhereClause, WhereOperator};
-use super::{document_count_chain_position, DriveDocumentCountQuery};
+use super::{
+    document_count_chain_position, point_count_reads_documents,
+    prefix_to_last_count_reads_documents, DriveDocumentCountQuery,
+};
 use crate::drive::RootTree;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -881,18 +884,13 @@ impl DriveDocumentCountQuery<'_> {
             let Some(clause) = self.where_clauses.iter().find(|wc| wc.field == prop.name) else {
                 // Prefix-to-last: the terminal property-name tree's own
                 // element carries the whole-prefix total — but only when
-                // that tree is a plain (non-indexed) count-bearing tree;
-                // a ranked terminal is an indexed tree grovedb refuses to
+                // that tree is a plain (non-indexed) count-bearing tree, or
+                // a `summableOffCountIndex` index's sum-bearing one; a
+                // ranked terminal is an indexed tree grovedb refuses to
                 // return, and those indexes route through the value-tree
                 // arm below instead.
-                let terminal_ranked = self.index.ranked_countable
-                    || self.index.ranked_summable
-                    || self.index.ranked_averageable;
-                // A `summableOffCountIndex` index's terminal tree is always
-                // sum-bearing, and its sum is the prefix's document count.
                 if position + 1 == self.index.properties.len()
-                    && (self.index.range_countable || self.index.is_summable_off_count_index())
-                    && !terminal_ranked
+                    && prefix_to_last_count_reads_documents(self.index)
                 {
                     prefix_to_last_key = Some(level_key.into_bytes());
                     break;
@@ -1021,11 +1019,11 @@ impl DriveDocumentCountQuery<'_> {
         //
         // So gate the optimization on `countable.is_countable()`:
         // every countable index uses the compact shape. The picker
-        // upstream already requires the index to be countable to be
-        // selected (`find_countable_index_for_where_clauses` / the
-        // range_countable picker for range shapes), so reaching this
-        // builder with a non-countable index would be a bug — but
-        // we keep the gate explicit for clarity.
+        // upstream selects only an index this gate admits
+        // (`point_count_reads_documents`, shared with
+        // `find_countable_index_for_where_clauses`), so reaching this
+        // builder with any other index would be a bug — but we keep the
+        // gate explicit for clarity.
         //
         // The loop above already enforces full coverage of every
         // index property, so the terminator is always proven; this
@@ -1034,8 +1032,7 @@ impl DriveDocumentCountQuery<'_> {
         //
         // A `summableOffCountIndex` index keeps its counter at that key: the
         // read takes its sum, the group's document count.
-        let count_tree_terminator =
-            self.index.countable.is_countable() || self.index.is_summable_off_count_index();
+        let count_tree_terminator = point_count_reads_documents(self.index);
 
         // CountTree storage convention for non-countable indexes
         // (defensive — picker upstream filters these out): the count

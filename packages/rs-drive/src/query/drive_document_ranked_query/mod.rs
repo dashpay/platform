@@ -330,8 +330,9 @@ pub struct DriveDocumentRankedQuery<'a> {
     /// order, distinct keys, one varying position, the fan-out ceiling)
     /// hold on every externally obtainable value.
     pub(crate) prefix_branches: Vec<Vec<Vec<u8>>>,
-    /// Which aggregate the groups are ranked by. Must be covered by
-    /// `index`'s matching `ranked_*` flag.
+    /// Which aggregate the groups are ranked by, as requested and as the
+    /// entries are presented. The walked secondary is [`Self::read_axis`]'s,
+    /// covered by `index`'s matching `ranked_*` flag.
     pub axis: RankedAxis,
     /// `true` walks the secondary from the largest aggregate down
     /// (`ORDER BY <agg> DESC`); `false` walks from the smallest up
@@ -378,6 +379,10 @@ pub struct DriveDocumentRankedQuery<'a> {
 /// Such an index's counters each count one group in its count trees and add
 /// their group's documents to its sums, so its sums are its document counts
 /// (`document_count_of_element`).
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain axis only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub fn read_axis_for(axis: RankedAxis, index: &Index) -> RankedAxis {
     if axis == RankedAxis::Count && index.is_summable_off_count_index() {
@@ -388,7 +393,8 @@ pub fn read_axis_for(axis: RankedAxis, index: &Index) -> RankedAxis {
 }
 
 /// Entries read on [`read_axis_for`]'s axis, presented on the requested
-/// `axis`: document counts read from sums come back as counts.
+/// `axis`: document counts read from sums come back as counts. A no-op
+/// whenever the read axis is the requested one.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub fn present_entries_on_axis(axis: RankedAxis, entries: Vec<RankedEntry>) -> Vec<RankedEntry> {
     if axis != RankedAxis::Count {

@@ -75,6 +75,10 @@ impl DriveDocumentRankedQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
+            // Edited in place in this shipped generation: `self.read_axis()` differs from
+            // `self.axis` only on a `summableOffCountIndex` index, which only
+            // meta-schema v3 (protocol version 14) admits, so every earlier
+            // version reads and presents exactly as before.
             let path_query = PathQuery::new_branched_axis(
                 prefix,
                 keys.clone(),
@@ -159,6 +163,10 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
         let path = self.indexed_property_name_tree_path(branch)?;
+        // Edited in place in this shipped generation: `self.read_axis()` differs from
+        // `self.axis` only on a `summableOffCountIndex` index, which only
+        // meta-schema v3 (protocol version 14) admits, so every earlier
+        // version reads and presents exactly as before.
         let path_query = PathQuery::new_axis_top_k(
             path,
             self.read_axis().into(),

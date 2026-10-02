@@ -1,6 +1,7 @@
 //! `summableOffCountIndex` indexes (protocol version 14): an index that keeps, per group, the
 //! number of its source index's entries in that group as a sum item, admitted only when that
-//! count is lossless. Its count is the groups and its sum the source's entries.
+//! count is lossless. Its count and sum read the source's entries, and its average divides them
+//! by the groups.
 
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::config::DataContractConfig;

@@ -327,18 +327,11 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
                     .expect("expected a random document");
                 small_sums(&mut document, document_type, seed);
                 let writes = writes_of(&contract, document_type, &document);
-                let known: Vec<bool> = writes
+                let written: Vec<bool> = writes
                     .iter()
-                    .map(|write| {
-                        // A ranked row moves and a counter is rewritten in
-                        // place whether or not they exist, as
-                        // `processing_costs` counts them.
-                        write.ranking.is_some()
-                            || !write.if_absent
-                            || matches!(write.element, PricedElement::SumItem { .. })
-                            || !exists(&drive, &contract, name, write)
-                    })
+                    .map(|write| !write.if_absent || !exists(&drive, &contract, name, write))
                     .collect();
+                let known = processed_writes(&writes, &written);
                 let mut assumptions = CostAssumptions::new(platform_version);
                 assumptions.existing_documents = seed;
                 let estimate = write_processing(

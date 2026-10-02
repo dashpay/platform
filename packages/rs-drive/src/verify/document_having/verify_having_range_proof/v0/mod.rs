@@ -58,6 +58,10 @@ impl DriveDocumentHavingQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
+            // Edited in place in this shipped generation: `self.read_bounds()` differs from
+            // `self.bounds` only on a `summableOffCountIndex` index, which only
+            // meta-schema v3 (protocol version 14) admits, so every earlier
+            // version reads and presents exactly as before.
             let axis = self.read_bounds().axis();
             let (lo, hi) = self.read_bounds().inclusive_bounds_i128();
             let path_query = PathQuery::new_branched_axis(
@@ -132,6 +136,10 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
         let path = self.indexed_property_name_tree_path(branch)?;
+        // Edited in place in this shipped generation: `self.read_bounds()` differs from
+        // `self.bounds` only on a `summableOffCountIndex` index, which only
+        // meta-schema v3 (protocol version 14) admits, so every earlier
+        // version reads and presents exactly as before.
         let axis = self.read_bounds().axis();
         let (lo, hi) = self.read_bounds().inclusive_bounds_i128();
         let path_query =

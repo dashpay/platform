@@ -17,7 +17,7 @@ use crate::drive::document::index_level_tree_types::{
     level_removes_entry,
 };
 use crate::drive::document::summable_off_count_counter::{
-    summable_off_count_counter_layer, CounterChange,
+    insert_summable_off_count_counter_layer, CounterChange,
 };
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -227,28 +227,20 @@ impl Drive {
                 if let Some(estimated_costs_only_with_layer_info) =
                     estimated_costs_only_with_layer_info
                 {
-                    let document_top_field_estimated_size = document_and_contract_info
-                        .owned_document_info
-                        .document_info
-                        .get_estimated_size_for_document_type(
-                            name,
-                            document_type,
-                            platform_version,
-                        )?;
-                    let max_key_size =
-                        u8::try_from(document_top_field_estimated_size).map_err(|_| {
-                            Error::Fee(FeeError::Overflow(
-                                "document field is too big for being an index",
-                            ))
-                        })?;
-                    estimated_costs_only_with_layer_info.insert(
+                    insert_summable_off_count_counter_layer(
+                        estimated_costs_only_with_layer_info,
                         sub_level_index_path_info.clone().convert_to_key_info_path(),
-                        summable_off_count_counter_layer(
-                            property_name_tree_type,
-                            max_key_size,
-                            *storage_flags,
-                        ),
-                    );
+                        property_name_tree_type,
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )?,
+                        *storage_flags,
+                    )?;
                 }
                 self.add_summable_off_count_counter_operations(
                     sub_level_index_path_info,

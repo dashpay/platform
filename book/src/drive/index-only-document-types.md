@@ -499,8 +499,9 @@ after:  byAuthorPost → postAuthor → <author> → postId → <post> = SumItem
 ```
 
 The tree of the last property is a count-and-sum tree (`rangeSummable`,
-plus `rangeCountable` for range counts), so each counter counts one group
-and adds its value to the sum. Every level above reads groups as the count
+plus `rangeCountable` for the group count an average divides by; a range
+count over the counters is refused, as it would count groups), so each
+counter counts one group and adds its value to the sum. Every level above reads groups as the count
 and the source's entries as the sum. A level a `{ "at": ... }` ranking
 names, and every level between it and the counters, carries those totals
 up: its value trees are `CountSumTree`s (or `CountTree`s or `SumTree`s when

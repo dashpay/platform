@@ -7,7 +7,7 @@
 //! and the SDK verifier both call these so they land on the same index
 //! (and therefore the same grove path) for the same request.
 
-use super::{DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
+use super::{read_axis_for, DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{index_admissible_for_query, ResolvedTimeRange, SkipIfAbsentBinding};
@@ -136,7 +136,7 @@ pub fn find_ranked_index_for_axis<'b>(
             // A document count over a `summableOffCountIndex` index ranks by
             // its sums, its document counts (`read_axis_for`); its Count
             // secondaries count groups.
-            RankedAxis::Count if index.is_summable_off_count_index() => {
+            RankedAxis::Count if read_axis_for(axis, index) == RankedAxis::Sum => {
                 positions(&index.ranked_summable_at, index.ranked_summable)
             }
             RankedAxis::Count => positions(&index.ranked_countable_at, index.ranked_countable),
@@ -276,15 +276,22 @@ pub fn no_covering_index_message(
             pin_fields()
         )
     };
+    // A document count over a `summableOffCountIndex` index ranks by its
+    // sums (`read_axis_for`), so there the keyword is `rankedSummable`.
+    let keyword = match axis {
+        RankedAxis::Count => "`rankedCountable` (`rankedSummable` on a `summableOffCountIndex` \
+                              index, whose sums are its document counts)"
+            .to_string(),
+        RankedAxis::Sum | RankedAxis::Avg => format!("`{}`", axis.required_index_keyword()),
+    };
     format!(
         "no ranked index covers `group_by = [{group_by_property}]`{} on the {axis:?} axis \
-         for this {surface} query: the document type needs {index_shape} declaring `{}`{}",
+         for this {surface} query: the document type needs {index_shape} declaring {keyword}{}",
         if prefix_pins.is_empty() {
             String::new()
         } else {
             format!(" with pins on [{}]", pin_fields())
         },
-        axis.required_index_keyword(),
         if aggregate_field.is_empty() {
             String::new()
         } else {

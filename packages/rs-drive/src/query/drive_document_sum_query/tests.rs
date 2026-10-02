@@ -14,7 +14,9 @@
 //!   `verify_aggregate_sum_query` lands in grovedb.
 
 use super::index_picker::{
-    find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
+    find_range_summable_index_for_where_clauses,
+    find_range_summable_index_with_counts_for_where_clauses, find_summable_index_for_where_clauses,
+    find_summable_index_with_counts_for_where_clauses,
 };
 use crate::query::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::{Index, IndexCountability, IndexProperty};
@@ -272,6 +274,87 @@ fn range_summable_picker_rejects_range_not_on_terminator() {
         find_range_summable_index_for_where_clauses(&indexes, &where_clauses, "amount", &[])
             .is_none()
     );
+}
+
+// ── counts-aware pickers (average / count-and-sum) ─────────────────
+
+/// A counter index summing the source index `byPost`.
+fn summable_off_count_index(name: &str, props: &[&str]) -> Index {
+    let mut index = range_summable_index(name, props, "byPost");
+    index.summable = None;
+    index.summable_off_count_index = Some("byPost".to_string());
+    index
+}
+
+#[test]
+fn should_keep_refusing_an_average_whose_first_regular_index_lacks_counts() {
+    // Before protocol version 14 the average picked the first summable
+    // index by name and then required it to be countable; a released
+    // verifier rebuilds that choice, so a later countable index must not
+    // answer instead.
+    let first = summable_index("aByAB", &["a", "b"], Some("amount"));
+    let mut second = summable_index("bByBA", &["b", "a"], Some("amount"));
+    second.countable = IndexCountability::Countable;
+    let indexes = make_index_map(vec![first, second]);
+    let where_clauses = vec![wc_equal("a"), wc_equal("b")];
+    assert!(find_summable_index_with_counts_for_where_clauses(
+        &indexes,
+        &where_clauses,
+        "amount",
+        &[]
+    )
+    .is_none());
+}
+
+#[test]
+fn should_pass_over_a_counter_index_without_counts_for_an_average() {
+    let first = summable_off_count_index("aByAuthorTag", &["postAuthor", "hashtag"]);
+    let mut second = summable_off_count_index("bByTagAuthor", &["hashtag", "postAuthor"]);
+    second.countable = IndexCountability::Countable;
+    let indexes = make_index_map(vec![first, second]);
+    let where_clauses = vec![wc_equal("postAuthor"), wc_equal("hashtag")];
+    let found =
+        find_summable_index_with_counts_for_where_clauses(&indexes, &where_clauses, "byPost", &[]);
+    assert_eq!(found.map(|i| i.name.as_str()), Some("bByTagAuthor"));
+}
+
+#[test]
+fn should_keep_refusing_a_range_average_whose_first_regular_index_lacks_range_counts() {
+    let first = range_summable_index("aByABT", &["a", "b", "t"], "amount");
+    let mut second = range_summable_index("bByBAT", &["b", "a", "t"], "amount");
+    second.countable = IndexCountability::Countable;
+    second.range_countable = true;
+    let indexes = make_index_map(vec![first, second]);
+    let where_clauses = vec![wc_equal("a"), wc_equal("b"), wc_gt("t", 0)];
+    assert!(find_range_summable_index_with_counts_for_where_clauses(
+        &indexes,
+        &where_clauses,
+        "amount",
+        &[]
+    )
+    .is_none());
+}
+
+#[test]
+fn should_pass_over_a_counter_index_without_range_counts_for_a_range_average() {
+    let first = summable_off_count_index("aByAuthorTagPost", &["postAuthor", "hashtag", "postId"]);
+    let mut second =
+        summable_off_count_index("bByTagAuthorPost", &["hashtag", "postAuthor", "postId"]);
+    second.countable = IndexCountability::Countable;
+    second.range_countable = true;
+    let indexes = make_index_map(vec![first, second]);
+    let where_clauses = vec![
+        wc_equal("postAuthor"),
+        wc_equal("hashtag"),
+        wc_gt("postId", 0),
+    ];
+    let found = find_range_summable_index_with_counts_for_where_clauses(
+        &indexes,
+        &where_clauses,
+        "byPost",
+        &[],
+    );
+    assert_eq!(found.map(|i| i.name.as_str()), Some("bByTagAuthorPost"));
 }
 
 // ── Dispatcher limit-policy regression tests ───────────────────────

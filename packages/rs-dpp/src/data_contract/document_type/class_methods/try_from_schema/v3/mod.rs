@@ -47,6 +47,7 @@ use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -1036,7 +1037,6 @@ pub(in crate::data_contract) fn validate_preallocated_indexes_kept_on_removal(
 pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
     document_types: &BTreeMap<String, DocumentType>,
 ) -> Result<(), ProtocolError> {
-    use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
     for (name, document_type) in document_types {
         let document_type = document_type.as_ref();
         for index in document_type.indexes().values() {

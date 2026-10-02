@@ -47,7 +47,7 @@ use crate::drive::document::index_level_tree_types::{
 use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
-use crate::drive::document::summable_off_count_counter::summable_off_count_counter_layer;
+use crate::drive::document::summable_off_count_counter::insert_summable_off_count_counter_layer;
 use crate::drive::document::unique_event_id;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -395,25 +395,17 @@ impl Drive {
                 if let Some(estimated_costs_only_with_layer_info) =
                     estimated_costs_only_with_layer_info
                 {
-                    let value_key_estimated_size = document_info
-                        .get_estimated_size_for_document_type(
+                    insert_summable_off_count_counter_layer(
+                        estimated_costs_only_with_layer_info,
+                        path_info.clone().convert_to_key_info_path(),
+                        property_name_tree_type,
+                        document_info.get_estimated_size_for_document_type(
                             property_name,
                             referring_type,
                             platform_version,
-                        )?;
-                    let max_key_size = u8::try_from(value_key_estimated_size).map_err(|_| {
-                        Error::Fee(FeeError::Overflow(
-                            "document field is too big for being an index",
-                        ))
-                    })?;
-                    estimated_costs_only_with_layer_info.insert(
-                        path_info.clone().convert_to_key_info_path(),
-                        summable_off_count_counter_layer(
-                            property_name_tree_type,
-                            max_key_size,
-                            storage_flags,
-                        ),
-                    );
+                        )?,
+                        storage_flags,
+                    )?;
                 }
                 let counter = Element::new_sum_item_with_flags(
                     0,
