@@ -1281,7 +1281,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             funding_paths.insert(utxo.address.clone(), path);
                         }
                     }
-                    builder = builder.add_funding(managed, account);
+                    builder = crate::wallet::core::add_funding_withholding_unresolved_change(
+                        builder,
+                        managed,
+                        account,
+                        &info.generation,
+                    );
                     offered_accounts.push(at);
                 }
             }

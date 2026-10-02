@@ -916,6 +916,11 @@ pub(crate) trait WalletSource: Send + Sync {
         walk: &AtomicBool,
         forced: HashSet<Txid>,
     ) -> Option<Option<WalletRead>>;
+
+    /// Record that a probe found these sends of the wallet accepted, so their
+    /// change may fund the next payment
+    /// ([`WalletGeneration::mark_send_accepted`](crate::wallet::core::WalletGeneration::mark_send_accepted)).
+    async fn mark_accepted(&self, wallet_id: WalletId, txids: Vec<Txid>);
 }
 
 /// Whether any account of the wallet records `txid` — a map lookup per
@@ -932,6 +937,16 @@ struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
 
 #[async_trait]
 impl WalletSource for ManagerSource {
+    async fn mark_accepted(&self, wallet_id: WalletId, txids: Vec<Txid>) {
+        let manager = self.0.read().await;
+        let Some(info) = manager.get_wallet_info(&wallet_id) else {
+            return;
+        };
+        for txid in txids {
+            info.generation.mark_send_accepted(txid);
+        }
+    }
+
     async fn holders(&self, txid: Txid) -> Vec<WalletId> {
         let manager = self.0.read().await;
         manager
@@ -1623,10 +1638,32 @@ impl Actor {
                     &root,
                     &report,
                 );
+                self.mark_accepted(wallet_id, &events);
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
         }
+    }
+
+    /// Hand the sends these events find accepted (or mined) to the wallet, so
+    /// their change is offered to payments again. Off the actor: the mark
+    /// takes the manager lock, and a set insert needs no ordering against
+    /// the actor's own work.
+    fn mark_accepted(&self, wallet_id: WalletId, events: &[Outgoing]) {
+        let txids: Vec<Txid> = events
+            .iter()
+            .filter_map(|item| match &item.event {
+                ResolverEvent::Verdict(txid, ProbeVerdict::Accepted | ProbeVerdict::Mined) => {
+                    Some(*txid)
+                }
+                _ => None,
+            })
+            .collect();
+        if txids.is_empty() {
+            return;
+        }
+        let source = Arc::clone(&self.source);
+        tokio::spawn(async move { source.mark_accepted(wallet_id, txids).await });
     }
 
     /// Probe the run's next due root, or end the run.
@@ -2686,6 +2723,8 @@ mod tests {
         /// Reads wait while set, so a test can hold a pass in its read.
         paused: StdMutex<bool>,
         resume: Notify,
+        /// Sends marked accepted, per wallet.
+        accepted: StdMutex<Vec<(WalletId, Txid)>>,
     }
 
     impl FakeSource {
@@ -2709,6 +2748,11 @@ mod tests {
 
     #[async_trait]
     impl WalletSource for FakeSource {
+        async fn mark_accepted(&self, wallet_id: WalletId, txids: Vec<Txid>) {
+            let mut accepted = self.accepted.lock().expect("accepted");
+            accepted.extend(txids.into_iter().map(|txid| (wallet_id, txid)));
+        }
+
         async fn holders(&self, txid: Txid) -> Vec<WalletId> {
             self.views
                 .lock()
@@ -2861,6 +2905,32 @@ mod tests {
 
         assert_eq!(rig.walks(), 0);
         assert!(rig.sent().is_empty());
+    }
+
+    /// A send a probe finds accepted is marked so on the wallet, so its change
+    /// may fund the next payment; an unresolved one is not.
+    #[tokio::test]
+    async fn should_mark_a_send_found_accepted_and_only_that_one() {
+        let probe = Arc::new(ScriptedProbe::new(&[
+            (txid(1), ProbeVerdict::Accepted),
+            (txid(2), unresolved()),
+        ]));
+        let mut rig = enabled(probe).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+        );
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.send(Command::Uncertain(txid(2))).await;
+        // The mark runs off the actor.
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(
+            *rig.source.accepted.lock().expect("accepted"),
+            vec![(wallet(), txid(1))]
+        );
     }
 
     /// An `Uncertain` result carries no wallet id: every wallet hears it, but

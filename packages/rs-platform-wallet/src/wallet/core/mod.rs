@@ -17,4 +17,5 @@ pub(crate) use generation::{InBroadcastFences, InBroadcastPin};
 pub use spend_observer::SpendObservationHandler;
 pub(crate) use transaction::resolve_source_accounts;
 pub use transaction::{SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES};
+pub(crate) use transaction::add_funding_withholding_unresolved_change;
 pub use wallet::CoreWallet;

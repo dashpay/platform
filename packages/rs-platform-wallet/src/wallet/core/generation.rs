@@ -3,11 +3,11 @@
 //! in-broadcast outpoint pins that fence a mid-dispatch transaction's inputs
 //! against concurrent re-selection.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use dashcore::{OutPoint, Transaction};
+use dashcore::{OutPoint, Transaction, Txid};
 use tokio::sync::{OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
 use super::balance::WalletBalance;
@@ -255,6 +255,18 @@ impl std::fmt::Debug for SettleBoundaryHook {
 #[derive(Debug, Default)]
 pub(crate) struct InBroadcastFences {
     fences: Mutex<HashMap<OutPoint, InBroadcastFence>>,
+    /// Outgoing sends the network has been seen to accept before the wallet
+    /// saw them InstantSend-locked or mined — a peer echoed the broadcast back,
+    /// or the broadcast resolver's probe found them in a node's mempool or a
+    /// block. Their change may fund the next payment; the change of any other
+    /// unconfirmed send of ours may not (see
+    /// [`WalletGeneration::is_send_accepted`]).
+    ///
+    /// Shared like the fences: acceptance is a fact about the network, not
+    /// about one in-memory instance. Not persisted — after a restart a send
+    /// still unconfirmed and unlocked is held again until the lock, a block or
+    /// a fresh verdict arrives, which only errs on the side of not spending.
+    accepted_sends: Mutex<HashSet<Txid>>,
 }
 
 impl InBroadcastFences {
@@ -262,6 +274,10 @@ impl InBroadcastFences {
     /// [`WalletGeneration::in_broadcast_lock`].
     fn lock(&self) -> MutexGuard<'_, HashMap<OutPoint, InBroadcastFence>> {
         self.fences.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn accepted(&self) -> MutexGuard<'_, HashSet<Txid>> {
+        self.accepted_sends.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -395,6 +411,22 @@ impl WalletGeneration {
             #[cfg(test)]
             settle_boundary_hook: SettleBoundaryHook::default(),
         }
+    }
+
+    /// Record that the network accepted the outgoing send `txid` — see
+    /// [`is_send_accepted`](Self::is_send_accepted).
+    pub(crate) fn mark_send_accepted(&self, txid: Txid) {
+        self.in_broadcast.accepted().insert(txid);
+    }
+
+    /// Whether the network has been seen to accept the outgoing send `txid`.
+    ///
+    /// Until it has — or the wallet sees it InstantSend-locked or mined — the
+    /// change of that send is not offered to a new payment: if the send never
+    /// reached the network, a payment built on its change is an orphan no node
+    /// accepts, and every later one built on that change is too.
+    pub(crate) fn is_send_accepted(&self, txid: &Txid) -> bool {
+        self.in_broadcast.accepted().contains(txid)
     }
 
     /// This generation's lock-free balance.

@@ -156,6 +156,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // guard, covers check-to-wire.
         };
         let outcome = self.broadcaster.broadcast(transaction).await;
+        // An accepted send — a peer echoed it back — may fund the next payment
+        // with its change before the InstantSend lock arrives; an ambiguous one
+        // may not (`is_unresolved_change`).
+        if outcome.is_ok() {
+            self.generation().mark_send_accepted(transaction.txid());
+        }
         // The pin already fences by default, so the inputs stay held on EVERY
         // exit from the await above — including one this code never observes:
         // the dispatching future being cancelled, or an unwind, mid-`broadcast`.
