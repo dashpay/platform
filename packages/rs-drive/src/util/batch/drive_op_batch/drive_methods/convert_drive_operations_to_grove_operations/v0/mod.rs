@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::batch::drive_op_batch::readiness::refuse_conflicting_readiness_writes;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use dpp::block::block_info::BlockInfo;
@@ -44,6 +45,11 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
+        // In-place edit of a shipped generation (every protocol version): the guard refuses only
+        // batches holding a readiness operation or readiness fund write, which nothing builds
+        // below protocol version 17 and whose own methods are inactive there, so every batch
+        // these versions replay passes unchanged.
+        refuse_conflicting_readiness_writes(&drive_batch_operations)?;
         self.prepare_drive_operations_time_range_ttl(
             &drive_batch_operations,
             block_info,

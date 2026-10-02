@@ -2,6 +2,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -315,6 +316,15 @@ pub struct SystemLimits {
     /// version 3 (protocol version 13), so every live network already serves
     /// V1 by the time the floor applies.
     pub minimum_grovedb_proof_envelope_version: u32,
+    /// Lower bound in milliseconds of the additional wait between a compilation readiness
+    /// crossing and the activation of the bundle: `wait = clamp(T, min, max)` where `T` is the
+    /// time the round took to cross. Confirmed policy (two minutes); only its placement in the
+    /// tables is a choice. Read by the readiness block event from protocol version 17. `None`
+    /// on the protocol versions that predate compilation readiness.
+    pub readiness_additional_wait_min_ms: Option<u64>,
+    /// Upper bound in milliseconds of the same additional wait (one hour). `None` on the
+    /// protocol versions that predate compilation readiness.
+    pub readiness_additional_wait_max_ms: Option<u64>,
 }
 
 #[cfg(test)]

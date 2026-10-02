@@ -126,6 +126,9 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_contests_proof: 0,
         verify_vote_polls_by_end_date_proof: 0,
         verify_specialized_balance: 0,
+        verify_readiness_round: 0,
+        verify_readiness_report: 0,
+        verify_readiness_fund: 0,
     },
     address_funds: DriveVerifyAddressFundsMethodVersions {
         verify_address_info: 0,

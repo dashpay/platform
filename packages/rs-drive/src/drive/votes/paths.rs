@@ -8,6 +8,20 @@
 /// |- Contested Resource [key: "c"]
 ///    |- Active polls [key: "p"]
 ///    |- Identifier Votes Query [key: "i"]
+/// |- Compilation Readiness [key: "r"] (from protocol version 17)
+///    |- Contracts [key: 0]
+///    |  |- contract_id
+///    |     |- Current round pointer [key: "c"] -> Item: round_id
+///    |     |- round_id
+///    |        |- Round record [key: 0] -> Item: ReadinessRound
+///    |        |- Reports [key: 1] (CountTree) -> pro_tx_hash -> Item: ReadinessReportRecord
+///    |        |- Scan cursor [key: 2] -> Item: ReadinessScanCursor (absent when no walk is open)
+///    |- Deadlines [key: 1]
+///    |  |- encode_u64(deadline_ms)
+///    |     |- contract_id -> Item: round_id
+///    |- Evaluation cursor [key: 2] -> Item: last contract_id visited by the block event
+///    |- Retired rounds awaiting cleanup [key: 3]
+///       |- round_id -> Item: contract_id
 /// ```
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
@@ -39,6 +53,34 @@ pub const ACTIVE_POLLS_TREE_KEY: char = 'p';
 
 /// A subtree made for being able to query votes that an identity has made
 pub const IDENTITY_VOTES_TREE_KEY: char = 'i';
+
+/// A subtree made for compilation readiness rounds. Provisional inner tag under the
+/// allocation register (new inner tags are unallocated), chosen beside `d`, `c` and `e`.
+pub const READINESS_TREE_KEY: char = 'r';
+
+/// Under the readiness tree: the contracts holding a round, keyed by contract id.
+pub const READINESS_CONTRACTS_TREE_KEY: u8 = 0;
+
+/// Under the readiness tree: activation deadlines keyed by `encode_u64(deadline_ms)`.
+pub const READINESS_DEADLINES_TREE_KEY: u8 = 1;
+
+/// Under the readiness tree: the block event's fairness cursor over contracts.
+pub const READINESS_EVALUATION_CURSOR_KEY: u8 = 2;
+
+/// Under the readiness tree: retired rounds awaiting their bounded cleanup, keyed by round id.
+pub const READINESS_RETIRED_ROUNDS_TREE_KEY: u8 = 3;
+
+/// Under a contract's readiness tree: the pointer to the current round id.
+pub const READINESS_CURRENT_ROUND_POINTER_KEY: char = 'c';
+
+/// Under a round's tree: the serialized round record.
+pub const READINESS_ROUND_RECORD_KEY: u8 = 0;
+
+/// Under a round's tree: the count tree of accepted reports keyed by pro tx hash.
+pub const READINESS_ROUND_REPORTS_TREE_KEY: u8 = 1;
+
+/// Under a round's tree: the persisted position of a paged eligibility walk.
+pub const READINESS_ROUND_SCAN_CURSOR_KEY: u8 = 2;
 
 /// The finished info
 pub const RESOURCE_STORED_INFO_KEY_U8_32: [u8; 32] = [
@@ -359,6 +401,155 @@ pub fn vote_end_date_queries_tree_path_vec() -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Votes as u8],
         vec![END_DATE_QUERIES_TREE_KEY as u8],
+    ]
+}
+
+/// the compilation readiness tree path of the voting branch
+pub fn readiness_tree_path<'a>() -> [&'a [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[READINESS_TREE_KEY as u8],
+    ]
+}
+
+/// the compilation readiness tree path of the voting branch as a vec
+pub fn readiness_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![RootTree::Votes as u8], vec![READINESS_TREE_KEY as u8]]
+}
+
+/// the readiness contracts tree path
+pub fn readiness_contracts_tree_path<'a>() -> [&'a [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[READINESS_TREE_KEY as u8],
+        &[READINESS_CONTRACTS_TREE_KEY],
+    ]
+}
+
+/// the readiness contracts tree path as a vec
+pub fn readiness_contracts_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![READINESS_TREE_KEY as u8],
+        vec![READINESS_CONTRACTS_TREE_KEY],
+    ]
+}
+
+/// the readiness tree of one contract
+pub fn readiness_contract_tree_path(contract_id: &[u8]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[READINESS_TREE_KEY as u8],
+        &[READINESS_CONTRACTS_TREE_KEY],
+        contract_id,
+    ]
+}
+
+/// the readiness tree of one contract as a vec
+pub fn readiness_contract_tree_path_vec(contract_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![READINESS_TREE_KEY as u8],
+        vec![READINESS_CONTRACTS_TREE_KEY],
+        contract_id.to_vec(),
+    ]
+}
+
+/// the tree of one readiness round of a contract
+pub fn readiness_round_tree_path<'a>(contract_id: &'a [u8], round_id: &'a [u8]) -> [&'a [u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[READINESS_TREE_KEY as u8],
+        &[READINESS_CONTRACTS_TREE_KEY],
+        contract_id,
+        round_id,
+    ]
+}
+
+/// the tree of one readiness round of a contract as a vec
+pub fn readiness_round_tree_path_vec(contract_id: [u8; 32], round_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![READINESS_TREE_KEY as u8],
+        vec![READINESS_CONTRACTS_TREE_KEY],
+        contract_id.to_vec(),
+        round_id.to_vec(),
+    ]
+}
+
+/// the reports count tree of one readiness round
+pub fn readiness_round_reports_tree_path<'a>(
+    contract_id: &'a [u8],
+    round_id: &'a [u8],
+) -> [&'a [u8]; 6] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[READINESS_TREE_KEY as u8],
+        &[READINESS_CONTRACTS_TREE_KEY],
+        contract_id,
+        round_id,
+        &[READINESS_ROUND_REPORTS_TREE_KEY],
+    ]
+}
+
+/// the reports count tree of one readiness round as a vec
+pub fn readiness_round_reports_tree_path_vec(
+    contract_id: [u8; 32],
+    round_id: [u8; 32],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![READINESS_TREE_KEY as u8],
+        vec![READINESS_CONTRACTS_TREE_KEY],
+        contract_id.to_vec(),
+        round_id.to_vec(),
+        vec![READINESS_ROUND_REPORTS_TREE_KEY],
+    ]
+}
+
+/// the readiness deadlines tree path
+pub fn readiness_deadlines_tree_path<'a>() -> [&'a [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[READINESS_TREE_KEY as u8],
+        &[READINESS_DEADLINES_TREE_KEY],
+    ]
+}
+
+/// the readiness deadlines tree path as a vec
+pub fn readiness_deadlines_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![READINESS_TREE_KEY as u8],
+        vec![READINESS_DEADLINES_TREE_KEY],
+    ]
+}
+
+/// the readiness deadlines tree at one deadline as a vec
+pub fn readiness_deadline_tree_path_vec(deadline_ms: TimestampMillis) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![READINESS_TREE_KEY as u8],
+        vec![READINESS_DEADLINES_TREE_KEY],
+        encode_u64(deadline_ms),
+    ]
+}
+
+/// the readiness retired rounds tree path
+pub fn readiness_retired_rounds_tree_path<'a>() -> [&'a [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[READINESS_TREE_KEY as u8],
+        &[READINESS_RETIRED_ROUNDS_TREE_KEY],
+    ]
+}
+
+/// the readiness retired rounds tree path as a vec
+pub fn readiness_retired_rounds_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![READINESS_TREE_KEY as u8],
+        vec![READINESS_RETIRED_ROUNDS_TREE_KEY],
     ]
 }
 

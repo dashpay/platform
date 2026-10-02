@@ -1,9 +1,11 @@
 use crate::drive::contract::paths::{
     PREFUNDED_BALANCES_FOR_CONTRACT_MODERATOR_FEES, PREFUNDED_BALANCES_FOR_CONTRACT_OWNER_FEES,
 };
-use crate::drive::prefunded_specialized_balances::PREFUNDED_BALANCES_FOR_VOTING;
+use crate::drive::prefunded_specialized_balances::{
+    PREFUNDED_BALANCES_FOR_READINESS, PREFUNDED_BALANCES_FOR_VOTING,
+};
 use crate::drive::RootTree;
-use crate::structure::{ElementKind, StructureNode};
+use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
 
 /// Balances set aside to pay for specific later state transitions
 pub(crate) fn structure() -> StructureNode {
@@ -42,6 +44,37 @@ pub(crate) fn structure() -> StructureNode {
             .kind(ElementKind::SumItem)
             .value("credits")
             .describe("What is left to pay for votes on this poll."),
+        ),
+    )
+    .child(
+        StructureNode::fixed(
+            "for_readiness",
+            &[PREFUNDED_BALANCES_FOR_READINESS],
+            "ForReadiness",
+            "PREFUNDED_BALANCES_FOR_READINESS",
+        )
+        .kind(ElementKind::SumTree)
+        .since(17)
+        .source("packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs")
+        .book("drive/compilation-readiness.md")
+        .describe(
+            "Balances that pay for compilation readiness rounds. The key is \
+             provisional.",
+        )
+        .child(
+            StructureNode::dynamic(
+                "fund",
+                "fund_id",
+                KeyMatcher::Len(32),
+                KeyEncoding::Hash32,
+                "A double sha256 of a domain tag and the round id",
+            )
+            .kind(ElementKind::SumItem)
+            .value("credits")
+            .describe(
+                "What is left of one round's funding, the cleanup reserve \
+                 included.",
+            ),
         ),
     )
     .child(contract_fee_pots(

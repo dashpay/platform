@@ -26,6 +26,22 @@ pub enum PrefundedSpecializedBalanceOperationType {
         /// The removed balance
         remove_balance: u64,
     },
+    /// Creates a compilation readiness fund or adds to it
+    CreateNewReadinessFund {
+        /// The fund id, derived from the round id
+        fund_id: Identifier,
+        /// The added balance
+        add_balance: u64,
+    },
+    /// Deducts from a compilation readiness fund, keeping the cleanup reserve untouchable
+    DeductFromReadinessFund {
+        /// The fund id, derived from the round id
+        fund_id: Identifier,
+        /// The removed balance
+        remove_balance: u64,
+        /// The balance that must remain after the deduction
+        reserve: u64,
+    },
 }
 
 impl DriveLowLevelOperationConverter for PrefundedSpecializedBalanceOperationType {
@@ -56,6 +72,28 @@ impl DriveLowLevelOperationConverter for PrefundedSpecializedBalanceOperationTyp
             } => drive.deduct_from_prefunded_specialized_balance_operations(
                 specialized_balance_id,
                 removed_balance,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            PrefundedSpecializedBalanceOperationType::CreateNewReadinessFund {
+                fund_id,
+                add_balance,
+            } => drive.add_readiness_fund_operations(
+                fund_id,
+                add_balance,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            PrefundedSpecializedBalanceOperationType::DeductFromReadinessFund {
+                fund_id,
+                remove_balance,
+                reserve,
+            } => drive.deduct_from_readiness_fund_operations(
+                fund_id,
+                remove_balance,
+                reserve,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

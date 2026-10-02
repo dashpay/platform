@@ -9,6 +9,7 @@ pub(crate) mod finalize_task;
 mod group;
 mod identity;
 mod prefunded_specialized_balance;
+mod readiness;
 mod shielded;
 mod system;
 mod token;
@@ -34,6 +35,7 @@ pub use document::UpdateOperationInfo;
 pub use group::GroupOperationType;
 pub use identity::IdentityOperationType;
 pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
+pub use readiness::ReadinessOperationType;
 pub use shielded::ShieldedPoolOperationType;
 pub use system::SystemOperationType;
 pub use token::TokenOperationType;
@@ -110,6 +112,8 @@ pub enum DriveOperation<'a> {
     AddressFundsOperation(AddressFundsOperationType),
     /// A shielded pool operation
     ShieldedPoolOperation(ShieldedPoolOperationType),
+    /// A compilation readiness operation
+    ReadinessOperation(ReadinessOperationType),
     /// A single low level groveDB operation
     GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations
@@ -183,6 +187,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 ),
             DriveOperation::ShieldedPoolOperation(shielded_pool_operation_type) => {
                 shielded_pool_operation_type.into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DriveOperation::ReadinessOperation(readiness_operation_type) => {
+                readiness_operation_type.into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
@@ -380,6 +393,9 @@ impl DriveOperation<'_> {
     /// because no batch repeats their keys: the total system credits
     /// ([`SystemOperationType`]) and address balances ([`AddressFundsOperationType`]). Their
     /// docs say what keeps it so; a change that could repeat one must extend this merge first.
+    /// Readiness fund writes and the settlements of readiness round openings, cancellations
+    /// and activations are not merged either: a batch that would repeat their keys is refused beforehand
+    /// (`refuse_conflicting_readiness_writes`).
     pub fn merge_balance_writes(operations: Vec<Self>) -> Result<Vec<Self>, Error> {
         // Most batches make at most one such write: nothing to merge, and no map to build.
         if operations
