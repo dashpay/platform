@@ -4,24 +4,57 @@ on:
   workflow_run:
     workflows:
       - "Security: Rust Crates"
+      - "Security: DashVM Engine"
       - "Security: JS NPM"
       - "Security: JS CodeQL"
     types:
       - completed
 
+# workflow_run jobs get the repository token; reading run conclusions is all
+# this job does, so that is all it may do.
+permissions:
+  actions: read
+
 jobs:
   check-status:
     name: Aggregate security audit results
+    # The engine audit also runs on pull requests (pull_request_target),
+    # including from forks. The status page aggregates the scheduled and
+    # dispatched audits only.
+    if: github.event.workflow_run.event == 'schedule' || github.event.workflow_run.event == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - name: Check all security audit workflows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Never expand event data inside the script: a branch name is
+          # attacker-controlled data, passed to gh as a URL-encoded parameter.
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPOSITORY: ${{ github.repository }}
         run: |
+          # Newest run of one workflow on the head branch for one event, as
+          # "<created_at> <conclusion>", or empty when there is none.
+          latest_run() {
+            gh api -X GET "repos/${REPOSITORY}/actions/workflows/$1/runs" \
+              -f per_page=1 -f branch="${HEAD_BRANCH}" -f event="$2" \
+              --jq '.workflow_runs[0] | if . == null then "" else "\(.created_at) \(.conclusion // "none")" end'
+          }
+
           failed=""
-          for workflow in "security-audit-rust.yml" "security-audit-js-npm.yml" "security-audit-js-codeql.yml"; do
-            conclusion=$(gh api "repos/${{ github.repository }}/actions/workflows/${workflow}/runs?per_page=1&branch=${{ github.event.workflow_run.head_branch }}" \
-              --jq '.workflow_runs[0].conclusion // "none"')
+          for workflow in "security-audit-rust.yml" "security-audit-engine.yml" "security-audit-js-npm.yml" "security-audit-js-codeql.yml"; do
+            # Only scheduled and dispatched runs carry the status signal. The
+            # engine audit also runs on pull requests, and the runs API lists a
+            # fork pull request under the fork's branch name, so an unfiltered
+            # "newest run on this branch" could be a pull request result.
+            scheduled=$(latest_run "${workflow}" schedule)
+            dispatched=$(latest_run "${workflow}" workflow_dispatch)
+            if [ "${dispatched}" \> "${scheduled}" ]; then
+              newest="${dispatched}"
+            else
+              newest="${scheduled}"
+            fi
+            conclusion="${newest#* }"
+            [ -n "${newest}" ] || conclusion="none"
             echo "${workflow}: ${conclusion}"
             if [ "$conclusion" != "success" ]; then
               failed="${failed} ${workflow}"

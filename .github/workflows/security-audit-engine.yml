@@ -1,0 +1,130 @@
+name: "Security: DashVM Engine"
+
+# Audits the DashVM engine dependency set (Wasmtime, Cranelift and the
+# wasm-tools crates, declared in the root Cargo.toml under
+# [workspace.metadata.dashvm.engine]) separately from the base-wide Rust audit.
+# The engine decides consensus results, so an advisory against one of its
+# crates is classified by the execution/fee-equivalence hotfix rule in
+# book/src/architecture/engine-dependencies-and-hotfixes.md rather than
+# deferred with the rest of the nightly findings. The checker runs cargo-audit
+# from outside the workspace so the ignore list in .cargo/audit.toml cannot
+# hide an engine advisory; engine exceptions live in Cargo.toml with a reason
+# and an expiry.
+#
+# Pull requests are audited through pull_request_target on purpose: the
+# workflow definition and the checker then come from the base branch, the
+# pull request's root manifest and lockfile are fetched as data files only,
+# and nothing from the pull request is executed. A pull request that edits
+# the checker cannot make its own audit pass, and one that drops a crate
+# from the engine set fails against the base branch's set. The token holds
+# contents: read and nothing else.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # After the base-wide audit at 23:30 UTC, off the round minute.
+    - cron: "45 23 * * *"
+  pull_request_target:
+    branches:
+      - master
+      - "v*-dev"
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "packages/**/Cargo.toml"
+      - ".cargo/audit.toml"
+      - ".github/scripts/check-engine-advisories.py"
+      - ".github/workflows/security-audit-engine.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  # github.ref is the base branch under pull_request_target, so key pull
+  # request runs on their number instead of cancelling one another.
+  group: engine-audit-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine-security:
+    name: DashVM engine dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the trusted revision
+        # Under pull_request_target this is the base branch head, never the
+        # pull request; on schedule and dispatch it is the branch itself.
+        uses: actions/checkout@v4
+
+      - name: Fetch the submitted manifest and lockfile as data
+        if: github.event_name == 'pull_request_target'
+        env:
+          # The event's immutable head commit, not the moving pull request
+          # ref: a rerun or a queued run audits the revision the event names.
+          SUBMITTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          submitted="${RUNNER_TEMP}/submitted"
+          mkdir -p "${submitted}"
+          git fetch --no-tags --depth=1 origin "${SUBMITTED_SHA}"
+          git show "${SUBMITTED_SHA}:Cargo.toml" > "${submitted}/Cargo.toml"
+          git show "${SUBMITTED_SHA}:Cargo.lock" > "${submitted}/Cargo.lock"
+          echo "submitted head: ${SUBMITTED_SHA}"
+          ls -l "${submitted}"
+
+      - name: Set up audit toolchain
+        # Same as the base-wide audit: the tool builds with a compiler
+        # independent of rust-toolchain.toml.
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo-audit
+        id: cache-cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}
+
+      - name: Install cargo-audit
+        if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
+        # Use the tool's lockfile so the audit binary is reproducible.
+        run: cargo +stable install cargo-audit --version 0.22.2 --locked
+
+      - name: Show cargo-audit version
+        run: cargo +stable audit --version
+
+      - name: Exercise the checker on known findings
+        # The failure path runs before the real audit, so a green run means the
+        # engine set was audited, not that nothing was compared.
+        run: python3 .github/scripts/check-engine-advisories.py --self-test
+
+      - name: Audit the engine dependency set
+        run: |
+          # The default shell has errexit on; guard the checker so its report is
+          # shown and summarised on failure, then exit with its status.
+          set -uo pipefail
+          report="${RUNNER_TEMP}/engine-audit.txt"
+          args=()
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request_target" ]; then
+            # Audit the submitted files with the base branch's checker, and
+            # hold the engine set to at least the base branch's set.
+            args=(
+              --manifest "${RUNNER_TEMP}/submitted/Cargo.toml"
+              --lockfile "${RUNNER_TEMP}/submitted/Cargo.lock"
+              --base-manifest Cargo.toml
+            )
+          fi
+          status=0
+          python3 .github/scripts/check-engine-advisories.py ${args[@]+"${args[@]}"} > "${report}" || status=$?
+          cat "${report}"
+          {
+            echo "## DashVM engine dependency audit"
+            echo
+            echo '```text'
+            cat "${report}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${status}"
