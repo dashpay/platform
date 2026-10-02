@@ -12,8 +12,6 @@ use dpp::document::property_names::CREATOR_ID;
 use dpp::errors::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
-use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
-use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
@@ -31,6 +29,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::document_reference_kind::document_reference_kind_mismatch;
 
 /// Whether two property types hold the same KIND of value for agreement
 /// purposes: sizes and other constraints may differ (both sides validated
@@ -58,9 +57,12 @@ fn stores_key_id_without_identity(
 /// pair naming it from `referring_property`, on the reference carried by
 /// `reference_property`: creating a referenced document then writes that
 /// property's value as a tree key of the index. `None` when no preallocated
-/// index is keyed through the pair.
+/// index is keyed through the pair, or only through a `moderatedDocument`
+/// binding the referenced type's removal record would not keep, which the
+/// referenced document's insert never preallocates through
+/// (`Index::preallocation_bindings_for_target`).
 fn preallocated_index_keyed_by(
-    contract_id: Identifier,
+    contract: &DataContract,
     document_type: DocumentTypeRef,
     reference_property: &str,
     referring_property: &str,
@@ -72,10 +74,16 @@ fn preallocated_index_keyed_by(
         .filter(|index| index.preallocated)
         .find(|index| {
             index
-                .preallocation_bindings(document_type.flattened_properties(), contract_id)
+                .preallocation_bindings(document_type.flattened_properties(), contract.id())
                 .iter()
                 .any(|binding| {
-                    binding.referring_property == reference_property
+                    // A referenced type the contract lacks is refused elsewhere
+                    let kept = contract
+                        .document_type_for_name(binding.target_document_type_name)
+                        .map_or(true, |target| {
+                            binding.is_kept_on_removal(target.moderator_deletion_kept_fields())
+                        });
+                    kept && binding.referring_property == reference_property
                         && index.properties.iter().zip(&binding.key_sources).any(
                             |(index_property, key_source)| {
                                 index_property.name == referring_property
@@ -93,12 +101,15 @@ fn preallocated_index_keyed_by(
 /// Checks every reference declaration of the given contract that carries
 /// declaration content.
 ///
-/// `permanentDocument` and `deletableDocument`: the referenced contract must
-/// exist (the declaring contract itself when no contract id is named,
-/// including when it names its own id) and the referenced document type must
-/// exist in it; for `permanentDocument` that type must forbid deletion, for
-/// `deletableDocument` it must allow it.
-/// Every `where` entry is checked for both, and a `findBy` into another
+/// `permanentDocument`, `moderatedDocument` and `deletableDocument`: the
+/// referenced contract must exist (the declaring contract itself when no
+/// contract id is named, including when it names its own id) and the
+/// referenced document type must exist in it and admit the declared kind (see
+/// [`document_reference_kind_mismatch`]): for `permanentDocument` its
+/// documents never leave state, for `moderatedDocument` they leave it only
+/// through a moderator's recorded removal, for `deletableDocument` in any
+/// other way.
+/// Every `where` entry is checked for all three, and a `findBy` into another
 /// contract's document type is checked against that type's indexes
 /// (one into the declaring contract was checked by the contract parse). Self
 /// references are checked against the in-flight contract, so a contract may
@@ -420,7 +431,7 @@ fn validate_reference_target_declaration_v0(
         contract_id,
         document_type_name,
         property_agreement,
-        permanent,
+        kind,
         lookup,
         in_list,
     }) = reference_target.as_any_document_reference()
@@ -490,35 +501,22 @@ fn validate_reference_target_declaration_v0(
         ));
     };
 
-    // The two document references are disjoint: a
-    // `permanentDocument` one demands a document type that forbids
-    // deletion, a `deletableDocument` one a document type that
-    // allows it, so the declaration always states which guarantee
-    // the reference carries. Deletable means by anyone: a document type moderators
-    // can delete from is deletable whatever its `canBeDeleted` says about a document's
-    // own owner, since a reference to it could dangle, and so is one whose documents the
-    // platform deletes when their `ttl` passes. None of the three can change on an update,
-    // so the answer holds for good.
-    let target_is_deletable = referenced_document_type.documents_can_disappear();
-    if permanent && target_is_deletable {
-        return Ok(SimpleConsensusValidationResult::new_with_error(
-            ReferencedDocumentTypeDeletableError::new(
-                effective_contract_id,
-                document_type_name.to_string(),
-                declaration_path,
-            )
-            .into(),
-        ));
-    }
-    if !permanent && !target_is_deletable {
-        return Ok(SimpleConsensusValidationResult::new_with_error(
-            ReferencedDocumentTypeNotDeletableError::new(
-                effective_contract_id,
-                document_type_name.to_string(),
-                declaration_path,
-            )
-            .into(),
-        ));
+    // The three document references are disjoint: a `permanentDocument` one demands a
+    // document type whose documents never leave state, a `moderatedDocument` one a type whose
+    // documents leave it only through a moderator's recorded removal, a `deletableDocument`
+    // one any other, so the declaration always states which guarantee the reference carries.
+    // A document type moderators can delete from is no longer permanent whatever its
+    // `canBeDeleted` says about a document's own owner, since a reference to it could dangle,
+    // and neither is one whose documents the platform deletes when their `ttl` passes. Nothing
+    // the kind reads can change on an update, so the answer holds for good.
+    if let Some(error) = document_reference_kind_mismatch(
+        kind,
+        referenced_document_type.document_reference_kind(),
+        effective_contract_id,
+        document_type_name,
+        &declaration_path,
+    ) {
+        return Ok(SimpleConsensusValidationResult::new_with_error(error));
     }
 
     // A `findBy`, on a document reference of either kind, must resolve
@@ -722,7 +720,7 @@ fn validate_reference_target_declaration_v0(
         // module (contract create and update state validation 1).
         let keyed_index = reference_property.and_then(|reference_property| {
             preallocated_index_keyed_by(
-                contract.id(),
+                contract,
                 document_type,
                 reference_property,
                 referring_property,
@@ -747,4 +745,110 @@ fn validate_reference_target_declaration_v0(
     }
 
     Ok(SimpleConsensusValidationResult::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::platform_value::{platform_value, Value};
+
+    /// A contract with a `post` only moderators remove, whose removal records keep `kept`,
+    /// and a `like` whose preallocated `byHashtagPost` is keyed by the post's hashtag through a
+    /// `moderatedDocument` reference. Parsed as a stored contract is read, without the
+    /// registration checks.
+    fn contract_keeping(kept: Option<Value>) -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("default config available")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        let moderator_abilities = match kept {
+            Some(kept) => platform_value!({ "delete": true, "deleteKeepsFields": kept }),
+            None => platform_value!({ "delete": true }),
+        };
+        let identifier = |position: u64| {
+            platform_value!({
+                "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier", "position": position,
+            })
+        };
+        let mut post_id = identifier(0);
+        post_id
+            .set_value(
+                "refersTo",
+                platform_value!({
+                    "type": "moderatedDocument",
+                    "documentType": "post",
+                    "where": { "hashtag": "hashtag" },
+                }),
+            )
+            .expect("refersTo applies");
+        DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Value::Identifier([7; 32]),
+                "ownerId": Value::Identifier([8; 32]),
+                "version": 1,
+                "config": dpp::platform_value::to_value(config).expect("the config converts"),
+                "documentSchemas": {
+                    "post": {
+                        "type": "object",
+                        "documentsMutable": false,
+                        "canBeDeleted": false,
+                        "moderatorAbilities": moderator_abilities,
+                        "properties": {
+                            "hashtag": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
+                        },
+                        "required": ["hashtag"],
+                        "additionalProperties": false,
+                    },
+                    "like": {
+                        "type": "object",
+                        "indexOnly": true,
+                        "documentsMutable": false,
+                        "canBeDeleted": true,
+                        "properties": {
+                            "postId": post_id,
+                            "hashtag": { "type": "string", "minLength": 1, "maxLength": 63, "position": 1 },
+                        },
+                        "indices": [{
+                            "name": "byHashtagPost",
+                            "properties": [{ "hashtag": "asc" }, { "postId": "asc" }],
+                            "terminal": "$ownerId",
+                            "preallocated": true,
+                        }],
+                        "required": ["postId", "hashtag"],
+                        "additionalProperties": false,
+                    },
+                },
+            }),
+            false,
+            platform_version,
+        )
+        .expect("the contract parses")
+    }
+
+    #[test]
+    fn should_key_a_preallocated_index_only_through_a_pair_the_record_keeps() {
+        let keyed_by = |contract: &DataContract| {
+            let like = contract
+                .document_type_for_name("like")
+                .expect("the like type");
+            preallocated_index_keyed_by(contract, like, "postId", "hashtag", "hashtag")
+        };
+        assert_eq!(
+            keyed_by(&contract_keeping(Some(platform_value!(["hashtag"])))),
+            Some("byHashtagPost".to_string())
+        );
+        // The post's insert never preallocates through a pair its record drops, so no tree
+        // is keyed by its value
+        assert_eq!(keyed_by(&contract_keeping(None)), None);
+    }
 }

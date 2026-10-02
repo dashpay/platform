@@ -138,6 +138,19 @@ fn should_parse_an_element_reference_of_each_target_type() {
                 property_agreement: BTreeMap::new(),
             },
         ),
+        (
+            platform_value!({
+                "type": "moderatedDocument",
+                "contractId": foreign_contract.to_string(Encoding::Base58),
+                "documentType": "post",
+                "where": { "topic": "topic" }
+            }),
+            DocumentPropertyReferenceTarget::ModeratedDocument {
+                contract_id: Some(foreign_contract),
+                document_type_name: "post".to_string(),
+                property_agreement: BTreeMap::from([("topic".to_string(), "topic".to_string())]),
+            },
+        ),
     ] {
         let schema = schema_with_reasons(reasons_with_items(identifier_items(Some(
             refers_to.clone(),

@@ -100,7 +100,7 @@ fn bounds(
 }
 
 /// A value of `property_type` of `length` (for a variable-size type).
-fn value_of(
+pub(crate) fn value_of(
     property_type: &DocumentPropertyType,
     length: u32,
     platform_version: &PlatformVersion,

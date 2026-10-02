@@ -2,7 +2,7 @@
 
 Some documents are nothing but a position: a like says which post, which hashtag and which identity, and nothing else. Stored as an ordinary document, a like pays for a serialized body, a row in the primary tree and a reference in every index, for a fact its index entries already hold. An **index-only** type stores no body and no row: its index entries are its documents. That cuts the storage of a small document by more than half, and makes each index a uniqueness rule. In exchange, its documents can only be created and deleted, every property must live in an index or in the entry's value, and a query returns documents rebuilt from index entries rather than fetched by `$id`.
 
-Five keywords shape an index-only type: `indexOnly` and `entryPayload` on the document type, and `terminal`, `preallocated` and `skipIfAbsent` on its indexes. All of them arrived at protocol version 14 and are fixed once the type exists.
+Six keywords shape an index-only type: `indexOnly` and `entryPayload` on the document type, and `terminal`, `preallocated`, `skipIfAbsent` and `outlivesDelete` on its indexes. All of them arrived at protocol version 14 and are fixed once the type exists.
 
 ## Example
 
@@ -154,7 +154,8 @@ In the example, `byHashtagPost` could be preallocated: `postId` is the reference
 Rules at registration:
 
 - Only on an `indexOnly` type.
-- Every index property is either a property with a `permanentDocument` reference to a type of the same contract, or a referring value of that reference's `where`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target. `$ownerId` may only be the terminal.
+- Every index property is either a property with a `permanentDocument` or `moderatedDocument` reference to a type of the same contract, or a referring value of that reference's `where`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target with nothing left to say what they were keyed by. `$ownerId` may only be the terminal.
+- Through a `moderatedDocument` reference, every key of the path must be kept by the referenced document's [removal record](deletion.md#moderatorabilitiesdeletekeepsfields): each `where` entry the index uses compares the referenced `$id`, `$ownerId` or a property the referenced type lists under `moderatorAbilities.deleteKeepsFields` (or one inside an object listed there), never `$creatorId` (`InvalidContractStructure`, 10231). The trees then outlive a removed document the way its record does, and a moderator's restore finds them in place. As through a `permanentDocument` reference, they are keyed by the values the document was created with: a value changed afterwards leaves them empty, and the first entry under the new value builds its own.
 - The referenced property of each such `where` entry holds at most 255 bytes, since creating a referenced document makes its value an index key (40126 when the contract is created or updated).
 - Not with `timeRange` or `integerRange`.
 
@@ -193,9 +194,46 @@ What an index-only type adds to the rules of every type:
 - An optional property is never a terminal.
 - At least one index that involves no `$createdAt` does not skip: the proof index.
 
+## `outlivesDelete`
+
+| | |
+|---|---|
+| **Where** | `timeRange` index of an `indexOnly` type |
+| **Value** | boolean |
+| **Default** | `false` |
+| **Since** | protocol version 14 |
+| **On update** | Fixed (10217) |
+
+A delete of an index-only document carries its values and removes the entries they address. A time window is keyed by the document's `$createdAt`, so without this keyword a delete must carry the exact timestamp to find the window's entries. With `outlivesDelete: true`, a delete leaves the index's entries where they are, and they expire with their window:
+
+```json
+{
+  "name": "byTrendPost",
+  "properties": [{ "$createdAt": "asc" }, { "postId": "asc" }],
+  "terminal": "$ownerId",
+  "countable": "countable",
+  "timeRange": { "on": "$createdAt", "range": 259200, "step": 86400, "ttl": 604800 },
+  "outlivesDelete": true
+}
+```
+
+- **A delete carries no `$createdAt`** when every index involving it outlives deletes: the rows commit to no timestamp, and a delete that carries one is refused (`InvalidDocumentTransitionActionError`). An unlike needs only the like's other values, which any device knows.
+- **A create writes over an entry already there.** When the same owner writes the same values again while a deleted document's entry still stands in a window, the create writes its own entry over it: the owner counts once, and the create is not refused as a duplicate. Only the index's other entries decide whether a create is a duplicate.
+- **A deleted document keeps counting in the window** until the window moves past it. On a trending window, an unliked like still counts there for up to the window's `range`.
+- **The executed-transition proof** runs against an index that does not outlive deletes, so a delete still proves the document gone.
+
+Rules at registration:
+
+- Only on an `indexOnly` type, on an index with a `timeRange` carrying a `ttl`, so the entries a delete leaves expire.
+- Not with a sum (`summable`), and not on a type with `entryPayload`: a kept entry holds the amount or payload of the document that wrote it.
+- Every schema property must also sit in an index that neither skips nor outlives deletes, which a delete checks.
+- The index's key (its properties but `$createdAt`, and its terminal) must hold the whole key of an index a delete clears and that skips nothing, so no two documents in state share one of its entries. `[$createdAt, postId] → $ownerId` holds `byPost`'s `[postId] → $ownerId`; `[$createdAt] → $ownerId` holds no such key and is refused.
+- The proof index may not outlive deletes.
+
 ## See also
 
 - [Index-Only Document Types](../drive/index-only-document-types.md) for the entry layout, the row commitment, the full constraint list and the query surface.
+- [Time Range](time-range.md) for the windows an `outlivesDelete` index needs.
 - [Indexes](indexes.md), [Counts, Sums and Averages](aggregates.md) and [Ranked Indexes](ranked.md) for the index keywords an index-only type uses.
-- [References (refersTo)](refers-to.md) for `permanentDocument` references and `where`, which `preallocated` relies on.
+- [References (refersTo)](refers-to.md) for `permanentDocument` and `moderatedDocument` references and `where`, which `preallocated` relies on.
 - [Mutability](mutability.md), [Deletion](deletion.md) and [Creation, Transfers and Trading](ownership-and-trading.md) for the flags an index-only type must set.

@@ -4,7 +4,10 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
-use crate::data_contract::document_type::class_methods::try_from_schema::validate_property_constraint_aggregates;
+use crate::data_contract::document_type::class_methods::try_from_schema::{
+    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+    validate_property_constraint_aggregates,
+};
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
     DocumentType,
@@ -88,9 +91,28 @@ impl DocumentType {
         // `apply_property_reference: Some(_)`, which no version before 14 does (their
         // meta-schemas refuse `refersTo` and their parser ignores it), so the loop below
         // finds no requirement to check there and the output is unchanged.
+        // Protocol version 14 and later: a derived index property reading a schema property of
+        // another document type of this contract takes that property's type, which a document
+        // type's parse can not see. On every parse, since Drive encodes the keys of a contract
+        // read back from state by it; under full validation it also judges the field read.
+        // Inert before 14: only parser generation 3 declares a derived index property.
+        resolve_derived_index_properties(
+            &mut contract_document_types,
+            data_contract_system_version,
+            contract_config_version,
+            full_validation,
+            platform_version,
+        )?;
+
         if !full_validation {
             return Ok(contract_document_types);
         }
+
+        // Protocol version 14 and later: a preallocated index bound only through a
+        // moderatedDocument reference needs every key of its path kept by the removal record
+        // of the referenced document, a type a document type's parse can not see. Inert
+        // before 14: only parser generation 3 admits `preallocated` and `moderatedDocument`.
+        validate_preallocated_indexes_kept_on_removal(&contract_document_types)?;
 
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {
@@ -185,7 +207,7 @@ impl DocumentType {
                         contract_id,
                         document_type_name,
                         lookup: Some(lookup),
-                        permanent,
+                        kind,
                         ..
                     }) = target.as_any_document_reference()
                     else {
@@ -199,18 +221,19 @@ impl DocumentType {
                     else {
                         continue;
                     };
-                    // A permanentDocument lookup into a deletable type, or a
-                    // deletableDocument lookup into one that forbids deletion, fails that
-                    // reference whatever its indexes say: registration reports it
-                    // (ReferencedDocumentTypeDeletableError or
-                    // ReferencedDocumentTypeNotDeletableError), so the lookup is not judged
+                    // A lookup into a document type admitting another kind of reference (a
+                    // permanentDocument lookup into a type whose documents can leave state,
+                    // a deletableDocument lookup into one whose documents never do, or
+                    // leave it only on a moderator's record) fails that reference whatever
+                    // its indexes say: registration reports it
+                    // (ReferencedDocumentTypeDeletableError,
+                    // ReferencedDocumentTypeNotDeletableError or
+                    // ReferencedDocumentTypeModeratedError), so the lookup is not judged
                     // against a type it could never reference. A deletableDocument lookup
                     // exists from the same protocol version 14 as every other lookup, so
                     // this stays inert before it
                     let referenced = referenced_document_type.as_ref();
-                    // Deletable by anyone: owner, moderators, or the platform (`ttl`).
-                    let deletable = referenced.documents_can_disappear();
-                    if permanent == deletable {
+                    if kind != referenced.document_reference_kind() {
                         continue;
                     }
                     if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {

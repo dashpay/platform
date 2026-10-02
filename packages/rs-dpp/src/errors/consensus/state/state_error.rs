@@ -13,6 +13,10 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
     ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
+    ContractModerationTeamNotSeatedError, DocumentNotSettledError,
+    ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
+    ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    DocumentTypeNotDeletableOnceSettledError, SettledDeletionNotRestorableError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
@@ -75,6 +79,9 @@ use crate::consensus::state::document::referenced_document_type_not_deletable_er
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
+use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
+use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
+use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -648,6 +655,46 @@ pub enum StateError {
     // `minimumAgeBlocks` (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
+
+    // A `moderatedDocument` reference names a document type whose documents can leave state
+    // otherwise than through a moderator's recorded removal, a `deletableDocument` reference
+    // names one whose documents leave it only that way, and a replace keeping a reference to a
+    // removed document had to compare one of its properties (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentTypeNotModeratedError(ReferencedDocumentTypeNotModeratedError),
+
+    #[error(transparent)]
+    ReferencedDocumentTypeModeratedError(ReferencedDocumentTypeModeratedError),
+
+    #[error(transparent)]
+    ReferencedDocumentRemovedError(ReferencedDocumentRemovedError),
+
+    // The deletion of a settled document by the approvals of a seated moderation team,
+    // `moderatorAbilities.deleteSettled`, and the team actions that carry them (protocol
+    // version 14).
+    #[error(transparent)]
+    DocumentTypeNotDeletableOnceSettledError(DocumentTypeNotDeletableOnceSettledError),
+
+    #[error(transparent)]
+    ContractModerationTeamNotSeatedError(ContractModerationTeamNotSeatedError),
+
+    #[error(transparent)]
+    DocumentNotSettledError(DocumentNotSettledError),
+
+    #[error(transparent)]
+    ContractTeamActionDoesNotExistError(ContractTeamActionDoesNotExistError),
+
+    #[error(transparent)]
+    ContractTeamActionAlreadySignedError(ContractTeamActionAlreadySignedError),
+
+    #[error(transparent)]
+    SettledDeletionNotRestorableError(SettledDeletionNotRestorableError),
+
+    #[error(transparent)]
+    ContractTeamActionAlreadyCompletedError(ContractTeamActionAlreadyCompletedError),
+
+    #[error(transparent)]
+    ContractTeamActionDocumentChangedError(ContractTeamActionDocumentChangedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1373,7 +1420,7 @@ mod tests {
             154
         );
         // A commitment a `findBy` function found that does not meet the reference's
-        // `minimumAgeSeconds` (protocol version 14): the tail of the enum.
+        // `minimumAgeSeconds` (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentRequirementNotMetError(
                 ReferencedDocumentRequirementNotMetError::new(
@@ -1384,6 +1431,87 @@ mod tests {
                 )
             )),
             155
+        );
+        // The third kind of document reference, `moderatedDocument` (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeNotModeratedError(
+                ReferencedDocumentTypeNotModeratedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            156
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeModeratedError(
+                ReferencedDocumentTypeModeratedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            157
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentRemovedError(
+                ReferencedDocumentRemovedError::new(
+                    identity_id,
+                    "replyTo".to_string(),
+                    "threadId".to_string(),
+                )
+            )),
+            158
+        );
+        // The deletion of a settled document by the approvals of a seated moderation team
+        // (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotDeletableOnceSettledError(
+                DocumentTypeNotDeletableOnceSettledError::new(group_id, "post".to_string())
+            )),
+            159
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTeamNotSeatedError(
+                ContractModerationTeamNotSeatedError::new(group_id)
+            )),
+            160
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentNotSettledError(
+                DocumentNotSettledError::new(group_id, identity_id, 1_000, 60, 2_000)
+            )),
+            161
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionDoesNotExistError(
+                ContractTeamActionDoesNotExistError::new(group_id, identity_id)
+            )),
+            162
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionAlreadySignedError(
+                ContractTeamActionAlreadySignedError::new(group_id, identity_id, identity_id)
+            )),
+            163
+        );
+        assert_eq!(
+            discriminant_of(StateError::SettledDeletionNotRestorableError(
+                SettledDeletionNotRestorableError::new(group_id, identity_id, 1_000)
+            )),
+            164
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionAlreadyCompletedError(
+                ContractTeamActionAlreadyCompletedError::new(group_id, identity_id)
+            )),
+            165
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionDocumentChangedError(
+                ContractTeamActionDocumentChangedError::new(group_id, identity_id, identity_id)
+            )),
+            166
         );
     }
 }

@@ -1,6 +1,6 @@
 //! Ban, unban, suspend, unsuspend, warn and clear the warnings of identities on a moderated
 //! data contract, and delete documents of the document types that let moderators do so
-//! (protocol version 14).
+//! (protocol version 14), alone or, once settled, as a seated team.
 //!
 //! A contract whose config declares moderation keeps a banlist, a suspension list and/or a
 //! warning list. The contract owner, or a moderator the config names, edits them with a
@@ -14,6 +14,14 @@
 //! sets or removes the fields a document type keeps for its moderators
 //! (`moderatorAbilities.changeFields`) on one of its documents, whoever owns it.
 //!
+//! Past a type's `moderatorAbilities.deleteWithin` window a document is settled: no moderator
+//! deletes it alone. A type that says who of an elected contract's seated team must approve
+//! (`moderatorAbilities.deleteSettled`) lets the team's members delete it together, as a token
+//! group acts: one member proposes the deletion, which is its own approval and a team action
+//! kept under the contract by its id, and the others approve that action by its id until as
+//! many as the rule asks for have, the leader among them when the rule says so. The approval
+//! that meets the rule closes the action and deletes the document.
+//!
 //! ```ignore
 //! let reason = ContractModerationReason::from_text("spam");
 //! let status = moderator_identity
@@ -21,9 +29,23 @@
 //!     .await?;
 //! let removal = moderator_identity
 //!     .delete_contract_document(
-//!         &sdk, contract_id, "post".to_string(), document_id, reason, None, &signer, None,
+//!         &sdk, contract_id, "post".to_string(), document_id, reason.clone(), None, &signer,
+//!         None,
 //!     )
 //!     .await?;
+//! let (action_id, status) = team_member_identity
+//!     .delete_settled_contract_document(
+//!         &sdk, contract_id, "post".to_string(), settled_document_id, reason, None, &signer,
+//!         None,
+//!     )
+//!     .await?;
+//! // Every other member that approves names the action the proposal opened.
+//! let status = other_team_member_identity
+//!     .approve_contract_team_action(&sdk, contract_id, action_id, None, &other_signer, None)
+//!     .await?;
+//! if status == GroupActionStatus::ActionClosed {
+//!     // The action ran, by this approval or a later one: the document is gone.
+//! }
 //! ```
 
 use crate::platform::Fetch;
@@ -35,6 +57,7 @@ use dpp::data_contract::config::moderation::{
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -132,6 +155,30 @@ impl TryFrom<StateTransitionProofResult> for VerifiedDocumentRemoval {
             }
             other => Err(Error::Generic(format!(
                 "expected a contract document removal proof result, got {other}"
+            ))),
+        }
+    }
+}
+
+/// A team action as the proof of one member's proposal or approval shows it: its id and
+/// whether it is still active or closed, its approvals having met the rule and the action run.
+/// The proof binds both to the transition: the verifier rebuilds the action's id from it (the
+/// proposal's computed id, or the id the approval carries) and finds the signer's approval
+/// under that action.
+struct VerifiedTeamActionSignature(Identifier, GroupActionStatus);
+
+impl TryFrom<StateTransitionProofResult> for VerifiedTeamActionSignature {
+    type Error = Error;
+
+    fn try_from(value: StateTransitionProofResult) -> Result<Self, Self::Error> {
+        match value {
+            StateTransitionProofResult::VerifiedContractTeamActionSignature(
+                _,
+                action_id,
+                status,
+            ) => Ok(Self(action_id, status)),
+            other => Err(Error::Generic(format!(
+                "expected a contract team action signature proof result, got {other}"
             ))),
         }
     }
@@ -360,12 +407,77 @@ pub trait ModerateContractUser: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<Option<ContractDocumentRemoval>, Error>;
 
+    /// Proposes, as a member of the seated moderation team of `contract_id`, the deletion of
+    /// settled document `document_id` of `document_type_name`, for `reason` (as for a ban): one
+    /// last modified longer ago than the type's `moderatorAbilities.deleteWithin` window, within
+    /// which a moderator deletes it alone. The type must say who of the team must approve
+    /// (`moderatorAbilities.deleteSettled`), and `reason` must name a reason document the
+    /// team's proposal lists. The proposal is this member's approval, kept under the contract
+    /// as a team action with the document's last modification and revision and `reason`.
+    ///
+    /// Resolves with the action's id and its status. The id is what the other members approve
+    /// with [`approve_contract_team_action`](Self::approve_contract_team_action), and what
+    /// `ContractTeamActions` and `ContractTeamActionSigners` read it back by: it is computed
+    /// from the contract, this identity, its contract nonce, the document and `reason`, so every
+    /// proposal has its own. The status is where the proof finds this proposal's approval:
+    /// `ActionActive` while the approvals fall short of the rule, and `ActionClosed` once the
+    /// action ran, whether this proposal alone met the rule (a rule of one approval, given by
+    /// the leader when the rule names the leader) or a later approval did before the proof was
+    /// taken: the document is then gone, deleted as `delete_contract_document` deletes it.
+    ///
+    /// A proposal never lapses, but an approval is refused once the document changed since the
+    /// proposal (a replace, a transfer, a moderator's change of its fields). The proof is
+    /// verified without the contract, and fails once this identity left the team and a later
+    /// approval dropped its approval.
+    #[allow(clippy::too_many_arguments)]
+    async fn delete_settled_contract_document<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Identifier, GroupActionStatus), Error>;
+
+    /// Approves, as a member of the seated moderation team of `contract_id`, team action
+    /// `action_id` another member proposed: today the deletion of a settled document, whose
+    /// proposal ([`delete_settled_contract_document`](Self::delete_settled_contract_document))
+    /// returned the id. What the action does and why are the proposal's.
+    ///
+    /// Resolves with the action's status where the proof finds this approval: `ActionActive`
+    /// while the approvals still fall short of the rule, and `ActionClosed` once the action ran,
+    /// the leader among the approvals when the rule says so, whether this approval met the rule
+    /// or a later one did before the proof was taken: the document is gone. The approvals of
+    /// members who left the team since no longer count and are dropped, and a dropped approval
+    /// no longer proves: the proof of this one fails once this identity left the team and a
+    /// later approval dropped it. An approval of an action that does not exist
+    /// (`ContractTeamActionDoesNotExistError`), one this member already approved
+    /// (`ContractTeamActionAlreadySignedError`), one already closed
+    /// (`ContractTeamActionAlreadyCompletedError`), or one whose document changed since the
+    /// proposal (`ContractTeamActionDocumentChangedError`) is refused. The proof is verified
+    /// without the contract.
+    async fn approve_contract_team_action<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        action_id: Identifier,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<GroupActionStatus, Error>;
+
     /// Brings back `document`, of `document_type_name` on `contract`, that a moderator deleted:
     /// the document as it was when it was deleted, which must hash to what its removal record
     /// holds, within `SystemLimits::contract_document_restore_window_ms` (a week) of the
-    /// deletion. Any current moderator or the contract owner may restore, whoever deleted.
-    /// The document goes back through an ordinary insert, so a unique index value another
-    /// document took meanwhile refuses it. Resolves with the record, now marked restored.
+    /// deletion. Any current moderator or the contract owner may restore, whoever deleted,
+    /// except a deletion a seated team approved together past the type's window
+    /// (`moderatorAbilities.deleteSettled`): that one stands, and its restore is refused
+    /// (`SettledDeletionNotRestorableError`, 41209). The document goes back through an ordinary
+    /// insert, so a unique index value another document took meanwhile refuses it. Resolves
+    /// with the record, now marked restored.
     ///
     /// The signer pays for the document's storage; the refund of a later deletion stays its
     /// owner's. `contract` serializes the document and is what the proof of the restore is
@@ -419,7 +531,8 @@ impl ModerateContractUser for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ModeratedUserStatus, Error> {
-        // A document deletion or restore is proved by its removal record, not by a status.
+        // A document deletion or restore is proved by its removal record, not by a status,
+        // and a team action's proposal or approval by the signer's approval of the action.
         // Refused before the nonce is taken: sent from here it would execute, be paid for, and
         // then fail to read its own result.
         if matches!(
@@ -427,11 +540,14 @@ impl ModerateContractUser for Identity {
             ContractUserModerationAction::DeleteDocument { .. }
                 | ContractUserModerationAction::RestoreDocument { .. }
                 | ContractUserModerationAction::ChangeDocumentFields { .. }
+                | ContractUserModerationAction::DeleteSettledDocument { .. }
+                | ContractUserModerationAction::ApproveTeamAction { .. }
         ) {
             return Err(Error::Generic(
-                "a document deletion, restore or field change names no identity to report a \
-                 status of: send it with `delete_contract_document`, \
-                 `restore_contract_document` or `change_contract_document_fields`, which \
+                "a document deletion, restore, field change or team action names no identity \
+                 to report a status of: send it with `delete_contract_document`, \
+                 `restore_contract_document`, `change_contract_document_fields`, \
+                 `delete_settled_contract_document` or `approve_contract_team_action`, which \
                  return what it left"
                     .to_string(),
             ));
@@ -474,6 +590,65 @@ impl ModerateContractUser for Identity {
         )
         .await?;
         Ok(removal)
+    }
+
+    async fn delete_settled_contract_document<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Identifier, GroupActionStatus), Error> {
+        let VerifiedTeamActionSignature(action_id, status) = broadcast_moderation(
+            self,
+            sdk,
+            contract_id,
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name,
+                document_id,
+                reason,
+            },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await?;
+        Ok((action_id, status))
+    }
+
+    async fn approve_contract_team_action<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        action_id: Identifier,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<GroupActionStatus, Error> {
+        let VerifiedTeamActionSignature(approved_action_id, status) = broadcast_moderation(
+            self,
+            sdk,
+            contract_id,
+            ContractUserModerationAction::ApproveTeamAction { action_id },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await?;
+        // The verifier reads the action id out of the transition, so this holds whenever the
+        // proof verified; checked so a verifier that answered for another action is not
+        // taken for this one.
+        if approved_action_id != action_id {
+            return Err(Error::Generic(format!(
+                "the proof of the approval of team action {action_id} shows team action \
+                 {approved_action_id}"
+            )));
+        }
+        Ok(status)
     }
 
     async fn restore_contract_document<S: Signer<IdentityPublicKey> + Send>(
@@ -616,6 +791,8 @@ where
     // whether the type keeps removal records, and so which proof to expect; a restore's
     // verifier decodes the document under the contract's document type, and a field change's
     // verifier reads the changed document back under it, so all three need the contract too.
+    // A team action's proposal or approval is verified by the signer's approval of the
+    // action, a query rebuilt from the transition alone, and needs none.
     if matches!(
         action,
         ContractUserModerationAction::Ban { .. }
