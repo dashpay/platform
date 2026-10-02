@@ -170,7 +170,31 @@ impl BatchTransition {
         let base_fees = self
             .calculate_min_required_fee(platform_version)?
             .saturating_add(self.shielded_bundle_compute_fee(platform_version)?);
-        self.validate_estimated_principal_and_fees(identity_known_balance, base_fees)
+        self.validate_estimated_principal_and_fees(
+            identity_known_balance,
+            self.fees_raised_by_the_chosen_increase(base_fees),
+        )
+    }
+
+    /// `base_fees` raised by the percentage the signer asked for.
+    ///
+    /// Settlement raises the processing fee that way and then judges the balance against the
+    /// raised figure, so a floor that ignored the increase would admit a signer settlement
+    /// cannot charge. Raised exactly as `FeeResult::apply_user_fee_increase` raises it, and only
+    /// over the fee: a document purchase and a contested collateral are amounts a signer owes,
+    /// not fees, and settlement does not raise them either.
+    ///
+    /// Only the generation the unreleased protocol version 14 selects asks for this. The
+    /// generation every released version selects reaches
+    /// `validate_estimated_principal_and_fees` directly and keeps the threshold and the
+    /// `required_balance` it has always reported.
+    fn fees_raised_by_the_chosen_increase(&self, base_fees: Credits) -> Credits {
+        base_fees.saturating_add(
+            ((base_fees as u128)
+                .saturating_mul(self.user_fee_increase() as u128)
+                .saturating_div(100))
+            .min(Credits::MAX as u128) as Credits,
+        )
     }
 
     /// The balance has to cover the principal of the batch (document purchases and the
@@ -209,20 +233,9 @@ impl BatchTransition {
             };
 
         // This is just the needed balance to pass this validation step, most likely the actual fees are smaller
-        // Settlement raises the processing fee by the percentage the signer asked for, and then
-        // judges the balance against the raised figure, so a floor that ignored the increase
-        // would admit a signer settlement cannot charge. Raised the same way
-        // `FeeResult::apply_user_fee_increase` raises it, and only over the fee: a document
-        // purchase and a contested collateral are amounts, not fees.
-        let raised_fees = base_fees.saturating_add(
-            ((base_fees as u128)
-                .saturating_mul(self.user_fee_increase() as u128)
-                .saturating_div(100))
-            .min(Credits::MAX as u128) as Credits,
-        );
         let needed_balance = purchases_amount
             .saturating_add(conflicting_indices_collateral_amount)
-            .saturating_add(raised_fees);
+            .saturating_add(base_fees);
 
         if identity_known_balance < needed_balance {
             return Ok(SimpleConsensusValidationResult::new_with_error(

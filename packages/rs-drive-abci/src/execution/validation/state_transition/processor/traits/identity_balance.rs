@@ -634,6 +634,37 @@ mod tests {
         }
 
         #[test]
+        fn should_leave_the_released_floor_alone_when_the_signer_chose_an_increase() {
+            use dpp::state_transition::StateTransitionIdentityEstimatedFeeValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            // Generation 0 of the pre-check is what every protocol version up to 13 selects, and
+            // those are released: the balance it admits has to stay exactly what it was, whatever
+            // increase the signer chose. A plain delete carries no principal, so its floor is the
+            // flat per-sub-transition minimum.
+            let flat_minimum = platform_version
+                .fee_version
+                .state_transition_min_fees
+                .document_batch_sub_transition;
+
+            for increase in [0u16, 50] {
+                let StateTransition::Batch(batch) =
+                    batch_of_with_fee_increase(vec![document_delete(None)], increase)
+                else {
+                    panic!("the fixture builds a batch");
+                };
+                assert!(
+                    batch
+                        .validate_estimated_fee(flat_minimum, platform_version)
+                        .expect("estimated fee should not error")
+                        .is_valid(),
+                    "generation 0 is released: an increase of {increase} must not move its floor"
+                );
+            }
+        }
+
+        #[test]
         fn should_ask_for_the_fee_increase_the_signer_chose_on_top_of_the_compute_fee() {
             let platform_version = PlatformVersion::latest();
             let actions = 2usize;
