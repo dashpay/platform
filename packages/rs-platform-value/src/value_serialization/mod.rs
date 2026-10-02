@@ -107,7 +107,8 @@ where
     T::deserialize(de::Deserializer(value))
 }
 
-#[cfg(test)]
+// serde only implements its traits for `HashMap` with `std`.
+#[cfg(all(test, feature = "std"))]
 #[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use serde::{Deserialize, Serialize};
