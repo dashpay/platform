@@ -17,6 +17,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
@@ -980,34 +981,57 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
         let wm = wallet.wallet_manager().read().await;
         let info = wm
             .get_wallet_info(&wallet_id)
-            .ok_or_else(|| "wallet not found".to_string())?;
+            .ok_or_else(|| SeedError::Other("wallet not found".to_string()))?;
 
         let managed = managed_account(&info.core_wallet.accounts, source, account_index)
-            .ok_or_else(|| format!("managed account {source:?} #{account_index} not found"))?;
+            .ok_or_else(|| {
+                SeedError::Other(format!(
+                    "managed account {source:?} #{account_index} not found"
+                ))
+            })?;
 
         let mut selected = Vec::with_capacity(requested.len());
         for op in &requested {
-            let utxo = managed
-                .utxos
-                .get(op)
-                .cloned()
-                .ok_or_else(|| format!("outpoint {}:{} not in account", op.txid, op.vout))?;
+            let utxo = managed.utxos.get(op).cloned().ok_or_else(|| {
+                SeedError::Other(format!("outpoint {}:{} not in account", op.txid, op.vout))
+            })?;
+            // Builds spend only final coins (InstantSend-locked or mined), so a
+            // seeded coin that is not final would be dropped silently at build
+            // time; refuse it here, by name, instead.
+            if !(utxo.is_confirmed || utxo.is_instantlocked) {
+                return Err(SeedError::NotFinal(
+                    PlatformWalletError::CoreFundsAwaitingNetwork {
+                        available: None,
+                        waiting: utxo.value(),
+                        required: None,
+                        outpoint: Some(*op),
+                    },
+                ));
+            }
             selected.push(utxo);
         }
 
         // Validation succeeded — only now consume the builder.
         let taken = (*builder).take_builder();
         (*builder).store_builder(taken.add_inputs(selected));
-        Ok::<_, String>(())
+        Ok::<_, SeedError>(())
     });
 
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
-        Err(e) => PlatformWalletFFIResult::err(
+        Err(SeedError::NotFinal(error)) => PlatformWalletFFIResult::from(error),
+        Err(SeedError::Other(e)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("add_inputs_from_outpoints failed: {e}"),
         ),
     }
+}
+
+/// Why `core_wallet_tx_builder_add_inputs_from_outpoints` refused its outpoints.
+enum SeedError {
+    /// A named coin is not final yet (code 59).
+    NotFinal(PlatformWalletError),
+    Other(String),
 }
 
 /// Destroy a transaction builder created by `core_wallet_tx_builder_new`.
