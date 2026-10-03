@@ -55,7 +55,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let document = &*(document_handle as *const Document);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
@@ -206,7 +206,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
 
     info!("[DOCUMENT REPLACE] starting document replace operation");
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let document = &*(document_handle as *const Document);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
