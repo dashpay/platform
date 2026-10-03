@@ -23,6 +23,7 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::TokenDirectPurchaseTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 
 /// action v0
@@ -233,6 +234,13 @@ impl BatchTransitionActionV0 {
                 ) => Some(document_purchase.price()),
                 BatchedTransitionAction::TokenAction(
                     TokenTransitionAction::DirectPurchaseAction(token_purchase),
+                ) => Some(token_purchase.total_agreed_price()),
+                BatchedTransitionAction::TokenAction(
+                    // Previously swallowed by the catch-all below. The action cannot be in a
+                    // batch on the released protocol versions: the purchase-into-pool kind is
+                    // refused unpaid at the batch's `is_allowed` gate before the batch becomes
+                    // actions, so the fold sees the same sequence of prices there.
+                    TokenTransitionAction::DirectPurchaseToPoolAction(token_purchase),
                 ) => Some(token_purchase.total_agreed_price()),
                 _ => None,
             })

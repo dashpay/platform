@@ -109,7 +109,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -633,6 +633,10 @@ pub enum StateError {
     #[error(transparent)]
     ModerationReasonNotListedError(ModerationReasonNotListedError),
 
+    // NOTE: `StateError` is bincode-encoded positionally, so a new variant MUST be appended at
+    // the tail: inserting mid-enum shifts the wire discriminant of every variant after it and
+    // mis-decodes errors already encoded. The error code in `codes.rs` is independent of order.
+
     // A document whose type declares a `ttl` is changed or restored after it expired
     // (protocol version 14).
     #[error(transparent)]
@@ -695,6 +699,16 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractTeamActionDocumentChangedError(ContractTeamActionDocumentChangedError),
+
+    // A token shielded pool refuses a transition (protocol version 14).
+    #[error(transparent)]
+    TokenShieldedPoolNotEnabledError(TokenShieldedPoolNotEnabledError),
+
+    #[error(transparent)]
+    TokenShieldedPaymentAmountMismatchError(TokenShieldedPaymentAmountMismatchError),
+
+    #[error(transparent)]
+    TokenShieldedPaymentNotRequiredError(TokenShieldedPaymentNotRequiredError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -734,11 +748,13 @@ mod tests {
     /// that follows the document contest block (the one an insertion there
     /// would shift first), and of the variants appended since, down to the
     /// last one, which the test's final assertion pins.
-    fn discriminant_of(error: StateError) -> u8 {
+    fn discriminant_of(error: StateError) -> u32 {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");
-        // Discriminants below 251 are a single byte under bincode's varint.
-        bytes[0]
+        let (discriminant, _): (u32, usize) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("expected to decode the discriminant");
+        discriminant
     }
 
     /// A reference error for an id reference encodes exactly as it did before
@@ -1365,6 +1381,7 @@ mod tests {
             )),
             149
         );
+
         // A seated moderation team's action names a reason its proposal lists (protocol
         // version 14).
         assert_eq!(
@@ -1512,6 +1529,33 @@ mod tests {
                 ContractTeamActionDocumentChangedError::new(group_id, identity_id, identity_id)
             )),
             166
+        );
+        // Token shielded pools (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
+                TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
+            )),
+            167
+        );
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPaymentAmountMismatchError(
+                TokenShieldedPaymentAmountMismatchError::new(
+                    Identifier::from([1; 32]),
+                    10,
+                    9,
+                    "create".to_string(),
+                )
+            )),
+            168
+        );
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPaymentNotRequiredError(
+                TokenShieldedPaymentNotRequiredError::new(
+                    Identifier::from([1; 32]),
+                    "create".to_string(),
+                )
+            )),
+            169
         );
     }
 }
