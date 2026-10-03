@@ -38,7 +38,9 @@ use crate::query::drive_document_ranked_query::{
     DocumentRankedRequest, DocumentRankedResponse, RankedEntryValue, RankedPaginationInputs,
     RANKED_COUNT_ORDER_KEY,
 };
-use crate::query::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
+use crate::query::drive_document_sum_query::index_picker::{
+    find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
+};
 use crate::query::drive_document_sum_query::{
     DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
 };
@@ -1106,6 +1108,133 @@ fn should_count_likes_over_a_range_of_posts_from_the_counters_sums() {
         assert_live_root_hash(&drive, root_hash);
         assert_eq!(verified, entries, "{mode:?}");
     }
+}
+
+/// A grouped `sum(byPost)` over a counter index keeps a preallocated post
+/// nobody liked as a sum of zero, unproved and proved alike, so a page of
+/// one starting at it returns it and paging one post at a time walks every
+/// post: through one author and through `IN` both authors.
+#[test]
+fn should_keep_an_unliked_post_on_a_page_of_grouped_likes_sums() {
+    let (drive, contract) = setup(true);
+    let (a1, a2, _, _) = liked_posts(&drive, &contract);
+    let unliked = insert_post(&drive, &contract, AUTHOR_A, "dash", 4);
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name("like")
+        .expect("like doctype exists");
+    let drive_config = DriveConfig::default();
+    let from = |post: [u8; 32], operator: WhereOperator| WhereClause {
+        field: "postId".to_string(),
+        operator,
+        value: Value::Identifier(post),
+    };
+    let page = |where_clauses: Vec<WhereClause>, mode: SumMode, prove: bool| {
+        drive
+            .execute_document_sum_request(
+                DocumentSumRequest {
+                    contract: &contract,
+                    document_type,
+                    sum_property: "byPost".to_string(),
+                    where_clauses,
+                    resolved_time_ranges: vec![],
+                    order_clauses: vec![],
+                    mode,
+                    limit: Some(1),
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                pv,
+            )
+            .expect("a page of one executes")
+    };
+    let proved_page = |where_clauses: Vec<WhereClause>, mode: SumMode| {
+        let proof = match page(where_clauses.clone(), mode, true) {
+            DocumentSumResponse::Proof(proof) => proof,
+            other => panic!("expected a proof, got {other:?}"),
+        };
+        let index = find_range_summable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+            "byPost",
+            &[],
+        )
+        .expect("a counter index answers");
+        assert!(index.is_summable_off_count_index());
+        let (root_hash, entries) = DriveDocumentSumQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "like".to_string(),
+            index,
+            where_clauses,
+            sum_property: "byPost".to_string(),
+        }
+        .verify_distinct_sum_proof(&proof, 1, true, pv)
+        .expect("the page's proof verifies");
+        assert_live_root_hash(&drive, root_hash);
+        entries
+    };
+    let unproved_page =
+        |where_clauses: Vec<WhereClause>, mode: SumMode| match page(where_clauses, mode, false) {
+            DocumentSumResponse::Entries(entries) => entries,
+            other => panic!("expected entries, got {other:?}"),
+        };
+
+    // A page of one starting at the unliked post returns it at zero.
+    for (clauses, mode, in_key) in [
+        (
+            vec![
+                equal("postAuthor", Value::Identifier(AUTHOR_A)),
+                from(unliked, WhereOperator::GreaterThanOrEquals),
+            ],
+            SumMode::GroupByRange,
+            None,
+        ),
+        (
+            vec![
+                both_authors(),
+                from(unliked, WhereOperator::GreaterThanOrEquals),
+            ],
+            SumMode::GroupByCompound,
+            Some(AUTHOR_A.to_vec()),
+        ),
+    ] {
+        let unproved = unproved_page(clauses.clone(), mode);
+        assert_eq!(
+            unproved
+                .iter()
+                .map(|entry| (entry.in_key.clone(), entry.key.clone(), entry.sum))
+                .collect::<Vec<_>>(),
+            vec![(in_key, unliked.to_vec(), Some(0))],
+            "{mode:?}"
+        );
+        assert_eq!(proved_page(clauses, mode), unproved, "proved {mode:?}");
+    }
+
+    // Paging one post at a time walks every one of A's posts.
+    let mut expected = [(a1.to_vec(), 3), (a2.to_vec(), 1), (unliked.to_vec(), 0)];
+    expected.sort();
+    let mut paged = Vec::new();
+    let mut after = [0u8; 32];
+    loop {
+        let clauses = vec![
+            equal("postAuthor", Value::Identifier(AUTHOR_A)),
+            from(after, WhereOperator::GreaterThan),
+        ];
+        let entries = unproved_page(clauses.clone(), SumMode::GroupByRange);
+        assert_eq!(
+            proved_page(clauses, SumMode::GroupByRange),
+            entries,
+            "proved page after {after:?}"
+        );
+        let Some(entry) = entries.first() else {
+            break;
+        };
+        after = entry.key.clone().try_into().expect("a post id");
+        paged.push((entry.key.clone(), entry.sum.unwrap_or_default()));
+    }
+    assert_eq!(paged, expected.to_vec(), "every page of one");
 }
 
 /// Over a counter index that ranks no level, a range count's total is the

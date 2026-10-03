@@ -721,6 +721,179 @@ mod limit_policy_regression {
         );
     }
 
+    /// At the last shipped protocol version, over a regular `[brand, color]`
+    /// index, a range sum per `IN` value without a proof still answers a
+    /// zero total as one entry, and a sum grouped by the range still leaves
+    /// out a group summing to zero (only a `summableOffCountIndex` index
+    /// keeps those).
+    #[test]
+    fn should_keep_a_zero_in_total_and_drop_zero_groups_at_protocol_version_13() {
+        use crate::query::drive_document_sum_query::SumEntry;
+
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let factory =
+            DataContractFactory::new(platform_version.protocol_version).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "brand":  {"type": "string",  "position": 0, "maxLength": 32},
+                "color":  {"type": "string",  "position": 1, "maxLength": 32},
+                "amount": {"type": "integer", "position": 2, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["brand", "color", "amount"],
+            "indices": [{
+                "name": "byBrandColor",
+                "properties": [{"brand": "asc"}, {"color": "asc"}],
+                "summable":      "amount",
+                "rangeSummable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                platform_value!({ "widget": document_schema }),
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        for (i, (brand, color, amount)) in [
+            ("acme", "blue", 0u64),
+            ("acme", "red", 5),
+            ("contoso", "red", 7),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let document: Document = DocumentV0 {
+                id: Identifier::from([(i + 1) as u8; 32]),
+                owner_id: Identifier::from([0u8; 32]),
+                properties: StdBTreeMap::from([
+                    ("brand".to_string(), Value::Text(brand.to_string())),
+                    ("color".to_string(), Value::Text(color.to_string())),
+                    ("amount".to_string(), Value::U64(amount)),
+                ]),
+                ..Default::default()
+            }
+            .into();
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &document,
+                                Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &data_contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("insert widget");
+        }
+
+        let drive_config = DriveConfig::default();
+        let entries = |where_clauses: Vec<WhereClause>, mode: SumMode| match drive
+            .execute_document_sum_request(
+                DocumentSumRequest {
+                    contract: &data_contract,
+                    document_type,
+                    sum_property: "amount".to_string(),
+                    where_clauses,
+                    order_clauses: Vec::new(),
+                    mode,
+                    limit: None,
+                    prove: false,
+                    drive_config: &drive_config,
+                    resolved_time_ranges: vec![],
+                },
+                None,
+                platform_version,
+            )
+            .expect("the sum executes at protocol version 13")
+        {
+            DocumentSumResponse::Entries(entries) => entries,
+            other => panic!("expected entries, got {other:?}"),
+        };
+        let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+            field: field.to_string(),
+            operator,
+            value,
+        };
+
+        assert_eq!(
+            entries(
+                vec![
+                    clause(
+                        "brand",
+                        WhereOperator::In,
+                        Value::Array(vec![
+                            Value::Text("acme".to_string()),
+                            Value::Text("contoso".to_string()),
+                        ]),
+                    ),
+                    clause(
+                        "color",
+                        WhereOperator::GreaterThan,
+                        Value::Text("zzz".to_string()),
+                    ),
+                ],
+                SumMode::GroupByIn,
+            ),
+            vec![SumEntry {
+                in_key: None,
+                key: Vec::new(),
+                sum: Some(0),
+            }],
+            "a zero total per IN value is one entry"
+        );
+        assert_eq!(
+            entries(
+                vec![
+                    clause(
+                        "brand",
+                        WhereOperator::Equal,
+                        Value::Text("acme".to_string())
+                    ),
+                    clause(
+                        "color",
+                        WhereOperator::GreaterThan,
+                        Value::Text("a".to_string()),
+                    ),
+                ],
+                SumMode::GroupByRange,
+            )
+            .into_iter()
+            .map(|entry| (entry.key, entry.sum))
+            .collect::<Vec<_>>(),
+            vec![(b"red".to_vec(), Some(5))],
+            "acme's blue sums to zero and is left out"
+        );
+    }
+
     #[test]
     fn range_distinct_sum_no_proof_applies_default_explicit_and_max_limits() {
         let drive = setup_drive_with_initial_state_structure(None);

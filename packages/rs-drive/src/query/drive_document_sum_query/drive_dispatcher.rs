@@ -156,13 +156,6 @@ impl Drive {
                     let total = entries.first().and_then(|e| e.sum).unwrap_or(0);
                     Ok(DocumentSumResponse::Aggregate(total))
                 } else {
-                    // A distinct sum leaves out the groups summing to zero.
-                    // The walk keeps them, as the proof does, so a count read
-                    // through it (a `summableOffCountIndex` index's
-                    // preallocated counters at zero) ends a page only at its
-                    // limit.
-                    let mut entries = entries;
-                    entries.retain(|entry| entry.sum != Some(0));
                     Ok(DocumentSumResponse::Entries(entries))
                 }
             }
