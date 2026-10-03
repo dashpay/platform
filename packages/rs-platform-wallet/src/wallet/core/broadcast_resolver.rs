@@ -4543,20 +4543,38 @@ mod tests {
     }
 
     /// A probe that never answers.
-    struct HangingProbe;
+    /// A probe that never answers, and reports when it started and when its
+    /// future was torn down.
+    #[derive(Default)]
+    struct HangingProbe {
+        started: tokio::sync::Notify,
+        dropped: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    /// Sets its flag when the probe future holding it is dropped.
+    struct DropFlag(Arc<std::sync::atomic::AtomicBool>);
+
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
 
     #[async_trait]
     impl AcceptanceProbe for HangingProbe {
         async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
+            let _torn_down = DropFlag(Arc::clone(&self.dropped));
+            self.started.notify_one();
             std::future::pending().await
         }
     }
 
-    /// Stopping the task aborts and awaits every job it started, so nothing
-    /// outlives it.
+    /// Stopping the task aborts and awaits every job it started: by the time
+    /// the task has ended, the hanging probe's future is gone too.
     #[tokio::test]
     async fn should_end_with_every_job_when_stopped() {
-        let mut rig = Rig::new(Arc::new(HangingProbe));
+        let probe = Arc::new(HangingProbe::default());
+        let mut rig = Rig::new(probe.clone());
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         let (commands, receiver) = mpsc::unbounded_channel();
         let (stop, stopped) = oneshot::channel();
@@ -4564,7 +4582,13 @@ mod tests {
         for command in [Command::SetEnabled(true), Command::Uncertain(txid(1))] {
             commands.send(command).expect("send");
         }
-        sleep(Duration::from_millis(50)).await;
+        timeout(Duration::from_secs(5), probe.started.notified())
+            .await
+            .expect("the probe started");
+        assert!(
+            !probe.dropped.load(Ordering::SeqCst),
+            "still running before the stop"
+        );
 
         stop.send(()).expect("stop");
 
@@ -4572,6 +4596,10 @@ mod tests {
             .await
             .expect("stopped in time")
             .expect("no panic");
+        assert!(
+            probe.dropped.load(Ordering::SeqCst),
+            "the probe was torn down before the task ended"
+        );
     }
 
     /// A probe that records what the host had been sent by the time it ran.
