@@ -1,4 +1,5 @@
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
 use dpp::data_contract::document_type::action_fees::ActionFeePricing;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -122,6 +123,7 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
         // signer is never their own sponsor. A batch that already has errors, or asks for a payer
         // the contracts do not offer, resolves nothing: advanced structure validation raises the
         // latter, and the signer pays for the former.
+        let mut sponsor_cannot_pay_for_the_bundles = None;
         if let Some(action) = validation_result
             .data
             .as_mut()
@@ -143,13 +145,46 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
                     )?;
                     execution_context
                         .add_operation(ValidationOperation::PrecalculatedOperation(fee));
+                    let balance = balance.unwrap_or_default();
                     action.set_gas_sponsor(Some(ResolvedGasSponsor {
                         identity_id,
-                        balance: balance.unwrap_or_default(),
+                        balance,
                         strict,
                     }));
+
+                    // A sponsor who insists on paying has to hold the compute fee of the
+                    // Orchard bundles the batch carries, whatever the rest of the fee comes to.
+                    // The signer of a sponsored batch funds only its principal, so nobody else
+                    // can be charged for the verification, and the whole batch is judged at
+                    // once rather than per sub-transition: a batch carrying two bundles would
+                    // otherwise pass the same check twice against a balance covering one.
+                    // Without this the verification runs inside per-transition state
+                    // validation, which comes after the transformer, and the batch is refused
+                    // there for the same shortfall, having done the proof work for nothing.
+                    // Refusing here refuses nothing that could have been executed: every
+                    // bundle-carrying sub-transition is charged this fee as its action is
+                    // built, so a sponsor short of it is refused by fee validation in any
+                    // case. A sponsor who merely prefers to pay is not asked, because the
+                    // signer pays in their place.
+                    let shielded_compute_fee = self
+                        .shielded_bundle_compute_fee(platform_version)
+                        .map_err(Error::Protocol)?;
+                    if strict && balance < shielded_compute_fee {
+                        sponsor_cannot_pay_for_the_bundles =
+                            Some(GasSponsorInsufficientBalanceError::new(
+                                identity_id,
+                                balance,
+                                shielded_compute_fee,
+                            ));
+                    }
                 }
             }
+        }
+        // The refusal carries no action, like the one fee validation raises for the same
+        // shortfall: a batch insisting on a sponsor who cannot pay charges nobody, since its
+        // signer refused to pay by asking for the contract owner rather than preferring them.
+        if let Some(error) = sponsor_cannot_pay_for_the_bundles {
+            return Ok(ConsensusValidationResult::new_with_error(error.into()));
         }
 
         // Document action fees (the `actionFees` keyword): a fee priced by the fee multiplier

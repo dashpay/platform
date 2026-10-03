@@ -530,20 +530,22 @@ impl DriveOperation<'_> {
         Ok(merged)
     }
 
-    /// Refuses a batch whose token operations write one identity's balance of a token, or
-    /// one token's total supply, more than once.
+    /// Refuses a batch whose token operations write one identity's balance of a token, one
+    /// token's total supply, or the total one token's shielded pool holds, more than once.
     ///
     /// These writes compute the new value from the one committed before the batch too, but a
-    /// transfer writes two balances and a mint or a burn a balance and the supply, so they
-    /// cannot be merged into operations of their own kinds. No state transition makes two of
-    /// them on one key: a batch carries one transition, and each writes a key at most once. A
-    /// batch that did would lose all but the last write, so it is refused instead.
+    /// transfer writes two balances, a mint or a burn a balance and the supply, and a shield
+    /// or an unshield a balance and the pool total, so they cannot be merged into operations
+    /// of their own kinds. No state transition makes two of them on one key: a batch carries
+    /// one transition, and each writes a key at most once. A batch that did would lose all but
+    /// the last write, so it is refused instead.
     pub fn refuse_repeated_token_balance_writes(operations: &[Self]) -> Result<(), Error> {
         let mut written = BTreeSet::new();
         for key in operations.iter().flat_map(token_balance_writes) {
             if !written.insert(key) {
                 return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a batch writes one token balance or token supply more than once",
+                    "a batch writes one token balance, token supply or token shielded pool \
+                     total more than once",
                 )));
             }
         }
@@ -560,11 +562,13 @@ enum BalanceKey {
     PrefundedSpecializedBalance(Identifier),
 }
 
-/// A key a token operation writes: an identity's balance of a token, or a token's total supply
+/// A key a token operation writes: an identity's balance of a token, a token's total supply,
+/// or the total a token's shielded pool holds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum TokenBalanceKey {
     Holder(Identifier, Identifier),
     Supply(Identifier),
+    PoolTotal(Identifier),
 }
 
 /// The keys `operation` writes if it is a token operation that moves tokens
@@ -604,7 +608,45 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
             TokenBalanceKey::Holder(*token_id, *sender_id),
             TokenBalanceKey::Holder(*token_id, *recipient_id),
         ],
-        _ => vec![],
+        // A shield moves tokens out of an identity's balance and into the pool, and an
+        // unshield out of the pool and into an identity's balance. Neither moves the total
+        // supply: the pool total is a term of the conservation sum beside the balances.
+        TokenOperationType::TokenShield {
+            token_id,
+            identity_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *identity_id),
+            TokenBalanceKey::PoolTotal(*token_id),
+        ],
+        TokenOperationType::TokenUnshield {
+            token_id,
+            recipient_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *recipient_id),
+            TokenBalanceKey::PoolTotal(*token_id),
+        ],
+        // Minting into the pool raises the total supply and the pool total by the same amount
+        // and burning from it lowers both; neither touches an identity's balance.
+        TokenOperationType::TokenMintToPool { token_id, .. }
+        | TokenOperationType::TokenBurnFromPool { token_id, .. } => vec![
+            TokenBalanceKey::Supply(*token_id),
+            TokenBalanceKey::PoolTotal(*token_id),
+        ],
+        // A transfer inside the pool moves nothing in or out of it, so it leaves the pool
+        // total where it stands and only records nullifiers and appends notes.
+        TokenOperationType::TokenShieldedTransfer { .. }
+        // The rest move no tokens at all: they write freeze records, the token's status, a
+        // direct purchase price, distribution bookkeeping or a history document.
+        | TokenOperationType::TokenFreeze { .. }
+        | TokenOperationType::TokenUnfreeze { .. }
+        | TokenOperationType::TokenSetStatus { .. }
+        | TokenOperationType::TokenSetPriceForDirectPurchase { .. }
+        | TokenOperationType::TokenMarkPerpetualReleaseAsDistributed { .. }
+        | TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed { .. }
+        | TokenOperationType::TokenMarkOncePerIdentityReleaseAsDistributed { .. }
+        | TokenOperationType::TokenHistory { .. } => vec![],
     }
 }
 
@@ -748,6 +790,11 @@ mod tests {
     use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    use crate::state_transition_action::shielded::ShieldedActionNote;
+    use dpp::balances::credits::TokenAmount;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
 
     #[test]
     fn test_add_dashpay_documents() {
@@ -1798,5 +1845,327 @@ mod tests {
             add_to_pot(ContractFeePot::Owner, 2),
         ];
         assert_eq!(merged(operations.clone()), format!("{operations:?}"));
+    }
+
+    fn note(tag: u8) -> ShieldedActionNote {
+        ShieldedActionNote {
+            nullifier: [tag; 32],
+            cmx: [tag.wrapping_add(1); 32],
+            cv_net: [tag.wrapping_add(2); 32],
+            encrypted_note: vec![tag; 216],
+        }
+    }
+
+    fn shield(token_position: u8, holder: u8, note_tag: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenShield {
+            token_id: token(token_position),
+            identity_id: Identifier::new([holder; 32]),
+            amount: 5,
+            notes: vec![note(note_tag)],
+        })
+    }
+
+    fn unshield(token_position: u8, recipient: u8, note_tag: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenUnshield {
+            token_id: token(token_position),
+            recipient_id: Identifier::new([recipient; 32]),
+            amount: 5,
+            nullifiers: vec![[note_tag; 32]],
+            notes: vec![note(note_tag)],
+        })
+    }
+
+    fn shielded_transfer(token_position: u8, note_tag: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenShieldedTransfer {
+            token_id: token(token_position),
+            nullifiers: vec![[note_tag; 32]],
+            notes: vec![note(note_tag)],
+        })
+    }
+
+    fn mint_to_pool(token_position: u8, note_tag: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenMintToPool {
+            token_id: token(token_position),
+            amount: 5,
+            allow_first_mint: false,
+            notes: vec![note(note_tag)],
+        })
+    }
+
+    fn burn_from_pool(token_position: u8, note_tag: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenBurnFromPool {
+            token_id: token(token_position),
+            amount: 5,
+            nullifiers: vec![[note_tag; 32]],
+            notes: vec![note(note_tag)],
+        })
+    }
+
+    /// Every pool operation that moves the pool's total replaces it with an absolute value, so
+    /// two of them on one token lose a write however they are paired.
+    #[test]
+    fn should_refuse_a_batch_that_writes_one_token_shielded_pool_total_twice() {
+        for (pairing, first, second) in [
+            (
+                "a shield and an unshield",
+                shield(0, 1, 1),
+                unshield(0, 2, 2),
+            ),
+            (
+                "a shield and a mint into the pool",
+                shield(0, 1, 1),
+                mint_to_pool(0, 2),
+            ),
+            (
+                "an unshield and a burn from the pool",
+                unshield(0, 1, 1),
+                burn_from_pool(0, 2),
+            ),
+            (
+                "a mint into and a burn from the pool",
+                mint_to_pool(0, 1),
+                burn_from_pool(0, 2),
+            ),
+            (
+                "two mints into the pool",
+                mint_to_pool(0, 1),
+                mint_to_pool(0, 2),
+            ),
+        ] {
+            assert!(
+                DriveOperation::refuse_repeated_token_balance_writes(&[first, second]).is_err(),
+                "{pairing} both write one pool total"
+            );
+        }
+    }
+
+    /// A shield debits the identity it takes tokens from and an unshield credits the one it
+    /// hands them to, so either paired with a transparent write of that balance loses a write.
+    #[test]
+    fn should_refuse_a_batch_that_writes_one_shielding_identity_balance_twice() {
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            shield(0, 1, 1),
+            burn(0, 1)
+        ])
+        .is_err());
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            unshield(0, 1, 1),
+            mint(0, 1)
+        ])
+        .is_err());
+    }
+
+    /// Minting into the pool raises the token's total supply and burning from it lowers it, so
+    /// either paired with a transparent mint or burn of that token loses a write.
+    #[test]
+    fn should_refuse_a_batch_that_writes_one_pool_minted_token_supply_twice() {
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            mint_to_pool(0, 1),
+            mint(0, 1)
+        ])
+        .is_err());
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            burn_from_pool(0, 1),
+            burn(0, 1)
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn should_admit_pool_operations_that_each_touch_their_own_keys() {
+        // Pools of different tokens are different keys.
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            shield(0, 1, 1),
+            mint_to_pool(1, 2)
+        ])
+        .is_ok());
+        // Shielding and unshielding leave the total supply alone, so a mint or a burn of the
+        // same token by another holder shares no key with them.
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            shield(0, 1, 1),
+            mint(0, 2)
+        ])
+        .is_ok());
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            unshield(0, 1, 1),
+            burn(0, 2)
+        ])
+        .is_ok());
+        // Minting into the pool and burning from it touch no identity balance.
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            mint_to_pool(0, 1),
+            transfer(1, 2)
+        ])
+        .is_ok());
+        // A transfer inside the pool moves nothing in or out of it, and no supply or balance,
+        // so it shares no key with the pool total a shield writes or the supply a mint does.
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            shielded_transfer(0, 1),
+            shield(0, 1, 2),
+            mint(0, 2),
+        ])
+        .is_ok());
+    }
+
+    /// A drive holding a token with a shielded pool and two identities each holding `balance`
+    /// of it: enough state for a composed batch of token operations to be lowered and applied.
+    fn setup_drive_with_token_pool(balance: TokenAmount) -> (Drive, [u8; 32], [u8; 32], [u8; 32]) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [7u8; 32];
+
+        let mut holders = [[0u8; 32]; 2];
+        for (seed, holder) in holders.iter_mut().enumerate() {
+            let identity = Identity::random_identity(3, Some(seed as u64), platform_version)
+                .expect("random identity");
+            *holder = identity.id().to_buffer();
+            drive
+                .add_new_identity(identity, false, &block_info, true, None, platform_version)
+                .expect("insert identity");
+        }
+
+        drive
+            .create_token_trees(
+                Identifier::from([5u8; 32]),
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("create token trees");
+        // Keep the supply consistent with the balances handed out, as a mint would.
+        drive
+            .add_to_token_total_supply(
+                token_id,
+                balance * 2,
+                true,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("add to total supply");
+        for holder in holders {
+            drive
+                .add_to_identity_token_balance(
+                    token_id,
+                    holder,
+                    balance,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("add token balance");
+        }
+
+        let operations = drive
+            .create_token_shielded_pool_trees_operations(
+                token_id,
+                false,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("pool tree operations");
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("create pool trees");
+
+        (drive, token_id, holders[0], holders[1])
+    }
+
+    /// Two shields of one token in one batch each read the pool total committed before the
+    /// batch and write back an absolute value, so the second would discard the first: both
+    /// identities would lose their tokens while the pool gained only one shield's worth.
+    #[test]
+    fn should_refuse_a_batch_that_shields_into_one_token_pool_twice() {
+        let (drive, token_id, first_holder, second_holder) = setup_drive_with_token_pool(1_000);
+        let platform_version = PlatformVersion::latest();
+
+        let result = drive.apply_drive_operations(
+            vec![
+                DriveOperation::TokenOperation(TokenOperationType::TokenShield {
+                    token_id: Identifier::from(token_id),
+                    identity_id: Identifier::from(first_holder),
+                    amount: 400,
+                    notes: vec![note(1)],
+                }),
+                DriveOperation::TokenOperation(TokenOperationType::TokenShield {
+                    token_id: Identifier::from(token_id),
+                    identity_id: Identifier::from(second_holder),
+                    amount: 300,
+                    notes: vec![note(2)],
+                }),
+            ],
+            true,
+            &BlockInfo::default(),
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                &result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(message)))
+                    if message.contains("more than once")
+            ),
+            "a batch shielding into one pool twice must be refused, got {result:?}"
+        );
+    }
+
+    /// A mint into the pool and a transparent mint of the same token in one batch each read the
+    /// total supply committed before the batch and write it back absolute, so the second would
+    /// discard the first and the supply would stop counting both mints.
+    #[test]
+    fn should_refuse_a_batch_that_mints_one_token_into_its_pool_and_to_a_holder() {
+        let (drive, token_id, holder, _) = setup_drive_with_token_pool(1_000);
+        let platform_version = PlatformVersion::latest();
+
+        let result = drive.apply_drive_operations(
+            vec![
+                DriveOperation::TokenOperation(TokenOperationType::TokenMintToPool {
+                    token_id: Identifier::from(token_id),
+                    amount: 400,
+                    allow_first_mint: false,
+                    notes: vec![note(1)],
+                }),
+                DriveOperation::TokenOperation(TokenOperationType::TokenMint {
+                    token_id: Identifier::from(token_id),
+                    identity_balance_holder_id: Identifier::from(holder),
+                    mint_amount: 300,
+                    allow_first_mint: false,
+                    allow_saturation: false,
+                }),
+            ],
+            true,
+            &BlockInfo::default(),
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                &result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(message)))
+                    if message.contains("more than once")
+            ),
+            "a batch minting one token into its pool and to a holder must be refused, got {result:?}"
+        );
     }
 }

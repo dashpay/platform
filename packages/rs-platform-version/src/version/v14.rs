@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts six consensus changes:
+/// v14 hosts thirty-one consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates**: an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -365,7 +365,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     update state validation (already 1 here) checks the named moderators.
 ///     `batch_state_transition.contract_moderation_gate = Some(0)` makes the
 ///     batch transformer refuse, paid, the document transitions of a banned or
-///     suspended signer, its deletions excepted, and collect a lapsed
+///     suspended signer, its deletions excepted (and its retractions, item 72),
+///     and collect a lapsed
 ///     suspension, which
 ///     `documents_batch_transition` 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`)
 ///     deletes when the batch executes; the same field gates the other
@@ -759,6 +760,55 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     deleted and a later one the condition leaves free set to another
 ///     document. A changed
 ///     element `refersTo` is an incompatible schema change on update.
+///
+/// 31. **Token shielded pools**: a token configuration in format version 1
+///     (`TokenConfiguration::V1`, admitted by `CONTRACT_VERSIONS_V6`'s
+///     `token_configuration_format` bounds) can set `hasShieldedPool`, which
+///     gives the token its own Orchard pool under
+///     `[Tokens, TOKEN_SHIELDED_POOLS_KEY, token_id]` laid out like the credit
+///     pool. A pooled token must leave its freeze, unfreeze and destroy-frozen-
+///     funds rules unassigned, since notes have no owner to freeze. Seven batch
+///     token transitions (`TokenShield`, `TokenUnshield`,
+///     `TokenShieldedTransfer`, `TokenMintToPool`, `TokenBurnFromPool`,
+///     `TokenClaimToPool` and `TokenDirectPurchaseToPool`, validated through
+///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` and gated by
+///     `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`) move tokens between an
+///     identity balance, the supply and the pool or inside it; the identity
+///     signs and pays the fee in credits, and every bundle binds its pool into
+///     the Orchard sighash, since all pools share the empty-tree anchor an
+///     unbound bundle would verify against: a spend bundle binds the token id
+///     and the batch owner (a burn binds the burner: the batch owner, or the
+///     proposer of a group action), plus the recipient and amount where tokens
+///     leave the pool; an outputs-only bundle (`TokenShield`,
+///     `TokenMintToPool`, `TokenClaimToPool`, `TokenDirectPurchaseToPool`),
+///     whose anchor is never checked against a pool, binds a per-kind tag,
+///     the token id and the batch owner (for a group action mint, the
+///     proposer).
+///     A batch carrying any of these bundles, or a document whose token cost
+///     is paid out of a pool, has to hold the compute fee the bundles will be
+///     charged (`compute_shielded_verification_fee` per bundle-carrying
+///     sub-transition): the batch minimum balance pre-check v1
+///     (`identity_minimum_balance_pre_check`) reserves it on top of the flat
+///     per-sub-transition minimum, which is orders of magnitude smaller. A
+///     batch without a bundle is asked for the flat minimum, unchanged, and
+///     one that asks the contract owner to pay its gas is asked for its
+///     principal alone as in item 11, the compute fee being gas. The floor
+///     refuses only what fee validation would refuse later, but it refuses it
+///     before the Halo 2 work: `TokenClaimToPool`'s proof is skipped in check
+///     tx, since its claimable amount is only known against state, so without
+///     the floor a signer between the two numbers cleared the mempool with no
+///     verification run and every validator then did the verification inside
+///     block validation, only to refuse the batch unpaid, leaving the same
+///     bytes replayable. The same holds for the bundle of a group action's
+///     non-proposing signer, whose proof check tx also skips.
+///     The pool balances are a term of the token conservation check
+///     (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
+///     `record_token_shielded_pool_anchors`
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`) records and prunes the anchors of the
+///     pools a block touched. The pools root tree is inserted by
+///     `transition_to_version_14` and by `create_initial_state_structure` v4;
+///     the six shielded queries accept an optional `token_id` to target a token
+///     pool.
 ///
 /// 32. **Document references resolved through a unique index**: a
 ///     `permanentDocument` `refersTo`, on an identifier property or on the
@@ -1283,8 +1333,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`SerializedObjectParsingError`, 10002), refused unpaid in `check_tx` and
 ///     in block processing. Version 0 ignored them, so the transition with
 ///     anything appended executed as the original under another transaction
-///     hash. Version 1 also reports a transition whose version is not active
-///     as `StateTransitionNotActiveError` (10603) instead of a decode failure.
+///     hash. Version 1 also reports a transition whose version is outside its
+///     active range as `StateTransitionNotActiveError` (10603) instead of a
+///     decode failure, naming whichever boundary of that range was missed: its
+///     start for a version not active yet, its end for one already superseded.
 ///
 /// 47. **A storage refund is clawed back from the epochs it was priced for**:
 ///     removing data in epoch E refunds its owner the shares of epochs E+1
@@ -1877,6 +1929,22 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     small enough that the sums stay in `i64`, which they do short of 2^36
 ///     documents. A stored contract still parses.
 ///
+/// 72. **A barred author may still retract (`retractedWhen`)**: a document
+///     type of meta-schema v3 and parser generation 3, in place, may declare
+///     `retractedWhen`, one condition in the grammar of an `immutable` entry's
+///     `when` (`$old.` reads, no `countOf` or `sumOf`), only on a mutable type
+///     of a contract keeping a banlist or a suspension list (10231 on every
+///     parse), and fixed on update (document type update validation 1, 40212).
+///     `contract_moderation_gate` v0, in place, lets a banned or suspended
+///     signer's replaces on such a type through with its bar
+///     (`ContractModerationRefusal::retraction_bar`, `refused` now optional),
+///     and the shared transformer, after fetching the stored document, refuses
+///     with the bar (41107, 41108), paid with the nonce bumped, each whose
+///     written document does not meet the condition or whose condition
+///     faults. Every other rule of the type still judges the replace. So an
+///     author whose documents can not be deleted can still take one back. Inert
+///     before this version: the gate and the keyword exist only here.
+///
 /// 73. **An index that counts another index's entries
 ///     (`summableOffCountIndex`)**: an index keyword of meta-schema v3 and
 ///     parser generation 3, in place (`Index::summable_off_count_index`,
@@ -1929,8 +1997,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   structure, identity signature, and nonce validation. It moves credits
 ///   from an identity balance straight into the shielded pool: the funding
 ///   side is identity-signed like `IdentityCreditTransferToAddresses`, the
-///   pool side is an outputs-only Orchard bundle like `Shield`, and the fee
-///   is metered plus the shielded compute fee, paid from the identity.
+///   pool side is an outputs-only Orchard bundle like `Shield`, bound to the
+///   funding identity (next item), and the fee is metered plus the shielded
+///   compute fee, paid from the identity.
+///
+/// * The credit pool's outputs-only bundles bind `kind tag || owner` into their
+///   Orchard sighash (`DPP_METHOD_VERSIONS_V3` sets `credit_pool_bundle_binding`
+///   to `Some(0)`): `Shield` (`0x84`) the SHA-256 of its input addresses,
+///   checked by `validate_shielded_proof` v1; `ShieldFromIdentity` (`0x85`) its
+///   identity id; `ShieldFromAssetLock` (`0x86`) its asset lock identifier,
+///   checked by the `transform_into_action` v1 that
+///   `DRIVE_ABCI_VALIDATION_VERSIONS_V10` selects. A third party can no longer
+///   wrap a proved bundle in a transition of their own. v13 keeps both checks
+///   unbound. A sender rebuilding the same notes (Faerie Gold) is not stopped:
+///   that needs the bundles' dummy nullifiers recorded and checked.
+///   `ShieldFromAssetLock` also gains transition version 1
+///   (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`), the only version 14
+///   admits: version 0 is refused at decode by `active_version_range`, before
+///   any proof work, uncharged and with its asset lock left unspent, so one
+///   still waiting when 14 activates is not burned by the bound check.
 ///
 /// * `IdentityTopUpFromShieldedPool` (state transition type 22) activates at the
 ///   same gate (`IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION = 14`,
@@ -1978,11 +2063,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; a batch moving one document type's summableOffCountIndex counters for more than one document refused; repaid identity debt credited to the processing fee pool); convert_drive_operations_to_grove_operations 1 (refuses that counter batch too, then converts as before); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; a batch moving one document type's summableOffCountIndex counters for more than one document refused; repaid identity debt credited to the processing fee pool); convert_drive_operations_to_grove_operations 1 (refuses that counter batch too, then converts as before); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 1 admits a document token cost paid from a token pool; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -1990,17 +2075,17 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
-        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; the ContractUserModeration transition
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; ShieldFromAssetLock moves to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math; reward_distribution_max_cycle_moment v1: the epoch claim cap no longer wraps; distribution_function_cycle_epochs v1: evonode cycles weighted by the epochs they span
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
+        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago; credit_pool_bundle_binding Some(0) — the credit pool's outputs-only bundles bind a kind tag and their owner
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status

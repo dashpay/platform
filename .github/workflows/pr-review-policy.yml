@@ -55,6 +55,6 @@ jobs:
       (contains(fromJSON('["coderabbitai", "coderabbitai[bot]"]'), github.event.comment.user.login) &&
       (contains(github.event.comment.body, 'final_review_risk_coverage') ||
       contains(github.event.comment.body, 'rate limited by coderabbit.ai')))
-    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@3b987722c37e91755785c031abb3f98fb08ea763
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@master
     with:
       scope: ${{ inputs.scope || 'batch' }}
