@@ -159,8 +159,8 @@ internal object WalletManagerNative {
      * Paged, not swept whole: a wallet's UTXO count is chain-controlled
      * (anyone who knows a watched address can keep sending dust to it), so
      * a full-inventory read would let a remote party decide how much this
-     * process allocates on every SYNCED transition and every 30-minute
-     * pass. Pass [cursor] `null` to start, then hand back the returned
+     * process allocates on every steady-state transition and every
+     * 30-minute pass. Pass [cursor] `null` to start, then hand back the returned
      * `cursor` verbatim while `hasMore` is true — a cursor this export did
      * not produce throws. [limit] caps the rows in one page; non-positive
      * asks for the engine's own default, and the engine clamps its own
