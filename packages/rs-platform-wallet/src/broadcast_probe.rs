@@ -603,6 +603,9 @@ mod tests {
         }
     }
 
+    /// Lookup answers in order: the node that answered, and what it said.
+    type ScriptedLookups = VecDeque<(Option<&'static str>, LookupAnswer)>;
+
     /// Replays scripted node answers in order and counts calls. Lookups
     /// default to two distinct nodes not knowing the txid, so a dead quorum
     /// is confirmed unless a test scripts otherwise.
@@ -610,7 +613,7 @@ mod tests {
         answers: Mutex<VecDeque<(Option<&'static str>, NodeVerdict)>>,
         lookups: Mutex<VecDeque<(Option<&'static str>, LookupAnswer)>>,
         /// Lookups of a parent txid, answered from here when scripted.
-        parent_lookups: Mutex<HashMap<Txid, VecDeque<(Option<&'static str>, LookupAnswer)>>>,
+        parent_lookups: Mutex<HashMap<Txid, ScriptedLookups>>,
         submissions: Mutex<usize>,
         lookups_made: Mutex<usize>,
     }
