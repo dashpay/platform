@@ -54,6 +54,7 @@ pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
 
 /// Verdict codes for [`OutgoingTransactionProbedFn`].
 pub const OUTGOING_PROBE_VERDICT_ACCEPTED: u8 = 0;
+/// Reserved; not emitted by this version.
 pub const OUTGOING_PROBE_VERDICT_DEAD: u8 = 1;
 pub const OUTGOING_PROBE_VERDICT_UNRESOLVED: u8 = 2;
 /// Not a verdict: drop whatever was kept for the send's earlier verdict. Sent
@@ -321,7 +322,6 @@ impl PlatformEventHandler for FFIEventHandler {
             // The host does not need to tell a mempool from a block: both mean
             // the payment is going through.
             ProbeVerdict::Accepted | ProbeVerdict::Mined => (OUTGOING_PROBE_VERDICT_ACCEPTED, None),
-            ProbeVerdict::Dead { reason } => (OUTGOING_PROBE_VERDICT_DEAD, Some(reason)),
             ProbeVerdict::Unresolved { reason } => {
                 (OUTGOING_PROBE_VERDICT_UNRESOLVED, Some(reason))
             }
@@ -733,13 +733,6 @@ mod outgoing_probe_callback_tests {
         with_callback.on_outgoing_transaction_probed(
             &wallet,
             &txid,
-            &ProbeVerdict::Dead {
-                reason: "bad-txns-inputs-missingorspent".to_string(),
-            },
-        );
-        with_callback.on_outgoing_transaction_probed(
-            &wallet,
-            &txid,
             &ProbeVerdict::Unresolved {
                 reason: "no quorum".to_string(),
             },
@@ -762,12 +755,6 @@ mod outgoing_probe_callback_tests {
             calls,
             vec![
                 (wallet, wire, OUTGOING_PROBE_VERDICT_ACCEPTED, None),
-                (
-                    wallet,
-                    wire,
-                    OUTGOING_PROBE_VERDICT_DEAD,
-                    Some("bad-txns-inputs-missingorspent".to_string())
-                ),
                 (
                     wallet,
                     wire,

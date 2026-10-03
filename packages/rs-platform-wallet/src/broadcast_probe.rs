@@ -1,13 +1,9 @@
-//! Asking Core nodes directly whether a signed transaction can still land.
+//! Asking Core nodes directly whether a signed transaction has landed.
 //!
 //! The P2P network has no negative signal — modern Dash Core removed BIP61
 //! `reject` — so a transaction whose SPV broadcast saw no acceptance signal
 //! (`BroadcastResult::Uncertain` → [`BroadcastError::MaybeSent`]) stays
-//! ambiguous for as long as nobody asks. For a valid transaction that is the
-//! right answer: it may still be relayed and mined. For one that can never
-//! land — its input does not exist, or is already spent by a final
-//! transaction — nothing ends the ambiguity: no block revisits it, dash-spv
-//! keeps rebroadcasting it, and its inputs stay fenced indefinitely.
+//! ambiguous for as long as nobody asks.
 //!
 //! Core's `sendrawtransaction`, which DAPI's `broadcastTransaction` wraps, is
 //! not silent. Measured against Dash Core 22.1.3 (testnet and mainnet,
@@ -21,14 +17,18 @@
 //! | spends an input that does not exist           | `-25 bad-txns-inputs-missingorspent`      |
 //! | spends an input an IS-locked tx already spent | `-26 tx-txlock-conflict`                  |
 //!
-//! The second row is why a rejection alone is never enough to call a
-//! transaction dead: Core recognises a mined transaction only while one of its
-//! outputs is still in the UTXO set, and otherwise evaluates it like a new one
-//! whose inputs are gone (measured on testnet 2026-09-29: `e758f06a…`, block
-//! 1560020, both outputs spent → `-25`). Before a dead verdict the probe
-//! therefore asks nodes whether they know the txid at all (DAPI
-//! `getTransaction`, served from the evonode's transaction index); a node that
-//! knows it rules out a dead verdict.
+//! The probe uses the positive answers: a node holding the transaction makes
+//! it accepted, and nodes having it in a block make it mined. A refusal never
+//! settles anything. Proving that a transaction can never land would need the
+//! finality of whatever spent its input, which these answers do not show — a
+//! node lagging behind a parent's block, an ancestor still propagating, or a
+//! competing spend in a block that can still be reorged all look the same. So
+//! a refusal only sends the probe to ask whether the txid is known at all
+//! (DAPI `getTransaction`, served from the evonode's transaction index): the
+//! third row is a *mined* transaction whose outputs are all spent (measured
+//! on testnet 2026-09-29: `e758f06a…`, block 1560020, both outputs spent →
+//! `-25`), and the lookup is what finds it. Otherwise the transaction stays
+//! unresolved, with the refusal in the reason.
 //!
 //! Mined needs two distinct nodes reporting the transaction in a block
 //! ([`MINED_QUORUM`]); one such report makes it accepted — it exists — and the
@@ -57,29 +57,23 @@ use dash_sdk::dapi_grpc::core::v0::{
 };
 use dash_sdk::dapi_grpc::tonic::Code;
 use dashcore::consensus;
-use dashcore::hashes::Hash;
 use dashcore::{Transaction, Txid};
 
-/// Core reject reasons that prove the transaction can never be mined as it
-/// stands.
+/// Core reject reasons about the transaction's inputs.
 ///
 /// - `bad-txns-inputs-missingorspent`: an input is neither in the UTXO set
 ///   nor created by anything in this node's mempool. `Missing inputs` is the
-///   older spelling of the same check.
+///   older spelling of the same check. Also what a mined transaction whose
+///   outputs are all spent gets.
 /// - `tx-txlock-conflict`: an input is already spent by an InstantSend-locked
-///   transaction, which is final.
+///   transaction.
 ///
-/// A node's `-25` alone is never taken as proof. It is also what a node that
-/// has not yet seen one of the transaction's unconfirmed parents answers
-/// (the wallet-side resolver only probes chain roots for that reason), what a
-/// node lagging behind the tip answers (hence [`DEAD_QUORUM`]: two distinct
-/// nodes), and what a mined transaction whose outputs are all spent gets
-/// (hence the txid lookup in [`confirm_by_lookup`]).
+/// Neither settles the transaction (see the module docs); [`REFUSAL_QUORUM`]
+/// of them send the probe to txid lookups.
 ///
-/// `txn-mempool-conflict` is deliberately absent: it means another,
-/// unconfirmed and not IS-locked, transaction spends the same input, and
-/// either one may still be mined — no verdict.
-const DEAD_REASONS: &[&str] = &[
+/// `txn-mempool-conflict` is deliberately absent: another, unconfirmed and
+/// not IS-locked, transaction spends the same input — nothing to look up.
+const REFUSAL_REASONS: &[&str] = &[
     "bad-txns-inputs-missingorspent",
     "missing inputs",
     "tx-txlock-conflict",
@@ -93,10 +87,10 @@ pub(crate) enum NodeVerdict {
     Accepted,
     /// The node has the transaction in a block (`-27`).
     Mined,
-    /// The node proved the transaction can never be mined as it stands.
-    Dead { reason: String },
-    /// No verdict: transport failure, timeout, or a rejection that proves
-    /// nothing (such as `txn-mempool-conflict`).
+    /// The node refused it for its inputs ([`REFUSAL_REASONS`]).
+    Refused { reason: String },
+    /// No verdict: transport failure, timeout, or another rejection (such as
+    /// `txn-mempool-conflict`).
     Unknown { reason: String },
 }
 
@@ -106,8 +100,11 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
         return NodeVerdict::Mined;
     }
     let lowered = message.to_ascii_lowercase();
-    if DEAD_REASONS.iter().any(|reason| lowered.contains(reason)) {
-        return NodeVerdict::Dead {
+    if REFUSAL_REASONS
+        .iter()
+        .any(|reason| lowered.contains(reason))
+    {
+        return NodeVerdict::Refused {
             reason: message.to_string(),
         };
     }
@@ -126,32 +123,16 @@ pub enum ProbeVerdict {
     /// Two different nodes have the transaction in a block. Final — there is
     /// nothing left to ask, even if this wallet has not seen that block yet.
     Mined,
-    /// Two different nodes refused it for the same class of reason in
-    /// [`DEAD_REASONS`], and two different nodes answered `getTransaction`
-    /// with NotFound: it is not in a block. A conflict with an
-    /// InstantSend-locked spend is final as it stands. For missing or spent
-    /// inputs, every parent it spends from is also in a ChainLocked block by
-    /// [`MINED_QUORUM`] distinct nodes and has the named output, so the input
-    /// existed and is spent — a parent nobody has seen yet, or one not yet
-    /// ChainLocked, leaves it unresolved — and the resolver takes it as final
-    /// only when a probe at least a block later finds the same
-    /// ([`ProbeReport::dead_needs_repeat`]). It can never be mined.
-    Dead { reason: String },
-    /// Not enough evidence either way; the transaction stays ambiguous.
+    /// Not enough evidence that it landed; the transaction stays ambiguous.
+    /// The reason says what the nodes answered, refusals included.
     Unresolved { reason: String },
 }
 
 /// Whether one node knows a txid (DAPI `getTransaction`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LookupAnswer {
-    /// The node has the transaction; `mined` when it is in a block,
-    /// `chain_locked` when that block is ChainLocked. `outputs` is how many
-    /// outputs the transaction has, when the node sent its bytes.
-    Known {
-        mined: bool,
-        chain_locked: bool,
-        outputs: Option<usize>,
-    },
+    /// The node has the transaction; `mined` when it is in a block.
+    Known { mined: bool },
     /// The node answered and does not have it.
     NotFound,
     /// No answer: transport failure, timeout, anything else.
@@ -170,23 +151,15 @@ pub(crate) trait NodeSubmitter: Send + Sync {
 /// How many submissions one probe may spend looking for a verdict.
 const MAX_SUBMISSIONS_PER_PROBE: usize = 4;
 
-/// How many txid lookups one probe may spend: to confirm a dead verdict, or to
-/// get a second opinion on one node's "in a block".
+/// How many txid lookups one probe may spend: after refusals, or to get a
+/// second opinion on one node's "in a block".
 const MAX_LOOKUPS_PER_PROBE: usize = 4;
 
-/// How many parent lookups one probe may spend before a `missingorspent`
-/// dead verdict: each distinct parent needs [`MINED_QUORUM`] distinct nodes
-/// reporting it in a block.
-const MAX_PARENT_LOOKUPS_PER_PROBE: usize = 8;
-
-/// How many *distinct* nodes must independently prove a transaction dead.
-///
-/// One node is not enough: a node lagging behind the tip has not seen a
-/// recently confirmed parent and answers `missingorspent` for a transaction
-/// that is perfectly valid. Two unrelated evonodes lagging on the same parent
-/// at the same time is far less likely, and the cost of waiting for a second
-/// opinion is one more request.
-const DEAD_QUORUM: usize = 2;
+/// How many *distinct* nodes must refuse a transaction for its inputs before
+/// the probe looks the txid up. One refusal may be a node lagging behind the
+/// tip; two make it worth asking whether it is a mined transaction whose
+/// outputs are all spent.
+const REFUSAL_QUORUM: usize = 2;
 
 /// How many *distinct* nodes must report a transaction in a block before it
 /// counts as mined — final, never asked about again, its children probed in
@@ -214,11 +187,6 @@ pub trait AcceptanceProbe: Send + Sync + 'static {
 pub struct ProbeReport {
     pub verdict: ProbeVerdict,
     pub in_block_by: BTreeSet<String>,
-    /// A `Dead` from missing or spent inputs: the resolver takes it as final
-    /// only once a later probe, at least a block later, finds the same — a
-    /// node lagging behind a block that confirms a parent answers the same
-    /// way for a valid spend. A lock conflict needs no second look.
-    pub dead_needs_repeat: bool,
 }
 
 impl From<ProbeVerdict> for ProbeReport {
@@ -226,53 +194,24 @@ impl From<ProbeVerdict> for ProbeReport {
         Self {
             verdict,
             in_block_by: BTreeSet::new(),
-            dead_needs_repeat: false,
         }
     }
-}
-
-/// Which proof a node's refusal offers. Each needs its own quorum of distinct
-/// nodes: one lock conflict and one missing input are not two of either.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RefusalClass {
-    /// `tx-txlock-conflict`: an input is spent by an InstantSend-locked
-    /// transaction — final on its own.
-    LockConflict,
-    /// `missingorspent` / `Missing inputs`: final only once every parent is
-    /// ChainLocked and the refusal holds a block later.
-    MissingOrSpent,
-}
-
-impl RefusalClass {
-    fn of(reason: &str) -> Self {
-        if reason.to_ascii_lowercase().contains("tx-txlock-conflict") {
-            Self::LockConflict
-        } else {
-            Self::MissingOrSpent
-        }
-    }
-}
-
-/// Distinct identified nodes behind one refusal class, and the first reason.
-#[derive(Default)]
-struct Refusals {
-    nodes: HashSet<String>,
-    reason: Option<String>,
 }
 
 /// Evidence rules shared by every probe: a node holding the transaction in its
-/// mempool makes it accepted; one reporting it in a block rules out dead and
-/// sends the probe to lookups for a second opinion ([`MINED_QUORUM`] distinct
-/// nodes make it mined); dead needs [`DEAD_QUORUM`] distinct nodes refusing
-/// it for its inputs **and** [`DEAD_QUORUM`] distinct nodes not knowing its
-/// txid, with none knowing it; give up after [`MAX_SUBMISSIONS_PER_PROBE`]
-/// submissions and [`MAX_LOOKUPS_PER_PROBE`] lookups.
+/// mempool makes it accepted; one reporting it in a block sends the probe to
+/// lookups for a second opinion ([`MINED_QUORUM`] distinct nodes make it
+/// mined); [`REFUSAL_QUORUM`] distinct nodes refusing it for its inputs send
+/// the probe to lookups too, which find a mined transaction whose outputs are
+/// all spent and otherwise leave it unresolved; give up after
+/// [`MAX_SUBMISSIONS_PER_PROBE`] submissions and [`MAX_LOOKUPS_PER_PROBE`]
+/// lookups.
 pub(crate) async fn probe_with(
     submitter: &dyn NodeSubmitter,
     transaction: &Transaction,
 ) -> ProbeReport {
-    let mut lock_conflicts = Refusals::default();
-    let mut missing_inputs = Refusals::default();
+    let mut refusing_nodes: HashSet<String> = HashSet::new();
+    let mut first_refusal: Option<String> = None;
     let mut last_other = String::from("no submission was answered");
     let report = ProbeReport::from;
 
@@ -287,8 +226,8 @@ pub(crate) async fn probe_with(
         match verdict {
             NodeVerdict::Accepted => return report(ProbeVerdict::Accepted),
             NodeVerdict::Mined => {
-                // In a block by this node's word: not dead. A second opinion
-                // comes from a lookup, not from sending it again.
+                // In a block by this node's word. A second opinion comes from
+                // a lookup, not from sending it again.
                 return confirm_by_lookup(
                     submitter,
                     transaction,
@@ -296,24 +235,19 @@ pub(crate) async fn probe_with(
                 )
                 .await;
             }
-            NodeVerdict::Dead { reason } => {
-                let class = RefusalClass::of(&reason);
-                let refusals = match class {
-                    RefusalClass::LockConflict => &mut lock_conflicts,
-                    RefusalClass::MissingOrSpent => &mut missing_inputs,
-                };
-                // A dead verdict from an unidentified node cannot count
-                // towards the quorum — it might be the node we already heard.
+            NodeVerdict::Refused { reason } => {
+                // An unidentified node cannot count towards the quorum — it
+                // might be the node we already heard.
                 if let Some(node) = node {
-                    refusals.nodes.insert(node);
+                    refusing_nodes.insert(node);
                 }
-                let first_reason = refusals.reason.get_or_insert(reason);
-                if refusals.nodes.len() >= DEAD_QUORUM {
-                    let reason = first_reason.clone();
+                let first = first_refusal.get_or_insert(reason);
+                if refusing_nodes.len() >= REFUSAL_QUORUM {
+                    let reason = first.clone();
                     return confirm_by_lookup(
                         submitter,
                         transaction,
-                        LookupFor::Dead { reason, class },
+                        LookupFor::Refused { reason },
                     )
                     .await;
                 }
@@ -324,22 +258,13 @@ pub(crate) async fn probe_with(
         }
     }
 
-    let refused = [&lock_conflicts, &missing_inputs]
-        .into_iter()
-        .filter_map(|refusals| {
-            refusals.reason.as_ref().map(|reason| {
-                format!(
-                    "{} of {DEAD_QUORUM} nodes needed refused it as {reason}",
-                    refusals.nodes.len()
-                )
-            })
-        })
-        .collect::<Vec<_>>();
     report(ProbeVerdict::Unresolved {
-        reason: if refused.is_empty() {
-            last_other
-        } else {
-            format!("{}; last other answer: {last_other}", refused.join("; "))
+        reason: match first_refusal {
+            None => last_other,
+            Some(reason) => format!(
+                "{} of {REFUSAL_QUORUM} nodes needed refused it as {reason}; last other answer: {last_other}",
+                refusing_nodes.len()
+            ),
         },
     })
 }
@@ -347,11 +272,11 @@ pub(crate) async fn probe_with(
 /// Why a probe turns to lookups.
 enum LookupFor {
     /// A submission answered "already in a block" (from `seen_by`): a second
-    /// node is asked; dead is ruled out.
+    /// node is asked.
     SecondOpinion { seen_by: Option<String> },
-    /// The refusal quorum for `reason` (of `class`) is met: dead, unless a
-    /// node knows it.
-    Dead { reason: String, class: RefusalClass },
+    /// [`REFUSAL_QUORUM`] nodes refused it as `reason`: is it a mined
+    /// transaction whose outputs are all spent?
+    Refused { reason: String },
 }
 
 /// Nodes that reported the transaction in a block, by submission or lookup.
@@ -375,11 +300,9 @@ impl MinedEvidence {
 }
 
 /// Settle by `getTransaction` lookups. A node that knows the txid in its
-/// mempool makes it accepted; in a block, counts towards [`MINED_QUORUM`] and
-/// rules out dead. With `refused` — the dead quorum of refusals is met — only
-/// [`DEAD_QUORUM`] distinct nodes not knowing the txid, and none knowing it,
-/// make it dead: a rejection for missing or spent inputs is also what a
-/// *mined* transaction whose outputs are all spent gets (see the module docs).
+/// mempool makes it accepted; in a block, counts towards [`MINED_QUORUM`].
+/// After refusals, nothing better than unresolved comes of nodes not knowing
+/// it.
 async fn confirm_by_lookup(
     submitter: &dyn NodeSubmitter,
     transaction: &Transaction,
@@ -392,12 +315,11 @@ async fn confirm_by_lookup(
             mined.add(seen_by);
             None
         }
-        LookupFor::Dead { reason, class } => Some((reason, class)),
+        LookupFor::Refused { reason } => Some(reason),
     };
     let report = |verdict, mined: &MinedEvidence| ProbeReport {
         verdict,
         in_block_by: mined.nodes.iter().cloned().collect(),
-        dead_needs_repeat: false,
     };
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
@@ -410,150 +332,38 @@ async fn confirm_by_lookup(
             "broadcast probe: txid lookup answered"
         );
         match answer {
-            LookupAnswer::Known { mined: true, .. } => {
+            LookupAnswer::Known { mined: true } => {
                 if mined.add(node) {
                     return report(ProbeVerdict::Mined, &mined);
                 }
             }
-            LookupAnswer::Known { mined: false, .. } => {
-                return report(ProbeVerdict::Accepted, &mined)
-            }
+            LookupAnswer::Known { mined: false } => return report(ProbeVerdict::Accepted, &mined),
             LookupAnswer::NotFound => {
                 if let Some(node) = node {
                     not_found.insert(node);
                 }
-                if let Some((reason, class)) = &refused {
-                    if !mined.seen && not_found.len() >= DEAD_QUORUM {
-                        let dead = || ProbeVerdict::Dead {
-                            reason: reason.clone(),
-                        };
-                        if *class == RefusalClass::LockConflict {
-                            return report(dead(), &mined);
-                        }
-                        return match unproven_parent(submitter, transaction).await {
-                            None => ProbeReport {
-                                dead_needs_repeat: true,
-                                ..report(dead(), &mined)
-                            },
-                            Some(why) => report(
-                                ProbeVerdict::Unresolved {
-                                    reason: format!("refused as {reason}, but {why}"),
-                                },
-                                &mined,
-                            ),
-                        };
-                    }
+                // Nobody has it in a block and enough nodes say so: asking on
+                // learns nothing more.
+                if refused.is_some() && !mined.seen && not_found.len() >= REFUSAL_QUORUM {
+                    break;
                 }
             }
             LookupAnswer::Unknown { reason } => last_unknown = reason,
         }
     }
     // A node's word that it is in a block: it exists, not settled as final.
-    let Some((reason, _)) = refused.filter(|_| !mined.seen) else {
-        // A second opinion that never came: it exists by one node's word.
+    let Some(reason) = refused.filter(|_| !mined.seen) else {
         return report(ProbeVerdict::Accepted, &mined);
     };
     report(
         ProbeVerdict::Unresolved {
             reason: format!(
-                "refused as {reason}, but only {} of {DEAD_QUORUM} nodes confirmed the txid is unknown; last lookup answer: {last_unknown}",
+                "refused as {reason}; {} node(s) do not know the txid; last other lookup answer: {last_unknown}",
                 not_found.len()
             ),
         },
         &mined,
     )
-}
-
-/// Why a `missingorspent` refusal does not yet prove the transaction dead, or
-/// `None` when it does.
-///
-/// Nodes refuse a transaction whose input they cannot find — spent by someone
-/// else, or created by a parent they have not seen yet. Only the second can
-/// still change: an unconfirmed ancestor this wallet does not record (behind
-/// an incoming payment) may simply not have reached those nodes. So every
-/// distinct parent must be in a ChainLocked block by [`MINED_QUORUM`]
-/// distinct nodes — final, not about to be reorged out — and must have the
-/// output each input names; then the output exists, is final, and is gone:
-/// spent by someone else. A refusing node that lagged behind the parent's
-/// block answers the same way for a valid spend; that is what the resolver's
-/// repeat a block later rules out ([`ProbeReport::dead_needs_repeat`]).
-async fn unproven_parent(
-    submitter: &dyn NodeSubmitter,
-    transaction: &Transaction,
-) -> Option<String> {
-    let mut parents: Vec<(Txid, Vec<u32>)> = Vec::new();
-    for input in &transaction.input {
-        let outpoint = input.previous_output;
-        if outpoint.txid == Txid::all_zeros() {
-            continue;
-        }
-        match parents.iter_mut().find(|(txid, _)| *txid == outpoint.txid) {
-            Some((_, vouts)) => vouts.push(outpoint.vout),
-            None => parents.push((outpoint.txid, vec![outpoint.vout])),
-        }
-    }
-    let mut budget = MAX_PARENT_LOOKUPS_PER_PROBE;
-    for (parent, vouts) in parents {
-        let mut locked = MinedEvidence::default();
-        let mut not_found: HashSet<String> = HashSet::new();
-        loop {
-            if budget == 0 {
-                return Some(format!(
-                    "parent {parent} could not be confirmed within the lookup budget"
-                ));
-            }
-            budget -= 1;
-            let (node, answer) = submitter.lookup(&parent).await;
-            tracing::debug!(
-                txid = %transaction.txid(),
-                parent = %parent,
-                node = node.as_deref().unwrap_or("unidentified"),
-                ?answer,
-                "broadcast probe: parent lookup answered"
-            );
-            match answer {
-                LookupAnswer::Known {
-                    mined: true,
-                    chain_locked: true,
-                    outputs,
-                } => {
-                    let Some(outputs) = outputs else {
-                        return Some(format!("parent {parent}'s outputs are unknown"));
-                    };
-                    if let Some(vout) = vouts.iter().find(|vout| **vout as usize >= outputs) {
-                        return Some(format!(
-                            "parent {parent} has no output {vout} (it has {outputs})"
-                        ));
-                    }
-                    if locked.add(node) {
-                        break;
-                    }
-                }
-                LookupAnswer::Known { mined: true, .. } => {
-                    return Some(format!(
-                        "parent {parent} is in a block that is not ChainLocked yet"
-                    ));
-                }
-                LookupAnswer::Known { mined: false, .. } => {
-                    return Some(format!(
-                        "parent {parent} is unconfirmed (in a node's mempool)"
-                    ));
-                }
-                LookupAnswer::NotFound => {
-                    if let Some(node) = node {
-                        not_found.insert(node);
-                    }
-                    if not_found.len() >= DEAD_QUORUM {
-                        return Some(format!(
-                            "parent {parent} is unknown to {DEAD_QUORUM} nodes (an ancestor may still be propagating)"
-                        ));
-                    }
-                }
-                LookupAnswer::Unknown { .. } => {}
-            }
-        }
-    }
-    None
 }
 
 /// What a node's `getTransaction` answer says. A block hash with no height and
@@ -566,13 +376,7 @@ fn lookup_answer(tx: &GetTransactionResponse) -> LookupAnswer {
             reason: "known only from a block off the active chain".to_string(),
         };
     }
-    LookupAnswer::Known {
-        mined,
-        chain_locked: mined && tx.is_chain_locked,
-        outputs: consensus::deserialize::<Transaction>(&tx.transaction)
-            .ok()
-            .map(|transaction| transaction.output.len()),
-    }
+    LookupAnswer::Known { mined }
 }
 
 /// One node per request: the probe decides whether to ask another, and it has
@@ -665,10 +469,8 @@ impl AcceptanceProbe for DapiAcceptanceProbe {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::VecDeque;
     use std::sync::Mutex;
-
-    use dashcore::{OutPoint, TxIn};
 
     use dash_sdk::dapi_grpc::tonic::Code;
 
@@ -684,35 +486,12 @@ mod tests {
         }
     }
 
-    fn parent() -> Txid {
-        Txid::from_byte_array([7; 32])
-    }
-
-    /// A transaction spending output 0 of [`parent`].
-    fn spending_parent() -> Transaction {
-        Transaction {
-            input: vec![TxIn {
-                previous_output: OutPoint {
-                    txid: parent(),
-                    vout: 0,
-                },
-                ..TxIn::default()
-            }],
-            ..transaction()
-        }
-    }
-
-    /// Lookup answers in order: the node that answered, and what it said.
-    type ScriptedLookups = VecDeque<(Option<&'static str>, LookupAnswer)>;
-
     /// Replays scripted node answers in order and counts calls. Lookups
-    /// default to two distinct nodes not knowing the txid, so a dead quorum
-    /// is confirmed unless a test scripts otherwise.
+    /// default to two distinct nodes not knowing the txid, unless a test
+    /// scripts otherwise.
     struct ScriptedNodes {
         answers: Mutex<VecDeque<(Option<&'static str>, NodeVerdict)>>,
         lookups: Mutex<VecDeque<(Option<&'static str>, LookupAnswer)>>,
-        /// Lookups of a parent txid, answered from here when scripted.
-        parent_lookups: Mutex<HashMap<Txid, ScriptedLookups>>,
         submissions: Mutex<usize>,
         lookups_made: Mutex<usize>,
     }
@@ -735,22 +514,9 @@ mod tests {
             Self {
                 answers: Mutex::new(answers.into()),
                 lookups: Mutex::new(lookups.into()),
-                parent_lookups: Mutex::new(HashMap::new()),
                 submissions: Mutex::new(0),
                 lookups_made: Mutex::new(0),
             }
-        }
-
-        fn with_parent(
-            self,
-            txid: Txid,
-            answers: Vec<(Option<&'static str>, LookupAnswer)>,
-        ) -> Self {
-            self.parent_lookups
-                .lock()
-                .expect("parent lookups")
-                .insert(txid, answers.into());
-            self
         }
 
         fn submissions(&self) -> usize {
@@ -780,22 +546,8 @@ mod tests {
             (node.map(str::to_string), verdict)
         }
 
-        async fn lookup(&self, txid: &Txid) -> (Option<String>, LookupAnswer) {
+        async fn lookup(&self, _txid: &Txid) -> (Option<String>, LookupAnswer) {
             *self.lookups_made.lock().expect("lookups") += 1;
-            if let Some(queue) = self
-                .parent_lookups
-                .lock()
-                .expect("parent lookups")
-                .get_mut(txid)
-            {
-                let (node, answer) = queue.pop_front().unwrap_or((
-                    None,
-                    LookupAnswer::Unknown {
-                        reason: "script exhausted".to_string(),
-                    },
-                ));
-                return (node.map(str::to_string), answer);
-            }
             let (node, answer) = self
                 .lookups
                 .lock()
@@ -811,31 +563,22 @@ mod tests {
         }
     }
 
-    /// In a ChainLocked block, with `outputs` outputs.
-    fn locked_with(outputs: usize) -> LookupAnswer {
-        LookupAnswer::Known {
-            mined: true,
-            chain_locked: true,
-            outputs: Some(outputs),
-        }
+    fn in_block() -> LookupAnswer {
+        LookupAnswer::Known { mined: true }
     }
 
     fn in_mempool() -> LookupAnswer {
-        LookupAnswer::Known {
-            mined: false,
-            chain_locked: false,
-            outputs: None,
-        }
+        LookupAnswer::Known { mined: false }
     }
 
     fn conflict() -> NodeVerdict {
-        NodeVerdict::Dead {
+        NodeVerdict::Refused {
             reason: "Transaction is rejected: tx-txlock-conflict".to_string(),
         }
     }
 
-    fn dead() -> NodeVerdict {
-        NodeVerdict::Dead {
+    fn refused() -> NodeVerdict {
+        NodeVerdict::Refused {
             reason: "bad-txns-inputs-missingorspent".to_string(),
         }
     }
@@ -844,6 +587,10 @@ mod tests {
         NodeVerdict::Unknown {
             reason: "Unavailable: connection refused".to_string(),
         }
+    }
+
+    fn is_unresolved(verdict: &ProbeVerdict) -> bool {
+        matches!(verdict, ProbeVerdict::Unresolved { .. })
     }
 
     #[test]
@@ -859,23 +606,25 @@ mod tests {
             (
                 Code::InvalidArgument,
                 "invalid transaction: bad-txns-inputs-missingorspent",
-                dead(),
+                NodeVerdict::Refused {
+                    reason: "invalid transaction: bad-txns-inputs-missingorspent".to_string(),
+                },
             ),
             // -25, rs-dapi.
             (
                 Code::FailedPrecondition,
                 "Transaction is rejected: bad-txns-inputs-missingorspent",
-                dead(),
+                NodeVerdict::Refused {
+                    reason: "Transaction is rejected: bad-txns-inputs-missingorspent".to_string(),
+                },
             ),
-            // -26 against an IS-locked spend: final.
+            // -26 against an IS-locked spend.
             (
                 Code::FailedPrecondition,
                 "Transaction is rejected: tx-txlock-conflict",
-                NodeVerdict::Dead {
-                    reason: "Transaction is rejected: tx-txlock-conflict".to_string(),
-                },
+                conflict(),
             ),
-            // -26 against an unconfirmed spend: not final.
+            // -26 against an unconfirmed spend.
             (
                 Code::FailedPrecondition,
                 "Transaction is rejected: txn-mempool-conflict",
@@ -887,11 +636,11 @@ mod tests {
         ];
 
         for (code, message, expected) in cases {
-            let verdict = classify_failed_submission(code, message);
-            match (&verdict, &expected) {
-                (NodeVerdict::Dead { .. }, NodeVerdict::Dead { .. }) => {}
-                _ => assert_eq!(verdict, expected, "{code:?} {message}"),
-            }
+            assert_eq!(
+                classify_failed_submission(code, message),
+                expected,
+                "{code:?} {message}"
+            );
         }
     }
 
@@ -919,7 +668,7 @@ mod tests {
     #[tokio::test]
     async fn should_accept_as_soon_as_any_node_holds_the_transaction() {
         let nodes = ScriptedNodes::new(vec![
-            (Some("a"), dead()),
+            (Some("a"), refused()),
             (Some("b"), NodeVerdict::Accepted),
         ]);
 
@@ -930,47 +679,64 @@ mod tests {
         assert_eq!(nodes.submissions(), 2);
     }
 
+    /// Refusals never settle a transaction: a lagging node, an ancestor
+    /// still propagating and a reorgable competing spend all look alike.
     #[tokio::test]
-    async fn should_call_a_transaction_dead_only_when_two_distinct_nodes_prove_it() {
-        let nodes = ScriptedNodes::new(vec![(Some("a"), dead()), (Some("b"), dead())]);
+    async fn should_never_settle_a_transaction_on_refusals_and_unknown_txids() {
+        for answers in [
+            vec![(Some("a"), refused()), (Some("b"), refused())],
+            vec![(Some("a"), conflict()), (Some("b"), conflict())],
+            vec![(Some("a"), conflict()), (Some("b"), refused())],
+        ] {
+            let nodes = ScriptedNodes::new(answers);
+            let verdict = probe_with(&nodes, &transaction()).await.verdict;
 
-        assert!(matches!(
-            probe_with(&nodes, &transaction()).await.verdict,
-            ProbeVerdict::Dead { .. }
-        ));
-        assert_eq!(nodes.submissions(), 2);
+            assert!(is_unresolved(&verdict), "{verdict:?}");
+            assert_eq!(nodes.lookups_made(), REFUSAL_QUORUM);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_refusal_in_the_unresolved_reason() {
+        let nodes = ScriptedNodes::new(vec![(Some("a"), conflict()), (Some("b"), conflict())]);
+
+        let ProbeVerdict::Unresolved { reason } = probe_with(&nodes, &transaction()).await.verdict
+        else {
+            panic!("expected unresolved");
+        };
+        assert!(reason.contains("tx-txlock-conflict"), "{reason}");
     }
 
     /// A lagging node answers `missingorspent` for a valid transaction. Hearing
     /// the same node twice must not look like two opinions.
     #[tokio::test]
-    async fn should_not_count_the_same_node_twice_towards_the_dead_quorum() {
+    async fn should_not_count_the_same_node_twice_towards_the_refusal_quorum() {
         let nodes = ScriptedNodes::new(vec![
-            (Some("a"), dead()),
-            (Some("a"), dead()),
-            (Some("a"), dead()),
-            (Some("a"), dead()),
+            (Some("a"), refused()),
+            (Some("a"), refused()),
+            (Some("a"), refused()),
+            (Some("a"), refused()),
         ]);
 
-        assert!(matches!(
-            probe_with(&nodes, &transaction()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
         ));
         assert_eq!(nodes.submissions(), MAX_SUBMISSIONS_PER_PROBE);
+        assert_eq!(nodes.lookups_made(), 0);
     }
 
     #[tokio::test]
-    async fn should_not_count_an_unidentified_node_towards_the_dead_quorum() {
-        let nodes = ScriptedNodes::new(vec![(Some("a"), dead()), (None, dead())]);
+    async fn should_not_count_an_unidentified_node_towards_the_refusal_quorum() {
+        let nodes = ScriptedNodes::new(vec![(Some("a"), refused()), (None, refused())]);
 
-        assert!(matches!(
-            probe_with(&nodes, &transaction()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
         ));
+        assert_eq!(nodes.lookups_made(), 0);
     }
 
     #[tokio::test]
-    async fn should_stay_unresolved_when_nodes_only_refuse_or_fail() {
+    async fn should_stay_unresolved_when_nodes_only_fail() {
         let nodes = ScriptedNodes::new(vec![
             (
                 Some("a"),
@@ -983,36 +749,35 @@ mod tests {
             (Some("d"), unknown()),
         ]);
 
-        assert!(matches!(
-            probe_with(&nodes, &transaction()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
         ));
         assert_eq!(nodes.submissions(), MAX_SUBMISSIONS_PER_PROBE);
     }
 
     #[tokio::test]
-    async fn should_reach_the_quorum_across_intervening_failures() {
+    async fn should_reach_the_refusal_quorum_across_intervening_failures() {
         let nodes = ScriptedNodes::new(vec![
-            (Some("a"), dead()),
+            (Some("a"), refused()),
             (Some("b"), unknown()),
-            (Some("c"), dead()),
+            (Some("c"), refused()),
         ]);
 
-        assert!(matches!(
-            probe_with(&nodes, &transaction()).await.verdict,
-            ProbeVerdict::Dead { .. }
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
         ));
         assert_eq!(nodes.submissions(), 3);
+        assert_eq!(nodes.lookups_made(), REFUSAL_QUORUM);
     }
 
     /// Core answers `missingorspent` for a mined transaction whose outputs
-    /// are all spent (testnet `e758f06a…`, 2026-09-29). A node that still
-    /// knows the txid in a block must turn the dead quorum into Mined.
+    /// are all spent (testnet `e758f06a…`, 2026-09-29). Nodes that still know
+    /// the txid in a block must turn the refusals into Mined.
     #[tokio::test]
-    async fn should_report_mined_for_a_refused_transaction_a_node_has_in_a_block() {
+    async fn should_report_mined_for_a_refused_transaction_nodes_have_in_a_block() {
         let nodes = ScriptedNodes::with_lookups(
-            vec![(Some("a"), dead()), (Some("b"), dead())],
-            vec![(Some("c"), locked_with(2)), (Some("d"), locked_with(2))],
+            vec![(Some("a"), refused()), (Some("b"), refused())],
+            vec![(Some("c"), in_block()), (Some("d"), in_block())],
         );
 
         assert_eq!(
@@ -1028,11 +793,11 @@ mod tests {
     async fn should_report_mined_only_when_two_distinct_nodes_have_it_in_a_block() {
         let two = ScriptedNodes::with_lookups(
             vec![(Some("a"), NodeVerdict::Mined)],
-            vec![(Some("b"), locked_with(2))],
+            vec![(Some("b"), in_block())],
         );
         let same_twice = ScriptedNodes::with_lookups(
             vec![(Some("a"), NodeVerdict::Mined)],
-            vec![(Some("a"), locked_with(2))],
+            vec![(Some("a"), in_block())],
         );
 
         assert_eq!(
@@ -1047,14 +812,14 @@ mod tests {
         );
     }
 
-    /// A node that has the transaction in a block rules out dead, whatever
+    /// A node that has the transaction in a block makes it exist, whatever
     /// the refusals and lookups that follow say.
     #[tokio::test]
-    async fn should_never_call_dead_a_transaction_a_node_has_in_a_block() {
+    async fn should_accept_a_refused_transaction_one_node_has_in_a_block() {
         let refused_then_seen_mined = ScriptedNodes::with_lookups(
-            vec![(Some("a"), dead()), (Some("b"), dead())],
+            vec![(Some("a"), refused()), (Some("b"), refused())],
             vec![
-                (Some("c"), locked_with(2)),
+                (Some("c"), in_block()),
                 (Some("d"), LookupAnswer::NotFound),
                 (Some("e"), LookupAnswer::NotFound),
             ],
@@ -1080,22 +845,8 @@ mod tests {
             })
         };
 
-        assert_eq!(
-            answer(Vec::new(), 0, 0),
-            LookupAnswer::Known {
-                mined: false,
-                chain_locked: false,
-                outputs: None,
-            }
-        );
-        assert_eq!(
-            answer(vec![1; 32], 100, 3),
-            LookupAnswer::Known {
-                mined: true,
-                chain_locked: false,
-                outputs: None,
-            }
-        );
+        assert_eq!(answer(Vec::new(), 0, 0), in_mempool());
+        assert_eq!(answer(vec![1; 32], 100, 3), in_block());
         assert!(matches!(
             answer(vec![1; 32], 0, 0),
             LookupAnswer::Unknown { .. }
@@ -1103,25 +854,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_confirm_dead_only_when_two_distinct_nodes_do_not_know_the_txid() {
+    async fn should_stop_looking_up_once_two_distinct_nodes_do_not_know_the_txid() {
         let nodes = ScriptedNodes::with_lookups(
-            vec![(Some("a"), dead()), (Some("b"), dead())],
+            vec![(Some("a"), refused()), (Some("b"), refused())],
             vec![
                 (Some("c"), LookupAnswer::NotFound),
                 (Some("c"), LookupAnswer::NotFound),
                 (None, LookupAnswer::NotFound),
-                (
-                    Some("d"),
-                    LookupAnswer::Unknown {
-                        reason: "Unavailable".to_string(),
-                    },
-                ),
+                (Some("d"), LookupAnswer::NotFound),
             ],
         );
 
-        assert!(matches!(
-            probe_with(&nodes, &transaction()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
         ));
         assert_eq!(nodes.lookups_made(), MAX_LOOKUPS_PER_PROBE);
     }
@@ -1136,159 +881,17 @@ mod tests {
     }
 
     /// Refused for its inputs yet still in a node's mempool (a double-spend
-    /// race the node lost locally): not dead, not mined — keep asking.
+    /// race the node lost locally): not mined — keep asking.
     #[tokio::test]
     async fn should_accept_a_refused_transaction_a_node_holds_in_its_mempool() {
         let nodes = ScriptedNodes::with_lookups(
-            vec![(Some("a"), dead()), (Some("b"), dead())],
+            vec![(Some("a"), refused()), (Some("b"), refused())],
             vec![(Some("c"), in_mempool())],
         );
 
         assert_eq!(
             probe_with(&nodes, &transaction()).await.verdict,
             ProbeVerdict::Accepted
-        );
-    }
-
-    /// An incoming payment can depend on an unconfirmed ancestor this wallet
-    /// does not record. Nodes that have not seen it refuse the child for a
-    /// missing input — that is not proof it can never land.
-    #[tokio::test]
-    async fn should_stay_unresolved_when_a_parent_is_unknown_to_the_nodes() {
-        let nodes = ScriptedNodes::new(vec![(Some("a"), dead()), (Some("b"), dead())]).with_parent(
-            parent(),
-            vec![
-                (Some("c"), LookupAnswer::NotFound),
-                (Some("d"), LookupAnswer::NotFound),
-            ],
-        );
-
-        assert!(matches!(
-            probe_with(&nodes, &spending_parent()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
-        ));
-    }
-
-    #[tokio::test]
-    async fn should_stay_unresolved_when_a_parent_is_still_unconfirmed() {
-        let nodes = ScriptedNodes::new(vec![(Some("a"), dead()), (Some("b"), dead())])
-            .with_parent(parent(), vec![(Some("c"), in_mempool())]);
-
-        assert!(matches!(
-            probe_with(&nodes, &spending_parent()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
-        ));
-    }
-
-    /// Every parent in a block by two nodes: the missing input is final —
-    /// spent by someone else, or never one of the parent's outputs.
-    #[tokio::test]
-    async fn should_call_dead_when_every_parent_is_in_a_block() {
-        let nodes = ScriptedNodes::new(vec![(Some("a"), dead()), (Some("b"), dead())]).with_parent(
-            parent(),
-            vec![(Some("c"), locked_with(2)), (Some("d"), locked_with(2))],
-        );
-
-        let report = probe_with(&nodes, &spending_parent()).await;
-        assert!(matches!(report.verdict, ProbeVerdict::Dead { .. }));
-        assert!(
-            report.dead_needs_repeat,
-            "a missing-input Dead is final only when a later block repeats it"
-        )
-    }
-
-    #[tokio::test]
-    async fn should_stay_unresolved_when_a_parent_block_is_not_chain_locked() {
-        let unlocked = || LookupAnswer::Known {
-            mined: true,
-            chain_locked: false,
-            outputs: Some(2),
-        };
-        let nodes = ScriptedNodes::new(vec![(Some("a"), dead()), (Some("b"), dead())]).with_parent(
-            parent(),
-            vec![(Some("c"), unlocked()), (Some("d"), unlocked())],
-        );
-
-        assert!(matches!(
-            probe_with(&nodes, &spending_parent()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
-        ));
-    }
-
-    #[tokio::test]
-    async fn should_stay_unresolved_when_the_parent_has_no_such_output() {
-        let nodes = ScriptedNodes::new(vec![(Some("a"), dead()), (Some("b"), dead())]).with_parent(
-            parent(),
-            vec![(Some("c"), locked_with(0)), (Some("d"), locked_with(0))],
-        );
-
-        assert!(matches!(
-            probe_with(&nodes, &spending_parent()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
-        ));
-    }
-
-    /// One lock conflict and one missing input are not two of either: neither
-    /// order reaches a quorum, and the conflict's shortcut past the parent
-    /// checks is never borrowed.
-    #[tokio::test]
-    async fn should_not_mix_refusal_classes_towards_one_quorum_in_either_order() {
-        for answers in [
-            vec![(Some("a"), conflict()), (Some("b"), dead())],
-            vec![(Some("a"), dead()), (Some("b"), conflict())],
-        ] {
-            let nodes = ScriptedNodes::new(answers).with_parent(parent(), Vec::new());
-
-            let report = probe_with(&nodes, &spending_parent()).await;
-
-            assert!(
-                matches!(report.verdict, ProbeVerdict::Unresolved { .. }),
-                "{report:?}"
-            );
-            assert_eq!(nodes.lookups_made(), 0, "no quorum, nothing looked up");
-        }
-    }
-
-    #[tokio::test]
-    async fn should_call_dead_on_an_instantsend_lock_conflict_without_parent_lookups() {
-        let nodes = ScriptedNodes::new(vec![(Some("a"), conflict()), (Some("b"), conflict())])
-            .with_parent(parent(), Vec::new());
-
-        let report = probe_with(&nodes, &spending_parent()).await;
-        assert!(matches!(report.verdict, ProbeVerdict::Dead { .. }));
-        assert!(
-            !report.dead_needs_repeat,
-            "a lock conflict is final at once"
-        );
-        assert_eq!(
-            nodes.lookups_made(),
-            DEAD_QUORUM,
-            "only the txid itself is looked up"
-        );
-    }
-
-    #[tokio::test]
-    async fn should_give_up_on_parents_within_the_lookup_budget() {
-        let nodes = ScriptedNodes::new(vec![(Some("a"), dead()), (Some("b"), dead())]).with_parent(
-            parent(),
-            vec![
-                (
-                    Some("c"),
-                    LookupAnswer::Unknown {
-                        reason: "Unavailable".to_string()
-                    }
-                );
-                20
-            ],
-        );
-
-        assert!(matches!(
-            probe_with(&nodes, &spending_parent()).await.verdict,
-            ProbeVerdict::Unresolved { .. }
-        ));
-        assert_eq!(
-            nodes.lookups_made(),
-            DEAD_QUORUM + MAX_PARENT_LOOKUPS_PER_PROBE
         );
     }
 }

@@ -52,11 +52,10 @@ pub trait PlatformEventHandler: EventHandler {
     /// the network was asked about the root of its chain. `Accepted` means a
     /// node holds the transaction in its mempool (or one has it in a block);
     /// `Mined` that two distinct nodes have it in a block — in one probe or
-    /// over several of the same send; `Dead` that the transaction, or a
-    /// parent it spends, can never be mined (two distinct nodes refused it, two do not know it, and
-    /// none of the nodes asked in that probe has it in a block);
-    /// `Unresolved` that there is no verdict yet — the resolver asks again on
-    /// a later block. Nothing in the wallet changes either way.
+    /// over several of the same send; `Unresolved` that there is no verdict
+    /// yet — refusals included, since no node's answer proves a transaction
+    /// can never land; the resolver asks again on a later block. Nothing in
+    /// the wallet changes either way.
     ///
     /// Default impl is a no-op so existing handlers don't have to care.
     fn on_outgoing_transaction_probed(

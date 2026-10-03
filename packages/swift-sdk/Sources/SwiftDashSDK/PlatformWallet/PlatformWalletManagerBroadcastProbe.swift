@@ -6,10 +6,9 @@ import DashSDKFFI
 public enum OutgoingTransactionVerdict: Sendable, Equatable {
     /// A node holds the transaction: it is in a mempool or a block.
     case accepted
-    /// Two distinct nodes proved it can never be mined (for example its input
-    /// no longer exists). `reason` is diagnostic, never user-facing copy.
-    case dead(reason: String)
-    /// No verdict yet; the SDK asks again on a later block.
+    /// No verdict yet; the SDK asks again on a later block. A refusal by the
+    /// nodes asked lands here too: no answer proves a send can never land.
+    /// `reason` is diagnostic, never user-facing copy.
     case unresolved(reason: String)
 }
 
@@ -82,9 +81,9 @@ func outgoingTransactionProbedCallback(
     switch verdictCode {
     case UInt8(OUTGOING_PROBE_VERDICT_ACCEPTED):
         verdict = .accepted
-    case UInt8(OUTGOING_PROBE_VERDICT_DEAD):
-        verdict = .dead(reason: reason)
     default:
+        // UNRESOLVED, and the reserved OUTGOING_PROBE_VERDICT_DEAD, which
+        // this version never emits.
         verdict = .unresolved(reason: reason)
     }
     let event = OutgoingTransactionProbeEvent(

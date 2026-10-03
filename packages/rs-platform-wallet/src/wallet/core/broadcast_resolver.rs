@@ -6,8 +6,10 @@
 //! unconfirmed spend and nothing ever tells the user whether the payment
 //! landed. This module re-asks the network through
 //! [`AcceptanceProbe`](crate::broadcast_probe::AcceptanceProbe) and publishes
-//! the verdict; it **changes nothing** in the wallet. Cancelling a dead send is
-//! a separate, user-driven decision.
+//! the verdict; it **changes nothing** in the wallet. Verdicts are positive
+//! only — accepted or mined — or unresolved: no answer the probe gets proves
+//! that a transaction can never land (see
+//! [`broadcast_probe`](crate::broadcast_probe)).
 //!
 //! What is probed: the *roots* of the chains the wallet signed into — its
 //! unsettled sends (not in a block, not InstantSend-locked) plus the unsettled
@@ -19,10 +21,8 @@
 //! ever probed.
 //!
 //! What is published: verdicts per **own send**, which is what the host
-//! shows. A root's verdict goes to the root when it is the wallet's send; a
-//! dead root also takes every own send built on it (spending a dead
-//! transaction is dead too), including sends built on it after it was found
-//! dead. A root found in a block that the wallet has not
+//! shows. A root's verdict goes to the root when it is the wallet's send.
+//! A root found in a block that the wallet has not
 //! seen yet counts as settled, so the sends built on it become roots, due at
 //! the next pass.
 //! Only changes are published — Unresolved never replaces a decided verdict,
@@ -50,9 +50,8 @@
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
 //! InstantSend-locked transaction, a block that changed records, a sweep) or
-//! an `Uncertain` result for one of its transactions wakes it. `Dead` and
-//! `Mined` end the probing of a root; `Accepted` does not — a mempool is not
-//! settlement.
+//! an `Uncertain` result for one of its transactions wakes it. `Mined` ends
+//! the probing of a root; `Accepted` does not — a mempool is not settlement.
 //! Probes run only while the SPV client delivers blocks, i.e. while the app is
 //! in the foreground.
 //!
@@ -188,8 +187,6 @@ pub(crate) struct ChainGraph<'a> {
     /// Unsettled for the purpose of picking roots: every view except those a
     /// probe found mined.
     unsettled: BTreeSet<Txid>,
-    /// Unsettled transactions spending an output of each unsettled one.
-    children: HashMap<Txid, Vec<Txid>>,
 }
 
 impl<'a> ChainGraph<'a> {
@@ -204,24 +201,7 @@ impl<'a> ChainGraph<'a> {
             .filter(|txid| !mined.contains(*txid))
             .copied()
             .collect();
-        let mut children: HashMap<Txid, Vec<Txid>> = HashMap::new();
-        for txid in &unsettled {
-            let parents: BTreeSet<Txid> = by_txid[txid]
-                .transaction
-                .input
-                .iter()
-                .map(|input| input.previous_output.txid)
-                .filter(|parent| unsettled.contains(parent))
-                .collect();
-            for parent in parents {
-                children.entry(parent).or_default().push(*txid);
-            }
-        }
-        Self {
-            by_txid,
-            unsettled,
-            children,
-        }
+        Self { by_txid, unsettled }
     }
 
     fn is_own(&self, txid: &Txid) -> bool {
@@ -289,23 +269,6 @@ impl<'a> ChainGraph<'a> {
             .filter(|txid| self.is_root(txid))
             .collect()
     }
-
-    /// The wallet's own sends in `root`'s chain: `root` itself if it is one,
-    /// and every unsettled send built on it, transitively. A dead root takes
-    /// all of them with it.
-    pub(crate) fn own_in_chain(&self, root: &Txid) -> BTreeSet<Txid> {
-        let mut chain = BTreeSet::new();
-        let mut frontier = vec![*root];
-        while let Some(txid) = frontier.pop() {
-            if !chain.insert(txid) {
-                continue;
-            }
-            if let Some(children) = self.children.get(&txid) {
-                frontier.extend(children.iter().copied());
-            }
-        }
-        chain.into_iter().filter(|txid| self.is_own(txid)).collect()
-    }
 }
 
 /// The roots of `views` with nothing known to be mined — see [`ChainGraph::roots`].
@@ -370,9 +333,6 @@ impl ProbeSchedule {
 /// A root's final verdict: nothing is left to ask.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Final {
-    Dead {
-        reason: String,
-    },
     /// Found in a block by a probe (two nodes), before the wallet saw it.
     Mined,
 }
@@ -389,7 +349,7 @@ fn same_for_host(a: &ProbeVerdict, b: &ProbeVerdict) -> bool {
         ) | (
             ProbeVerdict::Unresolved { .. },
             ProbeVerdict::Unresolved { .. }
-        ) | (ProbeVerdict::Dead { .. }, ProbeVerdict::Dead { .. })
+        )
     )
 }
 
@@ -433,19 +393,10 @@ pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     finished: HashMap<(WalletId, Txid), Final>,
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
-    /// Own sends published Dead because dead roots they are built on are:
-    /// those roots. Their Dead is withdrawn once none of them is known dead
-    /// any more (settled, left, or forgotten).
-    dead_from: HashMap<(WalletId, Txid), BTreeSet<Txid>>,
     /// The identified nodes that reported each root in a block, added up
     /// across probes while it stays unsettled: [`MINED_QUORUM`] of them make
     /// it mined even when no single probe heard two.
     seen_in_block: HashMap<(WalletId, Txid), BTreeSet<String>>,
-    /// The height at which a probe first found a root dead for missing or
-    /// spent inputs ([`ProbeReport::dead_needs_repeat`]). It becomes final
-    /// only when a probe at a later height finds the same; any other answer
-    /// in between, or a rewind, starts over.
-    dead_evidence_since: HashMap<(WalletId, Txid), u32>,
 }
 
 impl ResolverState {
@@ -456,8 +407,6 @@ impl ResolverState {
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
         self.seen_in_block
             .retain(|(wallet, _), _| wallet != wallet_id);
-        self.dead_evidence_since
-            .retain(|(wallet, _), _| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, trigger)
     }
 
@@ -466,94 +415,23 @@ impl ResolverState {
         self.schedules.clear();
         self.finished.clear();
         self.seen_in_block.clear();
-        self.dead_evidence_since.clear();
         self.clear_where(|_, _| true, None, "disabled")
     }
 
     /// A wallet event reported `txids` settled or gone: forget them and clear
-    /// their verdicts — and the Dead any send inherited from one of them.
+    /// their verdicts.
     fn settle(&mut self, wallet_id: WalletId, txids: &HashSet<Txid>) -> Vec<Outgoing> {
         for txid in txids {
             let key = (wallet_id, *txid);
             self.schedules.remove(&key);
             self.finished.remove(&key);
             self.seen_in_block.remove(&key);
-            self.dead_evidence_since.remove(&key);
         }
-        let mut events = self.clear_where(
+        self.clear_where(
             |wallet, txid| *wallet == wallet_id && txids.contains(txid),
             None,
             "settled-or-left",
-        );
-        events.extend(self.clear_orphaned_dead(wallet_id, None, "settled-or-left"));
-        events
-    }
-
-    /// Withdraw every Dead a send of `wallet_id` inherited from a root that is
-    /// no longer known dead.
-    fn clear_orphaned_dead(
-        &mut self,
-        wallet_id: WalletId,
-        height: Option<u32>,
-        trigger: &'static str,
-    ) -> Vec<Outgoing> {
-        let finished = &self.finished;
-        let mut orphans: HashSet<Txid> = HashSet::new();
-        self.dead_from.retain(|(wallet, send), roots| {
-            if *wallet != wallet_id {
-                return true;
-            }
-            roots.retain(|root| {
-                matches!(finished.get(&(wallet_id, *root)), Some(Final::Dead { .. }))
-            });
-            if roots.is_empty() {
-                orphans.insert(*send);
-                return false;
-            }
-            true
-        });
-        if orphans.is_empty() {
-            return Vec::new();
-        }
-        let published = &self.published;
-        let dead: HashSet<Txid> = orphans
-            .into_iter()
-            .filter(|send| {
-                matches!(
-                    published.get(&(wallet_id, *send)),
-                    Some(ProbeVerdict::Dead { .. })
-                )
-            })
-            .collect();
-        self.clear_where(
-            |wallet, txid| *wallet == wallet_id && dead.contains(txid),
-            height,
-            trigger,
         )
-    }
-
-    /// Publish a root's Dead to the own sends in its chain, remembering which
-    /// root each send other than the root itself inherited it from.
-    #[allow(clippy::too_many_arguments)]
-    fn publish_dead(
-        &mut self,
-        wallet_id: WalletId,
-        root: Txid,
-        sends: BTreeSet<Txid>,
-        verdict: &ProbeVerdict,
-        height: u32,
-        trigger: &'static str,
-        out: &mut Vec<Outgoing>,
-    ) {
-        for send in &sends {
-            if *send != root {
-                self.dead_from
-                    .entry((wallet_id, *send))
-                    .or_default()
-                    .insert(root);
-            }
-        }
-        self.publish_all(wallet_id, sends, verdict, height, trigger, out);
     }
 
     /// Unpublish every send `drop` matches; a clear for each, in a stable order.
@@ -572,8 +450,6 @@ impl ResolverState {
         cleared.sort();
         self.published
             .retain(|(wallet, txid), _| !drop(wallet, txid));
-        self.dead_from
-            .retain(|(wallet, txid), _| !drop(wallet, txid));
         cleared
             .into_iter()
             .map(|(wallet_id, txid)| Outgoing {
@@ -586,7 +462,7 @@ impl ResolverState {
     }
 
     /// Record `verdict` for `send`; returns whether the host must hear it.
-    /// Unresolved never replaces a decided verdict (Accepted, Mined, Dead) —
+    /// Unresolved never replaces a decided verdict (Accepted, Mined) —
     /// one probe that only met transport errors says nothing new.
     fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict) -> bool {
         let changed = match self.published.get(&key) {
@@ -667,9 +543,8 @@ pub(crate) struct PassStart {
 }
 
 /// Start a pass over one wallet at `height`: forget what settled or left
-/// (clearing the sends the host had a verdict for), re-publish every dead
-/// root to every own send built on it — a send built on its change after it
-/// was found dead is dead too — and pick the roots due for a probe. The
+/// (clearing the sends the host had a verdict for) and pick the roots due for
+/// a probe. The
 /// roots of every `forced` transaction's chain (dash-spv has just reported
 /// it `Uncertain`) are due regardless of their schedule — even if one went
 /// out at this height already: a repeat probe is cheaper than bookkeeping
@@ -704,9 +579,6 @@ pub(crate) fn begin_pass(
     state
         .seen_in_block
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
-    state
-        .dead_evidence_since
-        .retain(|(wallet, txid), _| !is_gone(wallet, txid));
     // Cleared because the send is no longer an unsettled own send: it
     // settled, or left the wallet — not a statement that it settled.
     events.extend(state.clear_where(
@@ -714,7 +586,6 @@ pub(crate) fn begin_pass(
         Some(height),
         "settled-or-left",
     ));
-    events.extend(state.clear_orphaned_dead(wallet_id, Some(height), "settled-or-left"));
 
     let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
@@ -723,23 +594,6 @@ pub(crate) fn begin_pass(
         .iter()
         .flat_map(|txid| graph.roots_of(txid))
         .collect();
-
-    for view in &roots {
-        if let Some(Final::Dead { reason }) = state.finished.get(&(wallet_id, view.txid)).cloned() {
-            let verdict = ProbeVerdict::Dead { reason };
-            let sends = graph.own_in_chain(&view.txid);
-            let trigger = trigger_of(forced_roots.contains(&view.txid));
-            state.publish_dead(
-                wallet_id,
-                view.txid,
-                sends,
-                &verdict,
-                height,
-                trigger,
-                &mut events,
-            );
-        }
-    }
 
     let mut due = VecDeque::new();
     for view in &roots {
@@ -782,15 +636,12 @@ pub(crate) fn withdraw_send(state: &mut ResolverState, wallet_id: WalletId, root
     }
 }
 
-/// Record one root's probe result: a final verdict ends its probing, and the
-/// verdict goes to the wallet's own sends — the root when it is one, and,
-/// when it is dead, every own send built on it (the pass's `views`, walked
-/// only then: Dead is terminal and rare).
+/// Record one root's probe result: Mined ends its probing, and the verdict
+/// goes to the root when it is the wallet's own send.
 pub(crate) fn record_probe(
     state: &mut ResolverState,
     wallet_id: WalletId,
     height: u32,
-    views: &[OutgoingView],
     root: &DueRoot,
     report: &ProbeReport,
 ) -> Vec<Outgoing> {
@@ -811,64 +662,16 @@ pub(crate) fn record_probe(
     } else {
         report.verdict.clone()
     };
-    // Dead from missing or spent inputs is final only when it holds a block
-    // later: a node that lagged behind a parent's block refuses a valid spend
-    // the same way.
-    let repeated;
-    let verdict = match verdict {
-        ProbeVerdict::Dead { reason } if report.dead_needs_repeat => {
-            match state.dead_evidence_since.get(&key).copied() {
-                Some(first) if height > first => verdict,
-                first => {
-                    let first = first.unwrap_or(height);
-                    state.dead_evidence_since.insert(key, first);
-                    repeated = ProbeVerdict::Unresolved {
-                        reason: format!(
-                            "{reason}; first seen at height {first}, final only if a later block repeats it"
-                        ),
-                    };
-                    &repeated
-                }
-            }
-        }
-        _ => {
-            state.dead_evidence_since.remove(&key);
-            verdict
-        }
-    };
-    match verdict {
-        ProbeVerdict::Dead { reason } => {
-            state.finished.insert(
-                key,
-                Final::Dead {
-                    reason: reason.clone(),
-                },
-            );
-        }
-        ProbeVerdict::Mined => {
-            state.finished.insert(key, Final::Mined);
-        }
-        _ => {}
+    if matches!(verdict, ProbeVerdict::Mined) {
+        state.finished.insert(key, Final::Mined);
     }
-    let trigger = trigger_of(root.forced);
-    if matches!(verdict, ProbeVerdict::Dead { .. }) {
-        let sends = ChainGraph::new(views, &state.mined(&wallet_id)).own_in_chain(&root.txid);
-        state.publish_dead(
-            wallet_id,
-            root.txid,
-            sends,
-            verdict,
-            height,
-            trigger,
-            &mut events,
-        );
-    } else if root.own {
+    if root.own {
         state.publish_all(
             wallet_id,
             [root.txid],
             verdict,
             height,
-            trigger,
+            trigger_of(root.forced),
             &mut events,
         );
     }
@@ -1626,8 +1429,8 @@ impl Actor {
                     let Some(entry) = self.wallets.get(&wallet_id) else {
                         continue;
                     };
-                    // A final verdict (dead or mined) is not reopened by an
-                    // echo; anything else becomes accepted.
+                    // A mined verdict is not reopened by an echo; anything
+                    // else becomes accepted.
                     if self.state.finished.contains_key(&(wallet_id, txid)) {
                         continue;
                     }
@@ -1712,8 +1515,8 @@ impl Actor {
                             due: start.due,
                             in_flight: None,
                         });
-                        // Clears and re-published dead verdicts reach the host
-                        // before the pass goes out to the network.
+                        // Clears reach the host before the pass goes out to
+                        // the network.
                         deliver(&self.sink, start.events);
                         self.probe_next(wallet_id);
                     }
@@ -1770,14 +1573,8 @@ impl Actor {
                     self.probe_next(wallet_id);
                     return;
                 }
-                let events = record_probe(
-                    &mut self.state,
-                    wallet_id,
-                    probing.height,
-                    &probing.views,
-                    &root,
-                    &report,
-                );
+                let events =
+                    record_probe(&mut self.state, wallet_id, probing.height, &root, &report);
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
@@ -2403,10 +2200,9 @@ mod tests {
         [7u8; 32]
     }
 
-    fn dead() -> ProbeVerdict {
-        ProbeVerdict::Dead {
-            reason: "bad-txns-inputs-missingorspent".to_string(),
-        }
+    /// A final verdict: the root is not probed again.
+    fn mined() -> ProbeVerdict {
+        ProbeVerdict::Mined
     }
 
     fn unresolved() -> ProbeVerdict {
@@ -2482,7 +2278,7 @@ mod tests {
             );
             let report = probe.probe(&root.transaction).await;
             let mut guard = state.lock().expect("state");
-            let events = record_probe(&mut guard.state, wallet_id, height, views, &root, &report);
+            let events = record_probe(&mut guard.state, wallet_id, height, &root, &report);
             guard.push(events);
         }
         let guard = state.lock().expect("state");
@@ -2503,149 +2299,6 @@ mod tests {
 
         assert_eq!(probe.probed(), vec![txid(1)]);
         assert_eq!(events, vec![ResolverEvent::Verdict(txid(1), unresolved())]);
-    }
-
-    /// Answers each probe with the next scripted report.
-    struct SequenceProbe(StdMutex<std::collections::VecDeque<ProbeReport>>);
-
-    #[async_trait]
-    impl AcceptanceProbe for SequenceProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
-            self.0
-                .lock()
-                .expect("reports")
-                .pop_front()
-                .unwrap_or_else(|| unresolved().into())
-        }
-    }
-
-    fn dead_needing_repeat() -> ProbeReport {
-        ProbeReport {
-            dead_needs_repeat: true,
-            ..dead().into()
-        }
-    }
-
-    fn is_dead(state: &Mutex<Harness>) -> bool {
-        matches!(
-            state
-                .lock()
-                .expect("state")
-                .state
-                .finished
-                .get(&(wallet(), txid(1))),
-            Some(Final::Dead { .. })
-        )
-    }
-
-    /// Missing-input evidence found again a block later is final.
-    #[tokio::test]
-    async fn should_call_a_missing_input_dead_only_when_a_later_block_repeats_it() {
-        let state = Mutex::new(Harness::default());
-        let probe = SequenceProbe(StdMutex::new(
-            [dead_needing_repeat(), dead_needing_repeat()].into(),
-        ));
-        let views = [send(1, &[outpoint(90, 0)])];
-
-        let first = pass(&state, &probe, 100, &views).await;
-        assert!(
-            matches!(
-                first.as_slice(),
-                [ResolverEvent::Verdict(_, ProbeVerdict::Unresolved { .. })]
-            ),
-            "{first:?}"
-        );
-        assert!(!is_dead(&state));
-
-        let second = pass(&state, &probe, 101, &views).await;
-        assert!(
-            matches!(
-                second.as_slice(),
-                [ResolverEvent::Verdict(_, ProbeVerdict::Dead { .. })]
-            ),
-            "{second:?}"
-        );
-        assert!(is_dead(&state));
-    }
-
-    /// A refuser lagging behind a parent's block: the next probe finds the
-    /// spend fine, so the earlier evidence is dropped and a later refusal
-    /// starts over instead of completing it.
-    #[tokio::test]
-    async fn should_drop_missing_input_evidence_another_answer_contradicts() {
-        let state = Mutex::new(Harness::default());
-        let probe = SequenceProbe(StdMutex::new(
-            [
-                dead_needing_repeat(),
-                ProbeVerdict::Accepted.into(),
-                dead_needing_repeat(),
-            ]
-            .into(),
-        ));
-        let views = [send(1, &[outpoint(90, 0)])];
-
-        for height in 100..103 {
-            pass(&state, &probe, height, &views).await;
-            assert!(!is_dead(&state), "dead at {height}");
-        }
-    }
-
-    /// The same height twice is not a later block.
-    #[tokio::test]
-    async fn should_not_count_a_repeat_at_the_same_height() {
-        let state = Mutex::new(Harness::default());
-        let views = [send(1, &[outpoint(90, 0)])];
-        let root = |state: &Mutex<Harness>| {
-            let mut guard = state.lock().expect("state");
-            let start = begin_pass(
-                &mut guard.state,
-                wallet(),
-                100,
-                &views,
-                &HashSet::new(),
-                Some(100),
-            );
-            start.due.into_iter().next()
-        };
-        let due = root(&state).expect("due");
-        for _ in 0..2 {
-            let mut guard = state.lock().expect("state");
-            record_probe(
-                &mut guard.state,
-                wallet(),
-                100,
-                &views,
-                &due,
-                &dead_needing_repeat(),
-            );
-        }
-
-        assert!(!is_dead(&state));
-    }
-
-    /// A lock conflict needs no repeat.
-    #[tokio::test]
-    async fn should_call_a_lock_conflict_dead_at_once() {
-        let state = Mutex::new(Harness::default());
-        let probe = SequenceProbe(StdMutex::new([dead().into()].into()));
-        let views = [send(1, &[outpoint(90, 0)])];
-
-        pass(&state, &probe, 100, &views).await;
-
-        assert!(is_dead(&state));
-    }
-
-    #[tokio::test]
-    async fn should_stop_probing_a_root_proven_dead() {
-        let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(1), dead())]);
-        let views = [send(1, &[outpoint(90, 0)])];
-
-        pass(&state, &probe, 100, &views).await;
-        let again = pass(&state, &probe, 101, &views).await;
-
-        assert!(again.is_empty());
-        assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
     /// Acceptance by one node's mempool is not settlement: the root keeps
@@ -2778,44 +2431,6 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
-    /// Spending a dead transaction is dead too: the whole chain of own sends
-    /// built on a dead root is published dead, not just the root.
-    #[tokio::test]
-    async fn should_publish_a_dead_root_for_every_own_send_built_on_it() {
-        let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(1), dead())]);
-        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
-
-        let events = pass(&state, &probe, 100, &views).await;
-
-        assert_eq!(
-            events,
-            vec![
-                ResolverEvent::Verdict(txid(1), dead()),
-                ResolverEvent::Verdict(txid(2), dead()),
-            ]
-        );
-        let again = pass(&state, &probe, 101, &views).await;
-        assert!(
-            again.is_empty(),
-            "a dead child is not cleared for not being a root"
-        );
-    }
-
-    /// Someone else's incoming payment is probed, but the host hears only
-    /// about the wallet's own send — the only row it can attach a verdict to.
-    #[tokio::test]
-    async fn should_publish_a_dead_incoming_parent_on_the_own_send_only() {
-        let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(5), dead())]);
-        let views = [incoming(5, &[outpoint(80, 0)]), send(6, &[outpoint(5, 0)])];
-
-        let events = pass(&state, &probe, 100, &views).await;
-
-        assert_eq!(probe.probed(), vec![txid(5)]);
-        assert_eq!(events, vec![ResolverEvent::Verdict(txid(6), dead())]);
-    }
-
     #[tokio::test]
     async fn should_publish_nothing_while_an_incoming_parent_is_only_accepted() {
         let state = Mutex::new(Harness::default());
@@ -2830,7 +2445,7 @@ mod tests {
     #[tokio::test]
     async fn should_probe_the_children_of_a_root_found_in_a_block() {
         let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined), (txid(2), dead())]);
+        let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined), (txid(2), mined())]);
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
 
         let first = pass(&state, &probe, 100, &views).await;
@@ -2840,28 +2455,8 @@ mod tests {
             first,
             vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Mined)]
         );
-        assert_eq!(second, vec![ResolverEvent::Verdict(txid(2), dead())]);
+        assert_eq!(second, vec![ResolverEvent::Verdict(txid(2), mined())]);
         assert_eq!(probe.probed(), vec![txid(1), txid(2)]);
-    }
-
-    /// A send built on a dead root's change after the root was found dead is
-    /// dead too, and hears it without the root being asked again.
-    #[tokio::test]
-    async fn should_publish_a_dead_root_to_a_send_built_on_it_later() {
-        let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(1), dead())]);
-
-        pass(&state, &probe, 100, &[send(1, &[outpoint(90, 0)])]).await;
-        let later = pass(
-            &state,
-            &probe,
-            101,
-            &[send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
-        )
-        .await;
-
-        assert_eq!(later, vec![ResolverEvent::Verdict(txid(2), dead())]);
-        assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
     /// A wallet whose every root has a final verdict has nothing to probe and
@@ -2869,10 +2464,10 @@ mod tests {
     #[tokio::test]
     async fn should_report_nothing_to_probe_only_when_every_root_is_final() {
         let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(1), dead()), (txid(2), unresolved())]);
+        let probe = ScriptedProbe::new(&[(txid(1), mined()), (txid(2), unresolved())]);
 
         let empty = run(&state, &probe, wallet(), 100, &[], &none()).await;
-        let dead_only = run(
+        let final_only = run(
             &state,
             &probe,
             wallet(),
@@ -2892,7 +2487,7 @@ mod tests {
         .await;
 
         assert_eq!(empty, u32::MAX);
-        assert_eq!(dead_only, u32::MAX);
+        assert_eq!(final_only, u32::MAX);
         assert_eq!(open, 102, "the open root is due next block");
     }
 
@@ -2966,33 +2561,6 @@ mod tests {
         assert!(!state.publish(key, &unresolved()));
         assert!(!state.publish(key, &ProbeVerdict::Mined));
         assert!(!state.publish(key, &ProbeVerdict::Accepted));
-        assert!(state.publish(key, &dead()));
-        assert!(
-            !state.publish(key, &unresolved()),
-            "Unresolved never replaces Dead either"
-        );
-        assert!(!state.publish(
-            key,
-            &ProbeVerdict::Dead {
-                reason: "missing inputs".into()
-            }
-        ));
-    }
-
-    /// A long chain on one root: every own send in it, found in one walk.
-    #[test]
-    fn should_find_every_own_send_in_a_long_chain() {
-        let mut views = vec![send(1, &[outpoint(90, 0)])];
-        for n in 2..=20u8 {
-            views.push(send(n, &[outpoint(n - 1, 1)]));
-        }
-        views.push(incoming(30, &[outpoint(80, 0)]));
-        let graph = ChainGraph::new(&views, &none());
-
-        assert_eq!(
-            graph.own_in_chain(&txid(1)),
-            (1..=20u8).map(txid).collect::<BTreeSet<_>>()
-        );
     }
 
     // ---- the actor ----------------------------------------------------------
@@ -3320,11 +2888,11 @@ mod tests {
     /// its records again until an event that touched them.
     #[tokio::test]
     async fn should_go_idle_when_every_root_is_final_until_a_touch() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
 
         rig.follow(wallet(), 100).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
         assert_eq!(rig.walks(), 1);
 
         rig.height(wallet(), 102).await;
@@ -3353,7 +2921,7 @@ mod tests {
     /// it before, so it must not leave the wallet idle.
     #[tokio::test]
     async fn should_not_leave_idle_a_wallet_touched_during_its_pass() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.height(wallet(), 100).await;
 
@@ -3375,7 +2943,7 @@ mod tests {
     /// height re-publishes what was cleared.
     #[tokio::test]
     async fn should_republish_after_probing_goes_off_and_on() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), dead())]));
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), mined())]));
         let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
@@ -3386,7 +2954,7 @@ mod tests {
 
         rig.send(Command::SetEnabled(true)).await;
         rig.height(wallet(), 102).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
         assert_eq!(probe.probed(), vec![txid(1), txid(1)]);
     }
 
@@ -3394,7 +2962,7 @@ mod tests {
     /// dropped, nothing is published after the clears.
     #[tokio::test]
     async fn should_drop_a_pass_in_flight_when_probing_goes_off() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.height(wallet(), 100).await;
 
@@ -3504,14 +3072,14 @@ mod tests {
     #[tokio::test]
     async fn should_keep_a_height_that_arrives_during_a_forced_pass() {
         let probe = Arc::new(ScriptedProbe::new(&[
-            (txid(1), dead()),
+            (txid(1), mined()),
             (txid(2), unresolved()),
         ]));
         let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
         rig.height(wallet(), 102).await;
-        assert_eq!(probe.probed(), vec![txid(1)], "idle after the dead root");
+        assert_eq!(probe.probed(), vec![txid(1)], "idle after the mined root");
         rig.views(
             wallet(),
             vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
@@ -3947,7 +3515,7 @@ mod tests {
     #[tokio::test]
     async fn should_clear_a_verdict_as_soon_as_an_event_settles_its_send() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[
-            (txid(1), dead()),
+            (txid(1), mined()),
             (txid(2), unresolved()),
         ])))
         .await;
@@ -4070,11 +3638,10 @@ mod tests {
     }
 
     /// A step back (a rewind for a rescan) starts the wallet over: every
-    /// verdict cleared — the root's and the ones its chain inherited alike —
-    /// every schedule gone, so every root is due at once.
+    /// verdict cleared, every schedule gone, so every root is due at once.
     #[tokio::test]
     async fn should_start_over_on_a_rewind() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
         rig.views(
             wallet(),
             vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
@@ -4084,75 +3651,10 @@ mod tests {
 
         rig.height(wallet(), 50).await;
 
-        assert_eq!(
-            rig.sent(),
-            vec![
-                ResolverEvent::Cleared(txid(1)),
-                ResolverEvent::Cleared(txid(2)),
-            ]
-        );
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
         assert!(rig.actor.state.schedules.is_empty());
         assert!(rig.actor.state.finished.is_empty());
         assert_eq!(rig.actor.wallets[&wallet()].wait_until, None);
-    }
-
-    /// A child published Dead because its root was dead loses that Dead when
-    /// the root settles — it is not left showing the worst verdict for a send
-    /// whose parent is confirmed.
-    #[tokio::test]
-    async fn should_withdraw_an_inherited_dead_when_the_dead_root_settles() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
-        rig.views(
-            wallet(),
-            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
-        );
-        rig.follow(wallet(), 100).await;
-        assert_eq!(
-            rig.sent(),
-            vec![
-                ResolverEvent::Verdict(txid(1), dead()),
-                ResolverEvent::Verdict(txid(2), dead()),
-            ]
-        );
-
-        rig.send(Command::Settled {
-            wallet_id: wallet(),
-            txids: HashSet::from([txid(1)]),
-        })
-        .await;
-
-        assert_eq!(
-            rig.sent(),
-            vec![
-                ResolverEvent::Cleared(txid(1)),
-                ResolverEvent::Cleared(txid(2)),
-            ]
-        );
-    }
-
-    /// The Dead a child inherited goes when the root leaves the wallet in a
-    /// pass's read too, not only on an event.
-    #[tokio::test]
-    async fn should_withdraw_an_inherited_dead_when_a_pass_finds_the_root_gone() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
-        rig.views(
-            wallet(),
-            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
-        );
-        rig.follow(wallet(), 100).await;
-        rig.sent();
-
-        rig.views(wallet(), vec![send(2, &[outpoint(1, 1)])]); // root mined
-        rig.send(Command::Seen {
-            wallet_id: wallet(),
-            touched: true,
-        })
-        .await;
-        rig.height(wallet(), 102).await;
-
-        let sent = rig.sent();
-        assert!(sent.contains(&ResolverEvent::Cleared(txid(1))));
-        assert!(sent.contains(&ResolverEvent::Cleared(txid(2))));
     }
 
     fn record(n: u8, context: TransactionContext) -> TransactionRecord {
@@ -4240,36 +3742,6 @@ mod tests {
         );
     }
 
-    /// A send settled while a pass is already probing — here the child of a
-    /// root whose probe is out — gets no Dead from that root's late answer.
-    #[tokio::test]
-    async fn should_not_spread_a_dead_to_a_send_settled_during_probing() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
-        rig.views(
-            wallet(),
-            vec![incoming(1, &[outpoint(80, 0)]), send(2, &[outpoint(1, 0)])],
-        );
-        rig.height(wallet(), 100).await;
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 101,
-        });
-        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
-        rig.actor.joined(read); // root 1's probe is out
-
-        rig.handle(Command::Settled {
-            wallet_id: wallet(),
-            txids: HashSet::from([txid(2)]),
-        });
-        rig.settle().await;
-
-        assert!(
-            !rig.sent()
-                .contains(&ResolverEvent::Verdict(txid(2), dead())),
-            "send 2 settled before the answer came"
-        );
-    }
-
     /// A rewind stops a forced pass still reading; what was forced runs in
     /// the pass after it, at the rewound height.
     #[tokio::test]
@@ -4334,35 +3806,6 @@ mod tests {
         assert!(probe.probed().is_empty());
         assert!(rig.actor.wallets[&wallet()].run.is_none());
         assert!(rig.actor.state.schedules.is_empty());
-    }
-
-    /// A send built on two dead roots keeps its Dead while either is still
-    /// dead.
-    #[tokio::test]
-    async fn should_keep_an_inherited_dead_while_another_dead_root_remains() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[
-            (txid(1), dead()),
-            (txid(2), dead()),
-        ])))
-        .await;
-        rig.views(
-            wallet(),
-            vec![
-                incoming(1, &[outpoint(80, 0)]),
-                incoming(2, &[outpoint(81, 0)]),
-                send(3, &[outpoint(1, 0), outpoint(2, 0)]),
-            ],
-        );
-        rig.follow(wallet(), 100).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(3), dead())]);
-
-        rig.send(Command::Settled {
-            wallet_id: wallet(),
-            txids: HashSet::from([txid(2)]),
-        })
-        .await;
-
-        assert!(rig.sent().is_empty(), "root 1 is still dead");
     }
 
     /// A send settled while the pass is still reading is left out of the read
@@ -4450,12 +3893,12 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(2)]);
     }
 
-    /// The first root's probe finishes Dead, then the root settles before
+    /// The first root's probe finishes Mined, then the root settles before
     /// the result is handled: the leftover answer is not recorded against
     /// the next root in flight.
     #[tokio::test]
     async fn should_not_record_a_stopped_probe_answer_against_the_next_root() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
         rig.views(
             wallet(),
             vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
@@ -4477,11 +3920,8 @@ mod tests {
 
         assert!(!rig
             .sent()
-            .contains(&ResolverEvent::Verdict(txid(2), dead())));
-        assert!(!matches!(
-            rig.actor.state.finished.get(&(wallet(), txid(2))),
-            Some(Final::Dead { .. })
-        ));
+            .contains(&ResolverEvent::Verdict(txid(2), mined())));
+        assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(2))));
     }
 
     /// A settle unrelated to a forced send's chain does not probe that send
@@ -4588,10 +4028,10 @@ mod tests {
     /// stale verdicts from before do not carry over.
     #[tokio::test]
     async fn should_start_a_re_registered_wallet_fresh() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
         assert_eq!(rig.actor.wallets[&wallet()].wait_until, Some(u32::MAX));
 
         rig.send(Command::WalletAdded(wallet())).await;
@@ -4650,12 +4090,12 @@ mod tests {
         assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
     }
 
-    /// A probe sent before a rewind would answer Dead: the answer belongs to
+    /// A probe sent before a rewind would answer Mined: the answer belongs to
     /// the state the rewind dropped — the rewind stops it, and nothing is told
     /// or recorded.
     #[tokio::test]
     async fn should_neither_tell_nor_record_a_pre_rewind_answer() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
         rig.views(
             wallet(),
             vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
@@ -4679,7 +4119,7 @@ mod tests {
     }
 
     /// A probe whose every answer is one node's "in a block", a different
-    /// node each time — then, after that, Dead.
+    /// node each time — then, after that, Mined from the probe alone.
     struct OneNodeInBlockPerProbe {
         answers: StdMutex<VecDeque<ProbeReport>>,
     }
@@ -4691,7 +4131,7 @@ mod tests {
                 .lock()
                 .expect("answers")
                 .pop_front()
-                .unwrap_or_else(|| dead().into())
+                .unwrap_or_else(|| mined().into())
         }
     }
 
@@ -4699,12 +4139,11 @@ mod tests {
         ProbeReport {
             verdict: ProbeVerdict::Accepted,
             in_block_by: BTreeSet::from([node.to_string()]),
-            dead_needs_repeat: false,
         }
     }
 
     /// Two distinct nodes reporting the root in a block over two probes make
-    /// it mined, final — a later probe cannot turn it Dead.
+    /// it mined, final — the root is not probed again.
     #[tokio::test]
     async fn should_settle_as_mined_when_two_nodes_saw_it_across_probes() {
         let mut rig = enabled(Arc::new(OneNodeInBlockPerProbe {
@@ -4722,24 +4161,7 @@ mod tests {
         );
         assert!(!rig
             .sent()
-            .contains(&ResolverEvent::Verdict(txid(1), dead())));
-    }
-
-    /// One node's word, over and over, is not enough to veto Dead for good.
-    #[tokio::test]
-    async fn should_not_let_one_node_veto_a_later_dead() {
-        let mut rig = enabled(Arc::new(OneNodeInBlockPerProbe {
-            answers: StdMutex::new(VecDeque::from([seen_by("a"), seen_by("a")])),
-        }))
-        .await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        rig.height(wallet(), 102).await;
-        rig.height(wallet(), 103).await;
-
-        assert!(rig
-            .sent()
-            .contains(&ResolverEvent::Verdict(txid(1), dead())));
+            .contains(&ResolverEvent::Verdict(txid(1), mined())));
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
