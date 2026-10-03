@@ -146,6 +146,31 @@ The local shielded balance API introduces three Rust source compatibility change
   index is zero. An absent row is different from a recorded empty scan; do not
   infer presence merely from `last_synced_index > 0`.
 
+## Final-inputs and broadcast-probe API migration
+
+Spending only final coins and probing unresolved broadcasts bring four Rust
+source and behaviour changes:
+
+- `CoreWallet::finalize_transaction_with_options` takes a `ShortfallBasis`
+  as its second argument (after the builder). Pass `ShortfallBasis::default()`
+  to keep the old pricing; otherwise fill in what the build knows that the
+  key-wallet builder does not expose: `fee_rate` (`None` = default rate, an
+  explicit zero is zero), `requested` (the sum of the payment outputs; leave it
+  `None` for a drain), `outputs` (the explicit outputs' `OutputShape`),
+  `seeded_inputs`, `payload_bytes` (a special payload's length prefix plus
+  body) and `drain`. `finalize_transaction` keeps its signature.
+- `PlatformWalletError` gains `CoreFundsAwaitingNetwork { available, waiting,
+  required, outpoint }` (FFI code 59): the build's final coins fall short, but
+  coins that are not yet confirmed or InstantSend-locked would cover it. An
+  exhaustive `match` needs an arm for it.
+- `WalletWorker` gains `BroadcastProbes`, reported in the shutdown report. An
+  exhaustive `match` needs an arm for it.
+- Behaviour: every payment build that funds from the wallet, and
+  `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
+  InstantSend-locked coins. A non-final coin seeded on the builder is refused
+  with `CoreFundsAwaitingNetwork` naming its outpoint, also when it was final
+  when seeded and lost that status before the build was finalized.
+
 ## Dependencies
 
 - `key-wallet`: Core wallet functionality
