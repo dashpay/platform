@@ -39,13 +39,16 @@ pub struct FFITransactionBuilder {
     /// this per funding call, which the finalizers make internally, so the
     /// intent has to be carried here and read when they run.
     reservation_only: bool,
-    /// The rate `core_wallet_tx_builder_set_fee_rate` set (0 = key-wallet's
-    /// default), the sum of `core_wallet_tx_builder_add_output` amounts, the
-    /// number of explicit outputs and the total length of their scripts, and
-    /// whether the strategy is a drain. The pinned key-wallet builder exposes
-    /// none of these, and the finalizers need them to tell a shortfall the
-    /// not-yet-final coins would cover from a genuine one (code 59).
-    fee_rate_sat_per_kb: u64,
+    /// The rate `core_wallet_tx_builder_set_fee_rate` set (`None` until it
+    /// runs: key-wallet's default; an explicit 0 is kept as 0), the sum of
+    /// `core_wallet_tx_builder_add_output` amounts, the number of explicit
+    /// outputs and the total length of their scripts, the bytes a special
+    /// payload adds, and whether the strategy is a drain. The pinned key-wallet
+    /// builder exposes none of these, and the finalizers need them to tell a
+    /// shortfall the not-yet-final coins would cover from a genuine one
+    /// (code 59).
+    fee_rate_sat_per_kb: Option<u64>,
+    payload_bytes: usize,
     output_sum: u64,
     output_count: usize,
     output_script_bytes: usize,
@@ -64,8 +67,7 @@ impl FFITransactionBuilder {
     /// nothing known.
     fn shortfall_basis(&self) -> ShortfallBasis {
         ShortfallBasis {
-            fee_rate: (self.fee_rate_sat_per_kb != 0)
-                .then(|| FeeRate::new(self.fee_rate_sat_per_kb)),
+            fee_rate: self.fee_rate_sat_per_kb.map(FeeRate::new),
             requested: (!self.drain && self.output_sum > 0).then_some(self.output_sum),
             outputs: (self.output_count > 0).then_some(OutputShape {
                 count: self.output_count,
@@ -74,6 +76,8 @@ impl FFITransactionBuilder {
             // `core_wallet_tx_builder_add_inputs_from_outpoints` refuses a
             // non-final coin up front, so a seed here is always final.
             seeded_inputs: Vec::new(),
+            payload_bytes: self.payload_bytes,
+            drain: self.drain,
         }
     }
 }
@@ -613,7 +617,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_new(
         inner,
         network,
         reservation_only: false,
-        fee_rate_sat_per_kb: 0,
+        fee_rate_sat_per_kb: None,
+        payload_bytes: 0,
         output_sum: 0,
         output_count: 0,
         output_script_bytes: 0,
@@ -793,7 +798,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_fee_rate(
     let b = (*builder).take_builder();
     let b = b.set_fee_rate(FeeRate::new(sat_per_kb));
     (*builder).store_builder(b);
-    (*builder).fee_rate_sat_per_kb = sat_per_kb;
+    (*builder).fee_rate_sat_per_kb = Some(sat_per_kb);
 
     PlatformWalletFFIResult::ok()
 }
@@ -978,6 +983,13 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
         }
     };
 
+    // The payload rides in the transaction behind a compact-size length.
+    let length_prefix = match payload.len() {
+        0..=0xfc => 1,
+        0xfd..=0xffff => 3,
+        _ => 5,
+    };
+    (*builder).payload_bytes = payload.len().saturating_add(length_prefix);
     let b = (*builder).take_builder();
     let b = b.set_special_payload(payload);
     (*builder).store_builder(b);
@@ -1366,6 +1378,130 @@ mod pooled_balance_handle_tests {
                 Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
             ),
             "got {one:?}"
+        );
+    }
+
+    fn is_insufficient(
+        result: &Result<platform_wallet::SignedCoreTransaction, PlatformWalletError>,
+    ) -> bool {
+        matches!(
+            result,
+            Err(PlatformWalletError::CoreInsufficientFunds { .. }
+                | PlatformWalletError::CorePooledInsufficientFunds { .. })
+        )
+    }
+
+    /// A drain requests no amount, so its shortfall is judged against its own
+    /// no-change fee and the dust floor. A lone 1,600-duff coin that is not
+    /// final, drained at 10,000 duffs/kB, nets 120 duffs after its input —
+    /// below the fee and dust a drain needs even once it confirms: insufficient
+    /// funds. A 100,000-duff one would cover them: waiting.
+    #[test]
+    fn should_judge_a_drain_shortfall_by_its_fee_and_dust() {
+        for (coin, waiting) in [(1_600, false), (100_000, true)] {
+            let (core, signer) = runtime().block_on(
+                platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
+                    StandardAccountType::BIP44Account,
+                    &[coin],
+                    &[coin],
+                ),
+            );
+            let drain = payment(Some(10_000), 0);
+            let set = unsafe {
+                core_wallet_tx_builder_set_selection_strategy(drain, CoreSelectionStrategyFFI::All)
+            };
+            assert_eq!(set.code, PlatformWalletFFIResultCode::Success);
+            let result = finalize_built(drain, &core, &signer);
+            if waiting {
+                assert!(
+                    matches!(
+                        result,
+                        Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+                    ),
+                    "coin {coin}: got {result:?}"
+                );
+            } else {
+                assert!(
+                    !matches!(
+                        result,
+                        Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+                    ) && result.is_err(),
+                    "coin {coin}: got {result:?}"
+                );
+            }
+        }
+    }
+
+    /// An explicit zero rate is the rate the build pays, not "unset": 900,000
+    /// final + 100,100 waiting fund a 1,000,000 payment for free once the
+    /// waiting coin confirms — code 59. Left unset, the default rate makes the
+    /// same build short.
+    #[test]
+    fn should_price_an_explicit_zero_fee_rate_as_zero() {
+        let (core, signer) = runtime().block_on(
+            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[900_000, 100_100],
+                &[100_100],
+            ),
+        );
+
+        let zero = finalize_built(payment(Some(0), 1_000_000), &core, &signer);
+        assert!(
+            matches!(
+                zero,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+            ),
+            "got {zero:?}"
+        );
+
+        let unset = finalize_built(payment(None, 1_000_000), &core, &signer);
+        assert!(is_insufficient(&unset), "got {unset:?}");
+    }
+
+    /// A special payload is bytes the fee pays for too. 900,000 final + 100,400
+    /// waiting against a 1,000,000 payment is covered without one, but a
+    /// ProUpRevTx payload (132 bytes) leaves too little: insufficient funds.
+    #[test]
+    fn should_price_a_waiting_shortfall_with_the_special_payload() {
+        use dashcore::blockdata::transaction::special_transaction::provider_update_revocation::ProviderUpdateRevocationPayload;
+        use dashcore::bls_sig_utils::BLSSignature;
+        use dashcore::hash_types::InputsHash;
+        use dashcore::hashes::Hash;
+
+        let (core, signer) = runtime().block_on(
+            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[900_000, 100_400],
+                &[100_400],
+            ),
+        );
+        let payload = TransactionPayload::ProviderUpdateRevocationPayloadType(
+            ProviderUpdateRevocationPayload::new(
+                dashcore::Txid::all_zeros(),
+                0,
+                InputsHash::all_zeros(),
+                BLSSignature::from([0u8; 96]),
+            ),
+        );
+        let bytes = bincode::encode_to_vec(payload, bincode::config::standard())
+            .expect("encode a revocation payload");
+
+        let with_payload = payment(None, 1_000_000);
+        let set = unsafe {
+            core_wallet_tx_builder_set_special_payload(with_payload, bytes.as_ptr(), bytes.len())
+        };
+        assert_eq!(set.code, PlatformWalletFFIResultCode::Success);
+        let with_payload = finalize_built(with_payload, &core, &signer);
+        assert!(is_insufficient(&with_payload), "got {with_payload:?}");
+
+        let without = finalize_built(payment(None, 1_000_000), &core, &signer);
+        assert!(
+            matches!(
+                without,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+            ),
+            "got {without:?}"
         );
     }
 

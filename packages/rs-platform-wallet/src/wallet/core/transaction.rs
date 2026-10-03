@@ -91,10 +91,11 @@ pub(crate) fn is_final(utxo: &Utxo) -> bool {
 
 /// What a caller knows about its build that the pinned key-wallet builder
 /// does not expose: the fee rate it set, the amount its outputs request, the
-/// shape of those outputs, and the inputs it seeded itself. Deciding whether a
-/// shortfall is "waiting on the network" prices it with these; without them
-/// the default fee rate, the selector's own `required` and one P2PKH output
-/// are used, and seeded coins are not counted.
+/// shape of those outputs and of a special payload, whether it is a drain, and
+/// the inputs it seeded itself. Deciding whether a shortfall is "waiting on the
+/// network" prices it with these; without them the default fee rate, the
+/// selector's own `required` and one P2PKH output are used, and seeded coins
+/// are not counted.
 #[derive(Debug, Clone, Default)]
 pub struct ShortfallBasis {
     /// The rate the build pays; `None` for key-wallet's default.
@@ -107,11 +108,42 @@ pub struct ShortfallBasis {
     /// Inputs seeded on the builder (`add_inputs`); with `reservation_only`
     /// they are the only coins the build can spend.
     pub seeded_inputs: Vec<OutPoint>,
+    /// The bytes a special payload adds to the transaction (its length prefix
+    /// and body); 0 without one.
+    pub payload_bytes: usize,
+    /// A drain (`SelectionStrategy::All`): no change, and the one value output
+    /// receives whatever the inputs leave after the fee.
+    pub drain: bool,
 }
 
 impl ShortfallBasis {
     fn rate(&self) -> FeeRate {
         self.fee_rate.unwrap_or_else(FeeRate::normal)
+    }
+
+    /// The explicit outputs plus the special payload, as the bytes they add to
+    /// the transaction — the payload counts like more output script.
+    fn sized_outputs(&self) -> OutputShape {
+        let outputs = self.outputs.unwrap_or(OutputShape::ONE_P2PKH);
+        OutputShape {
+            count: outputs.count,
+            script_bytes: outputs.script_bytes.saturating_add(self.payload_bytes),
+        }
+    }
+
+    /// What a payment must leave for the fee of the final coins it already
+    /// spends: [`final_inputs_fee`]. A drain has no change, but its one value
+    /// output must still clear dust, so it reserves the no-change fee plus the
+    /// dust floor.
+    fn fee_reserve(&self, final_coins: usize) -> Result<u64, PlatformWalletError> {
+        let outputs = self.sized_outputs();
+        if !self.drain {
+            return final_inputs_fee(final_coins, outputs, self.rate());
+        }
+        let size =
+            estimate_tx_size(final_coins, 0, false).saturating_add(outputs.serialized_size());
+        Ok(checked_fee(self.rate(), size)?
+            .saturating_add(modeled_output_script().dust_value().to_sat()))
     }
 }
 
@@ -197,6 +229,7 @@ pub(crate) fn awaiting_network(
     waiting: u64,
     fee_reserve: u64,
     requested: Option<u64>,
+    drain: bool,
 ) -> PlatformWalletError {
     let (available, required) = match &error {
         PlatformWalletError::CoreInsufficientFunds {
@@ -211,7 +244,7 @@ pub(crate) fn awaiting_network(
         } => (*available, *required),
         _ => return error,
     };
-    waiting_error(available, required, waiting, fee_reserve, requested).unwrap_or(error)
+    waiting_error(available, required, waiting, fee_reserve, requested, drain).unwrap_or(error)
 }
 
 /// The same rule for a build whose failure is otherwise reported as a plain
@@ -224,23 +257,36 @@ pub(crate) fn build_error_awaiting_network(
 ) -> PlatformWalletError {
     shortfall(&error)
         .and_then(|(available, required)| {
-            waiting_error(available, required, waiting, fee_reserve, requested)
+            waiting_error(available, required, waiting, fee_reserve, requested, false)
         })
         .unwrap_or_else(|| PlatformWalletError::TransactionBuild(error.to_string()))
 }
 
 /// `requested`, when the caller knows it, stands in for an unknown `required`
 /// and is the floor of a known one (which key-wallet may report before
-/// fees).
+/// fees). A drain requests no amount: it is waiting when the final and the
+/// waiting coins together clear its fee and dust floor (`fee_reserve`).
 fn waiting_error(
     available: Option<u64>,
     required: Option<u64>,
     waiting: u64,
     fee_reserve: u64,
     requested: Option<u64>,
+    drain: bool,
 ) -> Option<PlatformWalletError> {
     if waiting == 0 {
         return None;
+    }
+    if drain {
+        let available = available.unwrap_or(0);
+        return (available.saturating_add(waiting) >= fee_reserve).then_some(
+            PlatformWalletError::CoreFundsAwaitingNetwork {
+                available: Some(available),
+                waiting,
+                required: None,
+                outpoint: None,
+            },
+        );
     }
     let required = match (required, requested) {
         (Some(required), Some(requested)) => Some(required.max(requested)),
@@ -950,12 +996,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         .sum(),
                 )
             };
-            let fee_reserve = final_inputs_fee(
-                finals,
-                basis.outputs.unwrap_or(OutputShape::ONE_P2PKH),
-                rate,
-            )?;
+            let fee_reserve = basis.fee_reserve(finals)?;
             let requested = basis.requested;
+            let drain = basis.drain;
             let (unsigned, fee, reservation_token) =
                 builder.build_unsigned_reserved().map_err(|error| {
                     awaiting_network(
@@ -963,6 +1006,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         waiting,
                         fee_reserve,
                         requested,
+                        drain,
                     )
                 })?;
 
