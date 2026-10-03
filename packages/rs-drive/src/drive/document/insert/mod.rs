@@ -37,6 +37,8 @@ mod add_indices_for_top_index_level_for_contract_operations;
 // This module contains functionality for preallocating refersTo-determined
 // indexOnly index trees when the referenced document is inserted
 mod add_preallocated_index_tree_operations;
+#[cfg(feature = "server")]
+pub(crate) use add_preallocated_index_tree_operations::preallocation_bindings_targeting;
 
 // Module: add_reference_for_index_level_for_contract_operations
 // This module contains functionality for adding a reference for an index level for contract operations

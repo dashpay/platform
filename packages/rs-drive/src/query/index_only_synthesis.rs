@@ -39,8 +39,8 @@ use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{
-    index_admissible_for_query, BestIndexOutcome, DriveDocumentQuery, InternalClauses, WhereClause,
-    WhereOperator,
+    document_index_admissible_for_query, BestIndexOutcome, DriveDocumentQuery, InternalClauses,
+    WhereClause, WhereOperator,
 };
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -190,7 +190,10 @@ impl DriveDocumentQuery<'_> {
         // projection, and an all-unused match inside the difference budget
         // could otherwise slip through (see
         // [`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)).
-        let admissible = |index: &Index| index_admissible_for_query(index, &[], &skip_bindings);
+        // The document form of the gate passes over a summableOffCountIndex
+        // index, which keeps no member entries to rebuild documents from.
+        let admissible =
+            |index: &Index| document_index_admissible_for_query(index, &[], &skip_bindings);
         let matching = |filter: &dyn Fn(&Index) -> bool| {
             self.document_type
                 .index_for_types_matching_including_terminal(
@@ -1101,17 +1104,11 @@ impl DriveDocumentQuery<'_> {
 /// mirrors exactly this predicate); prover and verifier share this one
 /// selector, so they can never disagree on the anchor.
 pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<&'a Index, Error> {
-    use dpp::document::property_names::{CREATED_AT, OWNER_ID};
+    use dpp::document::property_names::OWNER_ID;
     document_type
         .indexes()
         .values()
-        .find(|index| {
-            let carries_owner = index.terminal_contains(OWNER_ID)
-                || index.properties.iter().any(|p| p.name == OWNER_ID);
-            let carries_created_at = index.terminal_contains(CREATED_AT)
-                || index.properties.iter().any(|p| p.name == CREATED_AT);
-            carries_owner && !carries_created_at && !index.skip_if_absent && !index.outlives_delete
-        })
+        .find(|index| index.involves(OWNER_ID) && index.keys_each_live_document_by_its_values())
         .ok_or(Error::Query(QuerySyntaxError::Unsupported(
             "executed-transition proofs for an indexOnly type need an \
                  $ownerId-bearing index that does not involve $createdAt and sets neither \

@@ -17,6 +17,7 @@ mod withdrawals;
 use crate::util::batch::GroveDbOpBatch;
 
 use crate::drive::contract::moderation::types::ContractTeamActionWrite;
+use crate::drive::document::preallocation_bindings_targeting;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -52,7 +53,11 @@ use crate::error::fee::FeeError;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -339,6 +344,82 @@ impl Drive {
         }
         Ok(())
     }
+
+    /// Refuses a batch that moves one document type's `summableOffCountIndex`
+    /// counters for more than one document. Each document's conversion reads
+    /// its groups' counters and writes them back moved, and no conversion sees
+    /// another's pending writes, so two moves of one counter in one batch
+    /// would apply as one (grovedb keeps one write per key). A document moves
+    /// the counters of its own type when that type keeps them, written or
+    /// deleted, and an inserted document those of every type whose
+    /// preallocated counter index the insert creates (preallocation writes the
+    /// counter at zero). The rule is per type, so it is conservative: two
+    /// documents of different groups are refused too.
+    ///
+    /// A documents batch carries one transition
+    /// (`max_transitions_in_documents_batch`) and only transitions write
+    /// indexOnly documents, so no consensus batch moves a counter twice; this
+    /// keeps it so for every caller of the batch methods, estimation
+    /// included. Only protocol version 14's batch methods call it.
+    pub(crate) fn refuse_repeated_counter_moves(
+        &self,
+        operations: &[DriveOperation],
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let mut moved: BTreeSet<(Identifier, String)> = BTreeSet::new();
+        for operation in operations {
+            let DriveOperation::DocumentOperation(operation) = operation else {
+                continue;
+            };
+            operation.for_each_document_type(
+                self,
+                block_info,
+                transaction,
+                |contract, document_type, inserts| {
+                    for counter_type in counter_types_moved(contract, document_type, inserts) {
+                        if !moved.insert((contract.id(), counter_type)) {
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "a batch moves one document type's summableOffCountIndex \
+                                 counters for more than one document",
+                            )));
+                        }
+                    }
+                    Ok(())
+                },
+                platform_version,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// The document types whose `summableOffCountIndex` counters a write of
+/// `document_type` moves: its own when it keeps them, and, when the write
+/// `inserts` a document, each type whose preallocated counter index the
+/// insert creates.
+fn counter_types_moved(
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    inserts: bool,
+) -> BTreeSet<String> {
+    let mut moved = BTreeSet::new();
+    if document_type
+        .indexes()
+        .values()
+        .any(|index| index.is_summable_off_count_index())
+    {
+        moved.insert(document_type.name().clone());
+    }
+    if inserts {
+        moved.extend(
+            preallocation_bindings_targeting(contract, document_type)
+                .filter(|(_, index, _)| index.is_summable_off_count_index())
+                .map(|(referring_type, _, _)| referring_type.name().clone()),
+        );
+    }
+    moved
 }
 
 impl DriveOperationFinalizationTasks for DriveOperation<'_> {

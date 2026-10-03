@@ -10,11 +10,13 @@ use dpp::data_contract::document_type::{IndexLevel, IndexType};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
+use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     document_takes_part_in_index, index_level_tree_types_with_continuation_demotion,
     level_removes_entry,
 };
+use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::util::storage_flags::StorageFlags;
@@ -209,6 +211,41 @@ impl Drive {
                 .unwrap_or_default();
 
             sub_level_index_path_info.push(index_property_key)?;
+
+            // A summableOffCountIndex index ending at this sub-level keeps its group's
+            // counter at the value position (see the insert walker): the
+            // delete takes one back, keeping a preallocated counter at zero
+            // and otherwise removing it with the group's last document,
+            // pruning the trees it leaves empty as a drained member bucket's
+            // are. Nothing continues below it.
+            if let Some(index_type) = sub_level.summable_off_count_index_info() {
+                self.add_summable_off_count_counter_operations(
+                    sub_level_index_path_info,
+                    document_index_field,
+                    property_name_tree_type,
+                    CounterChange::Decrement {
+                        keep_at_zero: index_type.preallocated,
+                        stop_path_height: CONTRACT_DOCUMENTS_PATH_HEIGHT,
+                    },
+                    *storage_flags,
+                    || {
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )
+                    },
+                    estimated_costs_only_with_layer_info,
+                    previous_batch_operations,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                continue;
+            }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {

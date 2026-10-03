@@ -15,7 +15,12 @@
 //!     suffixes) are wrapped with `Element::NonCounted` so they
 //!     contribute 0 to the parent count.
 
+use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
 use crate::drive::Drive;
+use crate::query::drive_document_count_query::{
+    CountMode, DocumentCountRequest, DocumentCountResponse,
+};
+use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -27,11 +32,14 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::fee_result::FeeResult;
+use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::utils::generate_random_identifier_struct;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
+use std::collections::BTreeMap;
 
 const PROTOCOL_VERSION_V12: u32 = 12;
 
@@ -126,6 +134,78 @@ fn build_widget_doc(contract: &DataContract, color: &str, size: &str, seed: u64)
     props.insert("size".to_string(), Value::Text(size.to_string()));
     doc.set_properties(props);
     doc
+}
+
+/// A `widget` contract at `protocol_version` whose `byBrandColor` index over
+/// `[brand, color]` is countable and rangeCountable, owned by a fixed
+/// identity.
+fn build_brand_color_contract(protocol_version: u32) -> DataContract {
+    DataContractFactory::new(protocol_version)
+        .expect("expected to create factory")
+        .create_with_value_config(
+            Identifier::from([9; 32]),
+            0,
+            platform_value!({
+                "widget": {
+                    "type": "object",
+                    "properties": {
+                        "brand": { "type": "string", "position": 0, "maxLength": 32 },
+                        "color": { "type": "string", "position": 1, "maxLength": 32 },
+                    },
+                    "indices": [{
+                        "name": "byBrandColor",
+                        "properties": [{"brand": "asc"}, {"color": "asc"}],
+                        "countable": "countable",
+                        "rangeCountable": true,
+                    }],
+                    "additionalProperties": false,
+                },
+            }),
+            None,
+            None,
+        )
+        .expect("create contract")
+        .data_contract_owned()
+}
+
+/// Inserts one `widget` per `(brand, color)` pair at `platform_version`, each
+/// a random document seeded by its position (from 1).
+fn insert_brand_color_widgets(
+    drive: &Drive,
+    contract: &DataContract,
+    widgets: &[(&str, &str)],
+    platform_version: &PlatformVersion,
+) {
+    let document_type = contract
+        .document_type_for_name("widget")
+        .expect("widget exists");
+    for (i, (brand, color)) in widgets.iter().enumerate() {
+        let mut doc = document_type
+            .random_document(Some((i + 1) as u64), platform_version)
+            .expect("random document");
+        doc.set_properties(BTreeMap::from([
+            ("brand".to_string(), Value::Text(brand.to_string())),
+            ("color".to_string(), Value::Text(color.to_string())),
+        ]));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert document");
+    }
 }
 
 /// The top-level property-name tree at `[contract_doc, doctype, "color"]`
@@ -904,27 +984,7 @@ fn range_count_with_in_on_prefix_returns_per_brand_color_entries() {
     let pv = PlatformVersion::latest();
 
     // Build a contract with `[brand, color]` range_countable.
-    let factory = dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12)
-        .expect("expected to create factory");
-    let document_schema = platform_value!({
-        "type": "object",
-        "properties": {
-            "brand": { "type": "string", "position": 0, "maxLength": 32 },
-            "color": { "type": "string", "position": 1, "maxLength": 32 },
-        },
-        "indices": [{
-            "name": "byBrandColor",
-            "properties": [{"brand": "asc"}, {"color": "asc"}],
-            "countable": "countable",
-            "rangeCountable": true,
-        }],
-        "additionalProperties": false,
-    });
-    let schemas = platform_value!({ "widget": document_schema });
-    let contract = factory
-        .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
-        .expect("create contract")
-        .data_contract_owned();
+    let contract = build_brand_color_contract(PROTOCOL_VERSION_V12);
 
     drive
         .apply_contract(
@@ -952,33 +1012,7 @@ fn range_count_with_in_on_prefix_returns_per_brand_color_entries() {
         ("contoso", "red"),
         ("contoso", "green"),
     ];
-    for (i, (brand, color)) in docs.iter().enumerate() {
-        let mut doc = document_type
-            .random_document(Some((i + 1) as u64), pv)
-            .expect("random doc");
-        let mut props = std::collections::BTreeMap::new();
-        props.insert("brand".to_string(), Value::Text(brand.to_string()));
-        props.insert("color".to_string(), Value::Text(color.to_string()));
-        doc.set_properties(props);
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&doc, None)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                pv,
-                None,
-            )
-            .expect("insert");
-    }
+    insert_brand_color_widgets(&drive, &contract, &docs, pv);
 
     // brand IN (acme, contoso) AND color > "blue"
     // Match: acme+red(3), contoso+red(2), contoso+green(1) = 6
@@ -1629,27 +1663,7 @@ fn aggregate_count_proof_verifies_on_compound_index_with_equal_prefix() {
     // Same shape as `range_count_with_in_on_prefix_forks_and_merges`
     // uses, but here we exercise the prove path instead of the
     // no-proof executor.
-    let factory = dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12)
-        .expect("expected to create factory");
-    let document_schema = platform_value!({
-        "type": "object",
-        "properties": {
-            "brand": { "type": "string", "position": 0, "maxLength": 32 },
-            "color": { "type": "string", "position": 1, "maxLength": 32 },
-        },
-        "indices": [{
-            "name": "byBrandColor",
-            "properties": [{"brand": "asc"}, {"color": "asc"}],
-            "countable": "countable",
-            "rangeCountable": true,
-        }],
-        "additionalProperties": false,
-    });
-    let schemas = platform_value!({ "widget": document_schema });
-    let contract = factory
-        .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
-        .expect("create contract")
-        .data_contract_owned();
+    let contract = build_brand_color_contract(PROTOCOL_VERSION_V12);
 
     drive
         .apply_contract(
@@ -1679,34 +1693,7 @@ fn aggregate_count_proof_verifies_on_compound_index_with_equal_prefix() {
         ("contoso", "green"),
         ("contoso", "blue"),
     ];
-    for (i, (brand, color)) in docs.iter().enumerate() {
-        let mut doc = document_type
-            .random_document(Some((i + 1) as u64), pv)
-            .expect("random document");
-        let mut props = std::collections::BTreeMap::new();
-        props.insert("brand".to_string(), Value::Text(brand.to_string()));
-        props.insert("color".to_string(), Value::Text(color.to_string()));
-        doc.set_properties(props);
-
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&doc, None)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                pv,
-                None,
-            )
-            .expect("expected to insert document");
-    }
+    insert_brand_color_widgets(&drive, &contract, docs, pv);
 
     let where_clauses = vec![
         WhereClause {
@@ -3000,27 +2987,7 @@ fn distinct_count_proof_with_in_on_prefix_returns_per_brand_color_entries() {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = PlatformVersion::latest();
 
-    let factory =
-        dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12).expect("factory");
-    let document_schema = platform_value!({
-        "type": "object",
-        "properties": {
-            "brand": { "type": "string", "position": 0, "maxLength": 32 },
-            "color": { "type": "string", "position": 1, "maxLength": 32 },
-        },
-        "indices": [{
-            "name": "byBrandColor",
-            "properties": [{"brand": "asc"}, {"color": "asc"}],
-            "countable": "countable",
-            "rangeCountable": true,
-        }],
-        "additionalProperties": false,
-    });
-    let schemas = platform_value!({ "widget": document_schema });
-    let contract = factory
-        .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
-        .expect("create contract")
-        .data_contract_owned();
+    let contract = build_brand_color_contract(PROTOCOL_VERSION_V12);
     drive
         .apply_contract(
             &contract,
@@ -3046,33 +3013,7 @@ fn distinct_count_proof_with_in_on_prefix_returns_per_brand_color_entries() {
         ("contoso", "red"),
         ("contoso", "green"),
     ];
-    for (i, (brand, color)) in docs.iter().enumerate() {
-        let mut doc = document_type
-            .random_document(Some((i + 1) as u64), pv)
-            .expect("random doc");
-        let mut props = std::collections::BTreeMap::new();
-        props.insert("brand".to_string(), Value::Text(brand.to_string()));
-        props.insert("color".to_string(), Value::Text(color.to_string()));
-        doc.set_properties(props);
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&doc, None)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                pv,
-                None,
-            )
-            .expect("insert");
-    }
+    insert_brand_color_widgets(&drive, &contract, &docs, pv);
 
     let where_clauses = vec![
         WhereClause {
@@ -3184,4 +3125,209 @@ fn distinct_count_proof_with_in_on_prefix_returns_per_brand_color_entries() {
     assert_eq!(per_color.get(b"green".as_slice()), Some(&1));
     let total: u64 = per_pair.values().sum();
     assert_eq!(total, 6);
+}
+
+/// The count verifiers (point lookup, aggregate, distinct and carrier) and
+/// the contract insert estimate are edited in place for
+/// `summableOffCountIndex` indexes; run at the last shipped protocol version
+/// over a regular `[brand, color]` index they take none of the new branches:
+/// the contract's estimated and applied fees stay what protocol version 13
+/// charges, and every proof verifies against the live root to the prover's
+/// answer.
+#[test]
+fn should_answer_count_proofs_and_price_the_contract_unchanged_at_protocol_version_13() {
+    let pv = PlatformVersion::get(13).expect("protocol version 13 exists");
+    let contract = build_brand_color_contract(pv.protocol_version);
+
+    let estimated = setup_drive_with_initial_state_structure(Some(pv))
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            false,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("the dry run prices the contract");
+    let drive = setup_drive_with_initial_state_structure(Some(pv));
+    let applied = drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("apply contract");
+    let fees = |fee: &FeeResult| (fee.storage_fee, fee.processing_fee);
+    assert_eq!(
+        fees(&estimated),
+        (30456000, 3373620),
+        "the dry run at protocol version 13"
+    );
+    assert_eq!(
+        fees(&applied),
+        (30456000, 531600),
+        "the applied fee at protocol version 13"
+    );
+
+    insert_brand_color_widgets(
+        &drive,
+        &contract,
+        &[
+            ("acme", "red"),
+            ("acme", "red"),
+            ("acme", "red"),
+            ("acme", "blue"),
+            ("acme", "blue"),
+            ("contoso", "red"),
+            ("contoso", "red"),
+            ("contoso", "green"),
+            ("contoso", "blue"),
+        ],
+        pv,
+    );
+    let live_root = drive
+        .grove
+        .root_hash(None, &pv.drive.grove_version)
+        .unwrap()
+        .expect("root hash must be readable");
+    let document_type = contract
+        .document_type_for_name("widget")
+        .expect("widget exists");
+
+    let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+        field: field.to_string(),
+        operator,
+        value,
+    };
+    let text = |value: &str| Value::Text(value.to_string());
+    let drive_config = DriveConfig::default();
+    let count = |where_clauses: &[WhereClause], mode: CountMode, prove: bool| {
+        drive
+            .execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type,
+                    where_clauses: where_clauses.to_vec(),
+                    resolved_time_ranges: vec![],
+                    order_clauses: vec![],
+                    mode,
+                    limit: None,
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                pv,
+            )
+            .expect("the count executes at protocol version 13")
+    };
+    let proof_of =
+        |where_clauses: &[WhereClause], mode: CountMode| match count(where_clauses, mode, true) {
+            DocumentCountResponse::Proof(proof) => proof,
+            other => panic!("expected a proof, got {other:?}"),
+        };
+    let query_for = |where_clauses: &[WhereClause], range: bool| {
+        let index = if range {
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                document_type.indexes(),
+                where_clauses,
+                &[],
+            )
+        } else {
+            DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                document_type.indexes(),
+                where_clauses,
+                &[],
+            )
+        }
+        .expect("byBrandColor answers the count");
+        assert!(!index.is_summable_off_count_index());
+        DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: where_clauses.to_vec(),
+        }
+    };
+
+    // Point lookup: acme reds.
+    let point = [
+        clause("brand", WhereOperator::Equal, text("acme")),
+        clause("color", WhereOperator::Equal, text("red")),
+    ];
+    let (root_hash, entries) = query_for(&point, false)
+        .verify_point_lookup_count_proof(&proof_of(&point, CountMode::Aggregate), pv)
+        .expect("the point lookup proof verifies");
+    assert_eq!(root_hash, live_root, "the point lookup proof's root");
+    assert_eq!(
+        entries.iter().filter_map(|entry| entry.count).sum::<u64>(),
+        3,
+        "acme reds"
+    );
+
+    // Aggregate range: acme colors after blue.
+    let acme_range = [
+        clause("brand", WhereOperator::Equal, text("acme")),
+        clause("color", WhereOperator::GreaterThan, text("blue")),
+    ];
+    let (root_hash, total) = query_for(&acme_range, true)
+        .verify_aggregate_count_proof(&proof_of(&acme_range, CountMode::Aggregate), pv)
+        .expect("the aggregate proof verifies");
+    assert_eq!(root_hash, live_root, "the aggregate proof's root");
+    assert_eq!(total, 3, "acme colors after blue");
+
+    // Distinct range: acme per color, matching the unproved entries.
+    let acme_colors = [
+        clause("brand", WhereOperator::Equal, text("acme")),
+        clause("color", WhereOperator::GreaterThan, text("a")),
+    ];
+    let unproved = match count(&acme_colors, CountMode::GroupByRange, false) {
+        DocumentCountResponse::Entries(entries) => entries,
+        other => panic!("expected entries, got {other:?}"),
+    };
+    assert_eq!(
+        unproved
+            .iter()
+            .map(|entry| (entry.key.clone(), entry.count))
+            .collect::<Vec<_>>(),
+        vec![(b"blue".to_vec(), Some(2)), (b"red".to_vec(), Some(3))],
+        "acme per color"
+    );
+    let (root_hash, verified) = query_for(&acme_colors, true)
+        .verify_distinct_count_proof(
+            &proof_of(&acme_colors, CountMode::GroupByRange),
+            DEFAULT_QUERY_LIMIT,
+            true,
+            pv,
+        )
+        .expect("the distinct proof verifies");
+    assert_eq!(root_hash, live_root, "the distinct proof's root");
+    assert_eq!(verified, unproved, "proved per color");
+
+    // Carrier: each brand's colors after blue.
+    let per_brand = [
+        clause(
+            "brand",
+            WhereOperator::In,
+            Value::Array(vec![text("acme"), text("contoso")]),
+        ),
+        clause("color", WhereOperator::GreaterThan, text("blue")),
+    ];
+    let (root_hash, totals) = query_for(&per_brand, true)
+        .verify_carrier_aggregate_count_proof(
+            &proof_of(&per_brand, CountMode::GroupByIn),
+            None,
+            true,
+            pv,
+        )
+        .expect("the carrier proof verifies");
+    assert_eq!(root_hash, live_root, "the carrier proof's root");
+    assert_eq!(
+        totals,
+        vec![(b"acme".to_vec(), 3), (b"contoso".to_vec(), 3)],
+        "each brand's colors after blue"
+    );
 }

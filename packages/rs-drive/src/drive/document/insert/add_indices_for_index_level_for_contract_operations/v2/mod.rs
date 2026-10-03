@@ -4,6 +4,7 @@ use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, level_counts_continuations,
     level_reaches_entry,
 };
+use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -251,7 +252,7 @@ impl Drive {
                 .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            if continuation_contributes_zero(
+            let property_name_tree_created = if continuation_contributes_zero(
                 parent_value_tree_type,
                 continuations_contribute,
                 sub_level,
@@ -275,7 +276,7 @@ impl Drive {
                     previous_batch_operations,
                     batch_operations,
                     &platform_version.drive,
-                )?;
+                )?
             } else {
                 self.batch_insert_empty_index_tree_if_not_exists(
                     path_key_info.clone(),
@@ -287,10 +288,43 @@ impl Drive {
                     previous_batch_operations,
                     batch_operations,
                     &platform_version.drive,
-                )?;
-            }
+                )?
+            };
 
             sub_level_index_path_info.push(index_property_key)?;
+
+            // A summableOffCountIndex index ending at this sub-level keeps one counter
+            // per group at the value position, where another index grows a
+            // value tree: the counter stands for the value tree, its `0`
+            // bucket and every member entry, and nothing continues below it
+            // (registration refuses an index that would).
+            if sub_level.summable_off_count_index_info().is_some() {
+                self.add_summable_off_count_counter_operations(
+                    sub_level_index_path_info,
+                    document_index_field,
+                    property_name_tree_type,
+                    CounterChange::Increment {
+                        parent_created: property_name_tree_created,
+                    },
+                    *storage_flags,
+                    || {
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )
+                    },
+                    estimated_costs_only_with_layer_info,
+                    previous_batch_operations,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                continue;
+            }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {

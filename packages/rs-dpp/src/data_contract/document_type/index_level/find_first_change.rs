@@ -97,6 +97,15 @@ impl IndexLevel {
                     old_info.range_summable, new_info.range_summable,
                 ));
             }
+            // The source a `summableOffCountIndex` index counts names its
+            // summed value and fixes the properties its groups derive from.
+            // `None` on every index before protocol version 14.
+            if old_info.summable_off_count_index != new_info.summable_off_count_index {
+                return Some(format!(
+                    "(summable_off_count_index: {:?} -> {:?})",
+                    old_info.summable_off_count_index, new_info.summable_off_count_index,
+                ));
+            }
         }
 
         for (key, old_sub) in &self.sub_index_levels {
@@ -143,6 +152,26 @@ impl IndexLevel {
             return Some(format!(
                 "(count_propagating: {} -> {})",
                 self.count_propagating, new.count_propagating,
+            ));
+        }
+        // The Sum and Avg chain stamps of a `summableOffCountIndex` index
+        // decide the same layout on the other axes.
+        if self.ranked_sum_grouping != new.ranked_sum_grouping {
+            return Some(format!(
+                "(ranked_sum_grouping: {} -> {})",
+                self.ranked_sum_grouping, new.ranked_sum_grouping,
+            ));
+        }
+        if self.ranked_average_grouping != new.ranked_average_grouping {
+            return Some(format!(
+                "(ranked_average_grouping: {} -> {})",
+                self.ranked_average_grouping, new.ranked_average_grouping,
+            ));
+        }
+        if self.sum_propagating != new.sum_propagating {
+            return Some(format!(
+                "(sum_propagating: {} -> {})",
+                self.sum_propagating, new.sum_propagating,
             ));
         }
         // The exempt-branch marker decides whether the level's

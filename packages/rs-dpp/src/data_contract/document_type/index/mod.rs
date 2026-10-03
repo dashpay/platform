@@ -26,6 +26,7 @@ use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use regex::Regex;
 use std::cmp::Ordering;
+use std::mem;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
@@ -38,6 +39,7 @@ mod integer_range_parse_tests;
 mod outlives_delete;
 pub mod preallocation;
 pub mod random_index;
+pub mod summable_off_count_index;
 pub mod time_range;
 
 pub use bucketing::IndexBucketing;
@@ -48,7 +50,9 @@ pub use derived_index_property::{DerivedIndexField, DerivedIndexProperty};
 pub use extract_contested_values::contested_index_identifier;
 pub use integer_range::{IntegerRangeKeyType, IntegerRangeTransform};
 pub use outlives_delete::index_only_row_commits_created_at;
-pub use preallocation::{PreallocatedKeySource, PreallocationBinding};
+pub use preallocation::{
+    referenced_value_kept_on_removal, PreallocatedKeySource, PreallocationBinding,
+};
 pub use time_range::TimeRangeTransform;
 
 /// Index-level keyword opting the index's terminal property-name tree into the
@@ -159,6 +163,32 @@ pub const OUTLIVES_DELETE: &str = "outlivesDelete";
 /// layout. The doc-type-level validation enforces all of this. Meta-schema
 /// v3+ (protocol version 14).
 pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
+/// Index-level keyword making the index sum **the count of another index**:
+/// it names an index of the same indexOnly document type, the *source*, and
+/// keeps, per group of its own properties, one counter holding the number of
+/// the source's entries in that group, with no entry per document. The source
+/// keeps the members; this index keeps their count at another grouping.
+///
+/// Each counter is a `SumItem` in the tree of the index's last property,
+/// rewritten in place by every create and delete. In that tree a group counts
+/// one and adds its counter to the sum, so the trees count groups and sum the
+/// source's entries in them. A count query over the index reads those sums,
+/// the source's entries, as does a sum query (which names the source index
+/// for the summed value), and the average is the entries per group.
+///
+/// The sums are lossless: the source must hold every document exactly once
+/// (it keeps entries, skips nothing, outlives no delete and involves no
+/// `$createdAt`), every source property must be a property of this index, and
+/// every other property of this index must be fixed by the source's values
+/// (a `where` referring value of a reference a source property holds, to a
+/// value that can never change). A group here therefore holds exactly the
+/// documents of one source group, and its counter always equals that group's
+/// entry count. Needs `rangeSummable: true` (the level holding the counters
+/// must be a sum tree); takes no `terminal`, `summable` or `averageable`. The
+/// parser checks the index-local rules, `apply_index_only` the ones that need
+/// the document type, and the contract-level validation the ones that need
+/// the referenced type. Meta-schema v3+ (protocol version 14).
+pub const SUMMABLE_OFF_COUNT_INDEX: &str = "summableOffCountIndex";
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -459,6 +489,143 @@ impl IndexCountability {
     }
 }
 
+/// The levels a ranking keyword's object form names: `{ "at": <property
+/// name> }` or `{ "at": [<property names>] }`. `None` for any other value
+/// (the boolean form), which the caller reads itself.
+fn parse_ranked_at_levels(
+    keyword: &str,
+    value: &Value,
+) -> Result<Option<Vec<String>>, DataContractError> {
+    let Some(ranked_map) = value.as_map() else {
+        return Ok(None);
+    };
+    let mut at_levels: Option<Vec<String>> = None;
+    for (key_value, field_value) in ranked_map {
+        let key = key_value
+            .to_str()
+            .map_err(|e| DataContractError::ValueDecodingError(e.to_string()))?;
+        match key {
+            "at" => {
+                let levels = if let Some(text) = field_value.as_text() {
+                    vec![text.to_owned()]
+                } else if let Some(array) = field_value.as_array() {
+                    array
+                        .iter()
+                        .map(|element| {
+                            element.as_text().map(|text| text.to_owned()).ok_or(
+                                DataContractError::ValueWrongType(format!(
+                                    "{keyword}.at array elements should be strings naming \
+                                     index properties"
+                                )),
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                } else {
+                    return Err(DataContractError::ValueWrongType(format!(
+                        "{keyword}.at should be a string naming an index property, or an \
+                         array of them"
+                    )));
+                };
+                at_levels = Some(levels);
+            }
+            other => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "unexpected {keyword} field: {other}"
+                )));
+            }
+        }
+    }
+    let at_levels = at_levels.ok_or(DataContractError::InvalidContractStructure(format!(
+        "{keyword}'s object form requires an `at` field naming the index property (or \
+         properties) whose levels carry the ranking"
+    )))?;
+    if at_levels.is_empty() {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.at must name at least one property; an empty array names nothing"
+        )));
+    }
+    if at_levels.iter().any(|at| at.is_empty()) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.at must name a property; an empty string names nothing"
+        )));
+    }
+    Ok(Some(at_levels))
+}
+
+/// Resolves the levels a ranking keyword's `at` names against the index's
+/// properties: whether it names the last property (the terminal ranking,
+/// folded into the keyword's boolean), and the other levels in
+/// index-property order, so two spellings of one declaration parse alike.
+fn resolve_ranked_at_levels(
+    keyword: &str,
+    levels: Vec<String>,
+    index_properties: &[IndexProperty],
+) -> Result<(bool, Vec<String>), DataContractError> {
+    for (position, at) in levels.iter().enumerate() {
+        if levels[..position].contains(at) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "{keyword}.at names \"{at}\" twice; each level is one ranking"
+            )));
+        }
+    }
+    let mut ranks_terminal = false;
+    let mut at_positions: Vec<(usize, String)> = Vec::new();
+    for at in levels {
+        let Some(position) = index_properties
+            .iter()
+            .position(|property| property.name == at)
+        else {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "{keyword}.at (\"{at}\") must name one of the index's properties; the ranking \
+                 is placed at that property's level"
+            )));
+        };
+        if position + 1 == index_properties.len() {
+            ranks_terminal = true;
+        } else {
+            at_positions.push((position, at));
+        }
+    }
+    at_positions.sort_by_key(|(position, _)| *position);
+    Ok((
+        ranks_terminal,
+        at_positions.into_iter().map(|(_, at)| at).collect(),
+    ))
+}
+
+/// One ranking keyword's value: its boolean form, or the levels its
+/// `{ "at": … }` object form names, held raw until the property list is
+/// parsed. Each spelling replaces both parts, so a repeated key keeps its last
+/// spelling, as the meta-schema's JSON view does.
+fn parse_ranking(
+    keyword: &str,
+    value: &Value,
+) -> Result<(bool, Option<Vec<String>>), DataContractError> {
+    if let Some(at_levels) = parse_ranked_at_levels(keyword, value)? {
+        return Ok((false, Some(at_levels)));
+    }
+    let ranks_terminal = value.as_bool().ok_or_else(|| {
+        DataContractError::ValueWrongType(format!(
+            "{keyword} value must be a boolean or a map with an `at` field"
+        ))
+    })?;
+    Ok((ranks_terminal, None))
+}
+
+/// [`resolve_ranked_at_levels`] for a ranking written in the object form:
+/// whether its levels name the last property, and the other levels.
+/// `(false, [])` for the boolean form.
+fn resolve_ranking(
+    keyword: &str,
+    at_levels: Option<Vec<String>>,
+    index_properties: &[IndexProperty],
+) -> Result<(bool, Vec<String>), DataContractError> {
+    match at_levels {
+        Some(levels) => resolve_ranked_at_levels(keyword, levels, index_properties),
+        None => Ok((false, Vec::new())),
+    }
+}
+
 /// Deserializer for [`Index::ranked_countable_at`] that accepts, besides
 /// the current array-of-names form, the two legacy spellings the field
 /// had while it was an `Option<String>`: `null` (→ empty) and a bare
@@ -628,7 +795,8 @@ pub struct Index {
     ///   so their sums don't pollute the value tree's running sum.
     ///
     /// `range_summable: true` requires `summable` to be `Some` (it's
-    /// additive on top of summable, not a replacement). Mutually
+    /// additive on top of summable, not a replacement), or the index to be a
+    /// `summableOffCountIndex` index, whose counters are what it sums. Mutually
     /// compatible with `countable` and `range_countable` — combining
     /// the flags promotes the tree to a `ProvableCountSumTree` so a
     /// single tree carries both metrics. The dispatcher in
@@ -645,8 +813,9 @@ pub struct Index {
     /// proof instead of enumerating every group.
     ///
     /// The indexed primary is a byte-compatible mirror of the tree it replaces,
-    /// so every existing range aggregate (`AggregateCountOnRange` &co.) keeps
-    /// working against it unchanged.
+    /// so per-value range reads keep working against it; a range total
+    /// (`AggregateCountOnRange` &co.) does not, so Drive refuses one through
+    /// any index whose path passes through a ranked level.
     ///
     /// `ranked_countable: true` requires [`Index::range_countable`] (which in
     /// turn requires [`Index::countable`]): the ranking secondary is built from
@@ -682,7 +851,11 @@ pub struct Index {
     /// flowing up through every ranked level above it. Mutually exclusive
     /// with the other ranking axes (`rankedSummable` / `rankedAverageable`)
     /// — the subtree count chain the prefix levels rank by cannot carry a
-    /// sum axis.
+    /// sum axis — except on a `summableOffCountIndex` index, whose counters
+    /// carry counts and sums up every level. There a document count is its
+    /// sums, so the parser merges `rankedCountable` into the Sum ranking
+    /// ([`Index::ranked_summable`] / [`Index::ranked_summable_at`]): on such
+    /// an index this field and its boolean stay empty.
     ///
     /// Requires [`Index::range_countable`], like the terminal form. Levels
     /// from the named property down to the terminal are laid out
@@ -702,11 +875,13 @@ pub struct Index {
     pub ranked_countable_at: Vec<String>,
     /// Sum-axis counterpart of [`Index::ranked_countable`]: the terminal
     /// property-name tree gains an ordered secondary keyed by each group's sum
-    /// of the [`Index::summable`] property, making "top / bottom K groups by
-    /// sum" O(log n + k) with a proof.
+    /// of the [`Index::summable`] property (on a `summableOffCountIndex`
+    /// index, of the source index's entries, which is also where its
+    /// `rankedCountable` lands), making "top / bottom K groups by sum"
+    /// O(log n + k) with a proof.
     ///
     /// Requires [`Index::range_summable`] (which in turn requires
-    /// [`Index::summable`]).
+    /// [`Index::summable`], or a `summableOffCountIndex` index).
     ///
     /// See `book/src/drive/document-ranked-trees.md` and
     /// `book/src/drive/ranked-index-examples.md` for the worked example.
@@ -730,6 +905,19 @@ pub struct Index {
     /// `book/src/drive/ranked-index-examples.md` for the worked example.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub ranked_averageable: bool,
+    /// The non-terminal levels the Sum axis ranks at: `rankedSummable`'s
+    /// object form `{ "at": … }`, with the terminal level folded into
+    /// [`Self::ranked_summable`], exactly as [`Self::ranked_countable_at`]
+    /// does for the Count axis. Only a [`Self::summable_off_count_index`]
+    /// index takes it: its chain carries the counters' sums up to each named
+    /// level. In index-property order.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub ranked_summable_at: Vec<String>,
+    /// The non-terminal levels the Avg axis ranks at, as
+    /// [`Self::ranked_summable_at`] is for the Sum axis. Only a
+    /// [`Self::summable_off_count_index`] index takes it.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub ranked_averageable_at: Vec<String>,
     /// When set, the index's first property is a timestamp that is bucketed
     /// into fixed-length, regularly-spaced (possibly overlapping) time
     /// ranges. The stored key for that property is the range *start* (a
@@ -826,6 +1014,14 @@ pub struct Index {
     // `serde(default)`: see `skip_if_absent`.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub skip_if_absent_properties: Vec<String>,
+    /// The source index of a `summableOffCountIndex` index (see
+    /// [`SUMMABLE_OFF_COUNT_INDEX`]): this index keeps, per group, the number
+    /// of the source's entries in that group, and no entry per document.
+    /// `None` on every other index.
+    //
+    // `serde(default)`: see `skip_if_absent`.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub summable_off_count_index: Option<String>,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -855,6 +1051,9 @@ pub(crate) struct IndexGrammarAdmissions {
     /// The `skipIfAbsent` keyword (indexOnly document types; generation 3
     /// and later).
     pub(crate) skip_if_absent: bool,
+    /// The `summableOffCountIndex` keyword (indexOnly document types;
+    /// generation 3 and later).
+    pub(crate) summable_off_count_index: bool,
     /// Whether `rangeCountable: true` promotes an omitted `countable` to
     /// `"countable"`, as the doctype-level `rangeCountable` has always
     /// implied `documentsCountable` (generation 3 and later). Earlier
@@ -880,6 +1079,7 @@ impl IndexGrammarAdmissions {
             preallocated: generation >= 3,
             outlives_delete: generation >= 3,
             skip_if_absent: generation >= 3,
+            summable_off_count_index: generation >= 3,
             range_countable_implies_countable: generation >= 3,
             no_locking_resolution: generation >= 3,
         }
@@ -1166,6 +1366,21 @@ impl Index {
         property_name.to_string()
     }
 
+    /// Whether `other`'s first `depth` levels occupy the same GroveDB subtrees
+    /// as this index's. Level identity is [`Self::level_key`] — the
+    /// grid-qualified storage key for a bucketed first property, the bare name
+    /// otherwise — so a bucketed sibling whose declared names match a plain
+    /// index's does NOT share its levels. `false` when either index has fewer
+    /// than `depth` properties.
+    pub fn shares_leading_levels(&self, other: &Index, depth: usize) -> bool {
+        self.properties.len() >= depth
+            && other.properties.len() >= depth
+            && (0..depth).all(|position| {
+                self.level_key(position, &self.properties[position].name)
+                    == other.level_key(position, &other.properties[position].name)
+            })
+    }
+
     /// Name-keyed variant of [`Self::level_key`] for callers that hold a
     /// property name rather than its position: a transform's source is
     /// validated to be the index's first property, so matching the name
@@ -1207,6 +1422,19 @@ impl Index {
         self.terminal_contains(name) || self.properties.iter().any(|property| property.name == name)
     }
 
+    /// Whether the index keeps exactly one entry for every live document,
+    /// keyed by values the document carries: it keeps entries (it is no
+    /// `summableOffCountIndex` index), skips no document (no `skipIfAbsent`),
+    /// drops a deleted document's entry (no `outlivesDelete`) and keys none
+    /// by `$createdAt`, a timestamp the block assigns. An indexOnly type's
+    /// proof index and a counter's source index both need it.
+    pub fn keys_each_live_document_by_its_values(&self) -> bool {
+        !self.is_summable_off_count_index()
+            && !self.skip_if_absent
+            && !self.outlives_delete
+            && !self.involves(property_names::CREATED_AT)
+    }
+
     /// The terminal's single component; `None` on a composite terminal or a
     /// non-indexOnly index.
     pub fn single_terminal(&self) -> Option<&str> {
@@ -1221,6 +1449,81 @@ impl Index {
     /// [`Self::flat_level_key`].
     pub fn is_flat(&self) -> bool {
         self.properties.is_empty() && self.terminal.is_some()
+    }
+
+    /// Whether the index declares any ranking: its last property ranked on
+    /// any axis, or an `at` level on any axis. Every level it names is then
+    /// an indexed tree.
+    pub fn declares_any_ranking(&self) -> bool {
+        self.ranks_its_last_property() || self.ranked_at_levels().next().is_some()
+    }
+
+    /// The properties the index ranks at through a `{ "at": ... }` form, on
+    /// every axis: count, then sum, then average (a property ranked on several
+    /// axes repeats).
+    pub fn ranked_at_levels(&self) -> impl Iterator<Item = &String> {
+        self.ranked_countable_at
+            .iter()
+            .chain(self.ranked_summable_at.iter())
+            .chain(self.ranked_averageable_at.iter())
+    }
+
+    /// The positions of the properties `at_levels` names, skipping a name that
+    /// is no property of the index (a hand-built `Index` may carry one).
+    pub fn at_level_positions<'a>(
+        &'a self,
+        at_levels: impl IntoIterator<Item = &'a String> + 'a,
+    ) -> impl Iterator<Item = usize> + 'a {
+        at_levels
+            .into_iter()
+            .filter_map(|at| self.properties.iter().position(|p| &p.name == at))
+    }
+
+    /// Whether the index ranks its last property on any axis, making that
+    /// property's tree an indexed tree.
+    pub fn ranks_its_last_property(&self) -> bool {
+        self.ranked_countable || self.ranked_summable || self.ranked_averageable
+    }
+
+    /// Whether this is a `summableOffCountIndex` index: one counter per
+    /// group, no entry per document.
+    pub fn is_summable_off_count_index(&self) -> bool {
+        self.summable_off_count_index.is_some()
+    }
+
+    /// The position of the shallowest level of this index's count chain: the
+    /// shallowest property its count or average ranking names in `at`.
+    /// Every value tree from that level down counts its whole subtree. `None`
+    /// without a prefix-level count or average ranking.
+    pub fn shallowest_count_chain_position(&self) -> Option<usize> {
+        self.at_level_positions(
+            self.ranked_countable_at
+                .iter()
+                .chain(self.ranked_averageable_at.iter()),
+        )
+        .min()
+    }
+
+    /// Sum-chain counterpart of [`Self::shallowest_count_chain_position`]:
+    /// the shallowest property a sum or average ranking names in `at`, from
+    /// which every value tree down sums its whole subtree. Only a
+    /// `summableOffCountIndex` index has one.
+    pub fn shallowest_sum_chain_position(&self) -> Option<usize> {
+        self.at_level_positions(
+            self.ranked_summable_at
+                .iter()
+                .chain(self.ranked_averageable_at.iter()),
+        )
+        .min()
+    }
+
+    /// The name a sum, average or ranking query addresses this index's summed
+    /// value by: its `summable` property, or the source index a
+    /// `summableOffCountIndex` index sums the entries of (`sum(byPost)`).
+    pub fn summed_value_name(&self) -> Option<&str> {
+        self.summable
+            .as_deref()
+            .or(self.summable_off_count_index.as_deref())
     }
 
     /// The storage key of a flat index's level (see [`flat_level_key_for`]);
@@ -1644,6 +1947,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -1687,6 +1991,7 @@ impl Index {
             preallocated: preallocated_allowed,
             outlives_delete: outlives_delete_allowed,
             skip_if_absent: skip_if_absent_allowed,
+            summable_off_count_index: summable_off_count_index_allowed,
             range_countable_implies_countable,
             no_locking_resolution: no_locking_resolution_allowed,
         } = admissions;
@@ -1739,17 +2044,16 @@ impl Index {
         // property-name tree; unlike `averageable` / `rangeAverageable` there
         // is no sugar relationship between them, so no explicit-vs-default
         // tracking is needed — nothing ever promotes them.
+        // Each ranking's object form `{ "at": … }` — one property name or an
+        // array of them — is held raw until after the loop, because resolving
+        // each (does it name an index property? is it the last one, i.e. the
+        // terminal form spelled longhand?) needs the parsed property list.
         let mut ranked_countable = false;
-        // The object form `rankedCountable: { "at": … }` — one property name
-        // or an array of them — held raw until after the loop, because
-        // resolving each (does it name an index property? is it the last
-        // one, i.e. the terminal form spelled longhand?) needs the parsed
-        // property list.
-        let mut ranked_countable_at_levels: Vec<String> = Vec::new();
-        let mut ranked_countable_object_form = false;
-        let mut ranked_countable_at: Vec<String> = Vec::new();
+        let mut ranked_countable_at_levels: Option<Vec<String>> = None;
         let mut ranked_summable = false;
+        let mut ranked_summable_at_levels: Option<Vec<String>> = None;
         let mut ranked_averageable = false;
+        let mut ranked_averageable_at_levels: Option<Vec<String>> = None;
         let mut time_range: Option<TimeRangeTransform> = None;
         let mut integer_range: Option<IntegerRangeTransform> = None;
         let mut terminal: Option<Vec<String>> = None;
@@ -1760,6 +2064,7 @@ impl Index {
         // checking that each name is one of the index's properties, and
         // sorting the set into index order, needs the parsed property list.
         let mut skip_if_absent_properties: Vec<String> = Vec::new();
+        let mut summable_off_count_index: Option<String> = None;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -2011,95 +2316,23 @@ impl Index {
                     // `[hashtag, postId]`) declares BOTH rankings on one
                     // index — the nested-secondaries shape the storage layer
                     // maintains as one count-propagation chain.
-                    if let Some(ranked_map) = value_value.as_map() {
-                        let mut at_levels: Option<Vec<String>> = None;
-                        for (rc_key_value, rc_value) in ranked_map {
-                            let rc_key = rc_key_value.to_str().map_err(|e| {
-                                DataContractError::ValueDecodingError(e.to_string())
-                            })?;
-                            match rc_key {
-                                "at" => {
-                                    let levels = if let Some(text) = rc_value.as_text() {
-                                        vec![text.to_owned()]
-                                    } else if let Some(array) = rc_value.as_array() {
-                                        array
-                                            .iter()
-                                            .map(|element| {
-                                                element.as_text().map(|text| text.to_owned()).ok_or(
-                                                    DataContractError::ValueWrongType(
-                                                        "rankedCountable.at array elements \
-                                                         should be strings naming index \
-                                                         properties"
-                                                            .to_string(),
-                                                    ),
-                                                )
-                                            })
-                                            .collect::<Result<Vec<_>, _>>()?
-                                    } else {
-                                        return Err(DataContractError::ValueWrongType(
-                                            "rankedCountable.at should be a string naming an \
-                                             index property, or an array of them"
-                                                .to_string(),
-                                        ));
-                                    };
-                                    at_levels = Some(levels);
-                                }
-                                other => {
-                                    return Err(DataContractError::InvalidContractStructure(
-                                        format!("unexpected rankedCountable field: {}", other),
-                                    ));
-                                }
-                            }
-                        }
-                        let at_levels =
-                            at_levels.ok_or(DataContractError::InvalidContractStructure(
-                                "rankedCountable's object form requires an `at` field naming \
-                                 the index property (or properties) whose levels carry the \
-                                 ranking"
-                                    .to_string(),
-                            ))?;
-                        if at_levels.is_empty() {
-                            return Err(DataContractError::InvalidContractStructure(
-                                "rankedCountable.at must name at least one property; an empty \
-                                 array names nothing"
-                                    .to_string(),
-                            ));
-                        }
-                        if at_levels.iter().any(|at| at.is_empty()) {
-                            return Err(DataContractError::InvalidContractStructure(
-                                "rankedCountable.at must name a property; an empty string names \
-                                 nothing"
-                                    .to_string(),
-                            ));
-                        }
-                        ranked_countable_object_form = true;
-                        ranked_countable_at_levels = at_levels;
-                    } else {
-                        ranked_countable =
-                            value_value
-                                .as_bool()
-                                .ok_or(DataContractError::ValueWrongType(
-                                    "rankedCountable value must be a boolean or a map with an \
-                                     `at` field"
-                                        .to_string(),
-                                ))?;
-                    }
+                    //
+                    // A repeated key keeps its last spelling (see
+                    // `parse_ranking`).
+                    (ranked_countable, ranked_countable_at_levels) =
+                        parse_ranking(RANKED_COUNTABLE, value_value)?;
                 }
+                // The Sum and Avg axes take the same two spellings as the
+                // Count axis. The object form is only admitted on a
+                // `summableOffCountIndex` index (checked once the whole map
+                // is read), whose counters carry the sums its chain ranks by.
                 RANKED_SUMMABLE if ranked_aggregates_allowed => {
-                    ranked_summable =
-                        value_value
-                            .as_bool()
-                            .ok_or(DataContractError::ValueWrongType(
-                                "rankedSummable value must be a boolean".to_string(),
-                            ))?;
+                    (ranked_summable, ranked_summable_at_levels) =
+                        parse_ranking(RANKED_SUMMABLE, value_value)?;
                 }
                 RANKED_AVERAGEABLE if ranked_aggregates_allowed => {
-                    ranked_averageable =
-                        value_value
-                            .as_bool()
-                            .ok_or(DataContractError::ValueWrongType(
-                                "rankedAverageable value must be a boolean".to_string(),
-                            ))?;
+                    (ranked_averageable, ranked_averageable_at_levels) =
+                        parse_ranking(RANKED_AVERAGEABLE, value_value)?;
                 }
                 // `timeRange` is guarded the same way as the ranking keywords
                 // above: it joined the grammar at meta-schema v3, so below
@@ -2393,6 +2626,27 @@ impl Index {
                         ));
                     }
                 },
+                // `summableOffCountIndex` is guarded like `terminal`: it joined the grammar
+                // at meta-schema v3. The rules that need the other indexes of
+                // the type (the source exists and holds every document once,
+                // its properties are this index's, the rest are fixed by its
+                // references) are checked by `apply_index_only`, and the
+                // immutability of the referenced values by the contract-level
+                // validation.
+                SUMMABLE_OFF_COUNT_INDEX if summable_off_count_index_allowed => {
+                    let source = value_value
+                        .as_text()
+                        .ok_or(DataContractError::ValueWrongType(
+                            "summableOffCountIndex value must be the name of an index".to_string(),
+                        ))?;
+                    if source.is_empty() {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "summableOffCountIndex must name an index; an empty string names nothing"
+                                .to_string(),
+                        ));
+                    }
+                    summable_off_count_index = Some(source.to_string());
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -2461,44 +2715,39 @@ impl Index {
                 .collect();
         }
 
-        // Resolve the object form of `rankedCountable` against the property
-        // list. Naming the *last* property is the terminal form spelled
-        // longhand — folded into the boolean so `ranked_countable_at` holds
-        // only non-terminal levels and downstream code never handles two
-        // spellings of one layout. Any number of levels may be named; the
-        // resolved vector is sorted into index-property order so two
-        // spellings of one declaration parse identically. (The boolean and
-        // object spellings cannot conflict: they are one JSON key.)
-        if ranked_countable_object_form {
-            for (position, at) in ranked_countable_at_levels.iter().enumerate() {
-                if ranked_countable_at_levels[..position].contains(at) {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "rankedCountable.at names \"{}\" twice; each level is one ranking",
-                        at
-                    )));
-                }
-            }
-            let mut at_positions: Vec<(usize, String)> = Vec::new();
-            for at in ranked_countable_at_levels.drain(..) {
-                let Some(position) = index_properties
-                    .iter()
-                    .position(|property| property.name == at)
-                else {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "rankedCountable.at (\"{}\") must name one of the index's properties; \
-                         the ranking is placed at that property's level",
-                        at
-                    )));
-                };
-                if position + 1 == index_properties.len() {
-                    ranked_countable = true;
-                } else {
-                    at_positions.push((position, at));
-                }
-            }
-            at_positions.sort_by_key(|(position, _)| *position);
-            ranked_countable_at = at_positions.into_iter().map(|(_, at)| at).collect();
-        }
+        // Resolve each ranking's object form against the property list.
+        // Naming the *last* property is the terminal form spelled longhand —
+        // folded into the boolean so the `*_at` vectors hold only non-terminal
+        // levels and downstream code never handles two spellings of one
+        // layout. Any number of levels may be named; each resolved vector is
+        // sorted into index-property order so two spellings of one
+        // declaration parse identically. (The boolean and object spellings
+        // cannot conflict: a repeated key keeps its last spelling.)
+        //
+        // Whether the Sum and Avg axes were written in the object form is read
+        // first, before the folding drops a last-property `at` into the
+        // boolean: the form itself is what only a `summableOffCountIndex`
+        // index admits.
+        let ranked_summable_object_form = ranked_summable_at_levels.is_some();
+        let ranked_averageable_object_form = ranked_averageable_at_levels.is_some();
+        let (ranks_terminal, mut ranked_countable_at) = resolve_ranking(
+            RANKED_COUNTABLE,
+            ranked_countable_at_levels,
+            &index_properties,
+        )?;
+        ranked_countable |= ranks_terminal;
+        let (ranks_terminal, mut ranked_summable_at) = resolve_ranking(
+            RANKED_SUMMABLE,
+            ranked_summable_at_levels,
+            &index_properties,
+        )?;
+        ranked_summable |= ranks_terminal;
+        let (ranks_terminal, ranked_averageable_at) = resolve_ranking(
+            RANKED_AVERAGEABLE,
+            ranked_averageable_at_levels,
+            &index_properties,
+        )?;
+        ranked_averageable |= ranks_terminal;
 
         // A prefix-level Count ranking works by making every level from the
         // named property down to the terminal count-bearing, so each write's
@@ -2507,13 +2756,48 @@ impl Index {
         // to contribute *count* through that chain, which its tree types
         // cannot express — the combination has no coherent layout. (The
         // terminal boolean form composes with the other axes as before.)
-        if !ranked_countable_at.is_empty() && (ranked_summable || ranked_averageable) {
-            return Err(DataContractError::InvalidContractStructure(
-                "rankedCountable's `at` form cannot be combined with rankedSummable or \
-                 rankedAverageable: the prefix level ranks by the subtree count chain, which \
-                 cannot carry a sum axis"
-                    .to_string(),
-            ));
+        //
+        // A `summableOffCountIndex` index is the exception: its chain is made
+        // of count-and-sum trees fed by the counters, which carry both
+        // aggregates to every level, so it takes the object form on all three
+        // axes and combines them freely. No other index carries a sum up a
+        // chain, so on any other index the Sum and Avg axes stay terminal.
+        if summable_off_count_index.is_none() {
+            if ranked_summable_object_form || ranked_averageable_object_form {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rankedSummable's and rankedAverageable's `at` form is only allowed on a \
+                     summableOffCountIndex index: only its counters carry a sum up the levels \
+                     of an index; on any other index the sum and average rankings stay at the \
+                     last property"
+                        .to_string(),
+                ));
+            }
+            if !ranked_countable_at.is_empty() && (ranked_summable || ranked_averageable) {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rankedCountable's `at` form cannot be combined with rankedSummable or \
+                     rankedAverageable: the prefix level ranks by the subtree count chain, which \
+                     cannot carry a sum axis"
+                        .to_string(),
+                ));
+            }
+        } else {
+            // A count ranking orders groups by `count(*)`, the documents in
+            // them. On a `summableOffCountIndex` index those are its sums
+            // (its count trees count groups), so `rankedCountable` declares
+            // the ranking `rankedSummable` does: its levels merge into the
+            // Sum axis, which a ranked `count(*)` and a ranked `sum(<source>)`
+            // both read.
+            ranked_summable |= mem::take(&mut ranked_countable);
+            for level in mem::take(&mut ranked_countable_at) {
+                if !ranked_summable_at.contains(&level) {
+                    ranked_summable_at.push(level);
+                }
+            }
+            ranked_summable_at.sort_by_key(|level| {
+                index_properties
+                    .iter()
+                    .position(|property| &property.name == level)
+            });
         }
 
         // Desugar `averageable` / `rangeAverageable` into the
@@ -2645,12 +2929,27 @@ impl Index {
         // NonCountedItemWithSumItem) so that range-sum queries can be
         // answered in O(log n). It's meaningless without the underlying
         // summability.
-        if range_summable && summable.is_none() {
+        if range_summable && summable.is_none() && summable_off_count_index.is_none() {
             return Err(DataContractError::InvalidContractStructure(
-                "rangeSummable requires summable to be set to a property name; \
-                 range-sum queries only make sense on a sum-bearing index"
+                "rangeSummable requires summable to be set to a property name (or \
+                 summableOffCountIndex to an index); range-sum queries only make sense on a \
+                 sum-bearing index"
                     .to_string(),
             ));
+        }
+
+        // A `summableOffCountIndex` index keeps one counter per group in the
+        // tree of its last property, which only `rangeSummable` makes a sum
+        // tree. Checked before the ranking prerequisites: its
+        // `rankedCountable` was merged into the Sum axis, so their message
+        // would name `rankedSummable`, a keyword the author may not have
+        // written.
+        if summable_off_count_index.is_some() && !range_summable {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "index {}: a summableOffCountIndex index needs rangeSummable: true; the counters \
+                 live in the tree of the last property, which only rangeSummable makes a sum tree",
+                name.as_deref().unwrap_or("(unnamed)"),
+            )));
         }
 
         // The ranking axes are checked after the `averageable` /
@@ -2672,7 +2971,7 @@ impl Index {
             ));
         }
 
-        if ranked_summable && !range_summable {
+        if (ranked_summable || !ranked_summable_at.is_empty()) && !range_summable {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedSummable requires rangeSummable: true; ranking groups by \
                  sum needs the per-group sums the range-sum layout maintains"
@@ -2683,7 +2982,9 @@ impl Index {
         // `rangeAverageable` semantics = both range axes (that is exactly what
         // the sugar desugars into), which transitively pulls in `countable`
         // and `summable` through the two checks above.
-        if ranked_averageable && !(range_countable && range_summable) {
+        if (ranked_averageable || !ranked_averageable_at.is_empty())
+            && !(range_countable && range_summable)
+        {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedAverageable requires rangeAverageable semantics — both \
                  rangeCountable and rangeSummable must be in effect (declare \
@@ -2695,6 +2996,13 @@ impl Index {
             ));
         }
 
+        let any_ranked_axis = ranked_countable
+            || !ranked_countable_at.is_empty()
+            || ranked_summable
+            || !ranked_summable_at.is_empty()
+            || ranked_averageable
+            || !ranked_averageable_at.is_empty();
+
         // Ranking orders groups (the distinct values of the index's last
         // property) by a per-group aggregate. On a unique index every group
         // holds at most one document, so every ranked ordering degenerates to
@@ -2702,12 +3010,7 @@ impl Index {
         // serves — while still paying for an indexed tree and its secondary
         // maintenance on every write. Contested indexes are unique by
         // construction (checked above).
-        if (ranked_countable
-            || !ranked_countable_at.is_empty()
-            || ranked_summable
-            || ranked_averageable)
-            && unique
-        {
+        if any_ranked_axis && unique {
             return Err(DataContractError::InvalidContractStructure(
                 "ranked aggregates are not supported on unique indexes: each \
                  group of a unique index contains at most one document, so \
@@ -2745,12 +3048,7 @@ impl Index {
         // default is `true` — and under `true` the null documents get their
         // real reference and form a legitimate rankable group, which is the
         // combination authors actually want.
-        if (ranked_countable
-            || !ranked_countable_at.is_empty()
-            || ranked_summable
-            || ranked_averageable)
-            && !null_searchable
-        {
+        if any_ranked_axis && !null_searchable {
             return Err(DataContractError::InvalidContractStructure(
                 "ranked aggregates are not supported with nullSearchable: false: a \
                  document missing the indexed property still creates the null group's \
@@ -2762,10 +3060,6 @@ impl Index {
             ));
         }
 
-        let any_ranked_axis = ranked_countable
-            || !ranked_countable_at.is_empty()
-            || ranked_summable
-            || ranked_averageable;
         let bucketed_index_shape = BucketedIndexShape {
             unique,
             contested: contested_index.is_some(),
@@ -2917,6 +3211,39 @@ impl Index {
             )?;
         }
 
+        // A `summableOffCountIndex` index (its `rangeSummable` checked above):
+        // its sum is the counters, so it names no summed property. It keeps no entries, so it takes no terminal,
+        // no offset-paginated member bucket, and nothing that buckets or
+        // ages entries.
+        if let Some(source) = &summable_off_count_index {
+            let refusal = if summable.is_some() {
+                Some("names no summable or averageable property; what it sums is the source index's count")
+            } else if terminal.is_some() {
+                Some("takes no terminal; it keeps no entry per document")
+            } else if index_properties.is_empty() {
+                Some("needs properties; the counters are kept per group of them")
+            } else if countable == IndexCountability::CountableAllowingOffset {
+                Some("cannot be countableAllowingOffset; it has no members to page through")
+            } else if time_range.is_some() || integer_range.is_some() {
+                Some("cannot declare timeRange or integerRange; its groups are fixed by the source index")
+            } else if outlives_delete {
+                Some("cannot outlive deletes; every delete takes its count back")
+            } else if unique || contested_index.is_some() {
+                Some("cannot be unique or contested")
+            } else if name.as_deref() == Some(source.as_str()) {
+                Some("cannot name itself")
+            } else {
+                None
+            };
+            if let Some(refusal) = refusal {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "index {}: a summableOffCountIndex index {}",
+                    name.as_deref().unwrap_or("(unnamed)"),
+                    refusal
+                )));
+            }
+        }
+
         // If the index didn't have a name, derive one deterministically from
         // its properties and their directions. Every document meta-schema
         // (v0/v1/v2) requires `name`, so an unnamed index can only reach this
@@ -2962,6 +3289,8 @@ impl Index {
             ranked_countable_at,
             ranked_summable,
             ranked_averageable,
+            ranked_summable_at,
+            ranked_averageable_at,
             time_range,
             integer_range,
             terminal,
@@ -2969,6 +3298,7 @@ impl Index {
             outlives_delete,
             skip_if_absent,
             skip_if_absent_properties,
+            summable_off_count_index,
         })
     }
 }
@@ -3038,6 +3368,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -3047,6 +3379,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 
@@ -3131,6 +3464,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3152,6 +3486,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3173,6 +3508,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3198,6 +3534,7 @@ mod tests {
             preallocated: true,
             outlives_delete: false,
             skip_if_absent: false,
+            summable_off_count_index: false,
             range_countable_implies_countable: false,
             no_locking_resolution: false,
         };
@@ -3232,6 +3569,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3267,6 +3605,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3294,6 +3633,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3321,6 +3661,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3349,6 +3690,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3378,6 +3720,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3403,6 +3746,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3433,6 +3777,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3463,6 +3808,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3491,6 +3837,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3524,6 +3871,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3552,6 +3900,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3576,6 +3925,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3604,6 +3954,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3663,6 +4014,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -3704,6 +4056,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3738,6 +4091,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3774,6 +4128,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3804,6 +4159,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -3829,6 +4185,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5072,6 +5429,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5103,6 +5461,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5150,6 +5509,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5185,6 +5545,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5221,6 +5582,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5255,6 +5617,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5286,6 +5649,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5319,6 +5683,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5352,6 +5717,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5387,6 +5753,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5428,6 +5795,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -5459,6 +5827,7 @@ mod tests {
                     preallocated: false,
                     outlives_delete: false,
                     skip_if_absent: false,
+                    summable_off_count_index: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
                 },
@@ -5496,6 +5865,7 @@ mod tests {
                         preallocated: false,
                         outlives_delete: false,
                         skip_if_absent: false,
+                        summable_off_count_index: false,
                         range_countable_implies_countable: false,
                         no_locking_resolution: false,
                     },
@@ -5572,6 +5942,7 @@ mod tests {
             preallocated: false,
             outlives_delete: false,
             skip_if_absent: false,
+            summable_off_count_index: false,
             range_countable_implies_countable: true,
             no_locking_resolution: true,
         }
@@ -5639,6 +6010,37 @@ mod tests {
             .expect("a terminal-only array must parse as the boolean form");
         assert!(index.ranked_countable);
         assert_eq!(index.ranked_countable_at, Vec::<String>::new());
+    }
+
+    /// A repeated `rankedCountable` key keeps its last spelling, as the
+    /// meta-schema's JSON view does, whichever spelling comes first.
+    #[test]
+    fn should_keep_the_last_spelling_of_a_repeated_ranked_countable() {
+        let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        index_map.push((
+            Value::Text("rankedCountable".to_string()),
+            Value::Bool(true),
+        ));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the repeated key must parse");
+        assert!(index.ranked_countable);
+        assert!(
+            index.ranked_countable_at.is_empty(),
+            "the later boolean replaces the object form"
+        );
+
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map.push((
+            Value::Text("rankedCountable".to_string()),
+            ranked_at("hashtag"),
+        ));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the repeated key must parse");
+        assert!(
+            !index.ranked_countable,
+            "the later object form replaces the boolean"
+        );
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
     }
 
     /// Array-form rejections: a duplicate name, more than one
@@ -6036,6 +6438,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
             },
@@ -6103,6 +6506,7 @@ mod tests {
                     preallocated: false,
                     outlives_delete: false,
                     skip_if_absent: false,
+                    summable_off_count_index: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
                 },
@@ -6136,6 +6540,7 @@ mod tests {
                     preallocated: false,
                     outlives_delete: false,
                     skip_if_absent: false,
+                    summable_off_count_index: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
                 },
@@ -6165,6 +6570,7 @@ mod tests {
                     preallocated: false,
                     outlives_delete: false,
                     skip_if_absent: false,
+                    summable_off_count_index: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
                 },
@@ -6192,6 +6598,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -6214,6 +6621,7 @@ mod tests {
                 preallocated: false,
                 outlives_delete: false,
                 skip_if_absent: false,
+                summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
             },
@@ -6555,6 +6963,7 @@ mod tests {
             preallocated: false,
             outlives_delete: false,
             skip_if_absent: false,
+            summable_off_count_index: false,
             range_countable_implies_countable: false,
             no_locking_resolution: false,
         }
@@ -6838,6 +7247,8 @@ mod json_convertible_tests {
             // all-true / all-false fixture cannot.
             ranked_countable: true,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
@@ -6847,6 +7258,7 @@ mod json_convertible_tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 
@@ -6876,7 +7288,9 @@ mod json_convertible_tests {
                 "ranked_countable": true,
                 "ranked_countable_at": serde_json::json!([]),
                 "ranked_summable": false,
+                "ranked_summable_at": serde_json::json!([]),
                 "ranked_averageable": true,
+                "ranked_averageable_at": serde_json::json!([]),
                 "time_range": serde_json::Value::Null,
                 "integer_range": serde_json::Value::Null,
                 "terminal": serde_json::Value::Null,
@@ -6884,6 +7298,7 @@ mod json_convertible_tests {
                 "outlives_delete": false,
                 "skip_if_absent": false,
                 "skip_if_absent_properties": serde_json::json!([]),
+                "summable_off_count_index": serde_json::Value::Null,
             })
         );
         let recovered = Index::from_json(json).expect("from_json");

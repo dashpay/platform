@@ -92,7 +92,8 @@ impl Drive {
     /// write walkers wrote nothing for it, so there is nothing to probe; the zero-path
     /// case flows through both consumers with the correct semantics
     /// (vacuously consistent for the delete probe, no duplicate for the
-    /// create probe).
+    /// create probe). A `summableOffCountIndex` index keeps a counter per
+    /// group and no entry per document, so it produces no paths either.
     ///
     /// [`TimeRangeTransform::entry_keys_for_raw`]:
     /// dpp::data_contract::document_type::TimeRangeTransform::entry_keys_for_raw
@@ -103,6 +104,9 @@ impl Drive {
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Result<IndexOnlyEntryPathsAndKey, Error> {
+        if index.is_summable_off_count_index() {
+            return Ok((Vec::new(), Vec::new()));
+        }
         let owner_id = Some(document.owner_id().to_buffer());
 
         let raw_value_for = |property_name: &str| -> Result<Vec<u8>, Error> {
@@ -185,7 +189,8 @@ impl Drive {
         if index.terminal.is_none() {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "index_only_entry_paths_and_key requires an indexOnly index (terminal is \
-                 always Some there after parse normalization)",
+                 Some there after parse normalization, but on a summableOffCountIndex \
+                 index, handled above)",
             )));
         }
         // The member key: the terminal components' encoded values,
@@ -305,7 +310,9 @@ impl Drive {
         let estimated_item_value_size =
             index_only_item_estimated_value_size(document_type, platform_version)?;
         // A delete neither checks nor clears the entries of an index that
-        // outlives it, so it reads none of them.
+        // outlives it, so it reads none of them. A summableOffCountIndex index
+        // keeps none: it yields no paths (its counter's read is priced where it
+        // moves).
         for index in document_type
             .indexes()
             .values()

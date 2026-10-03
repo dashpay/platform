@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::query::drive_document_count_query::counter_sum_entry_as_count_entry;
 use crate::query::{DriveDocumentCountQuery, SplitCountEntry, WhereOperator};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -48,6 +49,24 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<SplitCountEntry>), Error> {
+        // A `summableOffCountIndex` index's documents are its range sums
+        // (`counter_sums_query`), proved by the sum surface. Edited in place in
+        // this shipped generation: only meta-schema v3 (protocol version 14)
+        // admits such an index, so every earlier version verifies as before.
+        if let Some(sums) = self.counter_sums_query() {
+            let (root_hash, entries) =
+                sums.verify_distinct_sum_proof(proof, limit, left_to_right, platform_version)?;
+            // A preallocated counter at zero stays, as a count of zero: the
+            // proof's limit counted it, so dropping it would end a page early
+            // (the unproven read keeps it too).
+            return Ok((
+                root_hash,
+                entries
+                    .into_iter()
+                    .map(counter_sum_entry_as_count_entry)
+                    .collect(),
+            ));
+        }
         let path_query =
             self.distinct_count_path_query(Some(limit), left_to_right, platform_version)?;
         let base_path_len = path_query.path.len();

@@ -1,6 +1,7 @@
 //! Range execution paths for the count query.
 //!
-//! Three executors all keyed on a `range_countable: true` index:
+//! Four executors, each keyed on a `range_countable: true` index or a
+//! `summableOffCountIndex` index (see below):
 //! - [`DriveDocumentCountQuery::execute_range_count_no_proof`] — Rust-
 //!   side walk of the property-name `ProvableCountTree`'s children,
 //!   returning per-(in_key, key) entries (or a single sum) without a
@@ -10,6 +11,14 @@
 //! - [`DriveDocumentCountQuery::execute_distinct_count_with_proof`] —
 //!   regular range proof against the `ProvableCountTree`, returning
 //!   per-key `KVCount` ops bound to the merk root.
+//! - [`DriveDocumentCountQuery::execute_carrier_aggregate_count_with_proof`]
+//!   — one `AggregateCountOnRange` per `In` branch (or outer range key),
+//!   proved together.
+//!
+//! Over a `summableOffCountIndex` index each executor reads the index's
+//! range sums instead, through the sum surface's counterpart
+//! ([`DriveDocumentCountQuery::counter_sums_query`]): its count trees count
+//! its counters, one per group, while its sums are its document counts.
 //!
 //! Point-lookup execution (Equal/In with no range) lives in
 //! [`super::execute_point_lookup`](super::execute_point_lookup).
@@ -18,7 +27,8 @@
 //! `pub mod execute_range_count;` declaration.
 
 use super::super::conditions::{WhereClause, WhereOperator};
-use super::{DriveDocumentCountQuery, SplitCountEntry};
+use super::super::drive_document_sum_query::{RangeSumOptions, RangeSumWalkMode};
+use super::{counter_sum_entry_as_count_entry, DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -58,7 +68,8 @@ pub struct RangeCountOptions {
 
 impl DriveDocumentCountQuery<'_> {
     /// Executes a range-aware count query against a `range_countable`
-    /// index. Path layout is `[contract_doc, doctype, prefix...,
+    /// index (or a `summableOffCountIndex` index, read through its range sums;
+    /// see the module docs). Path layout is `[contract_doc, doctype, prefix...,
     /// range_prop_name]`, whose children are the per-value
     /// `CountTree` leaves keyed by the range property's serialized
     /// value.
@@ -66,7 +77,8 @@ impl DriveDocumentCountQuery<'_> {
     /// The caller picks the index via
     /// [`Self::find_range_countable_index_for_where_clauses`]; this
     /// method assumes:
-    /// - `self.index.range_countable == true`
+    /// - `self.index.range_countable == true`, or the index is a
+    ///   `summableOffCountIndex` index
     /// - All `Equal` / `In` where clauses cover the index prefix
     /// - Exactly one range-operator where clause hits the index's last
     ///   property
@@ -113,6 +125,35 @@ impl DriveDocumentCountQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SplitCountEntry>, Error> {
+        // A `summableOffCountIndex` index's documents are its range sums.
+        if let Some(sums) = self.counter_sums_query() {
+            let walk_mode = if options.distinct {
+                RangeSumWalkMode::Distinct(
+                    options
+                        .limit
+                        .map_or(u16::MAX, |limit| u16::try_from(limit).unwrap_or(u16::MAX)),
+                )
+            } else {
+                RangeSumWalkMode::Aggregate
+            };
+            // The walk keeps a preallocated counter at zero, a group its
+            // limit counted, as the proof does, so a page ends only at the
+            // limit.
+            let entries = sums.execute_range_sum_no_proof(
+                drive,
+                &RangeSumOptions {
+                    walk_mode,
+                    carrier_outer_limit: None,
+                    left_to_right: options.order_by_ascending,
+                },
+                transaction,
+                platform_version,
+            )?;
+            return Ok(entries
+                .into_iter()
+                .map(counter_sum_entry_as_count_entry)
+                .collect());
+        }
         let drive_version = &platform_version.drive;
         let has_in_on_prefix = self
             .where_clauses
@@ -343,7 +384,8 @@ impl DriveDocumentCountQuery<'_> {
     }
 
     /// Generates a grovedb `AggregateCountOnRange` proof for a
-    /// range-count query against a `range_countable` index. The returned
+    /// range-count query against a `range_countable` index (a
+    /// `summableOffCountIndex` index proves its range sum instead). The returned
     /// proof bytes can be verified client-side via
     /// `GroveDb::verify_aggregate_count_query`, which yields
     /// `(root_hash, count)` — replacing the materialize-and-count proof
@@ -362,6 +404,10 @@ impl DriveDocumentCountQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        // A `summableOffCountIndex` index's documents are its range sums.
+        if let Some(sums) = self.counter_sums_query() {
+            return sums.execute_aggregate_sum_with_proof(drive, transaction, platform_version);
+        }
         let drive_version = &platform_version.drive;
         let path_query = self.aggregate_count_path_query(platform_version)?;
         // Destructure rather than `.unwrap()` — see the In fan-out branch
@@ -377,7 +423,8 @@ impl DriveDocumentCountQuery<'_> {
     }
 
     /// Generates a regular grovedb range proof against this count
-    /// query's `range_countable` index — the distinct-counts-with-
+    /// query's `range_countable` index (a `summableOffCountIndex` index
+    /// proves its per-value range sums instead) — the distinct-counts-with-
     /// proof companion to [`Self::execute_aggregate_count_with_proof`].
     ///
     /// No new prover code: the leaf is a `ProvableCountTree` and
@@ -406,6 +453,16 @@ impl DriveDocumentCountQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        // A `summableOffCountIndex` index's documents are its range sums.
+        if let Some(sums) = self.counter_sums_query() {
+            return sums.execute_distinct_sum_with_proof(
+                drive,
+                limit,
+                left_to_right,
+                transaction,
+                platform_version,
+            );
+        }
         let drive_version = &platform_version.drive;
         let path_query =
             self.distinct_count_path_query(Some(limit), left_to_right, platform_version)?;
@@ -470,6 +527,16 @@ impl DriveDocumentCountQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        // A `summableOffCountIndex` index's documents are its range sums.
+        if let Some(sums) = self.counter_sums_query() {
+            return sums.execute_carrier_aggregate_sum_with_proof(
+                drive,
+                limit,
+                left_to_right,
+                transaction,
+                platform_version,
+            );
+        }
         let drive_version = &platform_version.drive;
         let path_query =
             self.carrier_aggregate_count_path_query(limit, left_to_right, platform_version)?;

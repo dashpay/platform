@@ -47,31 +47,79 @@ use crate::drive::document::index_level_tree_types::{
 use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::drive::document::summable_off_count_counter::insert_summable_off_count_counter_layer;
 use crate::drive::document::unique_event_id;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
+use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
+use crate::util::object_size_info::PathKeyElementInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::{DocumentTypeRef, Index, PreallocatedKeySource};
+use dpp::data_contract::document_type::{
+    DocumentType, DocumentTypeRef, Index, PreallocatedKeySource, PreallocationBinding,
+};
+use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
+use grovedb::Element;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb_merk::tree_type::SUM_ITEM_COST_SIZE;
 use std::collections::HashMap;
 
 #[cfg(test)]
 mod tests;
+
+/// Every preallocated index whose binding targets `target_document_type`, with
+/// the indexOnly referring type holding it and the binding: what an insert of
+/// a `target_document_type` document preallocates, in the order it does.
+pub(crate) fn preallocation_bindings_targeting<'a>(
+    contract: &'a DataContract,
+    target_document_type: DocumentTypeRef<'a>,
+) -> impl Iterator<Item = (DocumentTypeRef<'a>, &'a Index, PreallocationBinding<'a>)> + 'a {
+    contract
+        .document_types()
+        .values()
+        // `preallocated` is only valid on indexOnly document types, so this
+        // filter also keeps the per-insert scan trivially cheap for contracts
+        // without the feature.
+        .filter(|referring_type| referring_type.index_only())
+        .flat_map(move |referring_type: &'a DocumentType| {
+            referring_type
+                .indexes()
+                .values()
+                .filter(|index| index.preallocated)
+                .flat_map(move |index| {
+                    // Target-filtered derivation: candidates naming other
+                    // target types are rejected before any binding plan is
+                    // allocated — this runs on every document insert. Through
+                    // a moderatedDocument reference, only a binding every key
+                    // of which the inserted document's removal record would
+                    // keep (registration makes sure each preallocated index
+                    // has one).
+                    index
+                        .preallocation_bindings_for_target(
+                            referring_type.flattened_properties(),
+                            contract.id(),
+                            target_document_type,
+                        )
+                        .into_iter()
+                        .map(move |binding| (referring_type.as_ref(), index, binding))
+                })
+        })
+}
 
 impl Drive {
     /// For every preallocated index (on any indexOnly document type of the
@@ -93,64 +141,39 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let contract = document_and_contract_info.contract;
-        let target_document_type = document_and_contract_info.document_type;
-
-        for referring_document_type in contract.document_types().values() {
-            let referring_type = referring_document_type.as_ref();
-            // `preallocated` is only valid on indexOnly document types, so
-            // this filter also keeps the per-insert scan trivially cheap for
-            // contracts without the feature.
-            if !referring_type.index_only() {
-                continue;
-            }
-            // Flags exist to route refunds when an element is deleted, and
-            // a preallocated tree has exactly one deletion path: the
-            // contract's own — entry deletes retain it by design (the
-            // delete walker's no-prune rule), and entry-level deletability
-            // (`documents_can_be_deleted`) never reaches it. So unlike the
-            // entry walkers' rule, flags ride only when the contract is
-            // deletable; on a permanent contract they would be dead bytes
-            // charged to the referenced document's creator on every tree.
-            // (Fallback-created trees may carry entry-rule flags from
-            // before the no-prune retention — harmless: unrefundable flags
-            // are inert, and if-not-exists inserts never rewrite them.)
-            let storage_flags = if contract.config().can_be_deleted() {
-                document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_storage_flags_ref()
-            } else {
-                None
-            };
-            for index in referring_type.indexes().values() {
-                if !index.preallocated {
-                    continue;
-                }
-                // Target-filtered derivation: candidates naming other
-                // target types are rejected before any binding plan is
-                // allocated — this runs on every document insert. Through a
-                // moderatedDocument reference, only a binding every key of
-                // which the inserted document's removal record would keep
-                // (registration makes sure each preallocated index has one).
-                for binding in index.preallocation_bindings_for_target(
-                    referring_type.flattened_properties(),
-                    contract.id(),
-                    target_document_type,
-                ) {
-                    self.add_preallocated_index_tree_operations_for_binding(
-                        document_and_contract_info,
-                        referring_type,
-                        index,
-                        &binding.key_sources,
-                        storage_flags,
-                        previous_batch_operations,
-                        estimated_costs_only_with_layer_info,
-                        transaction,
-                        batch_operations,
-                        platform_version,
-                    )?;
-                }
-            }
+        // Flags exist to route refunds when an element is deleted, and a
+        // preallocated tree has exactly one deletion path: the contract's own
+        // — entry deletes retain it by design (the delete walker's no-prune
+        // rule), and entry-level deletability (`documents_can_be_deleted`)
+        // never reaches it. So unlike the entry walkers' rule, flags ride only
+        // when the contract is deletable; on a permanent contract they would
+        // be dead bytes charged to the referenced document's creator on every
+        // tree. (Fallback-created trees may carry entry-rule flags from before
+        // the no-prune retention — harmless: unrefundable flags are inert, and
+        // if-not-exists inserts never rewrite them.)
+        let storage_flags = if contract.config().can_be_deleted() {
+            document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_storage_flags_ref()
+        } else {
+            None
+        };
+        for (referring_type, index, binding) in
+            preallocation_bindings_targeting(contract, document_and_contract_info.document_type)
+        {
+            self.add_preallocated_index_tree_operations_for_binding(
+                document_and_contract_info,
+                referring_type,
+                index,
+                &binding.key_sources,
+                storage_flags,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                platform_version,
+            )?;
         }
         Ok(())
     }
@@ -306,17 +329,21 @@ impl Drive {
             let ranked_axes = tree_types.ranked_axes.as_slice();
             let value_tree_type = tree_types.value_tree_type;
 
-            let mut path_info = match index_path_info.take() {
+            // Whether this level's property-name tree was created by this walk
+            // (a static first level never is): a counter under it cannot
+            // exist yet.
+            let (mut path_info, property_name_tree_created) = match index_path_info.take() {
                 None => {
                     // First property: its property-name tree is static —
                     // created at contract registration — so only enter it.
                     let mut index_path = contract_document_type_path.clone();
                     index_path.push(Vec::from(property_name.as_bytes()));
-                    if document_info.is_document_size() {
+                    let path_info = if document_info.is_document_size() {
                         PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
                     } else {
                         PathInfo::PathAsVec::<0>(index_path)
-                    }
+                    };
+                    (path_info, false)
                 }
                 Some(mut path_info) => {
                     // Deeper property-name trees are dynamic: create this
@@ -342,7 +369,7 @@ impl Drive {
                     // may itself be the plain sibling): its branch tree is
                     // zero-wrapped even under a chain level that counts its
                     // own continuation — matching the entry-insert walkers.
-                    if continuation_contributes_zero(
+                    let created = if continuation_contributes_zero(
                         parent_value_tree_type,
                         parent_counts_continuations,
                         sub_level,
@@ -358,7 +385,7 @@ impl Drive {
                             previous_batch_operations,
                             batch_operations,
                             drive_version,
-                        )?;
+                        )?
                     } else {
                         self.batch_insert_empty_index_tree_if_not_exists(
                             path_key_info,
@@ -370,12 +397,71 @@ impl Drive {
                             previous_batch_operations,
                             batch_operations,
                             drive_version,
-                        )?;
-                    }
+                        )?
+                    };
                     path_info.push(KeyRef(property_name.as_bytes()))?;
-                    path_info
+                    (path_info, created)
                 }
             };
+
+            // A summableOffCountIndex index keeps its group's counter at the value
+            // position of its last property: preallocating it is creating the
+            // counter at zero, in place of the value tree and its `0` bucket.
+            // Nothing continues below it, so this is the last level.
+            if sub_level.summable_off_count_index_info().is_some() {
+                let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    insert_summable_off_count_counter_layer(
+                        estimated_costs_only_with_layer_info,
+                        path_info.clone().convert_to_key_info_path(),
+                        property_name_tree_type,
+                        document_info.get_estimated_size_for_document_type(
+                            property_name,
+                            referring_type,
+                            platform_version,
+                        )?,
+                        storage_flags,
+                    )?;
+                }
+                let counter = Element::new_sum_item_with_flags(
+                    0,
+                    StorageFlags::map_to_some_element_flags(storage_flags),
+                );
+                let key_element_info = match &value_key {
+                    Key(key) => KeyElement((key.as_slice(), counter)),
+                    KeyRef(key) => KeyElement((key, counter)),
+                    KeySize(key_info) => KeyElementSize((key_info.clone(), counter)),
+                };
+                let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
+                    path_info,
+                    key_element_info,
+                )?;
+                if property_name_tree_created && estimated_costs_only_with_layer_info.is_none() {
+                    // The walk just created the tree the counter sits in, so
+                    // the counter cannot exist: write it without the
+                    // existence read (an estimate still prices the read).
+                    self.batch_insert(path_key_element_info, batch_operations, drive_version)?;
+                } else {
+                    let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                        BatchInsertApplyType::StatefulBatchInsert
+                    } else {
+                        BatchInsertApplyType::StatelessBatchInsert {
+                            in_tree_type: property_name_tree_type,
+                            target: QueryTargetValue(SUM_ITEM_COST_SIZE + flags_len),
+                        }
+                    };
+                    self.batch_insert_if_not_exists(
+                        path_key_element_info,
+                        apply_type,
+                        transaction,
+                        batch_operations,
+                        drive_version,
+                    )?;
+                }
+                return Ok(());
+            }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {

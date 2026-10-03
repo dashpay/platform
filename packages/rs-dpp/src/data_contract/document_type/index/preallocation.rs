@@ -101,22 +101,34 @@ impl<'a> PreallocationBinding<'a> {
     /// of the referenced document drops, or `None` when
     /// [`Self::is_kept_on_removal`].
     pub fn first_key_dropped_on_removal(&self, kept_fields: &BTreeSet<String>) -> Option<&'a str> {
-        if self.kind != DocumentReferenceKind::Moderated {
-            return None;
-        }
         self.key_sources
             .iter()
             .find_map(|key_source| match *key_source {
                 PreallocatedKeySource::ReferencedDocumentProperty(referenced)
-                    if referenced != ID
-                        && referenced != OWNER_ID
-                        && !is_path_listed(kept_fields, referenced) =>
+                    if !referenced_value_kept_on_removal(self.kind, referenced, kept_fields) =>
                 {
                     Some(referenced)
                 }
                 _ => None,
             })
     }
+}
+
+/// Whether the referenced document's value `referenced` can still be read
+/// once the document leaves through a reference of `kind`: a reference that
+/// is not moderated keeps its document, and a moderator's removal record
+/// keeps the document's id, its owner and the fields its type lists under
+/// `deleteKeepsFields` (`kept_fields`), never its creator. Preallocation and
+/// the `summableOffCountIndex` lossless check both judge by it.
+pub fn referenced_value_kept_on_removal(
+    kind: DocumentReferenceKind,
+    referenced: &str,
+    kept_fields: &BTreeSet<String>,
+) -> bool {
+    kind != DocumentReferenceKind::Moderated
+        || referenced == ID
+        || referenced == OWNER_ID
+        || is_path_listed(kept_fields, referenced)
 }
 
 impl Index {
@@ -345,6 +357,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -354,6 +368,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 

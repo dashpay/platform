@@ -2,7 +2,7 @@
 
 Some documents are nothing but a position: a like says which post, which hashtag and which identity, and nothing else. Stored as an ordinary document, a like pays for a serialized body, a row in the primary tree and a reference in every index, for a fact its index entries already hold. An **index-only** type stores no body and no row: its index entries are its documents. That cuts the storage of a small document by more than half, and makes each index a uniqueness rule. In exchange, its documents can only be created and deleted, every property must live in an index or in the entry's value, and a query returns documents rebuilt from index entries rather than fetched by `$id`.
 
-Six keywords shape an index-only type: `indexOnly` and `entryPayload` on the document type, and `terminal`, `preallocated`, `skipIfAbsent` and `outlivesDelete` on its indexes. All of them arrived at protocol version 14 and are fixed once the type exists.
+Seven keywords shape an index-only type: `indexOnly` and `entryPayload` on the document type, and `terminal`, `preallocated`, `summableOffCountIndex`, `skipIfAbsent` and `outlivesDelete` on its indexes. All of them arrived at protocol version 14 and are fixed once the type exists.
 
 ## Example
 
@@ -160,6 +160,53 @@ Rules at registration:
 - Not with `timeRange` or `integerRange`.
 
 A referenced document whose agreed value takes more bytes than the referring property can hold preallocates nothing for that index, since no entry could agree with it.
+
+## `summableOffCountIndex`
+
+| | |
+|---|---|
+| **Where** | index of an `indexOnly` type |
+| **Value** | the name of another index of the type, its source |
+| **Default** | none |
+| **Since** | protocol version 14 |
+| **On update** | Fixed (10217) |
+
+A like counted by post, by author and by hashtag is written three times: once in `byPost` and once in each of the other two, which hold nothing `byPost` does not already hold. When every like of a post lands in the same author and the same hashtag, the other two only need to know how many likes each post has. An index with `summableOffCountIndex` keeps exactly that: one counter per group, holding the number of entries its source index keeps for it, in place of an entry per document. A like then adds one to two counters instead of writing two more entries.
+
+```json
+{
+  "name": "byAuthorPost",
+  "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }],
+  "summableOffCountIndex": "byPost",
+  "rangeCountable": true,
+  "rangeSummable": true,
+  "rankedSummable": { "at": ["postAuthor", "postId"] },
+  "rankedAverageable": { "at": ["postAuthor"] },
+  "preallocated": true
+}
+```
+
+Each counter counts one group in the index's count trees and adds its entries to their sums. A count query counts documents, so on this index it reads the sums, which hold the source's entries:
+
+| Query | Reads | `byAuthorPost` |
+|---|---|---|
+| `count(*)` | the sums | an author's likes, or one post's |
+| `sum(byPost)`, named by the source index | the sums | the same |
+| `avg(byPost)` | the sums and the group counts | an author's posts and likes, so likes per post |
+
+A ranking at an earlier level orders by these totals: `rankedSummable: { "at": "postAuthor" }` ranks authors by likes, `rankedAverageable: { "at": "postAuthor" }` by likes per post, and `"postId"`, the last property, ranks an author's posts by likes. A count or sum point query may stop at any level from the shallowest sum or average ranking down, and an average point query at any level that also carries counts (from the shallowest average ranking down). A ranked or `HAVING` count reads the sum rankings the same way: `count(*)` grouped by `postAuthor` ranks authors by likes. So on this index `rankedCountable` declares the same ranking as `rankedSummable`, and needs no `rangeCountable`: `rankedCountable: { "at": "postAuthor" }` ranks authors by likes too. A range count reads the sums over the range too: `count(*)` with `postAuthor == A` and a range on `postId`, grouped by `postId`, gives each of A's posts in the range with its likes (on a preallocated index a post nobody liked comes back with zero, and takes its place in a page's limit), and across an `IN` on `postAuthor` each author's. A range total (no grouping, or one per `IN` value) needs an index whose path passes through no ranked level, as everywhere: grovedb totals a range only through unranked trees, so on this index, which ranks `postAuthor` and `postId`, group by `postId` instead. When the index is `preallocated`, every post has a counter from its creation, so a post without likes counts as a post with zero likes; otherwise a post shows once it is liked and leaves with its last like.
+
+Rules at registration:
+
+- Only on an `indexOnly` type, with `rangeSummable: true` (the counters sit in the tree of the last property, which only `rangeSummable` makes a sum tree). No `summable`, `averageable`, `terminal`, `countable: "countableAllowingOffset"`, `timeRange`, `integerRange`, `outlivesDelete`, `unique` or `contested`.
+- The source is another index of the type holding every document exactly once: it keeps entries (it is no `summableOffCountIndex` index itself), skips no document (`skipIfAbsent`), keeps no deleted one (`outlivesDelete`) and involves no `$createdAt`.
+- One summed value per type: no index of the type declares `summable`, every `summableOffCountIndex` index names the same source, and no property shares the source's name.
+- Every property of the source is a property of the index, so a group never counts two source groups.
+- Every other property is a referring value of a `where` on a `permanentDocument` or `moderatedDocument` reference to a type of the same contract, held by a property of the source, and the referenced value never changes once written: `$id`, `$creatorId`, an `$ownerId` no transfer or trade changes, or a property the referenced type never lets change. Through a `moderatedDocument` reference, the value must also stay on the removal record ([`deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields)). Every like of one post then lands in one group.
+- No other index continues below the index's last property, where the counter stands.
+- `rankedSummable` and `rankedAverageable` take the `{ "at": ... }` form only on such an index.
+
+A broken rule is refused as `InvalidContractStructure` (10231).
 
 ## `skipIfAbsent`
 
