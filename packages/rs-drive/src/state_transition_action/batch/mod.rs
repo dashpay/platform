@@ -3,7 +3,9 @@ use crate::state_transition_action::batch::v0::BatchTransitionActionV0;
 use crate::state_transition_action::contract::moderators_pot_settlement::ModeratorsPotSettlement;
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::drive::contract_groups::types::ContractGroupMembershipsForContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::consensus::ConsensusError;
@@ -18,7 +20,9 @@ use dpp::data_contract::document_type::action_fees::{
     ActionFeePricing, ContractFeePot, DocumentActionFee, FEE_MULTIPLIER_PERMILLE_BASE,
 };
 use dpp::prelude::FeeMultiplier;
-use crate::util::batch::drive_op_batch::{ContractFeePotOperationType, IdentityOperationType};
+use crate::util::batch::drive_op_batch::{
+    ContractFeePotOperationType, DocumentOperationType, IdentityOperationType,
+};
 use crate::util::batch::DriveOperation;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 
@@ -169,6 +173,83 @@ pub fn action_fee_operations(
         })
     }));
     Ok(operations)
+}
+
+/// Names the gas sponsor as the owner of the storage the batch's documents write (protocol
+/// version 14), once fee validation settled that the sponsor pays: storage refunds go to whoever
+/// paid for the storage, and a document's would otherwise go to its owner, who could delete it
+/// and keep what the sponsor paid.
+///
+/// A stored element names one owner. An update that grows it, or shrinks it in the epoch it was
+/// paid in or once it holds bytes of several epochs, hands the whole element to the owner the
+/// update names; a single-epoch element shrunk in a later epoch keeps its flags. So a sponsored
+/// write takes over an element of the document's owner that it resizes so, including what the
+/// owner paid for before. Updates that are not sponsored leave a stored document the sponsor
+/// holds with the sponsor (Drive's document update v1), or the owner could take it back with
+/// one small replace of their own. A contested document's vote poll end date entries name
+/// whoever its flags name (Drive's contested document insert v1).
+///
+/// Deletes name no owner (their refunds go to the owners recorded on what they remove), history
+/// entries, which are never deleted, refund nobody, and the withdrawal and multi-document
+/// operations are never part of a batch. A document of a type with a `ttl` is stored without
+/// flags and refunds nobody.
+///
+/// Execution applies it once fee validation settled that the sponsor pays. The estimate needs
+/// no owner, and an owner takes no more bytes than any other, so it changes no fee.
+pub fn record_gas_sponsor_as_storage_owner(
+    operations: &mut [DriveOperation],
+    gas_sponsor_id: Identifier,
+) {
+    for operation in operations {
+        let DriveOperation::DocumentOperation(document_operation) = operation else {
+            continue;
+        };
+        match document_operation {
+            DocumentOperationType::AddDocument {
+                owned_document_info,
+                ..
+            }
+            | DocumentOperationType::AddContestedDocument {
+                owned_document_info,
+                ..
+            }
+            | DocumentOperationType::UpdateDocument {
+                owned_document_info,
+                ..
+            }
+            | DocumentOperationType::AddDocumentAndDeleteConsumed {
+                owned_document_info,
+                ..
+            } => owned_document_info
+                .document_info
+                .set_storage_flags_owner(gas_sponsor_id.to_buffer()),
+            DocumentOperationType::DeleteDocument { .. }
+            | DocumentOperationType::ForceDeleteDocument { .. }
+            | DocumentOperationType::DeleteIndexOnlyDocument { .. }
+            | DocumentOperationType::AddWithdrawalDocument { .. }
+            | DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+                ..
+            }
+            | DocumentOperationType::DocumentHistory { .. } => {}
+        }
+    }
+}
+
+/// Whether a document type's token costs let the contract owner pay the gas of some action on
+/// its documents (protocol version 14): only then can the contract owner hold the storage of a
+/// document someone else owns as its gas sponsor.
+pub(crate) fn document_type_offers_gas_sponsorship(document_type: DocumentTypeRef) -> bool {
+    [
+        document_type.document_creation_token_cost(),
+        document_type.document_replacement_token_cost(),
+        document_type.document_deletion_token_cost(),
+        document_type.document_transfer_token_cost(),
+        document_type.document_update_price_token_cost(),
+        document_type.document_purchase_token_cost(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|token_cost| token_cost.gas_fees_paid_by != GasFeesPaidBy::DocumentOwner)
 }
 
 /// Who pays the gas of a whole batch, as `GasFeesPaidBy::resolve` names it for each of its

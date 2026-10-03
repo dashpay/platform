@@ -104,6 +104,61 @@ impl DocumentInfo<'_> {
             }
         }
     }
+
+    /// Names `owner_id` as the owner of the storage this document writes, the identity its
+    /// storage refunds go to. Storage flags without an owner refund nobody and stay that way,
+    /// as does a document without flags or a worst-case size. The owner takes no more bytes
+    /// than any other, so the write costs the same.
+    pub fn set_storage_flags_owner(&mut self, owner_id: [u8; 32]) {
+        let storage_flags = match self {
+            DocumentInfo::DocumentOwnedInfo((_, storage_flags))
+            | DocumentInfo::DocumentRefInfo((_, storage_flags))
+            | DocumentInfo::DocumentRefAndSerialization((_, _, storage_flags))
+            | DocumentInfo::DocumentAndSerialization((_, _, storage_flags)) => storage_flags,
+            DocumentInfo::DocumentEstimatedAverageSize(_) => return,
+        };
+        if let Some(storage_flags) = storage_flags {
+            storage_flags.to_mut().set_owner_id(owner_id);
+        }
+    }
+
+    /// The same document, borrowed, with storage flags naming `owner_id`: for one write that
+    /// names a different owner than the others of the same document. Only the flags are
+    /// copied; the document and its serialization are borrowed.
+    pub fn borrowed_with_storage_flags_owner(&self, owner_id: [u8; 32]) -> DocumentInfo<'_> {
+        let with_owner = |storage_flags: &Option<Cow<'_, StorageFlags>>| {
+            storage_flags.as_ref().map(|storage_flags| {
+                let mut storage_flags = storage_flags.clone().into_owned();
+                storage_flags.set_owner_id(owner_id);
+                Cow::Owned(storage_flags)
+            })
+        };
+        match self {
+            DocumentInfo::DocumentOwnedInfo((document, storage_flags)) => {
+                DocumentInfo::DocumentRefInfo((document, with_owner(storage_flags)))
+            }
+            DocumentInfo::DocumentRefInfo((document, storage_flags)) => {
+                DocumentInfo::DocumentRefInfo((document, with_owner(storage_flags)))
+            }
+            DocumentInfo::DocumentRefAndSerialization((document, serialization, storage_flags)) => {
+                DocumentInfo::DocumentRefAndSerialization((
+                    document,
+                    serialization,
+                    with_owner(storage_flags),
+                ))
+            }
+            DocumentInfo::DocumentAndSerialization((document, serialization, storage_flags)) => {
+                DocumentInfo::DocumentRefAndSerialization((
+                    document,
+                    serialization.as_slice(),
+                    with_owner(storage_flags),
+                ))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(size) => {
+                DocumentInfo::DocumentEstimatedAverageSize(*size)
+            }
+        }
+    }
 }
 
 impl DocumentInfoV0Methods for DocumentInfo<'_> {

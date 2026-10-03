@@ -274,12 +274,14 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                 platform_version,
                             )?;
                         // The document goes back the way a create puts it in, every index and
-                        // aggregate of its type included. Its storage flags name its owner, as
-                        // they did before the deletion: the moderator pays for the bytes, and
-                        // the refund of a later deletion is the owner's, as it always was. Then
-                        // the record, marked restored in place: two operations on one key
-                        // would fail the batch, so it is replaced rather than deleted and
-                        // written again, and it is never deleted.
+                        // aggregate of its type included. Its storage flags name its owner: the
+                        // moderator pays for the bytes, and the refund of a later deletion is
+                        // the owner's. A gas sponsor who held the deleted document's storage
+                        // was settled by the deletion (forfeited, or refunded to them), so the
+                        // restore is new storage they have no claim on. Then the record, marked
+                        // restored in place: two operations on one key would fail the batch, so
+                        // it is replaced rather than deleted and written again, and it is never
+                        // deleted.
                         let storage_flags =
                             StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
                         operations.push(DocumentOperation(DocumentOperationType::AddDocument {
@@ -324,7 +326,10 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         // The document is updated the way a replace updates it, every index and
                         // aggregate of its type included. Its storage flags name its owner, as a
                         // replace's do: the moderator pays for the bytes the change adds, and a
-                        // refund of the document's storage stays the owner's, as it always was.
+                        // refund of the document's storage goes to whoever its stored flags
+                        // name, its owner, or the contract owner for a document whose storage
+                        // they hold as its gas sponsor (Drive's document update v1 keeps it
+                        // with them).
                         let owner_id = document.owner_id();
                         let storage_flags =
                             StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));

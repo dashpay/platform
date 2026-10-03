@@ -34,7 +34,7 @@ pub(crate) mod gas_sponsorship_tests {
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
-    use dpp::prelude::{Identifier, Revision};
+    use dpp::prelude::{Identifier, IdentityNonce, Revision};
     use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
     use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
     use dpp::state_transition::StateTransition;
@@ -45,6 +45,9 @@ pub(crate) mod gas_sponsorship_tests {
     };
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+    use dpp::document::DocumentV0Setters;
+    use drive::query::DriveDocumentQuery;
     use drive::util::test_helpers::setup_contract;
     use simple_signer::signer::SimpleSigner;
 
@@ -288,22 +291,7 @@ pub(crate) mod gas_sponsorship_tests {
 
         /// The user's deletion of the card they created, without any token payment info
         async fn card_deletion_without_token_payment(&self) -> StateTransition {
-            let (document, _) = self.card_of(&self.user);
-            BatchTransition::new_document_deletion_transition_from_document(
-                document,
-                self.contract
-                    .document_type_for_name("card")
-                    .expect("expected the card document type"),
-                &self.user_key,
-                3,
-                0,
-                None,
-                &self.user_signer,
-                self.platform_version,
-                None,
-            )
-            .await
-            .expect("expected a batch transition")
+            self.card_deletion_paying(3, None).await
         }
 
         /// The contract owner's own card creation, asking `requested` for the gas
@@ -320,34 +308,177 @@ pub(crate) mod gas_sponsorship_tests {
             .await
         }
 
+        /// A payment of at most `maximum` of the game's second token, which pays for replacing,
+        /// deleting and transferring a card, asking `requested` for the gas
+        fn game_token_payment(maximum: TokenAmount, requested: GasFeesPaidBy) -> TokenPaymentInfo {
+            TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                payment_token_contract_id: None,
+                token_contract_position: 1,
+                minimum_token_cost: None,
+                maximum_token_cost: Some(maximum),
+                gas_fees_paid_by: requested,
+            })
+        }
+
         /// The user's replacement of the card they created, at `revision`, preferring that the
         /// contract owner pays the gas
         async fn card_replacement(&self, revision: Revision) -> StateTransition {
             let (mut document, _) = self.card_of(&self.user);
             document.set("attack", 5.into());
             document.set_revision(Some(revision));
+            self.card_replacement_of(document, 3, GasFeesPaidBy::PreferContractOwner)
+                .await
+        }
 
+        /// The user's replacement of the card they created, at `revision` and identity contract
+        /// `nonce`, giving it a description of `description_length` characters and asking
+        /// `requested` for the gas
+        async fn card_replacement_describing(
+            &self,
+            revision: Revision,
+            nonce: IdentityNonce,
+            description_length: usize,
+            requested: GasFeesPaidBy,
+        ) -> StateTransition {
+            let (mut document, _) = self.card_of(&self.user);
+            document.set("description", "d".repeat(description_length).into());
+            document.set_revision(Some(revision));
+            self.card_replacement_of(document, nonce, requested).await
+        }
+
+        /// The user's replacement of their card by `document`, at identity contract `nonce`,
+        /// paying its token and asking `requested` for the gas
+        async fn card_replacement_of(
+            &self,
+            document: Document,
+            nonce: IdentityNonce,
+            requested: GasFeesPaidBy,
+        ) -> StateTransition {
             BatchTransition::new_document_replacement_transition_from_document(
                 document,
                 self.contract
                     .document_type_for_name("card")
                     .expect("expected the card document type"),
                 &self.user_key,
-                3,
+                nonce,
                 0,
-                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
-                    payment_token_contract_id: None,
-                    token_contract_position: 1,
-                    minimum_token_cost: None,
-                    maximum_token_cost: Some(2),
-                    gas_fees_paid_by: GasFeesPaidBy::PreferContractOwner,
-                })),
+                Some(Self::game_token_payment(2, requested)),
                 &self.user_signer,
                 self.platform_version,
                 None,
             )
             .await
             .expect("expected a batch transition")
+        }
+
+        /// The user's deletion of the card they created, at identity contract `nonce`, paying
+        /// its token and the gas themselves: the card game offers no sponsorship of a deletion
+        async fn card_deletion(&self, nonce: IdentityNonce) -> StateTransition {
+            self.card_deletion_paying(
+                nonce,
+                Some(Self::game_token_payment(1, GasFeesPaidBy::DocumentOwner)),
+            )
+            .await
+        }
+
+        /// The user's deletion of the card they created, at identity contract `nonce`, with
+        /// `token_payment_info`
+        async fn card_deletion_paying(
+            &self,
+            nonce: IdentityNonce,
+            token_payment_info: Option<TokenPaymentInfo>,
+        ) -> StateTransition {
+            let (document, _) = self.card_of(&self.user);
+            BatchTransition::new_document_deletion_transition_from_document(
+                document,
+                self.contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type"),
+                &self.user_key,
+                nonce,
+                0,
+                token_payment_info,
+                &self.user_signer,
+                self.platform_version,
+                None,
+            )
+            .await
+            .expect("expected a batch transition")
+        }
+
+        /// Gives the user `amount` of the game's second token, which pays for replacing and
+        /// deleting a card
+        fn give_the_user_game_tokens(&self, amount: TokenAmount) {
+            let token_id: Identifier = calculate_token_id(self.contract.id().as_bytes(), 1).into();
+            add_tokens_to_identity(&self.platform, token_id, self.user.id(), amount);
+        }
+
+        /// Processes `transition` in a block of its own and commits it
+        fn process_and_commit(
+            &self,
+            transition: &StateTransition,
+        ) -> StateTransitionExecutionResult {
+            self.process_in_and_commit(transition, &BlockInfo::default())
+        }
+
+        /// `process_and_commit` in the block `block_info` describes
+        fn process_in_and_commit(
+            &self,
+            transition: &StateTransition,
+            block_info: &BlockInfo,
+        ) -> StateTransitionExecutionResult {
+            let tx = self.platform.drive.grove.start_transaction();
+            let result = self.process_in(transition, block_info, &tx);
+            self.platform
+                .drive
+                .grove
+                .commit_transaction(tx)
+                .unwrap()
+                .expect("expected to commit the transition");
+            result
+        }
+
+        /// The identity the committed storage flags of the user's card name as its storage owner
+        fn stored_card_storage_owner(&self) -> Option<Identifier> {
+            let (card, _) = self.card_of(&self.user);
+            let query = DriveDocumentQuery::new_primary_key_single_item_query(
+                &self.contract,
+                self.contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type"),
+                card.id(),
+            );
+            let mut documents = self
+                .platform
+                .drive
+                .query_documents_with_flags(
+                    query,
+                    None,
+                    false,
+                    None,
+                    Some(self.platform_version.protocol_version),
+                )
+                .expect("expected to query the card")
+                .documents_owned();
+            let (_, storage_flags) = documents.pop().expect("expected the card to be stored");
+            storage_flags
+                .and_then(|storage_flags| storage_flags.owner_id().copied())
+                .map(Identifier::from)
+        }
+
+        /// The committed credits held in the trees
+        fn committed_credits_in_trees(&self) -> Credits {
+            let tx = self.platform.drive.grove.start_transaction();
+            credits_in_trees_of(&self.platform, &tx, self.platform_version)
+        }
+
+        /// The committed balances of the user and of the contract owner
+        fn committed_credits(&self) -> (Credits, Credits) {
+            let tx = self.platform.drive.grove.start_transaction();
+            (
+                self.credits(&self.user, &tx),
+                self.credits(&self.contract_owner, &tx),
+            )
         }
 
         /// The card `creator` creates, always the same one, with the entropy of its id
@@ -591,6 +722,20 @@ pub(crate) mod gas_sponsorship_tests {
             .fetch_identity_balance(identity.id().to_buffer(), Some(tx), platform_version)
             .expect("expected to fetch the balance")
             .expect("expected a balance")
+    }
+
+    /// The credits held in the trees in `tx`
+    pub(crate) fn credits_in_trees_of(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        tx: &drive::grovedb::Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        platform
+            .drive
+            .calculate_total_credits_balance(Some(tx), &platform_version.drive)
+            .expect("expected to sum the credits")
+            .total_in_trees()
+            .expect("expected the credits to add up")
     }
 
     pub(crate) fn total_fee(result: &StateTransitionExecutionResult) -> Credits {
@@ -867,19 +1012,13 @@ pub(crate) mod gas_sponsorship_tests {
         // and on a recheck, while its validation mode stays what it is.
         let setup = Sponsorship::new(GasFeesPaidBy::ContractOwner, dash_to_credits!(0.1), 0, 15);
         // Replacing a card costs 2 of the game's second token
-        let gas_token_id: Identifier = calculate_token_id(setup.contract.id().as_bytes(), 1).into();
-        add_tokens_to_identity(&setup.platform, gas_token_id, setup.user.id(), 5);
+        setup.give_the_user_game_tokens(5);
 
         let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
-        let tx = setup.platform.drive.grove.start_transaction();
-        assert_matches!(setup.process(&creation, &tx), SuccessfulExecution { .. });
-        setup
-            .platform
-            .drive
-            .grove
-            .commit_transaction(tx)
-            .unwrap()
-            .expect("expected to commit the creation");
+        assert_matches!(
+            setup.process_and_commit(&creation),
+            SuccessfulExecution { .. }
+        );
 
         for (revision, expected) in [(2, Vec::<u32>::new()), (3, vec![INVALID_DOCUMENT_REVISION])] {
             let replacement = setup.card_replacement(revision).await;
@@ -986,6 +1125,421 @@ pub(crate) mod gas_sponsorship_tests {
                 dash_to_credits!(0.1)
             );
         }
+    }
+
+    // ---------- Storage refunds ----------
+
+    /// What processing `transition` in the block `block_info` describes and committing it
+    /// refunded the user and the contract owner. Checks that whoever paid was charged the fee
+    /// less their own refund, that the other was credited theirs, and that only the fee less
+    /// the refunds left the credits held in the trees.
+    fn settle(
+        setup: &Sponsorship,
+        transition: &StateTransition,
+        block_info: &BlockInfo,
+        paid_by_the_contract_owner: bool,
+    ) -> (Option<Credits>, Option<Credits>) {
+        let (user_credits, contract_owner_credits) = setup.committed_credits();
+        let credits_in_trees = setup.committed_credits_in_trees();
+
+        let result = setup.process_in_and_commit(transition, block_info);
+
+        let SuccessfulExecution { fee_result, .. } = &result else {
+            panic!("expected the transition to execute, got {result:?}");
+        };
+        let fee = fee_result.total_base_fee();
+        let refunded_to_user = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(setup.user.id());
+        let refunded_to_contract_owner = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(setup.contract_owner.id());
+        let (user_fee, contract_owner_fee) = if paid_by_the_contract_owner {
+            (0, fee)
+        } else {
+            (fee, 0)
+        };
+        assert_eq!(
+            setup.committed_credits(),
+            (
+                user_credits - user_fee + refunded_to_user.unwrap_or_default(),
+                contract_owner_credits - contract_owner_fee
+                    + refunded_to_contract_owner.unwrap_or_default(),
+            ),
+            "the payer is charged the fee, and each is credited their refund"
+        );
+        assert_eq!(
+            setup.committed_credits_in_trees(),
+            credits_in_trees - fee
+                + refunded_to_user.unwrap_or_default()
+                + refunded_to_contract_owner.unwrap_or_default(),
+            "only the fee less the refunds leaves the trees"
+        );
+        (refunded_to_user, refunded_to_contract_owner)
+    }
+
+    #[tokio::test]
+    async fn should_refund_a_sponsored_cards_storage_to_the_contract_owner() {
+        // The contract owner paid for the card's storage, so its refund is theirs: a user who
+        // deletes the card pays for the deletion and gets nothing back.
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+        );
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+
+        let deletion = setup.card_deletion(3).await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &deletion, &block, false);
+
+        assert_eq!(refunded_to_user, None, "the user is refunded nothing");
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the contract owner is refunded the storage they paid for"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_sponsored_card_with_the_contract_owner_through_the_users_own_replacement(
+    ) {
+        // Growing the card at the user's own expense would hand the whole stored card to the
+        // user, and with it the contract owner's refund. The card stays the contract owner's:
+        // they get the refund of what the user added too.
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+        );
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+
+        let replacement = setup
+            .card_replacement_describing(2, 3, 200, GasFeesPaidBy::DocumentOwner)
+            .await;
+        assert_eq!(
+            settle(&setup, &replacement, &block, false),
+            (None, None),
+            "the user pays for their own replacement, which frees nothing"
+        );
+
+        let deletion = setup.card_deletion(4).await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &deletion, &block, false);
+
+        assert_eq!(refunded_to_user, None, "the user is refunded nothing");
+        assert!(refunded_to_contract_owner.is_some_and(|refund| refund > 0));
+    }
+
+    #[tokio::test]
+    async fn should_refund_the_user_the_index_entries_their_own_replacement_added() {
+        // Moving an indexed value writes new index entries: the user pays for them in full, so
+        // they are the user's, while the stored card stays the contract owner's and the entries
+        // it replaced refund the contract owner.
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+        );
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+
+        let (mut document, _) = setup.card_of(&setup.user);
+        document.set("attack", 5.into());
+        document.set_revision(Some(2));
+        let replacement = setup
+            .card_replacement_of(document, 3, GasFeesPaidBy::DocumentOwner)
+            .await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &replacement, &block, false);
+        assert_eq!(refunded_to_user, None);
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the replaced index entries refund the contract owner"
+        );
+
+        let deletion = setup.card_deletion(4).await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &deletion, &block, false);
+
+        assert!(
+            refunded_to_user.is_some_and(|refund| refund > 0),
+            "the user is refunded the index entries they paid for"
+        );
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the contract owner is refunded the card"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_sponsored_card_with_the_contract_owner_through_a_transfer() {
+        // The user transfers the card the contract owner paid for, at their own expense: the
+        // stored card stays the contract owner's, and the index entries the transfer moves are
+        // the recipient's.
+        let mut setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+        );
+        let (recipient, _, _) = setup_identity(&mut setup.platform, 571, dash_to_credits!(0.1));
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+        assert_eq!(
+            setup.stored_card_storage_owner(),
+            Some(setup.contract_owner.id())
+        );
+
+        let (mut card, _) = setup.card_of(&setup.user);
+        card.increment_revision()
+            .expect("expected the revision to increment");
+        let transfer = BatchTransition::new_document_transfer_transition_from_document(
+            card,
+            setup
+                .contract
+                .document_type_for_name("card")
+                .expect("expected the card document type"),
+            recipient.id(),
+            &setup.user_key,
+            3,
+            0,
+            Some(Sponsorship::game_token_payment(
+                1,
+                GasFeesPaidBy::DocumentOwner,
+            )),
+            &setup.user_signer,
+            setup.platform_version,
+            None,
+        )
+        .await
+        .expect("expected a batch transition");
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &transfer, &block, false);
+
+        assert_eq!(refunded_to_user, None, "the user is refunded nothing");
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the index entries the transfer moves refund the contract owner"
+        );
+        assert_eq!(
+            setup.stored_card_storage_owner(),
+            Some(setup.contract_owner.id()),
+            "the stored card stays the contract owner's"
+        );
+    }
+
+    /// The card game with a card type that keeps history, its creation and replacement
+    /// offering the contract owner's gas
+    fn history_card_game() -> Sponsorship {
+        let setup = Sponsorship::build_customized(
+            PlatformVersion::latest(),
+            GasFeesPaidBy::ContractOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            None,
+            |contract| {
+                let mut schema = contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type")
+                    .schema()
+                    .clone();
+                schema
+                    .set_value("documentsKeepHistory", true.into())
+                    .expect("expected to keep history");
+                schema
+                    .set_value("canBeDeleted", false.into())
+                    .expect("expected to refuse deletion");
+                contract
+                    .set_document_schema(
+                        "card",
+                        schema,
+                        false,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected the card type to keep history");
+            },
+        );
+        assert!(setup
+            .contract
+            .document_type_for_name("card")
+            .expect("expected the card document type")
+            .documents_keep_history());
+        setup
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_sponsored_history_version_with_the_contract_owner_when_rewritten_in_its_block(
+    ) {
+        // A type keeping history stores each version under the block's time, so a second
+        // update in the same block rewrites the version the first wrote. The version the
+        // contract owner paid for stays theirs when the user grows it at their own expense, so
+        // the user's later shrink in that block refunds the contract owner.
+        let setup = history_card_game();
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+
+        let growth = setup
+            .card_replacement_describing(2, 3, 200, GasFeesPaidBy::DocumentOwner)
+            .await;
+        assert_eq!(settle(&setup, &growth, &block, false), (None, None));
+
+        let shrink = setup
+            .card_replacement_describing(3, 4, 10, GasFeesPaidBy::DocumentOwner)
+            .await;
+        let (refunded_to_user, refunded_to_contract_owner) = settle(&setup, &shrink, &block, false);
+
+        assert_eq!(refunded_to_user, None, "the user is refunded nothing");
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the version the contract owner paid for refunds them what the shrink frees"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_estimate_a_sponsor_held_history_rewrite_at_no_less_than_it_costs() {
+        // Keeping a history version with its sponsor probes whether the block's version exists:
+        // the estimate charges that probe too, so it never falls short of the execution.
+        let setup = history_card_game();
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+
+        let growth = setup
+            .card_replacement_describing(2, 3, 200, GasFeesPaidBy::DocumentOwner)
+            .await;
+        let result = setup.process_and_commit(&growth);
+
+        let SuccessfulExecution {
+            estimated_fees: Some(estimated_fees),
+            fee_result,
+            ..
+        } = &result
+        else {
+            panic!("expected an execution with an estimated fee, got {result:?}");
+        };
+        assert!(
+            estimated_fees.processing_fee >= fee_result.processing_fee,
+            "estimated {} below the {} the rewrite cost",
+            estimated_fees.processing_fee,
+            fee_result.processing_fee
+        );
+        assert!(estimated_fees.total_base_fee() >= fee_result.total_base_fee());
+    }
+
+    #[tokio::test]
+    async fn should_leave_a_history_version_the_user_paid_for_with_the_user_in_a_later_block() {
+        // A version written in a later block than the sponsored one is a new element, paid for
+        // by the user: it names the user, so the user's shrink of it in that block refunds
+        // the user.
+        let setup = history_card_game();
+        setup.give_the_user_game_tokens(5);
+        let creation_block = BlockInfo::default();
+        let later_block = BlockInfo {
+            time_ms: 1_000,
+            height: 1,
+            ..Default::default()
+        };
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &creation_block, true);
+
+        let growth = setup
+            .card_replacement_describing(2, 3, 200, GasFeesPaidBy::DocumentOwner)
+            .await;
+        assert_eq!(settle(&setup, &growth, &later_block, false), (None, None));
+
+        let shrink = setup
+            .card_replacement_describing(3, 4, 10, GasFeesPaidBy::DocumentOwner)
+            .await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &shrink, &later_block, false);
+
+        assert!(
+            refunded_to_user.is_some_and(|refund| refund > 0),
+            "the user is refunded what the shrink frees of the version they paid for"
+        );
+        assert_eq!(refunded_to_contract_owner, None);
+    }
+
+    #[tokio::test]
+    async fn should_give_a_users_card_to_the_contract_owner_who_sponsors_its_replacement() {
+        // A stored element has one owner, and a sponsored write that grows it takes it: the
+        // contract owner paid for what was added to the card, and is refunded what the user
+        // paid for it before too. The index entries the replacement leaves as they are stay
+        // the user's. A user who would rather keep the card pays for the replacement.
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+        );
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::DocumentOwner).await;
+        settle(&setup, &creation, &block, false);
+
+        let replacement = setup
+            .card_replacement_describing(2, 3, 200, GasFeesPaidBy::ContractOwner)
+            .await;
+        assert_eq!(
+            settle(&setup, &replacement, &block, true),
+            (None, None),
+            "the contract owner pays for the replacement, which frees nothing"
+        );
+
+        let deletion = setup.card_deletion(4).await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &deletion, &block, false);
+
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the contract owner is refunded the card"
+        );
+        assert!(
+            refunded_to_user.is_some_and(|refund| refund > 0),
+            "the user is refunded the index entries"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refund_the_user_who_paid_when_the_contract_owner_could_not() {
+        // A preference the contract owner cannot honour falls back to the user, who then paid
+        // for the storage and is refunded it.
+        let setup = Sponsorship::new(GasFeesPaidBy::ContractOwner, 0, dash_to_credits!(0.1), 15);
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup
+            .card_creation(GasFeesPaidBy::PreferContractOwner)
+            .await;
+        settle(&setup, &creation, &block, false);
+
+        let deletion = setup.card_deletion(3).await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &deletion, &block, false);
+
+        assert!(
+            refunded_to_user.is_some_and(|refund| refund > 0),
+            "the user is refunded the storage they paid for"
+        );
+        assert_eq!(refunded_to_contract_owner, None);
     }
 
     // ---------- Optional token costs ----------
@@ -1105,15 +1659,10 @@ pub(crate) mod gas_sponsorship_tests {
             0,
         );
         let creation = setup.card_creation_without_token_payment().await;
-        let tx = setup.platform.drive.grove.start_transaction();
-        assert_matches!(setup.process(&creation, &tx), SuccessfulExecution { .. });
-        setup
-            .platform
-            .drive
-            .grove
-            .commit_transaction(tx)
-            .unwrap()
-            .expect("expected to commit the creation");
+        assert_matches!(
+            setup.process_and_commit(&creation),
+            SuccessfulExecution { .. }
+        );
 
         let deletion = setup.card_deletion_without_token_payment().await;
         assert_eq!(setup.check_tx(&deletion), Vec::<u32>::new());
@@ -1133,15 +1682,10 @@ pub(crate) mod gas_sponsorship_tests {
             15,
         );
         let creation = setup.card_creation(GasFeesPaidBy::DocumentOwner).await;
-        let tx = setup.platform.drive.grove.start_transaction();
-        assert_matches!(setup.process(&creation, &tx), SuccessfulExecution { .. });
-        setup
-            .platform
-            .drive
-            .grove
-            .commit_transaction(tx)
-            .unwrap()
-            .expect("expected to commit the creation");
+        assert_matches!(
+            setup.process_and_commit(&creation),
+            SuccessfulExecution { .. }
+        );
         let deletion = setup.card_deletion_without_token_payment().await;
         assert_eq!(
             setup.check_tx(&deletion),

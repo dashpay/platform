@@ -17,6 +17,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
@@ -25,26 +26,29 @@ use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::util::object_size_info::{
-    DocumentAndContractInfo, DocumentInfo, DocumentInfoV0Methods, DriveKeyInfo, PathKeyInfo,
+    DocumentAndContractInfo, DocumentInfo, DocumentInfoV0Methods, DriveKeyInfo, OwnedDocumentInfo,
+    PathKeyInfo,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 
+use crate::state_transition_action::batch::document_type_offers_gas_sponsorship;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::Identifier;
 
 use crate::drive::document::paths::{
     contract_document_type_path,
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path,
 };
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::{
-    DocumentTypeRef, Index, IndexBucketing, IndexCountability, IndexLevel,
+    DocumentPropertyType, DocumentTypeRef, Index, IndexBucketing, IndexCountability, IndexLevel,
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -82,6 +86,65 @@ fn known_index_path(path: &[DriveKeyInfo]) -> Result<Vec<Vec<u8>>, Error> {
             ))),
         })
         .collect()
+}
+
+/// Whether a gas sponsor holds a stored document, so that its refunds go to them (protocol
+/// version 14): its stored flags name the contract owner as the owner of a document they do not
+/// own, on a document type whose token costs let them pay the gas. A sponsored write records
+/// them so (`record_gas_sponsor_as_storage_owner`).
+///
+/// A transfer that kept the size of a document left its flags as they were, so a document the
+/// contract owner gave away that way also still names them. It is treated alike: the contract
+/// owner paid for that storage too.
+fn storage_held_by_gas_sponsor(
+    contract_owner_id: Identifier,
+    document_type: DocumentTypeRef,
+    old_document: &Document,
+    old_storage_flags: Option<&StorageFlags>,
+) -> bool {
+    old_storage_flags.and_then(StorageFlags::owner_id) == Some(contract_owner_id.as_bytes())
+        && old_document.owner_id() != contract_owner_id
+        && document_type_offers_gas_sponsorship(document_type)
+}
+
+impl Drive {
+    /// Charges the probe of whether a document's history already holds a version at the block's
+    /// time (protocol version 14) at its average-case cost. Execution and the fee estimate both
+    /// charge it this way, so they price the probe alike, whatever the node's state holds.
+    fn add_history_version_probe_cost(
+        &self,
+        contract_id: &[u8],
+        document_type: DocumentTypeRef,
+        document_id: &[u8],
+        block_info: &BlockInfo,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let in_tree_type = if document_type.documents_summable().is_some() {
+            TreeType::SumTree
+        } else {
+            TreeType::NormalTree
+        };
+        self.grove_has_raw(
+            (&contract_documents_keeping_history_primary_key_path_for_document_id(
+                contract_id,
+                document_type.name().as_str(),
+                document_id,
+            ))
+                .into(),
+            DocumentPropertyType::encode_date_timestamp(block_info.time_ms).as_slice(),
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type,
+                query_target: QueryTargetValue(
+                    document_type.estimated_size(platform_version)? as u32
+                ),
+            },
+            None,
+            drive_operations,
+            &platform_version.drive,
+        )?;
+        Ok(())
+    }
 }
 
 /// `[0]`-key reference-bucket `TreeType` dispatch for the
@@ -162,6 +225,11 @@ impl Drive {
     /// sides, computing the old entry's layout from the old document's
     /// nullness and the new entry's from the new document's.
     ///
+    /// v1 also leaves a stored document a gas sponsor holds with the
+    /// sponsor when an update that is not sponsored rewrites it
+    /// (`storage_held_by_gas_sponsor`), reading the stored document
+    /// before it writes the new one.
+    ///
     /// The `[0]` reference-bucket tree-type dispatch and everything
     /// else match v0.
     pub(in crate::drive::document::update) fn update_document_for_contract_operations_v1(
@@ -197,14 +265,37 @@ impl Drive {
             .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
-            return self.estimate_document_change_as_insert_operations_v1(
+            let contract = document_and_contract_info.contract;
+            let document_type = document_and_contract_info.document_type;
+            let document_id = document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_borrowed_document()
+                .map(|document| document.id().to_buffer())
+                .unwrap_or_default();
+            let mut operations = self.estimate_document_change_as_insert_operations_v1(
                 document_and_contract_info,
                 block_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
-            );
+            )?;
+            // An update that may keep a history version with its gas sponsor probes whether
+            // the version exists (below), at the cost charged here too.
+            if document_type.documents_keep_history()
+                && document_type_offers_gas_sponsorship(document_type)
+            {
+                self.add_history_version_probe_cost(
+                    contract.id_ref().as_bytes(),
+                    document_type,
+                    &document_id,
+                    block_info,
+                    &mut operations,
+                    platform_version,
+                )?;
+            }
+            return Ok(operations);
         }
 
         // A type with derived index properties (protocol version 14) keys its documents by
@@ -222,13 +313,14 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owned_document_info.owner_id;
-        let Some((document, storage_flags)) = document_and_contract_info
+        let Some(document_id) = document_and_contract_info
             .owned_document_info
             .document_info
-            .get_borrowed_document_and_storage_flags()
+            .get_borrowed_document()
+            .map(|document| document.id())
         else {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "must have document and storage flags",
+                "must have a document",
             )));
         };
         // we need to construct the path for documents on the contract
@@ -242,25 +334,13 @@ impl Drive {
         let contract_documents_primary_key_path =
             contract_documents_primary_key_path(contract.id_ref().as_bytes(), document_type.name());
 
-        // Per-document reference is built per-index below because
-        // summable indexes need `Element::ReferenceWithSumItem` (sum
-        // contribution propagates to ancestor sum trees) while plain
-        // indexes use `Element::Reference`. The non-sum reference is
-        // computed once here for reuse on all non-summable indexes;
-        // summable indexes build their own variant inside the loop.
-        let document_reference = make_document_reference(
-            document,
-            document_and_contract_info.document_type,
-            storage_flags,
-        );
-
         // next we need to get the old document from storage
         let old_document_element = if document_type.documents_keep_history() {
             let contract_documents_keeping_history_primary_key_path_for_document_id =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
                     contract.id_ref().as_bytes(),
                     document_type.name().as_str(),
-                    document.id_ref().as_slice(),
+                    document_id.as_slice(),
                 );
             // When keeping document history the 0 is a reference that points to the current value
             // O is just on one byte, so we have at most one hop of size 1 (1 byte)
@@ -275,7 +355,7 @@ impl Drive {
         } else {
             self.grove_get_raw(
                 (&contract_documents_primary_key_path).into(),
-                document.id().as_slice(),
+                document_id.as_slice(),
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
                 &mut batch_operations,
@@ -283,10 +363,120 @@ impl Drive {
             )?
         };
 
+        let Some(old_document_element) = old_document_element else {
+            return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
+                "document being updated does not exist",
+            )));
+        };
+        // Accept BOTH plain `Item` (non-summable doctypes) AND
+        // `ItemWithSumItem` (summable doctypes — primary storage on
+        // doctypes with `documents_summable: Some(_)` is written as
+        // ItemWithSumItem by `add_document_to_primary_storage`).
+        // The sum_value is discarded here because the reload only
+        // needs the document body + flags; the new write below
+        // re-computes the sum from the freshly-supplied document.
+        let (old_serialized_document, element_flags) = match old_document_element {
+            Element::Item(bytes, flags) => (bytes, flags),
+            Element::ItemWithSumItem(bytes, _sum_value, flags) => (bytes, flags),
+            _ => {
+                return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
+                    "old document is not an item or item-with-sum-item",
+                )))
+            }
+        };
+        // The stored size of the document before the change, which a type with a `ttl` needs
+        // to prepay the deletion of the bytes the change adds.
+        let old_document_bytes = old_serialized_document.len() as u64;
+        let mut old_document = Document::from_bytes(
+            old_serialized_document.as_slice(),
+            document_type,
+            platform_version,
+        )?;
+        let old_storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
+
+        let Some((document, storage_flags)) = document_and_contract_info
+            .owned_document_info
+            .document_info
+            .get_borrowed_document_and_storage_flags()
+        else {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "must have document and storage flags",
+            )));
+        };
+
+        // Per-document reference is built per-index below because
+        // summable indexes need `Element::ReferenceWithSumItem` (sum
+        // contribution propagates to ancestor sum trees) while plain
+        // indexes use `Element::Reference`. The non-sum reference is
+        // computed once here for reuse on all non-summable indexes;
+        // summable indexes build their own variant inside the loop.
+        let document_reference = make_document_reference(
+            document,
+            document_and_contract_info.document_type,
+            storage_flags,
+        );
+
+        // A document whose stored element a gas sponsor holds stays theirs when an update that is
+        // not sponsored rewrites that element, a transfer included: GroveDB hands an element
+        // whose size the update changes to the owner the update names (unless it shrinks a
+        // single-epoch element in a later epoch, which keeps its flags), so the rewrite names
+        // the sponsor. A sponsored update names the sponsor already. A reference the update
+        // refreshes keeps its stored flags, and every other element it writes is new, paid for
+        // by the signer, and names whom the update names. A type keeping history stores each
+        // version under the block's time: only a second update in the same block rewrites the
+        // version the first wrote, so only then does the version keep naming the sponsor, and a
+        // version written in a later block is new and names whom the update names. The probe
+        // is charged at its average-case cost, as the fee estimate charges it.
+        let contract_owner_id = contract.owner_id();
+        let sponsor_held_primary_storage = (storage_flags.and_then(StorageFlags::owner_id)
+            != Some(contract_owner_id.as_bytes())
+            && storage_held_by_gas_sponsor(
+                contract_owner_id,
+                document_type,
+                &old_document,
+                old_storage_flags.as_ref(),
+            )
+            && (!document_type.documents_keep_history() || {
+                self.add_history_version_probe_cost(
+                    contract.id_ref().as_bytes(),
+                    document_type,
+                    document_id.as_slice(),
+                    block_info,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+                self.grove_has_raw(
+                    (&contract_documents_keeping_history_primary_key_path_for_document_id(
+                        contract.id_ref().as_bytes(),
+                        document_type.name().as_str(),
+                        document_id.as_slice(),
+                    ))
+                        .into(),
+                    DocumentPropertyType::encode_date_timestamp(block_info.time_ms).as_slice(),
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    drive_version,
+                )?
+            }))
+        .then(|| DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .borrowed_with_storage_flags_owner(contract_owner_id.to_buffer()),
+                owner_id,
+            },
+            contract,
+            document_type,
+        });
+
         // we need to store the document for it's primary key
         // we should be overriding if the document_type does not have history enabled
         self.add_document_to_primary_storage(
-            &document_and_contract_info,
+            sponsor_held_primary_storage
+                .as_ref()
+                .unwrap_or(&document_and_contract_info),
             block_info,
             true,
             estimated_costs_only_with_layer_info,
@@ -295,52 +485,21 @@ impl Drive {
             platform_version,
         )?;
 
-        // The stored size of the document before the change, which a type with a `ttl` needs
-        // to prepay the deletion of the bytes the change adds.
-        let old_document_bytes: u64;
-        let old_document_info = if let Some(old_document_element) = old_document_element {
-            // Accept BOTH plain `Item` (non-summable doctypes) AND
-            // `ItemWithSumItem` (summable doctypes — primary storage on
-            // doctypes with `documents_summable: Some(_)` is written as
-            // ItemWithSumItem by `add_document_to_primary_storage`).
-            // The sum_value is discarded here because the reload only
-            // needs the document body + flags; the new write below
-            // re-computes the sum from the freshly-supplied document.
-            let (old_serialized_document, element_flags) = match old_document_element {
-                Element::Item(bytes, flags) => (bytes, flags),
-                Element::ItemWithSumItem(bytes, _sum_value, flags) => (bytes, flags),
-                _ => {
-                    return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
-                        "old document is not an item or item-with-sum-item",
-                    )))
-                }
-            };
-            old_document_bytes = old_serialized_document.len() as u64;
-            let mut old_document = Document::from_bytes(
-                old_serialized_document.as_slice(),
+        if !document_type.derived_index_properties().is_empty() {
+            let values = self.derived_index_values(
+                &old_document,
+                Some(document),
+                contract,
                 document_type,
+                false,
+                transaction,
+                &mut batch_operations,
                 platform_version,
             )?;
-            if !document_type.derived_index_properties().is_empty() {
-                let values = self.derived_index_values(
-                    &old_document,
-                    Some(document),
-                    contract,
-                    document_type,
-                    false,
-                    transaction,
-                    &mut batch_operations,
-                    platform_version,
-                )?;
-                set_derived_index_values(&mut old_document, values);
-            }
-            let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
-            DocumentOwnedInfo((old_document, storage_flags.map(Cow::Owned)))
-        } else {
-            return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
-                "document being updated does not exist",
-            )));
-        };
+            set_derived_index_values(&mut old_document, values);
+        }
+        let old_document_info =
+            DocumentOwnedInfo((old_document, old_storage_flags.map(Cow::Owned)));
 
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
         // Pre-built tree of every index path in the doctype. Walking

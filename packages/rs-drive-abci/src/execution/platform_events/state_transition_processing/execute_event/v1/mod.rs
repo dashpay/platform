@@ -21,7 +21,9 @@ use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 use drive::grovedb::Transaction;
-use drive::state_transition_action::batch::{action_fee_operations, action_fees_total};
+use drive::state_transition_action::batch::{
+    action_fee_operations, action_fees_total, record_gas_sponsor_as_storage_owner,
+};
 use drive::util::batch::DriveOperation;
 use std::collections::BTreeMap;
 
@@ -40,10 +42,10 @@ where
     ///
     /// The fee is charged to whoever fee validation settled on (`settle_fees_of_event_v1`, of the
     /// same generation): the gas sponsor when their balance covers the gas estimated with them
-    /// paying, and the identity otherwise. Storage refunds still
-    /// go to whoever paid the storage originally, so a sponsored document refunds its owner when
-    /// it is deleted. A failed batch (`consensus_errors`) is never sponsored: its signer pays for
-    /// the work that ran.
+    /// paying, and the identity otherwise. A sponsor who pays is named as the owner of the storage
+    /// the batch's documents write (`record_gas_sponsor_as_storage_owner`), so the refunds of that
+    /// storage go back to them and not to the documents' owners. A failed batch
+    /// (`consensus_errors`) is never sponsored: its signer pays for the work that ran.
     ///
     /// A budgeted signing key is then charged with what the transition took from its identity:
     /// the balance it moved out (`removed_balance`) plus the fee the identity owes, net of the
@@ -155,6 +157,9 @@ where
             // gas, by the rule that already governs a principal, and never the pots against
             // credits that were not there.
             let mut operations = operations;
+            if let Some(gas_sponsor) = paying_sponsor {
+                record_gas_sponsor_as_storage_owner(&mut operations, gas_sponsor.identity_id);
+            }
             operations.extend(action_fee_operations(payer_id, &action_fees)?);
             let action_fees_owed_by_identity = if paying_sponsor.is_some() {
                 0

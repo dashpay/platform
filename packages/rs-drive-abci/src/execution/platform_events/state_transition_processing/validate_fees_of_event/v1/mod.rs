@@ -226,6 +226,11 @@ where
         // What the batch is estimated to cost when `payer_id` pays its gas, and so its action
         // fees, charged by the operations execution appends and merged with the batch's own as
         // execution applies them; and the part of the processing fee the user fee increase adds.
+        //
+        // Execution names a paying sponsor as the owner of the storage the batch writes
+        // (`record_gas_sponsor_as_storage_owner`); the estimate does not need to: it prices the
+        // operations without reading state, so it reads no owner, and an owner takes the same
+        // bytes whoever it is.
         let estimate_paid_by = |payer_id: Identifier| -> Result<(FeeResult, Credits), Error> {
             let mut operations = operations.clone();
             operations.extend(action_fee_operations(payer_id, action_fees)?);

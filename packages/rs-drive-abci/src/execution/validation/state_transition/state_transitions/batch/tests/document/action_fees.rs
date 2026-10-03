@@ -6,8 +6,8 @@
 //! sum of all credits changes by the gas alone.
 
 use super::gas_sponsorship::gas_sponsorship_tests::{
-    balance_of, process_alone, total_fee, Sponsorship, GAS_SPONSOR_INSUFFICIENT_BALANCE,
-    IDENTITY_INSUFFICIENT_BALANCE,
+    balance_of, credits_in_trees_of, process_alone, total_fee, Sponsorship,
+    GAS_SPONSOR_INSUFFICIENT_BALANCE, IDENTITY_INSUFFICIENT_BALANCE,
 };
 use super::*;
 
@@ -1232,19 +1232,6 @@ mod action_fee_tests {
                 .credits
         };
         (pot(ContractFeePot::Owner), pot(ContractFeePot::Moderators))
-    }
-
-    fn credits_in_trees_of(
-        platform: &TempPlatform<MockCoreRPCLike>,
-        tx: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Credits {
-        platform
-            .drive
-            .calculate_total_credits_balance(Some(tx), &platform_version.drive)
-            .expect("expected to sum the credits")
-            .total_in_trees()
-            .expect("expected the credits to add up")
     }
 
     /// The agreement to what `document_type` declares for `action`, at the fee multiplier of
