@@ -472,13 +472,22 @@ impl DocumentTypeRef<'_> {
                     let rule = |rule: Option<SettledDeletionRule>| match rule {
                         None => "no deletion once settled".to_string(),
                         Some(SettledDeletionRule {
-                            leader: true,
+                            leader,
                             approvals,
-                        }) => format!("{approvals} approvals, the team's leader among them"),
-                        Some(SettledDeletionRule {
-                            leader: false,
-                            approvals,
-                        }) => format!("{approvals} approvals"),
+                            approvers_predate_document,
+                        }) => format!(
+                            "{approvals} approvals{}{}",
+                            if leader {
+                                ", the team's leader among them"
+                            } else {
+                                ""
+                            },
+                            if approvers_predate_document {
+                                ", added members only from before the document"
+                            } else {
+                                ", added members whenever added"
+                            }
+                        ),
                     };
                     return SimpleConsensusValidationResult::new_with_error(
                         DocumentTypeUpdateError::new(
@@ -1208,7 +1217,7 @@ mod tests {
                     "properties": {
                         "text": { "type": "string", "maxLength": 50, "position": 0 },
                     },
-                    "required": ["$updatedAt"],
+                    "required": ["$createdAt", "$updatedAt"],
                     "additionalProperties": false,
                     "moderatorAbilities": abilities,
                 }),
@@ -1223,22 +1232,28 @@ mod tests {
         };
 
         // Fewer approvals would reach content written under more, and more would take back
-        // what the contract promised its moderators: the rule changes in no direction.
+        // what the contract promised its moderators: the rule changes in no direction. Letting
+        // members added after a document approve its deletion would let the leader add them.
         for (old, new, expected) in [
             (
                 None,
                 Some(platform_value!({ "leader": true })),
-                "document type can not change who must approve a moderator's deletion of a settled document: changing from no deletion once settled to 1 approvals, the team's leader among them",
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from no deletion once settled to 1 approvals, the team's leader among them, added members only from before the document",
             ),
             (
                 Some(platform_value!({ "leader": true, "approvals": 3 })),
                 Some(platform_value!({ "approvals": 3 })),
-                "document type can not change who must approve a moderator's deletion of a settled document: changing from 3 approvals, the team's leader among them to 3 approvals",
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from 3 approvals, the team's leader among them, added members only from before the document to 3 approvals, added members only from before the document",
             ),
             (
                 Some(platform_value!({ "approvals": 2 })),
                 None,
-                "document type can not change who must approve a moderator's deletion of a settled document: changing from 2 approvals to no deletion once settled",
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from 2 approvals, added members only from before the document to no deletion once settled",
+            ),
+            (
+                Some(platform_value!({ "approvals": 2 })),
+                Some(platform_value!({ "approvals": 2, "approversPredateDocument": false })),
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from 2 approvals, added members only from before the document to 2 approvals, added members whenever added",
             ),
         ] {
             let result = make_document_type(old)

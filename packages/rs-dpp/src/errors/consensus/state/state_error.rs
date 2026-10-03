@@ -16,6 +16,7 @@ use crate::consensus::state::contract_moderation::{
     ContractModerationTeamNotSeatedError, DocumentNotSettledError,
     ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
     ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    ContractTeamMemberAddedAfterDocumentError,
     DocumentTypeNotDeletableOnceSettledError, SettledDeletionNotRestorableError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
@@ -695,6 +696,12 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractTeamActionDocumentChangedError(ContractTeamActionDocumentChangedError),
+
+    // A member the leader added after a settled document was created proposes or approves its
+    // deletion, the type's rule admitting only members from before it
+    // (`deleteSettled.approversPredateDocument`, protocol version 14).
+    #[error(transparent)]
+    ContractTeamMemberAddedAfterDocumentError(ContractTeamMemberAddedAfterDocumentError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1512,6 +1519,18 @@ mod tests {
                 ContractTeamActionDocumentChangedError::new(group_id, identity_id, identity_id)
             )),
             166
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamMemberAddedAfterDocumentError(
+                ContractTeamMemberAddedAfterDocumentError::new(
+                    group_id,
+                    identity_id,
+                    2_000,
+                    identity_id,
+                    1_000
+                )
+            )),
+            167
         );
     }
 }
