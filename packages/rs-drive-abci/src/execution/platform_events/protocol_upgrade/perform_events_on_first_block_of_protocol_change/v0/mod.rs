@@ -186,13 +186,24 @@ impl<C> Platform<C> {
                 continue;
             }
 
+            // A shared masternode has no owner key to add. Only a Core v24 masternode list has
+            // one, and no earlier binary can parse it, so no committed block reached this branch.
+            let Some(owner_address) = masternode.state.owner_address else {
+                tracing::debug!(
+                    pro_tx_hash = %masternode.pro_tx_hash,
+                    method = "transition_to_version_4",
+                    "no OWNER key added: the masternode has no owner address"
+                );
+                continue;
+            };
+
             let last_key_id = *old_owner_identity_keys
                 .keys()
                 .max()
                 .expect("there must be keys, we already checked");
 
             let new_owner_key = Self::get_owner_identity_owner_key(
-                masternode.state.owner_address,
+                owner_address,
                 last_key_id + 1,
                 platform_version,
             )?;
@@ -1048,6 +1059,138 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    /// Version 4 gives every owner identity the OWNER key of its masternode's owner address.
+    /// A shared masternode has no owner address, so its identity, if one exists under its
+    /// ProTx hash, gets no key; the owner identities of other masternodes still get theirs.
+    #[test]
+    fn should_add_no_owner_key_for_a_masternode_without_owner_address_on_transition_to_version_4() {
+        use dpp::dashcore::{ProTxHash, Txid};
+        use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::{Identity, KeyID, Purpose};
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let masternode =
+            |pro_tx_hash: [u8; 32], owner_address: Option<[u8; 20]>| MasternodeListItem {
+                node_type: MasternodeType::Regular,
+                pro_tx_hash: ProTxHash::from_byte_array(pro_tx_hash),
+                collateral_hash: Txid::from_byte_array([0x41; 32]),
+                collateral_index: 0,
+                collateral_address: owner_address.map(|_| [0x42; 20]),
+                operator_reward: 0.0,
+                state: DMNState {
+                    service: "1.2.3.4:9999".parse().expect("socket address"),
+                    registered_height: 0,
+                    pose_revived_height: None,
+                    pose_ban_height: None,
+                    revocation_reason: 0,
+                    owner_address,
+                    voting_address: [0x43; 20],
+                    payout_address: owner_address.map(|_| [0x44; 20]),
+                    payouts: None,
+                    pub_key_operator: vec![0x45; 48],
+                    operator_payout_address: None,
+                    platform_node_id: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
+                },
+            };
+
+        let owner_address = [0x46; 20];
+        let with_owner = [0x47; 32];
+        let shared_with_identity = [0x48; 32];
+        let shared_without_identity = [0x49; 32];
+
+        let mut platform_state = platform.state.load().as_ref().clone();
+        for item in [
+            masternode(with_owner, Some(owner_address)),
+            masternode(shared_with_identity, None),
+            masternode(shared_without_identity, None),
+        ] {
+            platform_state.insert_masternode(item);
+        }
+
+        // Owner identities as created before version 4: only the TRANSFER key id 0.
+        for pro_tx_hash in [with_owner, shared_with_identity] {
+            let mut identity =
+                Identity::create_basic_identity(pro_tx_hash.into(), platform_version)
+                    .expect("expected an identity");
+            identity.add_public_keys([
+                Platform::<MockCoreRPCLike>::get_owner_identity_withdrawal_key(
+                    [0x44; 20],
+                    0,
+                    platform_version,
+                )
+                .expect("expected a withdrawal key"),
+            ]);
+            platform
+                .drive
+                .add_new_identity(
+                    identity,
+                    true,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the owner identity");
+        }
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .transition_to_version_4(
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected the transition to version 4 to succeed");
+
+        let identity_keys = |pro_tx_hash: [u8; 32]| -> BTreeMap<KeyID, (Purpose, Vec<u8>)> {
+            platform
+                .drive
+                .fetch_full_identity(pro_tx_hash, Some(&transaction), platform_version)
+                .expect("expected to fetch an identity")
+                .expect("expected the identity to exist")
+                .public_keys()
+                .iter()
+                .map(|(key_id, key)| (*key_id, (key.purpose(), key.data().to_vec())))
+                .collect()
+        };
+
+        assert_eq!(
+            identity_keys(with_owner),
+            BTreeMap::from([
+                (0, (Purpose::TRANSFER, vec![0x44; 20])),
+                (1, (Purpose::OWNER, owner_address.to_vec())),
+            ])
+        );
+        assert_eq!(
+            identity_keys(shared_with_identity),
+            BTreeMap::from([(0, (Purpose::TRANSFER, vec![0x44; 20]))])
+        );
+        assert_eq!(
+            platform
+                .drive
+                .fetch_full_identity(
+                    shared_without_identity,
+                    Some(&transaction),
+                    platform_version
+                )
+                .expect("expected to fetch an identity"),
+            None
+        );
     }
 
     #[test]
