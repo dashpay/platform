@@ -80,6 +80,10 @@ pub const fn min_protocol_version(network: Network) -> u32 {
 /// upward. See [`SdkBuilder::with_protocol_version_observer`].
 pub type ProtocolVersionObserver = Arc<dyn Fn(u32) + Send + Sync>;
 
+mod quorum_refresh;
+pub use quorum_refresh::QuorumRefreshFn;
+use quorum_refresh::QuorumRefresher;
+
 /// Default signed-metadata freshness window for network SDKs.
 const DEFAULT_METADATA_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
@@ -237,6 +241,10 @@ pub struct Sdk {
     /// host can persist the learned version and seed the next SDK with it.
     protocol_version_observer: Option<ProtocolVersionObserver>,
 
+    /// Refreshes the context provider's quorum keys when a proof names a quorum
+    /// it does not know. Shared between clones, so they share one refresh.
+    quorum_refresher: Option<Arc<QuorumRefresher>>,
+
     /// Last seen height; used to determine if the remote node is stale.
     ///
     /// This is clone-able and can be shared between threads.
@@ -273,6 +281,7 @@ impl Clone for Sdk {
             protocol_version: Arc::clone(&self.protocol_version),
             version_pinned: self.version_pinned,
             protocol_version_observer: self.protocol_version_observer.clone(),
+            quorum_refresher: self.quorum_refresher.clone(),
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
@@ -833,6 +842,9 @@ pub struct SdkBuilder {
     /// See [`SdkBuilder::with_protocol_version_observer`].
     protocol_version_observer: Option<ProtocolVersionObserver>,
 
+    /// See [`SdkBuilder::with_quorum_refresher`].
+    quorum_refresher: Option<QuorumRefreshFn>,
+
     /// Cache size for data contracts. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
@@ -914,6 +926,7 @@ impl Default for SdkBuilder {
             version: None,
             version_pinned: false,
             protocol_version_observer: None,
+            quorum_refresher: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
@@ -1082,6 +1095,22 @@ impl SdkBuilder {
         self
     }
 
+    /// Refresh the context provider's quorum keys when a proof names a quorum
+    /// the provider does not know.
+    ///
+    /// For a context provider that caches quorum keys and cannot fetch a
+    /// missing one from inside the synchronous
+    /// [`ContextProvider::get_quorum_public_key`]. When a read's proof is
+    /// signed by a quorum that formed after the cache was filled, the SDK awaits
+    /// `refresh` and sends the request again, instead of retrying it on other
+    /// nodes and banning each of them for the client's stale keys. A key still
+    /// missing after the refresh fails that request without banning the node.
+    /// Concurrent misses share one refresh.
+    pub fn with_quorum_refresher(mut self, refresh: QuorumRefreshFn) -> Self {
+        self.quorum_refresher = Some(refresh);
+        self
+    }
+
     /// Configure context provider to use.
     ///
     /// Context provider is used to retrieve data contracts and quorum public keys from application state.
@@ -1247,6 +1276,7 @@ impl SdkBuilder {
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
                     protocol_version_observer: self.protocol_version_observer.clone(),
+                    quorum_refresher: self.quorum_refresher.clone().map(|refresh| Arc::new(QuorumRefresher::new(refresh))),
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
                         self.trusted_initial_height.unwrap_or(0),
                     )),
@@ -1317,6 +1347,7 @@ impl SdkBuilder {
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
                     protocol_version_observer: self.protocol_version_observer.clone(),
+                    quorum_refresher: self.quorum_refresher.clone().map(|refresh| Arc::new(QuorumRefresher::new(refresh))),
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(

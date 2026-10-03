@@ -454,103 +454,108 @@ impl WaitForOutcome for StateTransition {
         };
 
         // prepare a factory that will generate closure which executes actual code
-        let factory = |request_settings: RequestSettings| async move {
-            trace!("wait: creating request");
-            let request = self
-                .wait_for_state_transition_result_request()
-                .map_err(|e| ExecutionError {
-                    inner: e,
-                    address: None,
-                    retries: 0,
+        // A proof signed by a quorum the context provider has not seen yet
+        // refreshes the provider's quorum keys and asks again; see
+        // `SdkBuilder::with_quorum_refresher`.
+        let factory = |request_settings: RequestSettings| {
+            sdk.with_quorum_refresh(move || async move {
+                trace!("wait: creating request");
+                let request = self
+                    .wait_for_state_transition_result_request()
+                    .map_err(|e| ExecutionError {
+                        inner: e,
+                        address: None,
+                        retries: 0,
+                    })?;
+
+                trace!("wait: executing request");
+                let response = request.execute(sdk, request_settings).await.inner_into()?;
+                trace!("wait: received response");
+
+                let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
+
+                // We use match here to have a compilation error if a new version of the response is introduced
+                let state_transition_broadcast_error = match &grpc_response.version {
+                    Some(wait_for_state_transition_result_response::Version::V0(result)) => {
+                        match &result.result {
+                            Some(wait_for_state_transition_result_response_v0::Result::Error(
+                                e,
+                            )) => Some(e),
+                            _ => None,
+                        }
+                    }
+                    None => None,
+                };
+
+                if let Some(e) = state_transition_broadcast_error {
+                    warn!(error=?e, "wait: state transition broadcast error detected");
+                    let state_transition_broadcast_error: StateTransitionBroadcastError =
+                        StateTransitionBroadcastError::try_from(e.clone())
+                            .wrap_to_execution_result(&response)?
+                            .inner;
+
+                    return Err(Error::from(state_transition_broadcast_error))
+                        .wrap_to_execution_result(&response);
+                }
+
+                let context_provider = sdk.context_provider().ok_or(ExecutionError {
+                    inner: Error::from(ContextProviderError::Config(
+                        "Context provider not initialized".to_string(),
+                    )),
+                    address: Some(response.address.clone()),
+                    retries: response.retries,
                 })?;
 
-            trace!("wait: executing request");
-            let response = request.execute(sdk, request_settings).await.inner_into()?;
-            trace!("wait: received response");
+                // Verify through the `FromProof` impl: it runs the GroveDB structural check AND
+                // `verify_tenderdash_proof` (the quorum BLS signature gate) that authenticates
+                // `metadata`. The request must be reconstructed to feed that verifier.
+                let request: BroadcastStateTransitionRequest = self
+                    .broadcast_request_for_state_transition()
+                    .wrap_to_execution_result(&response)?
+                    .inner;
 
-            let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
-
-            // We use match here to have a compilation error if a new version of the response is introduced
-            let state_transition_broadcast_error = match &grpc_response.version {
-                Some(wait_for_state_transition_result_response::Version::V0(result)) => {
-                    match &result.result {
-                        Some(wait_for_state_transition_result_response_v0::Result::Error(e)) => {
-                            Some(e)
-                        }
-                        _ => None,
-                    }
-                }
-                None => None,
-            };
-
-            if let Some(e) = state_transition_broadcast_error {
-                warn!(error=?e, "wait: state transition broadcast error detected");
-                let state_transition_broadcast_error: StateTransitionBroadcastError =
-                    StateTransitionBroadcastError::try_from(e.clone())
-                        .wrap_to_execution_result(&response)?
-                        .inner;
-
-                return Err(Error::from(state_transition_broadcast_error))
-                    .wrap_to_execution_result(&response);
-            }
-
-            let context_provider = sdk.context_provider().ok_or(ExecutionError {
-                inner: Error::from(ContextProviderError::Config(
-                    "Context provider not initialized".to_string(),
-                )),
-                address: Some(response.address.clone()),
-                retries: response.retries,
-            })?;
-
-            // Verify through the `FromProof` impl: it runs the GroveDB structural check AND
-            // `verify_tenderdash_proof` (the quorum BLS signature gate) that authenticates
-            // `metadata`. The request must be reconstructed to feed that verifier.
-            let request: BroadcastStateTransitionRequest = self
-                .broadcast_request_for_state_transition()
+                trace!("wait: verifying proof and quorum signature");
+                let (maybe_outcome, metadata, _proof) = <StateTransitionProofOutcome as FromProof<
+                    BroadcastStateTransitionRequest,
+                >>::maybe_from_proof_with_metadata(
+                    request,
+                    grpc_response.clone(),
+                    sdk.network,
+                    sdk.version(),
+                    &context_provider,
+                )
+                .map_err(Error::from)
                 .wrap_to_execution_result(&response)?
                 .inner;
 
-            trace!("wait: verifying proof and quorum signature");
-            let (maybe_outcome, metadata, _proof) = <StateTransitionProofOutcome as FromProof<
-                BroadcastStateTransitionRequest,
-            >>::maybe_from_proof_with_metadata(
-                request,
-                grpc_response.clone(),
-                sdk.network,
-                sdk.version(),
-                &context_provider,
-            )
-            .map_err(Error::from)
-            .wrap_to_execution_result(&response)?
-            .inner;
+                // The current `FromProof` impl always yields `Some`; this guards only a future
+                // impl change, so it stays a typed error rather than an unwrap.
+                let outcome: StateTransitionProofOutcome = maybe_outcome
+                    .ok_or_else(|| {
+                        Error::InvalidProvedResponse(
+                            "state transition result missing from verified proof".to_string(),
+                        )
+                    })
+                    .wrap_to_execution_result(&response)?
+                    .inner;
 
-            // The current `FromProof` impl always yields `Some`; this guards only a future
-            // impl change, so it stays a typed error rather than an unwrap.
-            let outcome: StateTransitionProofOutcome = maybe_outcome
-                .ok_or_else(|| {
-                    Error::InvalidProvedResponse(
-                        "state transition result missing from verified proof".to_string(),
-                    )
-                })
-                .wrap_to_execution_result(&response)?
-                .inner;
+                // `metadata` is quorum-authenticated only after the verification above, so the
+                // protocol-version ratchet must run here, never before. A `StaleNode` error is
+                // retryable and prompts another server.
+                let _: () = sdk
+                    .verify_response_metadata("wait_for_state_transition_result", &metadata)
+                    .wrap_to_execution_result(&response)?
+                    .inner;
 
-            // `metadata` is quorum-authenticated only after the verification above, so the
-            // protocol-version ratchet must run here, never before. A `StaleNode` error is
-            // retryable and prompts another server.
-            let _: () = sdk
-                .verify_response_metadata("wait_for_state_transition_result", &metadata)
-                .wrap_to_execution_result(&response)?
-                .inner;
+                trace!("wait: proof verification successful");
+                trace!(
+                    result_variant = %outcome.result().to_string(),
+                    execution_proved = outcome.is_execution_proved(),
+                    "wait: result variant"
+                );
 
-            trace!("wait: proof verification successful");
-            trace!(
-                result_variant = %outcome.result().to_string(),
-                execution_proved = outcome.is_execution_proved(),
-                "wait: result variant"
-            );
-
-            Ok::<_, Error>((outcome, metadata)).wrap_to_execution_result(&response)
+                Ok::<_, Error>((outcome, metadata)).wrap_to_execution_result(&response)
+            })
         };
 
         let future = retry(sdk.address_list(), retry_settings, factory);

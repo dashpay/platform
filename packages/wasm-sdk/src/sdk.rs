@@ -470,7 +470,8 @@ impl WasmSdkBuilder {
                 .with_context_provider(context.clone())
         } else {
             self.inner.with_context_provider(context.clone())
-        };
+        }
+        .with_quorum_refresher(context.quorum_refresher());
 
         Self {
             inner,
