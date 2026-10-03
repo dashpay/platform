@@ -11,6 +11,7 @@ use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
+use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
@@ -18,12 +19,17 @@ use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
+use dash_sdk::platform::DataContract;
 use js_sys::Reflect;
 use std::sync::Arc;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_dpp2::data_contract::document::DocumentWasm;
+use wasm_dpp2::error::WasmDppError;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::state_transitions::batch::action_fee_agreement::{
+    DocumentActionFeeAgreementOptionsJs, DocumentActionFeeAgreementWasm,
+};
 use wasm_dpp2::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use wasm_dpp2::state_transitions::batch::token_payment_info::{
     TokenPaymentInfoOptionsJs, TokenPaymentInfoWasm,
@@ -91,6 +97,44 @@ fn try_from_options_optional_token_payment_info(
     Ok(Some(token_payment_info.into()))
 }
 
+fn creation_options_of(settings: &mut Option<PutSettings>) -> &mut StateTransitionCreationOptions {
+    settings
+        .get_or_insert_with(Default::default)
+        .state_transition_creation_options
+        .get_or_insert_with(Default::default)
+}
+
+fn apply_action_fee_agreement_option(
+    options: &JsValue,
+    settings: &mut Option<PutSettings>,
+) -> Result<(), WasmSdkError> {
+    let Some(agreement) = try_from_options_optional_with(options, "actionFeeAgreement", |v| {
+        let refused = |what: &str| {
+            WasmDppError::invalid_argument(format!(
+                "actionFeeAgreement must be a DocumentActionFeeAgreement or its options, not {}",
+                what
+            ))
+        };
+        if !v.is_object() {
+            return Err(refused("a primitive value"));
+        }
+        match get_class_type(v)?.as_str() {
+            "DocumentActionFeeAgreement" => DocumentActionFeeAgreementWasm::try_from(v),
+            // Any other class would parse as an agreement to pay nothing
+            "" => DocumentActionFeeAgreementWasm::constructor(
+                v.clone()
+                    .unchecked_into::<DocumentActionFeeAgreementOptionsJs>(),
+            ),
+            other => Err(refused(&format!("an instance of {}", other))),
+        }
+    })?
+    else {
+        return Ok(());
+    };
+    creation_options_of(settings).action_fee_agreement = Some(agreement.into());
+    Ok(())
+}
+
 // ============================================================================
 // Document Create
 // ============================================================================
@@ -136,6 +180,13 @@ export interface DocumentCreateOptions {
    * joins no contest ignores it.
    */
   contestFund?: bigint;
+
+  /**
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
+   */
+  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
   /**
    * Optional settings for the broadcast operation.
@@ -211,12 +262,6 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
-        // Fetch the data contract (using cache)
-        let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Get document type (owned)
-        let document_type = get_document_type(&data_contract, &document_type_name)?;
-
         // Extract settings from options
         let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
@@ -226,12 +271,15 @@ impl WasmSdk {
         if let Some(contest_fund) = try_from_options_optional_with(&options, "contestFund", |v| {
             try_to_u64(v, "contestFund")
         })? {
-            settings
-                .get_or_insert_with(Default::default)
-                .state_transition_creation_options
-                .get_or_insert_with(Default::default)
-                .contest_fund = Some(contest_fund);
+            creation_options_of(&mut settings).contest_fund = Some(contest_fund);
         }
+        apply_action_fee_agreement_option(&options, &mut settings)?;
+
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+
+        // Get document type (owned)
+        let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Use PutDocument trait for creation, keeping the confirmed
         // document Platform returns — it carries the consensus-assigned
@@ -369,6 +417,13 @@ export interface DocumentReplaceOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
+   */
+  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+
+  /**
    * Optional settings for the broadcast operation.
    * Includes retries, timeouts, userFeeIncrease, etc.
    */
@@ -414,16 +469,17 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        // Extract settings from options
+        let mut settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        apply_action_fee_agreement_option(&options, &mut settings)?;
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
+
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;
-
-        // Extract settings from options
-        let settings =
-            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use PutDocument trait for replacement (revision > INITIAL_REVISION triggers replace)
         document
@@ -486,6 +542,13 @@ export interface DocumentDeleteOptions {
    * Optional token payment agreement for document types with tokenCost.delete.
    */
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
+
+  /**
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
+   */
+  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
   /**
    * Optional settings for the broadcast operation.
@@ -571,49 +634,88 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        // Extract settings from options
+        let mut settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        apply_action_fee_agreement_option(&options, &mut settings)?;
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
+
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
-        // Extract settings from options
-        let settings =
-            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
-
-        // Build and execute delete transition using DocumentDeleteTransitionBuilder.
-        // A provided Document instance goes through from_document so its
-        // values ride along (required for indexOnly document types).
-        let builder = if let Some(full_document) = &full_document {
-            DocumentDeleteTransitionBuilder::from_document(
-                Arc::new(data_contract),
-                document_type_name,
-                full_document,
-            )
-        } else {
-            DocumentDeleteTransitionBuilder::new(
-                Arc::new(data_contract),
-                document_type_name,
+        let builder = delete_transition_builder(
+            data_contract,
+            document_type_name,
+            DeleteTarget {
                 document_id,
                 owner_id,
-            )
-        };
-
-        let builder = if let Some(token_payment_info) = token_payment_info {
-            builder.with_token_payment_info(token_payment_info)
-        } else {
-            builder
-        };
-
-        let builder = if let Some(s) = settings {
-            builder.with_settings(s)
-        } else {
-            builder
-        };
+                full_document,
+            },
+            token_payment_info,
+            settings,
+        );
 
         self.inner_sdk()
             .document_delete(builder, &identity_key, &signer)
             .await?;
 
         Ok(())
+    }
+}
+
+struct DeleteTarget {
+    document_id: Identifier,
+    owner_id: Identifier,
+    full_document: Option<Document>,
+}
+
+/// A provided document goes through `from_document` so its values ride along (required
+/// for indexOnly document types).
+fn delete_transition_builder(
+    data_contract: DataContract,
+    document_type_name: String,
+    target: DeleteTarget,
+    token_payment_info: Option<TokenPaymentInfo>,
+    mut settings: Option<PutSettings>,
+) -> DocumentDeleteTransitionBuilder {
+    let builder = match &target.full_document {
+        Some(full_document) => DocumentDeleteTransitionBuilder::from_document(
+            Arc::new(data_contract),
+            document_type_name,
+            full_document,
+        ),
+        None => DocumentDeleteTransitionBuilder::new(
+            Arc::new(data_contract),
+            document_type_name,
+            target.document_id,
+            target.owner_id,
+        ),
+    };
+
+    let builder = match token_payment_info {
+        Some(token_payment_info) => builder.with_token_payment_info(token_payment_info),
+        None => builder,
+    };
+
+    // The delete builder ignores these fields of its settings, so set them on it directly
+    let builder = match settings
+        .as_ref()
+        .and_then(|settings| settings.user_fee_increase)
+    {
+        Some(user_fee_increase) => builder.with_user_fee_increase(user_fee_increase),
+        None => builder,
+    };
+    let builder = match settings
+        .as_mut()
+        .and_then(|settings| settings.state_transition_creation_options.take())
+    {
+        Some(creation_options) => builder.with_state_transition_creation_options(creation_options),
+        None => builder,
+    };
+
+    match settings {
+        Some(settings) => builder.with_settings(settings),
+        None => builder,
     }
 }
 
@@ -655,6 +757,13 @@ export interface DocumentTransferOptions {
    * Optional token payment agreement for document types with tokenCost.transfer.
    */
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
+
+  /**
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
+   */
+  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
   /**
    * Optional settings for the broadcast operation.
@@ -713,16 +822,17 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        // Extract settings from options
+        let mut settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        apply_action_fee_agreement_option(&options, &mut settings)?;
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
+
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;
-
-        // Extract settings from options
-        let settings =
-            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use TransferDocument trait
         document
@@ -787,6 +897,13 @@ export interface DocumentPurchaseOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
+   */
+  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+
+  /**
    * Optional settings for the broadcast operation.
    * Includes retries, timeouts, userFeeIncrease, etc.
    */
@@ -837,16 +954,17 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        // Extract settings from options
+        let mut settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        apply_action_fee_agreement_option(&options, &mut settings)?;
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
+
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;
-
-        // Extract settings from options
-        let settings =
-            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use PurchaseDocument trait
         document
@@ -907,6 +1025,13 @@ export interface DocumentSetPriceOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
+   */
+  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+
+  /**
    * Optional settings for the broadcast operation.
    * Includes retries, timeouts, userFeeIncrease, etc.
    */
@@ -954,16 +1079,17 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        // Extract settings from options
+        let mut settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        apply_action_fee_agreement_option(&options, &mut settings)?;
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
+
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;
-
-        // Extract settings from options
-        let settings =
-            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use UpdatePriceOfDocument trait
         document
@@ -988,7 +1114,7 @@ impl WasmSdk {
 
 /// Get an owned DocumentType from a DataContract
 fn get_document_type(
-    data_contract: &dash_sdk::platform::DataContract,
+    data_contract: &DataContract,
     document_type_name: &str,
 ) -> Result<DocumentType, WasmSdkError> {
     data_contract
@@ -999,4 +1125,97 @@ fn get_document_type(
                 document_type_name, e
             ))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::data_contract::document_type::action_fees::agreement::v0::DocumentActionFeeAgreementV0;
+    use dash_sdk::dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
+
+    fn agreement() -> DocumentActionFeeAgreement {
+        DocumentActionFeeAgreementV0 {
+            owner: 80_000_000,
+            moderators: 16_000_000,
+            fee_multiplier: None,
+        }
+        .into()
+    }
+
+    fn builder_for(settings: Option<PutSettings>) -> DocumentDeleteTransitionBuilder {
+        let contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("load the DPNS contract");
+        delete_transition_builder(
+            contract,
+            "domain".to_string(),
+            DeleteTarget {
+                document_id: Identifier::new([1; 32]),
+                owner_id: Identifier::new([2; 32]),
+                full_document: None,
+            },
+            None,
+            settings,
+        )
+    }
+
+    #[test]
+    fn should_hand_the_delete_builder_the_action_fee_agreement_it_signs_with() {
+        let mut settings = None;
+        creation_options_of(&mut settings).action_fee_agreement = Some(agreement());
+        creation_options_of(&mut settings)
+            .signing_options
+            .allow_signing_with_any_purpose = true;
+
+        let builder = builder_for(settings);
+
+        let creation_options = builder
+            .state_transition_creation_options
+            .expect("the builder carries the creation options");
+        assert_eq!(creation_options.action_fee_agreement, Some(agreement()));
+        assert!(
+            creation_options
+                .signing_options
+                .allow_signing_with_any_purpose
+        );
+        let settings = builder.settings.expect("the other settings are kept");
+        assert!(settings.state_transition_creation_options.is_none());
+    }
+
+    #[test]
+    fn should_leave_the_delete_builder_without_creation_options_when_none_are_given() {
+        let builder = builder_for(Some(PutSettings::default()));
+
+        assert!(builder.state_transition_creation_options.is_none());
+    }
+
+    #[test]
+    fn should_hand_the_delete_builder_the_user_fee_increase_it_signs_with() {
+        let builder = builder_for(Some(PutSettings {
+            user_fee_increase: Some(3),
+            ..Default::default()
+        }));
+
+        assert_eq!(builder.user_fee_increase, Some(3));
+    }
+
+    #[test]
+    fn should_add_to_the_creation_options_the_settings_already_carry() {
+        let mut settings = Some(PutSettings {
+            user_fee_increase: Some(3),
+            ..Default::default()
+        });
+        creation_options_of(&mut settings).contest_fund = Some(5);
+        creation_options_of(&mut settings).action_fee_agreement = Some(agreement());
+
+        let settings = settings.expect("settings are kept");
+        assert_eq!(settings.user_fee_increase, Some(3));
+        let creation_options = settings
+            .state_transition_creation_options
+            .expect("creation options are created once");
+        assert_eq!(creation_options.contest_fund, Some(5));
+        assert_eq!(creation_options.action_fee_agreement, Some(agreement()));
+    }
 }
