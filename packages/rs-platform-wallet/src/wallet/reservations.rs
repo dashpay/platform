@@ -33,7 +33,6 @@ use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use crate::wallet::core::generation::next_acceptance_seq;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Maximum age, in `last_processed_height` blocks, of a held funding
@@ -127,23 +126,6 @@ pub(crate) fn reservation_expired(registered_height: u32, current_height: Option
     }
 }
 
-/// A broadcast of ours returned accepted — a peer echoed it back. Record it,
-/// so its outputs are not held as an unresolved send's
-/// ([`UnresolvedSends`](crate::wallet::core::UnresolvedSends)). The sequence
-/// number is taken here, where the fact is observed, before the lock is
-/// awaited.
-pub(crate) async fn record_send_accepted(
-    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
-    wallet_id: &WalletId,
-    txid: Txid,
-) {
-    let seq = next_acceptance_seq();
-    let manager = wallet_manager.read().await;
-    if let Some((_, info)) = manager.get_wallet_and_info(wallet_id) {
-        info.generation.record_acceptance(txid, true, seq);
-    }
-}
-
 /// Broadcast `tx` and reconcile the funding account's UTXO reservation on
 /// failure.
 ///
@@ -170,10 +152,7 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
     tx: &Transaction,
 ) -> Result<Txid, BroadcastError> {
     match broadcaster.broadcast(tx).await {
-        Ok(txid) => {
-            record_send_accepted(wallet_manager, wallet_id, txid).await;
-            Ok(txid)
-        }
+        Ok(txid) => Ok(txid),
         Err(e) => {
             if matches!(e, BroadcastError::Rejected { .. }) {
                 release_reservation_after_rejected_broadcast(

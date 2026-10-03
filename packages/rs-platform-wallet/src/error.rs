@@ -393,29 +393,6 @@ pub enum PlatformWalletError {
         required: Option<u64>,
     },
 
-    /// A Core payment the wallet's balance covers, but only with coins held
-    /// back because they came from one of its own sends the network has not
-    /// been seen to accept yet (its broadcast outcome is unknown). Spending
-    /// them before that is settled builds a transaction no node accepts if
-    /// that send never reached the network. They become spendable once the
-    /// send is InstantSend-locked, mined, or found accepted. Not a shortfall:
-    /// the host should say the money is waiting on the network.
-    ///
-    /// `held` is the held value among the offered sources. `outpoint` names
-    /// a held coin the caller chose as an input itself (outpoint-seeded or
-    /// `reservation_only` builds); `None` when selection came up short.
-    #[error(
-        "Core funds held until an earlier send is accepted by the network: \
-         available {available:?}, held {held}, required {required:?}{}",
-        refused_input(outpoint)
-    )]
-    CoreFundsAwaitingNetwork {
-        available: Option<u64>,
-        held: u64,
-        required: Option<u64>,
-        outpoint: Option<dashcore::OutPoint>,
-    },
-
     #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
     NoSpendableInputs {
         account_type: StandardAccountType,
@@ -1807,12 +1784,4 @@ mod asset_lock_already_consumed_tests {
             &out_point()
         ));
     }
-}
-
-/// The refused input of a `CoreFundsAwaitingNetwork`, for its message: a host
-/// doing coin control learns which coin to leave out.
-fn refused_input(outpoint: &Option<dashcore::OutPoint>) -> String {
-    outpoint
-        .map(|outpoint| format!(", refused input {}:{}", outpoint.txid, outpoint.vout))
-        .unwrap_or_default()
 }

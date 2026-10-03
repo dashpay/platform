@@ -118,16 +118,6 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorCoreFundsAwaitingNetwork` (native code 59). The payment is
-         * covered only by coins of an earlier send of this wallet whose
-         * broadcast outcome is not known yet; they become spendable once the
-         * network is seen to accept that send. Not a shortfall — retry after
-         * the earlier payment settles.
-         */
-        class CoreFundsAwaitingNetwork(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
-
-        /**
          * `ErrorShieldedInsufficientBalance` (native code 41; historical FFI
          * spelling). A Platform Payment account's deterministic shield input
          * set cannot cover the requested amount plus input 0's retained fee
@@ -743,7 +733,6 @@ sealed class DashSdkError(
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
             42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
-            59 -> PlatformWallet.CoreFundsAwaitingNetwork(message, cause) // ErrorCoreFundsAwaitingNetwork
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch

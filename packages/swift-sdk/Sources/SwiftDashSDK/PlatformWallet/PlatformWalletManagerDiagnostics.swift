@@ -337,11 +337,6 @@ extension PlatformWalletManager {
         public let scriptPubkey: Data
         public let height: UInt32
         public let isLocked: Bool
-        /// An output of a send the network has not been seen to accept: a
-        /// build seeded with it fails with `.coreFundsAwaitingNetwork`, so
-        /// coin control and drains leave it out. Always false while broadcast
-        /// probing is off.
-        public var isHeld: Bool = false
     }
 
     public func accountUtxos(
@@ -378,8 +373,7 @@ extension PlatformWalletManager {
                 valueDuffs: entry.value_duffs,
                 scriptPubkey: scriptData,
                 height: entry.height,
-                isLocked: entry.is_locked,
-                isHeld: entry.is_held
+                isLocked: entry.is_locked
             )
         }
     }

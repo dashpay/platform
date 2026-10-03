@@ -25,7 +25,7 @@ use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
-use key_wallet::transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker};
+use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
@@ -624,31 +624,6 @@ where
         info.core_wallet.update_last_processed_height(target);
     }
     target
-}
-
-/// Apply `transaction` to the wallet in `context` — what SPV does when it sees
-/// it in a peer's mempool (`Mempool`), InstantSend-locked or in a block. A send
-/// this wallet signed, applied in `Mempool` and never echoed back, is what an
-/// unknown broadcast outcome leaves behind.
-pub async fn apply_to_wallet(
-    manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    transaction: &Transaction,
-    context: TransactionContext,
-) {
-    let mut wm = manager.write().await;
-    let (wallet, info) = wm
-        .get_wallet_and_info_mut(wallet_id)
-        .expect("wallet present in manager");
-    let mut wallet = wallet.clone();
-    let result = info
-        .core_wallet
-        .check_core_transaction(transaction, context, &mut wallet, true, true)
-        .await;
-    assert!(
-        result.is_relevant,
-        "the transaction must be the wallet's own"
-    );
 }
 
 /// No-op persister satisfying [`PlatformWalletManager`] construction for tests

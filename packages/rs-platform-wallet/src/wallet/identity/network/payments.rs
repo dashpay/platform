@@ -12,7 +12,6 @@ use key_wallet_manager::WalletManager;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::core::{awaiting_network_or_build_error, shortfall_basis, UnresolvedSends};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 // ---------------------------------------------------------------------------
@@ -1128,15 +1127,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         self.drain_pending_contact_crypto_verified(provider, None)
             .await?;
 
-        let (
-            payment_address,
-            used_flip_changeset,
-            tx,
-            fee,
-            funding_accounts,
-            in_broadcast_pin,
-            generation,
-        ) = {
+        let (payment_address, used_flip_changeset, tx, fee, funding_accounts, in_broadcast_pin) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
@@ -1254,13 +1245,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .set_current_height(current_height)
                 .set_selection_strategy(SelectionStrategy::LargestFirst)
                 .add_output(&payment_address, amount_duffs);
-            // Coins of our own sends the network has not been seen to accept
-            // stay out of selection (see `UnresolvedSends`).
-            let unresolved = UnresolvedSends::of(info);
-            // Infallible: the payment address is already marked used here, and
-            // an early return now would burn it.
-            let basis = shortfall_basis(&builder);
-            let mut held_value = 0u64;
 
             // Derivation paths for every offered UTXO, since the signer closure
             // below cannot resolve them from one account.
@@ -1297,12 +1281,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             funding_paths.insert(utxo.address.clone(), path);
                         }
                     }
-                    if let Some(basis) = basis {
-                        held_value +=
-                            unresolved.held_net_value(managed, current_height, basis.input_cost);
-                    }
-                    builder =
-                        unresolved.exclude_from(builder.add_funding(managed, account), managed);
+                    builder = builder.add_funding(managed, account);
                     offered_accounts.push(at);
                 }
             }
@@ -1351,7 +1330,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     {
                         return_contact_payment_address_to_pool(external_account, &payment_address);
                     }
-                    return Err(awaiting_network_or_build_error(e, held_value, basis));
+                    return Err(PlatformWalletError::TransactionBuild(e.to_string()));
                 }
             };
 
@@ -1422,7 +1401,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 fee,
                 offered_accounts,
                 in_broadcast_pin,
-                Arc::clone(&info.generation),
             )
         };
 
@@ -1526,11 +1504,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // still selectable here and must stay fenced until an observed
                 // spend says otherwise.
                 in_broadcast_pin.settle_pending_spend();
-                // Accepted: its change may fund the next payment before the
-                // InstantSend lock arrives (see `UnresolvedSends`).
-                if other.is_ok() {
-                    generation.mark_send_accepted(tx.txid());
-                }
                 other
             }
         };

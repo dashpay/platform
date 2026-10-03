@@ -3,13 +3,11 @@
 //! in-broadcast outpoint pins that fence a mid-dispatch transaction's inputs
 //! against concurrent re-selection.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
 
-use dashcore::{OutPoint, Transaction, Txid};
+use dashcore::{OutPoint, Transaction};
 use tokio::sync::{OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
 use super::balance::WalletBalance;
@@ -257,95 +255,13 @@ impl std::fmt::Debug for SettleBoundaryHook {
 #[derive(Debug, Default)]
 pub(crate) struct InBroadcastFences {
     fences: Mutex<HashMap<OutPoint, InBroadcastFence>>,
-    /// What the network was last seen to say about our unsettled sends: a
-    /// peer echoed the broadcast back or a probe found it accepted or mined
-    /// (accepted), or a probe found it dead. Only an accepted send's outputs
-    /// may fund the next payment before the wallet sees it InstantSend-locked
-    /// or mined (see [`WalletGeneration::acceptance_among`]).
-    ///
-    /// Shared like the fences: acceptance is a fact about the network, not
-    /// about one in-memory instance. A fact is kept while its send is among
-    /// the wallet's unsettled transactions, and for [`ACCEPTANCE_GRACE`] after
-    /// it was observed otherwise — a broadcast can return before its record
-    /// reaches the wallet. Not persisted: after a restart an unsettled send is
-    /// held again until its lock, a block or a fresh verdict, which only errs
-    /// on the side of not spending.
-    acceptance: Mutex<HashMap<Txid, Acceptance>>,
-    /// Whether the coins of unresolved sends are held at all
-    /// ([`WalletGeneration::holds_unresolved_sends`]): the manager's
-    /// broadcast-probe switch, shared. Without probing nothing would ever find
-    /// such a send dead or mined beyond its own lock or block, so with it off
-    /// nothing is held and building behaves as it did before the hold.
-    hold_unresolved: Arc<AtomicBool>,
-}
-
-/// How long an acceptance fact outlives its send's absence from the wallet's
-/// unsettled records: covers a broadcast that returns before the wallet has
-/// applied the transaction.
-const ACCEPTANCE_GRACE: Duration = Duration::from_secs(10 * 60);
-
-/// The last word on one send, and when it was observed — see
-/// [`next_acceptance_seq`]. A later observation replaces an earlier one, so a
-/// send found dead after it was found accepted is held again.
-#[derive(Debug, Clone, Copy)]
-struct Acceptance {
-    seq: u64,
-    accepted: bool,
-    observed_at: Instant,
-}
-
-static ACCEPTANCE_SEQ: AtomicU64 = AtomicU64::new(1);
-
-/// A sequence number for an acceptance fact, taken where the fact is observed
-/// (a broadcast returning, a probe verdict published). Facts are recorded off
-/// the observing task, so they can land out of order; the number keeps the
-/// later one.
-pub(crate) fn next_acceptance_seq() -> u64 {
-    ACCEPTANCE_SEQ.fetch_add(1, Ordering::Relaxed)
 }
 
 impl InBroadcastFences {
-    /// Fences for one wallet that hold the coins of its unresolved sends
-    /// whenever `hold_unresolved` — the manager's probe switch — is on.
-    pub(crate) fn with_hold_flag(hold_unresolved: Arc<AtomicBool>) -> Self {
-        Self {
-            hold_unresolved,
-            ..Self::default()
-        }
-    }
-
     /// Recovers from a poisoned mutex rather than panicking — see
     /// [`WalletGeneration::in_broadcast_lock`].
     fn lock(&self) -> MutexGuard<'_, HashMap<OutPoint, InBroadcastFence>> {
         self.fences.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// See [`WalletGeneration::record_acceptance`]. On the fences, so the
-    /// broadcast resolver can record a verdict without the wallet manager's
-    /// lock — synchronously, before the verdict reaches the host.
-    pub(crate) fn record_acceptance(&self, txid: Txid, accepted: bool, seq: u64) {
-        let mut acceptance = self.acceptance();
-        if !self.hold_unresolved.load(Ordering::SeqCst) {
-            acceptance.clear();
-            return;
-        }
-        let newer = acceptance.get(&txid).is_none_or(|known| known.seq < seq);
-        if newer {
-            acceptance.insert(
-                txid,
-                Acceptance {
-                    seq,
-                    accepted,
-                    observed_at: Instant::now(),
-                },
-            );
-        }
-    }
-
-    fn acceptance(&self) -> MutexGuard<'_, HashMap<Txid, Acceptance>> {
-        self.acceptance
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -479,63 +395,6 @@ impl WalletGeneration {
             #[cfg(test)]
             settle_boundary_hook: SettleBoundaryHook::default(),
         }
-    }
-
-    /// Record what the network said about our send `txid` (accepted, or
-    /// found dead), observed at `seq` ([`next_acceptance_seq`]). An older
-    /// observation than the one recorded is dropped. Nothing is kept while the
-    /// hold is off: only the hold reads these facts, and only its reads prune
-    /// them.
-    pub(crate) fn record_acceptance(&self, txid: Txid, accepted: bool, seq: u64) {
-        self.in_broadcast.record_acceptance(txid, accepted, seq);
-    }
-
-    /// A broadcast of `txid` returned accepted: a peer echoed it back.
-    pub(crate) fn mark_send_accepted(&self, txid: Txid) {
-        self.record_acceptance(txid, true, next_acceptance_seq());
-    }
-
-    /// Whether the coins of this wallet's unresolved sends are held from new
-    /// payments — on exactly while the manager probes unresolved broadcasts.
-    pub(crate) fn holds_unresolved_sends(&self) -> bool {
-        self.in_broadcast.hold_unresolved.load(Ordering::SeqCst)
-    }
-
-    /// Turn the hold on or off for this wallet alone, as the manager's probe
-    /// switch would.
-    #[cfg(test)]
-    pub(crate) fn set_holds_unresolved_sends(&self, on: bool) {
-        self.in_broadcast
-            .hold_unresolved
-            .store(on, Ordering::SeqCst);
-    }
-
-    /// The latest fact recorded about each send among `unsettled`: whether
-    /// the network was seen to accept it, and the sequence it was observed at.
-    /// Forgets a recorded send that is not among them once
-    /// [`ACCEPTANCE_GRACE`] has passed since it was observed — settled or gone
-    /// by then — so the record stays about the size of the wallet's unsettled
-    /// sends, yet a fact that arrived before its send's record is kept.
-    pub(crate) fn acceptance_among(&self, unsettled: &HashSet<Txid>) -> HashMap<Txid, (bool, u64)> {
-        let mut acceptance = self.in_broadcast.acceptance();
-        acceptance.retain(|txid, known| {
-            unsettled.contains(txid) || known.observed_at.elapsed() < ACCEPTANCE_GRACE
-        });
-        acceptance
-            .iter()
-            .filter(|(txid, _)| unsettled.contains(*txid))
-            .map(|(txid, known)| (*txid, (known.accepted, known.seq)))
-            .collect()
-    }
-
-    /// The sends among `unsettled` whose latest fact is accepted.
-    #[cfg(test)]
-    pub(crate) fn accepted_among(&self, unsettled: &HashSet<Txid>) -> HashSet<Txid> {
-        self.acceptance_among(unsettled)
-            .into_iter()
-            .filter(|(_, (accepted, _))| *accepted)
-            .map(|(txid, _)| txid)
-            .collect()
     }
 
     /// This generation's lock-free balance.

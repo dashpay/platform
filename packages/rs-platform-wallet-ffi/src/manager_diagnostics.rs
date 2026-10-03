@@ -580,7 +580,6 @@ pub unsafe extern "C" fn platform_wallet_account_utxos(
                 script_pubkey_len: script_len,
                 height: s.height,
                 is_locked: s.is_locked,
-                is_held: s.is_held,
             }
         })
         .collect();
