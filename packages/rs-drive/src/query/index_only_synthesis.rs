@@ -1091,10 +1091,12 @@ impl DriveDocumentQuery<'_> {
 
 /// The index an executed-transition proof (waitForStateTransitionResult)
 /// runs against: the first `$ownerId`-bearing index that involves no
-/// `$createdAt` AND is not `skipIfAbsent` — the verifier cannot know the
-/// block timestamp a time-keyed entry was written with, and a skipIfAbsent
-/// index has no entry at all for a trigger-absent document, so neither can
-/// anchor a proof that must exist for every create/delete. The parser
+/// `$createdAt` AND is neither `skipIfAbsent` nor `outlivesDelete` — the
+/// verifier cannot know the block timestamp a time-keyed entry was written
+/// with, a skipIfAbsent index has no entry at all for a trigger-absent
+/// document, and an outlivesDelete index keeps the entry a delete leaves, so
+/// none can anchor a proof that must exist for every create and be gone for
+/// every delete. The parser
 /// guarantees such an index exists (`apply_index_only`'s proof-index rule
 /// mirrors exactly this predicate); prover and verifier share this one
 /// selector, so they can never disagree on the anchor.
@@ -1108,11 +1110,12 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
                 || index.properties.iter().any(|p| p.name == OWNER_ID);
             let carries_created_at = index.terminal_contains(CREATED_AT)
                 || index.properties.iter().any(|p| p.name == CREATED_AT);
-            carries_owner && !carries_created_at && !index.skip_if_absent
+            carries_owner && !carries_created_at && !index.skip_if_absent && !index.outlives_delete
         })
         .ok_or(Error::Query(QuerySyntaxError::Unsupported(
             "executed-transition proofs for an indexOnly type need an \
-                 $ownerId-bearing, non-skipIfAbsent index that does not involve $createdAt"
+                 $ownerId-bearing index that does not involve $createdAt and sets neither \
+                 skipIfAbsent nor outlivesDelete"
                 .to_string(),
         )))
 }

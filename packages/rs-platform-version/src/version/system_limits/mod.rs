@@ -238,6 +238,15 @@ pub struct SystemLimits {
     /// after the election (`maxAddedModerators`). Read by the declaration's validation
     /// (protocol version 14) and never reached before.
     pub max_contract_moderation_added_moderators: u16,
+    /// Most members a moderation charter elects beside its leader: the `maxItems` of the
+    /// moderation charters contract's `electedCharter.members`, which must stay equal to it.
+    /// With the leader and the members an elected declaration lets the leader add
+    /// (`maxAddedModerators`), it bounds how many members of a seated team a document type's
+    /// `moderatorAbilities.deleteSettled` may require to approve the deletion of a settled
+    /// document. Refused under full validation only, so a stored contract stays readable if it
+    /// ever shrinks. Read by the document type parser (protocol version 14) and never reached
+    /// before.
+    pub max_moderation_charter_elected_members: u16,
     /// Most contenders one contested document resource vote poll accepts: a document that
     /// would add one more is refused. The end of a poll tallies, and cleans up, every
     /// contender in one block, so this bounds that work; `maximum_contenders_to_consider`
@@ -349,6 +358,17 @@ pub struct SystemLimits {
     /// version 3 (protocol version 13), so every live network already serves
     /// V1 by the time the floor applies.
     pub minimum_grovedb_proof_envelope_version: u32,
+    /// The largest magnitude a summed property may admit on a document type with a
+    /// contested index, enforced when a contract is registered or updated (full validation
+    /// only, like `max_document_ttl_seconds`): the property's schema must declare a
+    /// `maximum` of at most this and a `minimum` of at least its negation. The end of a
+    /// contest writes the winner's document into the type's sums with no transition to
+    /// refuse, so the values must be small enough that the sums stay in `i64`: with every
+    /// value this small, a sum of fewer than 2^36 documents does. Read by document type
+    /// parser generation 3 (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers do not read it.
+    pub max_contested_summed_value_magnitude: Option<u64>,
 }
 
 #[cfg(test)]

@@ -1,25 +1,22 @@
-//! The `lookup` of a document reference: the referenced document is the one a
-//! unique index of the referenced document type finds for a key assembled from
-//! the referring document, rather than the document whose id the property holds.
+//! `findBy`, how a document reference finds the referenced document when the
+//! value is not that document's id: properties of the referenced document type
+//! mapped to where each value comes from on the referring side, the key of the
+//! unique index whose properties are exactly those `findBy` names.
 //!
-//! Declared inside a `permanentDocument` `refersTo` (meta-schema v3, protocol
-//! version 14); a `deletableDocument` reference cannot carry one, since a key
-//! into a deletable type could find a new document once the one it found is
-//! deleted, where an id is produced at most once:
+//! Declared on a `permanentDocument` or `deletableDocument` `refersTo`
+//! (meta-schema v3, protocol version 14):
 //!
 //! ```json
 //! "refersTo": {
 //!   "type": "permanentDocument",
 //!   "documentType": "joinRequest",
-//!   "lookup": {
-//!     "index": "bySubmittedCharter",
-//!     "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." }
-//!   }
+//!   "findBy": { "submittedCharterId": "submittedCharterId", "$ownerId": "." }
 //! }
 //! ```
 //!
 //! reads: the value must be the owner of a `joinRequest` whose
-//! `submittedCharterId` equals this document's `submittedCharterId`. The rules
+//! `submittedCharterId` equals this document's `submittedCharterId`, found
+//! through its unique index over (`submittedCharterId`, `$ownerId`). The rules
 //! live here so the two places that check a declaration against its referenced
 //! document type (the contract parse for a type of the same contract, the
 //! registration state validation for a type of another contract) cannot drift.
@@ -35,7 +32,7 @@ use crate::data_contract::document_type::property::{
 /// Why a key part moves when it is a field only the contract's moderators write
 /// (`moderatorAbilities.changeFields`): no replace is needed to change it.
 const MODERATORS_CHANGE: &str = "the contract's moderators change";
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentTypeRef, Index};
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID, ID, OWNER_ID,
@@ -67,23 +64,19 @@ pub enum LookupKeySource {
     /// A property path of the referring document type. The property must be
     /// required, so the key is never missing a part.
     Property(String),
-    /// A `propertyAgreement` function pair,
+    /// A `findBy` function,
     /// `"<index property>": { "function": "sys.hash.sha256d", "params": [...] }`:
     /// the hash of a preimage the referring document reveals, see
-    /// [`LookupHashKey`]. Declared in the agreement, as what the referenced
-    /// property must hold, and held here as the source of that index property.
+    /// [`LookupHashKey`], the source of that index property.
     /// A lookup holding one is checked when the document is created only, and
     /// the document it finds is a commitment. Appended, so every earlier
     /// source keeps its consensus encoding.
     Hash(LookupHashKey),
 }
 
-/// The source as the lookup holds it. A computed key serializes as its
-/// `{ "function", "params" }` under the index property it fills, the parsed
-/// model: the schema declares it as a `propertyAgreement` function pair
-/// instead, keyed by that property, and refuses it under `keys`. A consumer
-/// presenting a declaration as the schema spells it moves it back, as the
-/// wasm-dpp2 reference listing does.
+/// The source as `findBy` spells it: `"."`, `"$ownerId"`, a property path, or
+/// a computed key's `{ "function", "params" }` under the index property it
+/// fills.
 impl Serialize for LookupKeySource {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
@@ -103,13 +96,13 @@ impl LookupKeySource {
             OWNER_ID => Ok(LookupKeySource::OwnerId),
             _ if name.starts_with('$') => {
                 Err(DataContractError::InvalidContractStructure(format!(
-                    "refersTo lookup keys take \".\", \"{OWNER_ID}\" or a property of the \
+                    "refersTo findBy takes \".\", \"{OWNER_ID}\" or a property of the \
                      referring document type, not system property \"{name}\""
                 )))
             }
             _ if name.is_empty() || name.len() > MAX_LOOKUP_PATH_LENGTH => {
                 Err(DataContractError::InvalidContractStructure(format!(
-                    "refersTo lookup key sources must be between 1 and {MAX_LOOKUP_PATH_LENGTH} \
+                    "refersTo findBy sources must be between 1 and {MAX_LOOKUP_PATH_LENGTH} \
                      characters"
                 )))
             }
@@ -136,25 +129,19 @@ pub const MAX_LOOKUP_PATH_LENGTH: usize = 256;
 /// The most key parts a lookup may map, the most properties an index can have.
 pub const MAX_LOOKUP_KEYS: usize = 10;
 
-/// The longest index name a lookup may name, the bound meta-schema v3 puts on
-/// index names.
-pub const MAX_LOOKUP_INDEX_NAME_LENGTH: usize = 32;
-
 /// How a document reference finds the referenced document when its value is not
-/// that document's id: through the unique index `index` of the referenced
-/// document type, with one key part per index property. With a computed key
-/// it also holds what the reference declares, beside its `lookup`, of the
-/// document found: `minimumAgeBlocks` and `consume`. It serializes as the
-/// parsed model, those two and the computed key inside the lookup.
+/// that document's id, the reference's `findBy`: through the unique index of
+/// the referenced document type whose properties are exactly the ones `keys`
+/// fills ([`Self::resolve_index`]), with one key part per index property. With
+/// a computed key it also holds what the reference declares, beside `findBy`,
+/// of the document found: `minimumAgeBlocks` and `consume`. It serializes as
+/// the parsed model, those two inside it.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, DecodeUntrusted)]
 pub struct DocumentReferenceLookup {
-    /// The name of a unique index of the referenced document type.
-    pub index: String,
     /// Every property of the index, by its name on the referenced side
     /// (`$ownerId` among the system ones), mapped to the referring-side source
-    /// of its value: the lookup's `keys`, and the index property the
-    /// reference's `propertyAgreement` function pair names, whose source is
-    /// that computed key ([`LookupKeySource::Hash`]), at most one. The value
+    /// of its value, as `findBy` declares them: at most one is a computed key
+    /// ([`LookupKeySource::Hash`]). The value
     /// carrying the reference fills a key part exactly once, as a `"."` source
     /// ([`LookupKeySource::ReferenceValue`]) or as a param of the computed key,
     /// except in the lookup of an `ownerRefersTo` or `creatorRefersTo` holding
@@ -162,16 +149,17 @@ pub struct DocumentReferenceLookup {
     pub keys: BTreeMap<String, LookupKeySource>,
     /// With a computed key only: how many blocks before the create the
     /// document the key finds must have been created (the reference's
-    /// `minimumAgeBlocks`, beside its `lookup`), judged on its `$createdAtBlockHeight`, so that 1 keeps a commitment and
-    /// its reveal out of the same block. The referenced document type must
+    /// `minimumAgeBlocks`, beside `findBy`), judged on its
+    /// `$createdAtBlockHeight`, so that 1 keeps a commitment and its reveal out
+    /// of the same block. The referenced document type must
     /// record `$createdAtBlockHeight`.
     #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
     pub minimum_age_blocks: Option<u32>,
     /// With a computed key only: whether the create deletes the document the
-    /// key found (the reference's `consume`, beside its `lookup`), in the same
-    /// state transition. Only a
-    /// `deletableDocument` reference whose `propertyAgreement` pairs the
-    /// writer's `$ownerId` with the found document's may consume, into a
+    /// key found (the reference's `consume`, beside `findBy`), in the same
+    /// state transition. Only a `deletableDocument` reference whose `where`
+    /// pairs the found document's `$ownerId` with the writer's may consume,
+    /// into a
     /// document type of the declaring contract whose documents their owner
     /// may delete.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -179,15 +167,89 @@ pub struct DocumentReferenceLookup {
 }
 
 impl DocumentReferenceLookup {
-    /// A lookup through `index` with `keys` and neither a minimum age nor
-    /// consumption.
-    pub fn new(index: String, keys: BTreeMap<String, LookupKeySource>) -> Self {
+    /// A lookup by `keys` with neither a minimum age nor consumption.
+    pub fn new(keys: BTreeMap<String, LookupKeySource>) -> Self {
         DocumentReferenceLookup {
-            index,
             keys,
             minimum_age_blocks: None,
             consume: false,
         }
+    }
+
+    /// The properties `findBy` names, joined with ", ", as errors show them.
+    pub fn find_by_names(&self) -> String {
+        self.keys
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The name of the unique index of `referenced` this lookup finds its
+    /// document through: one whose properties are exactly the ones `keys`
+    /// fills, in any order, and that does not bucket its first property
+    /// (`timeRange`, `integerRange`), whose first key part is a window start no
+    /// referring value names. Two unique indexes over the same properties find
+    /// the same document, so the first by name is taken. A type's indexes never
+    /// change once it is registered, so the answer holds for good. When none
+    /// qualifies, why, naming the unique indexes the type has.
+    pub fn resolve_index(&self, referenced: DocumentTypeRef) -> Result<String, String> {
+        let find_by = self.find_by_names();
+        let over_find_by: Vec<(&String, &Index)> = referenced
+            .indexes()
+            .iter()
+            .filter(|(_, index)| {
+                index.properties.len() == self.keys.len()
+                    && index
+                        .properties
+                        .iter()
+                        .all(|property| self.keys.contains_key(&property.name))
+            })
+            .collect();
+        if let Some((name, _)) = over_find_by
+            .iter()
+            .find(|(_, index)| index.unique && index.bucketing().is_none())
+        {
+            return Ok(name.to_string());
+        }
+        if let Some((name, index)) = over_find_by.first() {
+            return Err(match index.bucketing() {
+                Some(bucketing) if index.unique => format!(
+                    "index \"{name}\" of \"{}\" over ({find_by}) buckets its first property by \
+                     a {}, so no referring value could name a key of it",
+                    referenced.name(),
+                    bucketing.keyword()
+                ),
+                _ => format!(
+                    "index \"{name}\" of \"{}\" over ({find_by}) is not unique: findBy must find \
+                     at most one document",
+                    referenced.name()
+                ),
+            });
+        }
+        let unique: Vec<String> = referenced
+            .indexes()
+            .iter()
+            .filter(|(_, index)| index.unique)
+            .map(|(name, index)| {
+                let properties: Vec<&str> = index
+                    .properties
+                    .iter()
+                    .map(|property| property.name.as_str())
+                    .collect();
+                format!("{name} ({})", properties.join(", "))
+            })
+            .collect();
+        Err(format!(
+            "\"{}\" has no unique index over exactly ({find_by}): findBy must name every \
+             property of one of its unique indexes and nothing else{}",
+            referenced.name(),
+            if unique.is_empty() {
+                ", and it has none".to_string()
+            } else {
+                format!(" ({})", unique.join("; "))
+            }
+        ))
     }
 
     /// The computed key of this lookup, `None` when every key part is read
@@ -273,9 +335,9 @@ impl DocumentReferenceLookup {
     /// created only, so nothing it reads may change afterwards: every property
     /// source must be fixed once written as well, the computed key's params
     /// follow [`LookupHashKey::referring_side_error`], and a property carrying
-    /// it must be fixed once written and set when the document is created (not
-    /// listed under `immutableAllowSetting`, which would let a replace set it
-    /// later unchecked), unless it is transient, never stored and read from
+    /// it must be fixed once written, so set when the document is created
+    /// (not listed under `immutable` with a condition, which could let a replace
+    /// set it later unchecked), unless it is transient, never stored and read from
     /// the create alone. On a property the reference's own value must fill
     /// the key exactly once, as a `"."` source or a param of the computed key,
     /// and on a string or byte array property, `reference_type` not an
@@ -309,8 +371,8 @@ impl DocumentReferenceLookup {
                 .filter(|(_, key)| key.reference_value_uses() > 0)
             {
                 return Some(format!(
-                    "propertyAgreement function \"{index_property}\" reads \".\": a param \
-                     names the property carrying the reference by its path, \"{reference_path}\""
+                    "findBy function \"{index_property}\" reads \".\": a param names the \
+                     property carrying the reference by its path, \"{reference_path}\""
                 ));
             }
         }
@@ -338,24 +400,20 @@ impl DocumentReferenceLookup {
             };
             if reads != 1 {
                 return Some(format!(
-                    "the key reads the value of \"{reference_path}\" {reads} times: a \
-                     property's lookup reads it exactly once, as a \".\" key or a param of the \
-                     propertyAgreement function (by its path, or as \".\" for an element), and \
-                     only the lookup of an ownerRefersTo or creatorRefersTo may leave it out \
-                     beside a computed key"
+                    "findBy reads the value of \"{reference_path}\" {reads} times: a \
+                     property's findBy reads it exactly once, as \".\" or a param of its \
+                     function (by its path, or as \".\" for an element), and only the findBy of \
+                     an ownerRefersTo or creatorRefersTo may leave it out beside a function"
                 ));
             }
             if !is_transient(declaring, reference_path)
-                && (!schema_property_is_fixed_once_written(declaring, reference_path)
-                    || declaring
-                        .immutable_fields_allow_setting()
-                        .contains(reference_path.split('.').next().unwrap_or(reference_path)))
+                && !schema_property_is_fixed_once_written(declaring, reference_path)
             {
                 return Some(format!(
-                    "\"{reference_path}\" carries a lookup with a computed key, which is checked \
-                     when the document is created only, so the property must be fixed once \
-                     written and set then (make the type immutable or list the property under \
-                     `immutable`, and not under `immutableAllowSetting`)"
+                    "\"{reference_path}\" carries a reference found by a computed key, which is \
+                     checked when the document is created only, so the property must be fixed \
+                     once written and set then (make the type immutable or list the property \
+                     under `immutable` without a condition)"
                 ));
             }
         }
@@ -364,18 +422,16 @@ impl DocumentReferenceLookup {
                 LookupKeySource::ReferenceValue => continue,
                 LookupKeySource::Hash(key) => {
                     if let Some(reason) = key.referring_side_error(declaring) {
-                        return Some(format!(
-                            "propertyAgreement function \"{index_property}\" {reason}"
-                        ));
+                        return Some(format!("findBy function \"{index_property}\" {reason}"));
                     }
                     continue;
                 }
                 LookupKeySource::OwnerId => {
                     if owner_can_change(declaring) {
                         return Some(format!(
-                            "key \"{index_property}\" reads \"$ownerId\", which a transfer or a \
-                             purchase of the referring document changes without re-validating \
-                             the reference: a lookup may read the writer only on a document type \
+                            "findBy \"{index_property}\" reads \"$ownerId\", which a transfer or \
+                             a purchase of the referring document changes without re-validating \
+                             the reference: findBy may read the writer only on a document type \
                              that cannot be transferred or traded"
                         ));
                     }
@@ -385,14 +441,14 @@ impl DocumentReferenceLookup {
             };
             if path == reference_path {
                 return Some(format!(
-                    "key \"{index_property}\" names the reference property itself: write \".\" \
-                     for the reference's own value"
+                    "findBy \"{index_property}\" names the reference property itself: write \
+                     \".\" for the reference's own value"
                 ));
             }
             let Some(property) = declaring.flattened_properties().get(path) else {
                 return Some(format!(
-                    "key \"{index_property}\" reads \"{path}\", which is not a property of the \
-                     referring document type"
+                    "findBy \"{index_property}\" reads \"{path}\", which is not a property of \
+                     the referring document type"
                 ));
             };
             if matches!(
@@ -403,13 +459,13 @@ impl DocumentReferenceLookup {
                     | DocumentPropertyType::Object(_)
             ) {
                 return Some(format!(
-                    "key \"{index_property}\" reads \"{path}\", which is not a single value"
+                    "findBy \"{index_property}\" reads \"{path}\", which is not a single value"
                 ));
             }
             if is_transient(declaring, path) {
                 return Some(format!(
-                    "key \"{index_property}\" reads \"{path}\", which is transient or inside a \
-                     transient object: the key must be readable from the stored document"
+                    "findBy \"{index_property}\" reads \"{path}\", which is transient or inside \
+                     a transient object: the key must be readable from the stored document"
                 ));
             }
             // A required leaf inside an optional object is only present when the
@@ -422,17 +478,17 @@ impl DocumentReferenceLookup {
                 prefix.push_str(segment);
                 if !declaring.required_fields().contains(&prefix) {
                     return Some(format!(
-                        "key \"{index_property}\" reads \"{path}\", which is not required: a \
-                         lookup never runs with a missing key part, so every property it reads \
+                        "findBy \"{index_property}\" reads \"{path}\", which is not required: \
+                         findBy never runs with a missing key part, so every property it reads \
                          (and every object around it) must be listed in `required`"
                     ));
                 }
             }
             if computed && !schema_property_is_fixed_once_written(declaring, path) {
                 return Some(format!(
-                    "key \"{index_property}\" reads \"{path}\", which a replace can change: a \
-                     lookup with a computed key is checked when the document is created only, so \
-                     every property it reads must be fixed once written (make the type immutable \
+                    "findBy \"{index_property}\" reads \"{path}\", which a replace can change: \
+                     a computed key is checked when the document is created only, so every \
+                     property findBy reads must be fixed once written (make the type immutable \
                      or list the property under `immutable`)"
                 ));
             }
@@ -442,47 +498,26 @@ impl DocumentReferenceLookup {
 
     /// Why this lookup, declared on a property of `declaring`, cannot resolve
     /// in `referenced`, the referenced document type; `None` when it can. The
-    /// index must exist and be unique, so the key finds at most one document;
-    /// it may not bucket its first property (`timeRange`, `integerRange`),
-    /// since its first key part is then a window start no referring value
-    /// names; the referenced type
-    /// may not be `indexOnly`; no index property may be transient, a value
-    /// no stored document holds; `keys` must map every property of the index
-    /// exactly once and nothing else; and each source must hold the same kind
-    /// of value as the index property it fills, or no document could ever
-    /// match. The key must also stay with the document it found, see
-    /// [`Self::moving_key_part`].
+    /// properties `findBy` names must be exactly those of a unique index that
+    /// does not bucket its first property ([`Self::resolve_index`]), so the key
+    /// finds at most one document; the referenced type may not be `indexOnly`;
+    /// no index property may be transient, a value no stored document holds;
+    /// and each source must hold the same kind of value as the index property
+    /// it fills, or no document could ever match. The key must also stay with
+    /// the document it found, see [`Self::moving_key_part`].
     pub fn referenced_side_error(
         &self,
         declaring: DocumentTypeRef,
         referenced: DocumentTypeRef,
     ) -> Option<String> {
-        let Some(index) = referenced.indexes().get(&self.index) else {
-            return Some(format!(
-                "the referenced document type \"{}\" has no index named \"{}\"",
-                referenced.name(),
-                self.index
-            ));
+        let index_name = match self.resolve_index(referenced) {
+            Ok(index_name) => index_name,
+            Err(reason) => return Some(reason),
         };
-        if !index.unique {
-            return Some(format!(
-                "index \"{}\" of \"{}\" is not unique: a lookup must find at most one document",
-                self.index,
-                referenced.name()
-            ));
-        }
-        if let Some(bucketing) = index.bucketing() {
-            return Some(format!(
-                "index \"{}\" of \"{}\" buckets its first property by a {}, so no \
-                 referring value could name a key of it",
-                self.index,
-                referenced.name(),
-                bucketing.keyword()
-            ));
-        }
+        let index = referenced.indexes().get(&index_name)?;
         if referenced.index_only() {
             return Some(format!(
-                "\"{}\" is an indexOnly document type, which a lookup cannot reference",
+                "\"{}\" is an indexOnly document type, which findBy cannot reference",
                 referenced.name()
             ));
         }
@@ -494,39 +529,10 @@ impl DocumentReferenceLookup {
             .find(|property| is_transient(referenced, &property.name))
         {
             return Some(format!(
-                "index \"{}\" of \"{}\" keys documents by \"{}\", which is transient or inside \
-                 a transient object: its value is never stored, so the lookup could never find \
-                 a document",
-                self.index,
-                referenced.name(),
-                transient.name
-            ));
-        }
-        if let Some(missing) = index
-            .properties
-            .iter()
-            .find(|property| !self.keys.contains_key(&property.name))
-        {
-            return Some(format!(
-                "keys does not map \"{}\", a property of index \"{}\", and no \
-                 propertyAgreement function fills it: every index property needs a source",
-                missing.name, self.index
-            ));
-        }
-        if let Some((extra, source)) = self.keys.iter().find(|(name, _)| {
-            !index
-                .properties
-                .iter()
-                .any(|property| &property.name == *name)
-        }) {
-            let declared = if matches!(source, LookupKeySource::Hash(_)) {
-                "the propertyAgreement function fills"
-            } else {
-                "keys maps"
-            };
-            return Some(format!(
-                "{declared} \"{extra}\", which is not a property of index \"{}\"",
-                self.index
+                "findBy names \"{}\" of \"{}\", which is transient or inside a transient \
+                 object: its value is never stored, so findBy could never find a document",
+                transient.name,
+                referenced.name()
             ));
         }
         for (index_property, source) in &self.keys {
@@ -556,8 +562,8 @@ impl DocumentReferenceLookup {
                     );
                     if !holds_hash {
                         return Some(format!(
-                            "propertyAgreement function \"{index_property}\" is a {} hash, so \
-                             the index property must be a byte array of exactly {length} bytes",
+                            "findBy function \"{index_property}\" is a {} hash, so the index \
+                             property must be a byte array of exactly {length} bytes",
                             key.function.as_str()
                         ));
                     }
@@ -566,8 +572,8 @@ impl DocumentReferenceLookup {
                 LookupKeySource::Property(path) => {
                     let Some(property) = declaring.flattened_properties().get(path) else {
                         return Some(format!(
-                            "key \"{index_property}\" reads \"{path}\", which is not a property \
-                             of the referring document type"
+                            "findBy \"{index_property}\" reads \"{path}\", which is not a \
+                             property of the referring document type"
                         ));
                     };
                     property.property_type.value_kind()
@@ -575,7 +581,7 @@ impl DocumentReferenceLookup {
             };
             if source_kind != indexed_kind {
                 return Some(format!(
-                    "key \"{index_property}\" is filled from \"{}\", which holds a different \
+                    "findBy \"{index_property}\" is filled from \"{}\", which holds a different \
                      kind of value: no document could ever match",
                     source.as_str()
                 ));
@@ -647,15 +653,14 @@ impl DocumentReferenceLookup {
         if let Some((index_property, why)) = self.moving_key_part(referenced) {
             // A field only moderators write is never fixed, whatever the type says
             let hint = if why == MODERATORS_CHANGE {
-                "key the lookup on a property only its owner writes"
+                "find it by a property only its owner writes"
             } else {
                 "make the type immutable or list the property under `immutable`"
             };
             return Some(format!(
-                "index \"{}\" of \"{}\" keys documents by \"{index_property}\", which {why}: a \
-                 lookup must keep finding the document it found, so every part of its key must \
-                 be fixed once the document is written ({hint})",
-                self.index,
+                "findBy names \"{index_property}\" of \"{}\", which {why}: findBy must keep \
+                 finding the document it found, so every property it names must be fixed once \
+                 the document is written ({hint})",
                 referenced.name()
             ));
         }
@@ -664,13 +669,14 @@ impl DocumentReferenceLookup {
 
     /// The first key part a referenced document of `referenced` can change
     /// after it was written, with how, `None` when every part is fixed for
-    /// good. A `permanentDocument` reference, the only kind that takes a
-    /// lookup, promises it never dangles: its referenced type forbids
-    /// deletion, and a lookup's key must not move off the document either, or
-    /// a document validated against it would later find nothing. A schema property is fixed on a type whose documents are
+    /// good. A key must not move off the document it found, or a document
+    /// validated against it would later find nothing; a `permanentDocument`
+    /// reference promises it never dangles, and a `deletableDocument` one that
+    /// the document it found is the one it checks again. A schema property is
+    /// fixed on a type whose documents are
     /// immutable or when its top-level property is listed under `immutable`
-    /// (an `immutableAllowSetting` entry can only be set on a document that
-    /// has no value for it, which no key could have found); `$ownerId` is
+    /// without a condition (one listed with a condition may change while it
+    /// does not hold); `$ownerId` is
     /// fixed unless documents can be transferred or traded; `$id`,
     /// `$creatorId` and the creation times never change; the update and
     /// transfer times change with the document. Every flag read here is
@@ -764,10 +770,11 @@ pub fn owner_can_change(document_type: DocumentTypeRef) -> bool {
 /// (`documentsMutable: false`), or the property's top-level property is listed
 /// under `immutable`, and in either case the contract's moderators do not
 /// write it (`moderatorAbilities.changeFields`, which the parser keeps apart
-/// from `immutable`). An `immutableAllowSetting` entry can only be set on a
-/// document that has no value for it yet, so a value read once stays. The
+/// from `immutable`). A property listed under `immutable` with a condition is
+/// not fixed: a replace may change it while its condition does not hold. The
 /// flags and the moderators' fields are immutable on contract update and the
-/// `immutable` list may only grow, so the answer holds for good. The one rule
+/// properties `immutable` lists without a condition may only grow, so the
+/// answer holds for good. The one rule
 /// both a lookup's key parts and a list element's list are judged by.
 pub(crate) fn schema_property_is_fixed_once_written(
     document_type: DocumentTypeRef,
@@ -916,9 +923,8 @@ mod tests {
         elected_charter_with(platform_value!({}))
     }
 
-    fn lookup(index: &str, keys: &[(&str, &str)]) -> DocumentReferenceLookup {
+    fn lookup(keys: &[(&str, &str)]) -> DocumentReferenceLookup {
         DocumentReferenceLookup {
-            index: index.to_string(),
             keys: keys
                 .iter()
                 .map(|(index_property, source)| {
@@ -935,13 +941,10 @@ mod tests {
 
     #[test]
     fn should_accept_a_lookup_covering_a_unique_index_with_sources_of_the_right_kind() {
-        let lookup = lookup(
-            "bySubmittedCharter",
-            &[
-                ("submittedCharterId", "submittedCharterId"),
-                ("$ownerId", "."),
-            ],
-        );
+        let lookup = lookup(&[
+            ("submittedCharterId", "submittedCharterId"),
+            ("$ownerId", "."),
+        ]);
         let declaring = elected_charter();
         assert_eq!(
             lookup.referring_side_error(declaring.as_ref(), "memberId",),
@@ -954,27 +957,36 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_a_missing_or_non_unique_index() {
-        let declaring = elected_charter();
-        for (index, fragment) in [
-            ("byMissing", "has no index named \"byMissing\""),
-            ("byNote", "is not unique"),
+    fn should_resolve_the_unique_index_over_exactly_the_properties_find_by_names() {
+        // In either order: the index is found by its set of properties
+        for keys in [
+            [
+                ("submittedCharterId", "submittedCharterId"),
+                ("$ownerId", "."),
+            ],
+            [
+                ("$ownerId", "."),
+                ("submittedCharterId", "submittedCharterId"),
+            ],
         ] {
-            let lookup = lookup(index, &[("note", "."), ("x", "note")]);
-            let error = lookup
-                .referenced_side_error(declaring.as_ref(), join_request().as_ref())
-                .expect("the index should be refused");
-            assert!(error.contains(fragment), "{index}: {error}");
+            assert_eq!(
+                lookup(&keys).resolve_index(join_request().as_ref()),
+                Ok("bySubmittedCharter".to_string())
+            );
         }
     }
 
     #[test]
-    fn should_refuse_keys_that_miss_or_add_an_index_property() {
+    fn should_refuse_find_by_naming_no_unique_index_exactly() {
         let declaring = elected_charter();
         for (keys, fragment) in [
+            // Fewer or more properties than the unique index, or an index not
+            // there at all, and the unique indexes the type has are listed
             (
                 vec![("$ownerId", ".")],
-                "does not map \"submittedCharterId\"",
+                "\"joinRequest\" has no unique index over exactly ($ownerId): findBy must name \
+                 every property of one of its unique indexes and nothing else \
+                 (bySubmittedCharter (submittedCharterId, $ownerId))",
             ),
             (
                 vec![
@@ -982,12 +994,21 @@ mod tests {
                     ("$ownerId", "."),
                     ("note", "note"),
                 ],
-                "maps \"note\", which is not a property of index",
+                "has no unique index over exactly ($ownerId, note, submittedCharterId)",
+            ),
+            (
+                vec![("note", "."), ("x", "note")],
+                "has no unique index over exactly (note, x)",
+            ),
+            // Exactly the properties of an index that is not unique
+            (
+                vec![("note", ".")],
+                "index \"byNote\" of \"joinRequest\" over (note) is not unique",
             ),
         ] {
-            let error = lookup("bySubmittedCharter", &keys)
+            let error = lookup(&keys)
                 .referenced_side_error(declaring.as_ref(), join_request().as_ref())
-                .expect("the keys should be refused");
+                .expect("findBy should be refused");
             assert!(error.contains(fragment), "{keys:?}: {error}");
         }
     }
@@ -995,12 +1016,9 @@ mod tests {
     #[test]
     fn should_refuse_a_source_of_the_wrong_value_kind() {
         let declaring = elected_charter();
-        let error = lookup(
-            "bySubmittedCharter",
-            &[("submittedCharterId", "note"), ("$ownerId", ".")],
-        )
-        .referenced_side_error(declaring.as_ref(), join_request().as_ref())
-        .expect("the string source should be refused");
+        let error = lookup(&[("submittedCharterId", "note"), ("$ownerId", ".")])
+            .referenced_side_error(declaring.as_ref(), join_request().as_ref())
+            .expect("the string source should be refused");
         assert!(error.contains("holds a different kind of value"), "{error}");
     }
 
@@ -1015,25 +1033,19 @@ mod tests {
             ),
             ("memberId", "names the reference property itself"),
         ] {
-            let error = lookup(
-                "bySubmittedCharter",
-                &[("submittedCharterId", source), ("$ownerId", ".")],
-            )
-            .referring_side_error(declaring.as_ref(), "memberId")
-            .expect("the source should be refused");
+            let error = lookup(&[("submittedCharterId", source), ("$ownerId", ".")])
+                .referring_side_error(declaring.as_ref(), "memberId")
+                .expect("the source should be refused");
             assert!(error.contains(fragment), "{source}: {error}");
         }
     }
 
     #[test]
     fn should_refuse_a_lookup_whose_key_the_referenced_document_can_move() {
-        let lookup = lookup(
-            "bySubmittedCharter",
-            &[
-                ("submittedCharterId", "submittedCharterId"),
-                ("$ownerId", "."),
-            ],
-        );
+        let lookup = lookup(&[
+            ("submittedCharterId", "submittedCharterId"),
+            ("$ownerId", "."),
+        ]);
         let declaring = elected_charter();
         let refused = |referenced: DocumentType| {
             lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref())
@@ -1043,15 +1055,17 @@ mod tests {
         for (extra, moving) in [
             (
                 platform_value!({ "documentsMutable": true }),
-                "keys documents by \"submittedCharterId\", which a replace can change",
+                "findBy names \"submittedCharterId\" of \"joinRequest\", which a replace can change",
             ),
             (
                 platform_value!({ "transferable": 1u8 }),
-                "keys documents by \"$ownerId\", which a transfer or a purchase changes",
+                "findBy names \"$ownerId\" of \"joinRequest\", which a transfer or a purchase \
+                 changes",
             ),
             (
                 platform_value!({ "tradeMode": 1u8 }),
-                "keys documents by \"$ownerId\", which a transfer or a purchase changes",
+                "findBy names \"$ownerId\" of \"joinRequest\", which a transfer or a purchase \
+                 changes",
             ),
         ] {
             let error =
@@ -1074,13 +1088,10 @@ mod tests {
     /// lookup's own check, which must never find a document through it.
     #[test]
     fn should_refuse_a_lookup_into_an_index_reading_a_transient_property() {
-        let lookup = lookup(
-            "bySubmittedCharter",
-            &[
-                ("submittedCharterId", "submittedCharterId"),
-                ("$ownerId", "."),
-            ],
-        );
+        let lookup = lookup(&[
+            ("submittedCharterId", "submittedCharterId"),
+            ("$ownerId", "."),
+        ]);
         let referenced = join_request_with(platform_value!({
             "transient": ["submittedCharterId"]
         }));
@@ -1089,8 +1100,8 @@ mod tests {
             .expect("an index over a transient property should be refused");
         assert!(
             error.contains(
-                "index \"bySubmittedCharter\" of \"joinRequest\" keys documents by \
-                 \"submittedCharterId\", which is transient or inside a transient object"
+                "findBy names \"submittedCharterId\" of \"joinRequest\", which is transient or \
+                 inside a transient object"
             ),
             "{error}"
         );
@@ -1101,10 +1112,7 @@ mod tests {
     /// only a type that can do neither may read it.
     #[test]
     fn should_refuse_a_writer_key_part_on_a_referring_type_that_can_change_owner() {
-        let lookup = lookup(
-            "bySubmittedCharter",
-            &[("submittedCharterId", "."), ("$ownerId", "$ownerId")],
-        );
+        let lookup = lookup(&[("submittedCharterId", "."), ("$ownerId", "$ownerId")]);
         for extra in [
             platform_value!({ "transferable": 1u8 }),
             platform_value!({ "tradeMode": 1u8 }),
@@ -1114,7 +1122,7 @@ mod tests {
                 .expect("a writer key part should be refused");
             assert!(
                 error.contains(
-                    "key \"$ownerId\" reads \"$ownerId\", which a transfer or a purchase of \
+                    "findBy \"$ownerId\" reads \"$ownerId\", which a transfer or a purchase of \
                      the referring document changes"
                 ),
                 "{extra:?}: {error}"
@@ -1179,7 +1187,7 @@ mod tests {
         ));
 
         // A key id reference holds a u32 like the plain key id it is matched with
-        let lookup = lookup("byKey", &[("keyId", "signerKeyId"), ("$ownerId", ".")]);
+        let lookup = lookup(&[("keyId", "signerKeyId"), ("$ownerId", ".")]);
         assert_eq!(
             lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref()),
             None
@@ -1196,13 +1204,10 @@ mod tests {
         }));
         let consuming = DocumentReferenceLookup {
             consume: true,
-            ..lookup(
-                "bySubmittedCharter",
-                &[
-                    ("submittedCharterId", "submittedCharterId"),
-                    ("$ownerId", "."),
-                ],
-            )
+            ..lookup(&[
+                ("submittedCharterId", "submittedCharterId"),
+                ("$ownerId", "."),
+            ])
         };
         let error = consuming
             .referenced_side_error(elected_charter().as_ref(), keeps_history.as_ref())
@@ -1231,13 +1236,10 @@ mod tests {
 
     #[test]
     fn should_assemble_the_key_from_the_reference_value_the_owner_and_the_document() {
-        let lookup = lookup(
-            "bySubmittedCharter",
-            &[
-                ("submittedCharterId", "submittedCharterId"),
-                ("$ownerId", "."),
-            ],
-        );
+        let lookup = lookup(&[
+            ("submittedCharterId", "submittedCharterId"),
+            ("$ownerId", "."),
+        ]);
         let member = Identifier::from([3; 32]);
         let owner = Identifier::from([4; 32]);
         let data = BTreeMap::from([("submittedCharterId".to_string(), Value::Identifier([5; 32]))]);

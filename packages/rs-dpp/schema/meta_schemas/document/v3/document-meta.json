@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the generatedFrom property keyword (a string property whose value a built-in function generates from other properties of the same document, on arrival when a document leaves it out), refersTo propertyAgreement functions (a pair keyed by the referenced property, whose value a sys.hash function of values the document reveals must be, filling a key of the reference's lookup, for a commit and reveal checked on create, on an identifier or on the string or byte array property whose value it reveals, with minimumAgeBlocks and consume beside the lookup), the timeRange and integerRange index transforms, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), refuses a dotted path in summable, averageable, documentsSummable and documentsAverageable, whose value is read from the top level of the document (the same word-character pattern; no contract on mainnet or testnet names one), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a document found by findBy, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the generatedFrom property keyword (a string property whose value a built-in function generates from other properties of the same document, on arrival when a document leaves it out), refersTo findBy and where (findBy the properties of a unique index of the referenced document type mapped to where each value comes from, where what the document found must hold, both keyed by the referenced document's property; a findBy entry may be a sys.hash function of values the document reveals, for a commit and reveal checked on create, on an identifier or on the string or byte array property whose value it reveals, with minimumAgeBlocks and consume beside findBy), the timeRange and integerRange index transforms, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), refuses a dotted path in summable, averageable, documentsSummable and documentsAverageable, whose value is read from the top level of the document (the same word-character pattern; no contract on mainnet or testnet names one), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "referenceOperands": {
-      "description": "The operands of a refersTo anyOf or allOf: two or more, no two alike, each a leaf or an expression of the other combinator. At most SystemLimits max_reference_operands of them in one list, and at most SystemLimits max_reference_expression_depth combinators on any path from the declaration to a leaf (4 and 4 from protocol version 14), checked at contract registration; every leaf counts against max_references_per_document, since each may be read for each value. A leaf is an identity, permanentDocument (by id or through a lookup), listElement or deletableDocument-through-a-lookup target. The first three are existence checks against entities that are never deleted (a list element reads a list that never changes on a document that is never deleted), so an expression of only them holds for good once it holds and is re-validated on replace only when its value or a property bound to one of its leaves changes, as a single target is; a deletableDocument leaf found through a lookup is an existence check against a document that may be deleted, so an expression holding one is re-validated on every replace, and an immutable property may not hold it. The exception is a leaf whose lookup key a propertyAgreement function computes (see lookup): it is judged when the document is created only and holds on a replace without a read, so an immutable property may hold it, and on a document type whose documents can be replaced it may not be an operand of an anyOf, which would then hold on every replace whichever operand held on the create. The other types do not compose with other operands: deletableDocument by id is re-validated on every replace and may be cleared once its document is deleted, which assumes the property refers to that one target; identityPublicKey pairs the value with a key id property no other operand reads; a contract target's requirements are gates judged against the block time and the writer rather than an existence check, and a contract or token id is never also an identity or document id. A propertyAgreement belongs to its leaf and is checked only against that leaf's document. Allowed on identifier properties and on the items of a typed array of identifiers; a changed expression is an incompatible schema change on update",
+      "description": "The operands of a refersTo anyOf or allOf: two or more, no two alike, each a leaf or an expression of the other combinator. At most SystemLimits max_reference_operands of them in one list, and at most SystemLimits max_reference_expression_depth combinators on any path from the declaration to a leaf (4 and 4 from protocol version 14), checked at contract registration; every leaf counts against max_references_per_document, since each may be read for each value. A leaf is an identity target, a permanentDocument by id, by findBy or with inList, or a deletableDocument found by findBy. The first two are existence checks against entities that are never deleted (inList reads a list that never changes on a document that is never deleted), so an expression of only them holds for good once it holds and is re-validated on replace only when its value or a property bound to one of its leaves changes, as a single target is; a deletableDocument leaf found by findBy is an existence check against a document that may be deleted, so an expression holding one is re-validated on every replace, and an immutable property may not hold it. The exception is a leaf whose key a findBy function computes (see findBy): it is judged when the document is created only and holds on a replace without a read, so an immutable property may hold it, and on a document type whose documents can be replaced it may not be an operand of an anyOf, which would then hold on every replace whichever operand held on the create. The other types do not compose with other operands: deletableDocument by id is re-validated on every replace and may be cleared once its document is deleted, which assumes the property refers to that one target; identityPublicKey pairs the value with a key id property no other operand reads; a contract target's requirements are gates judged against the block time and the writer rather than an existence check, and a contract or token id is never also an identity or document id. A where belongs to its leaf and is checked only against that leaf's document. Allowed on identifier properties and on the items of a typed array of identifiers; a changed expression is an incompatible schema change on update",
       "type": "array",
       "minItems": 2,
       "uniqueItems": true,
@@ -16,7 +16,6 @@
             "enum": [
               "identity",
               "permanentDocument",
-              "listElement",
               "deletableDocument"
             ]
           },
@@ -34,13 +33,13 @@
         },
         "then": {
           "required": [
-            "lookup"
+            "findBy"
           ]
         }
       }
     },
-    "agreementFunction": {
-      "description": "The value of a propertyAgreement function pair, the same function and params shape as generatedFrom: a sys.hash function (sys.hash.sha256d, SHA-256 of SHA-256, 32 bytes) of the params' bytes joined in order with nothing between them, which the referenced property the pair names must hold. A param is the dotted path of a string (its UTF-8), byte array (its bytes) or identifier (its 32 bytes) property of the referring document type, the property carrying the reference included; { \"const\": text }, fixed UTF-8 text of 1 to 64 bytes; or \".\", the value carrying the reference where it has no path (each element of a typed array, the writer of an ownerRefersTo, the creator of a creatorRefersTo). See lookup for what the computed key means.",
+    "findByFunction": {
+      "description": "The function of a findBy entry, the same function and params shape as generatedFrom: a sys.hash function (sys.hash.sha256d, SHA-256 of SHA-256, 32 bytes) of the params' bytes joined in order with nothing between them, the value of the referenced property the entry names that finds the document. A param is the dotted path of a string (its UTF-8), byte array (its bytes) or identifier (its 32 bytes) property of the referring document type, the property carrying the reference included; { \"const\": text }, fixed UTF-8 text of 1 to 64 bytes; or \".\", the value carrying the reference where it has no path (each element of a typed array, the writer of an ownerRefersTo, the creator of a creatorRefersTo). See findBy for what the computed key means.",
       "type": "object",
       "properties": {
         "function": {
@@ -580,11 +579,11 @@
                 "permanentDocument",
                 "identityPublicKey",
                 "deletableDocument",
-                "listElement"
+                "moderatedDocument"
               ]
             },
             "anyOf": {
-              "description": "A reference expression holding if at least one operand holds: two or more operands, each a leaf (an ordinary identity, permanentDocument (by id or through a lookup), listElement or deletableDocument-through-a-lookup target, with its own keys) or an allOf (an anyOf directly inside an anyOf says what one flat list says). When the referring document is created or replaced, consensus checks the operands in declared order and stops at the first that holds; every read is billed, including those of the operands that failed, and when none holds the write is refused with the error of the last operand, so the order of the list decides which failure a writer sees. See referenceOperands for the limits and the leaf types. Available from protocol version 14.",
+              "description": "A reference expression holding if at least one operand holds: two or more operands, each a leaf (an ordinary identity target, a permanentDocument by id, by findBy or with inList, or a deletableDocument found by findBy, with its own keys) or an allOf (an anyOf directly inside an anyOf says what one flat list says). When the referring document is created or replaced, consensus checks the operands in declared order and stops at the first that holds; every read is billed, including those of the operands that failed, and when none holds the write is refused with the error of the last operand, so the order of the list decides which failure a writer sees. See referenceOperands for the limits and the leaf types. Available from protocol version 14.",
               "$ref": "#/$defs/referenceOperands",
               "items": {
                 "properties": {
@@ -593,7 +592,7 @@
               }
             },
             "allOf": {
-              "description": "A reference expression holding if every operand holds for the same value: two or more operands, each a leaf (an ordinary identity, permanentDocument (by id or through a lookup), listElement or deletableDocument-through-a-lookup target, with its own keys) or an anyOf (an allOf directly inside an allOf says what one flat list says). When the referring document is created or replaced, consensus checks the operands in declared order and stops at the first that fails, refusing the write with that operand's error; every read is billed. See referenceOperands for the limits and the leaf types. Available from protocol version 14.",
+              "description": "A reference expression holding if every operand holds for the same value: two or more operands, each a leaf (an ordinary identity target, a permanentDocument by id, by findBy or with inList, or a deletableDocument found by findBy, with its own keys) or an anyOf (an allOf directly inside an allOf says what one flat list says). When the referring document is created or replaced, consensus checks the operands in declared order and stops at the first that fails, refusing the write with that operand's error; every read is billed. See referenceOperands for the limits and the leaf types. Available from protocol version 14.",
               "$ref": "#/$defs/referenceOperands",
               "items": {
                 "properties": {
@@ -623,7 +622,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. For listElement, the document type holding the list, whose documents must forbid deletion; the document is the one the propertyAgreement's $id pair names",
+              "description": "The name of the referenced document type, whose documents must leave state only as the reference type says: for permanentDocument never (canBeDeleted: false, no moderatorAbilities.delete and no ttl); for moderatedDocument only through a moderator's recorded removal (canBeDeleted: false, no ttl, moderatorAbilities.delete with deleteKeepsRecord not false), so the reference resolves to the document or to its removal record, which a replace keeps; for deletableDocument in any other way; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -716,18 +715,48 @@
               "minProperties": 1,
               "additionalProperties": false
             },
-            "propertyAgreement": {
-              "description": "permanentDocument, deletableDocument and listElement references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. Beside a function pair the declaration is judged when the document is created only, so its pairs gate the create alone, and every referring side other than $ownerId must be transient or fixed once written (not listed under immutableAllowSetting). The referenced side is a schema property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A listElement reference holds exactly one pair with $id on the referenced side, read from a schema identifier property (not $ownerId): it names the document whose list the value must be in. At most one pair may instead be a function, keyed by the referenced property since a function cannot be a key: { referenced property: { \"function\": \"sys.hash.sha256d\", \"params\": [...] } } (agreementFunction) demands that the referenced property hold that hash of the referring document's values, and fills that property of the lookup's index, the key the referenced document is found by; it needs a lookup, see lookup for the commit and reveal it makes",
+            "findBy": {
+              "description": "permanentDocument and deletableDocument references only: how the referenced document is found when the property's value is not its id. Each entry maps a property of the referenced document type (by its name there, system ones such as $ownerId included) to where its value comes from: \".\", the value of the property carrying the reference (on an array element, the element; the writer for ownerRefersTo, the creator for creatorRefersTo), which must be read exactly once; \"$ownerId\", the referring document's owner; a property path of the referring document type; or a function computing it (findByFunction). The entries must name exactly the properties of one unique index of the referenced document type, in any order, that carries no timeRange or integerRange on its first property and does not belong to an indexOnly type: that index finds the document, at most one. Its key must stay with the document it found (every schema property it names fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles. A property an entry reads must be required (and so must every object around it), not transient nor inside a transient object, and hold the same kind of value as the property it fills, so findBy never runs with a missing part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries that index for the key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; where is checked against the document found. A replace re-validates a permanentDocument found by findBy when a property an entry reads changed, and on every replace when an entry reads $ownerId. On a deletableDocument reference findBy says less: once the document it found is deleted the same key may find another filed later, so the reference means a document with this key exists now; every replace re-validates it, as it does a deletableDocument reference by id, and an immutable property may not hold one, except one found by a function, judged when the document is created only, as below. Without findBy the value is the referenced document's $id; { \"$id\": <property> } is the one entry naming $id, with inList: it finds the document holding the list by the id the property holds. A function entry, { referenced property: { \"function\": \"sys.hash.sha256d\", \"params\": [...] } }, fills a byte array property of exactly 32 bytes with the hash of the params' bytes joined in order, for a commit and reveal: the document such a key finds is a commitment made earlier, and the reference is checked when the referring document is created only, never on a replace: every stored property it reads (the function's params, the other entries, the property carrying the reference, the where values) must be fixed once written: a property carrying it or read by it is set when the document is created and never changes, so one listed under immutable with a condition is refused. A param may be transient, being read from the create, and optional, a create missing a param being refused (DocumentReferencePreimageInvalidError, 10423), as is one whose param sits behind a key repeated in an object on the way. So the joined bytes split into the params one way only, every variable-length param (a string, or a byte array without a fixed size) with another variable-length param anywhere after it must be followed directly by a one-byte const, its separator, which its value may not hold (refused the same way). At most one entry is a function; the value carrying the reference is read exactly once, as \".\" or a param of the function, which names a single property carrying the reference by its path and uses \".\" only for a value without one (each element of a typed array, the writer, the creator), except beside a function of an ownerRefersTo or creatorRefersTo, which may leave it out. A string or byte array property may carry a refersTo only this way, its value read by the function: it is not an id. Beside a function the refersTo may declare minimumAgeBlocks and consume. A where entry { \"$ownerId\": \"$ownerId\" } demands that the commitment be the writer's own (ReferencedDocumentPropertyMismatchError, 40127, otherwise); without it anyone who learns the params may reveal them. Available from protocol version 14.",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
               "propertyNames": {
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "const": "."
+                  },
+                  {
+                    "const": "$ownerId"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+                  },
+                  {
+                    "$ref": "#/$defs/findByFunction"
+                  }
+                ]
+              }
+            },
+            "where": {
+              "description": "permanentDocument, moderatedDocument and deletableDocument references only: what the referenced document must hold once found, checked by consensus when the referring document is written. Each entry maps a property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, to the referring document's value it must equal: a schema property of the declaring document type, or \"$ownerId\", the writer, which turns the entry into a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may be compared once. $creatorId needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract), and $ownerId, $creatorId or $id an identifier on the referring side. Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A document found that fails an entry refuses the write with ReferencedDocumentPropertyMismatchError (40127). Beside a findBy function the declaration is judged when the document is created only, so its entries gate the create alone, and every referring value other than $ownerId must be transient or fixed once written (not listed under immutable with a condition). where never finds the document: \".\" and functions belong to findBy. Available from protocol version 14.",
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 10,
+              "propertyNames": {
+                "maxLength": 256,
                 "anyOf": [
                   {
                     "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
                   },
                   {
-                    "const": "$ownerId"
+                    "enum": ["$ownerId", "$creatorId", "$id"]
                   }
                 ]
               },
@@ -740,74 +769,26 @@
                     "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
                   },
                   {
-                    "type": "string",
-                    "enum": [
-                      "$ownerId",
-                      "$creatorId",
-                      "$id"
-                    ]
-                  },
-                  {
-                    "$ref": "#/$defs/agreementFunction"
+                    "const": "$ownerId"
                   }
                 ]
               }
             },
             "inList": {
-              "description": "listElement references only: the typed array of identifiers of documentType (a dotted path when nested) the value must be an element of. The document holding it is the one whose $id the propertyAgreement's $id pair reads from an identifier property of the referring document type (stored, not transient nor inside a transient object, checked at contract registration; it may be optional). At contract registration documentType must forbid deletion, and the list must be stored and fixed once a document is written: documentType is immutable (documentsMutable: false) or lists the list's top-level property under immutable, so a value accepted as an element stays one. When the referring document is created or replaced, consensus fetches that document by its id (once per write, shared with any other reference of the same document), checks the other agreement pairs against it, and requires the value (on a typed array, every element) to be an element of its list; a value that is not, or one set while the $id property is not, refuses the write with ReferencedEntityNotFoundError (40120). A replace checks it again when the value or a referring side of any pair changed, as every agreement is",
+              "description": "permanentDocument references only: the typed array of identifiers of documentType (a dotted path when nested) the value must be an element of. The document holding it is found by findBy { \"$id\": <property> }, the id an identifier property of the referring document type holds (stored, not transient nor inside a transient object, checked at contract registration; it may be optional). At contract registration documentType must forbid deletion, and the list must be stored and fixed once a document is written: documentType is immutable (documentsMutable: false) or lists the list's top-level property under immutable, so a value accepted as an element stays one. When the referring document is created or replaced, consensus fetches that document by its id (once per write, shared with any other reference of the same document), checks where against it, and requires the value (on a typed array, every element) to be an element of its list; a value that is not, or one set while the $id property is not, refuses the write with ReferencedEntityNotFoundError (40120). A replace checks it again when the value or a property findBy or where reads changed. Available from protocol version 14.",
               "type": "string",
               "minLength": 1,
               "maxLength": 256,
               "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
             },
-            "lookup": {
-              "description": "permanentDocument and deletableDocument references only: the property's value is not the referenced document's id. The referenced document is the one the named unique index of the referenced document type finds for a key assembled from the referring document, and the reference holds if that document exists. index names an index of the referenced document type that is unique, carries no timeRange or integerRange and does not belong to an indexOnly type; its key must stay with the document it found (every schema property of the index fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles; keys maps every property of that index (by its name on the referenced side, system ones such as $ownerId included), in any order, to where its value comes from: a property path of the referring document type, \"$ownerId\" for the referring document's owner, or \".\" for the value of the property carrying the reference (on an array element, the element), which must appear exactly once. A property a key reads must be required (and so must every object around it), not transient nor inside a transient object, and hold the same kind of value as its index property, so a lookup never runs with a missing key part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries the index for the assembled key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; propertyAgreement pairs are checked against the document found. A replace re-validates a permanentDocument lookup when a property a key reads changed, and on every replace when a key reads $ownerId. On a deletableDocument reference the lookup says less: once the document it found is deleted the same key may find another filed later, so the reference means a document with this key exists now; every replace re-validates it, as it does a deletableDocument reference by id, and an immutable property may not hold one (the clearing a dead reference by id allows reads an id, which a key is not), except a lookup whose key a propertyAgreement function computes, judged when the document is created only, as below. keys may be left out for the index property a propertyAgreement function pair names, { referenced property: { \"function\": \"sys.hash.sha256d\", \"params\": [...] } } (agreementFunction), which fills it with a computed key, for a commit and reveal: a byte array index property of exactly 32 bytes, filled with the hash of the params' bytes joined in order, so keys is left out entirely when that property is the whole index. The document such a key finds is a commitment made earlier, and the lookup is checked when the referring document is created only, never on a replace: every stored property it reads (the function's params, the other key parts, the property carrying the reference) must be fixed once written, and a property carrying it may not be listed under immutableAllowSetting. A param may be transient, being read from the create, and optional, a create missing a param being refused (DocumentReferencePreimageInvalidError, 10423), as is one whose param sits behind a key repeated in an object on the way. So the joined bytes split into the params one way only, every variable-length param (a string, or a byte array without a fixed size) with another variable-length param anywhere after it must be followed directly by a one-byte const, its separator, which its value may not hold (refused the same way). A reference holds at most one function pair; the value carrying the reference fills the key exactly once, as a \".\" key or a param of the function, which names a single property carrying the reference by its path and uses \".\" only for a value without one (each element of a typed array, the writer, the creator), except beside a function of an ownerRefersTo or creatorRefersTo, which may leave it out. A string or byte array property may carry a refersTo only this way, its value read by the function: it is not an id. Beside such a lookup the refersTo may declare minimumAgeBlocks and consume. A propertyAgreement pair { \"$ownerId\": \"$ownerId\" } demands that the commitment be the writer's own (ReferencedDocumentPropertyMismatchError, 40127, otherwise); without it anyone who learns the params may reveal them",
-              "type": "object",
-              "properties": {
-                "index": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 32
-                },
-                "keys": {
-                  "type": "object",
-                  "minProperties": 1,
-                  "maxProperties": 10,
-                  "propertyNames": {
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "additionalProperties": {
-                    "type": "string",
-                    "anyOf": [
-                      {
-                        "const": "."
-                      },
-                      {
-                        "const": "$ownerId"
-                      },
-                      {
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
-                      }
-                    ]
-                  }
-                }
-              },
-              "required": [
-                "index"
-              ],
-              "additionalProperties": false
-            },
             "minimumAgeBlocks": {
-              "description": "Beside a lookup whose key a propertyAgreement function computes, only: how many blocks before the create the document the lookup finds must have been created, judged against its $createdAtBlockHeight, so that 1 keeps a commitment and the create revealing it out of the same block. The referenced document type must list $createdAtBlockHeight in its required, checked at contract registration; a found document recording no creation height never meets it. An unmet age refuses the create (ReferencedDocumentRequirementNotMetError, 40142). Available from protocol version 14.",
+              "description": "Beside a findBy function, only: how many blocks before the create the document findBy finds must have been created, judged against its $createdAtBlockHeight, so that 1 keeps a commitment and the create revealing it out of the same block. The referenced document type must list $createdAtBlockHeight in its required, checked at contract registration; a found document recording no creation height never meets it. An unmet age refuses the create (ReferencedDocumentRequirementNotMetError, 40142). Available from protocol version 14.",
               "type": "integer",
               "minimum": 1,
               "maximum": 4294967295
             },
             "consume": {
-              "description": "Beside a lookup whose key a propertyAgreement function computes, only: the create deletes the document the lookup finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose propertyAgreement pairs \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true), that declares no delete token cost and no delete action fee (no delete transition charges them) and requires no stricter signature security level than the declaring type, checked at contract registration. A key bound to a contract or a document type must be allowed to act on every document type the create may consume (ContractBoundedKeyOutOfBoundsError, 20014). A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
+              "description": "Beside a findBy function, only: the create deletes the document findBy finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose where compares \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true), that declares no delete token cost and no delete action fee (no delete transition charges them) and requires no stricter signature security level than the declaring type, checked at contract registration. A key bound to a contract or a document type must be allowed to act on every document type the create may consume (ContractBoundedKeyOutOfBoundsError, 20014). A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
               "const": true
             }
           },
@@ -837,31 +818,14 @@
           "additionalProperties": false,
           "allOf": [
             {
-              "$comment": "A lookup may leave keys out only when a propertyAgreement function pair fills its index: then the agreement holds a value that is not a string",
-              "if": {
-                "properties": {
-                  "lookup": { "not": { "required": ["keys"] } }
-                },
-                "required": ["lookup"]
-              },
-              "then": {
-                "required": ["propertyAgreement"],
-                "properties": {
-                  "propertyAgreement": {
-                    "not": { "additionalProperties": { "type": "string" } }
-                  }
-                }
-              }
-            },
-            {
-              "$comment": "minimumAgeBlocks and consume describe the document a lookup whose key a propertyAgreement function pair computes finds: they need both",
+              "$comment": "minimumAgeBlocks and consume describe the document a findBy function finds: they need findBy holding a value that is not a string",
               "if": {
                 "anyOf": [{ "required": ["minimumAgeBlocks"] }, { "required": ["consume"] }]
               },
               "then": {
-                "required": ["lookup", "propertyAgreement"],
+                "required": ["findBy"],
                 "properties": {
-                  "propertyAgreement": {
+                  "findBy": {
                     "not": { "additionalProperties": { "type": "string" } }
                   }
                 }
@@ -878,7 +842,9 @@
             {
               "if": {
                 "properties": {
-                  "type": { "enum": ["permanentDocument", "deletableDocument", "listElement"] }
+                  "type": {
+                    "enum": ["permanentDocument", "deletableDocument", "moderatedDocument"]
+                  }
                 },
                 "required": ["type"]
               },
@@ -888,23 +854,40 @@
               "else": {
                 "properties": {
                   "contractId": false,
-                  "documentType": false
+                  "documentType": false,
+                  "findBy": false,
+                  "where": false
                 }
               }
             },
             {
+              "$comment": "A moderated document is referred to by its id alone: a moderator's removal frees the unique index keys a findBy finds by",
               "if": {
-                "properties": { "type": { "const": "listElement" } },
+                "properties": { "type": { "const": "moderatedDocument" } },
                 "required": ["type"]
               },
               "then": {
-                "required": ["type", "documentType", "propertyAgreement", "inList"]
-              },
-              "else": {
+                "properties": { "findBy": false }
+              }
+            },
+            {
+              "$comment": "inList names a list on the document findBy finds by its $id, which never changes on a document never deleted: a permanentDocument alone",
+              "if": { "required": ["inList"] },
+              "then": {
+                "required": ["type", "findBy"],
                 "properties": {
-                  "inList": false
+                  "type": { "const": "permanentDocument" },
+                  "findBy": { "required": ["$id"], "maxProperties": 1 }
                 }
               }
+            },
+            {
+              "$comment": "findBy names $id only to find the document holding the list of inList",
+              "if": {
+                "properties": { "findBy": { "required": ["$id"] } },
+                "required": ["findBy"]
+              },
+              "then": { "required": ["inList"] }
             },
             {
               "if": {
@@ -922,8 +905,7 @@
                   {
                     "required": ["type", "identityProperty"],
                     "properties": {
-                      "keyIdProperty": false,
-                      "propertyAgreement": false
+                      "keyIdProperty": false
                     }
                   }
                 ]
@@ -945,18 +927,6 @@
               "else": {
                 "properties": {
                   "contractRequirements": false
-                }
-              }
-            },
-            {
-              "if": {
-                "properties": { "type": { "enum": ["permanentDocument", "deletableDocument"] } },
-                "required": ["type"]
-              },
-              "then": {},
-              "else": {
-                "properties": {
-                  "lookup": false
                 }
               }
             }
@@ -1181,7 +1151,7 @@
           }
         },
         "refersTo": {
-          "description": "refersTo is only allowed on identifier properties, except an identityPublicKey reference with identityProperty, which sits on the key id property: an integer with minimum 0 and maximum 4294967295, the range of a key id; and a document reference with a lookup, which may sit on a string or byte array property whose value its computed key reveals (the parser checks that the key reads it)",
+          "description": "refersTo is only allowed on identifier properties, except an identityPublicKey reference with identityProperty, which sits on the key id property: an integer with minimum 0 and maximum 4294967295, the range of a key id; and a document reference with findBy, which may sit on a string or byte array property whose value its findBy function reveals (the parser checks that the function reads it)",
           "if": {
             "properties": {
               "refersTo": {
@@ -1211,7 +1181,7 @@
             "if": {
               "properties": {
                 "refersTo": {
-                  "required": ["lookup"]
+                  "required": ["findBy"]
                 }
               }
             },
@@ -1472,7 +1442,7 @@
           "maximum": 65535
         },
         "refersTo": {
-          "description": "Only on identifier elements: what every element refers to, the refersTo declaration of an identifier property with the same keys and the same checks (a reference expression included, which each element must meet on its own), except that identityPublicKey is refused: its keyIdProperty names one sibling key id, which cannot pair with many elements. When a document is created or replaced each element is checked as a single reference is, and the first one that fails refuses the write, its error naming the element by its list path (reasons[2] for the third). A propertyAgreement's referring side is still a property of the referring document or its $ownerId, the same for every element, and its referenced side a property of that element's referenced document. The declaration belongs on the items, not on the array. Available from protocol version 14.",
+          "description": "Only on identifier elements: what every element refers to, the refersTo declaration of an identifier property with the same keys and the same checks (a reference expression included, which each element must meet on its own), except that identityPublicKey is refused: its keyIdProperty names one sibling key id, which cannot pair with many elements. When a document is created or replaced each element is checked as a single reference is, and the first one that fails refuses the write, its error naming the element by its list path (reasons[2] for the third). A where value is still a property of the referring document or its $ownerId, the same for every element, and its key a property of that element's referenced document. The declaration belongs on the items, not on the array. Available from protocol version 14.",
           "$ref": "#/$defs/documentSchema/properties/refersTo",
           "properties": {
             "type": {
@@ -2069,7 +2039,11 @@
           },
           "preallocated": {
             "type": "boolean",
-            "description": "Only on indexOnly document types whose index path is fully determined by a same-contract permanentDocument refersTo declaration: every index property must be either the referring property itself (its value is the referenced document's $id) or a key of that declaration's propertyAgreement (consensus-equal to a referenced-document property). When true, creating a referenced document also creates this index's dynamic trees for entries referencing it — paid by the referenced document's creator — and deleting the last entry keeps them, so every entry insert costs the same as the first. Available from protocol version 14."
+            "description": "Only on indexOnly document types whose index path is fully determined by a same-contract permanentDocument or moderatedDocument refersTo declaration: every index property must be either the referring property itself (its value is the referenced document's $id) or a referring value of that declaration's where (consensus-equal to a referenced-document property; through moderatedDocument, the referenced $ownerId or a property the referenced type keeps under moderatorAbilities.deleteKeepsFields). When true, creating a referenced document also creates this index's dynamic trees for entries referencing it — paid by the referenced document's creator — and deleting the last entry keeps them, so every entry insert costs the same as the first. Available from protocol version 14."
+          },
+          "outlivesDelete": {
+            "type": "boolean",
+            "description": "Only on a timeRange index with a ttl of an indexOnly document type, without a sum and on a type without entryPayload: a delete of a document leaves its entries in this index to expire with their window, and a create whose entry here already exists writes over it rather than being refused as a duplicate. The index's key (its properties but $createdAt, and its terminal) must hold the whole key of an index a delete clears that skips no document. A value only such indexes use ($createdAt, when every index involving it outlives deletes) is neither carried by a delete nor part of the row commitment. Available from protocol version 14."
           },
           "skipIfAbsent": {
             "oneOf": [
@@ -2251,21 +2225,49 @@
       "properties": {
         "delete": {
           "type": "boolean",
-          "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints, or its seated team) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract, and restore them. Independent of `canBeDeleted`, which rules what a document's own owner may do. Refused on a type that keeps history, is indexOnly, restricts document creation or has a contested index. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it."
+          "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints, or its seated team) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract, and restore them. Independent of `canBeDeleted`, which rules what a document's own owner may do. Refused on a type that keeps history, is indexOnly, restricts document creation or has a contested index. For references a type carrying it is no longer permanent: a permanentDocument reference refuses it; a moderatedDocument reference is the one it takes when canBeDeleted is false, it declares no ttl and deleteKeepsRecord is not false, every document leaving state then leaving a removal record behind; a deletableDocument reference is the one it takes otherwise."
         },
         "deleteWithin": {
           "type": "integer",
           "minimum": 1,
           "maximum": 4294967295,
-          "description": "For how many seconds after a document's last modification the moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer, a purchase or a moderator's field change does not. Absent means no limit. Requires `delete: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Says nothing about what a document's own owner may do."
+          "description": "For how many seconds after a document's last modification the moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it alone any more, the contract owner included; `deleteSettled` may let the members of a seated team delete it together. A replace or a price update moves `$updatedAt` and opens the window again; a transfer, a purchase or a moderator's field change does not. Absent means no limit. Requires `delete: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Says nothing about what a document's own owner may do."
         },
         "deleteKeepsRecord": {
           "type": "boolean",
-          "description": "Whether a moderator's deletion leaves a removal record under the contract: whose document it was, the moderator, the reason, the block time and a hash of the document, readable with getContractDocumentRemovals and never deleted. A deleted document can only be restored from its record, so false also means a deletion can not be undone, and the type has no removal records tree. Default true. Requires `delete: true`."
+          "description": "Whether a moderator's deletion leaves a removal record under the contract: whose document it was, the moderator, the reason, the block time and a hash of the document, readable with getContractDocumentRemovals and never deleted. A deleted document can only be restored from its record, so false also means a deletion can not be undone, and the type has no removal records tree. A type keeping records whose owners can not delete their documents (canBeDeleted: false) and that declares no ttl is referred to by a moderatedDocument reference, which resolves to the record once the document is removed; false makes it a deletableDocument target. Default true. Requires `delete: true`."
         },
         "deleteRefundsOwner": {
           "type": "boolean",
           "description": "Whether the owner of a document a moderator deletes is refunded the part of its storage fee not yet paid out to past epochs, as an owner deleting it themselves is. Default false: the owner forfeits it, and the credits stay in the storage pools. A type with a `ttl` refunds nothing either way. Requires `delete: true`."
+        },
+        "deleteSettled": {
+          "type": "object",
+          "properties": {
+            "leader": {
+              "type": "boolean",
+              "description": "Whether the seated team's leader must be among the approvals. Default false."
+            },
+            "approvals": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31,
+              "description": "How many members of the seated team must approve, the leader counted among them. Default 1. At registration, at most the members the declared team can hold: its leader, the 15 members a charter elects and the elected declaration's maxAddedModerators."
+            }
+          },
+          "additionalProperties": false,
+          "minProperties": 1,
+          "description": "Who must approve a moderator's deletion of a settled document, one past `deleteWithin`: a member of the contract's seated team proposes it with deleteSettledDocument, which is its own approval, the others approve the proposal by its action id with approveTeamAction, and the approval that meets the rule deletes the document, as `delete` would. `{\"leader\": true}` is the leader alone; `{\"leader\": true, \"approvals\": 3}` the leader and two others. The proposals and their approvals are kept under the contract as team actions, readable with getContractTeamActions and getContractTeamActionSigners; nothing lapses, but an approval is refused once the document has changed since the proposal. Requires `deleteWithin` and a contract whose moderators are an elected team, which must give the team `deleteDocuments` on the type; no interim moderator deletes a settled document."
+        },
+        "deleteKeepsFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Property paths whose values a moderator's removal record keeps, copied from the document as it was deleted: what of the document stays public once it is gone (the hashtag of a removed post, say). Each entry names a declared property at any depth (`hashtag`, `meta.tags`, or an object kept whole), or one of the timestamps and block heights the type lists in `required` (`$createdAt`, `$updatedAtBlockHeight`, ...); not a transient property, not `$id` or `$ownerId` (every record holds them already), and not a path inside another listed one. A document without a value at a path leaves it out of the record. The values are read with the record (getContractDocumentRemovals), and the moderator pays for their storage. Requires `delete: true` and a record (`deleteKeepsRecord` not false)."
         },
         "changeFields": {
           "type": "array",
@@ -2275,18 +2277,18 @@
           },
           "minItems": 1,
           "uniqueItems": true,
-          "description": "Top-level properties only the moderators write. A moderator sets or removes them with a contract user moderation transition (changeDocumentFields), which bumps `$revision` and leaves `$updatedAt` and every other property as it was. A document's owner can neither set them in a create nor change or remove them in a replace (DocumentModeratorFieldNotWritableError, code 41124), unless the owner moderates the contract. Every entry must name a declared top-level property that is optional, not transient, not listed under `immutable`, neither a reference nor read by one (a propertyAgreement, a lookup key, a key id), neither generated nor read by a generated property, and in no contested index; refused on an indexOnly type. A type listing any keeps `$revision` on its documents even when `documentsMutable` is false."
+          "description": "Top-level properties only the moderators write. A moderator sets or removes them with a contract user moderation transition (changeDocumentFields), which bumps `$revision` and leaves `$updatedAt` and every other property as it was. A document's owner can neither set them in a create nor change or remove them in a replace (DocumentModeratorFieldNotWritableError, code 41124), unless the owner moderates the contract. Every entry must name a declared top-level property that is optional, not transient, not listed under `immutable`, neither a reference nor read by one (a where value, a findBy source or function param, a key id), neither generated nor read by a generated property, and in no contested index; refused on an indexOnly type. A type listing any keeps `$revision` on its documents even when `documentsMutable` is false."
         }
       },
       "additionalProperties": false,
       "minProperties": 1,
-      "description": "What the contract's moderators may do to documents of this type with a contract user moderation transition: delete them (`delete`, within `deleteWithin` seconds of their last modification when given, leaving a removal record unless `deleteKeepsRecord` is false, refunding the owner when `deleteRefundsOwner` is true), and write the fields only they write (`changeFields`). Requires the contract to declare `moderation` in its config. Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
+      "description": "What the contract's moderators may do to documents of this type with a contract user moderation transition: delete them (`delete`, within `deleteWithin` seconds of their last modification when given, leaving a removal record unless `deleteKeepsRecord` is false, keeping in it the values `deleteKeepsFields` lists, refunding the owner when `deleteRefundsOwner` is true), and write the fields only they write (`changeFields`). Requires the contract to declare `moderation` in its config. Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
     },
     "ttl": {
       "type": "integer",
       "minimum": 1,
       "maximum": 4294967295,
-      "description": "Time to live, in seconds: the platform deletes each document of this type once its `$createdAt` plus this many seconds has passed, whoever owns it and whatever `canBeDeleted` says, at most a protocol-versioned number of documents per block (128 at protocol version 14) after the block's state transitions. Its documents are stored without storage flags and refund nothing when deleted: instead of the perpetual storage price, each byte they write pays a price for the time they will live (five tiers up to seven days, then per 9.125 days spanned), paid out as storage fees to the epochs they live in (at most one era of them), and a document prepays its deletion as processing when it is created. From its expiry on, a document can no longer be replaced, transferred, bought, repriced or restored by a moderator; its owner may still delete it where `canBeDeleted` allows. Requires `$createdAt` in `required`; refused together with `documentsKeepHistory`, `indexOnly` and a contested index. A `permanentDocument` reference, a lookup one included, and a list element reference may not target the type; a `deletableDocument` reference, a lookup one included, may. At least and at most protocol-versioned bounds (3600, one hour, and 31536000, one year, at protocol version 14). Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
+      "description": "Time to live, in seconds: the platform deletes each document of this type once its `$createdAt` plus this many seconds has passed, whoever owns it and whatever `canBeDeleted` says, at most a protocol-versioned number of documents per block (128 at protocol version 14) after the block's state transitions. Its documents are stored without storage flags and refund nothing when deleted: instead of the perpetual storage price, each byte they write pays a price for the time they will live (five tiers up to seven days, then per 9.125 days spanned), paid out as storage fees to the epochs they live in (at most one era of them), and a document prepays its deletion as processing when it is created. From its expiry on, a document can no longer be replaced, transferred, bought, repriced or restored by a moderator; its owner may still delete it where `canBeDeleted` allows. Requires `$createdAt` in `required`; refused together with `documentsKeepHistory`, `indexOnly` and a contested index. A `permanentDocument` reference, one found by `findBy` or with `inList` included, and a `moderatedDocument` reference may not target the type; a `deletableDocument` reference, one found by `findBy` included, may. At least and at most protocol-versioned bounds (3600, one hour, and 31536000, one year, at protocol version 14). Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
     },
     "indexOnly": {
       "type": "boolean",
@@ -2419,33 +2421,51 @@
       "items": {
         "type": "string"
       },
-      "description": "Names of top-level properties whose values are validated on the transition but never stored: a create, and from protocol version 14 a replace, drops them before the document is written. From protocol version 14 every entry must name a top-level property (list the object around a nested one); no index may read a transient property or one inside a transient object; a refersTo lookup may not read one on either side, a propertyAgreement may not name one on its referenced side, and a stored key id may not pair with a transient identity; encryptedFor may not name one; generatedFrom may neither name one nor sit on one. Adding, removing or changing an entry on contract update is an incompatible schema change."
+      "description": "Names of top-level properties whose values are validated on the transition but never stored: a create, and from protocol version 14 a replace, drops them before the document is written. From protocol version 14 every entry must name a top-level property (list the object around a nested one); no index may read a transient property or one inside a transient object; a refersTo findBy may not read one on either side (a findBy function's params may), a where may not name one on its referenced side, and a stored key id may not pair with a transient identity; encryptedFor may not name one; generatedFrom may neither name one nor sit on one. Adding, removing or changing an entry on contract update is an incompatible schema change."
     },
     "immutable": {
       "type": "array",
       "items": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "property": {
+                "type": "string"
+              },
+              "when": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 1
+              }
+            },
+            "required": [
+              "property",
+              "when"
+            ],
+            "additionalProperties": false
+          }
+        ]
       },
-      "uniqueItems": true,
-      "description": "Names of top-level properties whose values are frozen at document creation on a mutable document type: a replace that changes, adds or removes any of them is rejected (DocumentImmutablePropertyChangedError, code 40128), unless the property is listed under immutableAllowSetting and the stored document has no value for it yet, or the replace removes a refersTo deletableDocument reference whose referenced document has been deleted. Only allowed when documentsMutable is true (the default), where the other properties stay replaceable; on an immutable document type every property is already frozen. Every entry must name a declared top-level property that is not transient: system properties ($-prefixed) are excluded because the platform manages them, nested paths are not accepted (list the containing object to freeze it whole), and a transient property is never stored so it could never be written once frozen. On contract update the list may gain entries but never lose one. Available from protocol version 14."
+      "description": "The top-level properties of a mutable document type a replace may not change, add or remove. An entry naming a property freezes it at document creation; an entry { \"property\": ..., \"when\": condition } freezes it for any replace the condition holds for, and leaves it free for any other. A condition takes the grammar of a propertyConstraints rule (comparisons, arithmetic, in, present, absent, anyOf, allOf, not, ifThen, ifThenElse, the system times and heights the type requires, $ownerId) and is judged on the document the replace writes: its $updatedAt is the replace's block time, so { \"greaterThan\": [{ \"subtract\": [\"$updatedAt\", \"$createdAt\"] }, 300000] } freezes a property five minutes after the document was created. A path under $old. reads the stored document instead: { \"present\": \"$old.trackingCode\" } lets an absent trackingCode be set once, and { \"equal\": [\"$old.status\", { \"const\": \"published\" }] } freezes a property once the stored document is published. A condition may read no countOf or sumOf total. A replace changing a frozen property is rejected (DocumentImmutablePropertyChangedError, code 40128), except one removing a refersTo deletableDocument reference by id, listed without a condition, whose referenced document has been deleted. Only allowed when documentsMutable is true (the default). Every property must be a declared top-level property that is not transient, listed once: system properties ($-prefixed) are excluded because the platform manages them, and nested paths are not accepted (list the containing object to freeze it whole). A deletableDocument reference by id may be listed only without a condition. On contract update a property may be added, with a condition or without, and one listed with a condition may lose it; one listed without a condition stays, a condition never changes, and no property is dropped. Replaces immutableAllowSetting, which is refused. Available from protocol version 14."
     },
-    "immutableAllowSetting": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "uniqueItems": true,
-      "description": "The subset of the immutable properties a replace may still set while the stored document has no value for them: a first-time set is accepted, after which the property is frozen like the rest of the immutable list (it can neither change nor be removed). Every entry must also appear in immutable; it is only meaningful for optional properties, since a required one always has a value from creation. On contract update an entry may be dropped (tightening) at any time, but may only be added for a property that becomes immutable in the same update: an already-immutable property cannot start allowing a set. Available from protocol version 14."
+    "retractedWhen": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "description": "The condition under which a replace writes a retracted document: on a moderated contract, the one replace a banned or suspended owner may still make. A barred owner can write nothing new, but may still delete its documents and, on a type declaring retractedWhen, replace one when the document the replace writes meets the condition; any other replace by it is refused with ContractUserBannedError (41107) or ContractUserSuspendedError (41108). So an author whose documents can not be deleted (canBeDeleted: false) can still take back what it wrote. The condition is an immutable entry's when: the grammar of a propertyConstraints rule, judged on the document the replace writes, with the stored document read through $old., and no countOf or sumOf. A condition that cannot be evaluated counts as not met. What a retracted document holds is for the type's other rules to say: { \"present\": \"deleted\" } with a propertyConstraints rule that a document carrying deleted carries no content, and an immutable entry { \"property\": \"deleted\", \"when\": { \"present\": \"$old.deleted\" } } that keeps it retracted. Only allowed when documentsMutable is true and the contract keeps a banlist or a suspension list. Adding, removing or changing it on contract update is an incompatible change. Available from protocol version 14."
     },
     "ownerRefersTo": {
-      "description": "A refersTo declaration whose value is the document's $ownerId, the writer, instead of a property's value: the declaration of an identifier property, with the same keys and the same checks, for the targets a writer can be: identity, a permanentDocument or a deletableDocument found through a lookup, where \".\" is the writer, or a listElement, the writer an element of the list, or an anyOf or allOf expression whose every leaf is one of them and \"$ownerId\" names the writer as well. A deletableDocument leaf gates the writer on the document the lookup finds existing now: every replace checks it again, so a writer whose document is gone can no longer replace theirs (it may still delete it). contract, token and a document by id are refused, since the writer's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the writer does not carry. A propertyAgreement's referring side is still a property of the document or its $ownerId, the same writer. Only on a document type whose documents can be neither transferred nor traded, so the writer stays the owner; on a type whose documents can, creatorRefersTo checks the creator instead. When a document is created, and when a replace changes a property the lookup or a propertyAgreement reads (every replace for a $ownerId agreement pair), consensus checks the writer against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $ownerId as the path. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
+      "description": "A refersTo declaration whose value is the document's $ownerId, the writer, instead of a property's value: the declaration of an identifier property, with the same keys and the same checks, for the targets a writer can be: identity, a permanentDocument or a deletableDocument found by findBy, where \".\" is the writer, or a permanentDocument with inList, the writer an element of the list, or an anyOf or allOf expression whose every leaf is one of them and \"$ownerId\" names the writer as well. A deletableDocument leaf gates the writer on the document findBy finds existing now: every replace checks it again, so a writer whose document is gone can no longer replace theirs (it may still delete it). contract, token and a document by id are refused, since the writer's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the writer does not carry. A where value is still a property of the document or its $ownerId, the same writer. Only on a document type whose documents can be neither transferred nor traded, so the writer stays the owner; on a type whose documents can, creatorRefersTo checks the creator instead. When a document is created, and when a replace changes a property findBy or where reads (every replace for a where value $ownerId), consensus checks the writer against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $ownerId as the path. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
       "$ref": "#/$defs/documentSchema/properties/refersTo",
       "properties": {
         "type": {
           "enum": [
             "identity",
             "permanentDocument",
-            "listElement",
             "deletableDocument"
           ]
         }
@@ -2465,19 +2485,18 @@
       },
       "then": {
         "required": [
-          "lookup"
+          "findBy"
         ]
       }
     },
     "creatorRefersTo": {
-      "description": "A refersTo declaration whose value is the document's $creatorId, its creator, instead of a property's value: the counterpart of ownerRefersTo for a document type whose documents can be transferred or traded, since the creator never changes. The declaration of an identifier property, with the same keys and the same checks, for the targets a creator can be: identity, a permanentDocument found through a lookup, where \".\" is the creator, a listElement, the creator an element of the list, a deletableDocument found through a lookup with a computed key (a commitment the creator reveals, checked when the document is created only, see lookup), or an anyOf or allOf expression whose every leaf is one of them. contract, token, a document by id and any other deletableDocument (the creator never changes, and a document a transfer handed on could not be replaced once the one a lookup found is deleted) are refused, since the creator's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the creator does not carry. A propertyAgreement's referring side is still a property of the document or its $ownerId, the writer. Only on a document type that records creator ids: a transferable or tradeable document type of a format-1 contract; a type declares at most one of ownerRefersTo and creatorRefersTo. When a document is created (by its creator) and when a replace changes a property the lookup or a propertyAgreement reads (every replace for a $ownerId agreement pair), consensus checks the creator against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $creatorId as the path. A transfer or a purchase needs no check: it does not change the creator. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
+      "description": "A refersTo declaration whose value is the document's $creatorId, its creator, instead of a property's value: the counterpart of ownerRefersTo for a document type whose documents can be transferred or traded, since the creator never changes. The declaration of an identifier property, with the same keys and the same checks, for the targets a creator can be: identity, a permanentDocument found by findBy, where \".\" is the creator, a permanentDocument with inList, the creator an element of the list, a deletableDocument found by a findBy function (a commitment the creator reveals, checked when the document is created only, see findBy), or an anyOf or allOf expression whose every leaf is one of them. contract, token, a document by id and any other deletableDocument (the creator never changes, and a document a transfer handed on could not be replaced once the one findBy found is deleted) are refused, since the creator's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the creator does not carry. A where value is still a property of the document or its $ownerId, the writer. Only on a document type that records creator ids: a transferable or tradeable document type of a format-1 contract; a type declares at most one of ownerRefersTo and creatorRefersTo. When a document is created (by its creator) and when a replace changes a property findBy or where reads (every replace for a where value $ownerId), consensus checks the creator against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $creatorId as the path. A transfer or a purchase needs no check: it does not change the creator. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
       "$ref": "#/$defs/documentSchema/properties/refersTo",
       "properties": {
         "type": {
           "enum": [
             "identity",
             "permanentDocument",
-            "listElement",
             "deletableDocument"
           ]
         }
@@ -2497,7 +2516,7 @@
       },
       "then": {
         "required": [
-          "lookup"
+          "findBy"
         ]
       }
     },

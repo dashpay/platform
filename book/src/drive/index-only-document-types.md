@@ -161,7 +161,10 @@ There is no document beyond that.
 Each entry's 32-byte payload is
 `hash_double(owner ‖ (name ‖ length ‖ raw index bytes)* ‖ [$createdAt])`
 over the document's PRESENT properties in sorted-name order
-(`index_only_row_commitment`) — every required property must be present,
+(`index_only_row_commitment`), `$createdAt` included unless only indexes
+whose entries outlive a delete involve it
+(`index_only_row_commits_created_at`, see
+[below](#entries-that-outlive-a-delete-outlivesdelete)) — every required property must be present,
 and an optional property (a skip property of a `skipIfAbsent` index, the
 only optional kind) contributes nothing when absent, not even its name. It binds the
 independently stored index projections of one document back into one
@@ -258,7 +261,7 @@ every write, so a per-hashtag ranked index on a like doctype used to tax
 every like — tagged or not — and forced a `''` sentinel onto the
 referenced post's hashtag. With `byHashtagPost` as a skip index, an
 untagged like pays only for the indexes it actually appears in, and the
-sentinel disappears (see the absence-aware `propertyAgreement` below).
+sentinel disappears (see the absence-aware `where` below).
 
 ## Lifecycle
 
@@ -268,29 +271,29 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   uniqueness constraint over its value projection plus owner — for likes,
   the `[postId]` index is the one-like-per-(post, owner) rule. `refersTo`
   validation runs unchanged (it reads transition values, not storage), so a
-  like on a nonexistent post is rejected — and a `propertyAgreement`
-  declaration on the reference (`{ "hashtag": "hashtag" }`) binds the
-  like's own property to the referenced post's: the referenced document is
+  like on a nonexistent post is rejected, and a `where` declaration on the
+  reference (`{ "hashtag": "hashtag" }`) binds the referenced post's
+  property to the like's own: the referenced document is
   already fetched for the existence check, so the equality comparison adds
   no reads, and a like whose hashtag disagrees with its post's is refused.
-  Absence is part of the agreement, strictly: both sides absent agree, one
+  Absence is part of the comparison, strictly: both sides absent agree, one
   side absent is the same mismatch a differing value would be — a like may
   omit its hashtag exactly when its post has none (anything laxer would
   let likes on tagged posts silently deflate per-tag aggregates), which is
-  what lets an agreement key double as a `skipIfAbsent` skip property with both
-  sides of the reference optional. The referenced side of a pair may also
-  name the referenced document's `$ownerId` or `$creatorId` (the referring
-  side must then be an identifier property): `{ "authorId": "$ownerId" }`
-  binds a like to its post's current owner, so an `[authorId, postId]`
+  what lets a compared property double as a `skipIfAbsent` skip property
+  with both sides of the reference optional. The key of an entry, the
+  referenced side, may also name the referenced document's `$ownerId` or
+  `$creatorId` (the referring side must then be an identifier property):
+  `{ "$ownerId": "authorId" }` binds a like to its post's current owner, so an `[authorId, postId]`
   index can be preallocated and ranked per author. `$ownerId` follows the
   post through transfers and `$creatorId` never changes; either is checked
   when the like is written, not when the post later moves. `$creatorId` is
   only recorded by transferable or tradeable types of a format-1 contract,
   which contract registration checks before accepting the declaration.
-  The referring side may in turn be the like's own `$ownerId`, the writer:
-  `{ "$ownerId": "$ownerId" }` lets only the post's current owner create
-  or replace a like on it, `{ "$ownerId": "$creatorId" }` only its
-  original creator. That is a write gate, checked on create and on every
+  The referring side, an entry's value, may in turn be the like's own
+  `$ownerId`, the writer: `{ "$ownerId": "$ownerId" }` lets only the post's
+  current owner create or replace a like on it, `{ "$creatorId": "$ownerId" }`
+  only its original creator. That is a write gate, checked on create and on every
   replace of the like, not only when its reference changes, since the post
   may have been transferred in between; a transfer itself is not
   re-checked, so on a transferable referring type it governs writing, not
@@ -299,7 +302,8 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under
-  its system key exactly when the type requires it). Delete-by-id and
+  its system key exactly when the row commits to it:
+  `index_only_row_commits_created_at`). Delete-by-id and
   delete-by-values are different operations — different payload,
   authorization model and validation pipeline — so the factory picks the
   KIND from the doctype's storage mode. Validation and the storage layer
@@ -310,6 +314,50 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   software.
 - **Replace / transfer / purchase / price** are structurally impossible.
 
+## Entries that outlive a delete (outlivesDelete)
+
+A delete-by-values recomputes every entry of the document from its values,
+and a time-window entry is keyed by the bucket starts of `$createdAt`, which
+only the block that included the create assigned. A client that did not keep
+that timestamp could not delete the document. `outlivesDelete: true` on a
+`timeRange` index with a `ttl` takes the window out of the delete:
+
+- **Delete.** Neither the state validation probes nor Drive's
+  row-integrity gate check the index, and the delete walkers do not descend
+  into it: `level_removes_entry` skips a level whose indexes all outlive the
+  delete (`IndexLevel::outlives_delete_at_or_below` keeps every other
+  contract on the old path), and the terminating level of such an index
+  removes nothing. Its entries stay until their window is dropped by the TTL
+  cleanup, which drops whole buckets.
+- **Commitment.** When every index involving `$createdAt` outlives deletes,
+  the row commitment leaves the timestamp out, and a delete carries none
+  (structure validation refuses one that does). The executed-transition
+  proof verifier computes the same commitment, so it no longer needs the
+  block time for such a type.
+- **Create.** State validation does not probe the index for a duplicate,
+  and the terminal insert writes over an entry already standing at the same
+  key (left by a deleted document with the same key) without reading it: the
+  count does not move, and the entry carries the commitment of the row
+  writing it. Registration makes the index's key hold the key of an index a
+  delete clears that skips nothing, so no two documents in state share an
+  entry, and the within-batch collision tracker leaves these entries to that
+  index.
+- **Proofs.** `index_only_proof_index` never picks such an index, and the
+  parser requires another one to exist.
+
+Registration admits the keyword only on an indexOnly `timeRange` index with
+a `ttl`, without a sum and on a type without `entryPayload` (a kept entry
+holds the first document's amount or payload), and requires every schema
+property to sit in an index that neither skips nor outlives deletes, and the
+index's key to hold the key of such an index. The flag is fixed with the
+index (`find_first_outlives_delete_change`). The index structure caches the
+decisions a delete reads (`IndexLevel::cleared_on_delete_at_or_below`, and at
+its root `created_at_indexed_only_by_outliving`), and Drive's delete refuses a
+document carrying a `$createdAt` its row does not commit to.
+
+The cost is on the aggregates: a deleted document still counts in the
+windows it wrote until they move past it.
+
 ## Preallocated index paths
 
 The first entry under a fresh value tuple pays for every tree on its path
@@ -319,14 +367,26 @@ entry pays for one item insert. When the index path is a pure function of
 a refersTo-referenced document, that lopsidedness is avoidable: an index
 may declare `preallocated: true` iff every index property is either the
 referring property itself (its value is the referenced document's `$id`)
-or a key of that reference's `propertyAgreement` (consensus-equal to a
+or a referring value of that reference's `where` (consensus-equal to a
 referenced-document property, its `$ownerId` and `$creatorId` included),
-and the reference is a `permanentDocument` one targeting a document type
-of the **same contract**. A `deletableDocument` reference shapes the path
-the same way but does not qualify: its target can be deleted, and the
-trees created alongside it would outlive it with other owners' entries
-inside. `byHashtagPost` (`[hashtag, postId]`) qualifies
-— `hashtag` through the agreement, `postId` as the reference;
+and the reference is a `permanentDocument` or `moderatedDocument` one
+targeting a document type of the **same contract**. A `deletableDocument`
+reference shapes the path the same way but does not qualify: its target can
+be deleted without a record, and the trees created alongside it would
+outlive it with other owners' entries inside and nothing left to say what
+they were keyed by. A `moderatedDocument` target leaves state only through a
+moderator's removal, whose record is never deleted, so its trees outlive it
+the way the record does, and a restore (which puts the document back through
+the create path) finds them in place. Through such a reference a binding
+counts only when the record keeps every key it binds: the referenced
+`$id` or `$ownerId`, or a property the referenced type lists under
+`moderatorAbilities.deleteKeepsFields` (`PreallocationBinding::is_kept_on_removal`).
+Registration refuses a preallocated index with no such binding
+(`validate_preallocated_indexes_kept_on_removal`, once every document type
+of the contract is parsed), and the insert path preallocates only through
+one (`Index::preallocation_bindings_for_target`, given the referenced
+type). `byHashtagPost` (`[hashtag, postId]`) qualifies:
+`hashtag` through `where`, `postId` as the reference;
 `byLiker` (`[$ownerId]`) cannot, since no referenced document determines
 the liker. An `[authorId, postId]` index whose `authorId` agrees with the
 post's `$ownerId` qualifies too: the poster is the one owner a referenced

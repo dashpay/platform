@@ -80,6 +80,9 @@ use dpp::consensus::state::document::document_contest_document_with_same_id_alre
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
+use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
+use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
+use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
@@ -104,8 +107,12 @@ use dpp::consensus::basic::moderation_charter::{
 use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
-    ContractModerationAbilityNotGrantedError, ModerationCharterAddedModeratorLimitReachedError,
-    ModerationReasonNotListedError,
+    ContractModerationAbilityNotGrantedError, ContractModerationTeamNotSeatedError,
+    DocumentNotSettledError, DocumentTypeNotDeletableOnceSettledError,
+    ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
+    ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
+    ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    SettledDeletionNotRestorableError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
@@ -727,6 +734,30 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::ModerationReasonNotListedError(e) => {
             generic_consensus_error!(ModerationReasonNotListedError, e).into()
         }
+        StateError::DocumentTypeNotDeletableOnceSettledError(e) => {
+            generic_consensus_error!(DocumentTypeNotDeletableOnceSettledError, e).into()
+        }
+        StateError::ContractModerationTeamNotSeatedError(e) => {
+            generic_consensus_error!(ContractModerationTeamNotSeatedError, e).into()
+        }
+        StateError::DocumentNotSettledError(e) => {
+            generic_consensus_error!(DocumentNotSettledError, e).into()
+        }
+        StateError::ContractTeamActionDoesNotExistError(e) => {
+            generic_consensus_error!(ContractTeamActionDoesNotExistError, e).into()
+        }
+        StateError::ContractTeamActionAlreadySignedError(e) => {
+            generic_consensus_error!(ContractTeamActionAlreadySignedError, e).into()
+        }
+        StateError::SettledDeletionNotRestorableError(e) => {
+            generic_consensus_error!(SettledDeletionNotRestorableError, e).into()
+        }
+        StateError::ContractTeamActionAlreadyCompletedError(e) => {
+            generic_consensus_error!(ContractTeamActionAlreadyCompletedError, e).into()
+        }
+        StateError::ContractTeamActionDocumentChangedError(e) => {
+            generic_consensus_error!(ContractTeamActionDocumentChangedError, e).into()
+        }
         StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
             generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()
         }
@@ -744,6 +775,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentRequirementNotMetError(e) => {
             generic_consensus_error!(ReferencedDocumentRequirementNotMetError, e).into()
+        }
+        StateError::ReferencedDocumentTypeNotModeratedError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypeNotModeratedError, e).into()
+        }
+        StateError::ReferencedDocumentTypeModeratedError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypeModeratedError, e).into()
+        }
+        StateError::ReferencedDocumentRemovedError(e) => {
+            generic_consensus_error!(ReferencedDocumentRemovedError, e).into()
         }
     }
 }

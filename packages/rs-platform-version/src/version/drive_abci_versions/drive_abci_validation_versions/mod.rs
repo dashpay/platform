@@ -33,11 +33,6 @@ pub struct DriveAbciValidationConstants {
     /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
     /// sufficient anonymity set before funds can leave the pool.
     pub minimum_pool_notes_for_outgoing: u64,
-    /// Superseded and read by nothing: a token shielded pool's outgoing notes threshold is
-    /// the token configuration's `minimumPoolNotesForOutgoing`, set per token by its issuer
-    /// and bounded by `SystemLimits::max_token_pool_notes_for_outgoing`. Kept only so the
-    /// version tables stay as they are; do not read it for a token pool.
-    pub minimum_token_pool_notes_for_outgoing: u64,
     /// Number of blocks of anchors to retain. Anchors older than this are
     /// pruned at the end of each block. Clients must use an anchor no older
     /// than this many blocks when building shielded transactions.

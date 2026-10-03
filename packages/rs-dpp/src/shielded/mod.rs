@@ -34,6 +34,19 @@ use crate::serialization::ValueConvertible;
 /// A digest of serialized Orchard actions in wire order: every field of every action, hashed
 /// once. A group action stores it so every signer commits to exactly the same notes, and a
 /// pool mint or burn folds it into its group action id.
+///
+/// FROZEN once a protocol version ships it. This is a hash preimage, not a serialization
+/// format, so there is nothing to decode and no version byte to carry — but a group action
+/// stores the digest and a later block re-derives it to compare, and the comparison has no way
+/// to learn which version the action was proposed at. Changing the layout here would leave every
+/// pending group action permanently unconfirmable, and versioning the function on the *current*
+/// protocol version would not help, because that is not the version the stored digest came from.
+/// A new layout needs a new function and a new transition generation, the way
+/// `calculate_action_id_with_fields` is handled.
+///
+/// The concatenation carries no length prefixes, so it is only unambiguous because every field is
+/// fixed-width in practice: `encrypted_note` is a `Vec<u8>` that bundle reconstruction refuses
+/// unless it is exactly the Orchard ciphertext length, on every path where this digest matters.
 pub fn serialized_actions_digest(actions: &[SerializedAction]) -> [u8; 32] {
     let mut bytes = Vec::new();
     for action in actions {

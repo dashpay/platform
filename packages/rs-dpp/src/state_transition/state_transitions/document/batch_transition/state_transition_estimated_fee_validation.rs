@@ -11,6 +11,7 @@ use crate::state_transition::batch_transition::batched_transition::BatchedTransi
 use crate::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::BatchTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{
     StateTransitionEstimatedFeeValidation, StateTransitionIdentityEstimatedFeeValidation,
     StateTransitionOwned,
@@ -82,6 +83,41 @@ impl BatchTransition {
         self.validate_estimated_principal_and_fees(identity_known_balance, 0)
     }
 
+    /// The principal a sponsored batch's signer funds, plus the compute fee of the Orchard
+    /// bundles it carries.
+    ///
+    /// A sponsor pays the gas of a batch that executes, but a sub-transition its state
+    /// validation replaces with a nonce bump takes the sponsor off the whole batch, and the
+    /// signer pays for the work that ran on it. So the signer has to hold what the verification
+    /// costs even while a sponsor is expected to pay it: whichever way the batch ends, somebody
+    /// can be charged for the proofs already verified. A batch carrying no bundle adds nothing
+    /// and is asked for its principal alone, as before.
+    pub fn validate_estimated_principal_with_shielded_compute(
+        &self,
+        identity_known_balance: Credits,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let compute_fee = self.shielded_bundle_compute_fee(platform_version)?;
+        // A batch carrying a bundle is held to the floor an unsponsored one meets, because the
+        // sponsor is not who pays when it fails: a sub-transition replaced by a nonce bump takes
+        // the sponsor off the batch, and the signer then owes the verification that ran together
+        // with the signature, the contract reads, the pool reads and the bump itself. Asking for
+        // the whole floor inherits that floor's own guarantee — an unsponsored batch meeting it
+        // can be charged — instead of guessing at a bound for the failed event. A batch carrying
+        // no bundle has no such work to pay for and keeps the exemption: its signer funds the
+        // principal and fee validation judges the gas against whoever ends up paying.
+        let base_fees = if compute_fee == 0 {
+            0
+        } else {
+            self.calculate_min_required_fee(platform_version)?
+                .saturating_add(compute_fee)
+        };
+        self.validate_estimated_principal_and_fees(
+            identity_known_balance,
+            self.fees_raised_by_the_chosen_increase(base_fees),
+        )
+    }
+
     /// The shielded compute fee the batch's Orchard bundles will be charged: one bundle
     /// verification plus the per-action work, summed over the sub-transitions that carry a
     /// bundle, each priced exactly as the transformer that builds it prices it.
@@ -151,7 +187,31 @@ impl BatchTransition {
         let base_fees = self
             .calculate_min_required_fee(platform_version)?
             .saturating_add(self.shielded_bundle_compute_fee(platform_version)?);
-        self.validate_estimated_principal_and_fees(identity_known_balance, base_fees)
+        self.validate_estimated_principal_and_fees(
+            identity_known_balance,
+            self.fees_raised_by_the_chosen_increase(base_fees),
+        )
+    }
+
+    /// `base_fees` raised by the percentage the signer asked for.
+    ///
+    /// Settlement raises the processing fee that way and then judges the balance against the
+    /// raised figure, so a floor that ignored the increase would admit a signer settlement
+    /// cannot charge. Raised exactly as `FeeResult::apply_user_fee_increase` raises it, and only
+    /// over the fee: a document purchase and a contested collateral are amounts a signer owes,
+    /// not fees, and settlement does not raise them either.
+    ///
+    /// Only the generation the unreleased protocol version 14 selects asks for this. The
+    /// generation every released version selects reaches
+    /// `validate_estimated_principal_and_fees` directly and keeps the threshold and the
+    /// `required_balance` it has always reported.
+    fn fees_raised_by_the_chosen_increase(&self, base_fees: Credits) -> Credits {
+        base_fees.saturating_add(
+            ((base_fees as u128)
+                .saturating_mul(self.user_fee_increase() as u128)
+                .saturating_div(100))
+            .min(Credits::MAX as u128) as Credits,
+        )
     }
 
     /// The balance has to cover the principal of the batch (document purchases and the

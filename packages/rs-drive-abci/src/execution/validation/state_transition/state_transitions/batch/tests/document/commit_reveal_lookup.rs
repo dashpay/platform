@@ -904,6 +904,7 @@ mod commit_reveal_lookup_tests {
                     &block(REVEAL_HEIGHT),
                     &mut consumed,
                     None,
+                    None,
                     &mut execution_context,
                     platform_version,
                 )

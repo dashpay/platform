@@ -182,6 +182,22 @@ impl Drive {
                     platform_version,
                 )?;
             }
+
+            // The actions the seated team votes on, the deletions of settled documents among
+            // them: their tree, with the active and the closed actions under it, only when a
+            // document type sets `deleteSettled`. Only here: such a type needs the elected
+            // declaration, fixed at creation, to give its team `deleteDocuments` on it, so no
+            // update can add one.
+            if contract.keeps_team_actions() {
+                self.insert_contract_team_action_trees_operations(
+                    contract.id().to_buffer(),
+                    storage_flags.as_ref(),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+            }
         }
 
         for (position, configuration) in contract.tokens() {

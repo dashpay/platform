@@ -51,8 +51,8 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
-              "topic": "meta.topic"
+            "where": {
+              "meta.topic": "topic"
             }
           }
         },

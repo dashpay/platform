@@ -4,7 +4,6 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentReferenceLookup, DocumentTypeRef, LookupHashKey};
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
@@ -481,11 +480,10 @@ pub(crate) fn fetch_document_through_lookup(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<Option<Document>, Error> {
-    if !document_type
-        .indexes()
-        .get(&lookup.index)
-        .is_some_and(|index| index.unique)
-    {
+    // Registration resolved the index its `findBy` names, and a type's indexes
+    // never change, so this only guards a declaration no registration admits:
+    // one naming no unique index finds no document
+    if lookup.resolve_index(document_type).is_err() {
         return Ok(None);
     }
     let billed_key = billed_key.or_else(|| {

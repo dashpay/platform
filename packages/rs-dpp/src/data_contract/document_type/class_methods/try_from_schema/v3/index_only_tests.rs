@@ -1042,7 +1042,7 @@ fn rejects_unindexed_property() {
     );
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "does not appear in any non-skipIfAbsent index",
+        "does not appear in any index that neither sets skipIfAbsent nor outlivesDelete",
     );
 }
 
@@ -1651,7 +1651,9 @@ fn preallocatable_likes_schema() -> Value {
         platform_value!({
             "type": "permanentDocument",
             "documentType": "post",
-            "propertyAgreement": { "hashtag": "hashtag" }
+            "where": {
+                "hashtag": "hashtag"
+            }
         }),
     );
     schema
@@ -1791,7 +1793,9 @@ fn rejects_preallocated_through_a_deletable_document_reference() {
         platform_value!({
             "type": "deletableDocument",
             "documentType": "post",
-            "propertyAgreement": { "hashtag": "hashtag" }
+            "where": {
+                "hashtag": "hashtag"
+            }
         }),
     );
     expect_structure_error(

@@ -726,14 +726,16 @@ Same convention as the layout diagram above: rectangles are tree-type elements, 
 
 ## Null Handling
 
-The `any_fields_null` and `all_fields_null` flags are accumulated as Drive descends the index property list during insertion ([`add_indices_for_index_level_for_contract_operations/v0/mod.rs:170-171`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations/v0/mod.rs#L170-L171)):
+The `any_fields_null` and `all_fields_null` flags follow the path Drive descends during insertion: each sub-level gets its parent's flags combined with its own value ([`add_indices_for_index_level_for_contract_operations/v2/mod.rs`](https://github.com/dashpay/platform/blob/v4.2-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations/v2/mod.rs)):
 
 ```rust
-any_fields_null |= document_index_field.is_empty();
-all_fields_null &= document_index_field.is_empty();
+let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
+let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
 ```
 
-`any_fields_null` becomes `true` the moment the walker hits any null/empty value at any level (first, middle, or last) and stays true for the rest of the descent. `all_fields_null` only stays true if every value seen so far is null.
+`any_fields_null` becomes `true` the moment the walker hits any null/empty value on an index's path (first, middle, or last property) and stays true below it. `all_fields_null` only stays true if every value on the path so far is null. A sibling sub-level's value never enters them: under the index trie's shared levels, each index is judged by its own properties.
+
+Before protocol version 14 the walkers updated the flags in place as they moved from one sibling sub-level to the next, so a sibling's missing value also marked every later sibling's path: a unique index could then hold its entry in the sub-tree shape with none of its own values missing, and a `nullSearchable: false` index could get an entry for a document missing all of its values because a sibling had one. The replace walker of those versions also chose a unique index's shape from `all_fields_null`, so a replace left an index with some of its values missing in the bare-Reference shape. From version 14, where one of those earlier writers could disagree with the rule, the delete walker and the replace walker read what is stored at `[0]` (and, for a `nullSearchable: false` index the rule skips, whether an entry is there) and remove or refresh the entry where it is. The read is unbilled bookkeeping, like the time-range walkers' removability reads, so a dry run and the applied operation bill the same; a type with a `ttl`, which exists only from version 14, skips it.
 
 By the time the recursion reaches the terminal:
 
@@ -750,7 +752,7 @@ A `skipIfAbsent` index is decided before any of this: a document missing a prope
 Putting it together, when Drive inserts a document into a contract `C` of type `T`:
 
 1. **`add_indices_for_top_index_level_for_contract_operations`** — for each top-level entry in the document type's index trie (each first-property of any declared index), pushes the property name and the document's value for that property onto the path, computes the initial `any_fields_null` / `all_fields_null` for that single value, and recurses.
-2. **`add_indices_for_index_level_for_contract_operations`** (recursive) — for each sub-level of the trie, pushes the property name and value onto the path, OR-accumulates `any_fields_null`, AND-accumulates `all_fields_null`, and recurses. If the current level has `has_index_with_type = Some(...)`, it also calls into step 3 *before* recursing further (because an index can terminate at a non-leaf trie level when another index continues past it).
+2. **`add_indices_for_index_level_for_contract_operations`** (recursive) — for each sub-level of the trie, pushes the property name and value onto the path, derives the sub-level's `any_fields_null` (OR) and `all_fields_null` (AND) from its parent's flags and its own value, and recurses. If the current level has `has_index_with_type = Some(...)`, it also calls into step 3 *before* recursing further (because an index can terminate at a non-leaf trie level when another index continues past it).
 3. **`add_reference_for_index_level_for_contract_operations`** — the terminal call. Decides between unique and non-unique-style storage using the matrix above; for the non-unique-style path it picks a `NormalTree` / `CountTree` / `ProvableCountTree` based on `countable`; finally inserts the document reference (or sub-tree containing it).
 
 Deletion mirrors the same walk in reverse — see [`packages/rs-drive/src/drive/document/delete/`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/delete/).

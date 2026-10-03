@@ -2,9 +2,11 @@
 //!
 //! A `preallocated` index on an indexOnly document type (see
 //! `dpp::data_contract::document_type::index::PREALLOCATED`) has a path that
-//! is a pure function of one same-contract refersTo-referenced document:
+//! is a pure function of one same-contract refersTo-referenced document (a
+//! `permanentDocument` one, or a `moderatedDocument` one whose removal record
+//! keeps every key of the path):
 //! every index property is either the referring property (its value is the
-//! referenced document's `$id`) or a `propertyAgreement` key
+//! referenced document's `$id`) or a `where` referring value
 //! (consensus-enforced equal to a referenced-document property at entry
 //! write time). So the moment the referenced document is inserted, every
 //! dynamic tree an entry referencing it will ever need — the per-value trees
@@ -91,7 +93,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let contract = document_and_contract_info.contract;
-        let target_name = document_and_contract_info.document_type.name().as_str();
+        let target_document_type = document_and_contract_info.document_type;
 
         for referring_document_type in contract.document_types().values() {
             let referring_type = referring_document_type.as_ref();
@@ -126,11 +128,14 @@ impl Drive {
                 }
                 // Target-filtered derivation: candidates naming other
                 // target types are rejected before any binding plan is
-                // allocated — this runs on every document insert.
+                // allocated — this runs on every document insert. Through a
+                // moderatedDocument reference, only a binding every key of
+                // which the inserted document's removal record would keep
+                // (registration makes sure each preallocated index has one).
                 for binding in index.preallocation_bindings_for_target(
                     referring_type.flattened_properties(),
                     contract.id(),
-                    target_name,
+                    target_document_type,
                 ) {
                     self.add_preallocated_index_tree_operations_for_binding(
                         document_and_contract_info,

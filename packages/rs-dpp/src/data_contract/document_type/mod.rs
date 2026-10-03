@@ -72,12 +72,19 @@ pub(crate) mod property_names {
     pub const REQUIRED: &str = "required";
     pub const REQUIRED_SINCE: &str = "requiredSince";
     pub const TRANSIENT: &str = "transient";
-    /// Doctype-level array naming the top-level properties of a **mutable**
-    /// document type whose values are frozen at creation: a replace that
-    /// changes, adds or removes any of them is rejected. Meta-schema v3+
-    /// (protocol version 14). See `apply_immutable_fields` in
+    /// Doctype-level array of the top-level properties of a **mutable**
+    /// document type a replace may not change, add or remove: a property
+    /// name, frozen at creation, or `{ "property": ..., "when": ... }`
+    /// ([`immutable_entry`]), frozen while its condition holds. Meta-schema
+    /// v3+ (protocol version 14). See `apply_immutable_fields` in
     /// `try_from_schema::common` for the structural rules.
     pub const IMMUTABLE: &str = "immutable";
+    /// Doctype-level condition, in the grammar of an [`IMMUTABLE`] entry's
+    /// `when`, under which a replace writes a retracted document: the one
+    /// replace a banned or suspended owner may still make on a moderated
+    /// contract. Meta-schema v3+ (protocol version 14). See
+    /// `apply_retracted_when` in `try_from_schema::common`.
+    pub const RETRACTED_WHEN: &str = "retractedWhen";
     /// Doctype-level object declaring a fixed fee in credits for actions on documents of
     /// the type, split between the contract's owner pot and its moderators pot. Meta-schema
     /// v3+ (protocol version 14). See `parse_action_fees_keyword` in
@@ -87,10 +94,11 @@ pub(crate) mod property_names {
     /// `replace`, `delete`, `transfer`, `update_price`, `purchase`). Meta-schema
     /// v0+ (protocol version 9). See `parse_token_costs` in `try_from_schema::common`.
     pub const TOKEN_COST: &str = "tokenCost";
-    /// Doctype-level array naming the [`IMMUTABLE`] properties a replace may
-    /// still set when the stored document has no value for them. Once set
-    /// they are frozen like the rest of the list. Every entry must also be in
-    /// [`IMMUTABLE`]. Meta-schema v3+ (protocol version 14).
+    /// The keyword that listed the [`IMMUTABLE`] properties a replace could
+    /// still set while absent, before a conditional `immutable` entry said it
+    /// (`{ "property": "p", "when": { "present": "$old.p" } }`). Refused on
+    /// every parse, naming its replacement, so that no contract written with
+    /// it loads with another meaning.
     pub const IMMUTABLE_ALLOW_SETTING: &str = "immutableAllowSetting";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
@@ -142,26 +150,36 @@ pub(crate) mod property_names {
     /// the value names (`"$ownerId"`, the writer). Takes the place of
     /// [`KEY_ID_PROPERTY`]; a declaration carries one or the other.
     pub const IDENTITY_PROPERTY: &str = "identityProperty";
-    pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
-    /// `refersTo` on a document reference: the unique index of the referenced
-    /// document type the referenced document is found through, and the key.
-    /// Meta-schema v3+ (protocol version 14).
-    pub const LOOKUP: &str = "lookup";
-    /// `lookup`: the name of the referenced document type's unique index.
-    pub const LOOKUP_INDEX: &str = "index";
-    /// `lookup`: every index property mapped to its referring-side source.
-    pub const LOOKUP_KEYS: &str = "keys";
-    /// `refersTo` beside a `lookup` with a computed key: how many blocks
+    /// `refersTo` on a document reference: how the referenced document is
+    /// found when the value is not its id, properties of the referenced
+    /// document type (exactly those of one of its unique indexes) mapped to
+    /// where each value comes from on the referring side. Meta-schema v3+
+    /// (protocol version 14).
+    pub const FIND_BY: &str = "findBy";
+    /// `refersTo` on a document reference: what the referenced document must
+    /// hold once found, properties of the referenced document type mapped to
+    /// the referring-side value each must equal. Meta-schema v3+ (protocol
+    /// version 14).
+    pub const WHERE: &str = "where";
+    /// `refersTo` beside a `findBy` with a computed key: how many blocks
     /// before the referring document's create the document the key finds
     /// must have been created.
     pub const MINIMUM_AGE_BLOCKS: &str = "minimumAgeBlocks";
-    /// `refersTo` beside a `lookup` with a computed key: whether the create
+    /// `refersTo` beside a `findBy` with a computed key: whether the create
     /// deletes the document the key finds.
     pub const CONSUME: &str = "consume";
-    /// `refersTo: listElement`: the typed array of identifiers, on the
-    /// referenced document type, the value must be an element of.
-    /// Meta-schema v3+ (protocol version 14).
+    /// `refersTo: permanentDocument` found by its `$id` from a property: the
+    /// typed array of identifiers, on the referenced document, the value must
+    /// be an element of. Meta-schema v3+ (protocol version 14).
     pub const IN_LIST: &str = "inList";
+    /// Keywords a protocol version 14 beta spelled a document reference with,
+    /// refused on every parse so a contract written with them never loads with
+    /// another meaning: `lookup` ([`FIND_BY`]), `propertyAgreement`
+    /// ([`WHERE`], keyed the other way) and the `listElement` type (a
+    /// `permanentDocument` with [`IN_LIST`]).
+    pub const REPLACED_LOOKUP: &str = "lookup";
+    pub const REPLACED_PROPERTY_AGREEMENT: &str = "propertyAgreement";
+    pub const REPLACED_LIST_ELEMENT: &str = "listElement";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
@@ -251,13 +269,24 @@ pub(crate) mod property_names {
     /// this type with a `ContractUserModeration` transition, whatever `canBeDeleted` and
     /// `documentsMutable` say about the documents' own owners: delete them (`delete`, within
     /// `deleteWithin` seconds of their last modification when given, leaving a removal record
-    /// unless `deleteKeepsRecord` is false, and refunding the owner when `deleteRefundsOwner`
-    /// is true), and write the fields `changeFields` lists, which nobody else writes. Meta-schema v3+ (protocol version
+    /// unless `deleteKeepsRecord` is false, keeping in it the values `deleteKeepsFields` lists,
+    /// and refunding the owner when `deleteRefundsOwner` is true), and write the fields
+    /// `changeFields` lists, which nobody else writes. Meta-schema v3+ (protocol version
     /// 14). See [`moderator_abilities`] for its keys, and `apply_moderator_abilities` in
     /// `try_from_schema::common` for what each requires of the type and of the contract.
     pub const MODERATOR_ABILITIES: &str = "moderatorAbilities";
 
     /// The keys of the `moderatorAbilities` object.
+    /// The keys of a conditional [`IMMUTABLE`] entry.
+    pub mod immutable_entry {
+        /// The top-level property the entry freezes.
+        pub const PROPERTY: &str = "property";
+        /// The condition under which it is frozen, in the grammar of a
+        /// `propertyConstraints` rule, judged on the document a replace
+        /// writes, with the stored one read through `$old.`.
+        pub const WHEN: &str = "when";
+    }
+
     pub mod moderator_abilities {
         /// When true, the moderators may delete documents of the type, leaving a removal
         /// record under the contract.
@@ -275,10 +304,30 @@ pub(crate) mod property_names {
         /// owner deleting it themselves is. Default `false`: the owner forfeits it. Needs
         /// `delete: true`.
         pub const DELETE_REFUNDS_OWNER: &str = "deleteRefundsOwner";
+        /// Who must approve a moderator's deletion of a document once it is settled, past
+        /// `deleteWithin`: an object with `leader` (whether the seated team's leader must be
+        /// among the approvals, default `false`) and `approvals` (how many members of the team
+        /// must approve, the leader counted, default 1). See [`delete_settled`] for the keys.
+        /// Needs `deleteWithin` and a contract whose moderators are an elected team.
+        pub const DELETE_SETTLED: &str = "deleteSettled";
+        /// The property paths whose values a moderator's removal record keeps, copied from
+        /// the document as it was deleted: what of it stays public once it is gone (the
+        /// hashtag of a removed post, say). Any declared, stored property at any depth, and
+        /// the timestamps and block heights the type requires. Needs `delete: true` and a
+        /// record (`deleteKeepsRecord` not false).
+        pub const DELETE_KEEPS_FIELDS: &str = "deleteKeepsFields";
         /// The top-level properties only the moderators write: a document's owner can
         /// neither set them when creating it nor change them when replacing it, unless the
         /// owner moderates the contract.
         pub const CHANGE_FIELDS: &str = "changeFields";
+
+        /// The keys of the `deleteSettled` object.
+        pub mod delete_settled {
+            /// Whether the seated team's leader must be among the approvals.
+            pub const LEADER: &str = "leader";
+            /// How many members of the seated team must approve, the leader counted.
+            pub const APPROVALS: &str = "approvals";
+        }
     }
     /// Doctype-level time to live, in seconds: the platform deletes each document of the
     /// type once `$createdAt` plus this many seconds has passed, whoever owns it and
@@ -363,11 +412,25 @@ impl DocumentTypeBasicMethods for DocumentType {
     fn has_moderator_changeable_fields(&self) -> bool {
         !self.moderator_changeable_fields().is_empty()
     }
+
+    fn derived_index_property_type(&self, name: &str) -> Option<&DocumentPropertyType> {
+        match self {
+            DocumentType::V0(_) | DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.derived_index_property_type(name),
+        }
+    }
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {
     fn has_moderator_changeable_fields(&self) -> bool {
         !self.moderator_changeable_fields().is_empty()
+    }
+
+    fn derived_index_property_type(&self, name: &str) -> Option<&DocumentPropertyType> {
+        match self {
+            DocumentTypeRef::V0(_) | DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.derived_index_property_type(name),
+        }
     }
 }
 

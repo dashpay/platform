@@ -127,6 +127,9 @@ fn should_create_the_action_counts_tree_with_an_elected_contract_only() {
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
     let elected = elected_contract(&drive, platform_version);
     assert!(has_counts_tree(&drive, elected.id()));
+    assert!(drive
+        .contract_keeps_moderation_action_counts(elected.id(), None, platform_version)
+        .expect("expected to probe the counts tree"));
 
     let owned = contract_keeping(true, false, false, false);
     let mut owned_contract = owned;
@@ -141,6 +144,10 @@ fn should_create_the_action_counts_tree_with_an_elected_contract_only() {
         )
         .expect("expected to insert the contract");
     assert!(!has_counts_tree(&drive, owned_contract.id()));
+    // What an elected contract stored before the counts existed reads as, too
+    assert!(!drive
+        .contract_keeps_moderation_action_counts(owned_contract.id(), None, platform_version)
+        .expect("expected to probe the counts tree"));
 
     // A contract without the tree (an elected one stored before the counts existed reads the
     // same) has no counts rather than a failing read.
@@ -239,6 +246,54 @@ fn should_write_read_and_reset_the_action_counts() {
         .fetch_contract_moderation_action_counts(contract_id, 31, None, platform_version)
         .expect("expected to read the counts")
         .is_empty());
+}
+
+#[test]
+fn should_prove_the_action_counts_the_query_reads() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract_id = elected_contract(&drive, platform_version).id();
+    let root_hash = |drive: &Drive| {
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected a root hash")
+    };
+    let prove_and_verify = |drive: &Drive| {
+        let proof = drive
+            .prove_contract_moderation_action_counts(contract_id, None, platform_version)
+            .expect("expected a proof of the counts");
+        let (proved_root, counts) = Drive::verify_contract_moderation_action_counts(
+            &proof,
+            contract_id,
+            false,
+            platform_version,
+        )
+        .expect("expected the proof to verify");
+        assert_eq!(proved_root, root_hash(drive));
+        counts
+    };
+
+    // No member has acted yet: the proof shows an empty tree
+    assert!(prove_and_verify(&drive).is_empty());
+
+    apply(
+        &drive,
+        vec![
+            set_count(member(1), 2, contract_id),
+            set_count(member(2), 5, contract_id),
+        ],
+        true,
+    );
+    let expected = BTreeMap::from([(member(1), 2), (member(2), 5)]);
+    assert_eq!(prove_and_verify(&drive), expected);
+    assert_eq!(
+        drive
+            .fetch_contract_moderation_action_counts(contract_id, u16::MAX, None, platform_version)
+            .expect("expected to read the counts"),
+        expected
+    );
 }
 
 /// The root key of the Merk at `path`/`key`, read from the tree element that points at it.

@@ -81,9 +81,9 @@
 - [History](contract-keywords/history.md)
 - [Signing and Keys](contract-keywords/signing-keys.md)
 - [References (refersTo)](contract-keywords/refers-to.md)
-  - [Lookups](contract-keywords/refers-to-lookup.md)
+  - [Finding by Properties (findBy)](contract-keywords/refers-to-lookup.md)
   - [Expressions](contract-keywords/refers-to-expressions.md)
-  - [List Elements](contract-keywords/refers-to-list-element.md)
+  - [List Elements (inList)](contract-keywords/refers-to-list-element.md)
   - [Writer and Creator References](contract-keywords/owner-refers-to.md)
 - [distinctFrom](contract-keywords/distinct-from.md)
 - [maxBytes](contract-keywords/max-bytes.md)
@@ -99,6 +99,7 @@
   - [Time-Range Indexes](contract-keywords/time-range.md)
   - [Integer-Range Indexes](contract-keywords/integer-range.md)
   - [Index-Only Types](contract-keywords/index-only.md)
+  - [Values of Referenced Documents](contract-keywords/derived-index-properties.md)
 - [Contract-Level Keys and config](contract-keywords/contract-config.md)
 
 # Drive

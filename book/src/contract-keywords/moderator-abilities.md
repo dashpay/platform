@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Where** | document type, in a contract whose config declares `moderation` |
-| **Value** | object with `delete` (boolean), `deleteWithin` (seconds), `deleteKeepsRecord` and `deleteRefundsOwner` (booleans), the last three only beside `delete: true`, and `changeFields` (array of top-level property names), at least one of them given |
+| **Value** | object with `delete` (boolean), `deleteWithin` (seconds), `deleteKeepsRecord` and `deleteRefundsOwner` (booleans), `deleteKeepsFields` (array of property paths), the last four only beside `delete: true`, `deleteSettled` (object, beside `deleteWithin`), and `changeFields` (array of top-level property names), at least one of them given |
 | **Default** | absent: the moderators can do nothing to documents of the type |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (`DocumentTypeUpdateError`, 40212): a type can neither gain, lose nor change it. A type the update adds may declare it. |
@@ -18,6 +18,8 @@ The keys:
 | `deleteWithin` | Limits `delete` to so many seconds after a document's last change. | [Deletion](deletion.md#moderatorabilitiesdeletewithin) |
 | `deleteKeepsRecord` | Whether a deletion leaves a removal record, and so can be restored. Default `true`. | [Deletion](deletion.md#moderatorabilitiesdeletekeepsrecord) |
 | `deleteRefundsOwner` | Whether the deleted document's owner is refunded its storage. Default `false`. | [Deletion](deletion.md#moderatorabilitiesdeleterefundsowner) |
+| `deleteSettled` | Past `deleteWithin`, the seated team of an elected contract deletes a document together: one member proposes, and so many approve, the leader among them only when the rule says so (`leader: true`). | [Deletion](deletion.md#moderatorabilitiesdeletesettled) |
+| `deleteKeepsFields` | The fields of a deleted document whose values stay public in its removal record, such as a post's hashtag. | [Deletion](deletion.md#moderatorabilitiesdeletekeepsfields) |
 | `changeFields` | The listed properties are written only by the moderators. | [below](#changefields) |
 
 The moderators are the ones the contract's `moderation` config declares: the contract owner, the identities it appoints, or the members of the seated team of an elected contract. A seated team holds an ability on a type only when the declaration's `moderatedDocumentTypes` gives it: `deleteDocuments` for `delete`, `changeDocumentFields` for `changeFields`. See [Contract Moderation](../data-model/contract-moderation.md).
@@ -94,15 +96,15 @@ All refusals below are `InvalidContractStructure` (10231).
   - optional: nobody but a moderator can set it, so it starts absent;
   - stored, so not `transient`;
   - not listed under `immutable`;
-  - neither a `refersTo` reference nor read by one: not the referring side of a `propertyAgreement`, not a lookup key's source, not the identity property of a key id reference;
+  - neither a `refersTo` reference nor read by one: not the referring value of a `where` entry, not a source `findBy` reads, not the identity property of a key id reference;
   - neither `generatedFrom` another property nor a parameter of one;
   - in no contested index.
 - A type that lists any keeps `$revision` on its documents, even when `documentsMutable` is `false`, because a moderator's change is stored as an update.
-- A `refersTo` lookup key, or a `listElement` reference's list, may not read a listed field of the type it refers to: such a field can change after the reference was checked.
+- A `refersTo` `findBy`, or the list an `inList` reference reads, may not read a listed field of the type it refers to: such a field can change after the reference was checked.
 
 ## See also
 
-- [Deletion](deletion.md), for `delete` and `deleteWithin`
+- [Deletion](deletion.md), for `delete`, `deleteWithin` and `deleteSettled`
 - [Contract Moderation](../data-model/contract-moderation.md#changing-document-fields), for the transition, the checks and the proof
 - [Mutability](mutability.md), for what a document's own owner may change
 - [Contract-Level Keys and config](contract-config.md), for `moderation`

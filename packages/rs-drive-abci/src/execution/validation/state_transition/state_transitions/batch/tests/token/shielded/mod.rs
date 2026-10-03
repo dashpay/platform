@@ -1,6 +1,7 @@
 use super::*;
 use drive::util::grove_operations::DirectQueryType;
 
+mod gas_sponsored_bundle;
 mod minimum_pool_notes;
 mod pool_nullifier_admission;
 

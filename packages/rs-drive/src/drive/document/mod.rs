@@ -35,6 +35,9 @@ use grovedb::Element;
 
 #[cfg(feature = "server")]
 mod delete;
+/// The values of derived index properties, read from the documents the references point at
+#[cfg(feature = "server")]
+pub(crate) mod derived_index_values;
 #[cfg(feature = "server")]
 mod estimation_costs;
 /// Document expiry: the expirations tree of documents whose type declares a `ttl`, their
@@ -113,6 +116,11 @@ pub(crate) mod time_range_ttl;
 #[cfg(feature = "server")]
 pub mod index_only;
 
+/// Unbilled reads of how an index entry is stored, for the walkers that
+/// remove or refresh entries earlier protocol versions laid out otherwise
+#[cfg(feature = "server")]
+pub(crate) mod stored_index_entry;
+
 /// The indexOnly row commitment: the payload every indexOnly terminal item
 /// stores, binding one document's index projections into one logical row
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -169,7 +177,7 @@ pub(crate) fn index_only_member_key(
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Whether `document`'s value of `referenced_property`, which a
-/// `propertyAgreement` binds to a referring index property of
+/// `where` binds to a referring index property of
 /// `referring_property_type`, is no wider as a tree key than a value of that
 /// property can be. A wider value equals no referring document's value, so no
 /// entry would ever sit under trees keyed by it, and past 255 bytes it is no

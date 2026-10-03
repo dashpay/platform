@@ -6,10 +6,10 @@ use crate::data_contract::document_type::class_methods::apply_required_since::ap
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::property_constraints::{
     parse_property_constraints, AffixPosition, AggregateBinding, AggregateKind, ElementKind,
-    EqualityKind, PropertyConstraint, PropertyRead,
+    EqualityKind, PropertyConstraint, PropertyRead, STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::reference_lookup::{
-    schema_property_is_fixed_once_written, MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS,
+    schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_LOOKUP_KEYS,
     MAX_LOOKUP_PATH_LENGTH,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
@@ -17,7 +17,7 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
-    property_names, ContractReferenceModeration, ContractReferenceOwner,
+    property_at_path, property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
@@ -45,13 +45,17 @@ mod v1;
 mod v2;
 mod v3;
 
+pub(in crate::data_contract) use v3::{
+    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+};
+
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
 /// How a `$ref` to one of the contract's `$defs` starts: `#/$defs/<name>`.
 const DEFINITIONS_REF_PREFIX: &str = "#/$defs/";
 
 /// The longest property path a keyword may name: `keyIdProperty`, the
-/// `propertyAgreement` pairs and the `encryptedFor` paths share it, and the
+/// `where` entries and the `encryptedFor` paths share it, and the
 /// meta-schema states the same bound as `maxLength`.
 const MAX_PROPERTY_PATH_LENGTH: usize = 256;
 
@@ -713,9 +717,9 @@ fn apply_property_reference_v0(
     };
 
     // A string or byte array property's value is not an id: a declaration
-    // with a lookup on one is read by `apply_revealed_reference`, which admits
-    // only a value revealed into a computed lookup key. Every other
-    // declaration on one is refused below
+    // with `findBy` on one is read by `apply_revealed_reference`, which admits
+    // only a value revealed into a computed key. Every other declaration on
+    // one is refused below
     if is_revealed_declaration(&property_type, refers_to_value) {
         return Ok(property_type);
     }
@@ -780,8 +784,8 @@ fn apply_property_reference_v0(
         return Err(DataContractError::InvalidContractStructure(
             "refersTo is only allowed on identifier properties, except an identityPublicKey \
              reference with identityProperty, which sits on the key id property, and a document \
-             reference whose lookup reveals a string or byte array property's value in a \
-             computed key"
+             reference whose findBy function reveals a string or byte array property's value in \
+             a computed key"
                 .to_string(),
         ));
     }
@@ -793,10 +797,10 @@ fn apply_property_reference_v0(
 
 /// Reads the `refersTo` of a string or byte array property: its value is not
 /// an id, so the one declaration it may carry is a document reference, of
-/// either kind, found through a `lookup` whose key a `propertyAgreement`
-/// function computes from the value, a commitment the value is revealed to (a
-/// salt a preorder hashed). `None` for every other property type, and for a declaration
-/// without a lookup, which [`apply_property_reference`] folds into the type or
+/// either kind, found by a `findBy` whose function computes the key from the
+/// value, a commitment the value is revealed to (a salt a preorder hashed).
+/// `None` for every other property type, and for a declaration without
+/// `findBy`, which [`apply_property_reference`] folds into the type or
 /// refuses.
 ///
 /// Versioned on `apply_property_reference`, the gate of the declaration it
@@ -823,14 +827,14 @@ fn apply_revealed_reference(
 }
 
 /// Whether `property_type` carrying `refers_to_value` is a revealed reference:
-/// a string or byte array whose declaration has a `lookup`. Version 0 of
+/// a string or byte array whose declaration has `findBy`. Version 0 of
 /// `apply_property_reference` leaves exactly these to
 /// [`apply_revealed_reference_v0`], which parses exactly these.
 fn is_revealed_declaration(property_type: &DocumentPropertyType, refers_to_value: &Value) -> bool {
     matches!(
         property_type,
         DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_)
-    ) && declares_a_lookup(refers_to_value)
+    ) && declares_find_by(refers_to_value)
 }
 
 fn apply_revealed_reference_v0(
@@ -846,8 +850,8 @@ fn apply_revealed_reference_v0(
     let refused = || {
         DataContractError::InvalidContractStructure(
             "refersTo on a string or byte array property must be a permanentDocument or \
-             deletableDocument reference whose lookup key is computed by a propertyAgreement \
-             function reading the value: the value is not an id"
+             deletableDocument reference found by a findBy function reading the value: the value \
+             is not an id"
                 .to_string(),
         )
     };
@@ -877,12 +881,12 @@ fn apply_revealed_reference_v0(
     Ok(Some(target))
 }
 
-/// Whether a `refersTo` declaration is a single target with a `lookup`, the
-/// one form a string or byte array property may carry.
-fn declares_a_lookup(refers_to_value: &Value) -> bool {
+/// Whether a `refersTo` declaration is a single target with `findBy`, the one
+/// form a string or byte array property may carry.
+fn declares_find_by(refers_to_value: &Value) -> bool {
     refers_to_value
         .to_btree_ref_string_map()
-        .is_ok_and(|declaration| declaration.contains_key(property_names::LOOKUP))
+        .is_ok_and(|declaration| declaration.contains_key(property_names::FIND_BY))
 }
 
 /// The combinator a `refersTo` declaration (or one operand of an expression)
@@ -976,10 +980,11 @@ fn parse_reference_expression_leaf(
     let reference_type = declaration
         .get_str(property_names::TYPE)
         .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-    // A deletableDocument leaf through a lookup is an existence check like
+    refuse_replaced_reference_keywords(declaration, reference_type)?;
+    // A deletableDocument leaf found by `findBy` is an existence check like
     // the others; it only asks every replace to re-validate the expression
     let deletable_lookup =
-        reference_type == "deletableDocument" && declaration.contains_key(property_names::LOOKUP);
+        reference_type == "deletableDocument" && declaration.contains_key(property_names::FIND_BY);
     let refusal = if deletable_lookup {
         None
     } else {
@@ -1002,7 +1007,7 @@ fn parse_reference_expression_leaf(
 
 /// Why a reference expression does not take a leaf of `reference_type`, `None`
 /// for the types it takes ([`COMBINABLE_REFERENCE_TARGET_TYPES`]). Those are
-/// existence checks, with a `propertyAgreement` on a document, against
+/// existence checks, with a `where` on a document, against
 /// entities that can never be deleted, so an expression of them holds for good
 /// once it holds and a replace re-validates it only when the value or a
 /// property bound to a leaf changed, as it does a single target. The others
@@ -1012,8 +1017,12 @@ fn expression_leaf_refusal_reason(reference_type: &str) -> Option<&'static str> 
         _ if COMBINABLE_REFERENCE_TARGET_TYPES.contains(&reference_type) => None,
         "deletableDocument" => Some(
             "by id it is re-validated on every replace and may be cleared once its document is \
-             deleted, which assumes the property refers to that one target; declare it with a \
-             lookup to combine it",
+             deleted, which assumes the property refers to that one target; declare it with \
+             findBy to combine it",
+        ),
+        "moderatedDocument" => Some(
+            "its value may resolve to a moderator's removal record rather than a document, \
+             which no other operand accounts for",
         ),
         "identityPublicKey" => {
             Some("it pairs the value with a key id property, which no other operand reads")
@@ -1027,13 +1036,54 @@ fn expression_leaf_refusal_reason(reference_type: &str) -> Option<&'static str> 
     }
 }
 
+/// Refuses the keywords a protocol version 14 beta spelled a document
+/// reference with, on every parse, so a contract written with them never
+/// loads with another meaning: `lookup`, now `findBy` (the index is the one
+/// whose properties it names); `propertyAgreement`, now `where`, keyed by the
+/// referenced property; and the `listElement` type, now a `permanentDocument`
+/// found by its `$id` with `inList`.
+fn refuse_replaced_reference_keywords(
+    refers_to_map: &BTreeMap<String, &Value>,
+    reference_type: &str,
+) -> Result<(), DataContractError> {
+    let refusal = if reference_type == property_names::REPLACED_LIST_ELEMENT {
+        Some(
+            "refersTo type listElement was replaced: declare a permanentDocument reference with \
+             findBy { \"$id\": <the property holding the document's id> } and inList",
+        )
+    } else if refers_to_map.contains_key(property_names::REPLACED_LOOKUP) {
+        Some(
+            "refersTo lookup was replaced by findBy: map every property of the unique index to \
+             its source, { \"<index property>\": <source> }, and leave the index name out; a \
+             propertyAgreement function goes in findBy too",
+        )
+    } else if refers_to_map.contains_key(property_names::REPLACED_PROPERTY_AGREEMENT) {
+        Some(
+            "refersTo propertyAgreement was replaced by where, keyed by the referenced \
+             document's property: { \"<referenced property>\": \"<referring property or \
+             $ownerId>\" }",
+        )
+    } else {
+        None
+    };
+    match refusal {
+        Some(refusal) => Err(DataContractError::InvalidContractStructure(
+            refusal.to_string(),
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Checks the keys of a single target declaration against its `type`: the
 /// keys that belong to one kind of target alone (`contractRequirements`,
-/// `keyRequirements`, `propertyAgreement`, `lookup`) are refused on the others.
+/// `keyRequirements`, `findBy`, `where`, `inList`) are refused on the others,
+/// and the keywords `findBy` and `where` replaced everywhere.
 fn validate_reference_target_keys(
     refers_to_map: &BTreeMap<String, &Value>,
     reference_type: &str,
 ) -> Result<(), DataContractError> {
+    refuse_replaced_reference_keywords(refers_to_map, reference_type)?;
+
     // Requirements on the referenced contract belong to contract references alone
     if reference_type != "contract"
         && refers_to_map.contains_key(property_names::CONTRACT_REQUIREMENTS)
@@ -1054,61 +1104,97 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `propertyAgreement` compares against a referenced DOCUMENT's values;
-    // no other target kind has a document body to agree with
-    if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT)
-        && !matches!(
-            reference_type,
-            "permanentDocument" | "deletableDocument" | "listElement"
-        )
-    {
-        return Err(DataContractError::InvalidContractStructure(
-            "propertyAgreement is only allowed on permanentDocument, deletableDocument and \
-             listElement references"
-                .to_string(),
-        ));
-    }
-
-    // `inList` names the list a list element belongs to; no other target
-    // reads a list
-    if refers_to_map.contains_key(property_names::IN_LIST) && reference_type != "listElement" {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "{reference_type} refersTo does not take inList: it is only allowed on listElement \
-             references"
-        )));
-    }
-
-    // `lookup` finds a referenced DOCUMENT through an index of its type, of
-    // either kind: a permanent one never dangles, and a deletable one is
-    // re-validated on every replace, since a key into a deletable type may
-    // find a new document once the one it found is deleted. The other targets
-    // are found by the value itself
-    if refers_to_map.contains_key(property_names::LOOKUP)
+    // `findBy` finds a referenced DOCUMENT through a unique index of its type,
+    // of either kind: a permanent one never dangles, and a deletable one is
+    // re-validated on every replace, since a key into a deletable type may find
+    // a new document once the one it found is deleted. A moderated one takes no
+    // `findBy`: a moderator's removal frees the document's unique index keys, so
+    // a key could come to find another document while the reference is held to
+    // the removed one's record. `where` compares a referenced DOCUMENT's values,
+    // of any kind. The other targets are found by the value itself and have no
+    // document body
+    if refers_to_map.contains_key(property_names::FIND_BY)
         && !matches!(reference_type, "permanentDocument" | "deletableDocument")
     {
+        let reason = if reference_type == "moderatedDocument" {
+            "a moderator's removal frees the unique index keys of the document it found, so \
+             the same key could find another document; refer to the document by its id"
+        } else {
+            "it is only allowed on permanentDocument and deletableDocument references"
+        };
         return Err(DataContractError::InvalidContractStructure(format!(
-            "{reference_type} refersTo does not take lookup: it is only allowed on \
-             permanentDocument and deletableDocument references"
+            "{reference_type} refersTo does not take {}: {reason}",
+            property_names::FIND_BY
+        )));
+    }
+    if refers_to_map.contains_key(property_names::WHERE)
+        && !matches!(
+            reference_type,
+            "permanentDocument" | "moderatedDocument" | "deletableDocument"
+        )
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo does not take {}: it is only allowed on \
+             permanentDocument, moderatedDocument and deletableDocument references",
+            property_names::WHERE
         )));
     }
 
-    // `minimumAgeBlocks` and `consume` describe the document a lookup's
-    // computed key finds, a commitment: they sit beside the lookup and need it
-    // (its parse checks for the propertyAgreement function computing the key)
+    // `inList` names a list on the document found by its `$id`, whose value
+    // must stay an element for good: the document is never deleted and the
+    // list never changes, which a permanent document promises
+    if refers_to_map.contains_key(property_names::IN_LIST) && reference_type != "permanentDocument"
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo does not take inList: only a permanentDocument reference, \
+             whose document is never deleted, names a list the value must be in"
+        )));
+    }
+
+    // `minimumAgeBlocks` and `consume` describe the document a `findBy`
+    // function finds, a commitment: they sit beside `findBy` and need it (its
+    // parse checks for the function computing the key)
     if let Some(keyword) = [property_names::MINIMUM_AGE_BLOCKS, property_names::CONSUME]
         .into_iter()
         .find(|keyword| refers_to_map.contains_key(*keyword))
     {
-        if !refers_to_map.contains_key(property_names::LOOKUP) {
+        if !refers_to_map.contains_key(property_names::FIND_BY) {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "{reference_type} refersTo does not take {keyword} without a lookup: it \
-                 describes the document a lookup whose key a propertyAgreement function pair \
-                 computes finds"
+                "{reference_type} refersTo does not take {keyword} without findBy: it describes \
+                 the document a findBy function finds"
             )));
         }
     }
 
     Ok(())
+}
+
+/// The document type a document reference of `reference_type` names: its
+/// `contractId`, absent for a document type of the declaring contract itself,
+/// and its `documentType`.
+fn parse_document_reference_type(
+    refers_to_map: &BTreeMap<String, &Value>,
+    reference_type: &str,
+) -> Result<(Option<Identifier>, String), DataContractError> {
+    let contract_id = refers_to_map
+        .get(property_names::CONTRACT_ID)
+        .map(|value| {
+            value
+                .to_identifier()
+                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))
+        })
+        .transpose()?;
+
+    let document_type_name = refers_to_map
+        .get_str(property_names::DOCUMENT_TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+
+    if document_type_name.is_empty() || document_type_name.len() > 64 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo documentType must be between 1 and 64 characters"
+        )));
+    }
+    Ok((contract_id, document_type_name.to_string()))
 }
 
 /// Parses a single target declaration of `reference_type` whose keys
@@ -1124,127 +1210,136 @@ fn parse_reference_target(
             contract_requirements: parse_contract_reference_requirements(refers_to_map)?,
         },
         "token" => DocumentPropertyReferenceTarget::Token,
-        // The three document targets share one declaration shape; they
-        // differ in whether the referenced document type must forbid deletion,
-        // checked against state at contract registration, and in how the
-        // document is found: by the value, through a lookup, or, for a list
-        // element, by a `$id` agreement pair
-        document_target @ ("permanentDocument" | "deletableDocument" | "listElement") => {
-            // An absent contractId means the reference targets a document
-            // type of the declaring contract itself
-            let contract_id = refers_to_map
-                .get(property_names::CONTRACT_ID)
-                .map(|value| {
-                    value
-                        .to_identifier()
-                        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))
-                })
-                .transpose()?;
-
-            let document_type_name = refers_to_map
-                .get_str(property_names::DOCUMENT_TYPE)
-                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-
-            if document_type_name.is_empty() || document_type_name.len() > 64 {
+        // A moderated document is found by the value as its id alone (the keys
+        // refused `findBy` and `inList`), with the declaration shape the other
+        // two share; whether the referenced document type leaves its documents
+        // only to a moderator's recorded removal is checked against state at
+        // contract registration
+        //
+        // A writer gate (a `where` entry valued `"$ownerId"`) is asked about on
+        // every replace, and once a moderator removes the document only its owner
+        // and its id are sure to be in its removal record (the fields a type keeps,
+        // `moderatorAbilities.deleteKeepsFields`, are left out where the document
+        // held none, and the type may be another contract's): a gate on any other
+        // property could refuse every later replace, for good on a property that
+        // can not be repointed or cleared, so it may compare only those two
+        "moderatedDocument" => {
+            let (contract_id, document_type_name) =
+                parse_document_reference_type(refers_to_map, reference_type)?;
+            let property_agreement = parse_where(refers_to_map, reference_type)?;
+            if let Some(referenced_property) =
+                property_agreement
+                    .iter()
+                    .find_map(|(referring_property, referenced_property)| {
+                        (is_referring_system_agreement_property(referring_property)
+                            && !matches!(referenced_property.as_str(), OWNER_ID | ID))
+                        .then_some(referenced_property)
+                    })
+            {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{document_target} refersTo documentType must be between 1 and 64 characters"
+                    "moderatedDocument refersTo where compares the writer with \
+                     \"{referenced_property}\": a writer is checked on every replace, and \
+                     once a moderator removes the document only its $ownerId and $id are sure \
+                     to be in its removal record, so the writer may be compared with those \
+                     alone"
                 )));
             }
+            DocumentPropertyReferenceTarget::ModeratedDocument {
+                contract_id,
+                document_type_name,
+                property_agreement,
+            }
+        }
+        // The two document targets share one declaration shape; they differ in
+        // whether the referenced document type must forbid deletion, checked
+        // against state at contract registration. The document is found by the
+        // value as its id, by `findBy` through a unique index, or, for a list
+        // the value must be in (`inList`, permanent only), by a `findBy` naming
+        // its `$id` from another property
+        document_target @ ("permanentDocument" | "deletableDocument") => {
+            let (contract_id, document_type_name) =
+                parse_document_reference_type(refers_to_map, document_target)?;
 
-            let (property_agreement, agreement_function) =
-                parse_property_agreement(refers_to_map, document_target)?;
-            // A function pair computes a key of the lookup that finds the
-            // referenced document: it needs one, whose index holds the property
-            // the pair names
-            if let Some((referenced_property, _)) = &agreement_function {
-                if document_target == "listElement"
-                    || !refers_to_map.contains_key(property_names::LOOKUP)
-                {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "{document_target} refersTo propertyAgreement \"{referenced_property}\" \
-                         is a function, which computes a key of the lookup that finds the \
-                         referenced document: declare a lookup whose index holds \
-                         \"{referenced_property}\""
-                    )));
-                }
+            let property_agreement = parse_where(refers_to_map, document_target)?;
+            let find_by = refers_to_map.get(property_names::FIND_BY);
+
+            if refers_to_map.contains_key(property_names::IN_LIST) {
+                let Some(find_by) = find_by else {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "permanentDocument refersTo inList needs findBy { \"$id\": <the property \
+                         holding the document's id> }: the value is an element of the list, not \
+                         the id of the document holding it"
+                            .to_string(),
+                    ));
+                };
+                return Ok(DocumentPropertyReferenceTarget::ListElement(
+                    parse_list_element_reference(
+                        refers_to_map,
+                        find_by,
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                    )?,
+                ));
             }
 
-            let document_type_name = document_type_name.to_string();
-            match document_target {
-                "permanentDocument" => {
-                    // A lookup is its own variant, so an id reference keeps its
-                    // shape (and its encoding in the reference errors)
-                    match refers_to_map.get(property_names::LOOKUP) {
-                        Some(lookup_value) => {
-                            let lookup = parse_document_reference_lookup(
-                                refers_to_map,
-                                lookup_value,
-                                agreement_function,
-                            )?;
-                            // A permanent document is never deleted, so there is
-                            // nothing to consume
-                            if lookup.consume {
-                                return Err(DataContractError::InvalidContractStructure(
-                                    "permanentDocument refersTo cannot consume the document its \
-                                     lookup finds, which is never deleted: consume needs a \
-                                     deletableDocument reference"
-                                        .to_string(),
-                                ));
-                            }
-                            DocumentPropertyReferenceTarget::PermanentDocumentLookup {
-                                contract_id,
-                                document_type_name,
-                                property_agreement,
-                                lookup,
-                            }
-                        }
-                        None => DocumentPropertyReferenceTarget::PermanentDocument {
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                        },
-                    }
-                }
-                "deletableDocument" => match refers_to_map.get(property_names::LOOKUP) {
-                    Some(lookup_value) => {
-                        let lookup = parse_document_reference_lookup(
-                            refers_to_map,
-                            lookup_value,
-                            agreement_function,
-                        )?;
-                        // Consuming deletes the found document, so only its
-                        // owner's own reveal may: the `$ownerId` pair makes the
-                        // writer the found document's owner
-                        if lookup.consume
-                            && property_agreement.get(OWNER_ID).map(String::as_str)
-                                != Some(OWNER_ID)
-                        {
-                            return Err(DataContractError::InvalidContractStructure(
-                                "deletableDocument refersTo may consume the document its lookup \
-                                 finds only when the writer owns it: declare the \
-                                 propertyAgreement pair \"$ownerId\": \"$ownerId\""
-                                    .to_string(),
-                            ));
-                        }
-                        DocumentPropertyReferenceTarget::DeletableDocumentLookup {
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                            lookup,
-                        }
-                    }
-                    None => DocumentPropertyReferenceTarget::DeletableDocument {
+            // A lookup is its own variant, so an id reference keeps its shape
+            // (and its encoding in the reference errors)
+            let Some(find_by) = find_by else {
+                return Ok(match document_target {
+                    "permanentDocument" => DocumentPropertyReferenceTarget::PermanentDocument {
                         contract_id,
                         document_type_name,
                         property_agreement,
                     },
-                },
-                _ => DocumentPropertyReferenceTarget::ListElement(parse_list_element_reference(
-                    refers_to_map,
-                    contract_id,
-                    document_type_name,
-                    property_agreement,
-                )?),
+                    _ => DocumentPropertyReferenceTarget::DeletableDocument {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                    },
+                });
+            };
+            let lookup = parse_find_by(refers_to_map, find_by)?;
+            match document_target {
+                "permanentDocument" => {
+                    // A permanent document is never deleted, so there is
+                    // nothing to consume
+                    if lookup.consume {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "permanentDocument refersTo cannot consume the document findBy \
+                             finds, which is never deleted: consume needs a deletableDocument \
+                             reference"
+                                .to_string(),
+                        ));
+                    }
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                        lookup,
+                    }
+                }
+                _ => {
+                    // Consuming deletes the found document, so only its
+                    // owner's own reveal may: the `$ownerId` entry makes the
+                    // writer the found document's owner
+                    if lookup.consume
+                        && property_agreement.get(OWNER_ID).map(String::as_str) != Some(OWNER_ID)
+                    {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "deletableDocument refersTo may consume the document findBy finds \
+                             only when the writer owns it: declare the where entry \
+                             \"$ownerId\": \"$ownerId\""
+                                .to_string(),
+                        ));
+                    }
+                    DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                        lookup,
+                    }
+                }
             }
         }
         "identityPublicKey" => {
@@ -1274,137 +1369,158 @@ fn parse_reference_target(
     Ok(target)
 }
 
-/// The `propertyAgreement` of a document reference of `document_target`: each
-/// `{referring property: referenced property}` pair, either side a property
-/// path or the system property its side admits (the writer's `$ownerId` on the
-/// referring side; `$ownerId`, `$creatorId` or `$id` on the referenced side),
-/// and at most one function pair, returned apart:
-/// `{referenced property: { "function": ..., "params": [...] }}`, keyed by the
-/// referenced side since a function cannot be a key, whose property must hold
-/// what the function computes from the referring document (see
-/// [`LookupHashKey`]). A function pair computes a key of the reference's
-/// lookup, which the caller checks it has. What the names resolve to is
-/// checked at registration.
-#[allow(clippy::type_complexity)]
-fn parse_property_agreement(
+/// The `where` of a document reference of `document_target`: what the
+/// referenced document must hold once found, each entry keyed by a property of
+/// the referenced document type (a property path, or `$ownerId`, `$creatorId`
+/// or `$id`) and mapped to the referring-side value it must equal (a property
+/// path of the declaring type, or `$ownerId`, the writer). Returned the way
+/// the parsed model holds it, `{referring property: referenced property}`, so
+/// a referring value may be compared once. `where` never finds the document
+/// and reads neither `"."` nor a function, which belong to `findBy`. What the
+/// names resolve to is checked at registration.
+fn parse_where(
     refers_to_map: &BTreeMap<String, &Value>,
     document_target: &str,
-) -> Result<(BTreeMap<String, String>, Option<(String, LookupHashKey)>), DataContractError> {
-    let Some(agreement_value) = refers_to_map.get(property_names::PROPERTY_AGREEMENT) else {
-        return Ok((BTreeMap::new(), None));
+) -> Result<BTreeMap<String, String>, DataContractError> {
+    let Some(where_value) = refers_to_map.get(property_names::WHERE) else {
+        return Ok(BTreeMap::new());
     };
-    let agreement_map = agreement_value.to_btree_ref_string_map()?;
-    if agreement_map.is_empty() || agreement_map.len() > 10 {
+    let where_map = where_value.to_btree_ref_string_map()?;
+    if where_map.is_empty() || where_map.len() > 10 {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "{document_target} refersTo propertyAgreement must declare between 1 and 10 \
-             property pairs"
+            "{document_target} refersTo where must compare between 1 and 10 properties"
         )));
     }
     let mut pairs = BTreeMap::new();
-    let mut function = None;
-    for (key, value) in agreement_map {
-        if key.is_empty() || key.len() > MAX_PROPERTY_PATH_LENGTH {
+    for (referenced_property, value) in where_map {
+        if referenced_property.is_empty() || referenced_property.len() > MAX_PROPERTY_PATH_LENGTH {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "propertyAgreement property paths must be between 1 and \
-                 {MAX_PROPERTY_PATH_LENGTH} characters"
+                "refersTo where property paths must be between 1 and {MAX_PROPERTY_PATH_LENGTH} \
+                 characters"
             )));
         }
-        // A function computes the referenced property's value from the
-        // referring document: the key names the referenced side
         if matches!(value, Value::Map(_)) {
-            if key.starts_with('$') {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "propertyAgreement function pair \"{key}\" must name a schema property of \
-                     the referenced document type, which the function computes"
-                )));
-            }
-            if function.is_some() {
-                return Err(DataContractError::InvalidContractStructure(
-                    "propertyAgreement holds at most one function pair".to_string(),
-                ));
-            }
-            function = Some((key, LookupHashKey::from_value(value)?));
-            continue;
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo where \"{referenced_property}\" holds a function, which computes a \
+                 key that finds the document: declare it in findBy"
+            )));
         }
-        let referring_property = key;
-        let referenced_property = value.as_text().ok_or_else(|| {
+        let referring_property = value.as_text().ok_or_else(|| {
             DataContractError::InvalidContractStructure(
-                "propertyAgreement values must be referenced property paths (strings), or a \
-                 function of the referring document keyed by the referenced property"
+                "refersTo where values must name a property of the referring document type or \
+                 \"$ownerId\", the writer"
                     .to_string(),
             )
         })?;
-        if referenced_property.is_empty() || referenced_property.len() > MAX_PROPERTY_PATH_LENGTH {
+        if referring_property.is_empty() || referring_property.len() > MAX_PROPERTY_PATH_LENGTH {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "propertyAgreement property paths must be between 1 and \
-                 {MAX_PROPERTY_PATH_LENGTH} characters"
+                "refersTo where property paths must be between 1 and {MAX_PROPERTY_PATH_LENGTH} \
+                 characters"
+            )));
+        }
+        if referring_property == LOOKUP_REFERENCE_VALUE {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo where \"{referenced_property}\" reads \".\", the reference's own \
+                 value, which only findBy reads"
             )));
         }
         // Either side may name a system property, but only one the
-        // agreement can read back as an identifier: the writer's
-        // `$ownerId` on the referring side (a write gate); `$ownerId`,
-        // `$creatorId` or `$id` on the referenced side.
-        if referring_property.starts_with('$')
-            && !is_referring_system_agreement_property(&referring_property)
-        {
-            return Err(DataContractError::InvalidContractStructure(
-                "propertyAgreement keys must name a schema property of the declaring \
-                 document type or its $ownerId"
-                    .to_string(),
-            ));
-        }
+        // comparison can read back as an identifier: `$ownerId`, `$creatorId`
+        // or `$id` on the referenced side; the writer's `$ownerId` on the
+        // referring side (a write gate)
         if referenced_property.starts_with('$')
-            && !is_referenced_system_agreement_property(referenced_property)
+            && !is_referenced_system_agreement_property(&referenced_property)
         {
             return Err(DataContractError::InvalidContractStructure(
-                "propertyAgreement values must name a schema property of the referenced \
-                 document type or one of its $ownerId, $creatorId and $id system \
-                 properties"
+                "refersTo where keys must name a property of the referenced document type or \
+                 one of its $ownerId, $creatorId and $id system properties"
                     .to_string(),
             ));
         }
-        pairs.insert(referring_property, referenced_property.to_string());
+        if referring_property.starts_with('$')
+            && !is_referring_system_agreement_property(referring_property)
+        {
+            return Err(DataContractError::InvalidContractStructure(
+                "refersTo where values must name a property of the referring document type or \
+                 its $ownerId"
+                    .to_string(),
+            ));
+        }
+        if pairs
+            .insert(referring_property.to_string(), referenced_property.clone())
+            .is_some()
+        {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo where compares \"{referring_property}\" twice: each referring value may \
+                 be compared once"
+            )));
+        }
     }
-    Ok((pairs, function))
+    Ok(pairs)
 }
 
-/// A `listElement` declaration beyond what it shares with the other document
-/// references: `inList`, the typed array of identifiers of the referenced
-/// type the value must be an element of, and, in `property_agreement`, exactly
-/// one pair with `$id` on the referenced side, whose referring side names the
-/// property holding the id of the document the list is read from (a schema
-/// property: no document has the writer's id). What the names resolve to is
-/// checked under full validation, once the document types are parsed: the
-/// `$id` pair's property against the declaring type
-/// ([`validate_list_element_sources`]), the list against the referenced one
-/// (at contract level for a type of the same contract, at registration for
-/// one of another contract), the other pairs as every agreement's.
+/// A reference to a list the value must be an element of, declared as a
+/// `permanentDocument` with `inList`, beyond what it shares with the other
+/// document references: `findBy` must be exactly `{ "$id": <property> }`,
+/// naming the property of the declaring type (a schema property: no document
+/// has the writer's id) that holds the id of the document the list is read
+/// from, and `inList` names the typed array of identifiers of the referenced
+/// type the value must be an element of. The `$id` entry joins the `where`
+/// comparisons in the parsed model's `property_agreement`, as `{property:
+/// "$id"}`. What the names resolve to is checked under full validation, once
+/// the document types are parsed: the `$id` property against the declaring
+/// type ([`validate_list_element_sources`]), the list against the referenced
+/// one (at contract level for a type of the same contract, at registration
+/// for one of another contract), the `where` comparisons as every agreement's.
 fn parse_list_element_reference(
     refers_to_map: &BTreeMap<String, &Value>,
+    find_by_value: &Value,
     contract_id: Option<Identifier>,
     document_type_name: String,
-    property_agreement: BTreeMap<String, String>,
+    mut property_agreement: BTreeMap<String, String>,
 ) -> Result<ListElementReference, DataContractError> {
-    let id_pairs = property_agreement
-        .iter()
-        .filter(|(_, referenced)| referenced.as_str() == ID)
-        .count();
-    if id_pairs != 1 {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "listElement refersTo propertyAgreement must hold exactly one pair with $id on the \
-             referenced side, naming the property whose value is the id of the document \
-             holding the list, found {id_pairs}"
-        )));
+    let find_by_map = find_by_value.to_btree_ref_string_map()?;
+    let document_id_property = match find_by_map.get(ID) {
+        Some(value) if find_by_map.len() == 1 => value.as_text(),
+        _ => None,
     }
-    if property_agreement
-        .iter()
-        .any(|(referring, referenced)| referenced.as_str() == ID && referring.starts_with('$'))
+    .ok_or_else(|| {
+        DataContractError::InvalidContractStructure(
+            "permanentDocument refersTo inList finds the document holding the list by its $id: \
+             findBy must be exactly { \"$id\": <the property holding the document's id> }"
+                .to_string(),
+        )
+    })?;
+    if document_id_property.starts_with('$')
+        || document_id_property == LOOKUP_REFERENCE_VALUE
+        || document_id_property.is_empty()
+        || document_id_property.len() > MAX_PROPERTY_PATH_LENGTH
     {
         return Err(DataContractError::InvalidContractStructure(
-            "listElement refersTo $id pair must read a property of the referring document \
-             type: no document has the writer's id"
+            "permanentDocument refersTo inList findBy $id must read a property of the referring \
+             document type: no document has the writer's id, and the value itself is the list \
+             element"
                 .to_string(),
         ));
+    }
+    if property_agreement
+        .values()
+        .any(|referenced| referenced.as_str() == ID)
+    {
+        return Err(DataContractError::InvalidContractStructure(
+            "permanentDocument refersTo inList compares $id in findBy, so where may not compare \
+             it again"
+                .to_string(),
+        ));
+    }
+    if property_agreement
+        .insert(document_id_property.to_string(), ID.to_string())
+        .is_some()
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "permanentDocument refersTo inList reads \"{document_id_property}\" in findBy and \
+             in where: each referring value may be compared once"
+        )));
     }
 
     let in_list = refers_to_map
@@ -1412,7 +1528,7 @@ fn parse_list_element_reference(
         .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
     if in_list.is_empty() || in_list.len() > MAX_PROPERTY_PATH_LENGTH || in_list.starts_with('$') {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "listElement refersTo inList must be a property path of 1 to \
+            "permanentDocument refersTo inList must be a property path of 1 to \
              {MAX_PROPERTY_PATH_LENGTH} characters"
         )));
     }
@@ -1425,9 +1541,9 @@ fn parse_list_element_reference(
     })
 }
 
-/// Checks the referring side of every `refersTo: listElement` of a document
+/// Checks the referring side of every `refersTo` with `inList` of a document
 /// type, alone or as a leaf of a reference expression, once all its
-/// properties are parsed: the `$id` pair must read a stored identifier
+/// properties are parsed: the `findBy` `$id` must read a stored identifier
 /// property of the type. See [`ListElementReference::referring_side_error`].
 ///
 /// Full validation only (registration), like the meta-schema, but in every
@@ -1446,7 +1562,7 @@ pub(super) fn validate_list_element_sources(
             continue;
         };
         // Each leaf of a reference expression is checked as it would be
-        // alone, and the error names the leaf (`refersTo anyOf[1] listElement`)
+        // alone, and the error names the leaf (`refersTo anyOf[1] inList`)
         for (leaf_path, leaf) in target.leaves_with_paths() {
             let Some(list_reference) = leaf.as_list_element_reference() else {
                 continue;
@@ -1458,7 +1574,7 @@ pub(super) fn validate_list_element_sources(
                     format!(" {leaf_path}")
                 };
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "document type \"{document_type_name}\" {}{at} listElement: {reason}",
+                    "document type \"{document_type_name}\" {}{at} inList: {reason}",
                     holder.describe()
                 )));
             }
@@ -1590,13 +1706,13 @@ fn apply_element_reference_v0(
 /// property's value, `ownerRefersTo` the document's `$ownerId` (the writer)
 /// and `creatorRefersTo` its `$creatorId` (the creator), named `value` in the
 /// errors. The declaration goes through [`apply_property_reference`] as one
-/// declared on an identifier property does, `propertyAgreement` and `lookup`
-/// included (where `"."` is that identity), but only these targets can hold an
-/// identity: `identity`, a `permanentDocument` found through a `lookup`, a
-/// `listElement` (the identity an element of the list), and a
-/// `deletableDocument` found through a `lookup`, on the writer, or on the
-/// creator when the lookup's key is computed (a commitment the create
-/// reveals), alone or as the leaves of an `anyOf` / `allOf` expression.
+/// declared on an identifier property does, `findBy` and `where` included
+/// (where `"."` is that identity), but only these targets can hold an
+/// identity: `identity`, a `permanentDocument` found by `findBy`, one with
+/// `inList` (the identity an element of the list), and a `deletableDocument`
+/// found by `findBy`, on the writer, or on the creator when the key is
+/// computed (a commitment the create reveals), alone or as the leaves of an
+/// `anyOf` / `allOf` expression.
 /// The others are refused: `contract`, `token` and a document by id, since an
 /// identity id is never a contract, token or document id, so a type declaring
 /// one could never be written, and `identityPublicKey`, which pairs the value
@@ -1685,7 +1801,7 @@ pub(super) fn parse_doctype_reference(
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
             | DocumentPropertyReferenceTarget::ListElement(_) => {}
-            // A deletable document found through a lookup gates the writer on
+            // A deletable document found by `findBy` gates the writer on
             // it existing now, and every replace asks again: the writer never
             // changes (ownerRefersTo is only on a type whose documents stay
             // with it), so the gate is the writer's own. The creator's would
@@ -1702,22 +1818,23 @@ pub(super) fn parse_doctype_reference(
                 if lookup.is_checked_on_create_only() => {}
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} does not take a deletableDocument reference unless its lookup \
+                    "{keyword}{at} does not take a deletableDocument reference unless its findBy \
                      key is computed: the creator never changes, and a document a transfer \
-                     handed on could not be replaced once the one the lookup found is deleted"
+                     handed on could not be replaced once the one findBy found is deleted"
                 )))
             }
             DocumentPropertyReferenceTarget::PermanentDocument { .. }
-            | DocumentPropertyReferenceTarget::DeletableDocument { .. } => {
+            | DocumentPropertyReferenceTarget::DeletableDocument { .. }
+            | DocumentPropertyReferenceTarget::ModeratedDocument { .. } => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} takes a document reference only with a lookup: its value, \
+                    "{keyword}{at} takes a document reference only with findBy: its value, \
                      {value}'s identity id, is never a document id"
                 )))
             }
             _ => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} takes an identity reference, a document reference with a \
-                     lookup or a listElement reference"
+                    "{keyword}{at} takes an identity reference, or a document reference with \
+                     findBy"
                 )))
             }
         }
@@ -1725,124 +1842,87 @@ pub(super) fn parse_doctype_reference(
     Ok(Some(target))
 }
 
-/// The `lookup` of a document reference: `index`, the name of an index of the
-/// referenced document type, and `keys`, properties of that index mapped to
-/// their referring-side source (`"."`, `"$ownerId"` or a property path), with
-/// `"."` exactly once. The reference's `propertyAgreement` function pair,
-/// `agreement_function`, fills the index property it names with a computed key
-/// (see [`LookupHashKey`]), so `keys` maps the other index properties and may
-/// be left out when that one is the whole index. Beside a computed key `"."`
-/// may be left out of `keys`, the function reading the value in its params or
-/// the lookup being an `ownerRefersTo` or `creatorRefersTo` one (checked with
-/// the other referring-side rules), and the `refersTo` declaring the lookup,
-/// `refers_to_map`, may declare `minimumAgeBlocks` and `consume` beside it,
-/// what the commitment the key finds must be and whether the create deletes
-/// it, held on the parsed lookup. What the names resolve to is checked once
-/// the document types are parsed: the sources against the declaring type
-/// ([`validate_reference_lookup_sources`]), the index against the referenced one
-/// (at contract level for a type of the same contract, at registration for one
-/// of another contract).
-fn parse_document_reference_lookup(
+/// The `findBy` of a document reference, `find_by_value`: properties of the
+/// referenced document type mapped to where each value comes from on the
+/// referring side (`"."`, `"$ownerId"`, a property path, or a function that
+/// computes it, at most one), the key of the unique index whose properties are
+/// exactly those it names, which is resolved against the referenced type (see
+/// [`DocumentReferenceLookup::resolve_index`]). `"."`, the reference's own
+/// value, fills the key exactly once; beside a function it may be left out,
+/// the function reading the value in its params or the reference being an
+/// `ownerRefersTo` or `creatorRefersTo` one (checked with the other
+/// referring-side rules). `$id` finds a document by id only for a list
+/// ([`parse_list_element_reference`]): without `findBy` the value is the id.
+/// Beside a function the `refersTo`, `refers_to_map`, may declare
+/// `minimumAgeBlocks` and `consume`, what the commitment the key finds must be
+/// and whether the create deletes it, held on the parsed lookup. What the
+/// names resolve to is checked once the document types are parsed: the
+/// sources against the declaring type ([`validate_reference_lookup_sources`]),
+/// the index against the referenced one (at contract level for a type of the
+/// same contract, at registration for one of another contract).
+fn parse_find_by(
     refers_to_map: &BTreeMap<String, &Value>,
-    lookup_value: &Value,
-    agreement_function: Option<(String, LookupHashKey)>,
+    find_by_value: &Value,
 ) -> Result<DocumentReferenceLookup, DataContractError> {
-    let lookup_map = lookup_value.to_btree_ref_string_map()?;
-    if let Some(unknown) = lookup_map.keys().find(|key| {
-        !matches!(
-            key.as_str(),
-            property_names::LOOKUP_INDEX | property_names::LOOKUP_KEYS
-        )
-    }) {
+    let find_by_map = find_by_value.to_btree_ref_string_map()?;
+    if find_by_map.is_empty() || find_by_map.len() > MAX_LOOKUP_KEYS {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "refersTo lookup {unknown:?} is unknown: a lookup takes index and keys \
-             (minimumAgeBlocks and consume sit beside the lookup, on the refersTo)"
+            "refersTo findBy must name between 1 and {MAX_LOOKUP_KEYS} properties, those of a \
+             unique index of the referenced document type"
         )));
     }
-
-    let index = lookup_map
-        .get_str(property_names::LOOKUP_INDEX)
-        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-    if index.is_empty() || index.len() > MAX_LOOKUP_INDEX_NAME_LENGTH {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "permanentDocument refersTo lookup index must be between 1 and \
-             {MAX_LOOKUP_INDEX_NAME_LENGTH} characters"
-        )));
+    if find_by_map.contains_key(ID) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo findBy $id names the document by id: leave findBy out when the value is \
+             the document's $id, or declare inList to find the document holding a list"
+                .to_string(),
+        ));
     }
 
-    let keys_map = match lookup_map.get(property_names::LOOKUP_KEYS) {
-        Some(keys_value) => {
-            let keys_map = keys_value.to_btree_ref_string_map()?;
-            if keys_map.is_empty() || keys_map.len() > MAX_LOOKUP_KEYS {
+    let mut keys = BTreeMap::new();
+    let mut computed_keys = 0;
+    for (index_property, source_value) in find_by_map {
+        if index_property.is_empty() || index_property.len() > MAX_LOOKUP_PATH_LENGTH {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo findBy property names must be between 1 and {MAX_LOOKUP_PATH_LENGTH} \
+                 characters"
+            )));
+        }
+        // A function computes the index property's value from the referring
+        // document
+        let source = if matches!(source_value, Value::Map(_)) {
+            if index_property.starts_with('$') {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "permanentDocument refersTo lookup keys must map between 1 and \
-                     {MAX_LOOKUP_KEYS} index properties"
+                    "refersTo findBy function \"{index_property}\" must fill a schema property \
+                     of the referenced document type, which the function computes"
                 )));
             }
-            keys_map
-        }
-        // A propertyAgreement function pair may fill the whole index
-        None if agreement_function.is_some() => BTreeMap::new(),
-        None => {
-            return Err(DataContractError::InvalidContractStructure(
-                "permanentDocument refersTo lookup must declare keys, or a propertyAgreement \
-                 function pair filling its index"
-                    .to_string(),
-            ))
-        }
-    };
-
-    let mut keys = keys_map
-        .into_iter()
-        .map(|(index_property, source_value)| {
-            if index_property.is_empty() || index_property.len() > MAX_LOOKUP_PATH_LENGTH {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "permanentDocument refersTo lookup index property names must be between 1 \
-                     and {MAX_LOOKUP_PATH_LENGTH} characters"
-                )));
+            computed_keys += 1;
+            if computed_keys > 1 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "refersTo findBy holds at most one function".to_string(),
+                ));
             }
+            LookupKeySource::Hash(LookupHashKey::from_value(source_value)?)
+        } else {
             let source = source_value.as_text().ok_or_else(|| {
                 DataContractError::InvalidContractStructure(
-                    "permanentDocument refersTo lookup keys must map each index property to a \
-                     string, \".\", \"$ownerId\" or a property path; a key computed by a \
-                     function is a propertyAgreement pair"
+                    "refersTo findBy maps each property to \".\", \"$ownerId\", a property path \
+                     of the referring document type or a function"
                         .to_string(),
                 )
             })?;
-            Ok((index_property, LookupKeySource::from_wire_name(source)?))
-        })
-        .collect::<Result<BTreeMap<String, LookupKeySource>, DataContractError>>()?;
-
-    // The function pair of the reference's agreement fills the index property
-    // it names, which `keys` then may not map
-    let computed_keys = usize::from(agreement_function.is_some());
-    if let Some((index_property, key)) = agreement_function {
-        if keys.contains_key(&index_property) {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "refersTo lookup keys map \"{index_property}\", which the propertyAgreement \
-                 function pair fills: an index property takes one source"
-            )));
-        }
-        keys.insert(index_property, LookupKeySource::Hash(key));
-    }
-    if keys.len() > MAX_LOOKUP_KEYS {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "permanentDocument refersTo lookup keys, with the propertyAgreement function pair, \
-             must fill at most {MAX_LOOKUP_KEYS} index properties"
-        )));
+            LookupKeySource::from_wire_name(source)?
+        };
+        keys.insert(index_property, source);
     }
 
-    let lookup = DocumentReferenceLookup {
-        index: index.to_string(),
-        keys,
-        minimum_age_blocks: None,
-        consume: false,
-    };
+    let lookup = DocumentReferenceLookup::new(keys);
 
     // Without the reference's own value in the key, every document would
     // resolve to the same referenced document whatever the property holds: it
-    // fills the key once, as a source or a param of the computed key. Beside a
-    // computed key `"."` may be absent here: its params may name a property
+    // fills the key once, as a source or a param of the function. Beside a
+    // function `"."` may be absent here: its params may name a property
     // carrying the reference by its path, and the writer or the creator may
     // leave the value out, which the referring-side rules check knowing where
     // the reference sits
@@ -1850,13 +1930,13 @@ fn parse_document_reference_lookup(
     let allowed_uses: &[usize] = if computed_keys == 1 { &[0, 1] } else { &[1] };
     if !allowed_uses.contains(&reference_value_uses) {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "refersTo lookup keys must read \".\", the reference's own value, exactly once, \
-             found {reference_value_uses}"
+            "refersTo findBy must read \".\", the reference's own value, exactly once, found \
+             {reference_value_uses}"
         )));
     }
 
     // What the commitment a computed key finds must be, and whether the create
-    // deletes it, declared beside the lookup: a lookup without one finds no
+    // deletes it, declared beside `findBy`: a key read as is finds no
     // commitment
     let minimum_age_blocks = refers_to_map
         .get(property_names::MINIMUM_AGE_BLOCKS)
@@ -1885,8 +1965,8 @@ fn parse_document_reference_lookup(
     };
     if computed_keys == 0 && (minimum_age_blocks.is_some() || consume) {
         return Err(DataContractError::InvalidContractStructure(
-            "refersTo minimumAgeBlocks and consume need a lookup whose key a propertyAgreement \
-             function pair computes: they describe the commitment a create reveals"
+            "refersTo minimumAgeBlocks and consume need a findBy function computing the key: \
+             they describe the commitment a create reveals"
                 .to_string(),
         ));
     }
@@ -1898,11 +1978,11 @@ fn parse_document_reference_lookup(
     })
 }
 
-/// Checks the referring side of every `refersTo` lookup of a document type,
+/// Checks the referring side of every `refersTo` `findBy` of a document type,
 /// once all its properties are parsed: each property a key reads must exist,
 /// be a stored, required, single value (with every object around it
 /// required), and not be the reference property itself. See
-/// [`DocumentReferenceLookup::referring_side_error`]. The lookup of the type's
+/// [`DocumentReferenceLookup::referring_side_error`]. The `findBy` of the type's
 /// `ownerRefersTo` or `creatorRefersTo` follows the same rules: the owner's
 /// `"$ownerId"` sources pass the owner rule, since that type cannot change
 /// owner (generation 3 refuses the keyword otherwise), and the creator's are
@@ -1926,7 +2006,7 @@ pub(super) fn validate_reference_lookup_sources(
             continue;
         };
         // Each leaf of a reference expression reads its key as it would
-        // alone, and the error names the leaf (`refersTo anyOf[1] lookup`)
+        // alone, and the error names the leaf (`refersTo anyOf[1] findBy`)
         for (leaf_path, leaf) in target.leaves_with_paths() {
             let Some(declaration) = leaf.as_any_document_reference() else {
                 continue;
@@ -1951,7 +2031,7 @@ pub(super) fn validate_reference_lookup_sources(
                     format!(" {leaf_path}")
                 };
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "document type \"{document_type_name}\" {}{at} lookup: {reason}",
+                    "document type \"{document_type_name}\" {}{at} findBy: {reason}",
                     holder.describe()
                 )));
             }
@@ -1960,8 +2040,8 @@ pub(super) fn validate_reference_lookup_sources(
     Ok(())
 }
 
-/// Why a `refersTo` leaf whose `lookup` key a `propertyAgreement` function
-/// computes, at `leaf_path` of its declaration on `document_type`, cannot be
+/// Why a `refersTo` leaf whose key a `findBy` function computes, at
+/// `leaf_path` of its declaration on `document_type`, cannot be
 /// judged on the create alone; `None` when it can (or the lookup holds no
 /// computed key). Such a leaf holds on a replace without a read, so:
 ///
@@ -1969,9 +2049,8 @@ pub(super) fn validate_reference_lookup_sources(
 ///   operand of an `anyOf`, at any depth: the `anyOf` would hold on every
 ///   replace whichever operand held on the create, and the operands a replace
 ///   asks again would never be asked;
-/// * every plain `propertyAgreement` pair beside the function reads a
-///   referring property that is transient or fixed once written (and not
-///   listed under `immutableAllowSetting`), since no replace checks the pair
+/// * every `where` entry beside the function reads a referring property that
+///   is transient or fixed once written, since no replace checks the entry
 ///   again. `"$ownerId"` is exempt: it names the writer of the create, whose
 ///   own commitment the reveal is.
 fn create_only_leaf_error(
@@ -1987,10 +2066,10 @@ fn create_only_leaf_error(
         && leaf_path.contains(ReferenceCombinator::AnyOf.wire_name())
     {
         return Some(
-            "a lookup whose key a propertyAgreement function computes is judged when the \
-             document is created only and holds on a replace without a read, so on a document \
-             type whose documents can be replaced it cannot be an operand of an anyOf: the \
-             anyOf would hold on every replace, whichever operand held on the create"
+            "a reference whose key a findBy function computes is judged when the document is \
+             created only and holds on a replace without a read, so on a document type whose \
+             documents can be replaced it cannot be an operand of an anyOf: the anyOf would hold \
+             on every replace, whichever operand held on the create"
                 .to_string(),
         );
     }
@@ -1999,17 +2078,14 @@ fn create_only_leaf_error(
         .filter(|referring| referring.as_str() != OWNER_ID)
         .find(|referring| {
             !is_transient(document_type, referring)
-                && (!schema_property_is_fixed_once_written(document_type, referring)
-                    || document_type
-                        .immutable_fields_allow_setting()
-                        .contains(referring.split('.').next().unwrap_or(referring)))
+                && !schema_property_is_fixed_once_written(document_type, referring)
         })
         .map(|referring| {
             format!(
-                "propertyAgreement pair \"{referring}\" sits beside a function, so it is judged \
-                 when the document is created only: \"{referring}\" must be fixed once written \
-                 (make the type immutable or list the property under `immutable`, and not under \
-                 `immutableAllowSetting`) or transient"
+                "where reads \"{referring}\" beside a findBy function, so it is judged when the \
+                 document is created only: \"{referring}\" must be fixed once written (make the \
+                 type immutable or list the property under `immutable` without a condition) or \
+                 transient"
             )
         })
 }
@@ -2567,23 +2643,6 @@ pub(super) fn apply_property_constraints(
     }
 }
 
-/// The property at the dotted `path` of `properties`, an object or a member of
-/// one included, `None` when the path names none.
-fn property_at_path<'a>(
-    properties: &'a IndexMap<String, DocumentProperty>,
-    path: &str,
-) -> Option<&'a DocumentProperty> {
-    let mut segments = path.split('.');
-    let mut property = properties.get(segments.next()?)?;
-    for segment in segments {
-        let DocumentPropertyType::Object(members) = &property.property_type else {
-            return None;
-        };
-        property = members.get(segment)?;
-    }
-    Some(property)
-}
-
 fn apply_property_constraints_v0(
     document_type: &mut DocumentTypeV2,
     schema_defs: Option<&BTreeMap<String, Value>>,
@@ -2591,22 +2650,8 @@ fn apply_property_constraints_v0(
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
-    let flattened_properties = &document_type.flattened_properties;
-    let equality_kind = |property_type: &DocumentPropertyType| match property_type {
-        DocumentPropertyType::String(_) => Some(EqualityKind::Text),
-        property_type if property_type.is_identifier() => Some(EqualityKind::Identifier),
-        _ => None,
-    };
-    // A typed array compares as its elements do, in a `contains`; anywhere else
-    // the reads below refuse an array where a string or an identifier belongs
-    let property_kind = |path: &str| match flattened_properties
-        .get(path)
-        .map(|property| &property.property_type)
-    {
-        Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
-        Some(property_type) => equality_kind(property_type),
-        None => None,
-    };
+    let property_kind =
+        |path: &str| property_equality_kind(&document_type.flattened_properties, path);
     let constraints =
         parse_property_constraints(&document_type.schema, document_type_name, &property_kind)?;
     let structure_error = |message: String| {
@@ -2616,318 +2661,14 @@ fn apply_property_constraints_v0(
     };
 
     for (name, constraint) in &constraints {
-        for (path, read) in constraint.property_reads() {
-            let reads = match read {
-                PropertyRead::Value => "reads",
-                PropertyRead::Presence => "tests the presence of",
-                PropertyRead::Text | PropertyRead::Identifier => "compares",
-                PropertyRead::Length => "measures",
-                PropertyRead::Count => "counts the items of",
-                PropertyRead::Elements(_) => "looks in",
-            };
-            match read {
-                PropertyRead::Value => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    // `is_integer` leaves out the 128-bit types, which the arithmetic holds
-                    // too; a boolean reads as 1 for true and 0 for false
-                    Some(property_type)
-                        if property_type.is_integer()
-                            || matches!(
-                                property_type,
-                                DocumentPropertyType::U128
-                                    | DocumentPropertyType::I128
-                                    | DocumentPropertyType::Boolean
-                            ) => {}
-                    // A string is compared with constants, never read as a number
-                    Some(DocumentPropertyType::String(_)) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which has type string, not integer \
-                             or boolean: a string property is compared, by equal or notEqual, \
-                             with a {{ \"const\": ... }} or another string property, or with the \
-                             strings an in lists"
-                        )));
-                    }
-                    // An identifier is compared with identifiers, never read as a number
-                    Some(property_type) if property_type.is_identifier() => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which has type identifier, not \
-                             integer or boolean: an identifier property is compared, by equal or \
-                             notEqual, with a {{ \"const\": base58 }} or another identifier \
-                             property, or with the identifiers an in lists"
-                        )));
-                    }
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which has type {}, not integer or \
-                             boolean",
-                            other.name()
-                        )));
-                    }
-                    // An object is not in the flattened map either: only its members hold values
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which is not an integer or boolean \
-                             property of the document type (a nested one is named by its dotted \
-                             path)"
-                        )));
-                    }
-                },
-                PropertyRead::Presence => {
-                    if property_at_path(&document_type.properties, path).is_none() {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" tests the presence of \"{path}\", which is not a \
-                             property of the document type (a nested one is named by its dotted \
-                             path)"
-                        )));
-                    }
-                }
-                PropertyRead::Text => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(DocumentPropertyType::String(_)) => {}
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" compares \"{path}\" with a string, but it has type \
-                             {}, not string",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" compares \"{path}\" with a string, but it is not a \
-                             string property of the document type (a nested one is named by its \
-                             dotted path)"
-                        )));
-                    }
-                },
-                PropertyRead::Length => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(DocumentPropertyType::String(_)) => {}
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" measures the length of \"{path}\", which has type {}, \
-                             not string: count gives the items of an array or byte array",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" measures the length of \"{path}\", which is not a \
-                             string property of the document type (a nested one is named by its \
-                             dotted path)"
-                        )));
-                    }
-                },
-                PropertyRead::Count => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(
-                        DocumentPropertyType::TypedArray(_)
-                        | DocumentPropertyType::ByteArray(_)
-                        | DocumentPropertyType::Array(_)
-                        | DocumentPropertyType::VariableTypeArray(_),
-                    ) => {}
-                    Some(DocumentPropertyType::String(_)) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" counts the items of \"{path}\", which has type \
-                             string, not array: length or byteLength gives the size of a string"
-                        )));
-                    }
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" counts the items of \"{path}\", which has type {}, \
-                             not array or byteArray",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" counts the items of \"{path}\", which is not an array \
-                             or byte array property of the document type (a nested one is named \
-                             by its dotted path)"
-                        )));
-                    }
-                },
-                PropertyRead::Elements(kind) => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(DocumentPropertyType::TypedArray(array)) => {
-                        let element_type = array.item_type.as_ref();
-                        let (holds, kind_name) = match kind {
-                            ElementKind::Integer => (
-                                element_type.is_integer()
-                                    || matches!(
-                                        element_type,
-                                        DocumentPropertyType::U128 | DocumentPropertyType::I128
-                                    ),
-                                "an integer",
-                            ),
-                            ElementKind::Text => (
-                                matches!(element_type, DocumentPropertyType::String(_)),
-                                "a string",
-                            ),
-                            ElementKind::Identifier => {
-                                (element_type.is_identifier(), "an identifier")
-                            }
-                        };
-                        if !holds {
-                            return Err(structure_error(format!(
-                                "rule \"{name}\" looks in \"{path}\" for {kind_name}, but its \
-                                 elements have type {}: contains looks for an integer, a string \
-                                 or an identifier among elements of that type",
-                                element_type.name()
-                            )));
-                        }
-                    }
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" looks in \"{path}\", which has type {}, not an \
-                             array with items",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" looks in \"{path}\", which is not an array property \
-                             of the document type (a nested one is named by its dotted path)"
-                        )));
-                    }
-                },
-                PropertyRead::Identifier => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(property_type) if property_type.is_identifier() => {}
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" compares \"{path}\" with an identifier, but it has \
-                             type {}, not identifier",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" compares \"{path}\" with an identifier, but it is \
-                             not an identifier property of the document type (a nested one is \
-                             named by its dotted path)"
-                        )));
-                    }
-                },
-            }
-            if is_transient(DocumentTypeRef::V2(document_type), path) {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" {reads} \"{path}\", which is transient or inside a \
-                     transient object: a transient value is never stored, so a stored document \
-                     could not be held to the rule"
-                )));
-            }
-        }
-        // An indexOnly type's delete carries its row's values but not its owner, so
-        // a rule reading the owner could not be judged there
-        if document_type.index_only && constraint.reads_owner() {
-            return Err(structure_error(format!(
-                "rule \"{name}\" compares $ownerId, which a delete of an indexOnly document \
-                 does not carry"
-            )));
-        }
-        for system_property in constraint.system_reads() {
-            let system_name = system_property.name();
-            // Nor its times and heights
-            if document_type.index_only {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" reads {system_name}, which a delete of an indexOnly \
-                     document does not carry"
-                )));
-            }
-            // A stored document holds only the times and heights its type requires
-            if !document_type.required_fields.contains(system_name) {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" reads {system_name}, which the document type does not \
-                     record: list it in required"
-                )));
-            }
-        }
-        // Which type an aggregate totals, and by which of its keys, is checked once
-        // every document type of the contract is parsed
-        for read in constraint.aggregate_reads() {
-            let operator = read.wire_name();
-            // Nor a total read from state, which its delete is not given
-            if document_type.index_only {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" reads a {operator}, which a delete of an indexOnly \
-                     document is not given"
-                )));
-            }
-            // The value a key is matched by is always there, so that every write reads
-            // the total of the documents matching it: a property the document could leave
-            // out, or whose enclosing object it could, would match nothing
-            for binding in read.filter.values() {
-                let AggregateBinding::Property { path, .. } = binding else {
-                    continue;
-                };
-                let mut prefix = String::new();
-                for segment in path.split('.') {
-                    if !prefix.is_empty() {
-                        prefix.push('.');
-                    }
-                    prefix.push_str(segment);
-                    if !document_type.required_fields.contains(&prefix) {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" matches a {operator} by \"{path}\", but the \
-                             document type does not require \"{prefix}\": a value a \
-                             {operator} matches by must always be there, so list it in required"
-                        )));
-                    }
-                }
-            }
-        }
-        // A constant or a default a string property's `enum` does not list is a
-        // typo: the property could never hold it
-        for (path, constant) in constraint.text_constants() {
-            if !enum_admits(&document_type.schema, schema_defs, path, constant)? {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" compares \"{path}\" with \"{constant}\", which is not one of \
-                     its enum values"
-                )));
-            }
-        }
-        // A constant a string property must start or end with, when the property
-        // declares an `enum`, must fit one of its values, or the test never holds
-        for (path, affix, position) in constraint.text_affixes() {
-            if !enum_any(&document_type.schema, schema_defs, path, |member| {
-                position.holds(member, affix)
-            })? {
-                let tests = match position {
-                    AffixPosition::Start => "starts with",
-                    AffixPosition::End => "ends with",
-                };
-                return Err(structure_error(format!(
-                    "rule \"{name}\" tests whether \"{path}\" {tests} \"{affix}\", which none \
-                     of its enum values does"
-                )));
-            }
-        }
-        for (path, default) in constraint.text_defaults() {
-            if !enum_admits(&document_type.schema, schema_defs, path, default)? {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" gives \"{path}\" the default \"{default}\", which is not \
-                     one of its enum values"
-                )));
-            }
-        }
+        validate_property_constraint_reads(
+            document_type,
+            schema_defs,
+            &format!("rule \"{name}\""),
+            constraint,
+            false,
+            &structure_error,
+        )?;
     }
 
     if full_validation {
@@ -2968,6 +2709,385 @@ fn apply_property_constraints_v0(
     }
 
     document_type.property_constraints = constraints;
+    Ok(())
+}
+
+/// How a condition compares the property at the dotted `path` of
+/// `flattened_properties` in an `equal`, `notEqual` or `in`: as a string or as
+/// an identifier, `None` as an integer (or not at all). A typed array compares
+/// as its elements do, in a `contains`; anywhere else the reads refuse an array
+/// where a string or an identifier belongs.
+pub(super) fn property_equality_kind(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+    path: &str,
+) -> Option<EqualityKind> {
+    let equality_kind = |property_type: &DocumentPropertyType| match property_type {
+        DocumentPropertyType::String(_) => Some(EqualityKind::Text),
+        property_type if property_type.is_identifier() => Some(EqualityKind::Identifier),
+        _ => None,
+    };
+    match flattened_properties
+        .get(path)
+        .map(|property| &property.property_type)
+    {
+        Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
+        Some(property_type) => equality_kind(property_type),
+        None => None,
+    }
+}
+
+/// A path a condition reads, as the document type names it: `path` itself,
+/// or, with `allow_stored_reads`, what follows the `$old.` a condition judging
+/// a replace (an `immutable` entry's, or `retractedWhen`) reads the stored
+/// document through ([`STORED_DOCUMENT_PREFIX`]). A rule of
+/// `propertyConstraints` judges the document written, so there is no stored
+/// document for it to read.
+fn stored_path<'a>(
+    path: &'a str,
+    subject: &str,
+    allow_stored_reads: bool,
+) -> Result<&'a str, String> {
+    match path.strip_prefix(STORED_DOCUMENT_PREFIX) {
+        Some(stored) if allow_stored_reads => Ok(stored),
+        Some(_) => Err(format!(
+            "{subject} reads \"{path}\", but only a condition judging a replace (an \
+             `immutable` entry's, or `retractedWhen`) reads the stored document through \
+             `{STORED_DOCUMENT_PREFIX}`"
+        )),
+        None => Ok(path),
+    }
+}
+
+/// Checks every property `constraint` reads against `document_type`, as
+/// [`apply_property_constraints`] describes for a rule: each read names a
+/// property of the kind it reads, neither transient nor inside a transient
+/// object, a system time or height the type records, and a constant or a
+/// default its string property's `enum` admits. `subject` names the condition
+/// in the errors (`rule "fee"`), and `structure_error` wraps them. With
+/// `allow_stored_reads` (the condition of an `immutable` entry) a path may read
+/// the stored document through `$old.` and is judged as the path after it.
+pub(super) fn validate_property_constraint_reads(
+    document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    subject: &str,
+    constraint: &PropertyConstraint,
+    allow_stored_reads: bool,
+    structure_error: &dyn Fn(String) -> DataContractError,
+) -> Result<(), DataContractError> {
+    for (path, read) in constraint.property_reads() {
+        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
+        let reads = match read {
+            PropertyRead::Value => "reads",
+            PropertyRead::Presence => "tests the presence of",
+            PropertyRead::Text | PropertyRead::Identifier => "compares",
+            PropertyRead::Length => "measures",
+            PropertyRead::Count => "counts the items of",
+            PropertyRead::Elements(_) => "looks in",
+        };
+        match read {
+            PropertyRead::Value => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                // `is_integer` leaves out the 128-bit types, which the arithmetic holds
+                // too; a boolean reads as 1 for true and 0 for false
+                Some(property_type)
+                    if property_type.is_integer()
+                        || matches!(
+                            property_type,
+                            DocumentPropertyType::U128
+                                | DocumentPropertyType::I128
+                                | DocumentPropertyType::Boolean
+                        ) => {}
+                // A string is compared with constants, never read as a number
+                Some(DocumentPropertyType::String(_)) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type string, not integer \
+                         or boolean: a string property is compared, by equal or notEqual, \
+                         with a {{ \"const\": ... }} or another string property, or with the \
+                         strings an in lists"
+                    )));
+                }
+                // An identifier is compared with identifiers, never read as a number
+                Some(property_type) if property_type.is_identifier() => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type identifier, not \
+                         integer or boolean: an identifier property is compared, by equal or \
+                         notEqual, with a {{ \"const\": base58 }} or another identifier \
+                         property, or with the identifiers an in lists"
+                    )));
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type {}, not integer or \
+                         boolean",
+                        other.name()
+                    )));
+                }
+                // An object is not in the flattened map either: only its members hold values
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which is not an integer or boolean \
+                         property of the document type (a nested one is named by its dotted \
+                         path)"
+                    )));
+                }
+            },
+            PropertyRead::Presence => {
+                if property_at_path(&document_type.properties, lookup).is_none() {
+                    return Err(structure_error(format!(
+                        "{subject} tests the presence of \"{path}\", which is not a \
+                         property of the document type (a nested one is named by its dotted \
+                         path)"
+                    )));
+                }
+            }
+            PropertyRead::Text => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(DocumentPropertyType::String(_)) => {}
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} compares \"{path}\" with a string, but it has type \
+                         {}, not string",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} compares \"{path}\" with a string, but it is not a \
+                         string property of the document type (a nested one is named by its \
+                         dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Length => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(DocumentPropertyType::String(_)) => {}
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} measures the length of \"{path}\", which has type {}, \
+                         not string: count gives the items of an array or byte array",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} measures the length of \"{path}\", which is not a \
+                         string property of the document type (a nested one is named by its \
+                         dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Count => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(
+                    DocumentPropertyType::TypedArray(_)
+                    | DocumentPropertyType::ByteArray(_)
+                    | DocumentPropertyType::Array(_)
+                    | DocumentPropertyType::VariableTypeArray(_),
+                ) => {}
+                Some(DocumentPropertyType::String(_)) => {
+                    return Err(structure_error(format!(
+                        "{subject} counts the items of \"{path}\", which has type \
+                         string, not array: length or byteLength gives the size of a string"
+                    )));
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} counts the items of \"{path}\", which has type {}, \
+                         not array or byteArray",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} counts the items of \"{path}\", which is not an array \
+                         or byte array property of the document type (a nested one is named \
+                         by its dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Elements(kind) => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(DocumentPropertyType::TypedArray(array)) => {
+                    let element_type = array.item_type.as_ref();
+                    let (holds, kind_name) = match kind {
+                        ElementKind::Integer => (
+                            element_type.is_integer()
+                                || matches!(
+                                    element_type,
+                                    DocumentPropertyType::U128 | DocumentPropertyType::I128
+                                ),
+                            "an integer",
+                        ),
+                        ElementKind::Text => (
+                            matches!(element_type, DocumentPropertyType::String(_)),
+                            "a string",
+                        ),
+                        ElementKind::Identifier => (element_type.is_identifier(), "an identifier"),
+                    };
+                    if !holds {
+                        return Err(structure_error(format!(
+                            "{subject} looks in \"{path}\" for {kind_name}, but its \
+                             elements have type {}: contains looks for an integer, a string \
+                             or an identifier among elements of that type",
+                            element_type.name()
+                        )));
+                    }
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} looks in \"{path}\", which has type {}, not an \
+                         array with items",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} looks in \"{path}\", which is not an array property \
+                         of the document type (a nested one is named by its dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Identifier => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(property_type) if property_type.is_identifier() => {}
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} compares \"{path}\" with an identifier, but it has \
+                         type {}, not identifier",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} compares \"{path}\" with an identifier, but it is \
+                         not an identifier property of the document type (a nested one is \
+                         named by its dotted path)"
+                    )));
+                }
+            },
+        }
+        if is_transient(DocumentTypeRef::V2(document_type), lookup) {
+            return Err(structure_error(format!(
+                "{subject} {reads} \"{path}\", which is transient or inside a \
+                 transient object: a transient value is never stored, so a stored document \
+                 could not be held to the rule"
+            )));
+        }
+    }
+    // An indexOnly type's delete carries its row's values but not its owner, so
+    // a rule reading the owner could not be judged there
+    if document_type.index_only && constraint.reads_owner() {
+        return Err(structure_error(format!(
+            "{subject} compares $ownerId, which a delete of an indexOnly document \
+             does not carry"
+        )));
+    }
+    for system_property in constraint.system_reads() {
+        let system_name = system_property.name();
+        // Nor its times and heights
+        if document_type.index_only {
+            return Err(structure_error(format!(
+                "{subject} reads {system_name}, which a delete of an indexOnly \
+                 document does not carry"
+            )));
+        }
+        // A stored document holds only the times and heights its type requires
+        if !document_type.required_fields.contains(system_name) {
+            return Err(structure_error(format!(
+                "{subject} reads {system_name}, which the document type does not \
+                 record: list it in required"
+            )));
+        }
+    }
+    // Which type an aggregate totals, and by which of its keys, is checked once
+    // every document type of the contract is parsed
+    for read in constraint.aggregate_reads() {
+        let operator = read.wire_name();
+        // Nor a total read from state, which its delete is not given
+        if document_type.index_only {
+            return Err(structure_error(format!(
+                "{subject} reads a {operator}, which a delete of an indexOnly \
+                 document is not given"
+            )));
+        }
+        // The value a key is matched by is always there, so that every write reads
+        // the total of the documents matching it: a property the document could leave
+        // out, or whose enclosing object it could, would match nothing
+        for binding in read.filter.values() {
+            let AggregateBinding::Property { path, .. } = binding else {
+                continue;
+            };
+            let mut prefix = String::new();
+            for segment in path.split('.') {
+                if !prefix.is_empty() {
+                    prefix.push('.');
+                }
+                prefix.push_str(segment);
+                if !document_type.required_fields.contains(&prefix) {
+                    return Err(structure_error(format!(
+                        "{subject} matches a {operator} by \"{path}\", but the \
+                         document type does not require \"{prefix}\": a value a \
+                         {operator} matches by must always be there, so list it in required"
+                    )));
+                }
+            }
+        }
+    }
+    // A constant or a default a string property's `enum` does not list is a
+    // typo: the property could never hold it
+    for (path, constant) in constraint.text_constants() {
+        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
+        if !enum_admits(&document_type.schema, schema_defs, lookup, constant)? {
+            return Err(structure_error(format!(
+                "{subject} compares \"{path}\" with \"{constant}\", which is not one of \
+                 its enum values"
+            )));
+        }
+    }
+    // A constant a string property must start or end with, when the property
+    // declares an `enum`, must fit one of its values, or the test never holds
+    for (path, affix, position) in constraint.text_affixes() {
+        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
+        if !enum_any(&document_type.schema, schema_defs, lookup, |member| {
+            position.holds(member, affix)
+        })? {
+            let tests = match position {
+                AffixPosition::Start => "starts with",
+                AffixPosition::End => "ends with",
+            };
+            return Err(structure_error(format!(
+                "{subject} tests whether \"{path}\" {tests} \"{affix}\", which none \
+                 of its enum values does"
+            )));
+        }
+    }
+    for (path, default) in constraint.text_defaults() {
+        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
+        if !enum_admits(&document_type.schema, schema_defs, lookup, default)? {
+            return Err(structure_error(format!(
+                "{subject} gives \"{path}\" the default \"{default}\", which is not \
+                 one of its enum values"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -3652,7 +3772,9 @@ mod tests {
                     "refersTo": {
                         "type": "permanentDocument",
                         "documentType": "post",
-                        "propertyAgreement": { "hashtag": "hashtag" }
+                        "where": {
+                            "hashtag": "hashtag"
+                        }
                     }
                 }
             },
@@ -3696,7 +3818,9 @@ mod tests {
                     "position": 0,
                     "refersTo": {
                         "type": "identity",
-                        "propertyAgreement": { "hashtag": "hashtag" }
+                        "where": {
+                            "hashtag": "hashtag"
+                        }
                     }
                 }
             },
@@ -3707,7 +3831,7 @@ mod tests {
 
         let message = err.to_string();
         assert!(
-            message.contains("propertyAgreement is only allowed on permanentDocument"),
+            message.contains("identity refersTo does not take where"),
             "unexpected error: {message}"
         );
     }
@@ -3727,7 +3851,7 @@ mod tests {
                     "refersTo": {
                         "type": "permanentDocument",
                         "documentType": "post",
-                        "propertyAgreement": {}
+                        "where": {}
                     }
                 }
             },
@@ -3738,7 +3862,7 @@ mod tests {
 
         let message = err.to_string();
         assert!(
-            message.contains("between 1 and 10 property pairs"),
+            message.contains("where must compare between 1 and 10 properties"),
             "unexpected error: {message}"
         );
     }
@@ -3758,7 +3882,7 @@ mod tests {
                     "refersTo": {
                         "type": "permanentDocument",
                         "documentType": "post",
-                        "propertyAgreement": { "hashtag": 7 }
+                        "where": { "hashtag": 7 }
                     }
                 }
             },
@@ -3769,7 +3893,7 @@ mod tests {
 
         let message = err.to_string();
         assert!(
-            message.contains("must be referenced property paths"),
+            message.contains("where values must name a property of the referring document type"),
             "unexpected error: {message}"
         );
     }
@@ -3796,7 +3920,7 @@ mod tests {
                     "refersTo": {
                         "type": "permanentDocument",
                         "documentType": "post",
-                        "propertyAgreement": agreement
+                        "where": agreement
                     }
                 }
             },
@@ -3809,7 +3933,7 @@ mod tests {
     fn should_parse_referenced_system_identifiers_in_property_agreement() {
         for referenced in ["$ownerId", "$creatorId"] {
             let document_type = try_document_type_from_schema(system_agreement_schema(json!({
-                "authorId": referenced
+                referenced: "authorId"
             })))
             .expect("a referenced-side system identifier should parse");
 
@@ -3839,13 +3963,13 @@ mod tests {
     fn should_reject_other_system_properties_on_the_referring_side_of_an_agreement() {
         for referring in ["$creatorId", "$id", "$createdAt"] {
             let err = try_document_type_from_schema(system_agreement_schema(json!({
-                referring: "$ownerId"
+                "$ownerId": referring
             })))
             .expect_err("only $ownerId may be the referring side");
 
             let message = err.to_string();
             assert!(
-                message.contains("declaring document type or its $ownerId"),
+                message.contains("referring document type or its $ownerId"),
                 "unexpected error for {referring}: {message}"
             );
         }
@@ -3855,7 +3979,7 @@ mod tests {
     fn should_parse_writer_owner_id_on_the_referring_side_of_an_agreement() {
         for referenced in ["$ownerId", "$creatorId", "authorId"] {
             let document_type = try_document_type_from_schema(system_agreement_schema(json!({
-                "$ownerId": referenced
+                referenced: "$ownerId"
             })))
             .expect("the writer's $ownerId should parse as the referring side");
 
@@ -3885,7 +4009,7 @@ mod tests {
     fn should_reject_other_system_properties_on_the_referenced_side_of_an_agreement() {
         for referenced in ["$createdAt", "$revision", "$owner"] {
             let err = try_document_type_from_schema(system_agreement_schema(json!({
-                "authorId": referenced
+                referenced: "authorId"
             })))
             .expect_err("only $ownerId, $creatorId and $id may be referenced");
 
@@ -3896,7 +4020,7 @@ mod tests {
             );
         }
         // `$id`, the referenced document's own id, is one of them
-        try_document_type_from_schema(system_agreement_schema(json!({ "authorId": "$id" })))
+        try_document_type_from_schema(system_agreement_schema(json!({ "$id": "authorId" })))
             .expect("$id may be referenced");
     }
 
@@ -4579,7 +4703,7 @@ mod tests {
                         "type": "deletableDocument",
                         "contractId": contract_id.to_string(Encoding::Base58),
                         "documentType": "draft",
-                        "propertyAgreement": { "topic": "topic", "$ownerId": "$ownerId" }
+                        "where": { "topic": "topic", "$ownerId": "$ownerId" }
                     }
                 },
                 "ownDraftId": {
@@ -4638,6 +4762,198 @@ mod tests {
                 }
             )
         );
+    }
+
+    #[test]
+    fn should_parse_moderated_document_refers_to() {
+        let contract_id = Identifier::from([7u8; 32]);
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "moderatedDocument",
+                        "contractId": contract_id.to_string(Encoding::Base58),
+                        "documentType": "post",
+                        "where": { "topic": "topic", "$ownerId": "$ownerId" }
+                    }
+                },
+                "ownPostId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1,
+                    "refersTo": {
+                        "type": "moderatedDocument",
+                        "documentType": "post"
+                    }
+                },
+                "topic": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "position": 2
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = |name: &str| {
+            document_type
+                .as_ref()
+                .flattened_properties()
+                .get(name)
+                .map(|p| p.property_type.clone())
+                .expect("property should be present")
+        };
+
+        assert_eq!(
+            property_type("postId"),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::ModeratedDocument {
+                    contract_id: Some(contract_id),
+                    document_type_name: "post".to_string(),
+                    property_agreement: [
+                        ("topic".to_string(), "topic".to_string()),
+                        ("$ownerId".to_string(), "$ownerId".to_string()),
+                    ]
+                    .into(),
+                }
+            )
+        );
+        assert_eq!(
+            property_type("ownPostId"),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::ModeratedDocument {
+                    contract_id: None,
+                    document_type_name: "post".to_string(),
+                    property_agreement: Default::default(),
+                }
+            )
+        );
+    }
+
+    /// A moderated document is referred to by its id alone: `findBy` (a removal frees the
+    /// keys it finds by), `inList` (a list on a document that may leave state) and an operand
+    /// of a reference expression (whose other operands know nothing of removal records) are
+    /// each refused.
+    #[test]
+    fn should_refuse_a_moderated_document_refers_to_not_by_its_id() {
+        for refers_to in [
+            json!({
+                "type": "moderatedDocument",
+                "documentType": "post",
+                "findBy": { "slug": "." }
+            }),
+            json!({
+                "type": "moderatedDocument",
+                "documentType": "post",
+                "findBy": { "$id": "parentId" },
+                "inList": "members"
+            }),
+            json!({
+                "anyOf": [
+                    { "type": "identity" },
+                    { "type": "moderatedDocument", "documentType": "post" }
+                ]
+            }),
+            json!({ "type": "moderatedDocument" }),
+        ] {
+            let schema = json!({
+                "type": "object",
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": refers_to.clone()
+                    },
+                    "parentId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 1
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            });
+            // By the parser alone, as a stored contract is read, and with the meta-schema
+            try_document_type_from_schema(schema.clone())
+                .expect_err(&format!("{refers_to} must be refused"));
+            try_document_type_from_schema_full_validation(schema).expect_err(&format!(
+                "{refers_to} must be refused under full validation"
+            ));
+        }
+    }
+
+    /// A writer gate on a moderatedDocument reference is asked about on every replace, and
+    /// only a removed document's owner and id are sure to be in its record: a gate on anything
+    /// else is refused, one on `$ownerId` or `$id` parses.
+    #[test]
+    fn should_refuse_a_moderated_document_writer_gate_the_removal_record_can_not_answer() {
+        let schema = |where_entries: serde_json::Value| {
+            json!({
+                "type": "object",
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "moderatedDocument",
+                            "documentType": "post",
+                            "where": where_entries
+                        }
+                    },
+                    "authorId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 1
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            })
+        };
+        for refused in [
+            json!({ "$creatorId": "$ownerId" }),
+            json!({ "authorId": "$ownerId" }),
+        ] {
+            let error = try_document_type_from_schema(schema(refused.clone()))
+                .expect_err(&format!("{refused} must be refused"));
+            assert!(
+                error.to_string().contains("compares the writer"),
+                "unexpected error: {error}"
+            );
+        }
+        for admitted in [
+            json!({ "$ownerId": "$ownerId" }),
+            json!({ "$creatorId": "authorId" }),
+        ] {
+            try_document_type_from_schema(schema(admitted.clone()))
+                .unwrap_or_else(|error| panic!("{admitted} must parse: {error}"));
+        }
     }
 
     #[test]
@@ -5200,17 +5516,19 @@ mod tests {
             json!({
                 "type": "identityPublicKey",
                 "identityProperty": "$ownerId",
-                "propertyAgreement": { "note": "note" }
+                "where": {
+                    "note": "note"
+                }
             }),
         );
         let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
         assert!(
             err.to_string()
-                .contains("propertyAgreement is only allowed"),
+                .contains("identityPublicKey refersTo does not take where"),
             "unexpected error: {err}"
         );
         try_document_type_from_schema_full_validation(schema)
-            .expect_err("the meta-schema should refuse propertyAgreement here");
+            .expect_err("the meta-schema should refuse where here");
     }
 
     #[test]

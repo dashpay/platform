@@ -378,6 +378,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentExpiredError(_) => 40140,
             Self::DocumentContestMaximumContendersReachedError(_) => 40141,
             Self::ReferencedDocumentRequirementNotMetError(_) => 40142,
+            Self::ReferencedDocumentTypeNotModeratedError(_) => 40143,
+            Self::ReferencedDocumentTypeModeratedError(_) => 40144,
+            Self::ReferencedDocumentRemovedError(_) => 40145,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -506,6 +509,14 @@ impl ErrorWithCode for StateError {
             Self::ContractModerationAbilityNotGrantedError(_) => 41201,
             Self::ModerationCharterAddedModeratorLimitReachedError(_) => 41202,
             Self::ModerationReasonNotListedError(_) => 41203,
+            Self::DocumentTypeNotDeletableOnceSettledError(_) => 41204,
+            Self::ContractModerationTeamNotSeatedError(_) => 41205,
+            Self::DocumentNotSettledError(_) => 41206,
+            Self::ContractTeamActionDoesNotExistError(_) => 41207,
+            Self::ContractTeamActionAlreadySignedError(_) => 41208,
+            Self::SettledDeletionNotRestorableError(_) => 41209,
+            Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
+            Self::ContractTeamActionDocumentChangedError(_) => 41211,
         }
     }
 }

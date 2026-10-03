@@ -66,7 +66,7 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             // older contract basic-structure generations remain frozen.
             //
             // This predicate is load-bearing rather than a shortcut: contract basic structure
-            // validation 0 and 1, which protocol versions 10 through 13 select, walk the token
+            // validation 0 and 1, which protocol versions 9 through 13 select, walk the token
             // configurations through the version 0 accessors and never ask what format version
             // they carry. On those versions the format-version check `validate_is_allowed` runs
             // is the only one there is, and it is reached only where this returns true, so a

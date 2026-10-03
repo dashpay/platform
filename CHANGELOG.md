@@ -1,3 +1,147 @@
+## [5.0.0-beta.1](https://github.com/dashpay/platform/compare/v4.2.0-beta.7...v5.0.0-beta.1) (2026-09-30)
+
+The 4.2 release line was renamed 5.0. This release follows 4.2.0-beta.7.
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** review fixes for outlivesDelete (PV14) (#5233)
+* **platform:** index entries that outlive a delete (outlivesDelete, PV14) (#5232)
+* **platform:** preallocated indexes may be bound through moderatedDocument references (PV14) (#5229)
+* **platform:** a seated moderation team deletes settled documents by approval (PV14) (#5215)
+* **platform:** review fixes for derived index properties reading kept fields (PV14) (#5224)
+* **platform:** derived index properties read a removed document's kept fields (PV14) (#5223)
+* **dpp:** moderator removal records keep the fields a type lists (PV14) (#5219)
+* **platform:** immutable properties frozen under a condition (PV14) (#5217)
+* **platform:** index a value of the document a reference points at (PV14) (#5216)
+* **dpp:** refersTo moderatedDocument, a reference that outlives a moderator's removal (PV14) (#5214)
+
+### Features
+
+* **dpp:** moderator removal records keep the fields a type lists (PV14) ([#5219](https://github.com/dashpay/platform/issues/5219))
+* **dpp:** refersTo moderatedDocument, a reference that outlives a moderator's removal (PV14) ([#5214](https://github.com/dashpay/platform/issues/5214))
+* **platform:** a seated moderation team deletes settled documents by approval (PV14) ([#5215](https://github.com/dashpay/platform/issues/5215))
+* **platform:** derived index properties read a removed document's kept fields (PV14) ([#5223](https://github.com/dashpay/platform/issues/5223))
+* **platform:** immutable properties frozen under a condition (PV14) ([#5217](https://github.com/dashpay/platform/issues/5217))
+* **platform:** index a value of the document a reference points at (PV14) ([#5216](https://github.com/dashpay/platform/issues/5216))
+* **platform:** index entries that outlive a delete (outlivesDelete, PV14) ([#5232](https://github.com/dashpay/platform/issues/5232))
+* **platform:** moderation reads: approval counts, action counts and team seats (PV14) ([#5230](https://github.com/dashpay/platform/issues/5230))
+* **platform:** preallocated indexes may be bound through moderatedDocument references (PV14) ([#5229](https://github.com/dashpay/platform/issues/5229))
+
+
+### Bug Fixes
+
+* **platform:** review fixes for derived index properties reading kept fields (PV14) ([#5224](https://github.com/dashpay/platform/issues/5224))
+* **platform:** review fixes for outlivesDelete (PV14) ([#5233](https://github.com/dashpay/platform/issues/5233))
+* **swift-sdk:** settle a stopping pass's completion and refuse manual syncs
+* **swift-sdk:** stop shielded sync off the main thread, closes [#5201](https://github.com/dashpay/platform/issues/5201)
+* **wasm-sdk:** fetch the moderated contract before verifying moderation proofs ([#5213](https://github.com/dashpay/platform/issues/5213))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** freeze App Store schema 3.0.0
+
+
+### Tests
+
+* **rs-sdk:** poll for missing-owner exclusions to expire instead of racing a fixed sleep ([#5218](https://github.com/dashpay/platform/issues/5218))
+
+## [4.2.0-beta.7](https://github.com/dashpay/platform/compare/v4.2.0-beta.6...v4.2.0-beta.7) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** refersTo finds a document with findBy and checks it with where (#5197)
+* **drive:** index null flags follow each index's own path (PV14) (#5173)
+* **platform:** a refersTo may find its document by a hash the document reveals (PV14) (#5041)
+* **platform:** integerRange index buckets an integer property into windows (#5170)
+* **dpp:** $moderatedAt and $moderatedBy record the last moderator's write (PV14) (#5161)
+* **dpp:** skipIfAbsent at any position, true or an array, on every document type (PV14) (#5162)
+* **dpp:** moderator-only document fields and deletion record and refund options (PV14) (#5158)
+* **dpp:** refuse a dotted property path in sum and average keywords (PV14) (#5104)
+* **sdk:** DataContract.validateUpdate in @dashevo/wasm-dpp2 (#5140)
+* **drive:** refuse a duplicate value in a unique index on a nested property (PV14) (#5127)
+
+### Features
+
+* add Value::same_scalar_data for comparing single values across variants ([#5125](https://github.com/dashpay/platform/issues/5125))
+* **dpp:** $moderatedAt and $moderatedBy record the last moderator's write (PV14) ([#5161](https://github.com/dashpay/platform/issues/5161))
+* **dpp:** moderator-only document fields and deletion record and refund options (PV14) ([#5158](https://github.com/dashpay/platform/issues/5158))
+* **dpp:** refersTo finds a document with findBy and checks it with where ([#5197](https://github.com/dashpay/platform/issues/5197))
+* **dpp:** skipIfAbsent at any position, true or an array, on every document type (PV14) ([#5162](https://github.com/dashpay/platform/issues/5162))
+* **drive:** compute a document type's GroveDB layout for the SDKs ([#5153](https://github.com/dashpay/platform/issues/5153))
+* **drive:** compute what creating a document costs for the SDKs ([#5159](https://github.com/dashpay/platform/issues/5159))
+* **platform:** a refersTo may find its document by a hash the document reveals (PV14) ([#5041](https://github.com/dashpay/platform/issues/5041))
+* **platform:** integerRange index buckets an integer property into windows ([#5170](https://github.com/dashpay/platform/issues/5170))
+* **sdk:** DataContract.validateUpdate in @dashevo/wasm-dpp2 ([#5140](https://github.com/dashpay/platform/issues/5140))
+* **sdk:** let apps that build document creates by hand state the contest fund ([#5163](https://github.com/dashpay/platform/issues/5163))
+
+
+### Bug Fixes
+
+* bound doctest linker concurrency on CI runners
+* **ci:** isolate NPM and Kotlin releases in disposable runners
+* **ci:** keep wallet FFI test pointer cast portable on ARM64
+* **ci:** repair headless Swift keychains and PIC RocksDB
+* **ci:** resolve Kotlin release NDK from runner environment
+* **ci:** validate runner candidates using full commit statuses
+* **dpp:** refuse a dotted property path in sum and average keywords (PV14) ([#5104](https://github.com/dashpay/platform/issues/5104))
+* **drive-abci:** check_tx refuses a masternode vote a block would refuse ([#5137](https://github.com/dashpay/platform/issues/5137))
+* **drive:** index null flags follow each index's own path (PV14) ([#5173](https://github.com/dashpay/platform/issues/5173))
+* **drive:** refuse a duplicate value in a unique index on a nested property (PV14) ([#5127](https://github.com/dashpay/platform/issues/5127))
+* **drive:** refuse indexOnly prefix pivots whose pages could be incomplete ([#5103](https://github.com/dashpay/platform/issues/5103))
+* **kotlin-sdk:** prepare secure emulator state in nightly tests
+* **platform-wallet-ffi:** report an incomplete SPV stop, and stop before switching in the example app
+* **platform-wallet:** a ProUpServTx always carries an output ([#5105](https://github.com/dashpay/platform/issues/5105))
+* **platform-wallet:** keep broadcasts on the stop's client lock again
+* **platform-wallet:** read the stop counter under the run-loop handle lock
+* **platform-wallet:** refuse an SPV start while a parked run loop is live
+* **platform-wallet:** refuse an SPV start while a stop is still joining the run loop
+* **platform-wallet:** run SPV stops one at a time and bound taking the client
+* **sdk:** accept vote poll end-date timestamps ([#5139](https://github.com/dashpay/platform/issues/5139))
+* **sdk:** index-only document creates and deletes resolve once they land ([#5136](https://github.com/dashpay/platform/issues/5136))
+* **sdk:** masternodeVote takes the ProTxHash as an Identifier and returns the vote ([#5138](https://github.com/dashpay/platform/issues/5138))
+* **swift-sdk:** handle failed SPV stops in the example app's options
+* **swift-sdk:** keep the example app's devnet rebuild and Docker toggle out of a running network switch
+* **swift-sdk:** refuse overlapping SPV calls during an async stop and fix the example app build
+* **swift-sdk:** stop SPV off the main thread
+* update trusted runner image controller pin
+
+
+### Performance Improvements
+
+* **wasm-sdk:** optimize release WASM with a single -Oz pass
+
+
+### Documentation
+
+* **release:** fix NPM dry-run tag example
+* **swift-sdk:** state the SPV stop's real upper bound
+
+
+### Tests
+
+* compare current cross-architecture runner contracts
+* preserve legacy fixtures across ordinary recipe rollout
+* **swift-sdk:** bound the wait for the fake native SPV stop to start
+
+
+### Continuous Integration
+
+* adopt verified exact-contract candidate image reuse
+* deploy isolated PR Hygiene engine on v4.2
+* isolate ARM64 image updates from the ordinary runner pool
+* isolate new ordinary AMD64 image contracts from legacy pools
+* keep optional S3 cache export outages from failing builds
+* pin integrated runner controller revision
+* re-pin PR Hygiene engine to 3b98772
+* recheck the current PR before selecting its candidate
+* restore legacy runner image template compatibility
+* use pinned ARM64 Rust images on Mac-backed Linux runners
+* **wasm-sdk:** bound optimizer threads independently of compilation
+* **wasm-sdk:** default Binaryen to four threads
+* **wasm-sdk:** inline Binaryen thread cap as a bash step
+
 ## [4.2.0-beta.6](https://github.com/dashpay/platform/compare/v4.2.0-beta.5...v4.2.0-beta.6) (2026-09-28)
 
 

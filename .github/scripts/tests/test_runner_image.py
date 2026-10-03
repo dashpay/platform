@@ -26,7 +26,8 @@ RUN_PATH = f"actions/runs/{FIXTURE['publisher_run']['id']}"
 
 class SelectorTests(unittest.TestCase):
     def setUp(self):
-        self.manifest = runner.read_manifest(ROOT / runner.MANIFEST)
+        # Historical publisher fixtures bind the legacy contract, not a future branch default.
+        self.manifest = runner.read_manifest(Path(__file__).parent / "fixtures/legacy-runner-requirements.json")
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.event = Path(self.temp.name) / "event.json"
@@ -233,7 +234,44 @@ class SelectorTests(unittest.TestCase):
                     self.assertEqual(self.select(wait_seconds=60)["image_changed"], "true")
                 sleep.assert_called_once_with(20)
                 self.assertEqual(self.status_calls(), [STATUS_PATH, STATUS_PATH])
-                self.assertEqual([call.args[0] for call in self.api.call_args_list].count("pulls/5151"), 2)
+                self.assertEqual([call.args[0] for call in self.api.call_args_list].count("pulls/5151"), 3)
+
+    def test_should_reject_head_change_or_closure_during_candidate_retry(self):
+        good = FIXTURE["statuses"][0]
+        for kind in ("rust", "kotlin", "npm"):
+            for change in ("head", "closed"):
+                with self.subTest(kind=kind, change=change):
+                    self.pr["state"] = "open"
+                    self.pr["head"]["sha"] = HEAD
+                    event = {"pull_request": copy.deepcopy(self.pr)}
+                    self.responses[STATUS_PATH] = [dict(good, state="pending")]
+
+                    def publish_after_pr_changes(_seconds):
+                        self.responses[STATUS_PATH] = [good]
+                        if change == "head":
+                            self.pr["head"]["sha"] = "e" * 40
+                        else:
+                            self.pr["state"] = "closed"
+
+                    with patch.object(runner.time, "monotonic", return_value=0), \
+                         patch.object(runner.time, "sleep", side_effect=publish_after_pr_changes):
+                        with self.assertRaisesRegex(ValueError, "PR changed before selecting"):
+                            self.select(event, kind=kind, wait_seconds=60)
+                    self.assertFalse(self.output.exists())
+
+    def test_should_fail_closed_if_final_candidate_head_check_is_unavailable(self):
+        original = self.api_response
+
+        def fail_after_publisher_validation(path):
+            response = original(path)
+            if path == RUN_PATH:
+                self.responses["pulls/5151"] = URLError("final PR check unavailable")
+            return response
+
+        with patch.object(self, "api_response", side_effect=fail_after_publisher_validation):
+            with self.assertRaisesRegex(URLError, "final PR check unavailable"):
+                self.select()
+        self.assertFalse(self.output.exists())
 
     def test_environment_export_rejects_multiline_values_before_writing(self):
         self.manifest["requirements"]["versions"]["protoc"] = "32.0\nINJECTED=yes"
@@ -311,11 +349,28 @@ class SelectorTests(unittest.TestCase):
         self.assertFalse(any("ANDROID" in name or "NDK" in name for name in values))
 
     def test_shared_rust_toolchain_does_not_drift_between_architectures(self):
-        amd = self.manifest["requirements"]
+        # This checks current contracts; historical publisher tests keep the frozen fixture.
+        amd = runner.read_manifest(ROOT / runner.MANIFEST)["requirements"]
         arm = runner.read_manifest(ROOT / runner.ARM64_MANIFEST)["requirements"]
         self.assertEqual(arm["versions"], {k: v for k, v in amd["versions"].items() if k != "cargo_ndk"})
         for key in ("rust_version", "rust_manifest_sha256", "apt_snapshot", "java_major", "client_codegen"):
             self.assertEqual(amd[key], arm[key], key)
+
+    def test_should_detect_live_amd64_drift_despite_frozen_publisher_fixture(self):
+        manifests = {ROOT / name: runner.read_manifest(ROOT / name)
+                     for name in (runner.MANIFEST, runner.ARM64_MANIFEST)}
+        manifests[ROOT / runner.MANIFEST]["requirements"]["java_major"] += 1
+        with patch.object(runner, "read_manifest", side_effect=manifests.__getitem__):
+            with self.assertRaises(AssertionError):
+                self.test_shared_rust_toolchain_does_not_drift_between_architectures()
+
+    def test_should_allow_matching_live_updates_despite_frozen_publisher_fixture(self):
+        manifests = {ROOT / name: runner.read_manifest(ROOT / name)
+                     for name in (runner.MANIFEST, runner.ARM64_MANIFEST)}
+        for manifest in manifests.values():
+            manifest["requirements"]["java_major"] += 1
+        with patch.object(runner, "read_manifest", side_effect=manifests.__getitem__):
+            self.test_shared_rust_toolchain_does_not_drift_between_architectures()
 
     def test_rejected_image_contract_stops_before_environment_export(self):
         with patch.dict(os.environ, {"RUNNER_OS": "Linux", "RUNNER_ARCH": "ARM64",

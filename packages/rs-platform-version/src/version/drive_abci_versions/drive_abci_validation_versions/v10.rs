@@ -468,7 +468,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             // results still fit the u16 query limit
             maximum_contenders_to_consider: 10_000,
             minimum_pool_notes_for_outgoing: 250,
-            minimum_token_pool_notes_for_outgoing: 0,
             shielded_anchor_retention_blocks: 1000,
             shielded_anchor_pruning_interval: 100,
             // Rebalanced for protocol 14: one Halo 2 bundle verification is

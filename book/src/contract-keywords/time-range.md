@@ -74,6 +74,8 @@ Everything written under an index with a `ttl` is billed as processing, at an ep
 
 A `ttl` removes entries from this index only. The documents stay, and so do their entries in the type's other indexes. To delete the documents themselves after a time, use the document type's [`ttl`](ttl.md).
 
+On an index-only type, a window with a `ttl` may also declare [`outlivesDelete`](index-only.md#outlivesdelete): a delete of a document then leaves its entries in the window to expire, so the delete needs no `$createdAt`, and the document keeps counting there until the window moves past it.
+
 ## Rules at registration
 
 - `on` names `$createdAt`, `$updatedAt` or `$transferredAt`, which is the index's first property and is listed in `required`. A user property cannot be bucketed by time; an integer one can be bucketed by value with [`integerRange`](integer-range.md).
@@ -83,7 +85,7 @@ A `ttl` removes entries from this index only. The documents stay, and so do thei
 - A unique time-range index has `range` equal to `step` and `on` equal to `$createdAt`.
 - The index is not contested, does not set `nullSearchable: false`, and is not `preallocated`.
 - A ranking sits below the bucketed timestamp: a single-property time-range index cannot be ranked, and `rankedCountable.at` cannot name the timestamp. See [Ranked Indexes](ranked.md).
-- A `refersTo` lookup cannot resolve through a time-range index. See [Lookups](refers-to-lookup.md).
+- A `refersTo` `findBy` cannot resolve through a time-range index. See [findBy](refers-to-lookup.md).
 - On an [index-only type](index-only.md), only `$createdAt` can be bucketed, and a bucketed index cannot serve as the type's proof index.
 
 A broken rule is refused as `InvalidContractStructure` (10231), or by the meta-schema as `JsonSchemaError` (10101). Before protocol version 14 the keyword is unknown and refused.

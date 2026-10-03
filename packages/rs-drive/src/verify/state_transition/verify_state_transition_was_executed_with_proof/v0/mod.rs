@@ -71,7 +71,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithShieldedNullifiers, VerifiedTokenGroupActionWithShieldedPoolBalance, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule, VerifiedTokenShieldedPoolBalance, VerifiedShieldedNullifiers};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedContractTeamActionSignature, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedShieldedNullifiers, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithShieldedNullifiers, VerifiedTokenGroupActionWithShieldedPoolBalance, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule, VerifiedTokenShieldedPoolBalance};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1480,6 +1480,18 @@ impl Drive {
                     platform_version,
                 )
             }
+            // A contract user moderation exists from protocol version 14 only, so no earlier
+            // proof changes.
+            StateTransition::ContractUserModeration(transition)
+                if transition.team_action_id().is_some() =>
+            {
+                verify_contract_team_action_execution(
+                    proof,
+                    transition,
+                    carries_owner_balance,
+                    platform_version,
+                )
+            }
             StateTransition::ContractUserModeration(transition)
                 if transition.action().changed_document().is_some() =>
             {
@@ -1529,9 +1541,12 @@ impl Drive {
                     }
                     ContractUserModerationAction::DeleteDocument { .. }
                     | ContractUserModerationAction::RestoreDocument { .. }
-                    | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                    | ContractUserModerationAction::ChangeDocumentFields { .. }
+                    | ContractUserModerationAction::DeleteSettledDocument { .. }
+                    | ContractUserModerationAction::ApproveTeamAction { .. } => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
-                            "a document deletion, restore or field change is verified above"
+                            "a document deletion, restore, field change or team action is \
+                             verified above"
                                 .to_string(),
                         )))
                     }
@@ -1576,7 +1591,9 @@ impl Drive {
                     }
                     ContractUserModerationAction::DeleteDocument { .. }
                     | ContractUserModerationAction::RestoreDocument { .. }
-                    | ContractUserModerationAction::ChangeDocumentFields { .. } => false,
+                    | ContractUserModerationAction::ChangeDocumentFields { .. }
+                    | ContractUserModerationAction::DeleteSettledDocument { .. }
+                    | ContractUserModerationAction::ApproveTeamAction { .. } => false,
                 };
                 if !as_expected {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -3066,6 +3083,8 @@ impl Drive {
                 // specific transition's execution.
                 Some(BatchedTransitionRef::Document(document_transition)) => {
                     use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+                    use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+                    use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
                     let data_contract_id = document_transition.data_contract_id();
                     let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
                         Error::Proof(ProofError::UnknownContract(format!(
@@ -3073,10 +3092,21 @@ impl Drive {
                             data_contract_id
                         ))),
                     )?;
-                    !contract
+                    let index_only = contract
                         .document_type_for_name(document_transition.document_type_name())
                         .map_err(|e| Error::Proof(ProofError::UnknownContract(e.to_string())))?
-                        .index_only()
+                        .index_only();
+                    // A document whose token cost is paid from a shielded pool is proven by the
+                    // document and, where one is read, the owner's balance — neither of which
+                    // names the bundle that paid. Two different payments leave the same document
+                    // behind, so a proof of the document is not a proof of the payment the
+                    // request carried, and only the state it affects is proven.
+                    let paid_from_a_shielded_pool = document_transition
+                        .base()
+                        .token_payment_info_ref()
+                        .as_ref()
+                        .is_some_and(|info| info.shielded_payment().is_some());
+                    !index_only && !paid_from_a_shielded_pool
                 }
                 Some(BatchedTransitionRef::Token(token_transition)) => {
                     let data_contract_id = token_transition.data_contract_id();
@@ -3121,12 +3151,19 @@ impl Drive {
                         // every other grouped kind is: by the signer's recorded entry under the
                         // action id this transition derives.
                         TokenTransition::MintToPool(_) => grouped,
-                        // A shielded transfer's spent nullifiers exist only if it executed.
-                        TokenTransition::ShieldedTransfer(_) => true,
-                        // Ungrouped, the pool nullifiers this burn spends exist only if it
-                        // executed. Grouped, the signer's recorded entry binds it whether or not
-                        // the action has gathered enough power to close.
-                        TokenTransition::BurnFromPool(_) => true,
+                        // Only the resulting state. A spend's nullifier comes from the note
+                        // and the viewing key, never from the outputs that replace it, so two
+                        // transfers of the same notes to different recipients carry the same
+                        // nullifiers. Whichever executes leaves evidence that fits both, and
+                        // this proof authenticates no output commitment, ciphertext or bundle
+                        // commitment that would tell them apart.
+                        TokenTransition::ShieldedTransfer(_) => false,
+                        // Grouped, the signer's recorded entry under the action id binds this
+                        // burn, and the id is derived from the digest of its actions. Ungrouped,
+                        // the evidence is the nullifiers alone, which name the notes spent and
+                        // not the amount burned: two burns of the same notes leaving different
+                        // change spend the same nullifiers.
+                        TokenTransition::BurnFromPool(_) => grouped,
                     }
                 }
             },
@@ -3167,8 +3204,11 @@ impl Drive {
             StateTransition::AddressFundingFromAssetLock(_) => false,
             StateTransition::AddressCreditWithdrawal(_) => false,
             StateTransition::Shield(_) => false,
-            // Nullifier-spend proofs bind the exact Orchard actions of this
-            // transition.
+            // A withdrawal's document id derives from its first nullifier and its output
+            // script, so that one binds its destination. The two beneath it rest on the
+            // nullifiers alone, which name the notes spent and not the outputs that replace
+            // them; they are classified the way the token families they mirror are not only
+            // because they are reached from released protocol versions.
             StateTransition::Unshield(_) => true,
             StateTransition::ShieldedTransfer(_) => true,
             StateTransition::ShieldedWithdrawal(_) => true,
@@ -3189,8 +3229,9 @@ impl Drive {
             // identity, and the credited identity's balance is a snapshot at
             // the proof's block.
             StateTransition::IdentityTopUpFromShieldedPool(_) => false,
-            // The token pool nullifiers bind the exact token bundle of this transfer.
-            StateTransition::TokenShieldedTransferWithShieldedFee(_) => true,
+            // Only the resulting state, for the reason the batched shielded transfer carries:
+            // its nullifiers name the notes it spends, not the recipients it pays.
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => false,
             // Balance and pool snapshots at the proof's block: not bindable to one transition.
             StateTransition::TokenUnshieldWithShieldedFee(_) => false,
             StateTransition::TokenPurchaseFromShieldedPool(_) => false,
@@ -3248,8 +3289,9 @@ impl Drive {
 }
 
 /// A moderator's document deletion is proved by the record it left: the one of the document
-/// named, saying that the transition's signer removed it for the transition's reason. When is
-/// the block's to say, and whose the document was only the record knows. A document id is
+/// named, saying that the transition's signer removed it for the transition's reason, and not
+/// marked restored. When is the block's to say, and whose the document was only the record
+/// knows. A document id is
 /// produced at most once, so the record is of that document and of no other.
 ///
 /// On a type whose moderators' deletions keep no record
@@ -3323,10 +3365,13 @@ fn verify_contract_document_deletion_execution(
             platform_version,
         )?;
         match (entries.pop(), entries.is_empty()) {
+            // A record marked restored says the document is live again: it proves an
+            // earlier deletion, undone since, not this one
             (Some(entry), true)
                 if entry.document_id == *document_id
                     && entry.removal.moderator_id == transition.owner_id()
-                    && entry.removal.reason == *reason =>
+                    && entry.removal.reason == *reason
+                    && entry.removal.restoration.is_none() =>
             {
                 Ok((
                     root_hash,
@@ -3371,6 +3416,40 @@ fn verify_contract_document_deletion_execution(
         }
         Ok(Some(_)) => record_error,
     })
+}
+
+/// A seated moderation team member's proposal of a settled document's deletion, or approval of a
+/// team action, is proved by the member's approval of the action wherever it is: active, or
+/// closed once the approvals met the rule and the action ran. The action's id is the one the
+/// proposal computes from its contract, signer, nonce, document and reason, or the one the
+/// approval carries, so the query is rebuilt from the transition alone: no contract is needed,
+/// and a proposal the same but for its reason is another action. An approval is never
+/// rewritten and moves only with its action, so the proof holds while the approval stands; one
+/// deleted because its member left the team no longer proves.
+fn verify_contract_team_action_execution(
+    proof: &[u8],
+    transition: &ContractUserModerationTransition,
+    verify_subset_of_proof: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let contract_id = transition.data_contract_id();
+    let Some(action_id) = transition.team_action_id() else {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "only a team action's proposal or approval is verified by its approval".to_string(),
+        )));
+    };
+    let (root_hash, status) = Drive::verify_contract_team_action_signature(
+        proof,
+        contract_id,
+        action_id,
+        transition.owner_id(),
+        verify_subset_of_proof,
+        platform_version,
+    )?;
+    Ok((
+        root_hash,
+        VerifiedContractTeamActionSignature(contract_id, action_id, status),
+    ))
 }
 
 /// A moderator's document restore is proved by the document's removal record, now marked
@@ -6220,6 +6299,12 @@ mod tests {
         use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
         use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
         use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+        use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
+        use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::v0::TokenShieldedTransferWithShieldedFeeTransitionV0;
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
+        use dpp::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
+        use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 
         let no_contracts: &ContractLookupFn = &|_id| Ok(None);
 
@@ -6275,6 +6360,79 @@ mod tests {
                 StateTransition::AddressCreditWithdrawal(AddressCreditWithdrawalTransition::V0(
                     Default::default(),
                 )),
+            ),
+            // The token pool families whose evidence is a spent nullifier, a balance or a pool
+            // total. A nullifier names the note a spend consumed, never the outputs that replace
+            // it, so it cannot tell one spend of those notes from another; a balance and a pool
+            // total are what the block committed, not a record of which request moved them.
+            // Built field by field because these carry fixed-width signatures, which no derived
+            // default covers; the classifier reads none of the fields.
+            (
+                "token shielded transfer with a shielded fee",
+                StateTransition::TokenShieldedTransferWithShieldedFee(
+                    TokenShieldedTransferWithShieldedFeeTransition::V0(
+                        TokenShieldedTransferWithShieldedFeeTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
+            ),
+            (
+                "token unshield with a shielded fee",
+                StateTransition::TokenUnshieldWithShieldedFee(
+                    TokenUnshieldWithShieldedFeeTransition::V0(
+                        TokenUnshieldWithShieldedFeeTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            recipient_id: Identifier::default(),
+                            amount: 0,
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
+            ),
+            (
+                "token purchase from a shielded pool",
+                StateTransition::TokenPurchaseFromShieldedPool(
+                    TokenPurchaseFromShieldedPoolTransition::V0(
+                        TokenPurchaseFromShieldedPoolTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            token_count: 0,
+                            total_agreed_price: 0,
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
             ),
         ];
 

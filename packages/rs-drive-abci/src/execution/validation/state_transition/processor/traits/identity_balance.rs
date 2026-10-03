@@ -77,12 +77,14 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
                     .validate_estimated_fee(balance, platform_version)
                     .map_err(Error::Protocol),
                 // A batch asking the contract owner to pay its gas cannot be judged before its
-                // contracts are loaded: the signer only has to fund the principal here, and fee
-                // validation judges the gas against whoever ends up paying it. This arm wins
-                // over the shielded floor below, and it should: the compute fee of a bundle a
-                // sponsored document carries is gas like the rest.
+                // contracts are loaded, so the signer funds the principal here and fee
+                // validation judges the gas against whoever ends up paying it. The compute fee
+                // of the bundles it carries is added to that principal, because the sponsor is
+                // not certain to pay it: a sub-transition state validation replaces with a
+                // nonce bump takes the sponsor off the whole batch, and then the signer owes the
+                // verification that already ran. A batch carrying no bundle adds nothing.
                 1 if st.requests_gas_sponsorship() => st
-                    .validate_estimated_principal(balance)
+                    .validate_estimated_principal_with_shielded_compute(balance, platform_version)
                     .map_err(Error::Protocol),
                 // A batch carrying shielded pool bundles also has to hold the compute fee those
                 // bundles will be charged. The flat per-sub-transition minimum is orders of
@@ -390,12 +392,21 @@ mod tests {
                 dpp::state_transition::batch_transition::batched_transition::BatchedTransition,
             >,
         ) -> StateTransition {
+            batch_of_with_fee_increase(transitions, 0)
+        }
+
+        fn batch_of_with_fee_increase(
+            transitions: Vec<
+                dpp::state_transition::batch_transition::batched_transition::BatchedTransition,
+            >,
+            user_fee_increase: dpp::prelude::UserFeeIncrease,
+        ) -> StateTransition {
             use dpp::state_transition::batch_transition::BatchTransitionV1;
 
             StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
                 owner_id: Default::default(),
                 transitions,
-                user_fee_increase: 0,
+                user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }))
@@ -592,7 +603,7 @@ mod tests {
         /// shielded compute fee is gas. Reserving it against the signer would refuse a
         /// sponsored document the contract owner was going to pay for.
         #[test]
-        fn should_not_reserve_the_shielded_fee_against_a_signer_who_asked_for_a_gas_sponsor() {
+        fn should_reserve_the_shielded_fee_against_a_sponsored_signer_too() {
             use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 
             let platform_version = PlatformVersion::latest();
@@ -608,8 +619,10 @@ mod tests {
                 )
                 .expect("pre check should not error");
             assert!(
-                result.is_valid(),
-                "a sponsored batch carries no principal, so its signer is asked for nothing"
+                !result.is_valid(),
+                "a sponsor is not certain to pay: a sub-transition replaced by a nonce bump takes \
+                 the sponsor off the batch and leaves the signer owing the verification that \
+                 already ran, so the signer has to hold it"
             );
 
             // The mempool still has to know the signer could not have paid unsponsored, so a
@@ -618,6 +631,121 @@ mod tests {
             assert!(st
                 .relies_on_gas_sponsor_to_pay(&identity, platform_version)
                 .expect("sponsor reliance should not error"));
+        }
+
+        #[test]
+        fn should_leave_the_released_floor_alone_when_the_signer_chose_an_increase() {
+            use dpp::state_transition::StateTransitionIdentityEstimatedFeeValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            // Generation 0 of the pre-check is what every protocol version up to 13 selects, and
+            // those are released: the balance it admits has to stay exactly what it was, whatever
+            // increase the signer chose. A plain delete carries no principal, so its floor is the
+            // flat per-sub-transition minimum.
+            let flat_minimum = platform_version
+                .fee_version
+                .state_transition_min_fees
+                .document_batch_sub_transition;
+
+            for increase in [0u16, 50] {
+                let StateTransition::Batch(batch) =
+                    batch_of_with_fee_increase(vec![document_delete(None)], increase)
+                else {
+                    panic!("the fixture builds a batch");
+                };
+                assert!(
+                    batch
+                        .validate_estimated_fee(flat_minimum, platform_version)
+                        .expect("estimated fee should not error")
+                        .is_valid(),
+                    "generation 0 is released: an increase of {increase} must not move its floor"
+                );
+            }
+        }
+
+        #[test]
+        fn should_ask_for_the_fee_increase_the_signer_chose_on_top_of_the_compute_fee() {
+            let platform_version = PlatformVersion::latest();
+            let actions = 2usize;
+
+            // The balance that exactly meets the floor when the signer asked for no increase.
+            let flat_minimum = platform_version
+                .fee_version
+                .state_transition_min_fees
+                .document_batch_sub_transition;
+            let shielded_fee =
+                dpp::shielded::compute_shielded_verification_fee(actions, platform_version)
+                    .expect("shielded compute fee");
+            let exactly_enough = shielded_fee + flat_minimum;
+
+            // Asserted relationally: the same batch and the same balance, differing only in the
+            // increase the signer chose, so the test cannot pass by agreeing with whatever the
+            // floor happens to compute.
+            assert!(
+                batch_of_with_fee_increase(vec![claim_to_pool(actions)], 0)
+                    .validate_identity_minimum_balance_pre_check(
+                        &identity_with_balance(exactly_enough),
+                        platform_version,
+                    )
+                    .expect("pre check should not error")
+                    .is_valid(),
+                "the floor without an increase is the baseline this test moves from"
+            );
+            assert!(
+                !batch_of_with_fee_increase(vec![claim_to_pool(actions)], 50)
+                    .validate_identity_minimum_balance_pre_check(
+                        &identity_with_balance(exactly_enough),
+                        platform_version,
+                    )
+                    .expect("pre check should not error")
+                    .is_valid(),
+                "settlement charges the increase the signer asked for, so the floor has to ask \
+                 for it too: otherwise the proof is verified and then nobody can be charged"
+            );
+        }
+
+        #[test]
+        fn should_hold_a_sponsored_signer_to_the_whole_floor_when_its_batch_carries_a_bundle() {
+            use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+
+            let platform_version = PlatformVersion::latest();
+            let actions = 2usize;
+            let st = batch_of(vec![document_paid_from_pool(
+                actions,
+                GasFeesPaidBy::ContractOwner,
+            )]);
+
+            let flat_minimum = platform_version
+                .fee_version
+                .state_transition_min_fees
+                .document_batch_sub_transition;
+            let compute_fee =
+                dpp::shielded::compute_shielded_verification_fee(actions, platform_version)
+                    .expect("shielded compute fee");
+
+            // The compute fee alone is what a failed event does not cost: dropping the sponsor
+            // leaves the signer owing the signature, the contract reads, the pool reads and the
+            // nonce bump beside it. Holding a sponsored signer to the floor an unsponsored one
+            // meets is what makes the failure chargeable, since that floor already is.
+            assert!(
+                !st.validate_identity_minimum_balance_pre_check(
+                    &identity_with_balance(compute_fee),
+                    platform_version,
+                )
+                .expect("pre check should not error")
+                .is_valid(),
+                "the compute fee alone leaves the rest of a failed event unfunded"
+            );
+            assert!(
+                st.validate_identity_minimum_balance_pre_check(
+                    &identity_with_balance(compute_fee + flat_minimum),
+                    platform_version,
+                )
+                .expect("pre check should not error")
+                .is_valid(),
+                "the whole floor is what it is asked for, the same one an unsponsored batch meets"
+            );
         }
 
         /// Every bundle in a batch is priced, not just the first: the floor asks for the sum,

@@ -47,7 +47,7 @@ The refusals below are `InvalidContractStructure` (10231) unless a bullet says o
 - `$createdAt` must be in `required`.
 - Refused together with `documentsKeepHistory: true` (Drive never deletes a document whose type keeps history), with `indexOnly: true` (there is no stored row to delete by id), and on a type with a contested index (a contested document waits in its vote poll, and could expire before it is stored).
 - At least `min_document_ttl_seconds` and at most `max_document_ttl_seconds` of `SystemLimits`: 3600 and 31536000 at protocol version 14. The meta-schema itself admits 1 to 4294967295, so a `ttl` of 0 is a `JsonSchemaError` (10101) and one outside the narrower bounds is 10231.
-- For references, a type with a `ttl` is deletable. A `permanentDocument` reference and a `listElement` reference may not point at it, a lookup included (`ReferencedDocumentTypeDeletableError`, 40122); a `deletableDocument` reference may. See [References](refers-to.md).
+- For references, a type with a `ttl` is deletable. A `permanentDocument` reference may not point at it, one found by `findBy` or with `inList` included (`ReferencedDocumentTypeDeletableError`, 40122); a `deletableDocument` reference may. See [References](refers-to.md).
 
 Everything else combines with a `ttl`: mutable types, `transferable`, `tradeMode`, `moderatorAbilities.delete`, `creationRestrictionMode`, count, sum and ranked indexes, `timeRange` indexes with or without their own `ttl`, references declared on the type, action fees and token costs.
 

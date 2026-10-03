@@ -162,8 +162,11 @@ impl_wire_query!(
     proto::GetContractGroupInfoRequest,
     proto::GetContractGroupMembersRequest,
     proto::GetContractGroupsForContractRequest,
+    proto::GetContractModerationActionCountsRequest,
     proto::GetContractModerationEntriesRequest,
     proto::GetContractModerationStatusRequest,
+    proto::GetContractTeamActionSignersRequest,
+    proto::GetContractTeamActionsRequest,
     proto::GetCurrentQuorumsInfoRequest,
     proto::GetDataContractHistoryRequest,
     proto::GetDataContractsLatestVersionsRequest,
@@ -1308,7 +1311,10 @@ impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
     ) -> Result<GetShieldedPoolStateRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedPoolState requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedPoolStateRequest {
@@ -1358,7 +1364,10 @@ impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
     ) -> Result<GetShieldedAnchorsRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedAnchors requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedAnchorsRequest {
@@ -1379,7 +1388,10 @@ impl Query<GetMostRecentShieldedAnchorRequest> for NoParamQuery {
     ) -> Result<GetMostRecentShieldedAnchorRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetMostRecentShieldedAnchor requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetMostRecentShieldedAnchorRequest {
@@ -1400,7 +1412,10 @@ impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
     ) -> Result<GetShieldedEncryptedNotesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedEncryptedNotes requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedEncryptedNotesRequest {
@@ -1423,7 +1438,10 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
     ) -> Result<GetShieldedNullifiersRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedNullifiers requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedNullifiersRequest {
@@ -1447,7 +1465,10 @@ impl Query<GetShieldedPoolStateRequest> for TokenShieldedPoolQuery {
     ) -> Result<GetShieldedPoolStateRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedPoolState requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedPoolStateRequest {
@@ -1492,7 +1513,10 @@ impl Query<GetShieldedAnchorsRequest> for TokenShieldedPoolQuery {
     ) -> Result<GetShieldedAnchorsRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedAnchors requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedAnchorsRequest {
@@ -1513,7 +1537,10 @@ impl Query<GetMostRecentShieldedAnchorRequest> for TokenShieldedPoolQuery {
     ) -> Result<GetMostRecentShieldedAnchorRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetMostRecentShieldedAnchor requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetMostRecentShieldedAnchorRequest {
@@ -1534,7 +1561,10 @@ impl Query<GetShieldedEncryptedNotesRequest> for TokenShieldedEncryptedNotesQuer
     ) -> Result<GetShieldedEncryptedNotesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedEncryptedNotes requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedEncryptedNotesRequest {
@@ -1557,7 +1587,10 @@ impl Query<GetShieldedNullifiersRequest> for TokenShieldedNullifiersQuery {
     ) -> Result<GetShieldedNullifiersRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedNullifiers requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedNullifiersRequest {

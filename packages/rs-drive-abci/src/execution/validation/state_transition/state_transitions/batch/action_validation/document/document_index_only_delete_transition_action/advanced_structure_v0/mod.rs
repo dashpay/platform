@@ -4,6 +4,7 @@ use dpp::consensus::basic::document::{
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::index_only_row_commits_created_at;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::document::property_names::CREATED_AT;
 use dpp::prelude::TimestampMillis;
@@ -82,7 +83,12 @@ impl DocumentIndexOnlyDeleteTransitionActionStructureValidationV0
         // mismatches downstream), and type-check it as a timestamp.
         let mut user_data = self.data().clone();
         let carried_created_at = user_data.remove(CREATED_AT);
-        let requires_created_at = document_type.required_fields().contains(CREATED_AT);
+        // The row commits to `$createdAt` unless only indexes whose entries
+        // outlive the delete involve it; then the delete carries none.
+        let requires_created_at = index_only_row_commits_created_at(
+            document_type.required_fields(),
+            document_type.index_structure(),
+        );
         match (requires_created_at, carried_created_at) {
             (true, None) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -98,7 +104,8 @@ impl DocumentIndexOnlyDeleteTransitionActionStructureValidationV0
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     InvalidDocumentTransitionActionError::new(format!(
                         "a delete of indexOnly document type {} must not carry $createdAt: \
-                         the type does not use it",
+                         its rows do not commit to it (the type does not require it, or only \
+                         indexes whose entries outlive a delete involve it)",
                         document_type_name
                     ))
                     .into(),
