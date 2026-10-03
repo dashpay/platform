@@ -944,6 +944,10 @@ pub(crate) trait WalletSource: Send + Sync {
     /// The wallets whose records hold `txid` — one look under one lock.
     async fn holders(&self, txid: Txid) -> Vec<WalletId>;
 
+    /// The wallets in which `txid` is still an unsettled own send — the only
+    /// ones a late acceptance may still be news to.
+    async fn unsettled_own_holders(&self, txid: Txid) -> Vec<WalletId>;
+
     /// `None`: no such wallet. `Some(None)`: nothing to do (see
     /// [`forced_held`]) — decided without walking the records. `walk` is read
     /// once the wallet is at hand: a catch-up may clear it meanwhile.
@@ -965,6 +969,23 @@ fn holds(info: &PlatformWalletInfo, txid: &Txid) -> bool {
         .any(|account| account.transactions().contains_key(txid))
 }
 
+/// Whether `txid` is an own send of the wallet that no account has settled
+/// (in a block, InstantSend-locked, or finalized) — the same rule as
+/// [`merge_records`]: settled in any account means settled.
+fn holds_unsettled_own(info: &PlatformWalletInfo, txid: &Txid) -> bool {
+    let mut own = false;
+    for account in info.core_wallet.accounts.all_accounts() {
+        let Some(record) = account.transactions().get(txid) else {
+            continue;
+        };
+        if is_settled(record) || account.transaction_is_finalized(txid) {
+            return false;
+        }
+        own |= !record.input_details.is_empty();
+    }
+    own
+}
+
 struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
 
 #[async_trait]
@@ -978,6 +999,20 @@ impl WalletSource for ManagerSource {
                 manager
                     .get_wallet_info(wallet_id)
                     .is_some_and(|info| holds(info, &txid))
+            })
+            .copied()
+            .collect()
+    }
+
+    async fn unsettled_own_holders(&self, txid: Txid) -> Vec<WalletId> {
+        let manager = self.0.read().await;
+        manager
+            .list_wallets()
+            .into_iter()
+            .filter(|wallet_id| {
+                manager
+                    .get_wallet_info(wallet_id)
+                    .is_some_and(|info| holds_unsettled_own(info, &txid))
             })
             .copied()
             .collect()
@@ -1089,7 +1124,13 @@ enum JobDone {
     /// The wallets holding a transaction reported `Uncertain`.
     Listed { txid: Txid, wallets: Vec<WalletId> },
     /// The wallets holding a send that was echoed after its `Uncertain`.
-    EchoListed { txid: Txid, wallets: Vec<WalletId> },
+    /// `token` names the echo this lookup answers: a send that settled, or a
+    /// wallet that left or re-registered, since then has withdrawn it.
+    EchoListed {
+        txid: Txid,
+        wallets: Vec<WalletId>,
+        token: u64,
+    },
     Read {
         wallet_id: WalletId,
         run: u64,
@@ -1188,6 +1229,11 @@ struct Actor {
     /// one of them is its acceptance. One entry per such send, removed by its
     /// echo.
     uncertain: HashSet<Txid>,
+    /// Echoes whose holder lookup is out, by the token their result carries.
+    /// A send that settles, or a wallet that leaves or re-registers, withdraws
+    /// them: an acceptance landing after that must not reach the host.
+    echo_lookups: HashMap<Txid, u64>,
+    next_echo_token: u64,
 }
 
 impl Actor {
@@ -1207,6 +1253,8 @@ impl Actor {
             jobs: JoinSet::new(),
             job_runs: HashMap::new(),
             uncertain: HashSet::new(),
+            echo_lookups: HashMap::new(),
+            next_echo_token: 0,
         }
     }
 
@@ -1399,6 +1447,12 @@ impl Actor {
                         }
                     }
                 }
+                // Settled sends have nothing left to accept: an echo, or a
+                // lookup for one already out, must not publish after this.
+                for txid in &txids {
+                    self.uncertain.remove(txid);
+                    self.echo_lookups.remove(txid);
+                }
                 let events = self.state.settle(wallet_id, &txids);
                 deliver(&self.sink, events);
                 if next_probe {
@@ -1440,11 +1494,15 @@ impl Actor {
                 if !self.enabled || !self.uncertain.remove(&txid) {
                     return;
                 }
+                let token = self.next_echo_token;
+                self.next_echo_token += 1;
+                self.echo_lookups.insert(txid, token);
                 let source = Arc::clone(&self.source);
                 self.jobs.spawn(async move {
                     JobDone::EchoListed {
                         txid,
-                        wallets: source.holders(txid).await,
+                        wallets: source.unsettled_own_holders(txid).await,
+                        token,
                     }
                 });
             }
@@ -1465,6 +1523,8 @@ impl Actor {
                     }
                 }
                 if !enabled {
+                    self.uncertain.clear();
+                    self.echo_lookups.clear();
                     let events = self.state.forget_all();
                     deliver(&self.sink, events);
                 }
@@ -1485,6 +1545,9 @@ impl Actor {
         if let Some(run) = self.wallets.remove(wallet_id).and_then(|entry| entry.run) {
             run.abort.abort();
         }
+        // Which wallet an echo's lookup will name is not known yet: withdraw
+        // them all — at worst an acceptance waits for the next probe.
+        self.echo_lookups.clear();
         let events = self.state.forget_wallet(wallet_id, trigger);
         deliver(&self.sink, events);
     }
@@ -1549,10 +1612,15 @@ impl Actor {
                     self.start(wallet_id);
                 }
             }
-            JobDone::EchoListed { txid, wallets } => {
-                if !self.enabled {
+            JobDone::EchoListed {
+                txid,
+                wallets,
+                token,
+            } => {
+                if !self.enabled || self.echo_lookups.get(&txid) != Some(&token) {
                     return;
                 }
+                self.echo_lookups.remove(&txid);
                 let mut events = Vec::new();
                 for wallet_id in wallets {
                     let Some(entry) = self.wallets.get(&wallet_id) else {
@@ -2972,6 +3040,21 @@ mod tests {
                 .collect()
         }
 
+        async fn unsettled_own_holders(&self, txid: Txid) -> Vec<WalletId> {
+            self.views
+                .lock()
+                .expect("views")
+                .iter()
+                .filter(|(_, views)| {
+                    // Views are the wallet's unsettled records.
+                    views
+                        .iter()
+                        .any(|view| view.txid == txid && view.spends_own_coins)
+                })
+                .map(|(wallet_id, _)| *wallet_id)
+                .collect()
+        }
+
         async fn read(
             &self,
             wallet_id: WalletId,
@@ -3168,6 +3251,52 @@ mod tests {
             rig.sent(),
             vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
         );
+    }
+
+    /// An acceptance whose lookup was out when the send settled must not
+    /// reach the host after the send's verdict was cleared.
+    #[tokio::test]
+    async fn should_drop_an_acceptance_that_lands_after_the_send_settled() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.sent();
+
+        // The echo's lookup is out, then the send settles before it lands.
+        rig.handle(Command::Echoed(txid(1)));
+        rig.handle(Command::Settled {
+            wallet_id: wallet(),
+            txids: HashSet::from([txid(1)]),
+        });
+        rig.settle().await;
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+    }
+
+    /// A late acceptance is news only to a wallet where the send is still an
+    /// unsettled own send: one that only receives it hears nothing.
+    #[tokio::test]
+    async fn should_publish_a_late_acceptance_only_to_an_own_unsettled_send() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe).await;
+        rig.views(wallet(), vec![incoming(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.sent();
+
+        rig.send(Command::Echoed(txid(1))).await;
+
+        assert!(rig.sent().is_empty());
     }
 
     /// Every healthy send is echoed: only one reported `Uncertain` first gets
