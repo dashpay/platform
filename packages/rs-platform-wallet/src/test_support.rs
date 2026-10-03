@@ -17,6 +17,7 @@ use dashcore::BlockHash;
 use dashcore::Txid;
 use dashcore::{Network, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
 // Only the `#[cfg(test)]` CoinJoin fixture needs the trait (for
 // `next_address_with_info` on a non-standard account); gate it to match so a
@@ -581,7 +582,41 @@ pub async fn funded_spv_core_wallet(
     crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
     WalletSigner,
 ) {
-    let (manager, wallet_id, generation, signer) = funded_wallet_manager(account_type).await;
+    funded_spv_core_wallet_with_outputs(account_type, &[10_000_000], &[]).await
+}
+
+/// Like [`funded_spv_core_wallet`] with caller-chosen funding outputs; every
+/// coin whose value is listed in `not_final` is marked neither mined nor
+/// InstantSend-locked — a coin the network has not confirmed yet.
+pub async fn funded_spv_core_wallet_with_outputs(
+    account_type: StandardAccountType,
+    outputs: &[u64],
+    not_final: &[u64],
+) -> (
+    crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
+    WalletSigner,
+) {
+    let (manager, wallet_id, generation, signer) =
+        funded_wallet_manager_with_outputs(account_type, outputs).await;
+    {
+        let mut guard = manager.write().await;
+        let (_, info) = guard.get_wallet_and_info_mut(&wallet_id).expect("wallet");
+        let account = AccountType::Standard {
+            index: 0,
+            standard_account_type: account_type,
+        };
+        let managed = info
+            .core_wallet
+            .accounts
+            .funds_account_mut(&account)
+            .expect("funded account");
+        for utxo in managed.utxos.values_mut() {
+            if not_final.contains(&utxo.value()) {
+                utxo.is_confirmed = false;
+                utxo.is_instantlocked = false;
+            }
+        }
+    }
     let spv = Arc::new(crate::spv::SpvRuntime::new(
         Arc::clone(&manager),
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),

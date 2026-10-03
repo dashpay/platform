@@ -2,6 +2,7 @@
 
 use dpp::prelude::Identifier;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
 
 use std::sync::Arc;
 
@@ -1290,7 +1291,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             funding_paths.insert(utxo.address.clone(), path);
                         }
                     }
-                    waiting += waiting_net_value(managed.spendable_utxos(current_height));
+                    waiting += waiting_net_value(
+                        managed.spendable_utxos(current_height),
+                        FeeRate::normal(),
+                    );
                     finals += final_count(managed.spendable_utxos(current_height));
                     builder = builder.add_funding(managed, account);
                     offered_accounts.push(at);
@@ -1344,7 +1348,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     return Err(build_error_awaiting_network(
                         e,
                         waiting,
-                        final_inputs_fee(finals),
+                        final_inputs_fee(finals, FeeRate::normal()),
+                        Some(amount_duffs),
                     ));
                 }
             };
