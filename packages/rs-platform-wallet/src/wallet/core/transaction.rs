@@ -1045,6 +1045,21 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     return Err(error);
                 }
             };
+            // `require_final_inputs` judged the builder's copies of the coins.
+            // A seeded input is the caller's snapshot, and key-wallet keeps it
+            // over the resident entry, so a coin a reorg has since demoted
+            // would pass on its old confirmed flag. The resident coins are
+            // what gets signed: check those, still under the write guard.
+            if let Some(stale) = selected.iter().find(|utxo| !is_final(utxo)) {
+                let error = PlatformWalletError::CoreFundsAwaitingNetwork {
+                    available: None,
+                    waiting: stale.value(),
+                    required: None,
+                    outpoint: Some(stale.outpoint),
+                };
+                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
+                return Err(error);
+            }
             // Duplicate prevouts make a transaction invalid (Core rejects it),
             // and additive funding is the shape that can produce them — an
             // outpoint seeded by `add_inputs` that a funding account also
@@ -1280,8 +1295,8 @@ mod tests {
     use tokio::sync::RwLock;
 
     use crate::wallet::core::transaction::{
-        build_error_awaiting_network, final_inputs_fee, modeled_output_script, waiting_net_value,
-        OutputShape, ShortfallBasis, MAX_STANDARD_TX_INPUTS,
+        build_error_awaiting_network, final_inputs_fee, is_final, modeled_output_script,
+        waiting_net_value, OutputShape, ShortfallBasis, MAX_STANDARD_TX_INPUTS,
     };
     use crate::wallet::core::CoreWallet;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -2563,6 +2578,67 @@ mod tests {
             ),
             "got {result:?}"
         );
+    }
+
+    /// A coin seeded while final and demoted before finalization (a reorg) is
+    /// refused on its resident status, before anything is signed, and leaves no
+    /// reservation behind — with ordinary and with `reservation_only` funding.
+    #[tokio::test]
+    async fn should_refuse_a_seeded_coin_demoted_before_finalization() {
+        for reservation_only in [false, true] {
+            let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+            let seeded = {
+                let manager = manager.read().await;
+                let info = manager.get_wallet_info(&wallet_id).expect("wallet");
+                let account = AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                };
+                let managed = info
+                    .core_wallet
+                    .accounts
+                    .funds_account(&account)
+                    .expect("bip44 account");
+                managed.utxos.values().next().cloned().expect("bip44 coin")
+            };
+            assert!(is_final(&seeded), "seeded while final");
+            set_bip44_finality(&manager, &wallet_id, false).await;
+            let sources = [preference(StandardAccountType::BIP44Account)];
+
+            // The failing signer proves signing never ran: reaching it would
+            // turn the result into a build error.
+            let result = core
+                .finalize_transaction_with_options(
+                    payment_builder(78).add_inputs([seeded.clone()]),
+                    ShortfallBasis::default(),
+                    &sources,
+                    0,
+                    &FailingSigner,
+                    reservation_only,
+                )
+                .await;
+            assert!(
+                matches!(
+                    result,
+                    Err(PlatformWalletError::CoreFundsAwaitingNetwork { outpoint: Some(outpoint), .. })
+                        if outpoint == seeded.outpoint
+                ),
+                "reservation_only={reservation_only}: got {result:?}"
+            );
+
+            // Nothing stays reserved: once final again the same coin builds.
+            set_bip44_finality(&manager, &wallet_id, true).await;
+            core.finalize_transaction_with_options(
+                payment_builder(79).add_inputs([seeded.clone()]),
+                ShortfallBasis::default(),
+                &sources,
+                0,
+                &signer,
+                reservation_only,
+            )
+            .await
+            .unwrap_or_else(|error| panic!("reservation_only={reservation_only}: {error:?}"));
+        }
     }
 
     /// The contact payment reports its shortfall through the same rule.
