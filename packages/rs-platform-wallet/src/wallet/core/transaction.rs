@@ -90,10 +90,11 @@ pub(crate) fn is_final(utxo: &Utxo) -> bool {
 }
 
 /// What a caller knows about its build that the pinned key-wallet builder
-/// does not expose: the fee rate it set, the amount its outputs request, and
-/// the inputs it seeded itself. Deciding whether a shortfall is "waiting on
-/// the network" prices it with these; without them the default fee rate and
-/// the selector's own `required` are used, and seeded coins are not counted.
+/// does not expose: the fee rate it set, the amount its outputs request, the
+/// shape of those outputs, and the inputs it seeded itself. Deciding whether a
+/// shortfall is "waiting on the network" prices it with these; without them
+/// the default fee rate, the selector's own `required` and one P2PKH output
+/// are used, and seeded coins are not counted.
 #[derive(Debug, Clone, Default)]
 pub struct ShortfallBasis {
     /// The rate the build pays; `None` for key-wallet's default.
@@ -101,6 +102,8 @@ pub struct ShortfallBasis {
     /// The sum of the payment outputs, when the caller knows it. Not for a
     /// drain, whose output amount is a placeholder.
     pub requested: Option<u64>,
+    /// The explicit outputs, change not included; `None` for one P2PKH.
+    pub outputs: Option<OutputShape>,
     /// Inputs seeded on the builder (`add_inputs`); with `reservation_only`
     /// they are the only coins the build can spend.
     pub seeded_inputs: Vec<OutPoint>,
@@ -112,32 +115,65 @@ impl ShortfallBasis {
     }
 }
 
+/// A build's explicit outputs as they serialize: how many, and the total
+/// length of their scripts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutputShape {
+    pub count: usize,
+    pub script_bytes: usize,
+}
+
+impl OutputShape {
+    /// One P2PKH output (a 25-byte script), the shape `estimate_tx_size`
+    /// assumes for every output.
+    pub const ONE_P2PKH: Self = Self {
+        count: 1,
+        script_bytes: 25,
+    };
+
+    /// Each output is its 8-byte value, a one-byte script length (a standard
+    /// script is under 253 bytes) and the script.
+    fn serialized_size(self) -> usize {
+        self.count
+            .saturating_mul(9)
+            .saturating_add(self.script_bytes)
+    }
+}
+
 /// The value the not-yet-final coins of `utxos` would bring to a payment at
 /// `fee_rate`, net of the input each one adds — what waiting for their
-/// confirmation could make available.
+/// confirmation could make available. A rate whose fee overflows is a typed
+/// error, as in [`checked_fee`].
 pub(crate) fn waiting_net_value<'a>(
     utxos: impl IntoIterator<Item = &'a Utxo>,
     fee_rate: FeeRate,
-) -> u64 {
+) -> Result<u64, PlatformWalletError> {
     let empty = estimate_tx_size(0, 1, false);
     let per_input = estimate_tx_size(1, 1, false).saturating_sub(empty);
-    let input_cost = fee_rate.calculate_fee(per_input);
-    utxos
+    let input_cost = checked_fee(fee_rate, per_input)?;
+    Ok(utxos
         .into_iter()
         .filter(|utxo| !is_final(utxo))
         .map(|utxo| utxo.value().saturating_sub(input_cost))
-        .sum()
+        .sum())
 }
 
 /// The fee a payment pays for the final coins it already spends, at
-/// `fee_rate`: a transaction with every one of `final_coins` as an input, a
-/// payment output and change. key-wallet can report a shortfall before it
-/// prices fees — `required` is then the outputs alone — so a shortfall is
-/// called "waiting" only when the waiting coins also cover this. When
-/// `required` already included the fee this errs towards insufficient funds,
-/// never towards promising coins that would not suffice.
-pub(crate) fn final_inputs_fee(final_coins: usize, fee_rate: FeeRate) -> u64 {
-    fee_rate.calculate_fee(estimate_tx_size(final_coins, 2, false))
+/// `fee_rate`: a transaction with every one of `final_coins` as an input,
+/// the build's explicit `outputs` and change. key-wallet can report a
+/// shortfall before it prices fees — `required` is then the outputs alone —
+/// so a shortfall is called "waiting" only when the waiting coins also cover
+/// this. When `required` already included the fee, or the payment would leave
+/// no change, this errs towards insufficient funds, never towards promising
+/// coins that would not suffice. A rate whose fee overflows is a typed error,
+/// as in [`checked_fee`].
+pub(crate) fn final_inputs_fee(
+    final_coins: usize,
+    outputs: OutputShape,
+    fee_rate: FeeRate,
+) -> Result<u64, PlatformWalletError> {
+    let size = estimate_tx_size(final_coins, 0, true).saturating_add(outputs.serialized_size());
+    checked_fee(fee_rate, size)
 }
 
 /// How many final coins `utxos` holds — the inputs a short build already used.
@@ -888,7 +924,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 .iter()
                 .filter_map(|at| info.core_wallet.accounts.funds_account(at))
                 .collect();
-            let (waiting, finals) = if reservation_only {
+            let (waiting, finals): (u64, usize) = if reservation_only {
                 let seeded: Vec<&Utxo> = basis
                     .seeded_inputs
                     .iter()
@@ -899,7 +935,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     })
                     .collect();
                 (
-                    waiting_net_value(seeded.iter().copied(), rate),
+                    waiting_net_value(seeded.iter().copied(), rate)?,
                     final_count(seeded.iter().copied()),
                 )
             } else {
@@ -907,14 +943,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     offered
                         .iter()
                         .map(|managed| waiting_net_value(managed.spendable_utxos(height), rate))
-                        .sum(),
+                        .sum::<Result<u64, _>>()?,
                     offered
                         .iter()
                         .map(|managed| final_count(managed.spendable_utxos(height)))
                         .sum(),
                 )
             };
-            let fee_reserve = final_inputs_fee(finals, rate);
+            let fee_reserve = final_inputs_fee(
+                finals,
+                basis.outputs.unwrap_or(OutputShape::ONE_P2PKH),
+                rate,
+            )?;
             let requested = basis.requested;
             let (unsigned, fee, reservation_token) =
                 builder.build_unsigned_reserved().map_err(|error| {
@@ -1240,7 +1280,8 @@ mod tests {
     use tokio::sync::RwLock;
 
     use crate::wallet::core::transaction::{
-        build_error_awaiting_network, modeled_output_script, ShortfallBasis, MAX_STANDARD_TX_INPUTS,
+        build_error_awaiting_network, final_inputs_fee, modeled_output_script, waiting_net_value,
+        OutputShape, ShortfallBasis, MAX_STANDARD_TX_INPUTS,
     };
     use crate::wallet::core::CoreWallet;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -2393,6 +2434,43 @@ mod tests {
                 Err(PlatformWalletError::CorePooledInsufficientFunds { .. })
             ),
             "got {result:?}"
+        );
+    }
+
+    /// The fees that classify a shortfall are checked like every other: a
+    /// host-chosen rate that overflows is a typed error, even with no coin
+    /// to price.
+    #[test]
+    fn should_return_a_typed_error_when_a_diagnostic_fee_overflows() {
+        let rate = FeeRate::new(u64::MAX);
+
+        assert!(matches!(
+            waiting_net_value(std::iter::empty(), rate),
+            Err(PlatformWalletError::TransactionBuild(_))
+        ));
+        assert!(matches!(
+            final_inputs_fee(0, OutputShape::ONE_P2PKH, rate),
+            Err(PlatformWalletError::TransactionBuild(_))
+        ));
+    }
+
+    /// The fee reserve is the transaction's serialized size: the final inputs,
+    /// every explicit output as its value, length byte and script, and change.
+    #[test]
+    fn should_size_the_fee_reserve_by_every_explicit_output() {
+        let rate = FeeRate::normal();
+        let four = OutputShape {
+            count: 4,
+            script_bytes: 4 * 25,
+        };
+
+        assert_eq!(
+            final_inputs_fee(1, OutputShape::ONE_P2PKH, rate).expect("fee"),
+            rate.calculate_fee(estimate_tx_size(1, 1, true))
+        );
+        assert_eq!(
+            final_inputs_fee(1, four, rate).expect("fee"),
+            rate.calculate_fee(estimate_tx_size(1, 4, true))
         );
     }
 

@@ -6,6 +6,7 @@ use crate::handle::{
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use dashcore::blockdata::script::{PushBytes, ScriptBuf};
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::Hash;
 use dashcore::{Address as DashAddress, OutPoint, TxOut, Txid};
@@ -17,7 +18,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-use platform_wallet::{PlatformWalletError, ShortfallBasis};
+use platform_wallet::{OutputShape, PlatformWalletError, ShortfallBasis};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
@@ -39,16 +40,25 @@ pub struct FFITransactionBuilder {
     /// intent has to be carried here and read when they run.
     reservation_only: bool,
     /// The rate `core_wallet_tx_builder_set_fee_rate` set (0 = key-wallet's
-    /// default), the sum of `core_wallet_tx_builder_add_output` amounts, and
+    /// default), the sum of `core_wallet_tx_builder_add_output` amounts, the
+    /// number of explicit outputs and the total length of their scripts, and
     /// whether the strategy is a drain. The pinned key-wallet builder exposes
     /// none of these, and the finalizers need them to tell a shortfall the
     /// not-yet-final coins would cover from a genuine one (code 59).
     fee_rate_sat_per_kb: u64,
     output_sum: u64,
+    output_count: usize,
+    output_script_bytes: usize,
     drain: bool,
 }
 
 impl FFITransactionBuilder {
+    /// Count one explicit output whose script is `script_len` bytes.
+    fn note_output(&mut self, script_len: usize) {
+        self.output_count = self.output_count.saturating_add(1);
+        self.output_script_bytes = self.output_script_bytes.saturating_add(script_len);
+    }
+
     /// What this build pays and requests, for classifying a shortfall. A drain's
     /// output amount is a placeholder the engine replaces, so it requests
     /// nothing known.
@@ -57,6 +67,10 @@ impl FFITransactionBuilder {
             fee_rate: (self.fee_rate_sat_per_kb != 0)
                 .then(|| FeeRate::new(self.fee_rate_sat_per_kb)),
             requested: (!self.drain && self.output_sum > 0).then_some(self.output_sum),
+            outputs: (self.output_count > 0).then_some(OutputShape {
+                count: self.output_count,
+                script_bytes: self.output_script_bytes,
+            }),
             // `core_wallet_tx_builder_add_inputs_from_outpoints` refuses a
             // non-final coin up front, so a seed here is always final.
             seeded_inputs: Vec::new(),
@@ -601,6 +615,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_new(
         reservation_only: false,
         fee_rate_sat_per_kb: 0,
         output_sum: 0,
+        output_count: 0,
+        output_script_bytes: 0,
         drain: false,
     }))
 }
@@ -629,10 +645,12 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_output(
         }
     };
 
+    let script_len = address.script_pubkey().len();
     let b = (*builder).take_builder();
     let b = b.add_output(&address, amount);
     (*builder).store_builder(b);
     (*builder).output_sum = (*builder).output_sum.saturating_add(amount);
+    (*builder).note_output(script_len);
 
     PlatformWalletFFIResult::ok()
 }
@@ -673,6 +691,16 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_op_return(
         );
     }
 
+    // The script key-wallet builds for it: OP_RETURN and one push of `data`.
+    let script_len = match <&PushBytes>::try_from(bytes) {
+        Ok(push) => ScriptBuf::new_op_return(&push).len(),
+        Err(err) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("OP_RETURN payload not pushable: {err}"),
+            );
+        }
+    };
     let b = (*builder).take_builder();
     let b = match b.add_op_return(bytes) {
         Ok(b) => b,
@@ -684,6 +712,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_op_return(
         }
     };
     (*builder).store_builder(b);
+    (*builder).note_output(script_len);
 
     PlatformWalletFFIResult::ok()
 }
@@ -1294,6 +1323,80 @@ mod pooled_balance_handle_tests {
                 Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
             ),
             "got {default:?}"
+        );
+    }
+
+    /// The shortfall is priced at the transaction's serialized shape, every
+    /// explicit output counted. 900,000 final + 100,400 waiting against four
+    /// 250,000 outputs: once confirmed, the two inputs and four outputs need a
+    /// 442-duff fee with no change and only 400 are left, so this is
+    /// insufficient funds. The same 1,000,000 in one output is covered.
+    #[test]
+    fn should_price_a_waiting_shortfall_at_every_output_the_builder_added() {
+        let (core, signer) = runtime().block_on(
+            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[900_000, 100_400],
+                &[100_400],
+            ),
+        );
+
+        let four = payment(None, 250_000);
+        for tag in 91..94 {
+            let address = CString::new(DashAddress::dummy(Network::Testnet, tag).to_string())
+                .expect("address");
+            let added =
+                unsafe { core_wallet_tx_builder_add_output(four, address.as_ptr(), 250_000) };
+            assert_eq!(added.code, PlatformWalletFFIResultCode::Success);
+        }
+        let four = finalize_built(four, &core, &signer);
+        assert!(
+            matches!(
+                four,
+                Err(PlatformWalletError::CoreInsufficientFunds { .. }
+                    | PlatformWalletError::CorePooledInsufficientFunds { .. })
+            ),
+            "got {four:?}"
+        );
+
+        let one = finalize_built(payment(None, 1_000_000), &core, &signer);
+        assert!(
+            matches!(
+                one,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+            ),
+            "got {one:?}"
+        );
+    }
+
+    /// A fee rate whose fee overflows, set on a build from an account with no
+    /// coin at all, is a typed error — not a panic, not a wrapped fee. The
+    /// wallet's coins are in BIP32; the build funds from the empty BIP44.
+    #[test]
+    fn should_return_a_typed_error_for_an_overflowing_fee_rate_on_an_empty_account() {
+        let (core, signer) = runtime().block_on(
+            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
+                StandardAccountType::BIP32Account,
+                &[500_000],
+                &[],
+            ),
+        );
+
+        let builder = payment(Some(u64::MAX), 100_000);
+        let ffi = unsafe { Box::from_raw(builder) };
+        let inner = *unsafe { Box::from_raw(ffi.inner as *mut TransactionBuilder) };
+        let result = runtime().block_on(core.finalize_transaction_with_options(
+            inner,
+            ffi.shortfall_basis(),
+            CoreAccountTypeFFI::BIP44.funding_sources(),
+            0,
+            &signer,
+            ffi.reservation_only,
+        ));
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBuild(ref message))
+                if message.contains("overflows")),
+            "got {result:?}"
         );
     }
 

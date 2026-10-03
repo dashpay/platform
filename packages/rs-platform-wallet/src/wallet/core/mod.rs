@@ -20,6 +20,7 @@ pub(crate) use transaction::{
     waiting_net_value,
 };
 pub use transaction::{
-    ShortfallBasis, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
+    OutputShape, ShortfallBasis, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES,
+    SEND_FUNDING_SOURCES,
 };
 pub use wallet::CoreWallet;

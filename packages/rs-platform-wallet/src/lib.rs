@@ -61,7 +61,7 @@ pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
 pub use wallet::core::WalletBalance;
 pub use wallet::core::{
-    CoreWallet, ShortfallBasis, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES,
+    CoreWallet, OutputShape, ShortfallBasis, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES,
     SEND_FUNDING_SOURCES,
 };
 pub use wallet::signed_payment_registry::{
