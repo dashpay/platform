@@ -468,8 +468,23 @@ class PlatformWalletPersistenceHandler(
             runBlockingCatching {
                 database.withTransaction { op(database) }
             }
+            // A standalone write commits store state exactly like a round
+            // does, so it stales a reconcile verdict read before it too.
+            committedRoundGeneration++
         }
     }
+
+    /**
+     * Writes committed by persistence callbacks since this handler was
+     * built: every successful [onChangesetEnd] commit, and every standalone
+     * [stage] write. The TXO reconcile reads it together with each store
+     * page and asks the engine about that page OUTSIDE [callbackExclusion];
+     * a round that commits in that gap may have re-credited one of the
+     * page's coins (a reorg of its spender hands it back in `utxos_added`),
+     * so the verdicts are applied only while the count is unchanged. Read
+     * and written only under [callbackExclusion].
+     */
+    private var committedRoundGeneration = 0L
 
     /** The open round for [walletId], or null on the standalone-callback path. */
     private fun openRound(walletId: ByteArray): ChangesetBuffer? = buffers[walletId.toHex()]
@@ -524,6 +539,7 @@ class PlatformWalletPersistenceHandler(
             }
             // Rows committed — the aliases are discoverable the normal way,
             // and the round's pending-key state changes are now true.
+            committedRoundGeneration++
             pendingRoundAliases.remove(key)
             publishPendingKeyDeltas(buffer)
             logUtxoCreditTally(buffer.utxoCreditTally, roundSuccess = true)

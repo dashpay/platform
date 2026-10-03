@@ -38,6 +38,19 @@ interface TxoDao {
     )
     suspend fun pageByWallet(walletId: ByteArray, after: ByteArray, limit: Int): List<TxoEntity>
 
+    /**
+     * [pageByWallet] restricted to `isSpent = 0` — the store reconcile's
+     * classify pass, which only ever asks the engine about the rows the
+     * restore would hand back. The cursor is the previous page's last
+     * outpoint, not an offset, so a row the pass marks spent behind the
+     * cursor leaving the predicate never shifts the rows after it.
+     */
+    @Query(
+        "SELECT * FROM txos WHERE walletId = :walletId AND isSpent = 0 AND outpoint > :after " +
+            "ORDER BY outpoint LIMIT :limit",
+    )
+    suspend fun pageUnspentByWallet(walletId: ByteArray, after: ByteArray, limit: Int): List<TxoEntity>
+
     /** WalletMemoryExplorer: `txo.walletId == walletId && txo.isSpent == false`. */
     @Query("SELECT * FROM txos WHERE walletId = :walletId AND isSpent = 0")
     fun observeUnspentByWallet(walletId: ByteArray): Flow<List<TxoEntity>>
