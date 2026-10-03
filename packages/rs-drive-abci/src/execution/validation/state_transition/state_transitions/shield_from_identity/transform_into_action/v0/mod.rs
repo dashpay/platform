@@ -11,6 +11,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::shielded::shield_from_identity_extra_sighash_data;
 use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -89,9 +90,18 @@ impl ShieldFromIdentityStateTransitionTransformIntoActionValidationV0
             .map(|action| action.into()));
         }
 
-        // Outputs-only bundle entering the pool, exactly like `Shield`. The identity ECDSA
-        // signature already binds every bundle field to the identity and nonce, so no extra
-        // sighash data is needed.
+        // Outputs-only bundle entering the pool, exactly like `Shield`. The identity signature
+        // binds the bundle to this transition, but the bundle itself carries no anchor and says
+        // nothing about who proved it, so any other identity could sign a transition of its own
+        // around the same proved bytes. The sighash therefore binds the kind and the funding
+        // identity, the same preimage CheckTx rebuilds in `validate_shielded_proof`.
+        //
+        // This generation is also selected by every protocol version before 14, where the
+        // binding cannot change anything: `is_allowed` refuses `ShieldFromIdentity` below
+        // version 14, so no such transition reaches this transform there, and those versions'
+        // `credit_pool_bundle_binding` is `None`, which rebuilds an empty preimage.
+        let extra_sighash_data =
+            shield_from_identity_extra_sighash_data(&v0.identity_id.to_buffer(), platform_version)?;
         if let Err(e) = reconstruct_and_verify_bundle(
             &v0.actions,
             FLAGS_OUTPUTS_ONLY,
@@ -99,7 +109,7 @@ impl ShieldFromIdentityStateTransitionTransformIntoActionValidationV0
             &v0.anchor,
             v0.proof.as_slice(),
             &v0.binding_signature,
-            &[],
+            &extra_sighash_data,
         ) {
             // Paid penalty: the same versioned amount `ShieldFromAssetLock` burns from its
             // asset lock, charged here as a processing operation of the identity-paid
