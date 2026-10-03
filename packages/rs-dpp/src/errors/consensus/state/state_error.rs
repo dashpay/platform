@@ -16,6 +16,7 @@ use crate::consensus::state::contract_moderation::{
     ContractModerationTeamNotSeatedError, DocumentNotSettledError,
     ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
     ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    ContractTeamMemberAddedAfterDocumentError,
     DocumentTypeNotDeletableOnceSettledError, SettledDeletionNotRestorableError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
@@ -709,6 +710,12 @@ pub enum StateError {
 
     #[error(transparent)]
     TokenShieldedPaymentNotRequiredError(TokenShieldedPaymentNotRequiredError),
+
+    // A member the leader added after a settled document was created proposes or approves its
+    // deletion, the type's rule admitting only members from before it
+    // (`deleteSettled.approversPredateDocument`, protocol version 14).
+    #[error(transparent)]
+    ContractTeamMemberAddedAfterDocumentError(ContractTeamMemberAddedAfterDocumentError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1530,7 +1537,7 @@ mod tests {
             )),
             166
         );
-        // Token shielded pools (protocol version 14): the tail of the enum.
+        // Token shielded pools (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
                 TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
@@ -1556,6 +1563,19 @@ mod tests {
                 )
             )),
             169
+        );
+        // The deletion of settled documents again (protocol version 14): who approves it.
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamMemberAddedAfterDocumentError(
+                ContractTeamMemberAddedAfterDocumentError::new(
+                    group_id,
+                    identity_id,
+                    2_000,
+                    identity_id,
+                    1_000
+                )
+            )),
+            170
         );
     }
 }

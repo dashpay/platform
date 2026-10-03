@@ -1823,7 +1823,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// 67. **A seated team deletes a settled document together**: past a type's
 ///     `deleteWithin` window no moderator deletes a document alone (41116); the
-///     new `moderatorAbilities.deleteSettled: { leader, approvals }` (meta-schema
+///     new `moderatorAbilities.deleteSettled: { leader, approvals,
+///     approversPredateDocument }` (meta-schema
 ///     v3, `DocumentTypeV2::moderator_settled_deletion`, fixed with the type,
 ///     40212) lets the members of an elected contract's seated team delete it
 ///     once `approvals` of them approve, the leader among them when `leader` is
@@ -1834,7 +1835,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     declaration's `maxAddedModerators`), the upper bound checked at
 ///     registration only; a seated team whose charter elects fewer members,
 ///     and so holds fewer than the rule asks for, must have all it can hold
-///     approve.
+///     approve. Its `approversPredateDocument` (default `true`, which needs
+///     `$createdAt` in `required`, 10231) counts a member the leader added
+///     only for documents created after its addition (the `addedModerator`'s
+///     `$createdAt` earlier than the document's): a proposal or approval by a
+///     later one is refused, and an approval that reads the team drops the
+///     approval of a member taken off and added again too late; the leader
+///     and the elected members always count.
 ///     `ContractUserModeration` gains two actions (appended), shaped like a
 ///     token group's action: `DeleteSettledDocument` proposes the deletion, kept
 ///     under the contract as a team action (other tree key `24`, `M` active and
@@ -1867,8 +1874,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (41207), `ContractTeamActionAlreadySignedError` (41208),
 ///     `SettledDeletionNotRestorableError` (41209): a deletion the team approved
 ///     is never restored, by the leader or any member,
-///     `ContractTeamActionAlreadyCompletedError` (41210) and
-///     `ContractTeamActionDocumentChangedError` (41211).
+///     `ContractTeamActionAlreadyCompletedError` (41210),
+///     `ContractTeamActionDocumentChangedError` (41211) and
+///     `ContractTeamMemberAddedAfterDocumentError` (41212).
 ///
 /// 68. **A preallocated index may be bound through `moderatedDocument`**:
 ///     `Index::preallocation_bindings`, in place, binds through a same-contract

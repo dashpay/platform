@@ -1326,10 +1326,12 @@ fn elected_config(platform_version: &PlatformVersion) -> DataContractConfig {
         }))
 }
 
-/// A windowed `post` whose settled documents a seated team deletes by `rule`.
+/// A windowed `post` whose settled documents a seated team deletes by `rule`, recording when
+/// each was created.
 fn settled_schema(rule: Value) -> Value {
     windowed_schema(platform_value!({
         "moderatorAbilities": { "delete": true, "deleteWithin": 86400, "deleteSettled": rule },
+        "required": ["$createdAt", "$updatedAt"],
     }))
 }
 
@@ -1351,6 +1353,7 @@ fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
             SettledDeletionRule {
                 leader: true,
                 approvals: 1,
+                approvers_predate_document: true,
             },
         ),
         (
@@ -1358,6 +1361,7 @@ fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
             SettledDeletionRule {
                 leader: true,
                 approvals: 3,
+                approvers_predate_document: true,
             },
         ),
         (
@@ -1365,6 +1369,23 @@ fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
             SettledDeletionRule {
                 leader: false,
                 approvals: 2,
+                approvers_predate_document: true,
+            },
+        ),
+        (
+            platform_value!({ "approvals": 2, "approversPredateDocument": false }),
+            SettledDeletionRule {
+                leader: false,
+                approvals: 2,
+                approvers_predate_document: false,
+            },
+        ),
+        (
+            platform_value!({ "approversPredateDocument": true }),
+            SettledDeletionRule {
+                leader: false,
+                approvals: 1,
+                approvers_predate_document: true,
             },
         ),
     ] {
@@ -1377,6 +1398,44 @@ fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
                 "{rule:?} (full validation: {full_validation})"
             );
         }
+    }
+}
+
+#[test]
+fn should_need_the_creation_time_while_added_members_must_predate_the_document() {
+    // Measured from `$updatedAt` alone, the window parses; who of the team predates a document
+    // is read from `$createdAt`, which the type must then record.
+    let without_creation = |rule: Value| {
+        windowed_schema(platform_value!({
+            "moderatorAbilities": { "delete": true, "deleteWithin": 86400, "deleteSettled": rule },
+        }))
+    };
+    for full_validation in [true, false] {
+        for rule in [
+            platform_value!({ "leader": true }),
+            platform_value!({ "leader": true, "approversPredateDocument": true }),
+        ] {
+            assert_refused_naming(
+                parse_elected(without_creation(rule), full_validation),
+                &["deleteSettled", "approversPredateDocument", "$createdAt"],
+            );
+        }
+        let any_addition = parse_elected(
+            without_creation(platform_value!({
+                "leader": true,
+                "approversPredateDocument": false,
+            })),
+            full_validation,
+        )
+        .expect("a rule admitting every added member reads no creation time");
+        assert_eq!(
+            any_addition.moderator_settled_deletion(),
+            Some(SettledDeletionRule {
+                leader: true,
+                approvals: 1,
+                approvers_predate_document: false,
+            })
+        );
     }
 }
 
@@ -1444,6 +1503,7 @@ fn should_refuse_a_number_of_approvals_the_declared_team_can_not_give() {
         Some(SettledDeletionRule {
             leader: false,
             approvals: team + 1,
+            approvers_predate_document: true,
         })
     );
     // No approvals at all is no rule, on both paths; the meta-schema speaks first under full
@@ -1463,6 +1523,7 @@ fn should_refuse_a_malformed_settled_deletion_on_the_stored_path_too() {
         (platform_value!({ "leaders": true }), "has no key"),
         (platform_value!({ "leader": "yes" }), ""),
         (platform_value!({ "approvals": -1 }), ""),
+        (platform_value!({ "approversPredateDocument": "yes" }), ""),
     ] {
         for full_validation in [true, false] {
             let error = parse_elected(settled_schema(rule.clone()), full_validation)

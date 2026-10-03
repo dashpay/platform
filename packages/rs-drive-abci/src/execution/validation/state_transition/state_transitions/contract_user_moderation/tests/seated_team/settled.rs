@@ -17,11 +17,16 @@ const MODERATION_REASON_NOT_LISTED: u32 = 41203;
 const SETTLED_DELETION_NOT_RESTORABLE: u32 = 41209;
 const CONTRACT_TEAM_ACTION_ALREADY_COMPLETED: u32 = 41210;
 const CONTRACT_TEAM_ACTION_DOCUMENT_CHANGED: u32 = 41211;
+const CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT: u32 = 41212;
 const DOCUMENT_NOT_FOUND: u32 = 40101;
 
 /// A month after the documents of these tests were written, and after the seat was awarded:
 /// every story and memo is settled.
 const SETTLED_AT: TimestampMillis = BLOCK_TIME_MS + 30 * 24 * 3_600 * 1_000;
+
+/// When the documents written after the leader's additions are: a second after the block of the
+/// additions, so that the members it added count toward their deletion.
+const AFTER_THE_ADDITIONS: TimestampMillis = BLOCK_TIME_MS + 1_000;
 
 /// The proposal of the deletion of settled `document_id` of `document_type_name`, for the
 /// listed reason with `text`
@@ -60,6 +65,21 @@ impl Team {
             .one_document_by(actor, document_type_name, &[None])
             .await;
         self.process_and_commit(&creates.pop().expect("expected the creation"));
+        document
+    }
+
+    /// A document of `document_type_name` by `actor`, created and committed in a block at
+    /// `time_ms`
+    async fn written_at(
+        &self,
+        actor: &Actor,
+        document_type_name: &str,
+        time_ms: TimestampMillis,
+    ) -> Document {
+        let (document, mut creates) = self
+            .one_document_by(actor, document_type_name, &[None])
+            .await;
+        self.process_and_commit_at(&creates.pop().expect("expected the creation"), time_ms);
         document
     }
 
@@ -169,16 +189,19 @@ impl Team {
 /// reason; the approval that meets the rule deletes the story as a moderator's deletion does,
 /// for the proposal's reason, closes the action with every approval, and counts for every
 /// approver; the ones before count for nobody. The proof of the proposal holds once the action
-/// ran, and an approval of an action that ran is refused.
+/// ran, and an approval of an action that ran is refused. The two members the leader added were
+/// added before the story was written, so they count.
 #[tokio::test]
 async fn should_delete_a_settled_story_once_the_leader_and_two_members_approve() {
     let team = Team::new(InterimModerators::ContractOwner).await;
     let setup = &team.setup;
-    let story = team.written_by(&setup.stranger, STORY).await;
     team.award();
     let [joiner, other_joiner, _] = &team.joiners;
     team.process_and_commit(&team.addition_of(joiner).await);
     team.process_and_commit(&team.addition_of(other_joiner).await);
+    let story = team
+        .written_at(&setup.stranger, STORY, AFTER_THE_ADDITIONS)
+        .await;
 
     // The elected member proposes, alone: the story stays.
     let proposal = setup
@@ -463,12 +486,13 @@ async fn should_refuse_a_proposal_or_an_approval_without_a_seated_team_a_rule_or
 
 /// A member who left the team no longer counts: the approval that reads the team drops its
 /// approval, refunded to it, and a member who comes back approves again. Nothing lapses: an
-/// approval given long before still counts.
+/// approval given long before still counts. On a legend, whose rule counts the members the
+/// leader added whenever added, the joiners added after it was written among them.
 #[tokio::test]
 async fn should_drop_approvals_of_members_who_left_and_count_the_ones_who_stay() {
     let team = Team::new(InterimModerators::ContractOwner).await;
     let setup = &team.setup;
-    let story = team.written_by(&setup.stranger, STORY).await;
+    let story = team.written_by(&setup.stranger, LEGEND).await;
     team.award();
     let [joiner, other_joiner, _] = &team.joiners;
     let (joiner_addition, adding_joiner) = team.added(joiner).await;
@@ -477,7 +501,7 @@ async fn should_drop_approvals_of_members_who_left_and_count_the_ones_who_stay()
 
     // The member proposes and the joiner approves.
     let proposal = setup
-        .moderate(&team.member, propose(STORY, story.id(), "doxxing"))
+        .moderate(&team.member, propose(LEGEND, story.id(), "doxxing"))
         .await;
     let action_id = action_id_of(&proposal);
     let transaction = setup.platform.drive.grove.start_transaction();
@@ -512,7 +536,7 @@ async fn should_drop_approvals_of_members_who_left_and_count_the_ones_who_stay()
         team.signers(GroupActionStatus::ActionActive, action_id, &transaction),
         vec![team.leader.id()]
     );
-    assert!(team.is_stored(STORY, story.id(), &transaction));
+    assert!(team.is_stored(LEGEND, story.id(), &transaction));
     setup.commit(transaction);
 
     // The joiner is added again and approves again; the other joiner's approval meets the rule.
@@ -522,7 +546,7 @@ async fn should_drop_approvals_of_members_who_left_and_count_the_ones_who_stay()
     assert_success(&setup.process_at(&joiner_again, later + 1, &transaction));
     let closing = setup.moderate(other_joiner, approve(action_id)).await;
     assert_success(&setup.process_at(&closing, later + 2, &transaction));
-    assert!(!team.is_stored(STORY, story.id(), &transaction));
+    assert!(!team.is_stored(LEGEND, story.id(), &transaction));
     // Only the approvals that counted close with the action, and only they are counted.
     let mut counted = vec![team.leader.id(), joiner.id(), other_joiner.id()];
     counted.sort();
@@ -652,15 +676,15 @@ async fn should_refuse_an_update_adding_a_type_that_deletes_settled_documents() 
 async fn should_refuse_an_approval_after_a_moderator_changes_the_fields_of_a_settled_document() {
     let team = Team::new(InterimModerators::ContractOwner).await;
     let setup = &team.setup;
+    team.award();
+    let [joiner, _, _] = &team.joiners;
+    team.process_and_commit(&team.addition_of(joiner).await);
     let (chronicle, create) = setup
         .create_document_of_type_with(&setup.stranger, CHRONICLE, |document| {
             document.properties_mut().remove("label");
         })
         .await;
-    team.process_and_commit(&create);
-    team.award();
-    let [joiner, _, _] = &team.joiners;
-    team.process_and_commit(&team.addition_of(joiner).await);
+    team.process_and_commit_at(&create, AFTER_THE_ADDITIONS);
 
     let transaction = setup.platform.drive.grove.start_transaction();
     // The member proposes and the leader approves: one short of the rule's three.
@@ -776,11 +800,13 @@ async fn should_refuse_an_approval_after_the_author_replaces_a_settled_document(
 async fn should_count_the_seat_of_a_removed_member_toward_a_rule_asking_for_the_whole_team() {
     let team = Team::new(InterimModerators::ContractOwner).await;
     let setup = &team.setup;
-    let epic = team.written_by(&setup.stranger, EPIC).await;
     team.award();
     let [first, second, _] = &team.joiners;
     team.process_and_commit(&team.addition_of(first).await);
     team.process_and_commit(&team.addition_of(second).await);
+    let epic = team
+        .written_at(&setup.stranger, EPIC, AFTER_THE_ADDITIONS)
+        .await;
     let (removal, remove) = team.removed(&team.member).await;
     team.process_and_commit(&remove);
 
@@ -811,17 +837,22 @@ async fn should_count_the_seat_of_a_removed_member_toward_a_rule_asking_for_the_
 
 /// Past as many earlier approvers as a read of the whole team takes queries, an approval reads
 /// the team once instead of each approver's seat, with the same outcome: approvers who left are
-/// dropped, and the rest count. A member added back approves again and completes the team.
+/// dropped, and so is one the leader took off and added again after the epic was written, whose
+/// new seat does not count for it; the rest count. Neither approves the epic again, so a rule
+/// asking for the whole team never deletes it.
 #[tokio::test]
-async fn should_read_the_team_once_to_drop_the_approvers_who_left() {
+async fn should_read_the_team_once_to_drop_the_approvers_who_no_longer_count() {
     let team = Team::new(InterimModerators::ContractOwner).await;
     let setup = &team.setup;
-    let epic = team.written_by(&setup.stranger, EPIC).await;
     team.award();
     let [first, second, _] = &team.joiners;
-    team.process_and_commit(&team.addition_of(first).await);
-    let (addition, add) = team.added(second).await;
-    team.process_and_commit(&add);
+    let (first_addition, add_first) = team.added(first).await;
+    team.process_and_commit(&add_first);
+    let (second_addition, add_second) = team.added(second).await;
+    team.process_and_commit(&add_second);
+    let epic = team
+        .written_at(&setup.stranger, EPIC, AFTER_THE_ADDITIONS)
+        .await;
 
     let transaction = setup.platform.drive.grove.start_transaction();
     let proposal = setup
@@ -833,30 +864,50 @@ async fn should_read_the_team_once_to_drop_the_approvers_who_left() {
         let approval = setup.moderate(approver, approve(action_id)).await;
         assert_success(&setup.process_at(&approval, SETTLED_AT, &transaction));
     }
-    // The leader takes the second addition back, then approves: three earlier approvers, more
-    // than the two queries of a team read, so the team is read once and the one who left is
-    // dropped. Three of the four the team can hold fall short.
-    let taking_back = team
-        .undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, addition)
-        .await;
-    assert_success(&setup.process_at(&taking_back, SETTLED_AT + 1, &transaction));
+    // The leader takes the first addition back, and the second too, adding that member again:
+    // on the team, but since after the epic was written.
+    for team_change in [
+        team.undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, first_addition)
+            .await,
+        team.undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, second_addition)
+            .await,
+        team.addition_of(second).await,
+    ] {
+        assert_success(&setup.process_at(&team_change, SETTLED_AT + 1, &transaction));
+    }
+    // Then the leader approves: three earlier approvers, more than the two queries of a team
+    // read, so the team is read once. Both added members are dropped and refunded; the member
+    // and the leader fall short of the four the team can hold.
     let leader_approval = setup.moderate(&team.leader, approve(action_id)).await;
-    assert_success(&setup.process_at(&leader_approval, SETTLED_AT + 2, &transaction));
-    let mut still_there = vec![team.member.id(), first.id(), team.leader.id()];
-    still_there.sort();
+    let execution = setup.process_at(&leader_approval, SETTLED_AT + 2, &transaction);
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = &execution else {
+        panic!("expected the approval to pass, got {execution:?}");
+    };
+    let mut refunded: Vec<[u8; 32]> = fee_result.fee_refunds.0.keys().copied().collect();
+    refunded.sort();
+    let mut dropped = vec![first.id().to_buffer(), second.id().to_buffer()];
+    dropped.sort();
+    assert_eq!(refunded, dropped);
+    let mut still_counted = vec![team.member.id(), team.leader.id()];
+    still_counted.sort();
     assert_eq!(
         team.signers(GroupActionStatus::ActionActive, action_id, &transaction),
-        still_there
+        still_counted
+    );
+
+    // The member added again after the epic does not approve it again, and the one taken off is
+    // off the team: the epic stays.
+    let again = setup.moderate(second, approve(action_id)).await;
+    assert_paid_with_code(
+        &setup.process_at(&again, SETTLED_AT + 3, &transaction),
+        CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT,
+    );
+    let off_the_team = setup.moderate(first, approve(action_id)).await;
+    assert_paid_with_code(
+        &setup.process_at(&off_the_team, SETTLED_AT + 3, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
     );
     assert!(team.is_stored(EPIC, epic.id(), &transaction));
-    setup.commit(transaction);
-
-    // The second member, added again, approves again and completes the team: the epic goes.
-    team.process_and_commit(&team.addition_of(second).await);
-    let transaction = setup.platform.drive.grove.start_transaction();
-    let last = setup.moderate(second, approve(action_id)).await;
-    assert_success(&setup.process_at(&last, SETTLED_AT + 3, &transaction));
-    assert!(!team.is_stored(EPIC, epic.id(), &transaction));
 }
 
 /// Two members may propose the deletion of one document: once one of the actions runs, the other
@@ -893,5 +944,171 @@ async fn should_refuse_an_approval_of_a_sibling_proposal_whose_document_is_gone(
             .expect("expected the team action")
             .0,
         GroupActionStatus::ActionActive
+    );
+}
+
+/// A member the leader added counts toward a story's deletion only when added before the story
+/// was written: one added in the same block or after neither proposes nor approves it, in a
+/// block or in the mempool, each refusal paid, and nothing it sent is kept. The leader and the
+/// elected member count however old the story, one written before the seat included, and a
+/// member added before the story completes the rule.
+#[tokio::test]
+async fn should_refuse_members_added_after_a_story_and_count_those_added_before() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let before_the_seat = team.written_by(&setup.stranger, STORY).await;
+    team.award();
+    let [early, late, _] = &team.joiners;
+    team.process_and_commit(&team.addition_of(early).await);
+    let story = team
+        .written_at(&setup.stranger, STORY, AFTER_THE_ADDITIONS)
+        .await;
+    // In the block that wrote the story: not before it.
+    team.process_and_commit_at(&team.addition_of(late).await, AFTER_THE_ADDITIONS);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let by_the_late = setup
+        .moderate(late, propose(STORY, story.id(), "doxxing"))
+        .await;
+    assert_eq!(
+        setup
+            .check_tx(&by_the_late)
+            .iter()
+            .map(|error| error.code())
+            .collect::<Vec<_>>(),
+        vec![CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT]
+    );
+    assert_paid_with_code(
+        &setup.process_at(&by_the_late, SETTLED_AT, &transaction),
+        CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT,
+    );
+    assert_eq!(
+        team.team_action(action_id_of(&by_the_late), &transaction),
+        None
+    );
+    // Nor does the early member reach the story written before the seat, which no addition
+    // predates; the elected member does.
+    let by_the_early = setup
+        .moderate(early, propose(STORY, before_the_seat.id(), "doxxing"))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&by_the_early, SETTLED_AT, &transaction),
+        CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT,
+    );
+    let by_the_member = setup
+        .moderate(
+            &team.member,
+            propose(STORY, before_the_seat.id(), "doxxing"),
+        )
+        .await;
+    assert_success(&setup.process_at(&by_the_member, SETTLED_AT, &transaction));
+
+    // The elected member proposes the story; the late member's approval is refused and kept
+    // nowhere, the early member's counts, and the leader's meets the rule.
+    let proposal = setup
+        .moderate(&team.member, propose(STORY, story.id(), "spam"))
+        .await;
+    let action_id = action_id_of(&proposal);
+    assert_success(&setup.process_at(&proposal, SETTLED_AT, &transaction));
+    let refused = setup.moderate(late, approve(action_id)).await;
+    assert_paid_with_code(
+        &setup.process_at(&refused, SETTLED_AT + 1, &transaction),
+        CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT,
+    );
+    assert_eq!(
+        team.signers(GroupActionStatus::ActionActive, action_id, &transaction),
+        vec![team.member.id()]
+    );
+    for (approver, at) in [(early, SETTLED_AT + 2), (&team.leader, SETTLED_AT + 3)] {
+        let approval = setup.moderate(approver, approve(action_id)).await;
+        assert_success(&setup.process_at(&approval, at, &transaction));
+    }
+    assert!(!team.is_stored(STORY, story.id(), &transaction));
+    let mut counted = vec![team.member.id(), early.id(), team.leader.id()];
+    counted.sort();
+    assert_eq!(
+        team.signers(GroupActionStatus::ActionClosed, action_id, &transaction),
+        counted
+    );
+}
+
+/// A member the leader takes off and adds again after a story was written sits in the new
+/// addition, too late for the story: the approval it gave before no longer counts, and the
+/// approval that reads the team drops it, refunded, as it drops a member who left. It does not
+/// approve again; a member added before the story completes the rule instead.
+#[tokio::test]
+async fn should_drop_the_approval_of_a_member_added_again_after_the_story() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    team.award();
+    let [joiner, other_joiner, _] = &team.joiners;
+    let (joiner_addition, adding_joiner) = team.added(joiner).await;
+    team.process_and_commit(&adding_joiner);
+    team.process_and_commit(&team.addition_of(other_joiner).await);
+    let story = team
+        .written_at(&setup.stranger, STORY, AFTER_THE_ADDITIONS)
+        .await;
+
+    // The joiner proposes, added before the story.
+    let proposal = setup
+        .moderate(joiner, propose(STORY, story.id(), "doxxing"))
+        .await;
+    let action_id = action_id_of(&proposal);
+    team.process_and_commit_at(&proposal, SETTLED_AT);
+
+    // The leader takes the joiner off and adds it again.
+    team.process_and_commit_at(
+        &team
+            .undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, joiner_addition)
+            .await,
+        SETTLED_AT + 1,
+    );
+    team.process_and_commit_at(&team.addition_of(joiner).await, SETTLED_AT + 1);
+
+    // The elected member approves; the leader's approval could then meet the rule, so it reads
+    // each earlier approver's seat: the joiner's approval is dropped and refunded, and the two
+    // left fall short.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let by_the_member = setup.moderate(&team.member, approve(action_id)).await;
+    assert_success(&setup.process_at(&by_the_member, SETTLED_AT + 2, &transaction));
+    let by_the_leader = setup.moderate(&team.leader, approve(action_id)).await;
+    let execution = setup.process_at(&by_the_leader, SETTLED_AT + 3, &transaction);
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = &execution else {
+        panic!("expected the approval to pass, got {execution:?}");
+    };
+    assert_eq!(
+        fee_result.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
+        vec![joiner.id().to_buffer()]
+    );
+    let mut still_counted = vec![team.member.id(), team.leader.id()];
+    still_counted.sort();
+    assert_eq!(
+        team.signers(GroupActionStatus::ActionActive, action_id, &transaction),
+        still_counted
+    );
+    assert!(team.is_stored(STORY, story.id(), &transaction));
+
+    // The joiner does not approve again; the other joiner, added before the story, completes it.
+    let again = setup.moderate(joiner, approve(action_id)).await;
+    assert_paid_with_code(
+        &setup.process_at(&again, SETTLED_AT + 4, &transaction),
+        CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT,
+    );
+    let closing = setup.moderate(other_joiner, approve(action_id)).await;
+    assert_success(&setup.process_at(&closing, SETTLED_AT + 5, &transaction));
+    assert!(!team.is_stored(STORY, story.id(), &transaction));
+    let mut counted = vec![team.member.id(), team.leader.id(), other_joiner.id()];
+    counted.sort();
+    assert_eq!(
+        team.signers(GroupActionStatus::ActionClosed, action_id, &transaction),
+        counted
+    );
+    assert_eq!(
+        team.action_counts(&transaction),
+        BTreeMap::from([
+            (team.leader.id(), 1),
+            (team.member.id(), 1),
+            (other_joiner.id(), 1),
+        ])
     );
 }

@@ -2253,7 +2253,8 @@ pub(super) struct ModeratorAbilitiesKeyword {
 /// this generation: a stored contract is read without one. An object, with
 /// only the keys `delete`, `deleteKeepsRecord` and `deleteRefundsOwner`
 /// (booleans), `deleteWithin` (seconds, a u32), `deleteSettled` (an object with
-/// only `leader`, a boolean, and `approvals`, a u16, at least one of them),
+/// only `leader` and `approversPredateDocument`, booleans, and `approvals`, a u16,
+/// at least one of them),
 /// `deleteKeepsFields` (a non-empty list of property paths) and `changeFields`
 /// (a non-empty list of property names), saying something.
 pub(super) fn parse_moderator_abilities_keyword(
@@ -2317,24 +2318,31 @@ pub(super) fn parse_moderator_abilities_keyword(
                 )));
             };
             if let Some(unknown) = settled_map.iter().find_map(|(key, _)| match key.as_text() {
-                Some(delete_settled::LEADER | delete_settled::APPROVALS) => None,
+                Some(
+                    delete_settled::LEADER
+                    | delete_settled::APPROVALS
+                    | delete_settled::APPROVERS_PREDATE_DOCUMENT,
+                ) => None,
                 Some(other) => Some(other.to_string()),
                 None => Some(key.to_string()),
             }) {
                 return Err(structure_error(format!(
                     "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` has no \
-                     key \"{unknown}\", only `{}` and `{}`",
+                     key \"{unknown}\", only `{}`, `{}` and `{}`",
                     delete_settled::LEADER,
                     delete_settled::APPROVALS,
+                    delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 )));
             }
             if settled_map.is_empty() {
                 return Err(structure_error(format!(
                     "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` is empty: \
                      say whether the team's leader must approve (`{}`), how many must (`{}`), \
-                     or both",
+                     whether members the leader added after a document approve its deletion \
+                     (`{}`), or any of them",
                     delete_settled::LEADER,
                     delete_settled::APPROVALS,
+                    delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 )));
             }
             let leader = Value::inner_optional_bool_value(settled_map, delete_settled::LEADER)
@@ -2344,7 +2352,17 @@ pub(super) fn parse_moderator_abilities_keyword(
                 Value::inner_optional_integer_value::<u16>(settled_map, delete_settled::APPROVALS)
                     .map_err(consensus_or_protocol_value_error)?
                     .unwrap_or(1);
-            Some(SettledDeletionRule { leader, approvals })
+            let approvers_predate_document = Value::inner_optional_bool_value(
+                settled_map,
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+            )
+            .map_err(consensus_or_protocol_value_error)?
+            .unwrap_or(true);
+            Some(SettledDeletionRule {
+                leader,
+                approvals,
+                approvers_predate_document,
+            })
         }
     };
     let delete_keeps_fields = match Value::get_optional_from_map(abilities_map, DELETE_KEEPS_FIELDS)
@@ -2455,7 +2473,11 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - `approvals` is at least 1 and, under full validation, at most the members
 ///   the declared team can hold: its leader,
 ///   `SystemLimits::max_moderation_charter_elected_members` elected members and
-///   the declaration's `maxAddedModerators`.
+///   the declaration's `maxAddedModerators`;
+/// - while `approversPredateDocument` is on (the default), the type must list
+///   `$createdAt` in `required`: a member the leader added approves only the
+///   deletion of documents created after its addition, and a document without
+///   `$createdAt` says nothing of when it was.
 ///
 /// `deleteKeepsFields` names what of a deleted document its removal record
 /// keeps, copied from the document as it was deleted: what stays public once
@@ -2688,6 +2710,16 @@ pub(super) fn apply_moderator_abilities(
                  team can hold",
                 delete_settled::APPROVALS,
                 rule.approvals,
+            )));
+        }
+        if rule.approvers_predate_document && !document_type.required_fields.contains(CREATED_AT) {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}`, whose \
+                 approvers the leader added must have been added before the document was created \
+                 (`{}`, on unless set to false), which is read from `$createdAt`: list \
+                 `$createdAt` in `required`, or set `{}: false`",
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
             )));
         }
         document_type.moderator_settled_deletion = Some(rule);

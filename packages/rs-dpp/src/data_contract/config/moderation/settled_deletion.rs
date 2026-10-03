@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 /// `moderatorAbilities.deleteSettled` (protocol version 14), on a contract whose moderators are
 /// an elected team: so many members of the seated team, the leader counted among them when
 /// it approves, and the leader among them only when `leader` is set; with `leader` unset, any
-/// members meet it.
+/// members meet it. While `approvers_predate_document` is set, a member the leader added
+/// counts only for documents created after its addition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub struct SettledDeletionRule {
     /// Whether the team's leader must be among the approvals.
@@ -22,6 +23,16 @@ pub struct SettledDeletionRule {
     /// declaration's `maxAddedModerators`). A seated team that can hold fewer, its charter
     /// electing fewer members, must have all it can hold approve.
     pub approvals: u16,
+    /// Whether a member the leader added (an `addedModerator`) proposes or approves the
+    /// deletion of a document only when its addition was made before the document was created
+    /// (`approversPredateDocument`, default `true`). The leader names whom it adds, so without
+    /// this it could add members who approve whatever it proposes, and take them off again
+    /// once they had. The leader and the elected members always count: the election seated
+    /// them, not the leader. Read from the document's `$createdAt`, which the type must then
+    /// require. What the rule needs is not lowered for it (see
+    /// [`Self::approvals_needed`]), so a team whose members from before a document are too few
+    /// never deletes that document once settled.
+    pub approvers_predate_document: bool,
 }
 
 impl SettledDeletionRule {
@@ -43,6 +54,19 @@ impl SettledDeletionRule {
     ) -> bool {
         approvals.len() >= self.approvals_needed(team_capacity)
             && (!self.leader || approvals.contains(&leader_id))
+    }
+
+    /// Whether a member the leader added at `added_at` (its `addedModerator`'s `$createdAt`)
+    /// may approve the deletion of a document created at `document_created_at`: always when
+    /// `approvers_predate_document` is unset, and otherwise only when added before it. An
+    /// addition in the same block as the document, at the same time, does not count: which of
+    /// the two came first is not something the leader should be able to choose.
+    pub fn admits_addition(
+        &self,
+        added_at: TimestampMillis,
+        document_created_at: TimestampMillis,
+    ) -> bool {
+        !self.approvers_predate_document || added_at < document_created_at
     }
 }
 
@@ -190,6 +214,7 @@ mod tests {
         let leader_and_two = SettledDeletionRule {
             leader: true,
             approvals: 3,
+            approvers_predate_document: true,
         };
         assert!(!leader_and_two.is_met_by(&[leader, member], leader, 31));
         assert!(!leader_and_two.is_met_by(&[member, other, Identifier::from([4; 32])], leader, 31));
@@ -198,6 +223,7 @@ mod tests {
         let leader_alone = SettledDeletionRule {
             leader: true,
             approvals: 1,
+            approvers_predate_document: true,
         };
         assert!(leader_alone.is_met_by(&[leader], leader, 31));
         assert!(!leader_alone.is_met_by(&[member], leader, 31));
@@ -205,6 +231,7 @@ mod tests {
         let any_two = SettledDeletionRule {
             leader: false,
             approvals: 2,
+            approvers_predate_document: true,
         };
         assert!(any_two.is_met_by(&[member, other], leader, 31));
         assert!(!any_two.is_met_by(&[member], leader, 31));
@@ -218,12 +245,32 @@ mod tests {
         let thirty_one = SettledDeletionRule {
             leader: true,
             approvals: 31,
+            approvers_predate_document: true,
         };
         // A team of three at most: all three meet the rule, two do not.
         assert!(thirty_one.is_met_by(&[member, leader, other], leader, 3));
         assert!(!thirty_one.is_met_by(&[member, leader], leader, 3));
         // The leader still has to be among them.
         assert!(!thirty_one.is_met_by(&[member, other], leader, 2));
+    }
+
+    #[test]
+    fn should_admit_only_members_added_before_the_document_while_the_rule_says_so() {
+        let predating = SettledDeletionRule {
+            leader: true,
+            approvals: 3,
+            approvers_predate_document: true,
+        };
+        assert!(predating.admits_addition(999, 1_000));
+        // Added in the block that created the document, or after it
+        assert!(!predating.admits_addition(1_000, 1_000));
+        assert!(!predating.admits_addition(1_001, 1_000));
+
+        let any_member = SettledDeletionRule {
+            approvers_predate_document: false,
+            ..predating
+        };
+        assert!(any_member.admits_addition(1_001, 1_000));
     }
 
     #[test]
