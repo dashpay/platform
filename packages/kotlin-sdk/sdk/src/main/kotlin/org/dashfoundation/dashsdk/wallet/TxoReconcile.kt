@@ -54,6 +54,16 @@ internal object TxoReconcileGates {
     const val CADENCE_MS = 30 * 60 * 1_000L
 
     /**
+     * Whether the wallet's own scan watermark (the engine's, see
+     * [org.dashfoundation.dashsdk.ffi.WalletManagerNative.walletManagerCoreWalletSyncedHeight])
+     * is within [TIP_MARGIN] blocks of the scan tip — Swift's
+     * `synced_height + margin >= tip`. The tip says how far the CLIENT got;
+     * a wallet added behind it is still being scanned.
+     */
+    fun walletCaughtUp(walletSyncedHeight: Long, tipHeight: Int): Boolean =
+        walletSyncedHeight >= 0 && walletSyncedHeight + TIP_MARGIN >= tipHeight
+
+    /**
      * dash-spv's steady state for a fully synced client is
      * [SpvSyncState.WAIT_FOR_EVENTS] with the filter phase at its target
      * height; [SpvSyncState.SYNCED] is the transient window before it.

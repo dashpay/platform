@@ -214,6 +214,20 @@ internal object WalletManagerNative {
         queriesJson: String,
     ): ByteArray?
 
+    /**
+     * The wallet's core scan watermark as the ENGINE holds it
+     * (`platform_wallet_core_wallet_state`'s `synced_height`) — the value the
+     * TXO-store reconcile gates on, as Swift's does. The persisted
+     * `syncedHeight` in Room trails it by up to one persistence round, which
+     * is exactly the window the SYNCED transition lands in. Throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError] `NotFound` when the
+     * manager does not hold the wallet.
+     */
+    external fun walletManagerCoreWalletSyncedHeight(
+        managerHandle: Long,
+        walletId: ByteArray,
+    ): Long
+
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //
     // Each step is a thin extern (one export = one FFI call, per

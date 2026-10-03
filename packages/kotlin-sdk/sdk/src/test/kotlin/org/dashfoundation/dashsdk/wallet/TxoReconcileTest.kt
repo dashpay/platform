@@ -143,4 +143,20 @@ class TxoReconcileTest {
             coordinator.walletsDue(steady, listOf("a"), nowMs = 10),
         )
     }
+
+    @Test
+    fun theWalletGateUsesTheEnginesWatermarkWithinTheTipMargin() {
+        // Swift's `synced_height + margin >= tip`. The value passed is the
+        // ENGINE's watermark: the persisted Room copy trails it by a round,
+        // and gating on that skipped the run at the SYNCED edge of a restore
+        // (2026-10-02 device run: WALLET_BEHIND_TIP at the transition, the
+        // next attempt 30 minutes later).
+        assertTrue(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = 1_565_211L, tipHeight = 1_565_211))
+        assertTrue(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = 1_565_205L, tipHeight = 1_565_211))
+        assertFalse(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = 1_565_204L, tipHeight = 1_565_211))
+        // A wallet added behind the tip is still being scanned.
+        assertFalse(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = 0L, tipHeight = 1_565_211))
+        // The native "no value" sentinel never passes.
+        assertFalse(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = -1L, tipHeight = 3))
+    }
 }

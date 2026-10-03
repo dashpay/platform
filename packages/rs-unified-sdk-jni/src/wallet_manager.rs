@@ -2660,6 +2660,43 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
+/// The wallet's core scan watermark as the ENGINE holds it
+/// (`platform_wallet_core_wallet_state`'s `synced_height`) — the value the
+/// TXO-store reconcile gates on, as Swift's does. The persisted copy in the
+/// host store trails it by up to one persistence round, which is exactly
+/// the window the SYNCED transition lands in. Throws `NotFound` when the
+/// manager does not hold the wallet. Backs
+/// `PlatformWalletManager.reconcileTxoStore`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerCoreWalletSyncedHeight(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jlong {
+    guard(&mut env, -1, |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return -1;
+        };
+        let mut state = platform_wallet_ffi::CoreWalletStateFFI {
+            synced_height: 0,
+            last_processed_height: 0,
+            monitor_revision: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_core_wallet_state(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut state as *mut platform_wallet_ffi::CoreWalletStateFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        jlong::from(state.synced_height)
+    })
+}
+
 #[cfg(feature = "shielded")]
 sync_start_stop!(
     Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedSyncStart,

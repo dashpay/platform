@@ -1280,12 +1280,16 @@ class PlatformWalletManager(
      * ([TxoReconcileGates.isSteadySyncState]); a scan tip
      * ([TxoReconcileGates.scanTipHeight]); no latched sync fault
      * ([syncFaultDetected] — a rejected round means rows are missing by
-     * design and a rescan is pending); and the wallet's own durable scan
-     * watermark — the Room wallet row's `syncedHeight`, which the engine
-     * persists through the changeset header — within
+     * design and a rescan is pending); and the wallet's own scan watermark
+     * as the engine holds it
+     * ([WalletManagerNative.walletManagerCoreWalletSyncedHeight], Swift's
+     * `platform_wallet_core_wallet_state`) within
      * [TxoReconcileGates.TIP_MARGIN] blocks of the tip: the tip says how far
-     * the CLIENT got, not how far this wallet's rows are committed, and a
-     * wallet added behind the tip is still being scanned.
+     * the CLIENT got, and a wallet added behind the tip is still being
+     * scanned. Not the persisted Room `syncedHeight`: that copy trails the
+     * engine by up to one persistence round, and the SYNCED transition lands
+     * inside that window — gating on it skipped the run at the end of every
+     * restore.
      *
      * The run holds a [teardownGate] borrow, so the native manager is not
      * destroyed under an engine read. [closeSuspending] and [removeWallet]
@@ -1324,9 +1328,16 @@ class PlatformWalletManager(
             return try {
                 teardownGate.withOp {
                     if (syncFaultDetected()) return@withOp skip(TxoReconcileSkipReason.SYNC_FAULT_DETECTED)
-                    val syncedHeight = database.walletDao().getByWalletId(walletId)?.syncedHeight
-                        ?: return@withOp skip(TxoReconcileSkipReason.WALLET_UNKNOWN)
-                    if (syncedHeight.toLong() + TxoReconcileGates.TIP_MARGIN < tipHeight) {
+                    val walletSyncedHeight = try {
+                        withContext(Dispatchers.IO) {
+                            mapNativeErrors {
+                                WalletManagerNative.walletManagerCoreWalletSyncedHeight(managerHandle, walletId)
+                            }
+                        }
+                    } catch (notFound: DashSdkError.PlatformWallet.NotFound) {
+                        return@withOp skip(TxoReconcileSkipReason.WALLET_UNKNOWN)
+                    }
+                    if (!TxoReconcileGates.walletCaughtUp(walletSyncedHeight, tipHeight)) {
                         return@withOp skip(TxoReconcileSkipReason.WALLET_BEHIND_TIP)
                     }
                     val isCancelled = { isClosed || txoReconcile.currentEpoch != generation }
