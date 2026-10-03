@@ -4975,7 +4975,7 @@ mod time_range_proof_verification {
 
     use dash_platform_queries::documents::document_query::DocumentQuery as SdkDocumentQuery;
     use drive::query::SelectProjection;
-    use drive_proof_verifier::{DocumentAverage, DocumentCount, DocumentSum};
+    use drive_proof_verifier::{DocumentAverage, DocumentCount, DocumentSplitCounts, DocumentSum};
     use std::sync::Arc;
 
     const SUMMABLE_INDEX: &str = "trendingLikes";
@@ -5143,6 +5143,112 @@ mod time_range_proof_verification {
                 ProofVerifierError::GroveDBError { .. } | ProofVerifierError::DriveError { .. }
             ),
             "the rejection must come from the proof path, got: {error:?}"
+        );
+    }
+
+    /// A range-outer carrier count (two ranges, grouped by the outer one,
+    /// proved) without a limit walks the platform default number of outer
+    /// keys on the server, and the SDK entry point rebuilds the same walk:
+    /// with more brands in range than that default, the proof verifies to the
+    /// first of them.
+    #[test]
+    fn a_range_outer_carrier_count_without_a_limit_verifies_through_the_sdk() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = DataContractFactory::new(version.protocol_version)
+            .expect("expected a factory")
+            .create_with_value_config(
+                Identifier::new([9u8; 32]),
+                0,
+                platform_value!({
+                    "widget": {
+                        "type": "object",
+                        "properties": {
+                            "brand": { "type": "string", "maxLength": 32, "position": 0 },
+                            "color": { "type": "string", "maxLength": 32, "position": 1 },
+                        },
+                        "indices": [{
+                            "name": "byBrandColor",
+                            "properties": [{ "brand": "asc" }, { "color": "asc" }],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                        }],
+                        "additionalProperties": false,
+                    }
+                }),
+                None,
+                None,
+            )
+            .expect("the brand contract is well-formed")
+            .data_contract_owned();
+        store_data_contract(&platform, &contract, version);
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget doctype exists");
+        let brands: Vec<String> = (0..12).map(|i| format!("brand{i:02}")).collect();
+        for (i, brand) in brands.iter().enumerate() {
+            let mut document: Document = document_type
+                .random_document(Some(9_000 + i as u64), version)
+                .expect("random document");
+            document.set_properties(BTreeMap::from([
+                ("brand".to_string(), Value::Text(brand.clone())),
+                ("color".to_string(), Value::Text("red".to_string())),
+            ]));
+            store_document(&platform, &contract, document_type, &document, version);
+        }
+        let state = state_with_committed_block_time(&base_state, &platform.drive, version);
+
+        let request = GetDocumentsRequestV1 {
+            data_contract_id: contract.id().to_vec(),
+            where_clauses: vec![
+                wc(
+                    "brand",
+                    ProtoWhereOperator::GreaterThan,
+                    Value::Text("a".to_string()),
+                ),
+                wc(
+                    "color",
+                    ProtoWhereOperator::GreaterThan,
+                    Value::Text("blue".to_string()),
+                ),
+            ],
+            selects: select_count_star(),
+            group_by: vec!["brand".to_string()],
+            prove: true,
+            limit: None,
+            ..empty_v1_request()
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let range = |field: &str, value: &str| WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text(value.to_string()),
+        };
+        let query = SdkDocumentQuery::new(Arc::new(contract.clone()), "widget")
+            .expect("the fixture has this document type")
+            .with_select(SelectProjection::count_star())
+            .with_where(range("brand", "a"))
+            .with_where(range("color", "blue"))
+            .with_group_by("brand");
+        let (counts, _mtd, _proof) =
+            <DocumentSplitCounts as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a range-outer carrier count without a limit must verify through the SDK");
+        let counts = counts.expect("brands are in range");
+        assert_eq!(
+            counts.0.len(),
+            10,
+            "the platform default caps the outer walk at ten brands of twelve"
+        );
+        assert!(
+            counts.0.iter().all(|entry| entry.count == Some(1)),
+            "each brand has one red widget: {:?}",
+            counts.0
         );
     }
 
