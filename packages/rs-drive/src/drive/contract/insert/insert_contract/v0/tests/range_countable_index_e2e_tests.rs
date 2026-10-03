@@ -1693,7 +1693,7 @@ fn aggregate_count_proof_verifies_on_compound_index_with_equal_prefix() {
         ("contoso", "green"),
         ("contoso", "blue"),
     ];
-    insert_brand_color_widgets(&drive, &contract, &docs, pv);
+    insert_brand_color_widgets(&drive, &contract, docs, pv);
 
     let where_clauses = vec![
         WhereClause {
