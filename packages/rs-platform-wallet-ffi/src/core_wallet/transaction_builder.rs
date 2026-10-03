@@ -39,15 +39,17 @@ pub struct FFITransactionBuilder {
     /// this per funding call, which the finalizers make internally, so the
     /// intent has to be carried here and read when they run.
     reservation_only: bool,
-    /// The rate `core_wallet_tx_builder_set_fee_rate` set (`None` until it
-    /// runs: key-wallet's default; an explicit 0 is kept as 0), the sum of
+    /// The rate `core_wallet_tx_builder_set_fee_rate` set (`fee_rate_set` is
+    /// false until it runs: key-wallet's default; an explicit 0 is kept as 0 —
+    /// two plain fields, as this struct is `repr(C)`), the sum of
     /// `core_wallet_tx_builder_add_output` amounts, the number of explicit
     /// outputs and the total length of their scripts, the bytes a special
     /// payload adds, and whether the strategy is a drain. The pinned key-wallet
     /// builder exposes none of these, and the finalizers need them to tell a
     /// shortfall the not-yet-final coins would cover from a genuine one
     /// (code 59).
-    fee_rate_sat_per_kb: Option<u64>,
+    fee_rate_set: bool,
+    fee_rate_sat_per_kb: u64,
     payload_bytes: usize,
     output_sum: u64,
     output_count: usize,
@@ -67,7 +69,9 @@ impl FFITransactionBuilder {
     /// nothing known.
     fn shortfall_basis(&self) -> ShortfallBasis {
         ShortfallBasis {
-            fee_rate: self.fee_rate_sat_per_kb.map(FeeRate::new),
+            fee_rate: self
+                .fee_rate_set
+                .then(|| FeeRate::new(self.fee_rate_sat_per_kb)),
             requested: (!self.drain && self.output_sum > 0).then_some(self.output_sum),
             outputs: (self.output_count > 0).then_some(OutputShape {
                 count: self.output_count,
@@ -617,7 +621,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_new(
         inner,
         network,
         reservation_only: false,
-        fee_rate_sat_per_kb: None,
+        fee_rate_set: false,
+        fee_rate_sat_per_kb: 0,
         payload_bytes: 0,
         output_sum: 0,
         output_count: 0,
@@ -798,7 +803,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_fee_rate(
     let b = (*builder).take_builder();
     let b = b.set_fee_rate(FeeRate::new(sat_per_kb));
     (*builder).store_builder(b);
-    (*builder).fee_rate_sat_per_kb = Some(sat_per_kb);
+    (*builder).fee_rate_set = true;
+    (*builder).fee_rate_sat_per_kb = sat_per_kb;
 
     PlatformWalletFFIResult::ok()
 }
