@@ -73,13 +73,27 @@ where
 mod test {
     use super::*;
     use crate::config::PlatformConfig;
+    use crate::platform_types::platform_state::platform_state_for_saving::v2::{
+        deserialize_masternode_entry, serialize_masternode_entry,
+    };
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use crate::platform_types::validator::v0::{NewValidatorIfMasternodeInState, ValidatorV0};
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::ProTxHash;
     use dpp::dashcore_rpc::json::MasternodeListDiff;
+    use dpp::identifier::MasternodeIdentifiers;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::{KeyID, Purpose};
+    use dpp::prelude::Identifier;
+    use std::collections::BTreeMap;
     use std::env;
     use std::fs::File;
     use std::io::BufReader;
     use std::path::PathBuf;
+    use std::str::FromStr;
 
     #[test]
     fn test_update_masternode_list() {
@@ -269,6 +283,241 @@ mod test {
                 "unexpected message: {message}"
             ),
             other => panic!("expected DashCoreBadResponseError, got {other:?}"),
+        }
+    }
+
+    /// Dash Core v24 prints masternodes that differ from every earlier list: a shared
+    /// masternode has no owner, payout or collateral address; an extended-address masternode
+    /// has a `payouts` list instead of `payoutAddress`; a Tor primary address is not an
+    /// `ip:port` `service`; an Evo without addresses has `-1` platform ports. From protocol
+    /// version 14 the list is processed rather than failing the block, and the masternode
+    /// identities are:
+    /// - shared: voter and operator identities, no owner identity (it has no owner key);
+    /// - one payout: the same owner identity as a legacy payout address (TRANSFER key 0,
+    ///   OWNER key 1);
+    /// - several payouts: an owner identity with only the OWNER key 1;
+    /// - a later payout change through `payouts`: no key change, since only a `payoutAddress`
+    ///   change rotates the TRANSFER key.
+    #[test]
+    fn should_update_masternode_identities_from_a_core_v24_masternode_list() {
+        let platform_version = PlatformVersion::latest();
+
+        let platform = platform_with_core_v24_masternode_list(platform_version);
+
+        let genesis_core_block_height = 1250;
+        let first_block_core_block_height = 1260;
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let mut init_chain_platform_state = platform.state.load().as_ref().clone();
+
+        platform
+            .update_masternode_list(
+                None,
+                &mut init_chain_platform_state,
+                genesis_core_block_height,
+                true,
+                &BlockInfo {
+                    height: 1,
+                    core_height: genesis_core_block_height,
+                    time_ms: 1,
+                    ..Default::default()
+                },
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process the Core v24 masternode list");
+
+        let platform_state = init_chain_platform_state.clone();
+        let mut block_platform_state = platform_state.clone();
+
+        platform
+            .update_masternode_list(
+                Some(&platform_state),
+                &mut block_platform_state,
+                first_block_core_block_height,
+                false,
+                &BlockInfo {
+                    height: 1,
+                    core_height: first_block_core_block_height,
+                    time_ms: 2,
+                    ..Default::default()
+                },
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process the Core v24 masternode list diff");
+
+        assert_eq!(block_platform_state.full_masternode_list().len(), 7);
+        assert_eq!(block_platform_state.hpmn_masternode_list().len(), 3);
+
+        // An Evo without addresses prints `-1` platform ports, which read as no port, so it
+        // cannot be a validator, like any Evo without ports. The legacy Evo is one, with the
+        // ports and address the diff gave it.
+        let validator = |pro_tx_hash: &str| {
+            ValidatorV0::new_validator_if_masternode_in_state(
+                ProTxHash::from_str(pro_tx_hash).expect("expected a pro tx hash"),
+                None,
+                &block_platform_state,
+            )
+        };
+        assert!(
+            validator("6f1757595185032c808321af3e2e8468fae10b8f91e2a657d7a4c7122f4b2706").is_none()
+        );
+        let legacy_evo_validator =
+            validator("ca3d32c4f2ef62eaf736bf41bb3235a832ec1eb6d8dfaccd4d3555e70f6757b0")
+                .expect("expected the legacy Evo to be a validator");
+        assert_eq!(legacy_evo_validator.node_ip, "192.0.2.40");
+        assert_eq!(legacy_evo_validator.platform_p2p_port, 36656);
+        assert_eq!(legacy_evo_validator.platform_http_port, 1443);
+
+        // Every parsed masternode survives a store and reload, except for the payout list and
+        // nested addresses, which are not stored.
+        for masternode in block_platform_state.full_masternode_list().values() {
+            let bytes = serialize_masternode_entry(masternode, platform_version)
+                .expect("expected to serialize the masternode entry");
+            let mut expected = masternode.clone();
+            expected.state.payouts = None;
+            expected.state.addresses = None;
+            assert_eq!(
+                deserialize_masternode_entry(&bytes)
+                    .expect("expected to deserialize the masternode entry"),
+                expected
+            );
+        }
+
+        let hash160 = |hex: &str| -> Vec<u8> { hex::decode(hex).expect("expected hex") };
+
+        // The keys of an identity, none of them disabled; `None` if there is no identity.
+        let identity_keys =
+            |identity_id: Identifier| -> Option<BTreeMap<KeyID, (Purpose, Vec<u8>)>> {
+                platform
+                    .drive
+                    .fetch_full_identity(
+                        identity_id.to_buffer(),
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("expected to fetch an identity")
+                    .map(|identity| {
+                        identity
+                            .public_keys()
+                            .iter()
+                            .map(|(key_id, key)| {
+                                assert!(key.disabled_at().is_none(), "key {key_id} is disabled");
+                                (*key_id, (key.purpose(), key.data().to_vec()))
+                            })
+                            .collect()
+                    })
+            };
+
+        let owner_key = |hex: &str| (Purpose::OWNER, hash160(hex));
+        let transfer_key = |hex: &str| (Purpose::TRANSFER, hash160(hex));
+
+        let voting_421c = "421c03add2c804421451c4e022258778175e60d8";
+        let voting_064c = "064cd21ff210c1a92adaea49a4768a41c2aef1bc";
+
+        // (pro_tx_hash, voting key hash, operator public key, owner identity keys)
+        let expected = [
+            (
+                // Legacy Evo whose payout address the diff moves into `payouts`
+                "ca3d32c4f2ef62eaf736bf41bb3235a832ec1eb6d8dfaccd4d3555e70f6757b0",
+                voting_421c,
+                "8ed3f0c208efbcfc815cbfb94490dc68cf2e29d44dd9f8a91e20e06057aa110d7062c8ab7ccc85a9ff0c88760157f563".to_string(),
+                Some(BTreeMap::from([
+                    (0, transfer_key("75d57974b6e29a4a70df57a3b11195ce0a0dc817")),
+                    (1, owner_key("1f67d90f35e3c5070c368ae6f3635aac357e47df")),
+                ])),
+            ),
+            (
+                // One payout, which the diff replaces with two
+                "27978dd892b7c876c238be1a6141461c2824f3497dd0058e160979bc8f0a0bef",
+                voting_421c,
+                "a792ce1af5f7bb9281053b3934cb8b08d00d075a56498e1a525388ce467f188e8a80911fd96a20982baa9b9678452534".to_string(),
+                Some(BTreeMap::from([
+                    (0, transfer_key("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
+                    (1, owner_key("b740a2ab3f631e4dfe15debf746364f1d8352c50")),
+                ])),
+            ),
+            (
+                // Shared
+                "a4d26868017c0ccffe2efe50944ef4211834660cca834c6e9f86dec6a88246fa",
+                voting_421c,
+                "b1".repeat(48),
+                None,
+            ),
+            (
+                // One payout, which the diff replaces with another single payout
+                "813a7c3f28817988a8e6ce66e07e43e261e78398373bfbaae94c898645111d6b",
+                voting_421c,
+                "b2".repeat(48),
+                Some(BTreeMap::from([
+                    (0, transfer_key("5555555555555555555555555555555555555555")),
+                    (1, owner_key("0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a")),
+                ])),
+            ),
+            (
+                // Tor primary address, two payouts; the owner and voting keys are the same
+                "3023ffd989974768b0dfc347410ad923fa6d3f1eee90180bd0c435e81cb1a82f",
+                voting_064c,
+                "b3".repeat(48),
+                Some(BTreeMap::from([(1, owner_key(voting_064c))])),
+            ),
+            (
+                // Evo without addresses, one payout
+                "6f1757595185032c808321af3e2e8468fae10b8f91e2a657d7a4c7122f4b2706",
+                voting_421c,
+                "b4".repeat(48),
+                Some(BTreeMap::from([
+                    (0, transfer_key("9999999999999999999999999999999999999999")),
+                    (1, owner_key("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")),
+                ])),
+            ),
+            (
+                // Evo with an IPv6 primary address, two payouts
+                "aecd2830b843e6a84283ba290492a213e355cea7c5026e6118a21e1bfbc36783",
+                voting_421c,
+                "b5".repeat(48),
+                Some(BTreeMap::from([(
+                    1,
+                    owner_key("0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"),
+                )])),
+            ),
+        ];
+
+        for (pro_tx_hash, voting_key_hash, operator_public_key, owner_identity_keys) in expected {
+            let pro_tx_hash = ProTxHash::from_str(pro_tx_hash)
+                .expect("expected a pro tx hash")
+                .to_byte_array();
+            let voting_key_hash: [u8; 20] = hash160(voting_key_hash)
+                .try_into()
+                .expect("expected 20 bytes");
+            let operator_public_key = hex::decode(operator_public_key).expect("expected hex");
+
+            assert_eq!(
+                identity_keys(pro_tx_hash.into()),
+                owner_identity_keys,
+                "owner identity of {}",
+                hex::encode(pro_tx_hash)
+            );
+            assert!(
+                identity_keys(Identifier::create_voter_identifier(
+                    &pro_tx_hash,
+                    &voting_key_hash
+                ))
+                .is_some(),
+                "voter identity of {}",
+                hex::encode(pro_tx_hash)
+            );
+            assert!(
+                identity_keys(Identifier::create_operator_identifier(
+                    &pro_tx_hash,
+                    &operator_public_key
+                ))
+                .is_some(),
+                "operator identity of {}",
+                hex::encode(pro_tx_hash)
+            );
         }
     }
 }

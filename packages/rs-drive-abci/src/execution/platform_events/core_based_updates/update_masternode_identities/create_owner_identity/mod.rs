@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -18,6 +19,11 @@ where
     /// This function constructs an identity for an owner using details from the masternode.
     /// It delegates to a version-specific method depending on the platform version.
     ///
+    /// Versions 0 and 1 always create an identity and fail on a masternode without the payout
+    /// address (and, in version 1, the owner address) they read. Version 2 (from protocol
+    /// version 14) creates none for a masternode without an owner address, such as a shared
+    /// masternode, and only the OWNER key for one paid to several payouts.
+    ///
     /// # Arguments
     ///
     /// * masternode - A reference to the masternode list item.
@@ -25,12 +31,12 @@ where
     ///
     /// # Returns
     ///
-    /// * Result<Identity, Error> - Returns the constructed identity for the owner if successful.
-    ///   Otherwise, returns an error.
+    /// * Result<Option<Identity>, Error> - The owner identity, or `None` when the masternode
+    ///   has none (only version 2 returns `None`). Otherwise, returns an error.
     pub(crate) fn create_owner_identity(
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
-    ) -> Result<Identity, Error> {
+    ) -> Result<Option<Identity>, Error> {
         match platform_version
             .drive_abci
             .methods
@@ -38,11 +44,12 @@ where
             .masternode_updates
             .create_owner_identity
         {
-            0 => Self::create_owner_identity_v0(masternode, platform_version),
-            1 => Self::create_owner_identity_v1(masternode, platform_version),
+            0 => Self::create_owner_identity_v0(masternode, platform_version).map(Some),
+            1 => Self::create_owner_identity_v1(masternode, platform_version).map(Some),
+            2 => Self::create_owner_identity_v2(masternode, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "create_owner_identity".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -60,7 +67,11 @@ mod tests {
     use dpp::dashcore_rpc::dashcore_rpc_json::{
         DMNPayout, DMNState, MasternodeListItem, MasternodeType,
     };
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::{KeyID, Purpose};
     use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     const OWNER_ADDRESS: [u8; 20] = [0x22; 20];
     const PAYOUT_ADDRESS: [u8; 20] = [0x24; 20];
@@ -111,11 +122,12 @@ mod tests {
     }
 
     /// Generation 0 (protocol versions 1 to 3) builds the owner identity from the payout
-    /// address, and generation 1 (4 to 13) from the payout and the owner address. A masternode
-    /// Core lists without one of them fails with `DashCoreBadResponseError`, so its block
-    /// fails instead of the masternode getting an owner identity these generations do not
-    /// define: a shared masternode has neither address, and an extended-address masternode
-    /// has a payout list instead of a payout address.
+    /// address (TRANSFER key 0), and generation 1 (4 to 13) from the payout and the owner
+    /// address (TRANSFER key 0, OWNER key 1). A masternode Core lists without one of them
+    /// fails with `DashCoreBadResponseError`, so its block fails instead of the masternode
+    /// getting an owner identity these generations do not define: a shared masternode has
+    /// neither address, and an extended-address masternode has a payout list instead of a
+    /// payout address.
     #[test]
     fn should_fail_for_a_masternode_without_a_payout_or_owner_address_up_to_protocol_version_13() {
         let legacy = masternode(Some(OWNER_ADDRESS), Some(PAYOUT_ADDRESS), None);
@@ -139,8 +151,23 @@ mod tests {
             let platform_version =
                 PlatformVersion::get(protocol_version).expect("expected a known protocol version");
 
-            Platform::<MockCoreRPCLike>::create_owner_identity(&legacy, platform_version)
-                .expect("a masternode with an owner and a payout address has an owner identity");
+            let legacy_owner_identity_keys: BTreeMap<KeyID, (Purpose, Vec<u8>)> =
+                Platform::<MockCoreRPCLike>::create_owner_identity(&legacy, platform_version)
+                    .expect("expected to create the owner identity")
+                    .expect("a masternode with an owner and a payout address has an owner identity")
+                    .public_keys()
+                    .iter()
+                    .map(|(key_id, key)| (*key_id, (key.purpose(), key.data().to_vec())))
+                    .collect();
+            let mut expected_keys =
+                BTreeMap::from([(0, (Purpose::TRANSFER, PAYOUT_ADDRESS.to_vec()))]);
+            if protocol_version == 13 {
+                expected_keys.insert(1, (Purpose::OWNER, OWNER_ADDRESS.to_vec()));
+            }
+            assert_eq!(
+                legacy_owner_identity_keys, expected_keys,
+                "protocol version {protocol_version}"
+            );
 
             let mut cases = vec![
                 (&shared, "has no payout address"),

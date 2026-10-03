@@ -11,12 +11,17 @@ use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
     /// Update of the masternode identities
+    ///
+    /// Version 0 adds an owner identity for every added masternode. Version 1 (from protocol
+    /// version 14) adds none for a masternode `create_owner_identity` gives none, such as a
+    /// shared masternode.
     pub(in crate::execution) fn update_masternode_identities(
         &self,
         masternode_diff: MasternodeListDiff,
@@ -41,9 +46,17 @@ where
                 transaction,
                 platform_version,
             ),
+            1 => self.update_masternode_identities_v1(
+                masternode_diff,
+                removed_masternodes,
+                block_info,
+                platform_state,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_masternode_identities".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -68,10 +81,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     /// A payout change of an extended-address masternode reaches Drive only as `payouts`,
-    /// never as `payout_address`. Every protocol version rotates the owner identity's TRANSFER
-    /// key only on a `payout_address` change; acting on `payouts` as well would change what a
-    /// block does to owner identities. Protocol version 13 is pinned because a node running it
-    /// against Dash Core v24 receives such diffs.
+    /// never as `payout_address`. Both generations rotate the owner identity's TRANSFER key
+    /// only on a `payout_address` change and leave the owner identity's keys as they are on a
+    /// `payouts` change. Protocol version 13 is pinned because a node running it against Dash
+    /// Core v24 receives such diffs.
     #[test]
     fn should_not_change_owner_identity_keys_on_a_payout_list_change() {
         for platform_version in [
