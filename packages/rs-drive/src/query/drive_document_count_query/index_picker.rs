@@ -7,23 +7,12 @@
 use super::super::conditions::WhereClause;
 use super::{
     document_count_chain_position, point_count_reads_documents,
-    prefix_to_last_count_reads_documents, DriveDocumentCountQuery,
+    prefix_to_last_count_reads_documents, terminal_reads_documents, DriveDocumentCountQuery,
 };
 use crate::query::ResolvedTimeRange;
-use crate::query::{index_admissible_for_query, SkipIfAbsentBinding};
+use crate::query::{index_admissible_for_query, pins_reach_chain, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
-
-/// Whether a range count of `index` reads documents: a `rangeCountable`
-/// index's terminal tree counts them (grovedb's `AggregateCountOnRange`), and
-/// a `summableOffCountIndex` index's range sums do
-/// ([`DriveDocumentCountQuery::counter_sums_query`]; its count trees would
-/// count the counters, one per group). Such an index is always
-/// `rangeSummable`.
-fn range_count_reads_documents(index: &Index) -> bool {
-    (index.range_countable && index.countable.is_countable())
-        || (index.is_summable_off_count_index() && index.range_summable)
-}
 
 impl DriveDocumentCountQuery<'_> {
     /// Finds a `countable: true` index whose properties **exactly match** the
@@ -176,17 +165,9 @@ impl DriveDocumentCountQuery<'_> {
                 continue;
             }
             let pin_depth = indexable_fields.len();
-            if pin_depth == 0 || pin_depth >= index.properties.len() {
-                continue;
-            }
             // An average ranking's chain carries the counts as well, and a
             // `summableOffCountIndex` index's sum chain its document counts.
-            let Some(min_at_position) = document_count_chain_position(index) else {
-                continue;
-            };
-            // The deepest pinned property (position pin_depth - 1) must
-            // sit at or below the shallowest ranked level.
-            if min_at_position > pin_depth - 1 {
+            if !pins_reach_chain(index, pin_depth, document_count_chain_position(index)) {
                 continue;
             }
             let leading_covered = index.properties[..pin_depth]
@@ -291,7 +272,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !range_count_reads_documents(index) {
+            if !terminal_reads_documents(index) {
                 continue;
             }
 

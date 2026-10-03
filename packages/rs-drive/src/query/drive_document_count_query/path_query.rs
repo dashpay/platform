@@ -22,6 +22,7 @@ use super::{
 use crate::drive::RootTree;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::{pins_reach_chain, refuse_a_range_total_through_a_ranked_index};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
@@ -189,6 +190,8 @@ impl DriveDocumentCountQuery<'_> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        // No range total through a ranked level (see the helper).
+        refuse_a_range_total_through_a_ranked_index(self.index)?;
         let range_clause = self
             .where_clauses
             .iter()
@@ -304,6 +307,8 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        // No range total through a ranked level (see the helper).
+        refuse_a_range_total_through_a_ranked_index(self.index)?;
         // The terminator property (last in the index) carries the
         // ACOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:
@@ -901,9 +906,11 @@ impl DriveDocumentCountQuery<'_> {
                 // whose count IS the whole-subtree total, and the
                 // fully-covered selector below reads them verbatim — the
                 // loop just stops here instead of at the terminal.
-                let min_at_position = document_count_chain_position(self.index);
-                let deepest_pin_is_count_bearing =
-                    position >= 1 && min_at_position.is_some_and(|min_at| min_at < position);
+                let deepest_pin_is_count_bearing = pins_reach_chain(
+                    self.index,
+                    position,
+                    document_count_chain_position(self.index),
+                );
                 if deepest_pin_is_count_bearing {
                     // Fail closed on a gapped set reaching the builder
                     // directly: a clause on any deeper property means the

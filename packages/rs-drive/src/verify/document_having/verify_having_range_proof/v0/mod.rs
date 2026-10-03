@@ -62,8 +62,9 @@ impl DriveDocumentHavingQuery<'_> {
             // `self.bounds` only on a `summableOffCountIndex` index, which only
             // meta-schema v3 (protocol version 14) admits, so every earlier
             // version reads and presents exactly as before.
-            let axis = self.read_bounds().axis();
-            let (lo, hi) = self.read_bounds().inclusive_bounds_i128();
+            let read_bounds = self.read_bounds();
+            let axis = read_bounds.axis();
+            let (lo, hi) = read_bounds.inclusive_bounds_i128();
             let path_query = PathQuery::new_branched_axis(
                 prefix,
                 keys.clone(),
@@ -140,8 +141,9 @@ impl DriveDocumentHavingQuery<'_> {
         // `self.bounds` only on a `summableOffCountIndex` index, which only
         // meta-schema v3 (protocol version 14) admits, so every earlier
         // version reads and presents exactly as before.
-        let axis = self.read_bounds().axis();
-        let (lo, hi) = self.read_bounds().inclusive_bounds_i128();
+        let read_bounds = self.read_bounds();
+        let axis = read_bounds.axis();
+        let (lo, hi) = read_bounds.inclusive_bounds_i128();
         let path_query =
             PathQuery::new_axis_bounded(path, axis.into(), lo, hi, self.limit, self.descending);
         let verified =

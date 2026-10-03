@@ -3185,3 +3185,246 @@ fn distinct_count_proof_with_in_on_prefix_returns_per_brand_color_entries() {
     let total: u64 = per_pair.values().sum();
     assert_eq!(total, 6);
 }
+
+/// The count verifiers (point lookup, aggregate, distinct and carrier) and
+/// the contract insert estimate are edited in place for
+/// `summableOffCountIndex` indexes; run at the last shipped protocol version
+/// over a regular `[brand, color]` index they take none of the new branches:
+/// every proof verifies to the prover's answer and the dry run still bounds
+/// the applied fee.
+#[test]
+fn count_proofs_and_contract_estimate_unchanged_at_protocol_version_13() {
+    use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
+    use crate::query::drive_document_count_query::{
+        CountMode, DocumentCountRequest, DocumentCountResponse,
+    };
+    use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+
+    let pv = PlatformVersion::get(13).expect("protocol version 13 exists");
+    let factory = DataContractFactory::new(pv.protocol_version).expect("factory");
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "brand": { "type": "string", "position": 0, "maxLength": 32 },
+            "color": { "type": "string", "position": 1, "maxLength": 32 },
+        },
+        "indices": [{
+            "name": "byBrandColor",
+            "properties": [{"brand": "asc"}, {"color": "asc"}],
+            "countable": "countable",
+            "rangeCountable": true,
+        }],
+        "additionalProperties": false,
+    });
+    let contract = factory
+        .create_with_value_config(
+            generate_random_identifier_struct(),
+            0,
+            platform_value!({ "widget": document_schema }),
+            None,
+            None,
+        )
+        .expect("create contract")
+        .data_contract_owned();
+
+    let estimated = setup_drive_with_initial_state_structure(Some(pv))
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            false,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("the dry run prices the contract");
+    let drive = setup_drive_with_initial_state_structure(Some(pv));
+    let applied = drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("apply contract");
+    assert!(
+        estimated.storage_fee >= applied.storage_fee
+            && estimated.processing_fee >= applied.processing_fee,
+        "the dry run {estimated:?} bounds the applied fee {applied:?}"
+    );
+
+    let document_type = contract
+        .document_type_for_name("widget")
+        .expect("widget exists");
+    for (i, (brand, color)) in [
+        ("acme", "red"),
+        ("acme", "red"),
+        ("acme", "red"),
+        ("acme", "blue"),
+        ("acme", "blue"),
+        ("contoso", "red"),
+        ("contoso", "red"),
+        ("contoso", "green"),
+        ("contoso", "blue"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut doc = document_type
+            .random_document(Some((i + 1) as u64), pv)
+            .expect("random document");
+        doc.set_properties(std::collections::BTreeMap::from([
+            ("brand".to_string(), Value::Text(brand.to_string())),
+            ("color".to_string(), Value::Text(color.to_string())),
+        ]));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to insert document");
+    }
+
+    let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+        field: field.to_string(),
+        operator,
+        value,
+    };
+    let text = |value: &str| Value::Text(value.to_string());
+    let drive_config = DriveConfig::default();
+    let count = |where_clauses: &[WhereClause], mode: CountMode, prove: bool| {
+        drive
+            .execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type,
+                    where_clauses: where_clauses.to_vec(),
+                    resolved_time_ranges: vec![],
+                    order_clauses: vec![],
+                    mode,
+                    limit: None,
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                pv,
+            )
+            .expect("the count executes at protocol version 13")
+    };
+    let proof_of =
+        |where_clauses: &[WhereClause], mode: CountMode| match count(where_clauses, mode, true) {
+            DocumentCountResponse::Proof(proof) => proof,
+            other => panic!("expected a proof, got {other:?}"),
+        };
+    let query_for = |where_clauses: &[WhereClause], range: bool| {
+        let index = if range {
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                document_type.indexes(),
+                where_clauses,
+                &[],
+            )
+        } else {
+            DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                document_type.indexes(),
+                where_clauses,
+                &[],
+            )
+        }
+        .expect("byBrandColor answers the count");
+        assert!(!index.is_summable_off_count_index());
+        DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: where_clauses.to_vec(),
+        }
+    };
+
+    // Point lookup: acme reds.
+    let point = [
+        clause("brand", WhereOperator::Equal, text("acme")),
+        clause("color", WhereOperator::Equal, text("red")),
+    ];
+    let (_, entries) = query_for(&point, false)
+        .verify_point_lookup_count_proof(&proof_of(&point, CountMode::Aggregate), pv)
+        .expect("the point lookup proof verifies");
+    assert_eq!(
+        entries.iter().filter_map(|entry| entry.count).sum::<u64>(),
+        3,
+        "acme reds"
+    );
+
+    // Aggregate range: acme colors after blue.
+    let acme_range = [
+        clause("brand", WhereOperator::Equal, text("acme")),
+        clause("color", WhereOperator::GreaterThan, text("blue")),
+    ];
+    let (_, total) = query_for(&acme_range, true)
+        .verify_aggregate_count_proof(&proof_of(&acme_range, CountMode::Aggregate), pv)
+        .expect("the aggregate proof verifies");
+    assert_eq!(total, 3, "acme colors after blue");
+
+    // Distinct range: acme per color, matching the unproved entries.
+    let acme_colors = [
+        clause("brand", WhereOperator::Equal, text("acme")),
+        clause("color", WhereOperator::GreaterThan, text("a")),
+    ];
+    let unproved = match count(&acme_colors, CountMode::GroupByRange, false) {
+        DocumentCountResponse::Entries(entries) => entries,
+        other => panic!("expected entries, got {other:?}"),
+    };
+    assert_eq!(
+        unproved
+            .iter()
+            .map(|entry| (entry.key.clone(), entry.count))
+            .collect::<Vec<_>>(),
+        vec![(b"blue".to_vec(), Some(2)), (b"red".to_vec(), Some(3))],
+        "acme per color"
+    );
+    let (_, verified) = query_for(&acme_colors, true)
+        .verify_distinct_count_proof(
+            &proof_of(&acme_colors, CountMode::GroupByRange),
+            DEFAULT_QUERY_LIMIT,
+            true,
+            pv,
+        )
+        .expect("the distinct proof verifies");
+    assert_eq!(verified, unproved, "proved per color");
+
+    // Carrier: each brand's colors after blue.
+    let per_brand = [
+        clause(
+            "brand",
+            WhereOperator::In,
+            Value::Array(vec![text("acme"), text("contoso")]),
+        ),
+        clause("color", WhereOperator::GreaterThan, text("blue")),
+    ];
+    let (_, totals) = query_for(&per_brand, true)
+        .verify_carrier_aggregate_count_proof(
+            &proof_of(&per_brand, CountMode::GroupByIn),
+            None,
+            true,
+            pv,
+        )
+        .expect("the carrier proof verifies");
+    assert_eq!(
+        totals,
+        vec![(b"acme".to_vec(), 3), (b"contoso".to_vec(), 3)],
+        "each brand's colors after blue"
+    );
+}

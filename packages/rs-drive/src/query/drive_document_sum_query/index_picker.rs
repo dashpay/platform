@@ -16,7 +16,9 @@
 
 use crate::query::drive_document_sum_query::{is_indexable_for_sum, is_range_operator};
 use crate::query::ResolvedTimeRange;
-use crate::query::{index_admissible_for_query, SkipIfAbsentBinding, WhereClause, WhereOperator};
+use crate::query::{
+    index_admissible_for_query, pins_reach_chain, SkipIfAbsentBinding, WhereClause, WhereOperator,
+};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -147,13 +149,7 @@ fn find_summable_index_accepted_by<'b>(
             continue;
         }
         let pin_depth = indexable_fields.len();
-        if pin_depth >= index.properties.len() {
-            continue;
-        }
-        let Some(min_at_position) = index.shallowest_sum_chain_position() else {
-            continue;
-        };
-        if min_at_position > pin_depth - 1 {
+        if !pins_reach_chain(index, pin_depth, index.shallowest_sum_chain_position()) {
             continue;
         }
         let leading_covered = index.properties[..pin_depth]

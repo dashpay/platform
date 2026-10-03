@@ -3740,10 +3740,7 @@ pub(super) fn apply_index_only(
                 let ranks_here = index.ranked_countable_at.contains(&skip_property.name)
                     || index.ranked_summable_at.contains(&skip_property.name)
                     || index.ranked_averageable_at.contains(&skip_property.name)
-                    || (last
-                        && (index.ranked_countable
-                            || index.ranked_summable
-                            || index.ranked_averageable));
+                    || (last && index.ranks_its_last_property());
                 if !ranks_here {
                     continue;
                 }
@@ -3971,10 +3968,7 @@ pub(super) fn apply_index_only(
                 || index.range_countable
                 || index.summable.is_some()
                 || index.range_summable
-                || index.ranked_countable
-                || !index.ranked_countable_at.is_empty()
-                || index.ranked_summable
-                || index.ranked_averageable
+                || index.declares_any_ranking()
                 || index.is_bucketed()
                 || index.skip_if_absent
                 || index.preallocated

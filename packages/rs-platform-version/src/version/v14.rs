@@ -1903,9 +1903,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     an index's sums, its document counts: a point read
 ///     (`document_count_of_element`), and a ranked or having-range read on
 ///     its Sum secondaries (`read_axis_for`), and a range read through the
-///     sum surface's range forms (`counter_sums_query`; a range total needs
-///     an unranked last property). Needs grovedb's `GROVE_V4`,
-///     which admits a bare `SumItem` under a
+///     sum surface's range forms (`counter_sums_query`). A range total
+///     through any index that ranks a level is refused cleanly
+///     (`refuse_a_range_total_through_a_ranked_index`). Drive's batch methods,
+///     `apply_drive_operations` and `convert_drive_operations_to_grove_operations`
+///     at version 1, refuse a batch moving one document type's counters for
+///     more than one document (`refuse_repeated_counter_moves`). Needs
+///     grovedb's `GROVE_V4`, which admits a bare `SumItem` under a
 ///     `ProvableCountProvableSumIndexedTree`. Inert for every contract without
 ///     the keyword, which every earlier grammar refuses.
 ///

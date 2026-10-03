@@ -26,6 +26,7 @@ use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use regex::Regex;
 use std::cmp::Ordering;
+use std::mem;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
@@ -49,7 +50,9 @@ pub use derived_index_property::{DerivedIndexField, DerivedIndexProperty};
 pub use extract_contested_values::contested_index_identifier;
 pub use integer_range::{IntegerRangeKeyType, IntegerRangeTransform};
 pub use outlives_delete::index_only_row_commits_created_at;
-pub use preallocation::{PreallocatedKeySource, PreallocationBinding};
+pub use preallocation::{
+    referenced_value_kept_on_removal, PreallocatedKeySource, PreallocationBinding,
+};
 pub use time_range::TimeRangeTransform;
 
 /// Index-level keyword opting the index's terminal property-name tree into the
@@ -759,7 +762,8 @@ pub struct Index {
     ///   so their sums don't pollute the value tree's running sum.
     ///
     /// `range_summable: true` requires `summable` to be `Some` (it's
-    /// additive on top of summable, not a replacement). Mutually
+    /// additive on top of summable, not a replacement), or the index to be a
+    /// `summableOffCountIndex` index, whose counters are what it sums. Mutually
     /// compatible with `countable` and `range_countable` — combining
     /// the flags promotes the tree to a `ProvableCountSumTree` so a
     /// single tree carries both metrics. The dispatcher in
@@ -776,8 +780,9 @@ pub struct Index {
     /// proof instead of enumerating every group.
     ///
     /// The indexed primary is a byte-compatible mirror of the tree it replaces,
-    /// so every existing range aggregate (`AggregateCountOnRange` &co.) keeps
-    /// working against it unchanged.
+    /// so per-value range reads keep working against it; a range total
+    /// (`AggregateCountOnRange` &co.) does not, so Drive refuses one through
+    /// any index that ranks a level.
     ///
     /// `ranked_countable: true` requires [`Index::range_countable`] (which in
     /// turn requires [`Index::countable`]): the ranking secondary is built from
@@ -837,11 +842,13 @@ pub struct Index {
     pub ranked_countable_at: Vec<String>,
     /// Sum-axis counterpart of [`Index::ranked_countable`]: the terminal
     /// property-name tree gains an ordered secondary keyed by each group's sum
-    /// of the [`Index::summable`] property, making "top / bottom K groups by
-    /// sum" O(log n + k) with a proof.
+    /// of the [`Index::summable`] property (on a `summableOffCountIndex`
+    /// index, of the source index's entries, which is also where its
+    /// `rankedCountable` lands), making "top / bottom K groups by sum"
+    /// O(log n + k) with a proof.
     ///
     /// Requires [`Index::range_summable`] (which in turn requires
-    /// [`Index::summable`]).
+    /// [`Index::summable`], or a `summableOffCountIndex` index).
     ///
     /// See `book/src/drive/document-ranked-trees.md` and
     /// `book/src/drive/ranked-index-examples.md` for the worked example.
@@ -1381,6 +1388,22 @@ impl Index {
     /// [`Self::flat_level_key`].
     pub fn is_flat(&self) -> bool {
         self.properties.is_empty() && self.terminal.is_some()
+    }
+
+    /// Whether the index declares any ranking: its last property ranked on
+    /// any axis, or an `at` level on any axis. Every level it names is then
+    /// an indexed tree.
+    pub fn declares_any_ranking(&self) -> bool {
+        self.ranks_its_last_property()
+            || !self.ranked_countable_at.is_empty()
+            || !self.ranked_summable_at.is_empty()
+            || !self.ranked_averageable_at.is_empty()
+    }
+
+    /// Whether the index ranks its last property on any axis, making that
+    /// property's tree an indexed tree.
+    pub fn ranks_its_last_property(&self) -> bool {
+        self.ranked_countable || self.ranked_summable || self.ranked_averageable
     }
 
     /// Whether this is a `summableOffCountIndex` index: one counter per
@@ -2677,7 +2700,7 @@ impl Index {
         if ranked_countable_object_form {
             let (ranks_terminal, at_levels) = resolve_ranked_at_levels(
                 RANKED_COUNTABLE,
-                std::mem::take(&mut ranked_countable_at_levels),
+                mem::take(&mut ranked_countable_at_levels),
                 &index_properties,
             )?;
             ranked_countable |= ranks_terminal;
@@ -2742,8 +2765,8 @@ impl Index {
             // the ranking `rankedSummable` does: its levels merge into the
             // Sum axis, which a ranked `count(*)` and a ranked `sum(<source>)`
             // both read.
-            ranked_summable |= std::mem::take(&mut ranked_countable);
-            for level in std::mem::take(&mut ranked_countable_at) {
+            ranked_summable |= mem::take(&mut ranked_countable);
+            for level in mem::take(&mut ranked_countable_at) {
                 if !ranked_summable_at.contains(&level) {
                     ranked_summable_at.push(level);
                 }
@@ -2912,7 +2935,16 @@ impl Index {
             ));
         }
 
-        if (ranked_summable || !ranked_summable_at.is_empty()) && !range_summable {
+        // A `summableOffCountIndex` index without rangeSummable is refused by
+        // its own rule below, which names the keyword it lacks: its
+        // `rankedCountable` was merged into this axis, so a message naming
+        // `rankedSummable` would blame a keyword the author may not have
+        // written.
+        let refused_as_a_counter = summable_off_count_index.is_some() && !range_summable;
+        if (ranked_summable || !ranked_summable_at.is_empty())
+            && !range_summable
+            && !refused_as_a_counter
+        {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedSummable requires rangeSummable: true; ranking groups by \
                  sum needs the per-group sums the range-sum layout maintains"
@@ -2925,6 +2957,7 @@ impl Index {
         // and `summable` through the two checks above.
         if (ranked_averageable || !ranked_averageable_at.is_empty())
             && !(range_countable && range_summable)
+            && !refused_as_a_counter
         {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedAverageable requires rangeAverageable semantics — both \
@@ -2937,6 +2970,13 @@ impl Index {
             ));
         }
 
+        let any_ranked_axis = ranked_countable
+            || !ranked_countable_at.is_empty()
+            || ranked_summable
+            || !ranked_summable_at.is_empty()
+            || ranked_averageable
+            || !ranked_averageable_at.is_empty();
+
         // Ranking orders groups (the distinct values of the index's last
         // property) by a per-group aggregate. On a unique index every group
         // holds at most one document, so every ranked ordering degenerates to
@@ -2944,14 +2984,7 @@ impl Index {
         // serves — while still paying for an indexed tree and its secondary
         // maintenance on every write. Contested indexes are unique by
         // construction (checked above).
-        if (ranked_countable
-            || !ranked_countable_at.is_empty()
-            || ranked_summable
-            || !ranked_summable_at.is_empty()
-            || ranked_averageable
-            || !ranked_averageable_at.is_empty())
-            && unique
-        {
+        if any_ranked_axis && unique {
             return Err(DataContractError::InvalidContractStructure(
                 "ranked aggregates are not supported on unique indexes: each \
                  group of a unique index contains at most one document, so \
@@ -2989,14 +3022,7 @@ impl Index {
         // default is `true` — and under `true` the null documents get their
         // real reference and form a legitimate rankable group, which is the
         // combination authors actually want.
-        if (ranked_countable
-            || !ranked_countable_at.is_empty()
-            || ranked_summable
-            || !ranked_summable_at.is_empty()
-            || ranked_averageable
-            || !ranked_averageable_at.is_empty())
-            && !null_searchable
-        {
+        if any_ranked_axis && !null_searchable {
             return Err(DataContractError::InvalidContractStructure(
                 "ranked aggregates are not supported with nullSearchable: false: a \
                  document missing the indexed property still creates the null group's \
@@ -3008,12 +3034,6 @@ impl Index {
             ));
         }
 
-        let any_ranked_axis = ranked_countable
-            || !ranked_countable_at.is_empty()
-            || ranked_summable
-            || !ranked_summable_at.is_empty()
-            || ranked_averageable
-            || !ranked_averageable_at.is_empty();
         let bucketed_index_shape = BucketedIndexShape {
             unique,
             contested: contested_index.is_some(),

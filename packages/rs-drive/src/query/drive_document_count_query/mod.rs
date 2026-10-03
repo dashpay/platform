@@ -128,6 +128,63 @@ pub const MAX_LIMIT_AS_FAILSAFE: u32 = 1024;
 /// `crate::config::DEFAULT_QUERY_LIMIT`).
 pub const MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT: u16 = 10;
 
+impl DriveDocumentCountQuery<'_> {
+    /// The `SizedQuery` limit a carrier-aggregate count proof walks with,
+    /// given the request's `limit`. The server's dispatcher and the SDK's
+    /// verifier both take it from here, so they build the same path query:
+    ///
+    /// - Range-outer carrier (two range clauses): `None` means
+    ///   [`MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`]; `Some(n)` is taken for
+    ///   `1 <= n <= MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` and refused
+    ///   otherwise.
+    /// - `In`-outer carrier: the `In` array bounds the walk, so the limit is
+    ///   `None`, and a request carrying one is refused.
+    pub fn carrier_aggregate_count_limit(
+        where_clauses: &[WhereClause],
+        limit: Option<u32>,
+    ) -> Result<Option<u16>, Error> {
+        let has_outer_range = where_clauses
+            .iter()
+            .filter(|wc| Self::is_range_operator(wc.operator))
+            .count()
+            == 2;
+        if !has_outer_range {
+            return match limit {
+                Some(n) => Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                    "carrier-aggregate In-outer queries (e.g. `outer_in_field IN \
+                     [...] AND inner_acor_field > Y` with `group_by = \
+                     [outer_in_field]`) don't accept `limit` — the In array's \
+                     length already bounds the result. Got limit = {n}.",
+                )))),
+                None => Ok(None),
+            };
+        }
+        match limit {
+            None => Ok(Some(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT)),
+            Some(n) if n > MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT as u32 => {
+                Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                    "carrier-aggregate range-outer queries (e.g. \
+                     `outer_range_field > X AND inner_acor_field > \
+                     Y` with `group_by = [outer_range_field]`) cap \
+                     the outer walk at {} entries (compile-time \
+                     constant `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`); \
+                     got limit = {}. Pass a value ≤ {} or omit \
+                     `limit` to use the default.",
+                    MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                    n,
+                    MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                ))))
+            }
+            Some(0) => Err(Error::Query(QuerySyntaxError::InvalidLimit(
+                "carrier-aggregate range-outer queries require limit \
+                 ≥ 1; got limit = 0"
+                    .to_string(),
+            ))),
+            Some(n) => Ok(Some(n as u16)),
+        }
+    }
+}
+
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests;
@@ -289,37 +346,22 @@ pub(crate) fn point_count_reads_documents(index: &Index) -> bool {
 /// plain `rangeCountable` test only on a `summableOffCountIndex` index, which only
 /// meta-schema v3 (protocol version 14) admits.
 pub(crate) fn prefix_to_last_count_reads_documents(index: &Index) -> bool {
-    let terminal_reads_documents = (index.range_countable && index.countable.is_countable())
-        || index.is_summable_off_count_index();
-    terminal_reads_documents && !ranks_its_last_property(index)
+    terminal_reads_documents(index) && !index.ranks_its_last_property()
 }
 
-/// Whether `index` ranks its last property, making that property's tree an
-/// indexed tree.
-fn ranks_its_last_property(index: &Index) -> bool {
-    index.ranked_countable || index.ranked_summable || index.ranked_averageable
-}
-
-/// Refuses a range total (one count, or one per `In` branch) over a
-/// `summableOffCountIndex` index that ranks its last property: that
-/// property's tree is then an indexed tree, and grovedb sums a range only
-/// over a provable sum tree (`AggregateSumOnRange`). Grouped by the last
-/// property, the same range reads each value's count.
-pub(crate) fn refuse_a_counter_range_total_over_a_ranked_tree(index: &Index) -> Result<(), Error> {
-    if index.is_summable_off_count_index() && ranks_its_last_property(index) {
-        let last = index
-            .properties
-            .last()
-            .map(|property| property.name.as_str())
-            .unwrap_or_default();
-        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-            "a range count total over the summableOffCountIndex index `{}` is not available: \
-             it ranks its last property `{last}`, and a range total is read only over an \
-             unranked one; group by `{last}` to count each value in the range",
-            index.name
-        ))));
-    }
-    Ok(())
+/// Whether the tree of `index`'s last property reads documents: a
+/// `rangeCountable` index's counts them (it implies `countable`; grovedb's
+/// `AggregateCountOnRange` for a range), and a `summableOffCountIndex`
+/// index's sums do (such an index is always `rangeSummable`; read through
+/// [`DriveDocumentCountQuery::counter_sums_query`] for a range, since its
+/// count trees count groups). The range picker and the prefix-to-last form
+/// both ask this.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain `rangeCountable` test only on a `summableOffCountIndex` index, which
+/// only meta-schema v3 (protocol version 14) admits.
+pub(crate) fn terminal_reads_documents(index: &Index) -> bool {
+    (index.range_countable && index.countable.is_countable()) || index.is_summable_off_count_index()
 }
 
 /// An entry in a split count result, containing the serialized

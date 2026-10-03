@@ -69,8 +69,7 @@ pub(super) fn validate_no_ranked_prefix_overlap(
     indices: &BTreeMap<String, Index>,
 ) -> Result<(), ProtocolError> {
     for ranked in indices.values() {
-        let is_ranked =
-            ranked.ranked_countable || ranked.ranked_summable || ranked.ranked_averageable;
+        let is_ranked = ranked.ranks_its_last_property();
         if !is_ranked || ranked.properties.len() < 2 {
             continue;
         }
@@ -144,14 +143,13 @@ pub(super) fn validate_no_ranked_prefix_overlap(
         // A `summableOffCountIndex` index's Sum and Avg rankings chain the
         // same way (its counters carry counts and sums), so the shallowest
         // level over all three axes keys the rules.
-        let Some(at_position) = ranked
-            .ranked_countable_at
-            .iter()
-            .chain(ranked.ranked_summable_at.iter())
-            .chain(ranked.ranked_averageable_at.iter())
-            .filter_map(|at| ranked.properties.iter().position(|p| &p.name == at))
-            .min()
-        else {
+        let Some(at_position) = [
+            ranked.shallowest_count_chain_position(),
+            ranked.shallowest_sum_chain_position(),
+        ]
+        .into_iter()
+        .flatten()
+        .min() else {
             continue;
         };
         let at = ranked.properties[at_position].name.as_str();
@@ -190,12 +188,7 @@ pub(super) fn validate_no_ranked_prefix_overlap(
                     && other.summable.is_none()
                     && !other.range_countable
                     && !other.range_summable
-                    && !other.ranked_countable
-                    && !other.ranked_summable
-                    && !other.ranked_averageable
-                    && other.ranked_countable_at.is_empty()
-                    && other.ranked_summable_at.is_empty()
-                    && other.ranked_averageable_at.is_empty()
+                    && !other.declares_any_ranking()
                     && other.summable_off_count_index.is_none()
                     && other.contested_index.is_none();
                 let continues_below_at = other.properties.len() > at_position + 1;

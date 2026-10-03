@@ -16,10 +16,12 @@
 //!
 //! A ranking flag upgrades that tree to the matching *indexed* variant
 //! (grovedb PR 657): a primary Merk that is a byte-compatible mirror of the
-//! tree it replaces, plus one ordered secondary Merk per declared axis. Every
-//! pre-existing range-aggregate read keeps working against the primary
-//! unchanged; the secondaries are what make "top / bottom K groups by
-//! count / sum / average" O(log n + k) with a proof.
+//! tree it replaces, plus one ordered secondary Merk per declared axis.
+//! Per-value range reads keep working against the primary; a range total
+//! does not (grovedb's range aggregates take provable trees only and do not
+//! prove through an indexed tree), so the query surfaces refuse one through
+//! any index that ranks a level. The secondaries are what make "top / bottom
+//! K groups by count / sum / average" O(log n + k) with a proof.
 //!
 //! The upgrade table (`axes` = the declared ranking axes, canonically sorted
 //! Count < Sum < Avg):
@@ -206,24 +208,23 @@ pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
         if level.ranked_average_grouping() {
             axes.push(IndexAxis::Avg);
         }
-        let tree_type = match (
-            level.chain_carries_counts(),
-            level.chain_carries_sums(),
-            axes.is_empty(),
-        ) {
-            (true, false, true) => TreeType::CountTree,
-            (false, true, true) => TreeType::SumTree,
-            (true, true, true) => TreeType::CountSumTree,
-            (true, false, false) => TreeType::ProvableCountIndexedTree,
-            (false, true, false) => TreeType::ProvableSumIndexedTree,
-            (true, true, false) => TreeType::ProvableCountProvableSumIndexedTree,
-            (false, false, _) => {
-                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a prefix-ranking chain level carries neither counts nor sums",
-                )))
-            }
+        // A propagating level's tree is the tree its values get; a grouping
+        // level's is the indexed mirror of the provable tree carrying the
+        // same aggregates, for the axes ranked at it.
+        let Some(value_tree_type) = ranked_chain_value_tree_type(level) else {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a prefix-ranking chain level carries neither counts nor sums",
+            )));
         };
-        return Ok((tree_type, axes));
+        if axes.is_empty() {
+            return Ok((value_tree_type, axes));
+        }
+        let provable_base = match value_tree_type {
+            TreeType::CountTree => TreeType::ProvableCountTree,
+            TreeType::SumTree => TreeType::ProvableSumTree,
+            _ => TreeType::ProvableCountProvableSumTree,
+        };
+        return Ok((ranked_property_name_tree_type(provable_base, &axes)?, axes));
     }
     property_name_tree_type_and_ranked_axes(level.has_index_with_type())
 }

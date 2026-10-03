@@ -63,8 +63,9 @@ impl DriveDocumentHavingQuery<'_> {
             let paths = (0..self.prefix_branches.len())
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
-            let axis = self.read_bounds().axis();
-            let (lo, hi) = self.read_bounds().inclusive_bounds_i128();
+            let read_bounds = self.read_bounds();
+            let axis = read_bounds.axis();
+            let (lo, hi) = read_bounds.inclusive_bounds_i128();
             return read_branched_union(
                 &drive.grove,
                 "having",
@@ -93,8 +94,9 @@ impl DriveDocumentHavingQuery<'_> {
     ) -> Result<Vec<RankedEntry>, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path(branch)?;
-        let axis = self.read_bounds().axis();
-        let (lo, hi) = self.read_bounds().inclusive_bounds_i128();
+        let read_bounds = self.read_bounds();
+        let axis = read_bounds.axis();
+        let (lo, hi) = read_bounds.inclusive_bounds_i128();
 
         // Costs are destructured away rather than `.unwrap()`-ed, same
         // as the ranked executors: `CostContext::unwrap` is infallible
@@ -169,13 +171,14 @@ impl DriveDocumentHavingQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let (lo, hi) = self.read_bounds().inclusive_bounds_i128();
+            let read_bounds = self.read_bounds();
+            let (lo, hi) = read_bounds.inclusive_bounds_i128();
             let path_query = PathQuery::new_branched_axis(
                 prefix,
                 keys,
                 suffix,
                 AxisQuery::bounded(
-                    self.read_bounds().axis().into(),
+                    read_bounds.axis().into(),
                     lo,
                     hi,
                     self.limit,
@@ -199,10 +202,11 @@ impl DriveDocumentHavingQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path(branch)?;
-        let (lo, hi) = self.read_bounds().inclusive_bounds_i128();
+        let read_bounds = self.read_bounds();
+        let (lo, hi) = read_bounds.inclusive_bounds_i128();
         let path_query = PathQuery::new_axis_bounded(
             path,
-            self.read_bounds().axis().into(),
+            read_bounds.axis().into(),
             lo,
             hi,
             self.limit,

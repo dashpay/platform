@@ -294,11 +294,6 @@ pub struct RangeSumOptions {
     /// Whether the carrier walk iterates ascending (`true`) or
     /// descending (`false`); flows into grovedb's `Query.left_to_right`.
     pub left_to_right: bool,
-    /// Whether a distinct walk keeps a group whose sum is zero, as the
-    /// distinct proof does. A range count over a `summableOffCountIndex`
-    /// index keeps them: a preallocated counter at zero is a group the walk's
-    /// limit counted, so dropping it would end a page early.
-    pub keep_zero_sums: bool,
 }
 
 /// Helper used by the verifier-side path-query rebuild to match the

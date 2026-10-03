@@ -1388,6 +1388,50 @@ pub fn index_admissible_for_query(
         && index_admissible_for_skip_if_absent(index, skip_bindings)
 }
 
+/// Whether a point read pinning the first `pin_depth` properties of `index`
+/// may stop at the deepest pin's value tree: the pins reach the chain
+/// starting at `chain_position` (the shallowest ranked `at` level, whose
+/// value trees and every one below aggregate their whole subtree) and leave a
+/// deeper property free. The count and sum pickers and path builders all ask
+/// this, each with its own chain position, so a picker never admits what its
+/// builder refuses.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn pins_reach_chain(index: &Index, pin_depth: usize, chain_position: Option<usize>) -> bool {
+    pin_depth >= 1
+        && pin_depth < index.properties.len()
+        && chain_position.is_some_and(|min_at| min_at < pin_depth)
+}
+
+/// Refuses a range total (one aggregate over a range, or one per carrier
+/// branch) read through `index` when the index ranks any level: a ranked
+/// level's property-name tree is an indexed tree, which grovedb's range
+/// aggregates neither read (`AggregateCountOnRange`, `AggregateSumOnRange`
+/// and `AggregateCountAndSumOnRange` take provable trees only) nor descend
+/// through when proving. Grouped by the last property, the same range reads
+/// each value. The count, sum and count-and-sum range-total path builders
+/// all call it, so the unproven read, the proof and its verification refuse
+/// alike.
+///
+/// Unversioned, so every protocol version reaches it: rankings exist only
+/// from protocol version 14 (meta-schema v3), so it refuses nothing before.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn refuse_a_range_total_through_a_ranked_index(index: &Index) -> Result<(), Error> {
+    if !index.declares_any_ranking() {
+        return Ok(());
+    }
+    let last = index
+        .properties
+        .last()
+        .map(|property| property.name.as_str())
+        .unwrap_or_default();
+    Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+        "a range total over the index `{}` is not available: the index ranks a level, and a \
+         range total is read only through unranked trees; group by `{last}` to read each \
+         value in the range",
+        index.name
+    ))))
+}
+
 /// Rejects a query whose resolution provenance and clause shapes disagree:
 /// every field in `resolved_time_ranges` must appear in the where
 /// clauses as exactly one `Equal` clause — the only shape

@@ -459,10 +459,22 @@ fn should_refuse_summable_off_count_index_without_range_summable() {
         "summableOffCountIndex": "byPost",
         "rangeCountable": true,
     });
-    assert_refused(
-        parse(post(), like(vec![by_post(), index]), false),
-        "needs rangeSummable: true",
-    );
+    // A count ranking is the sum ranking here, and the refusal still names
+    // the keyword the author left out.
+    for index in [
+        index.clone(),
+        with(index.clone(), "rankedCountable", Value::Bool(true)),
+        with(
+            index,
+            "rankedCountable",
+            platform_value!({ "at": ["postAuthor"] }),
+        ),
+    ] {
+        assert_refused(
+            parse(post(), like(vec![by_post(), index]), false),
+            "needs rangeSummable: true",
+        );
+    }
 }
 
 #[test]
@@ -699,6 +711,85 @@ fn should_refuse_an_owner_a_transfer_changes() {
         parse(post, like, true),
         "can change after a document is written",
     );
+}
+
+#[test]
+fn should_accept_a_property_any_source_reference_fixes() {
+    // `postAuthor` is fixed through two references: the post's `$ownerId`,
+    // which a transfer changes, and the thread's `author`, which never
+    // changes. The count stays lossless through the second.
+    let mut post = post();
+    post.set_value("transferable", Value::U8(1))
+        .expect("transferable set");
+    post.remove("moderatorAbilities")
+        .expect("moderator abilities removed");
+    let thread = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeleted": false,
+        "properties": { "author": identifier(0, None) },
+        "required": ["author"],
+        "additionalProperties": false,
+    });
+    let like = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "properties": {
+            "postId": identifier(0, Some(platform_value!({
+                "type": "permanentDocument",
+                "documentType": "post",
+                "where": { "$ownerId": "postAuthor" },
+            }))),
+            "threadId": identifier(1, Some(platform_value!({
+                "type": "permanentDocument",
+                "documentType": "thread",
+                "where": { "author": "postAuthor" },
+            }))),
+            "postAuthor": identifier(2, None),
+        },
+        "indices": [
+            {
+                "name": "byPostThread",
+                "properties": [{ "postId": "asc" }, { "threadId": "asc" }],
+                "terminal": "$ownerId",
+            },
+            {
+                "name": "byAuthorPostThread",
+                "properties": [
+                    { "postAuthor": "asc" },
+                    { "postId": "asc" },
+                    { "threadId": "asc" },
+                ],
+                "summableOffCountIndex": "byPostThread",
+                "rangeSummable": true,
+            },
+        ],
+        "required": ["postId", "threadId", "postAuthor"],
+        "additionalProperties": false,
+    });
+    let config = config();
+    for full_validation in [false, true] {
+        DocumentType::create_document_types_from_document_schemas(
+            Identifier::new(CONTRACT_ID),
+            1,
+            config.version(),
+            BTreeMap::from([
+                ("post".to_string(), post.clone()),
+                ("thread".to_string(), thread.clone()),
+                ("like".to_string(), like.clone()),
+            ]),
+            None,
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            false,
+            &mut vec![],
+            PlatformVersion::latest(),
+        )
+        .expect("the thread reference keeps the count lossless");
+    }
 }
 
 #[test]

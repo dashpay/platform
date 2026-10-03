@@ -44,15 +44,6 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
-        // In place for every protocol version: it refuses only a batch writing
-        // two documents of a type keeping summableOffCountIndex counters,
-        // which only meta-schema v3 (protocol version 14) admits.
-        self.refuse_repeated_counter_moves(
-            &drive_batch_operations,
-            block_info,
-            transaction,
-            platform_version,
-        )?;
         self.prepare_drive_operations_time_range_ttl(
             &drive_batch_operations,
             block_info,

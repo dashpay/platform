@@ -254,7 +254,7 @@ impl Drive {
                 .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            if continuation_contributes_zero(
+            let property_name_tree_created = if continuation_contributes_zero(
                 parent_value_tree_type,
                 continuations_contribute,
                 sub_level,
@@ -278,7 +278,7 @@ impl Drive {
                     previous_batch_operations,
                     batch_operations,
                     &platform_version.drive,
-                )?;
+                )?
             } else {
                 self.batch_insert_empty_index_tree_if_not_exists(
                     path_key_info.clone(),
@@ -290,8 +290,8 @@ impl Drive {
                     previous_batch_operations,
                     batch_operations,
                     &platform_version.drive,
-                )?;
-            }
+                )?
+            };
 
             sub_level_index_path_info.push(index_property_key)?;
 
@@ -326,7 +326,9 @@ impl Drive {
                     sub_level_index_path_info,
                     document_index_field,
                     property_name_tree_type,
-                    CounterChange::Increment,
+                    CounterChange::Increment {
+                        parent_created: property_name_tree_created,
+                    },
                     *storage_flags,
                     estimated_costs_only_with_layer_info,
                     previous_batch_operations,

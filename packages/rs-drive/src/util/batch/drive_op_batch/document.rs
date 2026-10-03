@@ -218,6 +218,39 @@ impl DocumentOperationType<'_> {
         {
             return Ok(());
         }
+        // Each document earns a drainage budget, but all budgets are spent
+        // before the first document's low-level ops are queued.
+        self.for_each_document_type(
+            drive,
+            block_info,
+            transaction,
+            platform_version,
+            |contract, document_type| {
+                drive.prepare_document_time_range_ttl(
+                    contract,
+                    document_type,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )
+            },
+        )
+    }
+
+    /// Calls `visit` with the contract and document type of every document
+    /// this operation writes or deletes, once per document, the consumed
+    /// documents of an `AddDocumentAndDeleteConsumed` included. Withdrawals
+    /// and document history write system types and are not visited.
+    /// Resolution reads are unbilled maintenance; normal conversion still
+    /// resolves and bills the contract through its usual path.
+    pub(crate) fn for_each_document_type(
+        &self,
+        drive: &Drive,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        mut visit: impl FnMut(&DataContract, DocumentTypeRef) -> Result<(), Error>,
+    ) -> Result<(), Error> {
         match self {
             Self::AddDocument {
                 contract_info,
@@ -249,8 +282,6 @@ impl DocumentOperationType<'_> {
                 document_type_info,
                 ..
             } => {
-                // Preparation reads are unbilled maintenance. Normal conversion
-                // still resolves and bills the contract through its usual path.
                 let resolved = contract_info.clone().resolve(
                     drive,
                     block_info,
@@ -259,27 +290,15 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )?;
                 let contract = resolved.as_ref();
-                let document_type = document_type_info.clone().resolve(contract)?;
-                drive.prepare_document_time_range_ttl(
-                    contract,
-                    document_type,
-                    block_info.time_ms,
-                    transaction,
-                    platform_version,
-                )
+                visit(contract, document_type_info.clone().resolve(contract)?)
             }
             Self::MultipleDocumentOperationsForSameContractDocumentType {
                 document_operations,
             } => {
-                // Each document earns a drainage budget, but all budgets are
-                // spent before the first document's low-level ops are queued.
                 for _ in &document_operations.operations {
-                    drive.prepare_document_time_range_ttl(
+                    visit(
                         document_operations.contract,
                         document_operations.document_type,
-                        block_info.time_ms,
-                        transaction,
-                        platform_version,
                     )?;
                 }
                 Ok(())
@@ -305,17 +324,11 @@ impl DocumentOperationType<'_> {
                     }),
                 );
                 for document_type_info in document_types {
-                    drive.prepare_document_time_range_ttl(
-                        contract,
-                        document_type_info.resolve(contract)?,
-                        block_info.time_ms,
-                        transaction,
-                        platform_version,
-                    )?;
+                    visit(contract, document_type_info.resolve(contract)?)?;
                 }
                 Ok(())
             }
-            // These write to system contracts, which have no TTL indexes.
+            // These write to system contracts.
             Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
         }
     }

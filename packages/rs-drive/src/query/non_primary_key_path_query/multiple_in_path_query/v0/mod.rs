@@ -315,7 +315,11 @@ impl<'a> DriveDocumentQuery<'a> {
             // `find_best_index`: a bucketed index only for a query whose
             // resolved equality names its transform source, never for a raw
             // query. See `index_admissible_for_resolved_time_range`.
-            // A summableOffCountIndex index keeps no entries to read documents from.
+            // A summableOffCountIndex index keeps no entries to read documents
+            // from. Edited in place: only the non-primary-key lowering v1
+            // (protocol version 14, unreleased) reaches this module, and the
+            // keyword parses only from that version, so no other version
+            // sees the skip.
             if index.is_summable_off_count_index()
                 || !index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings)
             {

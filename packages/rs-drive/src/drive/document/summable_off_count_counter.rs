@@ -45,7 +45,12 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CounterChange {
     /// A create: one more document in the group.
-    Increment,
+    Increment {
+        /// Whether this write created the tree the counter sits in, so the
+        /// counter cannot exist yet and the stateful write skips its read
+        /// (an estimate still prices it).
+        parent_created: bool,
+    },
     /// A delete: one document fewer. A preallocated index keeps the counter
     /// at zero; any other removes it with its last document, pruning the trees
     /// above up to `stop_path_height`.
@@ -142,7 +147,7 @@ impl Drive {
                 &drive_version.grove_version,
             )?));
             match change {
-                CounterChange::Increment => {
+                CounterChange::Increment { .. } => {
                     batch_operations.push(
                         LowLevelDriveOperation::insert_for_estimated_path_key_element(
                             key_info_path,
@@ -225,14 +230,23 @@ impl Drive {
             )));
         }
 
-        let existing = self.grove_get_raw_optional(
-            counter_path.as_slice().into(),
-            counter_key.as_slice(),
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            batch_operations,
-            drive_version,
-        )?;
+        let existing = if matches!(
+            change,
+            CounterChange::Increment {
+                parent_created: true
+            }
+        ) {
+            None
+        } else {
+            self.grove_get_raw_optional(
+                counter_path.as_slice().into(),
+                counter_key.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                batch_operations,
+                drive_version,
+            )?
+        };
         let (count, stored_flags) =
             match existing {
                 None => (None, None),
@@ -242,7 +256,7 @@ impl Drive {
                 ))),
             };
         match change {
-            CounterChange::Increment => {
+            CounterChange::Increment { .. } => {
                 // A rewrite keeps the flags of whoever first paid for the
                 // item; the first create of a group pays for it.
                 let (count, flags) = match count {

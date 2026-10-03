@@ -24,10 +24,7 @@
 
 use super::super::conditions::{WhereClause, WhereOperator};
 use super::super::drive_document_sum_query::{RangeSumOptions, RangeSumWalkMode};
-use super::{
-    counter_sum_entry_as_count_entry, refuse_a_counter_range_total_over_a_ranked_tree,
-    DriveDocumentCountQuery, SplitCountEntry,
-};
+use super::{counter_sum_entry_as_count_entry, DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -131,19 +128,17 @@ impl DriveDocumentCountQuery<'_> {
                         .map_or(u16::MAX, |limit| u16::try_from(limit).unwrap_or(u16::MAX)),
                 )
             } else {
-                refuse_a_counter_range_total_over_a_ranked_tree(self.index)?;
                 RangeSumWalkMode::Aggregate
             };
+            // The walk keeps a preallocated counter at zero, a group its
+            // limit counted, as the proof does, so a page ends only at the
+            // limit.
             let entries = sums.execute_range_sum_no_proof(
                 drive,
                 &RangeSumOptions {
                     walk_mode,
                     carrier_outer_limit: None,
                     left_to_right: options.order_by_ascending,
-                    // A preallocated counter at zero is a group the walk's
-                    // limit counted, kept as a count of zero as the proof
-                    // keeps it, so a page ends only at the limit.
-                    keep_zero_sums: true,
                 },
                 transaction,
                 platform_version,
@@ -404,7 +399,6 @@ impl DriveDocumentCountQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         // A `summableOffCountIndex` index's documents are its range sums.
         if let Some(sums) = self.counter_sums_query() {
-            refuse_a_counter_range_total_over_a_ranked_tree(self.index)?;
             return sums.execute_aggregate_sum_with_proof(drive, transaction, platform_version);
         }
         let drive_version = &platform_version.drive;
@@ -527,7 +521,6 @@ impl DriveDocumentCountQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         // A `summableOffCountIndex` index's documents are its range sums.
         if let Some(sums) = self.counter_sums_query() {
-            refuse_a_counter_range_total_over_a_ranked_tree(self.index)?;
             return sums.execute_carrier_aggregate_sum_with_proof(
                 drive,
                 limit,

@@ -80,6 +80,8 @@ use crate::error::query::QuerySyntaxError;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::query::drive_document_count_query::counter_sum_as_document_count;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::platform_value::Value;
@@ -403,9 +405,8 @@ pub fn present_entries_on_axis(axis: RankedAxis, entries: Vec<RankedEntry>) -> V
     entries
         .into_iter()
         .map(|entry| match entry.value {
-            // A counter is never negative: it counts entries.
             RankedEntryValue::Sum(sum) => RankedEntry {
-                value: RankedEntryValue::Count(u64::try_from(sum).unwrap_or_default()),
+                value: RankedEntryValue::Count(counter_sum_as_document_count(sum)),
                 ..entry
             },
             _ => entry,

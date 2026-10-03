@@ -36,8 +36,9 @@ impl DriveDocumentSumQuery<'_> {
     ///   branch, summed in Rust.
     /// - **Distinct mode** (`distinct=true`): walks the unified
     ///   `distinct_sum_path_query` and emits one entry per matched
-    ///   `(in_key, key)` pair. (Currently stubbed pending the
-    ///   distinct-builder port.)
+    ///   `(in_key, key)` pair, zero sums included, as the distinct proof
+    ///   does: the walk's limit counted them. The sum dispatcher leaves the
+    ///   zero sums out of a distinct sum.
     pub fn execute_range_sum_no_proof(
         &self,
         drive: &Drive,
@@ -188,9 +189,6 @@ impl DriveDocumentSumQuery<'_> {
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
             let sum = element.sum_value_or_default();
-            if sum == 0 && !options.keep_zero_sums {
-                continue;
-            }
             let in_key = if has_in_on_prefix && path.len() > base_path_len {
                 Some(path[base_path_len].clone())
             } else {
@@ -230,10 +228,8 @@ impl DriveDocumentSumQuery<'_> {
 
     /// Per-distinct-key range-sum proof against this query's
     /// `rangeSummable` index. Mirror of count's
-    /// `execute_distinct_count_with_proof`. Currently routes through
-    /// `distinct_sum_path_query` which is stubbed (pending the
-    /// ~280-line port from count); calls before that lands surface
-    /// `Unsupported` cleanly.
+    /// `execute_distinct_count_with_proof`, through
+    /// `distinct_sum_path_query`.
     pub fn execute_distinct_sum_with_proof(
         &self,
         drive: &Drive,

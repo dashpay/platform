@@ -4816,3 +4816,56 @@ mod at_chain_value_tree_counts {
         drop(drive);
     }
 }
+
+#[test]
+fn should_take_one_carrier_limit_on_server_and_sdk() {
+    let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+        field: field.to_string(),
+        operator,
+        value,
+    };
+    let range_outer = vec![
+        clause(
+            "brand",
+            WhereOperator::GreaterThan,
+            Value::Text("acme".into()),
+        ),
+        clause(
+            "color",
+            WhereOperator::GreaterThan,
+            Value::Text("blue".into()),
+        ),
+    ];
+    let in_outer = vec![
+        clause(
+            "brand",
+            WhereOperator::In,
+            Value::Array(vec![Value::Text("a".into()), Value::Text("b".into())]),
+        ),
+        clause(
+            "color",
+            WhereOperator::GreaterThan,
+            Value::Text("blue".into()),
+        ),
+    ];
+    let limit = DriveDocumentCountQuery::carrier_aggregate_count_limit;
+
+    // A range-outer request without a limit walks the platform default.
+    assert_eq!(
+        limit(&range_outer, None).expect("the default"),
+        Some(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT)
+    );
+    assert_eq!(
+        limit(&range_outer, Some(3)).expect("a smaller limit"),
+        Some(3)
+    );
+    assert!(limit(&range_outer, Some(0)).is_err());
+    assert!(limit(
+        &range_outer,
+        Some(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT as u32 + 1)
+    )
+    .is_err());
+    // The `In` array bounds an `In`-outer walk.
+    assert_eq!(limit(&in_outer, None).expect("no limit"), None);
+    assert!(limit(&in_outer, Some(3)).is_err());
+}

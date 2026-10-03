@@ -18,7 +18,7 @@
 //! referenced document is the one the source property's value names.
 
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceKind,
+    DocumentProperty, DocumentPropertyType, DocumentReferenceKind,
 };
 use crate::data_contract::document_type::Index;
 use indexmap::IndexMap;
@@ -44,10 +44,13 @@ pub struct CountIndexDerivation<'a> {
 }
 
 impl Index {
-    /// For a summableOffCountIndex index, the derivation of every property `source`
-    /// lacks, in index order; `Err` names the first property no source
-    /// reference fixes. A property of the referring document's own system
-    /// (`$ownerId`, `$createdAt`) is never fixed by a referenced document.
+    /// For a summableOffCountIndex index, the derivations of every property
+    /// `source` lacks, in index order: one per source reference whose `where`
+    /// binds it, so a property fixed through several references has several
+    /// and the contract-level validation can accept any of them. `Err` names
+    /// the first property no source reference fixes. A property of the
+    /// referring document's own system (`$ownerId`, `$createdAt`) is never
+    /// fixed by a referenced document.
     ///
     /// `flattened_properties` are the declaring document type's flattened
     /// properties; `own_contract_id` is the declaring contract's id (a
@@ -71,51 +74,42 @@ impl Index {
             if property.starts_with('$') {
                 return Err(property);
             }
-            let derivation = source.properties.iter().find_map(|source_property| {
-                let declaration = flattened_properties.get(&source_property.name)?;
-                let (kind, contract_id, document_type_name, property_agreement) =
-                    match &declaration.property_type {
-                        DocumentPropertyType::IdentifierWithReference(
-                            DocumentPropertyReferenceTarget::PermanentDocument {
-                                contract_id,
-                                document_type_name,
-                                property_agreement,
-                            },
-                        ) => (
-                            DocumentReferenceKind::Permanent,
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                        ),
-                        DocumentPropertyType::IdentifierWithReference(
-                            DocumentPropertyReferenceTarget::ModeratedDocument {
-                                contract_id,
-                                document_type_name,
-                                property_agreement,
-                            },
-                        ) => (
-                            DocumentReferenceKind::Moderated,
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                        ),
-                        _ => return None,
-                    };
-                if contract_id.is_some_and(|id| id != own_contract_id) {
-                    return None;
+            let bound_before = derivations.len();
+            for source_property in &source.properties {
+                let Some(DocumentPropertyType::IdentifierWithReference(target)) =
+                    flattened_properties
+                        .get(&source_property.name)
+                        .map(|declaration| &declaration.property_type)
+                else {
+                    continue;
+                };
+                let Some(reference) = target.as_document_reference().filter(|reference| {
+                    matches!(
+                        reference.kind,
+                        DocumentReferenceKind::Permanent | DocumentReferenceKind::Moderated
+                    )
+                }) else {
+                    continue;
+                };
+                if reference
+                    .contract_id
+                    .is_some_and(|id| id != own_contract_id)
+                {
+                    continue;
                 }
-                let referenced = property_agreement.get(property)?;
-                Some(CountIndexDerivation {
+                let Some(referenced) = reference.property_agreement.get(property) else {
+                    continue;
+                };
+                derivations.push(CountIndexDerivation {
                     property,
                     referring_property: source_property.name.as_str(),
-                    target_document_type_name: document_type_name.as_str(),
-                    kind,
+                    target_document_type_name: reference.document_type_name,
+                    kind: reference.kind,
                     referenced: referenced.as_str(),
-                })
-            });
-            match derivation {
-                Some(derivation) => derivations.push(derivation),
-                None => return Err(property),
+                });
+            }
+            if derivations.len() == bound_before {
+                return Err(property);
             }
         }
         Ok(derivations)

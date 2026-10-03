@@ -27,8 +27,9 @@ use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
 };
 use crate::data_contract::document_type::index::{
-    parse_derived_index_property_name, DerivedIndexField, DerivedIndexProperty,
-    DerivedIndexPropertyName, Index, IndexGrammarAdmissions, PreallocationBinding,
+    parse_derived_index_property_name, referenced_value_kept_on_removal, DerivedIndexField,
+    DerivedIndexProperty, DerivedIndexPropertyName, Index, IndexGrammarAdmissions,
+    PreallocationBinding,
 };
 #[cfg(feature = "validation")]
 #[cfg(feature = "validation")]
@@ -52,7 +53,7 @@ use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
@@ -118,11 +119,7 @@ const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
 fn ranked_index_key_length_limit(index: &Index) -> Option<u16> {
     if index.ranked_averageable || !index.ranked_averageable_at.is_empty() {
         Some(MAX_RANKED_AVG_INDEX_KEY_LENGTH)
-    } else if index.ranked_countable
-        || !index.ranked_countable_at.is_empty()
-        || index.ranked_summable
-        || !index.ranked_summable_at.is_empty()
-    {
+    } else if index.declares_any_ranking() {
         Some(MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH)
     } else {
         None
@@ -170,7 +167,7 @@ fn validate_ranked_index_property_key_length(
         .any(|at| at == index_property_name);
     let is_ranked_terminal = index.properties.last().map(|p| p.name.as_str())
         == Some(index_property_name)
-        && (index.ranked_countable || index.ranked_summable || index.ranked_averageable);
+        && index.ranks_its_last_property();
     if !is_at_level && !is_ranked_terminal {
         return Ok(());
     }
@@ -1054,7 +1051,13 @@ pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
             ) else {
                 continue;
             };
-            for derivation in derivations {
+            // A property may be fixed through several source references: it
+            // is lossless when any of them reads a value that never changes
+            // and survives a removal. Refused only when none does, naming the
+            // first one that fails.
+            let mut lossless: BTreeSet<&str> = BTreeSet::new();
+            let mut refusals = Vec::new();
+            for derivation in &derivations {
                 let Some(referenced_type) = document_types
                     .get(derivation.target_document_type_name)
                     .filter(|referenced| referenced.document_reference_kind() == derivation.kind)
@@ -1063,16 +1066,16 @@ pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
                 };
                 let referenced_type = referenced_type.as_ref();
                 let referenced = derivation.referenced;
-                let target = derivation.target_document_type_name;
                 let fixed = match referenced {
                     ID | CREATOR_ID => true,
                     OWNER_ID => !owner_can_change(referenced_type),
                     path => schema_property_is_fixed_once_written(referenced_type, path),
                 };
-                let kept = derivation.kind != DocumentReferenceKind::Moderated
-                    || referenced == ID
-                    || referenced == OWNER_ID
-                    || is_path_listed(referenced_type.moderator_deletion_kept_fields(), referenced);
+                let kept = referenced_value_kept_on_removal(
+                    derivation.kind,
+                    referenced,
+                    referenced_type.moderator_deletion_kept_fields(),
+                );
                 let reason = if !fixed {
                     "can change after a document is written (a mutable property, a moderator's \
                      `changeFields`, or an `$ownerId` a transfer or purchase changes), so the \
@@ -1083,8 +1086,17 @@ pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
                      `moderatorAbilities.deleteKeepsFields`, so a removed document's value could \
                      no longer be read back"
                 } else {
+                    lossless.insert(derivation.property);
                     continue;
                 };
+                refusals.push((derivation, reason));
+            }
+            let refused = refusals
+                .into_iter()
+                .find(|(derivation, _)| !lossless.contains(derivation.property));
+            if let Some((derivation, reason)) = refused {
+                let referenced = derivation.referenced;
+                let target = derivation.target_document_type_name;
                 return Err(consensus_or_protocol_data_contract_error(
                     DataContractError::InvalidContractStructure(format!(
                         "summableOffCountIndex index \"{}\" of document type \"{name}\" groups by \"{}\", \
