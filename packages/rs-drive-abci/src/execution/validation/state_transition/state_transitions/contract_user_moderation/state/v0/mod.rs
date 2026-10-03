@@ -916,7 +916,9 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
     // rule asking for more asks for all of them, so that a charter electing fewer members than
     // the rule allows for can still meet it. A member the leader removed still counts: the
     // leader can not lower the bar by removing members who would not approve, and gets the
-    // seat back by deleting the removal.
+    // seat back by deleting the removal. The price: nobody else takes an elected member's seat,
+    // so a team that lost too many of them for good (removed, or no longer approving) never
+    // meets the rule again. Deliberate: a stuck settled deletion over a leader who deletes alone.
     let team_capacity = usize::from(charter.charter.seats(elected.max_added_moderators));
     // Approvals that can not meet the rule, even if every one still counts, need no team read,
     // and leave the approvals of members who left where they are until one that reads the team:

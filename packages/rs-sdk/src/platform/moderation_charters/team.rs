@@ -3,6 +3,7 @@
 use super::readers::{elected_charter_of, member_ids};
 use crate::platform::Document;
 use crate::Error;
+use dpp::data_contract::config::moderation::SettledDeletionRule;
 use dpp::document::DocumentV0Getters;
 use dpp::moderation_charter::{property_names, ElectedCharter};
 use dpp::platform_value::Identifier;
@@ -72,6 +73,23 @@ impl ModerationTeam {
     /// accepts are the approvals that count.
     pub fn seats(&self, max_added_moderators: u16) -> u16 {
         ElectedCharter::seats_for(self.elected_members.len(), max_added_moderators)
+    }
+
+    /// How many approvals a settled deletion under `rule` (a document type's
+    /// `moderatorAbilities.deleteSettled`) needs of this team, given the target contract's elected
+    /// declaration's `maxAddedModerators`: the rule's `approvals`, or every
+    /// [seat](Self::seats) when it asks for more
+    /// ([`SettledDeletionRule::approvals_needed`], what consensus counts). It does not move when
+    /// the team shrinks: a removed elected member keeps its seat, and nobody else can fill it.
+    /// While the leader and its [`members`](Self::members) are fewer, the team approves no
+    /// settled deletion until the leader adds members (up to `maxAddedModerators` at a time) or
+    /// deletes a removal.
+    pub fn settled_deletion_approvals_needed(
+        &self,
+        rule: &SettledDeletionRule,
+        max_added_moderators: u16,
+    ) -> usize {
+        rule.approvals_needed(usize::from(self.seats(max_added_moderators)))
     }
 
     /// Whether `identity_id` is on the team: the leader or an active member.
@@ -154,6 +172,29 @@ mod tests {
         assert_eq!(team.seats(2), charter.seats(2));
         assert_eq!(team.seats(2), 6);
         assert_eq!(team.seats(15), 19);
+    }
+
+    #[test]
+    fn should_need_the_rule_of_every_seat_however_many_members_are_left() {
+        // The leader and two elected members, two additions allowed: five seats.
+        let (document, _) = elected_charter(&[2, 3]);
+        let rule = |approvals| SettledDeletionRule {
+            leader: true,
+            approvals,
+        };
+        let team = ModerationTeam::from_documents(&document, &[], &[]).expect("reads");
+        assert_eq!(team.settled_deletion_approvals_needed(&rule(3), 2), 3);
+        // A rule asking for more than the team can hold asks for every seat.
+        assert_eq!(team.settled_deletion_approvals_needed(&rule(31), 2), 5);
+        assert_eq!(team.settled_deletion_approvals_needed(&rule(31), 0), 3);
+
+        // The leader removes 3: two left, still three needed, so nothing passes until the
+        // leader adds members or puts 3 back.
+        let shrunk = ModerationTeam::from_documents(&document, &[], &[change(0x60, CHARTER, 3)])
+            .expect("reads");
+        assert_eq!(shrunk.members.len() + 1, 2);
+        assert_eq!(shrunk.settled_deletion_approvals_needed(&rule(3), 2), 3);
+        assert_eq!(shrunk.settled_deletion_approvals_needed(&rule(31), 0), 3);
     }
 
     #[test]

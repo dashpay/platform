@@ -6,6 +6,7 @@
 use crate::encrypted_for::message_from_options;
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::data_contract::config::moderation::SettledDeletionRule;
 use dash_sdk::dpp::moderation_charter::{
     ELECTED_CHARTER_DOCUMENT_TYPE_NAME, JOIN_REQUEST_DOCUMENT_TYPE_NAME,
     MODERATION_CHARTERS_CONTRACT_ID, RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
@@ -161,17 +162,37 @@ impl ModerationTeamWasm {
         &self,
         #[wasm_bindgen(js_name = "maxAddedModerators")] max_added_moderators: f64,
     ) -> Result<u16, WasmSdkError> {
-        // A number, not a u16 parameter: wasm-bindgen would wrap one out of range silently
-        if max_added_moderators.fract() != 0.0
-            || !(0.0..=f64::from(u16::MAX)).contains(&max_added_moderators)
-        {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "maxAddedModerators must be an integer from 0 to {}, got {}",
-                u16::MAX,
-                max_added_moderators
-            )));
-        }
-        Ok(self.0.seats(max_added_moderators as u16))
+        Ok(self
+            .0
+            .seats(u16_argument(max_added_moderators, "maxAddedModerators")?))
+    }
+
+    /// How many approvals a settled deletion needs of this team, given the document type's
+    /// `moderatorAbilities.deleteSettled.approvals` (1 when the rule leaves it out) and the
+    /// target contract's elected declaration's `maxAddedModerators`: `approvals`, or every seat
+    /// (`seats`) when it asks for more, as consensus counts. It does not move when the team
+    /// shrinks: a removed elected member keeps its seat, and nobody else can fill it. While the
+    /// leader and its `members` are fewer, the team approves no settled deletion until the
+    /// leader adds members (up to `maxAddedModerators` at a time) or deletes a removal.
+    /// An `approvals` or a `maxAddedModerators` that is not an integer from 0 to 65535 is
+    /// refused.
+    #[wasm_bindgen(js_name = "settledDeletionApprovalsNeeded")]
+    pub fn settled_deletion_approvals_needed(
+        &self,
+        approvals: f64,
+        #[wasm_bindgen(js_name = "maxAddedModerators")] max_added_moderators: f64,
+    ) -> Result<u32, WasmSdkError> {
+        // The count does not depend on whether the leader must be among the approvals
+        let rule = SettledDeletionRule {
+            leader: false,
+            approvals: u16_argument(approvals, "approvals")?,
+        };
+        let needed = self.0.settled_deletion_approvals_needed(
+            &rule,
+            u16_argument(max_added_moderators, "maxAddedModerators")?,
+        );
+        // At most `approvals`, a u16
+        Ok(needed as u32)
     }
 
     /// Whether `identityId` is on the team: the leader or an active member.
@@ -183,6 +204,18 @@ impl ModerationTeamWasm {
         let identity_id: Identifier = identity_id.try_into()?;
         Ok(self.0.contains(&identity_id))
     }
+}
+
+/// `value`, the JavaScript number passed as `name`, as a u16: a number, not a u16 parameter,
+/// since wasm-bindgen would wrap one out of range silently.
+fn u16_argument(value: f64, name: &str) -> Result<u16, WasmSdkError> {
+    if value.fract() != 0.0 || !(0.0..=f64::from(u16::MAX)).contains(&value) {
+        return Err(WasmSdkError::invalid_argument(format!(
+            "{name} must be an integer from 0 to {}, got {value}",
+            u16::MAX
+        )));
+    }
+    Ok(value as u16)
 }
 
 /// The identifier `id_field` of a page query and the page it asks for. Each field is read as
