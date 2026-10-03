@@ -478,13 +478,83 @@ fn like_count_query<'a>(
     }
 }
 
-/// `postId > 0`: every post.
-fn every_post() -> WhereClause {
+/// A `sum(byPost)` request over likes, executed.
+fn sum_likes(
+    drive: &Drive,
+    contract: &DataContract,
+    where_clauses: Vec<WhereClause>,
+    mode: SumMode,
+    limit: Option<u32>,
+    prove: bool,
+) -> Result<DocumentSumResponse, Error> {
+    let drive_config = DriveConfig::default();
+    drive.execute_document_sum_request(
+        DocumentSumRequest {
+            contract,
+            document_type: contract
+                .document_type_for_name("like")
+                .expect("like doctype exists"),
+            sum_property: "byPost".to_string(),
+            where_clauses,
+            resolved_time_ranges: vec![],
+            order_clauses: vec![],
+            mode,
+            limit,
+            prove,
+            drive_config: &drive_config,
+        },
+        None,
+        platform_version(),
+    )
+}
+
+/// The sum query a verifier rebuilds for a `sum(byPost)` over
+/// `where_clauses`: through the range picker for a range, the point picker
+/// otherwise.
+fn like_sum_query<'a>(
+    contract: &'a DataContract,
+    where_clauses: &[WhereClause],
+) -> DriveDocumentSumQuery<'a> {
+    let document_type = contract
+        .document_types()
+        .get("like")
+        .expect("like doctype exists");
+    let has_range = where_clauses
+        .iter()
+        .any(|clause| DriveDocumentCountQuery::is_range_operator(clause.operator));
+    let index = if has_range {
+        find_range_summable_index_for_where_clauses(
+            document_type.indexes(),
+            where_clauses,
+            "byPost",
+            &[],
+        )
+    } else {
+        find_summable_index_for_where_clauses(document_type.indexes(), where_clauses, "byPost", &[])
+    }
+    .expect("a counter index answers the sum");
+    DriveDocumentSumQuery {
+        document_type: document_type.as_ref(),
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "like".to_string(),
+        index,
+        where_clauses: where_clauses.to_vec(),
+        sum_property: "byPost".to_string(),
+    }
+}
+
+/// `postId <operator> post`.
+fn post_id(operator: WhereOperator, post: [u8; 32]) -> WhereClause {
     WhereClause {
         field: "postId".to_string(),
-        operator: WhereOperator::GreaterThan,
-        value: Value::Identifier([0; 32]),
+        operator,
+        value: Value::Identifier(post),
     }
+}
+
+/// `postId > 0`: every post.
+fn every_post() -> WhereClause {
+    post_id(WhereOperator::GreaterThan, [0; 32])
 }
 
 /// `postAuthor IN [A, B]`.
@@ -756,8 +826,9 @@ fn add_document<'a>(
 /// A Drive batch writing two likes is refused, applied, dry-run or converted:
 /// each like's conversion reads the counter the other moves, so the counter
 /// would move once. So is a batch writing a post and a like of it, in either
-/// order: the post's preallocation writes the counter the like moves. One
-/// like a batch goes through.
+/// order: the post's preallocation writes the counter the like moves. Only an
+/// insert preallocates, so deleting posts moves no counter. One like a batch
+/// goes through.
 #[test]
 fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
     let (drive, contract) = setup(true);
@@ -822,6 +893,25 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
             "a post and its like (post first: {post_first})"
         );
     }
+    let delete_post = |post: [u8; 32]| {
+        DriveOperation::DocumentOperation(DocumentOperationType::ForceDeleteDocument {
+            document_id: Identifier::new(post),
+            contract_info: DataContractInfo::BorrowedDataContract(&contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("post"),
+        })
+    };
+    let other_post = insert_post(&drive, &contract, AUTHOR_B, "dash", 2);
+    for operations in [
+        vec![delete_post(post), delete_post(other_post)],
+        vec![
+            delete_post(post),
+            add_document(&contract, "post", &new_post),
+        ],
+    ] {
+        drive
+            .refuse_repeated_counter_moves(&operations, &BlockInfo::default(), None, pv)
+            .expect("a post delete moves no counter");
+    }
 
     drive
         .apply_drive_operations(
@@ -845,10 +935,6 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
 fn should_sum_likes_by_the_source_index_name() {
     let (drive, contract) = setup(true);
     let (a1, _, _, _) = liked_posts(&drive, &contract);
-    let document_type = contract
-        .document_type_for_name("like")
-        .expect("like doctype exists");
-    let drive_config = DriveConfig::default();
 
     for (clauses, total) in [
         (
@@ -861,46 +947,37 @@ fn should_sum_likes_by_the_source_index_name() {
         (vec![equal("postAuthor", Value::Identifier(AUTHOR_A))], 4),
         (vec![equal("hashtag", Value::Text("dash".to_string()))], 9),
     ] {
-        let request = |prove: bool| DocumentSumRequest {
-            contract: &contract,
-            document_type,
-            sum_property: "byPost".to_string(),
-            where_clauses: clauses.clone(),
-            resolved_time_ranges: vec![],
-            order_clauses: vec![],
-            mode: SumMode::Aggregate,
-            limit: None,
-            prove,
-            drive_config: &drive_config,
-        };
-        match drive
-            .execute_document_sum_request(request(false), None, platform_version())
-            .expect("the sum must execute")
+        match sum_likes(
+            &drive,
+            &contract,
+            clauses.clone(),
+            SumMode::Aggregate,
+            None,
+            false,
+        )
+        .expect("the sum must execute")
         {
             DocumentSumResponse::Aggregate(sum) => assert_eq!(sum, total, "{clauses:?}"),
             other => panic!("expected an aggregate sum, got {other:?}"),
         }
-        let proof = match drive
-            .execute_document_sum_request(request(true), None, platform_version())
-            .expect("the proved sum must execute")
+        let proof = match sum_likes(
+            &drive,
+            &contract,
+            clauses.clone(),
+            SumMode::Aggregate,
+            None,
+            true,
+        )
+        .expect("the proved sum must execute")
         {
             DocumentSumResponse::Proof(proof) => proof,
             other => panic!("expected a proof, got {other:?}"),
         };
-        let index =
-            find_summable_index_for_where_clauses(document_type.indexes(), &clauses, "byPost", &[])
-                .expect("a summableOffCountIndex index answers");
-        assert!(index.is_summable_off_count_index());
-        let (root_hash, entries) = DriveDocumentSumQuery {
-            document_type,
-            contract_id: contract.id().to_buffer(),
-            document_type_name: "like".to_string(),
-            index,
-            where_clauses: clauses.clone(),
-            sum_property: "byPost".to_string(),
-        }
-        .verify_point_lookup_sum_proof(&proof, platform_version())
-        .expect("the sum proof verifies");
+        let query = like_sum_query(&contract, &clauses);
+        assert!(query.index.is_summable_off_count_index());
+        let (root_hash, entries) = query
+            .verify_point_lookup_sum_proof(&proof, platform_version())
+            .expect("the sum proof verifies");
         assert_live_root_hash(&drive, root_hash);
         let proved: i64 = entries.iter().filter_map(|entry| entry.sum).sum();
         assert_eq!(proved, total, "{clauses:?}");
@@ -1032,11 +1109,7 @@ fn should_count_likes_over_a_range_of_posts_from_the_counters_sums() {
             &contract,
             vec![
                 equal("postAuthor", Value::Identifier(AUTHOR_A)),
-                WhereClause {
-                    field: "postId".to_string(),
-                    operator: WhereOperator::GreaterThan,
-                    value: Value::Identifier(after),
-                },
+                post_id(WhereOperator::GreaterThan, after),
             ],
             CountMode::GroupByRange,
             Some(1),
@@ -1119,74 +1192,48 @@ fn should_keep_an_unliked_post_on_a_page_of_grouped_likes_sums() {
     let (drive, contract) = setup(true);
     let (a1, a2, _, _) = liked_posts(&drive, &contract);
     let unliked = insert_post(&drive, &contract, AUTHOR_A, "dash", 4);
-    let pv = platform_version();
-    let document_type = contract
-        .document_type_for_name("like")
-        .expect("like doctype exists");
-    let drive_config = DriveConfig::default();
-    let from = |post: [u8; 32], operator: WhereOperator| WhereClause {
-        field: "postId".to_string(),
-        operator,
-        value: Value::Identifier(post),
-    };
-    let page = |where_clauses: Vec<WhereClause>, mode: SumMode, prove: bool| {
-        drive
-            .execute_document_sum_request(
-                DocumentSumRequest {
-                    contract: &contract,
-                    document_type,
-                    sum_property: "byPost".to_string(),
-                    where_clauses,
-                    resolved_time_ranges: vec![],
-                    order_clauses: vec![],
-                    mode,
-                    limit: Some(1),
-                    prove,
-                    drive_config: &drive_config,
-                },
-                None,
-                pv,
-            )
-            .expect("a page of one executes")
+    let unproved_page = |where_clauses: Vec<WhereClause>, mode: SumMode| match sum_likes(
+        &drive,
+        &contract,
+        where_clauses,
+        mode,
+        Some(1),
+        false,
+    )
+    .expect("a page of one executes")
+    {
+        DocumentSumResponse::Entries(entries) => entries,
+        other => panic!("expected entries, got {other:?}"),
     };
     let proved_page = |where_clauses: Vec<WhereClause>, mode: SumMode| {
-        let proof = match page(where_clauses.clone(), mode, true) {
+        let proof = match sum_likes(
+            &drive,
+            &contract,
+            where_clauses.clone(),
+            mode,
+            Some(1),
+            true,
+        )
+        .expect("a page of one proves")
+        {
             DocumentSumResponse::Proof(proof) => proof,
             other => panic!("expected a proof, got {other:?}"),
         };
-        let index = find_range_summable_index_for_where_clauses(
-            document_type.indexes(),
-            &where_clauses,
-            "byPost",
-            &[],
-        )
-        .expect("a counter index answers");
-        assert!(index.is_summable_off_count_index());
-        let (root_hash, entries) = DriveDocumentSumQuery {
-            document_type,
-            contract_id: contract.id().to_buffer(),
-            document_type_name: "like".to_string(),
-            index,
-            where_clauses,
-            sum_property: "byPost".to_string(),
-        }
-        .verify_distinct_sum_proof(&proof, 1, true, pv)
-        .expect("the page's proof verifies");
+        let query = like_sum_query(&contract, &where_clauses);
+        assert!(query.index.is_summable_off_count_index());
+        let (root_hash, entries) = query
+            .verify_distinct_sum_proof(&proof, 1, true, platform_version())
+            .expect("the page's proof verifies");
         assert_live_root_hash(&drive, root_hash);
         entries
     };
-    let unproved_page =
-        |where_clauses: Vec<WhereClause>, mode: SumMode| match page(where_clauses, mode, false) {
-            DocumentSumResponse::Entries(entries) => entries,
-            other => panic!("expected entries, got {other:?}"),
-        };
 
     // A page of one starting at the unliked post returns it at zero.
     for (clauses, mode, in_key) in [
         (
             vec![
                 equal("postAuthor", Value::Identifier(AUTHOR_A)),
-                from(unliked, WhereOperator::GreaterThanOrEquals),
+                post_id(WhereOperator::GreaterThanOrEquals, unliked),
             ],
             SumMode::GroupByRange,
             None,
@@ -1194,7 +1241,7 @@ fn should_keep_an_unliked_post_on_a_page_of_grouped_likes_sums() {
         (
             vec![
                 both_authors(),
-                from(unliked, WhereOperator::GreaterThanOrEquals),
+                post_id(WhereOperator::GreaterThanOrEquals, unliked),
             ],
             SumMode::GroupByCompound,
             Some(AUTHOR_A.to_vec()),
@@ -1220,7 +1267,7 @@ fn should_keep_an_unliked_post_on_a_page_of_grouped_likes_sums() {
     loop {
         let clauses = vec![
             equal("postAuthor", Value::Identifier(AUTHOR_A)),
-            from(after, WhereOperator::GreaterThan),
+            post_id(WhereOperator::GreaterThan, after),
         ];
         let entries = unproved_page(clauses.clone(), SumMode::GroupByRange);
         assert_eq!(
@@ -1313,11 +1360,17 @@ fn should_total_the_likes_of_a_range_of_posts_from_the_counters_sums() {
 /// with and without a proof: grovedb neither totals nor proves a range
 /// through an indexed tree. That covers `byPost`, ranked at its last
 /// property, the counter indexes as the fixture ranks them, an average over
-/// them, and a counter index ranked only above the range.
+/// them, the per-author totals of a count, a sum and an average across an
+/// `IN` (the carrier proofs), and a counter index ranked only above the
+/// range.
 #[test]
 fn should_refuse_a_range_total_through_a_ranked_index() {
     let refused = |result: Result<(), Error>| {
-        matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(_))))
+        matches!(
+            result,
+            Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+                if message.starts_with("a range total")
+        )
     };
     let (drive, contract) = setup(true);
     liked_posts(&drive, &contract);
@@ -1325,7 +1378,30 @@ fn should_refuse_a_range_total_through_a_ranked_index() {
         equal("postAuthor", Value::Identifier(AUTHOR_A)),
         every_post(),
     ];
+    let both_ranges = vec![both_authors(), every_post()];
     let drive_config = DriveConfig::default();
+    let average = |where_clauses: Vec<WhereClause>, mode: AverageMode, prove: bool| {
+        drive
+            .execute_document_average_request(
+                DocumentAverageRequest {
+                    contract: &contract,
+                    document_type: contract
+                        .document_type_for_name("like")
+                        .expect("like doctype exists"),
+                    sum_property: "byPost".to_string(),
+                    where_clauses,
+                    resolved_time_ranges: vec![],
+                    order_clauses: vec![],
+                    mode,
+                    limit: None,
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                platform_version(),
+            )
+            .map(|_| ())
+    };
     for prove in [false, true] {
         for clauses in [vec![every_post()], a_range.clone()] {
             let result = count_likes(
@@ -1339,27 +1415,40 @@ fn should_refuse_a_range_total_through_a_ranked_index() {
             .map(|_| ());
             assert!(refused(result), "{clauses:?} (prove: {prove})");
         }
-        let average = drive
-            .execute_document_average_request(
-                DocumentAverageRequest {
-                    contract: &contract,
-                    document_type: contract
-                        .document_type_for_name("like")
-                        .expect("like doctype exists"),
-                    sum_property: "byPost".to_string(),
-                    where_clauses: a_range.clone(),
-                    resolved_time_ranges: vec![],
-                    order_clauses: vec![],
-                    mode: AverageMode::Aggregate,
-                    limit: None,
-                    prove,
-                    drive_config: &drive_config,
-                },
-                None,
-                platform_version(),
-            )
-            .map(|_| ());
-        assert!(refused(average), "a range average (prove: {prove})");
+        assert!(
+            refused(average(a_range.clone(), AverageMode::Aggregate, prove)),
+            "a range average (prove: {prove})"
+        );
+        let per_author_counts = count_likes(
+            &drive,
+            &contract,
+            both_ranges.clone(),
+            CountMode::GroupByIn,
+            None,
+            prove,
+        )
+        .map(|_| ());
+        assert!(
+            refused(per_author_counts),
+            "per-author range counts (prove: {prove})"
+        );
+        let per_author_sums = sum_likes(
+            &drive,
+            &contract,
+            both_ranges.clone(),
+            SumMode::GroupByIn,
+            None,
+            prove,
+        )
+        .map(|_| ());
+        assert!(
+            refused(per_author_sums),
+            "per-author range sums (prove: {prove})"
+        );
+        assert!(
+            refused(average(both_ranges.clone(), AverageMode::GroupByIn, prove)),
+            "per-author range averages (prove: {prove})"
+        );
     }
 
     // Ranked only at `postAuthor`, above the range on `postId`.

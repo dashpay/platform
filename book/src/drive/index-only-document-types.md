@@ -544,9 +544,10 @@ the range sums (`DriveDocumentCountQuery::counter_sums_query`): every range
 count executor and verifier hands the same index and clauses to the sum
 surface's counterpart, summing the source index, and reads the sums back as
 counts, since grovedb's range count over the counters would count them, one
-per group. A range total over an index that ranks any level is refused with
-a hint to group by the last property, as on every ranked index: a ranked
-level's tree is indexed, and grovedb's range totals neither read nor prove
+per group. A range total over an index whose path passes through a ranked
+level (its own, or one another index ranks at a shared level) is refused with
+a hint to group by the last property, as everywhere: a ranked level's tree is
+indexed, and grovedb's range totals neither read nor prove
 through an indexed tree.
 
 ## What it costs and what it saves

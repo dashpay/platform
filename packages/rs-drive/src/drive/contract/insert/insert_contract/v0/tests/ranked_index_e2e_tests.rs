@@ -57,7 +57,14 @@
 #[path = "batched_group_drain.rs"]
 mod batched_group_drain;
 
+use crate::config::DriveConfig;
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
+use crate::error::Error;
+use crate::query::drive_document_count_query::{
+    CountMode, DocumentCountRequest, DocumentCountResponse,
+};
+use crate::query::{WhereClause, WhereOperator};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -66,8 +73,10 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::data_contract::DataContractFactory;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-use dpp::platform_value::Value;
+use dpp::identifier::Identifier;
+use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
@@ -723,8 +732,6 @@ const PROTOCOL_VERSION_V14: u32 = 14;
 fn try_build_dish_contract(
     standalone_prefix_index: bool,
 ) -> Result<DataContract, dpp::ProtocolError> {
-    use dpp::data_contract::DataContractFactory;
-    use dpp::platform_value::platform_value;
     use dpp::tests::utils::generate_random_identifier_struct;
 
     let factory =
@@ -897,8 +904,6 @@ fn compound_ranked_index_contract_parses_unless_its_prefix_aggregates() {
 fn try_build_null_searchable_ranked_contract(
     null_searchable: Option<bool>,
 ) -> Result<DataContract, dpp::ProtocolError> {
-    use dpp::data_contract::DataContractFactory;
-    use dpp::platform_value::platform_value;
     use dpp::tests::utils::generate_random_identifier_struct;
 
     let factory =
@@ -1087,9 +1092,6 @@ fn build_cafe_contract(
     owner_id: dpp::identifier::Identifier,
     with_ranked_doctype: bool,
 ) -> DataContract {
-    use dpp::data_contract::DataContractFactory;
-    use dpp::platform_value::platform_value;
-
     let factory =
         DataContractFactory::new(PROTOCOL_VERSION_V14).expect("expected to create factory");
 
@@ -1784,8 +1786,6 @@ fn an_offset_past_the_end_returns_an_empty_page_whose_skip_attests_the_populatio
 /// multi-index fixture in `query::drive_document_ranked_query::tests` had to
 /// hang its compound sibling off a count-only index instead.
 fn build_shared_prefix_ranked_dish_contract() -> DataContract {
-    use dpp::data_contract::DataContractFactory;
-    use dpp::platform_value::platform_value;
     use dpp::tests::utils::generate_random_identifier_struct;
 
     let factory =
@@ -2013,4 +2013,153 @@ fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() 
     );
 
     assert_grovedb_is_consistent(&drive);
+}
+
+/// An `order` contract whose `byRestaurantOrders` ranks `restaurantId` by
+/// count while the unranked `byRestaurantGuests` continues below it, so the
+/// second index's `restaurantId` level is the first's indexed tree.
+fn build_order_contract_continuing_below_a_ranked_level() -> DataContract {
+    DataContractFactory::new(PROTOCOL_VERSION_V14)
+        .expect("expected to create factory")
+        .create_with_value_config(
+            Identifier::from([7; 32]),
+            0,
+            platform_value!({
+                "order": {
+                    "type": "object",
+                    "properties": {
+                        "restaurantId": {"type": "string", "position": 0, "maxLength": 32},
+                        "guests": {"type": "integer", "minimum": 1, "maximum": 100, "position": 1},
+                    },
+                    "required": ["restaurantId", "guests"],
+                    "indices": [
+                        {
+                            "name": "byRestaurantOrders",
+                            "properties": [{"restaurantId": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                            "rankedCountable": true,
+                        },
+                        {
+                            "name": "byRestaurantGuests",
+                            "properties": [{"restaurantId": "asc"}, {"guests": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                        },
+                    ],
+                    "additionalProperties": false,
+                },
+            }),
+            None,
+            None,
+        )
+        .expect("expected to create the order data contract")
+        .data_contract_owned()
+}
+
+/// A range total through an unranked index is refused, with and without a
+/// proof, when its path passes through a level another index ranks: grovedb
+/// neither totals nor proves a range through that indexed tree. Grouped by
+/// the range's property, the same range still reads each value.
+#[test]
+fn should_refuse_a_range_total_through_another_index_s_ranked_level() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = build_order_contract_continuing_below_a_ranked_level();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the order contract");
+    insert_docs(
+        &drive,
+        &contract,
+        "order",
+        "guests",
+        &[("alpha", 2), ("alpha", 5), ("beta", 4)],
+    );
+
+    let document_type = contract
+        .document_type_for_name("order")
+        .expect("order doctype exists");
+    let drive_config = DriveConfig::default();
+    let count = |where_clauses: Vec<WhereClause>, mode: CountMode, prove: bool| {
+        drive.execute_document_count_request(
+            DocumentCountRequest {
+                contract: &contract,
+                document_type,
+                where_clauses,
+                resolved_time_ranges: vec![],
+                order_clauses: vec![],
+                mode,
+                limit: None,
+                prove,
+                drive_config: &drive_config,
+            },
+            None,
+            pv,
+        )
+    };
+    let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+        field: field.to_string(),
+        operator,
+        value,
+    };
+    let more_than_three = clause("guests", WhereOperator::GreaterThan, Value::I64(3));
+    let alpha = clause(
+        GROUP_PROPERTY,
+        WhereOperator::Equal,
+        Value::Text("alpha".to_string()),
+    );
+    let both = clause(
+        GROUP_PROPERTY,
+        WhereOperator::In,
+        Value::Array(vec![
+            Value::Text("alpha".to_string()),
+            Value::Text("beta".to_string()),
+        ]),
+    );
+    let refused = |result: Result<DocumentCountResponse, Error>| {
+        matches!(
+            result,
+            Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+                if message.starts_with("a range total")
+        )
+    };
+
+    for prove in [false, true] {
+        assert!(
+            refused(count(
+                vec![alpha.clone(), more_than_three.clone()],
+                CountMode::Aggregate,
+                prove,
+            )),
+            "a range total (prove: {prove})"
+        );
+        assert!(
+            refused(count(
+                vec![both.clone(), more_than_three.clone()],
+                CountMode::GroupByIn,
+                prove,
+            )),
+            "a range total per restaurant (prove: {prove})"
+        );
+    }
+    match count(vec![alpha, more_than_three], CountMode::GroupByRange, false)
+        .expect("a range read per value answers")
+    {
+        DocumentCountResponse::Entries(entries) => {
+            assert_eq!(
+                entries.iter().map(|entry| entry.count).collect::<Vec<_>>(),
+                vec![Some(1)],
+                "alpha's one order of five guests"
+            )
+        }
+        other => panic!("expected entries, got {other:?}"),
+    }
 }

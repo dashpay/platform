@@ -179,9 +179,7 @@ fn summable_point_lookup_carries_counts(index: &Index, where_clauses: &[WhereCla
         .take_while(|prop| where_clauses.iter().any(|wc| wc.field == prop.name))
         .count();
     pin_depth == index.properties.len()
-        || index
-            .shallowest_count_chain_position()
-            .is_some_and(|min_at_position| pin_depth >= 1 && min_at_position < pin_depth)
+        || pins_reach_chain(index, pin_depth, index.shallowest_count_chain_position())
 }
 
 /// Find a `rangeSummable: true` index whose properties cover the

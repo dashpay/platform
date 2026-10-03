@@ -43,10 +43,7 @@ pub(crate) fn ranked_level_split(
         )));
     };
     let is_at_level = index
-        .ranked_countable_at
-        .iter()
-        .chain(index.ranked_summable_at.iter())
-        .chain(index.ranked_averageable_at.iter())
+        .ranked_at_levels()
         .any(|at| at == &ranked_property.name);
     let is_terminal = pin_count + 1 == index.properties.len();
     if !is_at_level && !is_terminal {

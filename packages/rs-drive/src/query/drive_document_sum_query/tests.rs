@@ -412,7 +412,7 @@ mod limit_policy_regression {
     use crate::error::query::QuerySyntaxError;
     use crate::error::Error;
     use crate::query::drive_document_sum_query::{
-        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
+        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumEntry, SumMode,
     };
     use crate::query::{WhereClause, WhereOperator};
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -433,39 +433,49 @@ mod limit_policy_regression {
 
     const PROTOCOL_VERSION_V12: u32 = 12;
 
+    /// Build a contract at `protocol_version` with one `widget` doctype
+    /// carrying `document_schema`, owned by a fixed identity.
+    fn build_widget_contract_with(
+        protocol_version: u32,
+        document_schema: Value,
+    ) -> dpp::data_contract::DataContract {
+        DataContractFactory::new(protocol_version)
+            .expect("create factory")
+            .create_with_value_config(
+                Identifier::from([0xAB; 32]),
+                0,
+                platform_value!({ "widget": document_schema }),
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned()
+    }
+
     /// Build a v12 contract with a `widget` doctype carrying a single
     /// `(color, amount)` `rangeSummable: true` index. The `byColor`
     /// index — `summable: "amount"` + `rangeSummable: true` — is what
     /// the SUM `RangeDistinctProof` arm walks (color = the per-distinct
     /// terminator key, amount = the summed per-doc value).
     fn build_widget_contract() -> dpp::data_contract::DataContract {
-        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
-        let document_schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "color":  {"type": "string",  "position": 0, "maxLength": 32},
-                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
-            },
-            "required": ["color", "amount"],
-            "indices": [{
-                "name": "byColor",
-                "properties": [{"color": "asc"}],
-                "summable":      "amount",
-                "rangeSummable": true,
-            }],
-            "additionalProperties": false,
-        });
-        let schemas = platform_value!({ "widget": document_schema });
-        factory
-            .create_with_value_config(
-                dpp::tests::utils::generate_random_identifier_struct(),
-                0,
-                schemas,
-                None,
-                None,
-            )
-            .expect("create data contract")
-            .data_contract_owned()
+        build_widget_contract_with(
+            PROTOCOL_VERSION_V12,
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                    "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+                },
+                "required": ["color", "amount"],
+                "indices": [{
+                    "name": "byColor",
+                    "properties": [{"color": "asc"}],
+                    "summable":      "amount",
+                    "rangeSummable": true,
+                }],
+                "additionalProperties": false,
+            }),
+        )
     }
 
     /// Insert one widget document at the given `(color, amount)` pair
@@ -477,13 +487,30 @@ mod limit_policy_regression {
         color: &str,
         amount: u64,
     ) {
-        let platform_version = PlatformVersion::latest();
+        insert_widget_with(
+            drive,
+            contract,
+            i,
+            StdBTreeMap::from([
+                ("color".to_string(), Value::Text(color.to_string())),
+                ("amount".to_string(), Value::U64(amount)),
+            ]),
+            PlatformVersion::latest(),
+        );
+    }
+
+    /// Insert one widget document with `properties` at `platform_version`,
+    /// using the index `(i+1)` as a unique 32-byte id.
+    fn insert_widget_with(
+        drive: &Drive,
+        contract: &dpp::data_contract::DataContract,
+        i: usize,
+        properties: StdBTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) {
         let document_type = contract
             .document_type_for_name("widget")
             .expect("widget type exists");
-        let mut properties = StdBTreeMap::new();
-        properties.insert("color".to_string(), Value::Text(color.to_string()));
-        properties.insert("amount".to_string(), Value::U64(amount));
         let document: Document = DocumentV0 {
             contract_version: None,
             id: Identifier::from([(i + 1) as u8; 32]),
@@ -728,37 +755,26 @@ mod limit_policy_regression {
     /// keeps those).
     #[test]
     fn should_keep_a_zero_in_total_and_drop_zero_groups_at_protocol_version_13() {
-        use crate::query::drive_document_sum_query::SumEntry;
-
         let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
-        let factory =
-            DataContractFactory::new(platform_version.protocol_version).expect("create factory");
-        let document_schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "brand":  {"type": "string",  "position": 0, "maxLength": 32},
-                "color":  {"type": "string",  "position": 1, "maxLength": 32},
-                "amount": {"type": "integer", "position": 2, "minimum": 0, "maximum": 1000},
-            },
-            "required": ["brand", "color", "amount"],
-            "indices": [{
-                "name": "byBrandColor",
-                "properties": [{"brand": "asc"}, {"color": "asc"}],
-                "summable":      "amount",
-                "rangeSummable": true,
-            }],
-            "additionalProperties": false,
-        });
-        let data_contract = factory
-            .create_with_value_config(
-                dpp::tests::utils::generate_random_identifier_struct(),
-                0,
-                platform_value!({ "widget": document_schema }),
-                None,
-                None,
-            )
-            .expect("create data contract")
-            .data_contract_owned();
+        let data_contract = build_widget_contract_with(
+            platform_version.protocol_version,
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "brand":  {"type": "string",  "position": 0, "maxLength": 32},
+                    "color":  {"type": "string",  "position": 1, "maxLength": 32},
+                    "amount": {"type": "integer", "position": 2, "minimum": 0, "maximum": 1000},
+                },
+                "required": ["brand", "color", "amount"],
+                "indices": [{
+                    "name": "byBrandColor",
+                    "properties": [{"brand": "asc"}, {"color": "asc"}],
+                    "summable":      "amount",
+                    "rangeSummable": true,
+                }],
+                "additionalProperties": false,
+            }),
+        );
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         drive
             .apply_contract(
@@ -781,38 +797,17 @@ mod limit_policy_regression {
         .into_iter()
         .enumerate()
         {
-            let document: Document = DocumentV0 {
-                id: Identifier::from([(i + 1) as u8; 32]),
-                owner_id: Identifier::from([0u8; 32]),
-                properties: StdBTreeMap::from([
+            insert_widget_with(
+                &drive,
+                &data_contract,
+                i,
+                StdBTreeMap::from([
                     ("brand".to_string(), Value::Text(brand.to_string())),
                     ("color".to_string(), Value::Text(color.to_string())),
                     ("amount".to_string(), Value::U64(amount)),
                 ]),
-                ..Default::default()
-            }
-            .into();
-            drive
-                .add_document_for_contract(
-                    DocumentAndContractInfo {
-                        owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefInfo((
-                                &document,
-                                Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
-                            )),
-                            owner_id: None,
-                        },
-                        contract: &data_contract,
-                        document_type,
-                    },
-                    false,
-                    BlockInfo::default(),
-                    true,
-                    None,
-                    platform_version,
-                    None,
-                )
-                .expect("insert widget");
+                platform_version,
+            );
         }
 
         let drive_config = DriveConfig::default();

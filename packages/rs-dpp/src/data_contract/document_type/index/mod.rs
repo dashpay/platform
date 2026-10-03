@@ -593,6 +593,39 @@ fn resolve_ranked_at_levels(
     ))
 }
 
+/// One ranking keyword's value: its boolean form, or the levels its
+/// `{ "at": … }` object form names, held raw until the property list is
+/// parsed. Each spelling replaces both parts, so a repeated key keeps its last
+/// spelling, as the meta-schema's JSON view does.
+fn parse_ranking(
+    keyword: &str,
+    value: &Value,
+) -> Result<(bool, Option<Vec<String>>), DataContractError> {
+    if let Some(at_levels) = parse_ranked_at_levels(keyword, value)? {
+        return Ok((false, Some(at_levels)));
+    }
+    let ranks_terminal = value.as_bool().ok_or_else(|| {
+        DataContractError::ValueWrongType(format!(
+            "{keyword} value must be a boolean or a map with an `at` field"
+        ))
+    })?;
+    Ok((ranks_terminal, None))
+}
+
+/// [`resolve_ranked_at_levels`] for a ranking written in the object form:
+/// whether its levels name the last property, and the other levels.
+/// `(false, [])` for the boolean form.
+fn resolve_ranking(
+    keyword: &str,
+    at_levels: Option<Vec<String>>,
+    index_properties: &[IndexProperty],
+) -> Result<(bool, Vec<String>), DataContractError> {
+    match at_levels {
+        Some(levels) => resolve_ranked_at_levels(keyword, levels, index_properties),
+        None => Ok((false, Vec::new())),
+    }
+}
+
 /// Deserializer for [`Index::ranked_countable_at`] that accepts, besides
 /// the current array-of-names form, the two legacy spellings the field
 /// had while it was an `Option<String>`: `null` (→ empty) and a bare
@@ -782,7 +815,7 @@ pub struct Index {
     /// The indexed primary is a byte-compatible mirror of the tree it replaces,
     /// so per-value range reads keep working against it; a range total
     /// (`AggregateCountOnRange` &co.) does not, so Drive refuses one through
-    /// any index that ranks a level.
+    /// any index whose path passes through a ranked level.
     ///
     /// `ranked_countable: true` requires [`Index::range_countable`] (which in
     /// turn requires [`Index::countable`]): the ranking secondary is built from
@@ -1333,6 +1366,21 @@ impl Index {
         property_name.to_string()
     }
 
+    /// Whether `other`'s first `depth` levels occupy the same GroveDB subtrees
+    /// as this index's. Level identity is [`Self::level_key`] — the
+    /// grid-qualified storage key for a bucketed first property, the bare name
+    /// otherwise — so a bucketed sibling whose declared names match a plain
+    /// index's does NOT share its levels. `false` when either index has fewer
+    /// than `depth` properties.
+    pub fn shares_leading_levels(&self, other: &Index, depth: usize) -> bool {
+        self.properties.len() >= depth
+            && other.properties.len() >= depth
+            && (0..depth).all(|position| {
+                self.level_key(position, &self.properties[position].name)
+                    == other.level_key(position, &other.properties[position].name)
+            })
+    }
+
     /// Name-keyed variant of [`Self::level_key`] for callers that hold a
     /// property name rather than its position: a transform's source is
     /// validated to be the index's first property, so matching the name
@@ -1374,6 +1422,19 @@ impl Index {
         self.terminal_contains(name) || self.properties.iter().any(|property| property.name == name)
     }
 
+    /// Whether the index keeps exactly one entry for every live document,
+    /// keyed by values the document carries: it keeps entries (it is no
+    /// `summableOffCountIndex` index), skips no document (no `skipIfAbsent`),
+    /// drops a deleted document's entry (no `outlivesDelete`) and keys none
+    /// by `$createdAt`, a timestamp the block assigns. An indexOnly type's
+    /// proof index and a counter's source index both need it.
+    pub fn keys_each_live_document_by_its_values(&self) -> bool {
+        !self.is_summable_off_count_index()
+            && !self.skip_if_absent
+            && !self.outlives_delete
+            && !self.involves(property_names::CREATED_AT)
+    }
+
     /// The terminal's single component; `None` on a composite terminal or a
     /// non-indexOnly index.
     pub fn single_terminal(&self) -> Option<&str> {
@@ -1394,10 +1455,28 @@ impl Index {
     /// any axis, or an `at` level on any axis. Every level it names is then
     /// an indexed tree.
     pub fn declares_any_ranking(&self) -> bool {
-        self.ranks_its_last_property()
-            || !self.ranked_countable_at.is_empty()
-            || !self.ranked_summable_at.is_empty()
-            || !self.ranked_averageable_at.is_empty()
+        self.ranks_its_last_property() || self.ranked_at_levels().next().is_some()
+    }
+
+    /// The properties the index ranks at through a `{ "at": ... }` form, on
+    /// every axis: count, then sum, then average (a property ranked on several
+    /// axes repeats).
+    pub fn ranked_at_levels(&self) -> impl Iterator<Item = &String> {
+        self.ranked_countable_at
+            .iter()
+            .chain(self.ranked_summable_at.iter())
+            .chain(self.ranked_averageable_at.iter())
+    }
+
+    /// The positions of the properties `at_levels` names, skipping a name that
+    /// is no property of the index (a hand-built `Index` may carry one).
+    pub fn at_level_positions<'a>(
+        &'a self,
+        at_levels: impl IntoIterator<Item = &'a String> + 'a,
+    ) -> impl Iterator<Item = usize> + 'a {
+        at_levels
+            .into_iter()
+            .filter_map(|at| self.properties.iter().position(|p| &p.name == at))
     }
 
     /// Whether the index ranks its last property on any axis, making that
@@ -1417,11 +1496,12 @@ impl Index {
     /// Every value tree from that level down counts its whole subtree. `None`
     /// without a prefix-level count or average ranking.
     pub fn shallowest_count_chain_position(&self) -> Option<usize> {
-        self.shallowest_at_position(
+        self.at_level_positions(
             self.ranked_countable_at
                 .iter()
                 .chain(self.ranked_averageable_at.iter()),
         )
+        .min()
     }
 
     /// Sum-chain counterpart of [`Self::shallowest_count_chain_position`]:
@@ -1429,20 +1509,12 @@ impl Index {
     /// which every value tree down sums its whole subtree. Only a
     /// `summableOffCountIndex` index has one.
     pub fn shallowest_sum_chain_position(&self) -> Option<usize> {
-        self.shallowest_at_position(
+        self.at_level_positions(
             self.ranked_summable_at
                 .iter()
                 .chain(self.ranked_averageable_at.iter()),
         )
-    }
-
-    fn shallowest_at_position<'a>(
-        &self,
-        at_levels: impl Iterator<Item = &'a String>,
-    ) -> Option<usize> {
-        at_levels
-            .filter_map(|at| self.properties.iter().position(|p| &p.name == at))
-            .min()
+        .min()
     }
 
     /// The name a sum, average or ranking query addresses this index's summed
@@ -1972,18 +2044,15 @@ impl Index {
         // property-name tree; unlike `averageable` / `rangeAverageable` there
         // is no sugar relationship between them, so no explicit-vs-default
         // tracking is needed — nothing ever promotes them.
+        // Each ranking's object form `{ "at": … }` — one property name or an
+        // array of them — is held raw until after the loop, because resolving
+        // each (does it name an index property? is it the last one, i.e. the
+        // terminal form spelled longhand?) needs the parsed property list.
         let mut ranked_countable = false;
-        // The object form `rankedCountable: { "at": … }` — one property name
-        // or an array of them — held raw until after the loop, because
-        // resolving each (does it name an index property? is it the last
-        // one, i.e. the terminal form spelled longhand?) needs the parsed
-        // property list.
-        let mut ranked_countable_at_levels: Vec<String> = Vec::new();
-        let mut ranked_countable_object_form = false;
-        let mut ranked_countable_at: Vec<String> = Vec::new();
+        let mut ranked_countable_at_levels: Option<Vec<String>> = None;
         let mut ranked_summable = false;
-        let mut ranked_averageable = false;
         let mut ranked_summable_at_levels: Option<Vec<String>> = None;
+        let mut ranked_averageable = false;
         let mut ranked_averageable_at_levels: Option<Vec<String>> = None;
         let mut time_range: Option<TimeRangeTransform> = None;
         let mut integer_range: Option<IntegerRangeTransform> = None;
@@ -2248,64 +2317,22 @@ impl Index {
                     // index — the nested-secondaries shape the storage layer
                     // maintains as one count-propagation chain.
                     //
-                    // A repeated key keeps its last spelling, as the
-                    // meta-schema's JSON view does: each branch clears what
-                    // the other one set.
-                    if let Some(at_levels) = parse_ranked_at_levels(RANKED_COUNTABLE, value_value)?
-                    {
-                        ranked_countable = false;
-                        ranked_countable_object_form = true;
-                        ranked_countable_at_levels = at_levels;
-                    } else {
-                        ranked_countable_object_form = false;
-                        ranked_countable_at_levels = Vec::new();
-                        ranked_countable =
-                            value_value
-                                .as_bool()
-                                .ok_or(DataContractError::ValueWrongType(
-                                    "rankedCountable value must be a boolean or a map with an \
-                                     `at` field"
-                                        .to_string(),
-                                ))?;
-                    }
+                    // A repeated key keeps its last spelling (see
+                    // `parse_ranking`).
+                    (ranked_countable, ranked_countable_at_levels) =
+                        parse_ranking(RANKED_COUNTABLE, value_value)?;
                 }
                 // The Sum and Avg axes take the same two spellings as the
                 // Count axis. The object form is only admitted on a
                 // `summableOffCountIndex` index (checked once the whole map
                 // is read), whose counters carry the sums its chain ranks by.
                 RANKED_SUMMABLE if ranked_aggregates_allowed => {
-                    if let Some(at_levels) = parse_ranked_at_levels(RANKED_SUMMABLE, value_value)? {
-                        ranked_summable = false;
-                        ranked_summable_at_levels = Some(at_levels);
-                    } else {
-                        ranked_summable_at_levels = None;
-                        ranked_summable =
-                            value_value
-                                .as_bool()
-                                .ok_or(DataContractError::ValueWrongType(
-                                    "rankedSummable value must be a boolean or a map with an \
-                                     `at` field"
-                                        .to_string(),
-                                ))?;
-                    }
+                    (ranked_summable, ranked_summable_at_levels) =
+                        parse_ranking(RANKED_SUMMABLE, value_value)?;
                 }
                 RANKED_AVERAGEABLE if ranked_aggregates_allowed => {
-                    if let Some(at_levels) =
-                        parse_ranked_at_levels(RANKED_AVERAGEABLE, value_value)?
-                    {
-                        ranked_averageable = false;
-                        ranked_averageable_at_levels = Some(at_levels);
-                    } else {
-                        ranked_averageable_at_levels = None;
-                        ranked_averageable =
-                            value_value
-                                .as_bool()
-                                .ok_or(DataContractError::ValueWrongType(
-                                    "rankedAverageable value must be a boolean or a map with an \
-                                     `at` field"
-                                        .to_string(),
-                                ))?;
-                    }
+                    (ranked_averageable, ranked_averageable_at_levels) =
+                        parse_ranking(RANKED_AVERAGEABLE, value_value)?;
                 }
                 // `timeRange` is guarded the same way as the ranking keywords
                 // above: it joined the grammar at meta-schema v3, so below
@@ -2688,44 +2715,39 @@ impl Index {
                 .collect();
         }
 
-        // Resolve the object form of `rankedCountable` against the property
-        // list. Naming the *last* property is the terminal form spelled
-        // longhand — folded into the boolean so `ranked_countable_at` holds
-        // only non-terminal levels and downstream code never handles two
-        // spellings of one layout. Any number of levels may be named; the
-        // resolved vector is sorted into index-property order so two
-        // spellings of one declaration parse identically. (The boolean and
-        // object spellings cannot conflict: a repeated key keeps its last
-        // spelling.)
-        if ranked_countable_object_form {
-            let (ranks_terminal, at_levels) = resolve_ranked_at_levels(
-                RANKED_COUNTABLE,
-                mem::take(&mut ranked_countable_at_levels),
-                &index_properties,
-            )?;
-            ranked_countable |= ranks_terminal;
-            ranked_countable_at = at_levels;
-        }
-        // Whether the Sum and Avg axes were written in the object form, read
-        // before the folding below drops a last-property `at` into the
+        // Resolve each ranking's object form against the property list.
+        // Naming the *last* property is the terminal form spelled longhand —
+        // folded into the boolean so the `*_at` vectors hold only non-terminal
+        // levels and downstream code never handles two spellings of one
+        // layout. Any number of levels may be named; each resolved vector is
+        // sorted into index-property order so two spellings of one
+        // declaration parse identically. (The boolean and object spellings
+        // cannot conflict: a repeated key keeps its last spelling.)
+        //
+        // Whether the Sum and Avg axes were written in the object form is read
+        // first, before the folding drops a last-property `at` into the
         // boolean: the form itself is what only a `summableOffCountIndex`
         // index admits.
         let ranked_summable_object_form = ranked_summable_at_levels.is_some();
         let ranked_averageable_object_form = ranked_averageable_at_levels.is_some();
-        let mut ranked_summable_at: Vec<String> = Vec::new();
-        if let Some(levels) = ranked_summable_at_levels {
-            let (ranks_terminal, at_levels) =
-                resolve_ranked_at_levels(RANKED_SUMMABLE, levels, &index_properties)?;
-            ranked_summable |= ranks_terminal;
-            ranked_summable_at = at_levels;
-        }
-        let mut ranked_averageable_at: Vec<String> = Vec::new();
-        if let Some(levels) = ranked_averageable_at_levels {
-            let (ranks_terminal, at_levels) =
-                resolve_ranked_at_levels(RANKED_AVERAGEABLE, levels, &index_properties)?;
-            ranked_averageable |= ranks_terminal;
-            ranked_averageable_at = at_levels;
-        }
+        let (ranks_terminal, mut ranked_countable_at) = resolve_ranking(
+            RANKED_COUNTABLE,
+            ranked_countable_at_levels,
+            &index_properties,
+        )?;
+        ranked_countable |= ranks_terminal;
+        let (ranks_terminal, mut ranked_summable_at) = resolve_ranking(
+            RANKED_SUMMABLE,
+            ranked_summable_at_levels,
+            &index_properties,
+        )?;
+        ranked_summable |= ranks_terminal;
+        let (ranks_terminal, ranked_averageable_at) = resolve_ranking(
+            RANKED_AVERAGEABLE,
+            ranked_averageable_at_levels,
+            &index_properties,
+        )?;
+        ranked_averageable |= ranks_terminal;
 
         // A prefix-level Count ranking works by making every level from the
         // named property down to the terminal count-bearing, so each write's
@@ -2916,6 +2938,20 @@ impl Index {
             ));
         }
 
+        // A `summableOffCountIndex` index keeps one counter per group in the
+        // tree of its last property, which only `rangeSummable` makes a sum
+        // tree. Checked before the ranking prerequisites: its
+        // `rankedCountable` was merged into the Sum axis, so their message
+        // would name `rankedSummable`, a keyword the author may not have
+        // written.
+        if summable_off_count_index.is_some() && !range_summable {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "index {}: a summableOffCountIndex index needs rangeSummable: true; the counters \
+                 live in the tree of the last property, which only rangeSummable makes a sum tree",
+                name.as_deref().unwrap_or("(unnamed)"),
+            )));
+        }
+
         // The ranking axes are checked after the `averageable` /
         // `rangeAverageable` desugar above, so they see the *resolved* range
         // flags: both the sugar form (`averageable` + `rangeAverageable`) and
@@ -2935,16 +2971,7 @@ impl Index {
             ));
         }
 
-        // A `summableOffCountIndex` index without rangeSummable is refused by
-        // its own rule below, which names the keyword it lacks: its
-        // `rankedCountable` was merged into this axis, so a message naming
-        // `rankedSummable` would blame a keyword the author may not have
-        // written.
-        let refused_as_a_counter = summable_off_count_index.is_some() && !range_summable;
-        if (ranked_summable || !ranked_summable_at.is_empty())
-            && !range_summable
-            && !refused_as_a_counter
-        {
+        if (ranked_summable || !ranked_summable_at.is_empty()) && !range_summable {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedSummable requires rangeSummable: true; ranking groups by \
                  sum needs the per-group sums the range-sum layout maintains"
@@ -2957,7 +2984,6 @@ impl Index {
         // and `summable` through the two checks above.
         if (ranked_averageable || !ranked_averageable_at.is_empty())
             && !(range_countable && range_summable)
-            && !refused_as_a_counter
         {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedAverageable requires rangeAverageable semantics — both \
@@ -3185,16 +3211,12 @@ impl Index {
             )?;
         }
 
-        // A `summableOffCountIndex` index keeps one counter per group in the
-        // tree of its last property, so that tree must be a sum tree: only
-        // `rangeSummable` makes it one. Its sum is the counters, so it names
-        // no summed property. It keeps no entries, so it takes no terminal,
+        // A `summableOffCountIndex` index (its `rangeSummable` checked above):
+        // its sum is the counters, so it names no summed property. It keeps no entries, so it takes no terminal,
         // no offset-paginated member bucket, and nothing that buckets or
         // ages entries.
         if let Some(source) = &summable_off_count_index {
-            let refusal = if !range_summable {
-                Some("needs rangeSummable: true; the counters live in the tree of the last property, which only rangeSummable makes a sum tree")
-            } else if summable.is_some() {
+            let refusal = if summable.is_some() {
                 Some("names no summable or averageable property; what it sums is the source index's count")
             } else if terminal.is_some() {
                 Some("takes no terminal; it keeps no entry per document")

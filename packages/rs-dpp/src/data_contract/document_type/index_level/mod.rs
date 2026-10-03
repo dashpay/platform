@@ -391,6 +391,14 @@ impl IndexLevel {
         self.has_index_with_type.as_ref()
     }
 
+    /// The type info of the `summableOffCountIndex` index this level ends,
+    /// whose counter stands at the level's value position in place of a value
+    /// tree; `None` when the level ends no such index.
+    pub fn summable_off_count_index_info(&self) -> Option<&IndexLevelTypeInfo> {
+        self.has_index_with_type()
+            .filter(|info| info.is_summable_off_count_index())
+    }
+
     /// Checks whether the given `rhs` IndexLevel is a subset of the current IndexLevel (`self`).
     ///
     /// A level is considered a subset if:
@@ -516,18 +524,14 @@ impl IndexLevel {
             // this derivation (check_tx, fixtures), and for those a
             // dangling `at` simply stamps nothing.
             let ranked_at_positions: Vec<usize> = index
-                .ranked_countable_at
-                .iter()
-                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                .at_level_positions(&index.ranked_countable_at)
                 .collect();
-            let positions_of = |levels: &[String]| -> Vec<usize> {
-                levels
-                    .iter()
-                    .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
-                    .collect()
-            };
-            let sum_at_positions = positions_of(&index.ranked_summable_at);
-            let average_at_positions = positions_of(&index.ranked_averageable_at);
+            let sum_at_positions: Vec<usize> = index
+                .at_level_positions(&index.ranked_summable_at)
+                .collect();
+            let average_at_positions: Vec<usize> = index
+                .at_level_positions(&index.ranked_averageable_at)
+                .collect();
             // The count chain starts at the shallowest level ranking by count
             // or average, the sum chain at the shallowest ranking by sum or
             // average: an average reads both.

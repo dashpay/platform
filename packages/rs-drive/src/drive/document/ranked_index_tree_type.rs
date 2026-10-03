@@ -20,7 +20,7 @@
 //! Per-value range reads keep working against the primary; a range total
 //! does not (grovedb's range aggregates take provable trees only and do not
 //! prove through an indexed tree), so the query surfaces refuse one through
-//! any index that ranks a level. The secondaries are what make "top / bottom
+//! any index whose path passes through a ranked level. The secondaries are what make "top / bottom
 //! K groups by count / sum / average" O(log n + k) with a proof.
 //!
 //! The upgrade table (`axes` = the declared ranking axes, canonically sorted
@@ -66,19 +66,37 @@ pub(crate) fn ranked_axes_for_index_level_info(
     let Some(info) = index_level_info else {
         return Vec::new();
     };
-    // Pushed in ascending tag order so the resulting list is already the
-    // canonical TLV order `Element::validate_pcpsit_axes` demands.
-    let mut axes = Vec::with_capacity(3);
-    if info.ranked_countable {
-        axes.push(IndexAxis::Count);
+    ranked_axes(
+        info.ranked_countable,
+        info.ranked_summable,
+        info.ranked_averageable,
+    )
+}
+
+/// The axes `count`, `sum` and `avg` name, pushed in ascending tag order so
+/// the list is already the canonical TLV order `Element::validate_pcpsit_axes`
+/// demands.
+fn ranked_axes(count: bool, sum: bool, avg: bool) -> Vec<IndexAxis> {
+    [
+        (count, IndexAxis::Count),
+        (sum, IndexAxis::Sum),
+        (avg, IndexAxis::Avg),
+    ]
+    .into_iter()
+    .filter_map(|(ranked, axis)| ranked.then_some(axis))
+    .collect()
+}
+
+/// The provable tree carrying `counts` and `sums`: the range-flag-selected
+/// base of a terminal property-name tree, and the base a ranked chain level's
+/// indexed tree mirrors. `NormalTree` when it carries neither.
+fn provable_tree_type(counts: bool, sums: bool) -> TreeType {
+    match (counts, sums) {
+        (true, true) => TreeType::ProvableCountProvableSumTree,
+        (true, false) => TreeType::ProvableCountTree,
+        (false, true) => TreeType::ProvableSumTree,
+        (false, false) => TreeType::NormalTree,
     }
-    if info.ranked_summable {
-        axes.push(IndexAxis::Sum);
-    }
-    if info.ranked_averageable {
-        axes.push(IndexAxis::Avg);
-    }
-    axes
 }
 
 /// Render a canonical axis list as the `(tag, secondary_root_key)` TLV a
@@ -142,12 +160,7 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
     let range_summable = index_level_info
         .map(|info| info.range_summable)
         .unwrap_or(false);
-    let base = match (range_countable, range_summable) {
-        (true, true) => TreeType::ProvableCountProvableSumTree,
-        (true, false) => TreeType::ProvableCountTree,
-        (false, true) => TreeType::ProvableSumTree,
-        (false, false) => TreeType::NormalTree,
-    };
+    let base = provable_tree_type(range_countable, range_summable);
     let ranked_axes = ranked_axes_for_index_level_info(index_level_info);
     Ok((
         ranked_property_name_tree_type(base, &ranked_axes)?,
@@ -198,16 +211,11 @@ pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
                     .to_string(),
             )));
         }
-        let mut axes = Vec::with_capacity(3);
-        if level.ranked_count_grouping() {
-            axes.push(IndexAxis::Count);
-        }
-        if level.ranked_sum_grouping() {
-            axes.push(IndexAxis::Sum);
-        }
-        if level.ranked_average_grouping() {
-            axes.push(IndexAxis::Avg);
-        }
+        let axes = ranked_axes(
+            level.ranked_count_grouping(),
+            level.ranked_sum_grouping(),
+            level.ranked_average_grouping(),
+        );
         // A propagating level's tree is the tree its values get; a grouping
         // level's is the indexed mirror of the provable tree carrying the
         // same aggregates, for the axes ranked at it.
@@ -219,11 +227,8 @@ pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
         if axes.is_empty() {
             return Ok((value_tree_type, axes));
         }
-        let provable_base = match value_tree_type {
-            TreeType::CountTree => TreeType::ProvableCountTree,
-            TreeType::SumTree => TreeType::ProvableSumTree,
-            _ => TreeType::ProvableCountProvableSumTree,
-        };
+        let provable_base =
+            provable_tree_type(level.chain_carries_counts(), level.chain_carries_sums());
         return Ok((ranked_property_name_tree_type(provable_base, &axes)?, axes));
     }
     property_name_tree_type_and_ranked_axes(level.has_index_with_type())

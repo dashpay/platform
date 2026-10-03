@@ -1,6 +1,7 @@
 //! Range execution paths for the count query.
 //!
-//! Three executors all keyed on a `range_countable: true` index:
+//! Four executors, each keyed on a `range_countable: true` index or a
+//! `summableOffCountIndex` index (see below):
 //! - [`DriveDocumentCountQuery::execute_range_count_no_proof`] — Rust-
 //!   side walk of the property-name `ProvableCountTree`'s children,
 //!   returning per-(in_key, key) entries (or a single sum) without a
@@ -10,6 +11,9 @@
 //! - [`DriveDocumentCountQuery::execute_distinct_count_with_proof`] —
 //!   regular range proof against the `ProvableCountTree`, returning
 //!   per-key `KVCount` ops bound to the merk root.
+//! - [`DriveDocumentCountQuery::execute_carrier_aggregate_count_with_proof`]
+//!   — one `AggregateCountOnRange` per `In` branch (or outer range key),
+//!   proved together.
 //!
 //! Over a `summableOffCountIndex` index each executor reads the index's
 //! range sums instead, through the sum surface's counterpart
@@ -64,7 +68,8 @@ pub struct RangeCountOptions {
 
 impl DriveDocumentCountQuery<'_> {
     /// Executes a range-aware count query against a `range_countable`
-    /// index. Path layout is `[contract_doc, doctype, prefix...,
+    /// index (or a `summableOffCountIndex` index, read through its range sums;
+    /// see the module docs). Path layout is `[contract_doc, doctype, prefix...,
     /// range_prop_name]`, whose children are the per-value
     /// `CountTree` leaves keyed by the range property's serialized
     /// value.
@@ -72,7 +77,8 @@ impl DriveDocumentCountQuery<'_> {
     /// The caller picks the index via
     /// [`Self::find_range_countable_index_for_where_clauses`]; this
     /// method assumes:
-    /// - `self.index.range_countable == true`
+    /// - `self.index.range_countable == true`, or the index is a
+    ///   `summableOffCountIndex` index
     /// - All `Equal` / `In` where clauses cover the index prefix
     /// - Exactly one range-operator where clause hits the index's last
     ///   property
@@ -378,7 +384,8 @@ impl DriveDocumentCountQuery<'_> {
     }
 
     /// Generates a grovedb `AggregateCountOnRange` proof for a
-    /// range-count query against a `range_countable` index. The returned
+    /// range-count query against a `range_countable` index (a
+    /// `summableOffCountIndex` index proves its range sum instead). The returned
     /// proof bytes can be verified client-side via
     /// `GroveDb::verify_aggregate_count_query`, which yields
     /// `(root_hash, count)` — replacing the materialize-and-count proof
@@ -416,7 +423,8 @@ impl DriveDocumentCountQuery<'_> {
     }
 
     /// Generates a regular grovedb range proof against this count
-    /// query's `range_countable` index — the distinct-counts-with-
+    /// query's `range_countable` index (a `summableOffCountIndex` index
+    /// proves its per-value range sums instead) — the distinct-counts-with-
     /// proof companion to [`Self::execute_aggregate_count_with_proof`].
     ///
     /// No new prover code: the leaf is a `ProvableCountTree` and

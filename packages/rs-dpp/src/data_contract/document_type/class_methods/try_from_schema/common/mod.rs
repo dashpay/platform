@@ -3422,7 +3422,7 @@ fn summable_off_count_index_error(
              not share its name with a property"
         ));
     }
-    if source.skip_if_absent || source.outlives_delete || source.involves(CREATED_AT) {
+    if !source.keys_each_live_document_by_its_values() {
         return Some(format!(
             "{prefix} sums the count of \"{source_name}\", which must hold every document \
              exactly once: it may not skip documents (skipIfAbsent), keep the entries of deleted \
@@ -3456,12 +3456,7 @@ fn summable_off_count_index_error(
     }
     let depth = index.properties.len();
     if let Some((other_name, _)) = document_type.indices.iter().find(|(_, other)| {
-        other.properties.len() > depth
-            && other
-                .properties
-                .iter()
-                .zip(index.properties.iter())
-                .all(|(other_property, property)| other_property.name == property.name)
+        other.properties.len() > depth && index.shares_leading_levels(other, depth)
     }) {
         return Some(format!(
             "{prefix} is continued by index \"{other_name}\", which lists its properties first: \
@@ -3534,12 +3529,7 @@ fn skip_if_absent_index_error(
         .rev()
         .find(|(_, property)| index.skip_if_absent_properties.contains(&property.name));
     if let Some((deepest_skip_position, deepest_skip_property)) = deepest_skip {
-        for ranked_at in index
-            .ranked_countable_at
-            .iter()
-            .chain(index.ranked_summable_at.iter())
-            .chain(index.ranked_averageable_at.iter())
-        {
+        for ranked_at in index.ranked_at_levels() {
             let above = index
                 .properties
                 .iter()
@@ -3737,9 +3727,7 @@ pub(super) fn apply_index_only(
                 })
             {
                 let last = position + 1 == index.properties.len();
-                let ranks_here = index.ranked_countable_at.contains(&skip_property.name)
-                    || index.ranked_summable_at.contains(&skip_property.name)
-                    || index.ranked_averageable_at.contains(&skip_property.name)
+                let ranks_here = index.ranked_at_levels().any(|at| *at == skip_property.name)
                     || (last && index.ranks_its_last_property());
                 if !ranks_here {
                     continue;
@@ -4426,16 +4414,10 @@ pub(super) fn apply_index_only(
     // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
     // index qualifies as the proof index.) Nor may it outlive deletes: a
     // delete's proof shows the entry gone, which such an index keeps.
-    let has_proof_index = document_type.indices.values().any(|index| {
-        !index.skip_if_absent
-            && !index.outlives_delete
-            && !index.is_summable_off_count_index()
-            && !index.terminal_contains(CREATED_AT)
-            && !index
-                .properties
-                .iter()
-                .any(|property| property.name == CREATED_AT)
-    });
+    let has_proof_index = document_type
+        .indices
+        .values()
+        .any(Index::keys_each_live_document_by_its_values);
     if !has_proof_index {
         return Err(structure_error(format!(
             "indexOnly document type \"{}\" must declare at least one index that neither \

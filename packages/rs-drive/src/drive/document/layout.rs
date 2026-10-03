@@ -735,10 +735,7 @@ fn value_node(
     // A `summableOffCountIndex` index keeps its counter at the value
     // position, where another index grows a value tree, and nothing continues
     // below it (registration refuses an index that would).
-    if let Some(info) = level
-        .has_index_with_type()
-        .filter(|info| info.is_summable_off_count_index())
-    {
+    if let Some(info) = level.summable_off_count_index_info() {
         notes.push(LayoutNote::SummableOffCountIndex {
             source: info.summable_off_count_index.clone().unwrap_or_default(),
         });

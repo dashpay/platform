@@ -52,6 +52,8 @@ mod get_fetch;
 mod index_uniqueness;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert;
+#[cfg(feature = "server")]
+pub(crate) use insert::preallocation_bindings_targeting;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]

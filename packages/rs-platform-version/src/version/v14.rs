@@ -1877,7 +1877,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     small enough that the sums stay in `i64`, which they do short of 2^36
 ///     documents. A stored contract still parses.
 ///
-/// 72. **An index that counts another index's entries
+/// 73. **An index that counts another index's entries
 ///     (`summableOffCountIndex`)**: an index keyword of meta-schema v3 and
 ///     parser generation 3, in place (`Index::summable_off_count_index`,
 ///     `IndexLevelTypeInfo::summable_off_count_index`), admitted only on an
@@ -1904,7 +1904,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`document_count_of_element`), and a ranked or having-range read on
 ///     its Sum secondaries (`read_axis_for`), and a range read through the
 ///     sum surface's range forms (`counter_sums_query`). A range total
-///     through any index that ranks a level is refused cleanly
+///     through any index whose path passes through a ranked level (its own,
+///     or one another index ranks at a shared level) is refused cleanly
 ///     (`refuse_a_range_total_through_a_ranked_index`). Drive's batch methods,
 ///     `apply_drive_operations` and `convert_drive_operations_to_grove_operations`
 ///     at version 1, refuse a batch moving one document type's counters for
@@ -1977,7 +1978,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; a batch moving one document type's summableOffCountIndex counters for more than one document refused; repaid identity debt credited to the processing fee pool); convert_drive_operations_to_grove_operations 1 (refuses that counter batch too, then converts as before); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

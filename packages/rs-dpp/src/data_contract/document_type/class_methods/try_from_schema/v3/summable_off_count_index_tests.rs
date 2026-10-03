@@ -126,12 +126,22 @@ fn parse(
     like: Value,
     full_validation: bool,
 ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    parse_schemas(
+        BTreeMap::from([("post".to_string(), post), ("like".to_string(), like)]),
+        full_validation,
+    )
+}
+
+fn parse_schemas(
+    schemas: BTreeMap<String, Value>,
+    full_validation: bool,
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
     let config = config();
     DocumentType::create_document_types_from_document_schemas(
         Identifier::new(CONTRACT_ID),
         1,
         config.version(),
-        BTreeMap::from([("post".to_string(), post), ("like".to_string(), like)]),
+        schemas,
         None,
         &BTreeMap::new(),
         &config,
@@ -769,24 +779,14 @@ fn should_accept_a_property_any_source_reference_fixes() {
         "required": ["postId", "threadId", "postAuthor"],
         "additionalProperties": false,
     });
-    let config = config();
     for full_validation in [false, true] {
-        DocumentType::create_document_types_from_document_schemas(
-            Identifier::new(CONTRACT_ID),
-            1,
-            config.version(),
+        parse_schemas(
             BTreeMap::from([
                 ("post".to_string(), post.clone()),
                 ("thread".to_string(), thread.clone()),
                 ("like".to_string(), like.clone()),
             ]),
-            None,
-            &BTreeMap::new(),
-            &config,
             full_validation,
-            false,
-            &mut vec![],
-            PlatformVersion::latest(),
         )
         .expect("the thread reference keeps the count lossless");
     }

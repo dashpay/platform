@@ -254,7 +254,7 @@ pub(super) fn verify_count_query(
             &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "range count requires a `range_countable: true` index whose last \
+            error: "range count requires a `range_countable: true` (or summableOffCountIndex) index whose last \
                     property matches the range field"
                 .to_string(),
         })?

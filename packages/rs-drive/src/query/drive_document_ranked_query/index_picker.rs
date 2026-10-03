@@ -121,9 +121,8 @@ pub fn find_ranked_index_for_axis<'b>(
         // levels); empty when the index does not declare the axis (or
         // aggregates a different field than requested).
         let positions = |at_levels: &[String], ranks_terminal: bool| -> Vec<usize> {
-            at_levels
-                .iter()
-                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+            index
+                .at_level_positions(at_levels)
                 .chain(
                     ranks_terminal
                         .then(|| index.properties.len().checked_sub(1))

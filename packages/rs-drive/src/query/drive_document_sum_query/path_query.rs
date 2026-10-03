@@ -30,6 +30,7 @@ use crate::query::{WhereClause, WhereOperator};
 // helpers). The serializer routes through a versioned dispatcher
 // (`serialize_value_for_key_v0` + friends), so it lives on the
 // versioned-methods trait.
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
@@ -254,7 +255,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type.indexes(), self.index)?;
         // Bind the range clause to the index's *terminator* property so a
         // request with multiple range-like clauses (e.g. `prefix > x AND
         // terminator > y`) picks the right one. The previous predicate
@@ -343,7 +344,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type.indexes(), self.index)?;
         if !self.index.range_countable {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "aggregate_count_and_sum_path_query: index must declare BOTH \
@@ -778,7 +779,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type.indexes(), self.index)?;
         // The terminator property (last in the index) carries the
         // ASOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:
@@ -979,7 +980,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type.indexes(), self.index)?;
         if !self.index.range_countable {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "carrier_aggregate_count_and_sum_path_query: index must declare BOTH \

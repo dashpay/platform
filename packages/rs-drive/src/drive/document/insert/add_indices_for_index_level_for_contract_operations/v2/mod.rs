@@ -4,9 +4,7 @@ use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, level_counts_continuations,
     level_reaches_entry,
 };
-use crate::drive::document::summable_off_count_counter::{
-    insert_summable_off_count_counter_layer, CounterChange,
-};
+use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -300,28 +298,7 @@ impl Drive {
             // value tree: the counter stands for the value tree, its `0`
             // bucket and every member entry, and nothing continues below it
             // (registration refuses an index that would).
-            if sub_level
-                .has_index_with_type()
-                .is_some_and(|index_type| index_type.is_summable_off_count_index())
-            {
-                if let Some(estimated_costs_only_with_layer_info) =
-                    estimated_costs_only_with_layer_info
-                {
-                    insert_summable_off_count_counter_layer(
-                        estimated_costs_only_with_layer_info,
-                        sub_level_index_path_info.clone().convert_to_key_info_path(),
-                        property_name_tree_type,
-                        document_and_contract_info
-                            .owned_document_info
-                            .document_info
-                            .get_estimated_size_for_document_type(
-                                name,
-                                document_type,
-                                platform_version,
-                            )?,
-                        *storage_flags,
-                    )?;
-                }
+            if sub_level.summable_off_count_index_info().is_some() {
                 self.add_summable_off_count_counter_operations(
                     sub_level_index_path_info,
                     document_index_field,
@@ -330,6 +307,16 @@ impl Drive {
                         parent_created: property_name_tree_created,
                     },
                     *storage_flags,
+                    || {
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )
+                    },
                     estimated_costs_only_with_layer_info,
                     previous_batch_operations,
                     transaction,

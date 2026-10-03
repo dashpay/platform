@@ -17,6 +17,7 @@ mod withdrawals;
 use crate::util::batch::GroveDbOpBatch;
 
 use crate::drive::contract::moderation::types::ContractTeamActionWrite;
+use crate::drive::document::preallocation_bindings_targeting;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -349,10 +350,11 @@ impl Drive {
     /// its groups' counters and writes them back moved, and no conversion sees
     /// another's pending writes, so two moves of one counter in one batch
     /// would apply as one (grovedb keeps one write per key). A document moves
-    /// the counters of its own type when that type keeps them, and of every
-    /// type whose preallocated counter index its insert creates (preallocation
-    /// writes the counter at zero). The rule is per type, so it is
-    /// conservative: two documents of different groups are refused too.
+    /// the counters of its own type when that type keeps them, written or
+    /// deleted, and an inserted document those of every type whose
+    /// preallocated counter index the insert creates (preallocation writes the
+    /// counter at zero). The rule is per type, so it is conservative: two
+    /// documents of different groups are refused too.
     ///
     /// A documents batch carries one transition
     /// (`max_transitions_in_documents_batch`) and only transitions write
@@ -366,23 +368,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let documents: usize = operations
-            .iter()
-            .map(|operation| match operation {
-                DriveOperation::DocumentOperation(
-                    DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
-                        document_operations,
-                    },
-                ) => document_operations.operations.len(),
-                DriveOperation::DocumentOperation(_) => 1,
-                _ => 0,
-            })
-            .sum();
-        // One document's own conversion refuses a second move of a counter.
-        if documents < 2 {
-            return Ok(());
-        }
-        let mut moves: BTreeMap<(Identifier, String), usize> = BTreeMap::new();
+        let mut moved: BTreeSet<(Identifier, String)> = BTreeSet::new();
         for operation in operations {
             let DriveOperation::DocumentOperation(operation) = operation else {
                 continue;
@@ -391,12 +377,9 @@ impl Drive {
                 self,
                 block_info,
                 transaction,
-                platform_version,
-                |contract, document_type| {
-                    for counter_type in counter_types_moved(contract, document_type) {
-                        let count = moves.entry((contract.id(), counter_type)).or_default();
-                        *count += 1;
-                        if *count > 1 {
+                |contract, document_type, inserts| {
+                    for counter_type in counter_types_moved(contract, document_type, inserts) {
+                        if !moved.insert((contract.id(), counter_type)) {
                             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                                 "a batch moves one document type's summableOffCountIndex \
                                  counters for more than one document",
@@ -405,6 +388,7 @@ impl Drive {
                     }
                     Ok(())
                 },
+                platform_version,
             )?;
         }
         Ok(())
@@ -412,29 +396,30 @@ impl Drive {
 }
 
 /// The document types whose `summableOffCountIndex` counters a write of
-/// `document_type` moves: its own when it keeps them, and each type whose
-/// preallocated counter index a write of `document_type` creates.
-fn counter_types_moved(contract: &DataContract, document_type: DocumentTypeRef) -> Vec<String> {
-    contract
-        .document_types()
+/// `document_type` moves: its own when it keeps them, and, when the write
+/// `inserts` a document, each type whose preallocated counter index the
+/// insert creates.
+fn counter_types_moved(
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    inserts: bool,
+) -> BTreeSet<String> {
+    let mut moved = BTreeSet::new();
+    if document_type
+        .indexes()
         .values()
-        .map(|counter_type| counter_type.as_ref())
-        .filter(|counter_type| {
-            counter_type.indexes().values().any(|index| {
-                index.is_summable_off_count_index()
-                    && (counter_type.name() == document_type.name()
-                        || (index.preallocated
-                            && !index
-                                .preallocation_bindings_for_target(
-                                    counter_type.flattened_properties(),
-                                    contract.id(),
-                                    document_type,
-                                )
-                                .is_empty()))
-            })
-        })
-        .map(|counter_type| counter_type.name().clone())
-        .collect()
+        .any(|index| index.is_summable_off_count_index())
+    {
+        moved.insert(document_type.name().clone());
+    }
+    if inserts {
+        moved.extend(
+            preallocation_bindings_targeting(contract, document_type)
+                .filter(|(_, index, _)| index.is_summable_off_count_index())
+                .map(|(referring_type, _, _)| referring_type.name().clone()),
+        );
+    }
+    moved
 }
 
 impl DriveOperationFinalizationTasks for DriveOperation<'_> {

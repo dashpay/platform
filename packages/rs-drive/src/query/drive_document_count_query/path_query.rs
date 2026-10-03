@@ -23,6 +23,7 @@ use crate::drive::RootTree;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{pins_reach_chain, refuse_a_range_total_through_a_ranked_index};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
@@ -191,7 +192,7 @@ impl DriveDocumentCountQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type.indexes(), self.index)?;
         let range_clause = self
             .where_clauses
             .iter()
@@ -308,7 +309,7 @@ impl DriveDocumentCountQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type.indexes(), self.index)?;
         // The terminator property (last in the index) carries the
         // ACOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:

@@ -100,7 +100,7 @@ A ranked query names one aggregate, groups by the ranked property, orders by the
 SELECT count(*) FROM review WHERE city == "London" GROUP BY restaurantId ORDER BY count(*) DESC LIMIT 5
 ```
 
-Every property before the grouped one must be fixed with an equality; at most one of them may instead be an `in` of 2 to 10 values, whose rankings are merged. There is no ranking across different values of those properties. A ranked index still answers the per-value range queries the same `range*` flags answer (one entry per value in the range). A range total, one count, sum or average over a whole range, is not available through an index that ranks any level: the ranked trees are indexed trees, which grovedb's range totals neither read nor prove through. Such a query is refused with a hint to group by the last property.
+Every property before the grouped one must be fixed with an equality; at most one of them may instead be an `in` of 2 to 10 values, whose rankings are merged. There is no ranking across different values of those properties. A ranked index still answers the per-value range queries the same `range*` flags answer (one entry per value in the range). A range total, one count, sum or average over a whole range, is not available through an index whose path passes through a ranked level, one it ranks itself or one another index ranks at a level the two share: the ranked trees are indexed trees, which grovedb's range totals neither read nor prove through. Such a query is refused with a hint to group by the last property.
 
 The request shape, ties, offsets and proofs are described in [Ranked Index Examples](../drive/ranked-index-examples.md).
 

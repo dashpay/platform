@@ -16,9 +16,7 @@ use crate::drive::document::index_level_tree_types::{
     document_takes_part_in_index, index_level_tree_types_with_continuation_demotion,
     level_removes_entry,
 };
-use crate::drive::document::summable_off_count_counter::{
-    insert_summable_off_count_counter_layer, CounterChange,
-};
+use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::util::storage_flags::StorageFlags;
@@ -220,28 +218,7 @@ impl Drive {
             // and otherwise removing it with the group's last document,
             // pruning the trees it leaves empty as a drained member bucket's
             // are. Nothing continues below it.
-            if let Some(index_type) = sub_level
-                .has_index_with_type()
-                .filter(|index_type| index_type.is_summable_off_count_index())
-            {
-                if let Some(estimated_costs_only_with_layer_info) =
-                    estimated_costs_only_with_layer_info
-                {
-                    insert_summable_off_count_counter_layer(
-                        estimated_costs_only_with_layer_info,
-                        sub_level_index_path_info.clone().convert_to_key_info_path(),
-                        property_name_tree_type,
-                        document_and_contract_info
-                            .owned_document_info
-                            .document_info
-                            .get_estimated_size_for_document_type(
-                                name,
-                                document_type,
-                                platform_version,
-                            )?,
-                        *storage_flags,
-                    )?;
-                }
+            if let Some(index_type) = sub_level.summable_off_count_index_info() {
                 self.add_summable_off_count_counter_operations(
                     sub_level_index_path_info,
                     document_index_field,
@@ -251,6 +228,16 @@ impl Drive {
                         stop_path_height: CONTRACT_DOCUMENTS_PATH_HEIGHT,
                     },
                     *storage_flags,
+                    || {
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )
+                    },
                     estimated_costs_only_with_layer_info,
                     previous_batch_operations,
                     transaction,

@@ -159,12 +159,7 @@ fn validate_ranked_index_property_key_length(
     // that is where the tightened ceiling comes from. Every other property
     // of a ranked index is an ordinary grovedb path segment, bound by the
     // generic limits checked after this.
-    let is_at_level = index
-        .ranked_countable_at
-        .iter()
-        .chain(index.ranked_summable_at.iter())
-        .chain(index.ranked_averageable_at.iter())
-        .any(|at| at == index_property_name);
+    let is_at_level = index.ranked_at_levels().any(|at| at == index_property_name);
     let is_ranked_terminal = index.properties.last().map(|p| p.name.as_str())
         == Some(index_property_name)
         && index.ranks_its_last_property();

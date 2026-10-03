@@ -1377,7 +1377,9 @@ pub fn index_admissible_for_skip_if_absent(
 /// index picker applies, so no picker can take one rule and miss the other.
 /// It joins the time-range provenance rule
 /// ([`index_admissible_for_resolved_time_range`]) and the `skipIfAbsent`
-/// rule ([`index_admissible_for_skip_if_absent`]).
+/// rule ([`index_admissible_for_skip_if_absent`]). A picker reading documents
+/// through the index's entries applies
+/// [`document_index_admissible_for_query`] instead.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub fn index_admissible_for_query(
     index: &Index,
@@ -1386,6 +1388,19 @@ pub fn index_admissible_for_query(
 ) -> bool {
     index_admissible_for_resolved_time_range(index, resolved_time_ranges)
         && index_admissible_for_skip_if_absent(index, skip_bindings)
+}
+
+/// [`index_admissible_for_query`] for a picker reading documents through the
+/// index's entries: a `summableOffCountIndex` index keeps none (its source
+/// serves the documents it counts), so it never serves such a read.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn document_index_admissible_for_query(
+    index: &Index,
+    resolved_time_ranges: &[ResolvedTimeRange],
+    skip_bindings: &[SkipIfAbsentBinding<'_>],
+) -> bool {
+    !index.is_summable_off_count_index()
+        && index_admissible_for_query(index, resolved_time_ranges, skip_bindings)
 }
 
 /// Whether a point read pinning the first `pin_depth` properties of `index`
@@ -1403,20 +1418,40 @@ pub fn pins_reach_chain(index: &Index, pin_depth: usize, chain_position: Option<
 }
 
 /// Refuses a range total (one aggregate over a range, or one per carrier
-/// branch) read through `index` when the index ranks any level: a ranked
-/// level's property-name tree is an indexed tree, which grovedb's range
-/// aggregates neither read (`AggregateCountOnRange`, `AggregateSumOnRange`
-/// and `AggregateCountAndSumOnRange` take provable trees only) nor descend
-/// through when proving. Grouped by the last property, the same range reads
-/// each value. The count, sum and count-and-sum range-total path builders
-/// all call it, so the unproven read, the proof and its verification refuse
-/// alike.
+/// branch) read through `index` when its path passes through a ranked level:
+/// one the index ranks itself, or one another of the type's `indexes` ranks
+/// at a level the two share (an index may continue below another's ranked
+/// last property). A ranked level's property-name tree is an indexed tree,
+/// which grovedb's range aggregates neither read (`AggregateCountOnRange`,
+/// `AggregateSumOnRange` and `AggregateCountAndSumOnRange` take provable trees
+/// only) nor descend through when proving. Grouped by the last property, the
+/// same range reads each value. The count, sum and count-and-sum range-total
+/// path builders all call it, so the unproven read, the proof and its
+/// verification refuse alike.
 ///
 /// Unversioned, so every protocol version reaches it: rankings exist only
 /// from protocol version 14 (meta-schema v3), so it refuses nothing before.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub fn refuse_a_range_total_through_a_ranked_index(index: &Index) -> Result<(), Error> {
-    if !index.declares_any_ranking() {
+pub fn refuse_a_range_total_through_a_ranked_index(
+    indexes: &BTreeMap<String, Index>,
+    index: &Index,
+) -> Result<(), Error> {
+    let ranked_level_on_the_path = |other: &Index| {
+        other
+            .at_level_positions(other.ranked_at_levels())
+            .chain(
+                other
+                    .properties
+                    .len()
+                    .checked_sub(1)
+                    .filter(|_| other.ranks_its_last_property()),
+            )
+            .any(|position| {
+                position < index.properties.len()
+                    && index.shares_leading_levels(other, position + 1)
+            })
+    };
+    if !index.declares_any_ranking() && !indexes.values().any(ranked_level_on_the_path) {
         return Ok(());
     }
     let last = index
@@ -1425,9 +1460,9 @@ pub fn refuse_a_range_total_through_a_ranked_index(index: &Index) -> Result<(), 
         .map(|property| property.name.as_str())
         .unwrap_or_default();
     Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-        "a range total over the index `{}` is not available: the index ranks a level, and a \
-         range total is read only through unranked trees; group by `{last}` to read each \
-         value in the range",
+        "a range total over the index `{}` is not available: its path passes through a ranked \
+         level, and a range total is read only through unranked trees; group by `{last}` to \
+         read each value in the range",
         index.name
     ))))
 }
@@ -3006,11 +3041,12 @@ impl<'a> DriveDocumentQuery<'a> {
             range_field,
             in_field,
             order_by_keys.as_slice(),
-            // A summableOffCountIndex index keeps no entries to read
-            // documents from; its source serves the documents it counts.
             |index| {
-                !index.is_summable_off_count_index()
-                    && index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings)
+                document_index_admissible_for_query(
+                    index,
+                    &self.resolved_time_ranges,
+                    &skip_bindings,
+                )
             },
             platform_version,
         )?

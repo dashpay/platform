@@ -50,21 +50,6 @@ use std::collections::BTreeMap;
 /// impossibility must reject the contract on every parse path — a
 /// contract admitted through a non-validating parse would brick the
 /// first document insert under the ranked index.
-/// Whether `other`'s first `depth` levels occupy the same GroveDB
-/// subtrees as `ranked`'s. Level identity is [`Index::level_key`] — the
-/// grid-qualified storage key for a time-range first property, the bare
-/// name otherwise — so a bucketed sibling whose declared names match a
-/// plain index's does NOT share its levels. `false` when either index
-/// has fewer than `depth` properties.
-fn shares_leading_levels(ranked: &Index, other: &Index, depth: usize) -> bool {
-    ranked.properties.len() >= depth
-        && other.properties.len() >= depth
-        && (0..depth).all(|position| {
-            ranked.level_key(position, &ranked.properties[position].name)
-                == other.level_key(position, &other.properties[position].name)
-        })
-}
-
 pub(super) fn validate_no_ranked_prefix_overlap(
     indices: &BTreeMap<String, Index>,
 ) -> Result<(), ProtocolError> {
@@ -79,7 +64,7 @@ pub(super) fn validate_no_ranked_prefix_overlap(
                 continue;
             }
             let terminates_at_prefix = other.properties.len() == prefix.len()
-                && shares_leading_levels(ranked, other, prefix.len());
+                && ranked.shares_leading_levels(other, prefix.len());
             let aggregates = other.countable.is_countable() || other.summable.is_some();
             if terminates_at_prefix && aggregates {
                 return Err(consensus_or_protocol_data_contract_error(
@@ -158,7 +143,7 @@ pub(super) fn validate_no_ranked_prefix_overlap(
                 continue;
             }
             let shares_at_level = other.properties.len() > at_position
-                && shares_leading_levels(ranked, other, at_position + 1);
+                && ranked.shares_leading_levels(other, at_position + 1);
             if shares_at_level {
                 // One shape is admissible inside the chain's range: a PLAIN
                 // sibling — no countable/summable/range/ranked flags, whose
@@ -195,14 +180,14 @@ pub(super) fn validate_no_ranked_prefix_overlap(
                 // Continuing below `at` is not enough — the sibling must
                 // also BRANCH OFF the chain. One whose levels are all chain
                 // levels (a level-key prefix of the ranked index's, by
-                // `shares_leading_levels`) terminates on a grouping or
+                // `Index::shares_leading_levels`) terminates on a grouping or
                 // count-propagating level itself; a longer sibling always
                 // leaves the chain (the helper returns `false` past the
                 // ranked index's length), by diverging or by extending past
                 // the ranked terminal into the pre-existing continuation
                 // demotion.
                 let branches_off_the_chain =
-                    !shares_leading_levels(ranked, other, other.properties.len());
+                    !ranked.shares_leading_levels(other, other.properties.len());
                 if !(sibling_is_plain && continues_below_at && branches_off_the_chain) {
                     return Err(consensus_or_protocol_data_contract_error(
                         DataContractError::InvalidContractStructure(format!(
@@ -229,7 +214,7 @@ pub(super) fn validate_no_ranked_prefix_overlap(
             if at_position >= 1 {
                 let prefix = &ranked.properties[..at_position];
                 let terminates_at_prefix = other.properties.len() == prefix.len()
-                    && shares_leading_levels(ranked, other, prefix.len());
+                    && ranked.shares_leading_levels(other, prefix.len());
                 let aggregates = other.countable.is_countable() || other.summable.is_some();
                 if terminates_at_prefix && aggregates {
                     return Err(consensus_or_protocol_data_contract_error(

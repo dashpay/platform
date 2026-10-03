@@ -101,17 +101,19 @@ impl Drive {
     /// `counter_tree_type` that tree's type.
     ///
     /// A stateful call reads the counter and writes it back moved; an
-    /// estimation call (`estimated_costs_only_with_layer_info` set) reads
-    /// nothing and prices the read and the write the change makes: an insert
-    /// for a create, a rewrite or the removal for a delete. A counter is
+    /// estimation call (`estimated_costs_only_with_layer_info` set) registers
+    /// the counter's layer, its keys sized by `estimated_key_size` (called
+    /// only then), reads nothing and prices the read and the write the change
+    /// makes: an insert for a create, a rewrite or the removal for a delete. A counter is
     /// written at most once per batch because a documents batch carries one
     /// transition (`max_transitions_in_documents_batch`), not because of the
     /// source: a source keyed by more than its owner holds several entries of
     /// one owner in one group. Each document is converted on its own
     /// (`previous_batch_operations` is empty across documents), so the check
     /// below catches only a second write within one conversion, refused
-    /// rather than folded, and the batch methods refuse a batch writing two
-    /// documents of a type keeping counters
+    /// rather than folded, and the batch methods refuse a batch moving one
+    /// type's counters for more than one document, an insert of a referenced
+    /// document that preallocates them included
     /// (`Drive::refuse_repeated_counter_moves`), estimation included; raising
     /// the cap needs the counter moves folded across documents first (see
     /// that limit).
@@ -123,6 +125,7 @@ impl Drive {
         counter_tree_type: TreeType,
         change: CounterChange,
         storage_flags: Option<&StorageFlags>,
+        estimated_key_size: impl FnOnce() -> Result<u16, Error>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -135,7 +138,14 @@ impl Drive {
         let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
         let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
 
-        if estimated_costs_only_with_layer_info.is_some() {
+        if let Some(layers) = estimated_costs_only_with_layer_info.as_mut() {
+            insert_summable_off_count_counter_layer(
+                layers,
+                counter_path_info.clone().convert_to_key_info_path(),
+                counter_tree_type,
+                estimated_key_size()?,
+                storage_flags,
+            )?;
             let key_info_path = counter_path_info.convert_to_key_info_path();
             let key_info = counter_key.to_key_info();
             // The read of the counter, priced at its fixed size.

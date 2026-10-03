@@ -184,14 +184,6 @@ fn counter(flags: Option<&StorageFlags>) -> PricedElement {
     }
 }
 
-/// Whether `level` ends a `summableOffCountIndex` index, whose counter
-/// stands at the level's value position in place of a value tree.
-fn ends_summable_off_count_index(level: &IndexLevel) -> bool {
-    level
-        .has_index_with_type()
-        .is_some_and(|info| info.is_summable_off_count_index())
-}
-
 fn empty_tree(tree_type: TreeType, wrapped: bool, flags: Option<&StorageFlags>) -> PricedElement {
     PricedElement::Tree {
         tree_type,
@@ -273,7 +265,7 @@ impl Context<'_> {
     /// On a `summableOffCountIndex` index it adds one to its group's counter,
     /// and so one to the sum of every level of the chain carrying that sum.
     fn sum_contribution(&self, level: &IndexLevel) -> Result<i64, Error> {
-        if ends_summable_off_count_index(level) || level.chain_carries_sums() {
+        if level.summable_off_count_index_info().is_some() || level.chain_carries_sums() {
             return Ok(1);
         }
         match level
@@ -557,7 +549,7 @@ impl Context<'_> {
             self.index_flags.clone()
         };
         for key in keys {
-            if ends_summable_off_count_index(level) {
+            if level.summable_off_count_index_info().is_some() {
                 self.counter_write(
                     &path,
                     key,
@@ -687,7 +679,7 @@ impl Context<'_> {
             let null = raw.is_empty();
             let mut property_path = path.to_vec();
             property_path.push(sub_key.as_bytes().to_vec());
-            if ends_summable_off_count_index(sub_level) {
+            if sub_level.summable_off_count_index_info().is_some() {
                 self.counter_write(
                     &property_path,
                     raw,

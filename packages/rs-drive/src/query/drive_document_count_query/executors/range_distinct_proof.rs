@@ -50,7 +50,7 @@ impl Drive {
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "range count requires a `range_countable: true` index whose last \
+                "range count requires a `range_countable: true` (or summableOffCountIndex) index whose last \
                      property matches the range field"
                     .to_string(),
             ))

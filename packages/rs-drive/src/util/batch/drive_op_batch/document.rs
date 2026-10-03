@@ -224,8 +224,7 @@ impl DocumentOperationType<'_> {
             drive,
             block_info,
             transaction,
-            platform_version,
-            |contract, document_type| {
+            |contract, document_type, _| {
                 drive.prepare_document_time_range_ttl(
                     contract,
                     document_type,
@@ -234,30 +233,47 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )
             },
+            platform_version,
         )
     }
 
     /// Calls `visit` with the contract and document type of every document
     /// this operation writes or deletes, once per document, the consumed
-    /// documents of an `AddDocumentAndDeleteConsumed` included. Withdrawals
-    /// and document history write system types and are not visited.
-    /// Resolution reads are unbilled maintenance; normal conversion still
-    /// resolves and bills the contract through its usual path.
+    /// documents of an `AddDocumentAndDeleteConsumed` included, and whether
+    /// the document is inserted (a plain insert, the one write that
+    /// preallocates referring types' trees). Withdrawals and document history
+    /// write system types and are not visited. Resolution reads are unbilled
+    /// maintenance; normal conversion still resolves and bills the contract
+    /// through its usual path.
     pub(crate) fn for_each_document_type(
         &self,
         drive: &Drive,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        mut visit: impl FnMut(&DataContract, DocumentTypeRef, bool) -> Result<(), Error>,
         platform_version: &PlatformVersion,
-        mut visit: impl FnMut(&DataContract, DocumentTypeRef) -> Result<(), Error>,
     ) -> Result<(), Error> {
         match self {
             Self::AddDocument {
                 contract_info,
                 document_type_info,
                 ..
+            } => {
+                let resolved = contract_info.clone().resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?;
+                let contract = resolved.as_ref();
+                visit(
+                    contract,
+                    document_type_info.clone().resolve(contract)?,
+                    true,
+                )
             }
-            | Self::AddContestedDocument {
+            Self::AddContestedDocument {
                 contract_info,
                 document_type_info,
                 ..
@@ -290,15 +306,20 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )?;
                 let contract = resolved.as_ref();
-                visit(contract, document_type_info.clone().resolve(contract)?)
+                visit(
+                    contract,
+                    document_type_info.clone().resolve(contract)?,
+                    false,
+                )
             }
             Self::MultipleDocumentOperationsForSameContractDocumentType {
                 document_operations,
             } => {
-                for _ in &document_operations.operations {
+                for operation in &document_operations.operations {
                     visit(
                         document_operations.contract,
                         document_operations.document_type,
+                        matches!(operation, DocumentOperation::AddOperation { .. }),
                     )?;
                 }
                 Ok(())
@@ -318,13 +339,18 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )?;
                 let contract = resolved.as_ref();
-                let document_types = std::iter::once(document_type_info.clone()).chain(
-                    consumed_documents.iter().map(|(_, document_type_name)| {
+                visit(
+                    contract,
+                    document_type_info.clone().resolve(contract)?,
+                    true,
+                )?;
+                for (_, document_type_name) in consumed_documents {
+                    visit(
+                        contract,
                         DocumentTypeInfo::DocumentTypeName(document_type_name.clone())
-                    }),
-                );
-                for document_type_info in document_types {
-                    visit(contract, document_type_info.resolve(contract)?)?;
+                            .resolve(contract)?,
+                        false,
+                    )?;
                 }
                 Ok(())
             }
