@@ -4,11 +4,14 @@ use crate::platform_address_sync::{
     PlatformAddressSyncMetricsFFI, PlatformAddressSyncWalletResultFFI,
 };
 use crate::shielded_types::ShieldedSyncWalletResultFFI;
+use dashcore::Txid;
+use platform_wallet::broadcast_probe::ProbeVerdict;
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::manager::dpns_sync::{DpnsSyncPassSummary, WalletDpnsSyncOutcome};
 #[cfg(feature = "shielded")]
 use platform_wallet::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use platform_wallet::{PlatformAddressSyncSummary, WalletSyncOutcome};
+use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 
 /// Current layout version of [`EventHandlerCallbacksExtension`].
@@ -49,6 +52,31 @@ pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
     sync_unix_seconds: u64,
 );
 
+/// Verdict codes for [`OutgoingTransactionProbedFn`].
+pub const OUTGOING_PROBE_VERDICT_ACCEPTED: u8 = 0;
+/// Reserved; not emitted by this version.
+pub const OUTGOING_PROBE_VERDICT_DEAD: u8 = 1;
+pub const OUTGOING_PROBE_VERDICT_UNRESOLVED: u8 = 2;
+/// Not a verdict: drop whatever was kept for the send's earlier verdict. Sent
+/// when the send settled or left the wallet, when its wallet was removed, and
+/// for every send when probing is turned off — so it does not mean the send
+/// settled. `reason` is null.
+pub const OUTGOING_PROBE_VERDICT_CLEARED: u8 = 3;
+
+/// A verdict on an unconfirmed send whose broadcast outcome was unknown.
+/// `wallet_id` and `txid` point to 32 bytes each; `txid` is in wire
+/// (internal) byte order — reverse it for the display hex. `verdict` is one of
+/// the `OUTGOING_PROBE_VERDICT_*` codes; `reason` is null for `ACCEPTED` and
+/// `CLEARED`, otherwise a NUL-terminated diagnostic string (never user-facing
+/// copy). All pointers are valid only for the duration of the call.
+pub type OutgoingTransactionProbedFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    txid: *const u8,
+    verdict: u8,
+    reason: *const c_char,
+);
+
 /// Size/version-tagged event extension. It shares the legacy event
 /// vtable's context and destructor; only callback pointers are copied.
 /// This avoids growing [`EventHandlerCallbacks`] and over-reading callers
@@ -70,6 +98,17 @@ pub struct EventHandlerCallbacksExtension {
             sync_unix_seconds: u64,
         ),
     >,
+    /// Appended within version 1: a host whose `struct_size` stops before
+    /// this slot simply never receives it. See [`OutgoingTransactionProbedFn`].
+    pub on_outgoing_transaction_probed_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            txid: *const u8,
+            verdict: u8,
+            reason: *const c_char,
+        ),
+    >,
 }
 
 impl Default for EventHandlerCallbacksExtension {
@@ -79,6 +118,7 @@ impl Default for EventHandlerCallbacksExtension {
             version: PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
             reserved: 0,
             on_dpns_marketplace_sync_completed_fn: None,
+            on_outgoing_transaction_probed_fn: None,
         }
     }
 }
@@ -189,16 +229,19 @@ unsafe impl Sync for EventHandlerCallbacks {}
 pub(crate) struct FFIEventHandler {
     callbacks: EventHandlerCallbacks,
     dpns_sync_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+    outgoing_probe_callback: Option<OutgoingTransactionProbedFn>,
 }
 
 impl FFIEventHandler {
     pub fn new(
         callbacks: EventHandlerCallbacks,
         dpns_sync_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+        outgoing_probe_callback: Option<OutgoingTransactionProbedFn>,
     ) -> Self {
         Self {
             callbacks,
             dpns_sync_callback,
+            outgoing_probe_callback,
         }
     }
 }
@@ -250,6 +293,53 @@ impl EventHandler for FFIEventHandler {
 }
 
 impl PlatformEventHandler for FFIEventHandler {
+    fn on_outgoing_transaction_cleared(&self, wallet_id: &[u8; 32], txid: &Txid) {
+        let Some(callback) = self.outgoing_probe_callback else {
+            return;
+        };
+        let txid_bytes: &[u8] = txid.as_ref();
+        unsafe {
+            callback(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                txid_bytes.as_ptr(),
+                OUTGOING_PROBE_VERDICT_CLEARED,
+                std::ptr::null(),
+            );
+        }
+    }
+
+    fn on_outgoing_transaction_probed(
+        &self,
+        wallet_id: &[u8; 32],
+        txid: &Txid,
+        verdict: &ProbeVerdict,
+    ) {
+        let Some(callback) = self.outgoing_probe_callback else {
+            return;
+        };
+        let (code, reason) = match verdict {
+            // The host does not need to tell a mempool from a block: both mean
+            // the payment is going through.
+            ProbeVerdict::Accepted | ProbeVerdict::Mined => (OUTGOING_PROBE_VERDICT_ACCEPTED, None),
+            ProbeVerdict::Unresolved { reason } => {
+                (OUTGOING_PROBE_VERDICT_UNRESOLVED, Some(reason))
+            }
+        };
+        // A reason is a node's text: strip interior NULs rather than lose it.
+        let reason = reason.and_then(|reason| CString::new(reason.replace('\0', "")).ok());
+        let txid_bytes: &[u8] = txid.as_ref();
+        unsafe {
+            callback(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                txid_bytes.as_ptr(),
+                code,
+                reason.as_ref().map_or(std::ptr::null(), |r| r.as_ptr()),
+            );
+        }
+    }
+
     fn on_dpns_marketplace_sync_completed(&self, summary: &DpnsSyncPassSummary) {
         let Some(callback) = self.dpns_sync_callback else {
             return;
@@ -496,6 +586,7 @@ mod release_tests {
                 release_fn: None,
             },
             None,
+            None,
         );
         handler.on_shielded_sync_completed(&ShieldedSyncPassSummary {
             wallet_results: BTreeMap::from([
@@ -567,6 +658,7 @@ mod release_tests {
                 release_fn: Some(count_release),
             },
             None,
+            None,
         ));
         let straggler = Arc::clone(&handler);
 
@@ -575,5 +667,108 @@ mod release_tests {
 
         drop(straggler);
         assert_eq!(releases.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod outgoing_probe_callback_tests {
+    use std::ffi::CStr;
+    use std::sync::Mutex;
+
+    use dashcore::hashes::Hash;
+    use platform_wallet::broadcast_probe::ProbeVerdict;
+
+    use super::*;
+
+    /// (wallet_id, txid, verdict, reason) of one call.
+    type Call = ([u8; 32], [u8; 32], u8, Option<String>);
+
+    static CALLS: Mutex<Vec<Call>> = Mutex::new(Vec::new());
+
+    unsafe extern "C" fn record(
+        _context: *mut c_void,
+        wallet_id: *const u8,
+        txid: *const u8,
+        verdict: u8,
+        reason: *const c_char,
+    ) {
+        let wallet_id = std::ptr::read(wallet_id as *const [u8; 32]);
+        let txid = std::ptr::read(txid as *const [u8; 32]);
+        let reason =
+            (!reason.is_null()).then(|| CStr::from_ptr(reason).to_string_lossy().into_owned());
+        CALLS
+            .lock()
+            .expect("calls")
+            .push((wallet_id, txid, verdict, reason));
+    }
+
+    fn handler(probe: Option<OutgoingTransactionProbedFn>) -> FFIEventHandler {
+        FFIEventHandler::new(
+            EventHandlerCallbacks {
+                context: std::ptr::null_mut(),
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: None,
+                ..unsafe { std::mem::zeroed() }
+            },
+            None,
+            probe,
+        )
+    }
+
+    /// One test drives every case so the shared capture is never raced by a
+    /// parallel test.
+    #[test]
+    fn should_deliver_each_verdict_with_its_code_wire_txid_and_reason() {
+        CALLS.lock().expect("calls").clear();
+        let wallet = [7u8; 32];
+        let txid = dashcore::Txid::from_byte_array([
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32,
+        ]);
+        let with_callback = handler(Some(record));
+
+        with_callback.on_outgoing_transaction_probed(&wallet, &txid, &ProbeVerdict::Accepted);
+        with_callback.on_outgoing_transaction_probed(
+            &wallet,
+            &txid,
+            &ProbeVerdict::Unresolved {
+                reason: "no quorum".to_string(),
+            },
+        );
+        with_callback.on_outgoing_transaction_probed(
+            &wallet,
+            &txid,
+            &ProbeVerdict::Unresolved {
+                reason: "odd\0node".to_string(),
+            },
+        );
+        with_callback.on_outgoing_transaction_cleared(&wallet, &txid);
+        // A host without the slot receives nothing.
+        handler(None).on_outgoing_transaction_probed(&wallet, &txid, &ProbeVerdict::Accepted);
+        handler(None).on_outgoing_transaction_cleared(&wallet, &txid);
+
+        let calls = CALLS.lock().expect("calls").clone();
+        let wire: [u8; 32] = *txid.as_byte_array();
+        assert_eq!(
+            calls,
+            vec![
+                (wallet, wire, OUTGOING_PROBE_VERDICT_ACCEPTED, None),
+                (
+                    wallet,
+                    wire,
+                    OUTGOING_PROBE_VERDICT_UNRESOLVED,
+                    Some("no quorum".to_string())
+                ),
+                (
+                    wallet,
+                    wire,
+                    OUTGOING_PROBE_VERDICT_UNRESOLVED,
+                    Some("oddnode".to_string())
+                ),
+                (wallet, wire, OUTGOING_PROBE_VERDICT_CLEARED, None),
+            ]
+        );
     }
 }

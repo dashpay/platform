@@ -9,15 +9,21 @@
 //!   announcing the txid back, an InstantSend lock, or a confirmation proves
 //!   the network accepted it. Trustless; no DAPI involvement.
 //! - [`DapiBroadcaster`] (fallback for wallets without an SPV runtime):
-//!   submission via DAPI's gRPC endpoint, with every failure conservatively
-//!   classified as [`BroadcastError::MaybeSent`].
+//!   submission via DAPI's gRPC endpoint. A node that already has the
+//!   transaction on chain counts as success; every other failure is
+//!   conservatively [`BroadcastError::MaybeSent`] (see [`crate::broadcast_probe`]
+//!   for why one node's rejection proves nothing).
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use dash_sdk::dapi_client::transport::TransportError;
+use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
+use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
+use dash_sdk::dapi_grpc::tonic::Code;
 use dash_spv::BroadcastResult;
-use dashcore::{Transaction, Txid};
+use dashcore::{consensus, Transaction, Txid};
 
 use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
@@ -117,10 +123,6 @@ impl DapiBroadcaster {
 #[async_trait]
 impl TransactionBroadcaster for DapiBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
-        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
-        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
-        use dashcore::consensus;
-
         let tx_bytes = consensus::serialize(transaction);
 
         let request = BroadcastTransactionRequest {
@@ -129,27 +131,31 @@ impl TransactionBroadcaster for DapiBroadcaster {
             bypass_limits: false,
         };
 
-        // Every DAPI failure is classified `MaybeSent`: `sdk.execute` retries
-        // across nodes internally (RequestSettings::default()), so the error
-        // surfaced here is only the *last* attempt's — an earlier attempt may
-        // have delivered the transaction even though the response was lost
-        // (the classic shape being a node that accepts the tx while its gRPC
-        // response times out, followed by a retry that fails differently).
-        // Distinguishing a genuinely pre-send rejection would require
-        // disabling the internal retries and inspecting transport errors;
-        // until then the conservative classification keeps reserved inputs
-        // safe from double-spends at the cost of holding them for the
-        // reservation TTL.
-        let _response = self
+        // A node that answers `AlreadyExists` (-27) has the transaction in a block,
+        // so that is success. Every other failure stays `MaybeSent`, including
+        // Core's own rejections: one node's `missingorspent` is also what a
+        // lagging node, a node that has not seen our unconfirmed parent, and
+        // a mined transaction whose outputs are all spent produce (see
+        // `broadcast_probe`), and the `Rejected` contract demands proof that
+        // the transaction never entered the network — which one answer cannot
+        // give. `sdk.execute` also retries transport failures across nodes, so
+        // an earlier attempt may have delivered it before this error.
+        match self
             .sdk
             .execute(request, RequestSettings::default())
             .await
             .into_inner()
-            .map_err(|e| BroadcastError::MaybeSent {
-                reason: format!("DAPI broadcast failed: {}", e),
-            })?;
-
-        Ok(transaction.txid())
+        {
+            Ok(_response) => Ok(transaction.txid()),
+            Err(DapiClientError::Transport(TransportError::Grpc(status)))
+                if status.code() == Code::AlreadyExists =>
+            {
+                Ok(transaction.txid())
+            }
+            Err(error) => Err(BroadcastError::MaybeSent {
+                reason: format!("DAPI broadcast failed: {error}"),
+            }),
+        }
     }
 }
 

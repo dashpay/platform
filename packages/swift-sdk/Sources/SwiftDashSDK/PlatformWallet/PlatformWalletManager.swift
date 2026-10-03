@@ -455,6 +455,18 @@ public class PlatformWalletManager: ObservableObject {
     /// Rust. Every native pointer has been copied before publication.
     @Published public internal(set) var lastDpnsSyncEvent: DpnsSyncEvent?
 
+    /// The latest broadcast-probe verdict per unconfirmed send (wallet + txid).
+    /// Filled only while `setBroadcastProbeEnabled(true)` is on; an entry is
+    /// removed when its send settles or leaves the wallet, when its wallet is
+    /// deleted, and all entries when probing is turned off — a removal does
+    /// not mean the send settled. See
+    /// `OutgoingTransactionProbeEvent`.
+    @Published public internal(set) var outgoingTransactionVerdicts: [OutgoingTransactionKey: OutgoingTransactionProbeEvent] = [:]
+
+    /// The most recent broadcast-probe verdict, for observers that react to
+    /// each one as it arrives.
+    @Published public internal(set) var lastOutgoingTransactionProbe: OutgoingTransactionProbeEvent?
+
     /// Cumulative number of encrypted notes scanned in the **current**
     /// in-flight shielded sync pass, published once per chunk (~every
     /// 2048 notes) via the Rust-side progress callback. Nil between
@@ -919,6 +931,10 @@ public class PlatformWalletManager: ObservableObject {
         drainingNativeHandle = h
         handle = NULL_HANDLE
         isConfigured = false
+        // The native side forgets every probe verdict on teardown, and its
+        // clears are dropped once `shutdownRequested` is set: drop them here.
+        outgoingTransactionVerdicts = [:]
+        lastOutgoingTransactionProbe = nil
         // Poll/reconcile cancellation is independent of admitted local-read
         // generations. Stop remaining reads and reconcile persistence steps
         // before the blocking shielded stop.
@@ -2647,6 +2663,12 @@ public class PlatformWalletManager: ObservableObject {
         // with the same deterministic id doesn't inherit a stale banner (the
         // poller would also prune it, but not until the next tick).
         dashPayUnlockStatus.removeValue(forKey: walletId)
+        // Same for broadcast-probe verdicts: Rust forgets the wallet's sends
+        // on removal, and a restored wallet (same id) must start clean.
+        outgoingTransactionVerdicts = outgoingTransactionVerdicts.filter { $0.key.walletId != walletId }
+        if lastOutgoingTransactionProbe?.walletId == walletId {
+            lastOutgoingTransactionProbe = nil
+        }
         // A store reconcile in flight for any wallet stops between pages:
         // its next step would read rows `deleteWalletData` is about to
         // remove. Coarse on purpose — the cadence re-runs the others.

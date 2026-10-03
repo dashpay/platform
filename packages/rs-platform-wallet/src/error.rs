@@ -393,6 +393,32 @@ pub enum PlatformWalletError {
         required: Option<u64>,
     },
 
+    /// A Core payment the wallet's balance covers, but only with coins the
+    /// network has not confirmed yet — neither InstantSend-locked nor mined.
+    /// Builds spend only final coins (`require_final_inputs`): the change of
+    /// a send that never reached the network never becomes final, so building
+    /// on it would make a transaction no node accepts. Coins become spendable
+    /// once their transaction is InstantSend-locked (usually seconds) or mined.
+    /// Not a shortfall: the host should say the money is waiting on the
+    /// network.
+    ///
+    /// `waiting` is the value of the not-yet-final coins among the offered
+    /// sources. `available` / `required` are the build's figures when known.
+    /// `outpoint` names a not-final coin the caller chose as an input itself.
+    #[error(
+        "Core funds are waiting for network confirmation: {} DASH not yet confirmed{}{}{}",
+        dash_amount(*waiting),
+        optional_amount(", available", available),
+        optional_amount(", needed", required),
+        refused_input(outpoint)
+    )]
+    CoreFundsAwaitingNetwork {
+        available: Option<u64>,
+        waiting: u64,
+        required: Option<u64>,
+        outpoint: Option<dashcore::OutPoint>,
+    },
+
     #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
     NoSpendableInputs {
         account_type: StandardAccountType,
@@ -1784,4 +1810,31 @@ mod asset_lock_already_consumed_tests {
             &out_point()
         ));
     }
+}
+
+/// Duffs as DASH for an error message: up to eight decimals, trailing zeros
+/// dropped (`85998722` → `0.85998722`, `1000000` → `0.01`).
+fn dash_amount(duffs: u64) -> String {
+    let whole = duffs / 100_000_000;
+    let fraction = duffs % 100_000_000;
+    if fraction == 0 {
+        return whole.to_string();
+    }
+    let fraction = format!("{fraction:08}");
+    format!("{whole}.{}", fraction.trim_end_matches('0'))
+}
+
+/// `", <label> <amount> DASH"`, or nothing when the amount is not known.
+fn optional_amount(label: &str, duffs: &Option<u64>) -> String {
+    duffs
+        .map(|duffs| format!("{label} {} DASH", dash_amount(duffs)))
+        .unwrap_or_default()
+}
+
+/// The refused input of a `CoreFundsAwaitingNetwork`, for its message: a host
+/// doing coin control learns which coin to leave out.
+fn refused_input(outpoint: &Option<dashcore::OutPoint>) -> String {
+    outpoint
+        .map(|outpoint| format!(", refused input {}:{}", outpoint.txid, outpoint.vout))
+        .unwrap_or_default()
 }

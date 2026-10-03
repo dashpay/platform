@@ -14,6 +14,7 @@
 
 pub mod address_paths;
 pub(crate) mod broadcast_outcome;
+pub mod broadcast_probe;
 pub mod broadcaster;
 pub mod changeset;
 pub mod error;
@@ -60,7 +61,8 @@ pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
 pub use wallet::core::WalletBalance;
 pub use wallet::core::{
-    CoreWallet, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
+    CoreWallet, OutputShape, ShortfallBasis, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES,
+    SEND_FUNDING_SOURCES,
 };
 pub use wallet::signed_payment_registry::{
     RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,

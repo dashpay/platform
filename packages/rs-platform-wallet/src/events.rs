@@ -12,10 +12,13 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use dashcore::Txid;
+use key_wallet_manager::WalletId;
 
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
+use crate::broadcast_probe::ProbeVerdict;
 use crate::manager::dpns_sync::DpnsSyncPassSummary;
 use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
 #[cfg(feature = "shielded")]
@@ -44,6 +47,32 @@ pub trait PlatformEventHandler: EventHandler {
     ///
     /// [`DpnsSyncManager`]: crate::manager::dpns_sync::DpnsSyncManager
     fn on_dpns_marketplace_sync_completed(&self, _summary: &DpnsSyncPassSummary) {}
+
+    /// Fired when the verdict on an unconfirmed send of this wallet changes —
+    /// the network was asked about the root of its chain. `Accepted` means a
+    /// node holds the transaction in its mempool (or one has it in a block);
+    /// `Mined` that two distinct nodes have it in a block — in one probe or
+    /// over several of the same send; `Unresolved` that there is no verdict
+    /// yet — refusals included, since no node's answer proves a transaction
+    /// can never land; the resolver asks again on a later block. Nothing in
+    /// the wallet changes either way.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to care.
+    fn on_outgoing_transaction_probed(
+        &self,
+        _wallet_id: &WalletId,
+        _txid: &Txid,
+        _verdict: &ProbeVerdict,
+    ) {
+    }
+
+    /// Fired when the host must drop a send's published verdict: the send
+    /// settled (block or InstantSend lock) or left the wallet, its wallet was
+    /// removed, or probing was turned off (then for every send). It does not
+    /// mean the send settled. Hosts drop any state they kept for the verdict.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to care.
+    fn on_outgoing_transaction_cleared(&self, _wallet_id: &WalletId, _txid: &Txid) {}
 
     /// Fired after each [`ShieldedSyncManager`] pass completes,
     /// including passes that produced no updates or skipped every
@@ -150,6 +179,28 @@ impl PlatformEventManager {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_dpns_marketplace_sync_completed(summary);
+        }
+    }
+
+    /// Dispatch a broadcast-probe verdict to every handler. Rare: at most one
+    /// per unconfirmed send per block.
+    pub fn on_outgoing_transaction_probed(
+        &self,
+        wallet_id: &WalletId,
+        txid: &Txid,
+        verdict: &ProbeVerdict,
+    ) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_outgoing_transaction_probed(wallet_id, txid, verdict);
+        }
+    }
+
+    /// Dispatch a cleared broadcast-probe verdict to every handler.
+    pub fn on_outgoing_transaction_cleared(&self, wallet_id: &WalletId, txid: &Txid) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_outgoing_transaction_cleared(wallet_id, txid);
         }
     }
 
