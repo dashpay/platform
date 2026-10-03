@@ -1825,7 +1825,7 @@ async fn stop_slot(
         &mut *actor.lock().unwrap_or_else(PoisonError::into_inner),
         ActorSlot::Closed,
     );
-    let mut handle = match slot {
+    let handle = match slot {
         ActorSlot::Running(handle, stop) => {
             let _ = stop.send(());
             handle
@@ -1833,16 +1833,46 @@ async fn stop_slot(
         ActorSlot::Stopping(handle) => handle,
         ActorSlot::NotStarted(..) | ActorSlot::Closed => return WorkerStatus::NotRunning,
     };
-    match timeout_at(deadline, &mut handle).await {
-        Ok(Ok(())) => WorkerStatus::Ok,
-        Ok(Err(error)) if error.is_panic() => WorkerStatus::Panicked(error.to_string()),
-        Ok(Err(error)) => WorkerStatus::Stopped(Some(error.to_string())),
-        Err(_) => {
-            // Told to stop, still going — likely inside a host callback. Not
-            // aborted: a retried stop waits for it to end on its own and can
-            // then report it clean.
-            *actor.lock().unwrap_or_else(PoisonError::into_inner) = ActorSlot::Stopping(handle);
-            WorkerStatus::Timeout
+    // Put back unless the task is joined here: on a timeout, and also when the
+    // caller drops this future mid-wait — otherwise the only handle goes with
+    // it and a retried stop would report a live task as not running.
+    let mut held = HeldActor {
+        actor,
+        handle: Some(handle),
+    };
+    let Some(handle) = held.handle.as_mut() else {
+        return WorkerStatus::NotRunning;
+    };
+    let joined = timeout_at(deadline, handle).await;
+    match joined {
+        Ok(result) => {
+            held.handle = None;
+            match result {
+                Ok(()) => WorkerStatus::Ok,
+                Err(error) if error.is_panic() => WorkerStatus::Panicked(error.to_string()),
+                Err(error) => WorkerStatus::Stopped(Some(error.to_string())),
+            }
+        }
+        // Told to stop, still going — likely inside a host callback. Not
+        // aborted: `held` puts it back, and a retried stop waits for it to end
+        // on its own and can then report it clean.
+        Err(_) => WorkerStatus::Timeout,
+    }
+}
+
+/// The resolver task's handle while a stop waits for it. Dropped with the
+/// handle still in it — the wait timed out, or the stopping future was
+/// cancelled — it goes back into the slot as [`ActorSlot::Stopping`].
+struct HeldActor<'a> {
+    actor: &'a Mutex<ActorSlot>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl Drop for HeldActor<'_> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            *self.actor.lock().unwrap_or_else(PoisonError::into_inner) =
+                ActorSlot::Stopping(handle);
         }
     }
 }
@@ -3201,6 +3231,26 @@ mod tests {
         assert_eq!(first, WorkerStatus::Timeout);
         assert_eq!(second, WorkerStatus::Ok);
         assert_eq!(third, WorkerStatus::NotRunning);
+    }
+
+    /// A stop whose caller gives up mid-wait (its future dropped) must not take
+    /// the task with it: a retried stop still finds it and waits for it.
+    #[tokio::test]
+    async fn should_keep_the_task_joinable_when_a_stop_is_cancelled() {
+        let (stop, _stopped) = oneshot::channel();
+        let handle = tokio::spawn(sleep(Duration::from_millis(300)));
+        let slot = Mutex::new(ActorSlot::Running(handle, stop));
+        let stopping = AsyncMutex::new(());
+
+        let cancelled = tokio::time::timeout(
+            Duration::from_millis(20),
+            stop_slot(&slot, &stopping, Duration::from_secs(5)),
+        )
+        .await;
+        let retried = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
+
+        assert!(cancelled.is_err(), "the first stop was cancelled mid-wait");
+        assert_eq!(retried, WorkerStatus::Ok, "the retry joined the live task");
     }
 
     /// An `Uncertain` result right after launch runs a pass at the stale stored
