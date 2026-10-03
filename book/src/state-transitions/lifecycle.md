@@ -19,7 +19,7 @@ execution. Every possible mutation is one of a fixed set of state transition typ
 with its own validation rules hardcoded into the platform. The benefit is predictability:
 you can reason about fees, security, and correctness without worrying about
 Turing-complete execution. The smart-contract work in development for Platform
-5.0 ([dashpay/platform#4626](https://github.com/dashpay/platform/issues/4626))
+6.0 ([dashpay/platform#4626](https://github.com/dashpay/platform/issues/4626))
 adds contract execution as further members of this fixed, versioned set rather
 than replacing the model.
 
