@@ -103,14 +103,35 @@ pub(crate) fn waiting_net_value<'a>(utxos: impl IntoIterator<Item = &'a Utxo>) -
         .sum()
 }
 
+/// The fee a payment pays for the final coins it already spends, at the
+/// default rate: a transaction with every one of `final_coins` as an input,
+/// a payment output and change. key-wallet can report a shortfall before it
+/// prices fees — `required` is then the outputs alone — so a shortfall is
+/// called "waiting" only when the waiting coins also cover this. When
+/// `required` already included the fee this errs towards insufficient funds,
+/// never towards promising coins that would not suffice.
+pub(crate) fn final_inputs_fee(final_coins: usize) -> u64 {
+    FeeRate::normal().calculate_fee(estimate_tx_size(final_coins, 2, false))
+}
+
+/// How many final coins `utxos` holds — the inputs a short build already used.
+pub(crate) fn final_count<'a>(utxos: impl IntoIterator<Item = &'a Utxo>) -> usize {
+    utxos.into_iter().filter(|utxo| is_final(utxo)).count()
+}
+
 /// A shortfall the not-yet-final coins would cover becomes
 /// [`PlatformWalletError::CoreFundsAwaitingNetwork`]; anything else is returned
-/// as it was mapped. `waiting` is [`waiting_net_value`] over the offered sources.
+/// as it was mapped. `waiting` is [`waiting_net_value`] over the offered sources,
+/// `fee_reserve` is [`final_inputs_fee`] over their final coins.
 ///
 /// When selection had nothing final to choose from at all, key-wallet reports
 /// no amount (`required` is `None`); the coins that exist are then all waiting,
 /// and that is what the user needs to hear, so it is reported as waiting too.
-pub(crate) fn awaiting_network(error: PlatformWalletError, waiting: u64) -> PlatformWalletError {
+pub(crate) fn awaiting_network(
+    error: PlatformWalletError,
+    waiting: u64,
+    fee_reserve: u64,
+) -> PlatformWalletError {
     let (available, required) = match &error {
         PlatformWalletError::CoreInsufficientFunds {
             available,
@@ -124,7 +145,7 @@ pub(crate) fn awaiting_network(error: PlatformWalletError, waiting: u64) -> Plat
         } => (*available, *required),
         _ => return error,
     };
-    waiting_error(available, required, waiting).unwrap_or(error)
+    waiting_error(available, required, waiting, fee_reserve).unwrap_or(error)
 }
 
 /// The same rule for a build whose failure is otherwise reported as a plain
@@ -132,9 +153,10 @@ pub(crate) fn awaiting_network(error: PlatformWalletError, waiting: u64) -> Plat
 pub(crate) fn build_error_awaiting_network(
     error: BuilderError,
     waiting: u64,
+    fee_reserve: u64,
 ) -> PlatformWalletError {
     shortfall(&error)
-        .and_then(|(available, required)| waiting_error(available, required, waiting))
+        .and_then(|(available, required)| waiting_error(available, required, waiting, fee_reserve))
         .unwrap_or_else(|| PlatformWalletError::TransactionBuild(error.to_string()))
 }
 
@@ -142,12 +164,15 @@ fn waiting_error(
     available: Option<u64>,
     required: Option<u64>,
     waiting: u64,
+    fee_reserve: u64,
 ) -> Option<PlatformWalletError> {
     if waiting == 0 {
         return None;
     }
     let covered = match (available, required) {
-        (Some(available), Some(required)) => available.saturating_add(waiting) >= required,
+        (Some(available), Some(required)) => {
+            available.saturating_add(waiting) >= required.saturating_add(fee_reserve)
+        }
         (available, None) => available.unwrap_or(0) == 0,
         (None, Some(_)) => false,
     };
@@ -806,18 +831,30 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // those coins would cover is "waiting on the network", not
             // insufficient funds. A `reservation_only` build offers nothing to
             // selection, so nothing it could wait for.
-            let waiting = if reservation_only {
-                0
+            let (waiting, fee_reserve) = if reservation_only {
+                (0, 0)
             } else {
-                offered_accounts
+                let offered: Vec<_> = offered_accounts
                     .iter()
                     .filter_map(|at| info.core_wallet.accounts.funds_account(at))
+                    .collect();
+                let waiting = offered
+                    .iter()
                     .map(|managed| waiting_net_value(managed.spendable_utxos(height)))
-                    .sum()
+                    .sum();
+                let finals = offered
+                    .iter()
+                    .map(|managed| final_count(managed.spendable_utxos(height)))
+                    .sum();
+                (waiting, final_inputs_fee(finals))
             };
             let (unsigned, fee, reservation_token) =
                 builder.build_unsigned_reserved().map_err(|error| {
-                    awaiting_network(map_builder_error(error, funding_context), waiting)
+                    awaiting_network(
+                        map_builder_error(error, funding_context),
+                        waiting,
+                        fee_reserve,
+                    )
                 })?;
 
             // Release across every contributing account on the error paths
@@ -2265,6 +2302,28 @@ mod tests {
         );
     }
 
+    /// key-wallet can report a shortfall before pricing fees (`required` is
+    /// then only the outputs). 900,000 final + 100,148 waiting do not cover a
+    /// 1,000,000 payment once the two inputs and the fee are paid: waiting
+    /// would not help, so it stays insufficient funds.
+    #[tokio::test]
+    async fn should_count_the_fee_before_calling_a_shortfall_waiting() {
+        let (core, signer, manager, wallet_id) = dual_core(&[100_148], &[900_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let builder = TransactionBuilder::new()
+            .add_output(&DashAddress::dummy(Network::Testnet, 75), 1_000_000);
+        let result = core
+            .finalize_transaction(builder, &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CorePooledInsufficientFunds { .. })
+            ),
+            "got {result:?}"
+        );
+    }
+
     /// With nothing final at all key-wallet names no requirement; the coins
     /// that exist are all waiting, and that is what is reported.
     #[tokio::test]
@@ -2306,6 +2365,7 @@ mod tests {
                 required: 500_000,
             },
             600_000,
+            0,
         );
         assert!(matches!(
             covered,
@@ -2321,6 +2381,7 @@ mod tests {
                 required: 5_000_000,
             },
             600_000,
+            0,
         );
         assert!(matches!(short, PlatformWalletError::TransactionBuild(_)));
     }

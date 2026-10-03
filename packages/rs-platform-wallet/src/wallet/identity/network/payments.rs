@@ -12,7 +12,9 @@ use key_wallet_manager::WalletManager;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::core::{build_error_awaiting_network, waiting_net_value};
+use crate::wallet::core::{
+    build_error_awaiting_network, final_count, final_inputs_fee, waiting_net_value,
+};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 // ---------------------------------------------------------------------------
@@ -1251,6 +1253,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // Not-yet-final coins of the offered accounts: a shortfall they
             // would cover is reported as waiting on the network.
             let mut waiting: u64 = 0;
+            let mut finals: usize = 0;
 
             // Derivation paths for every offered UTXO, since the signer closure
             // below cannot resolve them from one account.
@@ -1288,6 +1291,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                     }
                     waiting += waiting_net_value(managed.spendable_utxos(current_height));
+                    finals += final_count(managed.spendable_utxos(current_height));
                     builder = builder.add_funding(managed, account);
                     offered_accounts.push(at);
                 }
@@ -1337,7 +1341,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     {
                         return_contact_payment_address_to_pool(external_account, &payment_address);
                     }
-                    return Err(build_error_awaiting_network(e, waiting));
+                    return Err(build_error_awaiting_network(
+                        e,
+                        waiting,
+                        final_inputs_fee(finals),
+                    ));
                 }
             };
 
