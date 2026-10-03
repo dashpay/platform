@@ -441,6 +441,11 @@ pub(crate) struct ResolverState {
     /// across probes while it stays unsettled: [`MINED_QUORUM`] of them make
     /// it mined even when no single probe heard two.
     seen_in_block: HashMap<(WalletId, Txid), BTreeSet<String>>,
+    /// The height at which a probe first found a root dead for missing or
+    /// spent inputs ([`ProbeReport::dead_needs_repeat`]). It becomes final
+    /// only when a probe at a later height finds the same; any other answer
+    /// in between, or a rewind, starts over.
+    dead_evidence_since: HashMap<(WalletId, Txid), u32>,
 }
 
 impl ResolverState {
@@ -451,6 +456,8 @@ impl ResolverState {
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
         self.seen_in_block
             .retain(|(wallet, _), _| wallet != wallet_id);
+        self.dead_evidence_since
+            .retain(|(wallet, _), _| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, trigger)
     }
 
@@ -459,6 +466,7 @@ impl ResolverState {
         self.schedules.clear();
         self.finished.clear();
         self.seen_in_block.clear();
+        self.dead_evidence_since.clear();
         self.clear_where(|_, _| true, None, "disabled")
     }
 
@@ -470,6 +478,7 @@ impl ResolverState {
             self.schedules.remove(&key);
             self.finished.remove(&key);
             self.seen_in_block.remove(&key);
+            self.dead_evidence_since.remove(&key);
         }
         let mut events = self.clear_where(
             |wallet, txid| *wallet == wallet_id && txids.contains(txid),
@@ -695,6 +704,9 @@ pub(crate) fn begin_pass(
     state
         .seen_in_block
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
+    state
+        .dead_evidence_since
+        .retain(|(wallet, txid), _| !is_gone(wallet, txid));
     // Cleared because the send is no longer an unsettled own send: it
     // settled, or left the wallet — not a statement that it settled.
     events.extend(state.clear_where(
@@ -798,6 +810,31 @@ pub(crate) fn record_probe(
         ProbeVerdict::Mined
     } else {
         report.verdict.clone()
+    };
+    // Dead from missing or spent inputs is final only when it holds a block
+    // later: a node that lagged behind a parent's block refuses a valid spend
+    // the same way.
+    let repeated;
+    let verdict = match verdict {
+        ProbeVerdict::Dead { reason } if report.dead_needs_repeat => {
+            match state.dead_evidence_since.get(&key).copied() {
+                Some(first) if height > first => verdict,
+                first => {
+                    let first = first.unwrap_or(height);
+                    state.dead_evidence_since.insert(key, first);
+                    repeated = ProbeVerdict::Unresolved {
+                        reason: format!(
+                            "{reason}; first seen at height {first}, final only if a later block repeats it"
+                        ),
+                    };
+                    &repeated
+                }
+            }
+        }
+        _ => {
+            state.dead_evidence_since.remove(&key);
+            verdict
+        }
     };
     match verdict {
         ProbeVerdict::Dead { reason } => {
@@ -2398,6 +2435,136 @@ mod tests {
 
         assert_eq!(probe.probed(), vec![txid(1)]);
         assert_eq!(events, vec![ResolverEvent::Verdict(txid(1), unresolved())]);
+    }
+
+    /// Answers each probe with the next scripted report.
+    struct SequenceProbe(StdMutex<std::collections::VecDeque<ProbeReport>>);
+
+    #[async_trait]
+    impl AcceptanceProbe for SequenceProbe {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
+            self.0
+                .lock()
+                .expect("reports")
+                .pop_front()
+                .unwrap_or_else(|| unresolved().into())
+        }
+    }
+
+    fn dead_needing_repeat() -> ProbeReport {
+        ProbeReport {
+            dead_needs_repeat: true,
+            ..dead().into()
+        }
+    }
+
+    fn is_dead(state: &Mutex<Harness>) -> bool {
+        matches!(
+            state
+                .lock()
+                .expect("state")
+                .state
+                .finished
+                .get(&(wallet(), txid(1))),
+            Some(Final::Dead { .. })
+        )
+    }
+
+    /// Missing-input evidence found again a block later is final.
+    #[tokio::test]
+    async fn should_call_a_missing_input_dead_only_when_a_later_block_repeats_it() {
+        let state = Mutex::new(Harness::default());
+        let probe = SequenceProbe(StdMutex::new(
+            [dead_needing_repeat(), dead_needing_repeat()].into(),
+        ));
+        let views = [send(1, &[outpoint(90, 0)])];
+
+        let first = pass(&state, &probe, 100, &views).await;
+        assert!(
+            matches!(
+                first.as_slice(),
+                [ResolverEvent::Verdict(_, ProbeVerdict::Unresolved { .. })]
+            ),
+            "{first:?}"
+        );
+        assert!(!is_dead(&state));
+
+        let second = pass(&state, &probe, 101, &views).await;
+        assert!(
+            matches!(
+                second.as_slice(),
+                [ResolverEvent::Verdict(_, ProbeVerdict::Dead { .. })]
+            ),
+            "{second:?}"
+        );
+        assert!(is_dead(&state));
+    }
+
+    /// A refuser lagging behind a parent's block: the next probe finds the
+    /// spend fine, so the earlier evidence is dropped and a later refusal
+    /// starts over instead of completing it.
+    #[tokio::test]
+    async fn should_drop_missing_input_evidence_another_answer_contradicts() {
+        let state = Mutex::new(Harness::default());
+        let probe = SequenceProbe(StdMutex::new(
+            [
+                dead_needing_repeat(),
+                ProbeVerdict::Accepted.into(),
+                dead_needing_repeat(),
+            ]
+            .into(),
+        ));
+        let views = [send(1, &[outpoint(90, 0)])];
+
+        for height in 100..103 {
+            pass(&state, &probe, height, &views).await;
+            assert!(!is_dead(&state), "dead at {height}");
+        }
+    }
+
+    /// The same height twice is not a later block.
+    #[tokio::test]
+    async fn should_not_count_a_repeat_at_the_same_height() {
+        let state = Mutex::new(Harness::default());
+        let views = [send(1, &[outpoint(90, 0)])];
+        let root = |state: &Mutex<Harness>| {
+            let mut guard = state.lock().expect("state");
+            let start = begin_pass(
+                &mut guard.state,
+                wallet(),
+                100,
+                &views,
+                &HashSet::new(),
+                Some(100),
+            );
+            start.due.into_iter().next()
+        };
+        let due = root(&state).expect("due");
+        for _ in 0..2 {
+            let mut guard = state.lock().expect("state");
+            record_probe(
+                &mut guard.state,
+                wallet(),
+                100,
+                &views,
+                &due,
+                &dead_needing_repeat(),
+            );
+        }
+
+        assert!(!is_dead(&state));
+    }
+
+    /// A lock conflict needs no repeat.
+    #[tokio::test]
+    async fn should_call_a_lock_conflict_dead_at_once() {
+        let state = Mutex::new(Harness::default());
+        let probe = SequenceProbe(StdMutex::new([dead().into()].into()));
+        let views = [send(1, &[outpoint(90, 0)])];
+
+        pass(&state, &probe, 100, &views).await;
+
+        assert!(is_dead(&state));
     }
 
     #[tokio::test]
@@ -4403,6 +4570,7 @@ mod tests {
         ProbeReport {
             verdict: ProbeVerdict::Accepted,
             in_block_by: BTreeSet::from([node.to_string()]),
+            dead_needs_repeat: false,
         }
     }
 
