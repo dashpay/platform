@@ -335,7 +335,6 @@ impl IdentityWallet {
         enrichment_deadline: Option<std::time::Instant>,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
         use super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
-        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
@@ -580,12 +579,8 @@ impl IdentityWallet {
                 break;
             }
             let identity_id = identity.id();
-            match self
-                .sdk
-                .get_dpns_usernames_by_identity(identity_id, None)
-                .await
-            {
-                Ok(usernames) => {
+            match self.fetch_owned_dpns_names(identity_id, None).await {
+                Ok((names, fetch)) => {
                     let mut wm_guard = self.wallet_manager.write().await;
                     let info_guard =
                         wm_guard
@@ -599,15 +594,7 @@ impl IdentityWallet {
                         .identity_manager
                         .managed_identity_mut(&identity_id)
                     {
-                        for username in usernames {
-                            managed.add_dpns_name(
-                                DpnsNameInfo {
-                                    label: username.label,
-                                    acquired_at: None,
-                                },
-                                &self.persister,
-                            );
-                        }
+                        managed.apply_fetched_dpns_names(names, fetch, &self.persister);
                     }
                 }
                 Err(e) => {

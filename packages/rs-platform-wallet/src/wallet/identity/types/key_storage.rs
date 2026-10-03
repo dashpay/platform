@@ -58,6 +58,17 @@ pub struct DpnsNameInfo {
     pub acquired_at: Option<u64>,
 }
 
+/// How much of an identity's owned DPNS names one username fetch returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DpnsFetch {
+    /// The identity's whole owned set: paging reached a short page, so a
+    /// label missing from the fetch has left the identity.
+    Complete,
+    /// A lower bound: the page bound was reached, or the platform version
+    /// cannot continue a page. A label missing from the fetch proves nothing.
+    Partial,
+}
+
 /// Private key storage mapping KeyID to public key metadata + private key data.
 ///
 /// Lives only in transient places — the `IdentityKeysChangeSet` apply
