@@ -2,6 +2,7 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityMethodVersions {
@@ -239,4 +240,9 @@ pub struct DriveIdentityUpdateMethodVersions {
     /// Rewrites a key with a raised total budget or a later expiry (protocol version 14). Keys
     /// cannot carry limits before v14, so earlier tables keep the slot `None`.
     pub update_identity_key_limits: OptionalFeatureVersion,
+    /// Read by `Drive::credit_storage_refunds_to_owners_operations`: credits each recorded
+    /// owner of a storage refund and reports the amount whose owner has no balance element
+    /// so the caller can route it to the current epoch's processing pool. `None` before
+    /// protocol version 15, where no path settles refunds outside a state transition.
+    pub credit_storage_refunds_to_owners: OptionalFeatureVersion,
 }
