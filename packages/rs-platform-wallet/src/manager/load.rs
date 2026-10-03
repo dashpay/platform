@@ -129,6 +129,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_manager,
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
+                dashpay_backfill,
             } = wallet_state;
 
             // Replay the sends the host still holds as unconfirmed, before
@@ -229,6 +230,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
+                dashpay_backfill,
+                rewind_barrier: Default::default(),
             };
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
@@ -237,6 +240,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts(
                 &platform_info,
             );
+
+            // The cursor the host just handed back is the durable one; it
+            // seeds the shared record of it as the wallet is published below.
+            let loaded_cursor = platform_info.core_wallet.metadata.synced_height;
 
             if wallet_id != expected_wallet_id {
                 load_error = Some(PlatformWalletError::WalletCreation(format!(
@@ -265,7 +272,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             //
             // The existence check and the insert share one write-lock scope
             // so a concurrent loader can't slip between them (TOCTOU).
+            //
+            // The durable cursor is seeded in that same scope, under the
+            // cursor lock taken first (its order: cursor lock, then manager).
+            // The insert makes the wallet visible to the scanner and the
+            // event adapter; seeding after it would let an adapter commit or
+            // a reconcile record a newer durable height first, and the seed
+            // would then overwrite it with the stale loaded one. An entry a
+            // removed same-id predecessor left behind is what the host holds
+            // now — a commit of its may have been accepted after the start
+            // state was read — so it wins over the loaded cursor.
             {
+                let mut durable_cursors = self.durable_cursors.lock().await;
                 let mut wm = self.wallet_manager.write().await;
                 if wm.get_wallet(&wallet_id).is_some() {
                     continue 'load;
@@ -277,6 +295,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     )));
                     break 'load;
                 }
+                durable_cursors
+                    .entry(wallet_id)
+                    .or_insert(crate::changeset::DurableCursor::at(loaded_cursor));
+                self.inherit_rewind_barrier(&mut wm, &wallet_id);
             }
             inserted_in_manager.push(wallet_id);
 
@@ -340,6 +362,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Arc::clone(&self.lock_notify),
                 Arc::clone(&persister_dyn),
                 broadcaster,
+                Arc::clone(&self.sync_fault),
+                Arc::clone(&self.durable_cursors),
             );
 
             // Initialize the platform-address provider. If the snapshot
@@ -465,7 +489,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    if let Err(e) = wm.remove_wallet(id) {
+                    if let Err(e) = self.remove_from_wallet_manager(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
                             error = %e,
@@ -718,6 +742,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: self.pending.clone(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -784,6 +809,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -823,6 +849,7 @@ mod idempotent_load_tests {
                 identity_manager: IdentityManagerStartState::default(),
                 unused_asset_locks: BTreeMap::new(),
                 unconfirmed_outgoing_txs: Vec::new(),
+                dashpay_backfill: Default::default(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());
