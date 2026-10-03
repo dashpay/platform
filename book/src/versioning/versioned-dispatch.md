@@ -341,7 +341,12 @@ know that the binary is too old to handle the active protocol version.
 
 Let us walk through the exact steps to add a v1 implementation of a method
 that currently only has v0. We will use a fictional example:
-`my_grove_operation`.
+`my_grove_operation`; the method and its table slot do not exist. Of the version
+constants in the excerpts below, `DRIVE_GROVE_METHOD_VERSIONS_V1`,
+`DRIVE_VERSION_V9` and `PLATFORM_V14` are the ones in the tree today;
+`DRIVE_GROVE_METHOD_VERSIONS_V2`, `DRIVE_VERSION_V10`, `PROTOCOL_VERSION_15` and
+`PLATFORM_V15` are the hypothetical next generations the walkthrough would
+create, not recorded history.
 
 ### Step 1: Write the new implementation
 
@@ -530,7 +535,7 @@ meaningfully.
 
 This is a lot of steps, but each one is mechanical and the compiler guides you
 through most of it. If you add a field to a version struct and forget to set it
-in one of the fourteen platform version constants, the build fails.
+in one of the registered platform version constants (fourteen today), the build fails.
 
 ## Passing Version References
 
