@@ -1037,6 +1037,8 @@ enum Command {
         txids: HashSet<Txid>,
     },
     Uncertain(Txid),
+    /// dash-spv saw a peer echo a send it had reported `Uncertain`.
+    Echoed(Txid),
     SetEnabled(bool),
     /// The wallet was registered or loaded into the manager: only this
     /// creates a wallet's entry, so events queued behind a removal cannot
@@ -1049,6 +1051,8 @@ enum Command {
 enum JobDone {
     /// The wallets holding a transaction reported `Uncertain`.
     Listed { txid: Txid, wallets: Vec<WalletId> },
+    /// The wallets holding a send that was echoed after its `Uncertain`.
+    EchoListed { txid: Txid, wallets: Vec<WalletId> },
     Read {
         wallet_id: WalletId,
         run: u64,
@@ -1143,6 +1147,10 @@ struct Actor {
     /// can end its run instead of leaving the wallet stuck behind it.
     /// A probe job also names its root.
     job_runs: HashMap<task::Id, (WalletId, u64, Option<Txid>)>,
+    /// Sends dash-spv reported `Uncertain` this session: a later peer echo of
+    /// one of them is its acceptance. One entry per such send, removed by its
+    /// echo.
+    uncertain: HashSet<Txid>,
 }
 
 impl Actor {
@@ -1161,6 +1169,7 @@ impl Actor {
             sink,
             jobs: JoinSet::new(),
             job_runs: HashMap::new(),
+            uncertain: HashSet::new(),
         }
     }
 
@@ -1377,11 +1386,26 @@ impl Actor {
                 if !self.enabled {
                     return;
                 }
+                self.uncertain.insert(txid);
                 // Routed to the registered wallets holding it, including ones
                 // no height step has reached yet.
                 let source = Arc::clone(&self.source);
                 self.jobs.spawn(async move {
                     JobDone::Listed {
+                        txid,
+                        wallets: source.holders(txid).await,
+                    }
+                });
+            }
+            Command::Echoed(txid) => {
+                // Every healthy send is echoed: only one that was `Uncertain`
+                // has a verdict to change.
+                if !self.enabled || !self.uncertain.remove(&txid) {
+                    return;
+                }
+                let source = Arc::clone(&self.source);
+                self.jobs.spawn(async move {
+                    JobDone::EchoListed {
                         txid,
                         wallets: source.holders(txid).await,
                     }
@@ -1487,6 +1511,32 @@ impl Actor {
                     pending.forced.insert(txid);
                     self.start(wallet_id);
                 }
+            }
+            JobDone::EchoListed { txid, wallets } => {
+                if !self.enabled {
+                    return;
+                }
+                let mut events = Vec::new();
+                for wallet_id in wallets {
+                    let Some(entry) = self.wallets.get(&wallet_id) else {
+                        continue;
+                    };
+                    // A final verdict (dead or mined) is not reopened by an
+                    // echo; anything else becomes accepted.
+                    if self.state.finished.contains_key(&(wallet_id, txid)) {
+                        continue;
+                    }
+                    let height = entry.height.unwrap_or(0);
+                    self.state.publish_all(
+                        wallet_id,
+                        [txid],
+                        &ProbeVerdict::Accepted,
+                        height,
+                        "echo",
+                        &mut events,
+                    );
+                }
+                deliver(&self.sink, events);
             }
             JobDone::Read {
                 wallet_id,
@@ -1954,12 +2004,18 @@ impl EventHandler for BroadcastResolver {
     }
 
     fn on_sync_event(&self, event: &SyncEvent) {
-        if let SyncEvent::TransactionBroadcastResult {
-            txid,
-            result: BroadcastResult::Uncertain,
-        } = event
-        {
-            self.send(Command::Uncertain(*txid));
+        match event {
+            SyncEvent::TransactionBroadcastResult {
+                txid,
+                result: BroadcastResult::Uncertain,
+            } => self.send(Command::Uncertain(*txid)),
+            // dash-spv lets a send it reported Uncertain still turn Accepted
+            // when a peer echoes it later.
+            SyncEvent::TransactionBroadcastResult {
+                txid,
+                result: BroadcastResult::Accepted { .. },
+            } => self.send(Command::Echoed(*txid)),
+            _ => {}
         }
     }
 }
@@ -2918,6 +2974,50 @@ mod tests {
             rig.sent(),
             vec![ResolverEvent::Verdict(txid(1), unresolved())]
         );
+    }
+
+    /// dash-spv may still see a send it reported `Uncertain` echoed by a peer
+    /// later: with no block, no InstantSend lock and no probe answer, that
+    /// echo alone turns its verdict into Accepted.
+    #[tokio::test]
+    async fn should_accept_a_send_echoed_after_its_uncertain_result() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        assert_eq!(
+            rig.sent(),
+            vec![ResolverEvent::Verdict(txid(1), unresolved())]
+        );
+
+        rig.send(Command::Echoed(txid(1))).await;
+
+        assert_eq!(
+            rig.sent(),
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
+        );
+    }
+
+    /// Every healthy send is echoed: only one reported `Uncertain` first gets
+    /// a verdict from it.
+    #[tokio::test]
+    async fn should_publish_nothing_for_the_echo_of_a_send_never_uncertain() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+
+        rig.send(Command::Echoed(txid(1))).await;
+
+        assert!(rig.sent().is_empty());
     }
 
     /// Once every root is final the wallet is idle: height advances do not walk
