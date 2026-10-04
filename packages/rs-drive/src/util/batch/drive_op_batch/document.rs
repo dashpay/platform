@@ -240,9 +240,10 @@ impl DocumentOperationType<'_> {
     /// Calls `visit` with the contract and document type of every document
     /// this operation writes or deletes, once per document, the consumed
     /// documents of an `AddDocumentAndDeleteConsumed` included, and whether
-    /// the document is inserted (a plain insert, the one write that
-    /// preallocates referring types' trees). Withdrawals and document history
-    /// write system types and are not visited. Resolution reads are unbilled
+    /// the write may preallocate referring types' trees: a plain insert, the
+    /// one write that does (a contested insert never does; an overriding insert
+    /// that turns out an update is counted conservatively). Withdrawals and
+    /// document history write system types and are not visited. Resolution reads are unbilled
     /// maintenance; normal conversion still resolves and bills the contract
     /// through its usual path.
     pub(crate) fn for_each_document_type(
@@ -258,22 +259,8 @@ impl DocumentOperationType<'_> {
                 contract_info,
                 document_type_info,
                 ..
-            } => {
-                let resolved = contract_info.clone().resolve(
-                    drive,
-                    block_info,
-                    transaction,
-                    &mut vec![],
-                    platform_version,
-                )?;
-                let contract = resolved.as_ref();
-                visit(
-                    contract,
-                    document_type_info.clone().resolve(contract)?,
-                    true,
-                )
             }
-            Self::AddContestedDocument {
+            | Self::AddContestedDocument {
                 contract_info,
                 document_type_info,
                 ..
@@ -309,7 +296,7 @@ impl DocumentOperationType<'_> {
                 visit(
                     contract,
                     document_type_info.clone().resolve(contract)?,
-                    false,
+                    matches!(self, Self::AddDocument { .. }),
                 )
             }
             Self::MultipleDocumentOperationsForSameContractDocumentType {

@@ -593,36 +593,43 @@ fn resolve_ranked_at_levels(
     ))
 }
 
-/// One ranking keyword's value: its boolean form, or the levels its
+/// One ranking keyword's declaration: its boolean form, or the levels its
 /// `{ "at": … }` object form names, held raw until the property list is
-/// parsed. Each spelling replaces both parts, so a repeated key keeps its last
-/// spelling, as the meta-schema's JSON view does.
-fn parse_ranking(
-    keyword: &str,
-    value: &Value,
-) -> Result<(bool, Option<Vec<String>>), DataContractError> {
-    if let Some(at_levels) = parse_ranked_at_levels(keyword, value)? {
-        return Ok((false, Some(at_levels)));
-    }
-    let ranks_terminal = value.as_bool().ok_or_else(|| {
-        DataContractError::ValueWrongType(format!(
-            "{keyword} value must be a boolean or a map with an `at` field"
-        ))
-    })?;
-    Ok((ranks_terminal, None))
+/// parsed. A repeated key keeps its last spelling, as the meta-schema's JSON
+/// view does: each parse replaces the whole value.
+enum Ranking {
+    Flag(bool),
+    At(Vec<String>),
 }
 
-/// [`resolve_ranked_at_levels`] for a ranking written in the object form:
-/// whether its levels name the last property, and the other levels.
-/// `(false, [])` for the boolean form.
-fn resolve_ranking(
-    keyword: &str,
-    at_levels: Option<Vec<String>>,
-    index_properties: &[IndexProperty],
-) -> Result<(bool, Vec<String>), DataContractError> {
-    match at_levels {
-        Some(levels) => resolve_ranked_at_levels(keyword, levels, index_properties),
-        None => Ok((false, Vec::new())),
+impl Ranking {
+    fn parse(keyword: &str, value: &Value) -> Result<Self, DataContractError> {
+        if let Some(at_levels) = parse_ranked_at_levels(keyword, value)? {
+            return Ok(Ranking::At(at_levels));
+        }
+        value.as_bool().map(Ranking::Flag).ok_or_else(|| {
+            DataContractError::ValueWrongType(format!(
+                "{keyword} value must be a boolean or a map with an `at` field"
+            ))
+        })
+    }
+
+    fn is_object_form(&self) -> bool {
+        matches!(self, Ranking::At(_))
+    }
+
+    /// Whether the ranking covers the last property, and the other levels it
+    /// names in index-property order ([`resolve_ranked_at_levels`]); the
+    /// boolean form names no other level.
+    fn resolve(
+        self,
+        keyword: &str,
+        index_properties: &[IndexProperty],
+    ) -> Result<(bool, Vec<String>), DataContractError> {
+        match self {
+            Ranking::Flag(ranks_terminal) => Ok((ranks_terminal, Vec::new())),
+            Ranking::At(levels) => resolve_ranked_at_levels(keyword, levels, index_properties),
+        }
     }
 }
 
@@ -1485,6 +1492,13 @@ impl Index {
         self.ranked_countable || self.ranked_summable || self.ranked_averageable
     }
 
+    /// Whether this is an index of an indexOnly type: one carrying a terminal,
+    /// or a `summableOffCountIndex` index, which keeps counters instead of
+    /// entries (only an indexOnly type may declare either).
+    pub fn is_index_only(&self) -> bool {
+        self.terminal.is_some() || self.is_summable_off_count_index()
+    }
+
     /// Whether this is a `summableOffCountIndex` index: one counter per
     /// group, no entry per document.
     pub fn is_summable_off_count_index(&self) -> bool {
@@ -2048,12 +2062,9 @@ impl Index {
         // array of them — is held raw until after the loop, because resolving
         // each (does it name an index property? is it the last one, i.e. the
         // terminal form spelled longhand?) needs the parsed property list.
-        let mut ranked_countable = false;
-        let mut ranked_countable_at_levels: Option<Vec<String>> = None;
-        let mut ranked_summable = false;
-        let mut ranked_summable_at_levels: Option<Vec<String>> = None;
-        let mut ranked_averageable = false;
-        let mut ranked_averageable_at_levels: Option<Vec<String>> = None;
+        let mut ranked_countable = Ranking::Flag(false);
+        let mut ranked_summable = Ranking::Flag(false);
+        let mut ranked_averageable = Ranking::Flag(false);
         let mut time_range: Option<TimeRangeTransform> = None;
         let mut integer_range: Option<IntegerRangeTransform> = None;
         let mut terminal: Option<Vec<String>> = None;
@@ -2317,22 +2328,18 @@ impl Index {
                     // index — the nested-secondaries shape the storage layer
                     // maintains as one count-propagation chain.
                     //
-                    // A repeated key keeps its last spelling (see
-                    // `parse_ranking`).
-                    (ranked_countable, ranked_countable_at_levels) =
-                        parse_ranking(RANKED_COUNTABLE, value_value)?;
+                    // A repeated key keeps its last spelling (see `Ranking`).
+                    ranked_countable = Ranking::parse(RANKED_COUNTABLE, value_value)?;
                 }
                 // The Sum and Avg axes take the same two spellings as the
                 // Count axis. The object form is only admitted on a
                 // `summableOffCountIndex` index (checked once the whole map
                 // is read), whose counters carry the sums its chain ranks by.
                 RANKED_SUMMABLE if ranked_aggregates_allowed => {
-                    (ranked_summable, ranked_summable_at_levels) =
-                        parse_ranking(RANKED_SUMMABLE, value_value)?;
+                    ranked_summable = Ranking::parse(RANKED_SUMMABLE, value_value)?;
                 }
                 RANKED_AVERAGEABLE if ranked_aggregates_allowed => {
-                    (ranked_averageable, ranked_averageable_at_levels) =
-                        parse_ranking(RANKED_AVERAGEABLE, value_value)?;
+                    ranked_averageable = Ranking::parse(RANKED_AVERAGEABLE, value_value)?;
                 }
                 // `timeRange` is guarded the same way as the ranking keywords
                 // above: it joined the grammar at meta-schema v3, so below
@@ -2728,26 +2735,14 @@ impl Index {
         // first, before the folding drops a last-property `at` into the
         // boolean: the form itself is what only a `summableOffCountIndex`
         // index admits.
-        let ranked_summable_object_form = ranked_summable_at_levels.is_some();
-        let ranked_averageable_object_form = ranked_averageable_at_levels.is_some();
-        let (ranks_terminal, mut ranked_countable_at) = resolve_ranking(
-            RANKED_COUNTABLE,
-            ranked_countable_at_levels,
-            &index_properties,
-        )?;
-        ranked_countable |= ranks_terminal;
-        let (ranks_terminal, mut ranked_summable_at) = resolve_ranking(
-            RANKED_SUMMABLE,
-            ranked_summable_at_levels,
-            &index_properties,
-        )?;
-        ranked_summable |= ranks_terminal;
-        let (ranks_terminal, ranked_averageable_at) = resolve_ranking(
-            RANKED_AVERAGEABLE,
-            ranked_averageable_at_levels,
-            &index_properties,
-        )?;
-        ranked_averageable |= ranks_terminal;
+        let ranked_summable_object_form = ranked_summable.is_object_form();
+        let ranked_averageable_object_form = ranked_averageable.is_object_form();
+        let (mut ranked_countable, mut ranked_countable_at) =
+            ranked_countable.resolve(RANKED_COUNTABLE, &index_properties)?;
+        let (mut ranked_summable, mut ranked_summable_at) =
+            ranked_summable.resolve(RANKED_SUMMABLE, &index_properties)?;
+        let (ranked_averageable, ranked_averageable_at) =
+            ranked_averageable.resolve(RANKED_AVERAGEABLE, &index_properties)?;
 
         // A prefix-level Count ranking works by making every level from the
         // named property down to the terminal count-bearing, so each write's

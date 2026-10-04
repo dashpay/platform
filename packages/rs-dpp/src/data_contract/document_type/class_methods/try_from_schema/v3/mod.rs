@@ -42,13 +42,12 @@ use crate::data_contract::document_type::property::{
 };
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::reference_lookup::{
-    owner_can_change, schema_property_is_fixed_once_written,
+    owner_can_change, schema_property_is_fixed_once_written, why_value_can_change,
 };
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
-use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -1071,11 +1070,7 @@ pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
                 };
                 let referenced_type = referenced_type.as_ref();
                 let referenced = derivation.referenced;
-                let fixed = match referenced {
-                    ID | CREATOR_ID => true,
-                    OWNER_ID => !owner_can_change(referenced_type),
-                    path => schema_property_is_fixed_once_written(referenced_type, path),
-                };
+                let fixed = why_value_can_change(referenced_type, referenced).is_none();
                 let kept = referenced_value_kept_on_removal(
                     derivation.kind,
                     referenced,

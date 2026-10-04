@@ -1197,7 +1197,7 @@ impl<'a> DriveDocumentQuery<'a> {
         )
         .ok_or_else(|| {
             unsupported(format!(
-                "count sub-query on \"{}\" needs a `countable: true` index covering its fixed \
+                "count sub-query on \"{}\" needs a `countable: true` (or summableOffCountIndex) index covering its fixed \
                  clauses and the bound field \"{}\"",
                 sub_query.document_type.name(),
                 binding.field,

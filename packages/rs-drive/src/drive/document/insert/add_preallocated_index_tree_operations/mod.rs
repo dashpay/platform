@@ -47,6 +47,7 @@ use crate::drive::document::index_level_tree_types::{
 use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::drive::document::preallocation_bindings_targeting;
 use crate::drive::document::summable_off_count_counter::insert_summable_off_count_counter_layer;
 use crate::drive::document::unique_event_id;
 use crate::drive::Drive;
@@ -64,11 +65,10 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
-    DocumentType, DocumentTypeRef, Index, PreallocatedKeySource, PreallocationBinding,
+    DocumentReferenceKind, DocumentTypeRef, Index, PreallocatedKeySource, PreallocationBinding,
 };
-use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element;
@@ -81,45 +81,6 @@ use std::collections::HashMap;
 
 #[cfg(test)]
 mod tests;
-
-/// Every preallocated index whose binding targets `target_document_type`, with
-/// the indexOnly referring type holding it and the binding: what an insert of
-/// a `target_document_type` document preallocates, in the order it does.
-pub(crate) fn preallocation_bindings_targeting<'a>(
-    contract: &'a DataContract,
-    target_document_type: DocumentTypeRef<'a>,
-) -> impl Iterator<Item = (DocumentTypeRef<'a>, &'a Index, PreallocationBinding<'a>)> + 'a {
-    contract
-        .document_types()
-        .values()
-        // `preallocated` is only valid on indexOnly document types, so this
-        // filter also keeps the per-insert scan trivially cheap for contracts
-        // without the feature.
-        .filter(|referring_type| referring_type.index_only())
-        .flat_map(move |referring_type: &'a DocumentType| {
-            referring_type
-                .indexes()
-                .values()
-                .filter(|index| index.preallocated)
-                .flat_map(move |index| {
-                    // Target-filtered derivation: candidates naming other
-                    // target types are rejected before any binding plan is
-                    // allocated — this runs on every document insert. Through
-                    // a moderatedDocument reference, only a binding every key
-                    // of which the inserted document's removal record would
-                    // keep (registration makes sure each preallocated index
-                    // has one).
-                    index
-                        .preallocation_bindings_for_target(
-                            referring_type.flattened_properties(),
-                            contract.id(),
-                            target_document_type,
-                        )
-                        .into_iter()
-                        .map(move |binding| (referring_type.as_ref(), index, binding))
-                })
-        })
-}
 
 impl Drive {
     /// For every preallocated index (on any indexOnly document type of the
@@ -159,14 +120,16 @@ impl Drive {
         } else {
             None
         };
-        for (referring_type, index, binding) in
-            preallocation_bindings_targeting(contract, document_and_contract_info.document_type)
-        {
+        for (referring_type, index, binding) in preallocation_bindings_targeting(
+            contract,
+            document_and_contract_info.document_type,
+            |_| true,
+        ) {
             self.add_preallocated_index_tree_operations_for_binding(
                 document_and_contract_info,
                 referring_type,
                 index,
-                &binding.key_sources,
+                &binding,
                 storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
@@ -192,7 +155,7 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         referring_type: DocumentTypeRef,
         index: &Index,
-        key_sources: &[PreallocatedKeySource],
+        binding: &PreallocationBinding,
         storage_flags: Option<&StorageFlags>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -240,7 +203,8 @@ impl Drive {
         // size, so the dry-run always sweeps the full path.
         let mut resolved_levels = Vec::with_capacity(index.properties.len());
         let mut current_level = referring_index_structure;
-        for (index_property, key_source) in index.properties.iter().zip(key_sources.iter()) {
+        for (index_property, key_source) in index.properties.iter().zip(binding.key_sources.iter())
+        {
             let property_name = index_property.name.as_str();
             let sub_level = current_level
                 .sub_levels()
@@ -410,21 +374,6 @@ impl Drive {
             // Nothing continues below it, so this is the last level.
             if sub_level.summable_off_count_index_info().is_some() {
                 let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
-                if let Some(estimated_costs_only_with_layer_info) =
-                    estimated_costs_only_with_layer_info
-                {
-                    insert_summable_off_count_counter_layer(
-                        estimated_costs_only_with_layer_info,
-                        path_info.clone().convert_to_key_info_path(),
-                        property_name_tree_type,
-                        document_info.get_estimated_size_for_document_type(
-                            property_name,
-                            referring_type,
-                            platform_version,
-                        )?,
-                        storage_flags,
-                    )?;
-                }
                 let counter = Element::new_sum_item_with_flags(
                     0,
                     StorageFlags::map_to_some_element_flags(storage_flags),
@@ -434,31 +383,64 @@ impl Drive {
                     KeyRef(key) => KeyElement((key, counter)),
                     KeySize(key_info) => KeyElementSize((key_info.clone(), counter)),
                 };
-                let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
-                    path_info,
-                    key_element_info,
-                )?;
-                if property_name_tree_created && estimated_costs_only_with_layer_info.is_none() {
-                    // The walk just created the tree the counter sits in, so
-                    // the counter cannot exist: write it without the
-                    // existence read (an estimate still prices the read).
-                    self.batch_insert(path_key_element_info, batch_operations, drive_version)?;
-                } else {
-                    let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                        BatchInsertApplyType::StatefulBatchInsert
-                    } else {
-                        BatchInsertApplyType::StatelessBatchInsert {
-                            in_tree_type: property_name_tree_type,
-                            target: QueryTargetValue(SUM_ITEM_COST_SIZE + flags_len),
+                // The counter cannot exist yet under a tree this walk just
+                // created, nor through a `permanentDocument` reference: its key
+                // is the inserted document's `$id`, inserted once and never
+                // restored. Only a `moderatedDocument` restore finds its
+                // counter kept, so only it needs the existence read.
+                let counter_cannot_exist =
+                    property_name_tree_created || binding.kind == DocumentReferenceKind::Permanent;
+                match estimated_costs_only_with_layer_info {
+                    Some(estimated_costs_only_with_layer_info) => {
+                        insert_summable_off_count_counter_layer(
+                            estimated_costs_only_with_layer_info,
+                            path_info.clone().convert_to_key_info_path(),
+                            property_name_tree_type,
+                            document_info.get_estimated_size_for_document_type(
+                                property_name,
+                                referring_type,
+                                platform_version,
+                            )?,
+                            storage_flags,
+                        )?;
+                        // The estimate prices the existence read either way,
+                        // so it bounds every stateful write below.
+                        self.batch_insert_if_not_exists(
+                            PathKeyElementInfo::from_path_info_and_key_element(
+                                path_info,
+                                key_element_info,
+                            )?,
+                            BatchInsertApplyType::StatelessBatchInsert {
+                                in_tree_type: property_name_tree_type,
+                                target: QueryTargetValue(SUM_ITEM_COST_SIZE + flags_len),
+                            },
+                            transaction,
+                            batch_operations,
+                            drive_version,
+                        )?;
+                    }
+                    None => {
+                        let path_key_element_info =
+                            PathKeyElementInfo::from_path_info_and_key_element(
+                                path_info,
+                                key_element_info,
+                            )?;
+                        if counter_cannot_exist {
+                            self.batch_insert(
+                                path_key_element_info,
+                                batch_operations,
+                                drive_version,
+                            )?;
+                        } else {
+                            self.batch_insert_if_not_exists(
+                                path_key_element_info,
+                                BatchInsertApplyType::StatefulBatchInsert,
+                                transaction,
+                                batch_operations,
+                                drive_version,
+                            )?;
                         }
-                    };
-                    self.batch_insert_if_not_exists(
-                        path_key_element_info,
-                        apply_type,
-                        transaction,
-                        batch_operations,
-                        drive_version,
-                    )?;
+                    }
                 }
                 return Ok(());
             }

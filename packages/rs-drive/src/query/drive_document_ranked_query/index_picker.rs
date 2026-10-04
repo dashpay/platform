@@ -331,7 +331,7 @@ pub fn encode_prefix_branches(
     // skip property is either pinned here or the ranked property itself; an
     // indexOnly type has no null values to pin: its indexes carry a terminal,
     // or keep `summableOffCountIndex` counters.)
-    if index.skip_if_absent && index.terminal.is_none() && !index.is_summable_off_count_index() {
+    if index.skip_if_absent && !index.is_index_only() {
         if let Some(pin) = prefix_pins.iter().find(|pin| {
             index.skip_if_absent_properties.contains(&pin.field)
                 && pin.values.iter().any(|value| value.is_null())

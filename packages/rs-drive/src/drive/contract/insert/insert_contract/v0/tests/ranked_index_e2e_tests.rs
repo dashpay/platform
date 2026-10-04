@@ -61,9 +61,11 @@ use crate::config::DriveConfig;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::drive_document_average_query::{AverageMode, DocumentAverageRequest};
 use crate::query::drive_document_count_query::{
     CountMode, DocumentCountRequest, DocumentCountResponse,
 };
+use crate::query::drive_document_sum_query::{DocumentSumRequest, DocumentSumResponse, SumMode};
 use crate::query::{WhereClause, WhereOperator};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -82,6 +84,7 @@ use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
 use grovedb::Element;
+use std::collections::BTreeMap;
 
 /// The one index property every doctype in the fixture ranks by.
 const GROUP_PROPERTY: &str = "restaurantId";
@@ -2015,9 +2018,11 @@ fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() 
     assert_grovedb_is_consistent(&drive);
 }
 
-/// An `order` contract whose `byRestaurantOrders` ranks `restaurantId` by
-/// count while the unranked `byRestaurantGuests` continues below it, so the
-/// second index's `restaurantId` level is the first's indexed tree.
+/// A contract whose `order` type ranks `restaurantId` by count
+/// (`byRestaurantOrders`) while the unranked `byRestaurantGuests` continues
+/// below it, so the second index's `restaurantId` level is the first's
+/// indexed tree; its `tab` type does the same with an unranked summable
+/// `byRestaurantDay` below the ranked `byRestaurantTabs`.
 fn build_order_contract_continuing_below_a_ranked_level() -> DataContract {
     DataContractFactory::new(PROTOCOL_VERSION_V14)
         .expect("expected to create factory")
@@ -2045,6 +2050,33 @@ fn build_order_contract_continuing_below_a_ranked_level() -> DataContract {
                             "properties": [{"restaurantId": "asc"}, {"guests": "asc"}],
                             "countable": "countable",
                             "rangeCountable": true,
+                        },
+                    ],
+                    "additionalProperties": false,
+                },
+                "tab": {
+                    "type": "object",
+                    "properties": {
+                        "restaurantId": {"type": "string", "position": 0, "maxLength": 32},
+                        "day": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 1},
+                        "amount": {"type": "integer", "minimum": 0, "maximum": 1000000, "position": 2},
+                    },
+                    "required": ["restaurantId", "day", "amount"],
+                    "indices": [
+                        {
+                            "name": "byRestaurantTabs",
+                            "properties": [{"restaurantId": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                            "rankedCountable": true,
+                        },
+                        {
+                            "name": "byRestaurantDay",
+                            "properties": [{"restaurantId": "asc"}, {"day": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                            "summable": "amount",
+                            "rangeSummable": true,
                         },
                     ],
                     "additionalProperties": false,
@@ -2160,6 +2192,144 @@ fn should_refuse_a_range_total_through_another_index_s_ranked_level() {
                 "alpha's one order of five guests"
             )
         }
+        other => panic!("expected entries, got {other:?}"),
+    }
+}
+
+/// The sum and average forms of the refusal above: a range sum or average
+/// total through the unranked `byRestaurantDay`, which continues below the
+/// ranked `byRestaurantTabs`, is refused with and without a proof, per
+/// restaurant across an `IN` too, while the range sums per day still answer.
+#[test]
+fn should_refuse_a_range_sum_or_average_total_through_another_index_s_ranked_level() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = build_order_contract_continuing_below_a_ranked_level();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the order contract");
+    let document_type = contract
+        .document_type_for_name("tab")
+        .expect("tab doctype exists");
+    for (i, (restaurant, day, amount)) in [("alpha", 1, 20), ("alpha", 5, 30), ("beta", 4, 10)]
+        .into_iter()
+        .enumerate()
+    {
+        let mut doc = document_type
+            .random_document(Some(100 + i as u64), pv)
+            .expect("random document");
+        doc.set_properties(BTreeMap::from([
+            (
+                GROUP_PROPERTY.to_string(),
+                Value::Text(restaurant.to_string()),
+            ),
+            ("day".to_string(), Value::I64(day)),
+            ("amount".to_string(), Value::I64(amount)),
+        ]));
+        insert_doc(&drive, &contract, "tab", &doc);
+    }
+
+    let drive_config = DriveConfig::default();
+    let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+        field: field.to_string(),
+        operator,
+        value,
+    };
+    let after_day_three = clause("day", WhereOperator::GreaterThan, Value::I64(3));
+    let alpha = clause(
+        GROUP_PROPERTY,
+        WhereOperator::Equal,
+        Value::Text("alpha".to_string()),
+    );
+    let both = clause(
+        GROUP_PROPERTY,
+        WhereOperator::In,
+        Value::Array(vec![
+            Value::Text("alpha".to_string()),
+            Value::Text("beta".to_string()),
+        ]),
+    );
+    let sum = |where_clauses: Vec<WhereClause>, mode: SumMode, prove: bool| {
+        drive.execute_document_sum_request(
+            DocumentSumRequest {
+                contract: &contract,
+                document_type,
+                sum_property: "amount".to_string(),
+                where_clauses,
+                resolved_time_ranges: vec![],
+                order_clauses: vec![],
+                mode,
+                limit: None,
+                prove,
+                drive_config: &drive_config,
+            },
+            None,
+            pv,
+        )
+    };
+    let average = |where_clauses: Vec<WhereClause>, mode: AverageMode, prove: bool| {
+        drive
+            .execute_document_average_request(
+                DocumentAverageRequest {
+                    contract: &contract,
+                    document_type,
+                    sum_property: "amount".to_string(),
+                    where_clauses,
+                    resolved_time_ranges: vec![],
+                    order_clauses: vec![],
+                    mode,
+                    limit: None,
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                pv,
+            )
+            .map(|_| ())
+    };
+    let refused = |result: Result<(), Error>| {
+        matches!(
+            result,
+            Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+                if message.starts_with("a range total")
+        )
+    };
+
+    for prove in [false, true] {
+        let alpha_range = vec![alpha.clone(), after_day_three.clone()];
+        let both_ranges = vec![both.clone(), after_day_three.clone()];
+        assert!(
+            refused(sum(alpha_range.clone(), SumMode::Aggregate, prove).map(|_| ())),
+            "a range sum total (prove: {prove})"
+        );
+        assert!(
+            refused(sum(both_ranges.clone(), SumMode::GroupByIn, prove).map(|_| ())),
+            "a range sum total per restaurant (prove: {prove})"
+        );
+        assert!(
+            refused(average(alpha_range, AverageMode::Aggregate, prove)),
+            "a range average total (prove: {prove})"
+        );
+        assert!(
+            refused(average(both_ranges, AverageMode::GroupByIn, prove)),
+            "a range average total per restaurant (prove: {prove})"
+        );
+    }
+    match sum(vec![alpha, after_day_three], SumMode::GroupByRange, false)
+        .expect("a range sum per value answers")
+    {
+        DocumentSumResponse::Entries(entries) => assert_eq!(
+            entries.iter().map(|entry| entry.sum).collect::<Vec<_>>(),
+            vec![Some(30)],
+            "alpha's tab after day three"
+        ),
         other => panic!("expected entries, got {other:?}"),
     }
 }

@@ -17,9 +17,8 @@
 //! referenced document's value when the document is written, and the
 //! referenced document is the one the source property's value names.
 
-use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyType, DocumentReferenceKind,
-};
+use super::preallocation::same_contract_record_reference;
+use crate::data_contract::document_type::property::{DocumentProperty, DocumentReferenceKind};
 use crate::data_contract::document_type::Index;
 use indexmap::IndexMap;
 use platform_value::Identifier;
@@ -76,27 +75,15 @@ impl Index {
             }
             let bound_before = derivations.len();
             for source_property in &source.properties {
-                let Some(DocumentPropertyType::IdentifierWithReference(target)) =
+                let Some(reference) =
                     flattened_properties
                         .get(&source_property.name)
-                        .map(|declaration| &declaration.property_type)
+                        .and_then(|declaration| {
+                            same_contract_record_reference(declaration, own_contract_id)
+                        })
                 else {
                     continue;
                 };
-                let Some(reference) = target.as_document_reference().filter(|reference| {
-                    matches!(
-                        reference.kind,
-                        DocumentReferenceKind::Permanent | DocumentReferenceKind::Moderated
-                    )
-                }) else {
-                    continue;
-                };
-                if reference
-                    .contract_id
-                    .is_some_and(|id| id != own_contract_id)
-                {
-                    continue;
-                }
                 let Some(referenced) = reference.property_agreement.get(property) else {
                     continue;
                 };

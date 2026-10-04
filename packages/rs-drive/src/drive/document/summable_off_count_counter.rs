@@ -22,6 +22,7 @@
 //! zero; otherwise the first create of a group inserts it and the delete of
 //! its last document removes it, pruning the trees it leaves empty.
 
+use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -53,12 +54,11 @@ pub(crate) enum CounterChange {
     },
     /// A delete: one document fewer. A preallocated index keeps the counter
     /// at zero; any other removes it with its last document, pruning the trees
-    /// above up to `stop_path_height`.
+    /// above it that it leaves empty, up to the document type's level
+    /// (`CONTRACT_DOCUMENTS_PATH_HEIGHT`), as a drained member bucket's are.
     Decrement {
         /// Whether the index is preallocated.
         keep_at_zero: bool,
-        /// The path height the pruning climb stops at.
-        stop_path_height: u16,
     },
 }
 
@@ -183,7 +183,6 @@ impl Drive {
                 // (`should_upper_bound_an_unlike_with_its_dry_run`).
                 CounterChange::Decrement {
                     keep_at_zero: false,
-                    stop_path_height,
                 } => {
                     let key_size = key_info.max_length();
                     let apply_type = Self::stateless_delete_of_non_tree_for_costs(
@@ -196,7 +195,7 @@ impl Drive {
                     self.batch_delete_up_tree_while_empty(
                         key_info_path,
                         key_info.as_slice(),
-                        Some(stop_path_height),
+                        Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                         apply_type,
                         transaction,
                         previous_batch_operations,
@@ -232,7 +231,7 @@ impl Drive {
                     .key
                     .as_ref()
                     .is_some_and(|key| key.as_slice() == counter_key.as_slice())
-                    && operation.path.to_path() == counter_path
+                    && operation.path.eq_path_vec(&counter_path)
             });
         if already_written {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
@@ -286,10 +285,7 @@ impl Drive {
                     Element::new_sum_item_with_flags(count, flags),
                 ));
             }
-            CounterChange::Decrement {
-                keep_at_zero,
-                stop_path_height,
-            } => {
+            CounterChange::Decrement { keep_at_zero } => {
                 let count = count.filter(|count| *count > 0).ok_or_else(|| {
                     Error::Drive(DriveError::CorruptedDriveState(
                         "a delete reached a summableOffCountIndex index whose group counts no document"
@@ -300,7 +296,7 @@ impl Drive {
                     self.batch_delete_up_tree_while_empty(
                         KeyInfoPath::from_known_owned_path(counter_path),
                         counter_key.as_slice(),
-                        Some(stop_path_height),
+                        Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                             is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },

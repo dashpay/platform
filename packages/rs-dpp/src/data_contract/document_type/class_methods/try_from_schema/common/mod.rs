@@ -3636,13 +3636,9 @@ fn skip_if_absent_index_error(
         .rev()
         .find(|(_, property)| index.skip_if_absent_properties.contains(&property.name));
     if let Some((deepest_skip_position, deepest_skip_property)) = deepest_skip {
-        for ranked_at in index.ranked_at_levels() {
-            let above = index
-                .properties
-                .iter()
-                .position(|property| property.name == *ranked_at)
-                .is_some_and(|position| position < deepest_skip_position);
-            if above {
+        for position in index.at_level_positions(index.ranked_at_levels()) {
+            if position < deepest_skip_position {
+                let ranked_at = &index.properties[position].name;
                 return Some(format!(
                     "index \"{}\" on document type \"{}\" ranks at \"{}\", above its skip \
                      property \"{}\": that ranking would count only documents carrying \"{}\", \
@@ -3839,19 +3835,13 @@ pub(super) fn apply_index_only(
                 if !ranks_here {
                     continue;
                 }
-                let prefix: Vec<String> = (0..=position)
-                    .map(|at| index.level_key(at, &index.properties[at].name))
-                    .collect();
                 if let Some((other_name, _)) =
                     document_type.indices.iter().find(|(other_name, other)| {
                         *other_name != index_name
                             && !other
                                 .skip_if_absent_properties
                                 .contains(&skip_property.name)
-                            && other.properties.len() > position
-                            && (0..=position).all(|at| {
-                                other.level_key(at, &other.properties[at].name) == prefix[at]
-                            })
+                            && index.shares_leading_levels(other, position + 1)
                     })
                 {
                     return Err(structure_error(format!(
@@ -4333,13 +4323,7 @@ pub(super) fn apply_index_only(
         // uniqueness-without-owner shape. A summableOffCountIndex index keeps no
         // entries: a delete takes its count back only once the entries of
         // the indexes that keep them, its source among them, matched.
-        if !index.is_summable_off_count_index()
-            && !index.terminal_contains(OWNER_ID)
-            && !index
-                .properties
-                .iter()
-                .any(|property| property.name == OWNER_ID)
-        {
+        if !index.is_summable_off_count_index() && !index.involves(OWNER_ID) {
             return Err(structure_error(format!(
                 "index \"{}\" on indexOnly document type \"{}\" must include $ownerId (as \
                  a property or as the terminal): every entry must be bound to its owner so \
@@ -4600,14 +4584,8 @@ pub(super) fn apply_index_only(
                 property_name, name,
             )));
         }
-        let holds_property = |index: &Index| {
-            !index.is_summable_off_count_index()
-                && (index.terminal_contains(property_name)
-                    || index
-                        .properties
-                        .iter()
-                        .any(|index_property| index_property.name == *property_name))
-        };
+        let holds_property =
+            |index: &Index| !index.is_summable_off_count_index() && index.involves(property_name);
         if fixed_by_a_source.contains(property_name.as_str()) {
             // Covered by its source's reference; the rules every index
             // holding an optional property follows still apply below.

@@ -47,6 +47,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, Index};
+use dpp::document::property_names::OWNER_ID;
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
@@ -1104,7 +1105,6 @@ impl DriveDocumentQuery<'_> {
 /// mirrors exactly this predicate); prover and verifier share this one
 /// selector, so they can never disagree on the anchor.
 pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<&'a Index, Error> {
-    use dpp::document::property_names::OWNER_ID;
     document_type
         .indexes()
         .values()
@@ -1130,7 +1130,6 @@ pub fn index_only_entry_path_and_key_from_values(
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<Vec<u8>>, Vec<u8>), Error> {
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-    use dpp::document::property_names::OWNER_ID;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 
     let encoded_value_for = |property_name: &str| -> Result<Vec<u8>, Error> {
@@ -1243,7 +1242,7 @@ pub fn synthesize_index_only_document(
     member_key: &[u8],
     element: Option<&grovedb::Element>,
 ) -> Result<Document, Error> {
-    use dpp::document::property_names::{CREATED_AT, OWNER_ID};
+    use dpp::document::property_names::CREATED_AT;
 
     let corrupted =
         |message: &'static str| Error::Drive(DriveError::CorruptedCodeExecution(message));

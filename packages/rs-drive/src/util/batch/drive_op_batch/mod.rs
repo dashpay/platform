@@ -377,8 +377,8 @@ impl Drive {
                 self,
                 block_info,
                 transaction,
-                |contract, document_type, inserts| {
-                    for counter_type in counter_types_moved(contract, document_type, inserts) {
+                |contract, document_type, preallocates| {
+                    for counter_type in counter_types_moved(contract, document_type, preallocates) {
                         if !moved.insert((contract.id(), counter_type)) {
                             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                                 "a batch moves one document type's summableOffCountIndex \
@@ -397,12 +397,12 @@ impl Drive {
 
 /// The document types whose `summableOffCountIndex` counters a write of
 /// `document_type` moves: its own when it keeps them, and, when the write
-/// `inserts` a document, each type whose preallocated counter index the
-/// insert creates.
+/// `preallocates` (a plain insert), each type whose preallocated counter index
+/// the insert creates.
 fn counter_types_moved(
     contract: &DataContract,
     document_type: DocumentTypeRef,
-    inserts: bool,
+    preallocates: bool,
 ) -> BTreeSet<String> {
     let mut moved = BTreeSet::new();
     if document_type
@@ -412,11 +412,12 @@ fn counter_types_moved(
     {
         moved.insert(document_type.name().clone());
     }
-    if inserts {
+    if preallocates {
         moved.extend(
-            preallocation_bindings_targeting(contract, document_type)
-                .filter(|(_, index, _)| index.is_summable_off_count_index())
-                .map(|(referring_type, _, _)| referring_type.name().clone()),
+            preallocation_bindings_targeting(contract, document_type, |index| {
+                index.is_summable_off_count_index()
+            })
+            .map(|(referring_type, _, _)| referring_type.name().clone()),
         );
     }
     moved

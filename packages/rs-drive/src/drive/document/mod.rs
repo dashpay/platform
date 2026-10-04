@@ -13,11 +13,19 @@ use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::util::storage_flags::StorageFlags;
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentPropertyType;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::{DocumentType, Index, PreallocationBinding};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::DataContract;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::document_methods::DocumentMethodsV0;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -52,8 +60,6 @@ mod get_fetch;
 mod index_uniqueness;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert;
-#[cfg(feature = "server")]
-pub(crate) use insert::preallocation_bindings_targeting;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
@@ -179,6 +185,50 @@ pub(crate) fn index_only_member_key(
         member_key.extend(encoded);
     }
     Ok(member_key)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Every preallocated index that `admits` and whose binding targets
+/// `target_document_type`, with the indexOnly referring type holding it and
+/// the binding: what an insert of a `target_document_type` document
+/// preallocates (with `admits` taking every index), in the order it does.
+/// Shared by the preallocation path, the batch methods' counter refusal and
+/// `drive::document::cost`.
+pub(crate) fn preallocation_bindings_targeting<'a>(
+    contract: &'a DataContract,
+    target_document_type: DocumentTypeRef<'a>,
+    admits: impl Fn(&Index) -> bool + Copy + 'a,
+) -> impl Iterator<Item = (DocumentTypeRef<'a>, &'a Index, PreallocationBinding<'a>)> + 'a {
+    contract
+        .document_types()
+        .values()
+        // `preallocated` is only valid on indexOnly document types, so this
+        // filter also keeps the per-insert scan trivially cheap for contracts
+        // without the feature.
+        .filter(|referring_type| referring_type.index_only())
+        .flat_map(move |referring_type: &'a DocumentType| {
+            referring_type
+                .indexes()
+                .values()
+                .filter(move |index| index.preallocated && admits(index))
+                .flat_map(move |index| {
+                    // Target-filtered derivation: candidates naming other
+                    // target types are rejected before any binding plan is
+                    // allocated — this runs on every document insert. Through
+                    // a moderatedDocument reference, only a binding every key
+                    // of which the inserted document's removal record would
+                    // keep (registration makes sure each preallocated index
+                    // has one).
+                    index
+                        .preallocation_bindings_for_target(
+                            referring_type.flattened_properties(),
+                            contract.id(),
+                            target_document_type,
+                        )
+                        .into_iter()
+                        .map(move |binding| (referring_type.as_ref(), index, binding))
+                })
+        })
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]

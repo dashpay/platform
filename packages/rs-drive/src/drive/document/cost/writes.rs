@@ -19,7 +19,7 @@ use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeTyp
 use crate::drive::document::{
     bound_value_fits_referring_property, encode_index_only_entry_payload, index_only_member_key,
     index_only_row_commitment, make_document_reference, make_document_reference_with_sum_item,
-    read_document_sum_contribution,
+    preallocation_bindings_targeting, read_document_sum_contribution,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -262,10 +262,10 @@ impl Context<'_> {
     }
 
     /// The document's contribution to the sum of its value trees at `level`.
-    /// On a `summableOffCountIndex` index it adds one to its group's counter,
-    /// and so one to the sum of every level of the chain carrying that sum.
+    /// A chain carrying a `summableOffCountIndex` index's sums gains one at
+    /// every level, as the document's counter does (`counter_write`).
     fn sum_contribution(&self, level: &IndexLevel) -> Result<i64, Error> {
-        if level.summable_off_count_index_info().is_some() || level.chain_carries_sums() {
+        if level.chain_carries_sums() {
             return Ok(1);
         }
         match level
@@ -550,13 +550,14 @@ impl Context<'_> {
         };
         for key in keys {
             if level.summable_off_count_index_info().is_some() {
+                let indexes = self.writing_indexes(&names);
                 self.counter_write(
                     &path,
                     key,
-                    level,
                     tree_types.property_name_tree_type,
                     &tree_types.ranked_axes,
-                    &names,
+                    indexes,
+                    1,
                     flags.as_ref(),
                     ephemeral,
                 )?;
@@ -680,13 +681,14 @@ impl Context<'_> {
             let mut property_path = path.to_vec();
             property_path.push(sub_key.as_bytes().to_vec());
             if sub_level.summable_off_count_index_info().is_some() {
+                let indexes = self.writing_indexes(&sub_names);
                 self.counter_write(
                     &property_path,
                     raw,
-                    sub_level,
                     sub_tree_types.property_name_tree_type,
                     &sub_tree_types.ranked_axes,
-                    &sub_names,
+                    indexes,
+                    1,
                     flags,
                     ephemeral,
                 )?;
@@ -731,34 +733,26 @@ impl Context<'_> {
         Ok(())
     }
 
-    /// A `summableOffCountIndex` index's counter for the document's group at
-    /// `key` under the property-name tree at `path`: inserted the first
-    /// time, rewritten in place (at its fixed size, adding no storage) after
-    /// that, so it adds storage only when absent; the processing of the
-    /// rewrite is counted whether or not it is absent (`processing_costs`).
-    /// Its ranking rows hold the group's one count and the document's one
-    /// entry.
+    /// A `summableOffCountIndex` index's counter at `key` under the
+    /// property-name tree at `path`, holding `sum`: inserted the first time,
+    /// rewritten in place (at its fixed size, adding no storage) after that,
+    /// so it adds storage only when absent; the processing of the rewrite is
+    /// counted whether or not it is absent (`processing_costs`). Its ranking
+    /// rows hold the group's one count and `sum`: a document's entry adds one,
+    /// a preallocated counter starts at zero. A document reaches it only when
+    /// the index does not skip it (`reaches_entry`).
     #[allow(clippy::too_many_arguments)]
     fn counter_write(
         &mut self,
         path: &[Vec<u8>],
         key: Vec<u8>,
-        level: &IndexLevel,
         property_name_tree_type: TreeType,
         ranked_axes: &[IndexAxis],
-        names: &[String],
+        indexes: Vec<String>,
+        sum: i64,
         flags: Option<&StorageFlags>,
         ephemeral: bool,
     ) -> Result<(), Error> {
-        let indexes = self.writing_indexes(names);
-        // The index ending here writes its counter only for a document it
-        // does not skip.
-        let Some(info) = level.has_index_with_type() else {
-            return Ok(());
-        };
-        if !self.takes_part(&info.skip_if_absent_properties)? {
-            return Ok(());
-        }
         self.push(Write {
             path: path.to_vec(),
             key: key.clone(),
@@ -773,7 +767,6 @@ impl Context<'_> {
             expiration: false,
             flagged: flags.is_some(),
         });
-        let sum = self.sum_contribution(level)?;
         self.ranking_rows(path, &key, ranked_axes, 1, sum, &indexes, ephemeral)
     }
 
@@ -836,28 +829,13 @@ impl Context<'_> {
             .document_flags
             .clone()
             .filter(|_| contract.config().can_be_deleted());
-        for referring in contract.document_types().values() {
-            let referring = referring.as_ref();
-            if !referring.index_only() {
-                continue;
-            }
-            for index in referring
-                .indexes()
-                .values()
-                .filter(|index| index.preallocated)
-            {
-                for binding in index.preallocation_bindings_for_target(
-                    referring.flattened_properties(),
-                    contract.id(),
-                    target,
-                ) {
-                    self.referring_type = Some(referring.name().clone());
-                    let result =
-                        self.preallocation(referring, index, &binding.key_sources, flags.as_ref());
-                    self.referring_type = None;
-                    result?;
-                }
-            }
+        for (referring, index, binding) in
+            preallocation_bindings_targeting(contract, target, |_| true)
+        {
+            self.referring_type = Some(referring.name().clone());
+            let result = self.preallocation(referring, index, &binding.key_sources, flags.as_ref());
+            self.referring_type = None;
+            result?;
         }
         Ok(())
     }
@@ -958,27 +936,15 @@ impl Context<'_> {
             // place of the value tree and its empty terminal: it counts one
             // group and nothing towards the sum.
             if info.is_summable_off_count_index() && position + 1 == index.properties.len() {
-                self.push(Write {
-                    path: path.clone(),
-                    key: raw.clone(),
-                    element: counter(flags),
-                    parent: tree_types.property_name_tree_type,
-                    role: LayoutRole::IndexValue,
-                    indexes: indexes.clone(),
-                    if_absent: true,
-                    ephemeral: false,
-                    ranking: None,
-                    referring_type: None,
-                    expiration: false,
-                    flagged: flags.is_some(),
-                });
-                return self.ranking_rows(
+                // A preallocated index is never under a time window.
+                return self.counter_write(
                     &path,
-                    &raw,
+                    raw,
+                    tree_types.property_name_tree_type,
                     &tree_types.ranked_axes,
-                    1,
+                    indexes.clone(),
                     0,
-                    &indexes,
+                    flags,
                     false,
                 );
             }

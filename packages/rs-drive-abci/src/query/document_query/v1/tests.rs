@@ -5152,7 +5152,7 @@ mod time_range_proof_verification {
     /// with more brands in range than that default, the proof verifies to the
     /// first of them.
     #[test]
-    fn a_range_outer_carrier_count_without_a_limit_verifies_through_the_sdk() {
+    fn should_verify_a_range_outer_carrier_count_without_a_limit_through_the_sdk() {
         let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
         let contract = DataContractFactory::new(version.protocol_version)
             .expect("expected a factory")

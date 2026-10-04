@@ -91,7 +91,7 @@ where    = color IN[...] AND brand > "brand_050"
 group_by = [color, brand]
 ```
 
-> `where clause on non indexed property error: range count requires a `range_countable: true` index whose last property matches the range field`
+> `where clause on non indexed property error: range count requires a `range_countable: true` (or summableOffCountIndex) index whose last property matches the range field`
 
 **Why.** The covering index for `(group_by[0] = color, group_by[1] = brand)` would need to be `byColorBrand` with `rangeCountable: true` on the `brand` terminator. The widget contract doesn't have that index — only `byBrand`, `byColor`, and `byBrandColor`. The dispatcher's index picker walks every declared index, finds none whose `(properties, last_property_is_range_countable)` shape matches the request, and rejects with the "non-indexed property" error.
 

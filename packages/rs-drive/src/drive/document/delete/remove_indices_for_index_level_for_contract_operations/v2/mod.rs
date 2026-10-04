@@ -10,7 +10,6 @@ use dpp::data_contract::document_type::{IndexLevel, IndexType};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     document_takes_part_in_index, index_level_tree_types_with_continuation_demotion,
@@ -225,7 +224,6 @@ impl Drive {
                     property_name_tree_type,
                     CounterChange::Decrement {
                         keep_at_zero: index_type.preallocated,
-                        stop_path_height: CONTRACT_DOCUMENTS_PATH_HEIGHT,
                     },
                     *storage_flags,
                     || {

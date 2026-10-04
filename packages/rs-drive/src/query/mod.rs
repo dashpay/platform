@@ -136,6 +136,8 @@ use {
 use crate::verify::RootHash;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 #[cfg(feature = "server")]
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -1363,9 +1365,10 @@ pub fn index_admissible_for_skip_if_absent(
     if !index.skip_if_absent {
         return true;
     }
-    // An index of an indexOnly type carries a terminal, except a
-    // `summableOffCountIndex` index, which keeps counters instead of entries.
-    let index_only = index.terminal.is_some() || index.is_summable_off_count_index();
+    // Every protocol version reaches this; `is_index_only`'s counter term is
+    // inert before protocol version 14, the only one whose grammar admits the
+    // keyword.
+    let index_only = index.is_index_only();
     index.skip_if_absent_properties.iter().all(|skip_property| {
         bindings.iter().any(|binding| {
             binding.field == skip_property.as_str() && (index_only || binding.excludes_missing)
@@ -1393,6 +1396,11 @@ pub fn index_admissible_for_query(
 /// [`index_admissible_for_query`] for a picker reading documents through the
 /// index's entries: a `summableOffCountIndex` index keeps none (its source
 /// serves the documents it counts), so it never serves such a read.
+///
+/// Unversioned, so every protocol version reaches it (the document pickers of
+/// every lowering): only protocol version 14's grammar admits a
+/// `summableOffCountIndex` index, so before it this is exactly
+/// [`index_admissible_for_query`].
 #[cfg(any(feature = "server", feature = "verify"))]
 pub fn document_index_admissible_for_query(
     index: &Index,
@@ -1419,39 +1427,46 @@ pub fn pins_reach_chain(index: &Index, pin_depth: usize, chain_position: Option<
 
 /// Refuses a range total (one aggregate over a range, or one per carrier
 /// branch) read through `index` when its path passes through a ranked level:
-/// one the index ranks itself, or one another of the type's `indexes` ranks
-/// at a level the two share (an index may continue below another's ranked
-/// last property). A ranked level's property-name tree is an indexed tree,
-/// which grovedb's range aggregates neither read (`AggregateCountOnRange`,
-/// `AggregateSumOnRange` and `AggregateCountAndSumOnRange` take provable trees
-/// only) nor descend through when proving. Grouped by the last property, the
-/// same range reads each value. The count, sum and count-and-sum range-total
-/// path builders all call it, so the unproven read, the proof and its
-/// verification refuse alike.
+/// a level whose property-name tree Drive lays out as an indexed tree,
+/// whichever of the type's indexes ranks it (an index may continue below
+/// another's ranked last property). It walks the type's index structure along
+/// the index's levels and asks each the resolver the write path uses
+/// ([`property_name_tree_type_and_ranked_axes_for_level`]), so it reads the
+/// layout Drive builds. grovedb's range aggregates neither read an indexed
+/// tree (`AggregateCountOnRange`, `AggregateSumOnRange` and
+/// `AggregateCountAndSumOnRange` take provable trees only) nor descend
+/// through one when proving. Grouped by the last property, the same range
+/// reads each value. The count, sum and count-and-sum range-total path
+/// builders all call it, so the unproven read, the proof and its verification
+/// refuse alike.
 ///
 /// Unversioned, so every protocol version reaches it: rankings exist only
-/// from protocol version 14 (meta-schema v3), so it refuses nothing before.
+/// from protocol version 14 (meta-schema v3), so no level is an indexed tree
+/// before and it refuses nothing.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub fn refuse_a_range_total_through_a_ranked_index(
-    indexes: &BTreeMap<String, Index>,
+    document_type: DocumentTypeRef,
     index: &Index,
 ) -> Result<(), Error> {
-    let ranked_level_on_the_path = |other: &Index| {
-        other
-            .at_level_positions(other.ranked_at_levels())
-            .chain(
-                other
-                    .properties
-                    .len()
-                    .checked_sub(1)
-                    .filter(|_| other.ranks_its_last_property()),
-            )
-            .any(|position| {
-                position < index.properties.len()
-                    && index.shares_leading_levels(other, position + 1)
-            })
-    };
-    if !index.declares_any_ranking() && !indexes.values().any(ranked_level_on_the_path) {
+    let mut level = document_type.index_structure();
+    let mut crosses_a_ranked_level = false;
+    for (position, property) in index.properties.iter().enumerate() {
+        let Some(sub_level) = level
+            .sub_levels()
+            .get(&index.level_key(position, &property.name))
+        else {
+            break;
+        };
+        if !property_name_tree_type_and_ranked_axes_for_level(sub_level)?
+            .1
+            .is_empty()
+        {
+            crosses_a_ranked_level = true;
+            break;
+        }
+        level = sub_level;
+    }
+    if !crosses_a_ranked_level {
         return Ok(());
     }
     let last = index
@@ -3041,6 +3056,9 @@ impl<'a> DriveDocumentQuery<'a> {
             range_field,
             in_field,
             order_by_keys.as_slice(),
+            // The document form of the gate, reached by every protocol version:
+            // its counter exclusion is inert before protocol version 14 (see
+            // `document_index_admissible_for_query`).
             |index| {
                 document_index_admissible_for_query(
                     index,

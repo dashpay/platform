@@ -422,7 +422,7 @@ mod limit_policy_regression {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::data_contract::DataContractFactory;
+    use dpp::data_contract::{DataContract, DataContractFactory};
     use dpp::document::{Document, DocumentV0};
     use dpp::identifier::Identifier;
     use dpp::platform_value::{platform_value, Value};
@@ -435,10 +435,7 @@ mod limit_policy_regression {
 
     /// Build a contract at `protocol_version` with one `widget` doctype
     /// carrying `document_schema`, owned by a fixed identity.
-    fn build_widget_contract_with(
-        protocol_version: u32,
-        document_schema: Value,
-    ) -> dpp::data_contract::DataContract {
+    fn build_widget_contract_with(protocol_version: u32, document_schema: Value) -> DataContract {
         DataContractFactory::new(protocol_version)
             .expect("create factory")
             .create_with_value_config(
@@ -457,7 +454,7 @@ mod limit_policy_regression {
     /// index — `summable: "amount"` + `rangeSummable: true` — is what
     /// the SUM `RangeDistinctProof` arm walks (color = the per-distinct
     /// terminator key, amount = the summed per-doc value).
-    fn build_widget_contract() -> dpp::data_contract::DataContract {
+    fn build_widget_contract() -> DataContract {
         build_widget_contract_with(
             PROTOCOL_VERSION_V12,
             platform_value!({
@@ -480,13 +477,7 @@ mod limit_policy_regression {
 
     /// Insert one widget document at the given `(color, amount)` pair
     /// using the index `(i+1)` as a unique 32-byte id.
-    fn insert_widget(
-        drive: &Drive,
-        contract: &dpp::data_contract::DataContract,
-        i: usize,
-        color: &str,
-        amount: u64,
-    ) {
+    fn insert_widget(drive: &Drive, contract: &DataContract, i: usize, color: &str, amount: u64) {
         insert_widget_with(
             drive,
             contract,
@@ -503,7 +494,7 @@ mod limit_policy_regression {
     /// using the index `(i+1)` as a unique 32-byte id.
     fn insert_widget_with(
         drive: &Drive,
-        contract: &dpp::data_contract::DataContract,
+        contract: &DataContract,
         i: usize,
         properties: StdBTreeMap<String, Value>,
         platform_version: &PlatformVersion,

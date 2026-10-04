@@ -265,7 +265,7 @@ pub(super) fn verify_count_query(
             &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "prove count requires a `countable: true` index whose properties \
+            error: "prove count requires a `countable: true` (or summableOffCountIndex) index whose properties \
                     exactly match the where clause fields, or `documentsCountable: \
                     true` on the document type for unfiltered total counts"
                 .to_string(),

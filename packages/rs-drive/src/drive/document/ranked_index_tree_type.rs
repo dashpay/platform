@@ -202,7 +202,9 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
 pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
     level: &IndexLevel,
 ) -> Result<(TreeType, Vec<IndexAxis>), Error> {
-    if level.is_ranked_chain_level() {
+    // A level on a prefix-ranking chain (`is_ranked_chain_level`): the tree
+    // its values get, aggregating what the chain carries.
+    if let Some(value_tree_type) = ranked_chain_value_tree_type(level) {
         if level.has_index_with_type().is_some() {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
                 "a prefix-ranking (grouping or propagating) index level cannot also \
@@ -219,11 +221,6 @@ pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
         // A propagating level's tree is the tree its values get; a grouping
         // level's is the indexed mirror of the provable tree carrying the
         // same aggregates, for the axes ranked at it.
-        let Some(value_tree_type) = ranked_chain_value_tree_type(level) else {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "a prefix-ranking chain level carries neither counts nor sums",
-            )));
-        };
         if axes.is_empty() {
             return Ok((value_tree_type, axes));
         }

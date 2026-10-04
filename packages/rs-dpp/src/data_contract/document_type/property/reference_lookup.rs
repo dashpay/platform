@@ -683,35 +683,9 @@ impl DocumentReferenceLookup {
     /// immutable on contract update, and the `immutable` list may only grow,
     /// so the answer holds for good.
     fn moving_key_part(&self, referenced: DocumentTypeRef) -> Option<(&str, &'static str)> {
-        let changes_owner = owner_can_change(referenced);
-        let replaceable = referenced.documents_mutable();
         self.keys.keys().find_map(|index_property| {
-            let why = match index_property.as_str() {
-                ID
-                | CREATOR_ID
-                | CREATED_AT
-                | CREATED_AT_BLOCK_HEIGHT
-                | CREATED_AT_CORE_BLOCK_HEIGHT => None,
-                OWNER_ID => changes_owner.then_some("a transfer or a purchase changes"),
-                UPDATED_AT | UPDATED_AT_BLOCK_HEIGHT | UPDATED_AT_CORE_BLOCK_HEIGHT => (replaceable
-                    || changes_owner)
-                    .then_some("a replace, a transfer or a purchase changes"),
-                TRANSFERRED_AT | TRANSFERRED_AT_BLOCK_HEIGHT | TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
-                    changes_owner.then_some("a transfer or a purchase changes")
-                }
-                property => {
-                    if referenced
-                        .moderator_changeable_fields()
-                        .contains(top_level_property(property))
-                    {
-                        Some(MODERATORS_CHANGE)
-                    } else {
-                        (!schema_property_is_fixed_once_written(referenced, property))
-                            .then_some("a replace can change")
-                    }
-                }
-            };
-            why.map(|why| (index_property.as_str(), why))
+            why_value_can_change(referenced, index_property)
+                .map(|why| (index_property.as_str(), why))
         })
     }
 
@@ -763,6 +737,45 @@ impl DocumentReferenceLookup {
 pub fn owner_can_change(document_type: DocumentTypeRef) -> bool {
     document_type.documents_transferable().is_transferable()
         || document_type.trade_mode() != TradeMode::None
+}
+
+/// How the value `property` names, of a document of `referenced`, can change
+/// after the document is written, `None` when it is fixed for good: `$id`,
+/// `$creatorId` and the creation times never change; `$ownerId` and the
+/// transfer times change with a transfer or a purchase, the update times also
+/// with a replace; a schema property is fixed when
+/// [`schema_property_is_fixed_once_written`] says so, and its moderators'
+/// fields are named as such. Shared by a lookup's key and the
+/// `summableOffCountIndex` lossless rule, so the two judge a value alike.
+pub(crate) fn why_value_can_change(
+    referenced: DocumentTypeRef,
+    property: &str,
+) -> Option<&'static str> {
+    let changes_owner = owner_can_change(referenced);
+    match property {
+        ID | CREATOR_ID | CREATED_AT | CREATED_AT_BLOCK_HEIGHT | CREATED_AT_CORE_BLOCK_HEIGHT => {
+            None
+        }
+        OWNER_ID => changes_owner.then_some("a transfer or a purchase changes"),
+        UPDATED_AT | UPDATED_AT_BLOCK_HEIGHT | UPDATED_AT_CORE_BLOCK_HEIGHT => {
+            (referenced.documents_mutable() || changes_owner)
+                .then_some("a replace, a transfer or a purchase changes")
+        }
+        TRANSFERRED_AT | TRANSFERRED_AT_BLOCK_HEIGHT | TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
+            changes_owner.then_some("a transfer or a purchase changes")
+        }
+        property => {
+            if referenced
+                .moderator_changeable_fields()
+                .contains(top_level_property(property))
+            {
+                Some(MODERATORS_CHANGE)
+            } else {
+                (!schema_property_is_fixed_once_written(referenced, property))
+                    .then_some("a replace can change")
+            }
+        }
+    }
 }
 
 /// Whether the schema property at `path` of a document of `document_type` can

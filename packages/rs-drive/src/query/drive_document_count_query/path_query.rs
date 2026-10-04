@@ -20,15 +20,31 @@ use super::{
     prefix_to_last_count_reads_documents, DriveDocumentCountQuery,
 };
 use crate::drive::RootTree;
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{pins_reach_chain, refuse_a_range_total_through_a_ranked_index};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
 impl DriveDocumentCountQuery<'_> {
+    /// Refuses a `summableOffCountIndex` index: its range counts are its range
+    /// sums, read through [`Self::counter_sums_query`], while its count trees
+    /// count groups, one per counter. Every count range executor and verifier
+    /// hands such an index to the sum surface before building, so this only
+    /// stops a caller that skipped that. Unversioned: only protocol version 14
+    /// admits such an index, so it refuses nothing before.
+    fn refuse_a_counter_index(&self) -> Result<(), Error> {
+        if self.index.is_summable_off_count_index() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a count range path query over a summableOffCountIndex index: its range counts \
+                 are its range sums (counter_sums_query)",
+            )));
+        }
+        Ok(())
+    }
+
     /// Convert a single range where-clause + value into the grovedb
     /// `QueryItem` used to walk children of the property-name
     /// `ProvableCountTree`. The clause's value is serialized via the
@@ -191,8 +207,9 @@ impl DriveDocumentCountQuery<'_> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_counter_index()?;
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.document_type.indexes(), self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)?;
         let range_clause = self
             .where_clauses
             .iter()
@@ -308,8 +325,9 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_counter_index()?;
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.document_type.indexes(), self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)?;
         // The terminator property (last in the index) carries the
         // ACOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:
@@ -541,6 +559,7 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_counter_index()?;
         let range_clause = self
             .where_clauses
             .iter()
