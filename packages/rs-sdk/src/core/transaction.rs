@@ -505,6 +505,71 @@ mod tests {
         }
     }
 
+    /// Script one `getTransaction` reply for `txid` on a mock SDK.
+    async fn sdk_answering(txid: &str, transaction: Vec<u8>) -> Sdk {
+        let sdk = Sdk::new_mock();
+        sdk.mock_dapi_client()
+            .lock()
+            .await
+            .expect(
+                &GetTransactionRequest {
+                    id: txid.to_string(),
+                },
+                &Ok(rs_dapi_client::ExecutionResponse {
+                    inner: reply(transaction),
+                    retries: 0,
+                    address: "http://127.0.0.1:1443".parse().expect("address"),
+                }),
+            )
+            .expect("expectation");
+        sdk
+    }
+
+    fn tx(lock_time: u32) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time,
+            input: Vec::new(),
+            output: Vec::new(),
+            special_transaction_payload: None,
+        }
+    }
+
+    /// The getters' contract: the requested transaction is returned; an empty
+    /// reply or another transaction is a miss; an unparsable txid is refused
+    /// before any request.
+    #[tokio::test]
+    async fn should_return_only_the_requested_transaction_from_the_getters() {
+        let wanted = tx(1);
+        let id = wanted.txid().to_string();
+
+        let sdk = sdk_answering(&id, serialize(&wanted)).await;
+        let fetched = sdk.get_transaction(&id).await.expect("ok").expect("found");
+        assert_eq!(fetched.transaction, wanted);
+        let placed = sdk
+            .get_transaction_placement(&id, RequestSettings::default())
+            .await
+            .expect("ok")
+            .expect("found");
+        assert_eq!(placed.transaction, wanted);
+
+        for answer in [Vec::new(), serialize(&tx(2))] {
+            let sdk = sdk_answering(&id, answer).await;
+            assert!(sdk.get_transaction(&id).await.expect("ok").is_none());
+            assert!(sdk
+                .get_transaction_placement(&id, RequestSettings::default())
+                .await
+                .expect("ok")
+                .is_none());
+        }
+
+        let refused = Sdk::new_mock().get_transaction("not a txid").await;
+        assert!(
+            matches!(refused, Err(Error::Generic(ref message)) if message.contains("invalid txid")),
+            "{refused:?}"
+        );
+    }
+
     /// A reply is read, never trusted: empty or another transaction is a
     /// miss, undecodable bytes are an error, only the requested one is
     /// returned.

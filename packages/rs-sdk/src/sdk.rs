@@ -337,6 +337,16 @@ impl Sdk {
             .expect("mock should be created")
     }
 
+    /// The mock DAPI client, for unit tests that script raw transport
+    /// requests (no proof involved).
+    #[cfg(all(test, feature = "mocks"))]
+    pub(crate) fn mock_dapi_client(&self) -> Arc<Mutex<MockDapiClient>> {
+        match &self.inner {
+            SdkInstance::Mock { dapi, .. } => Arc::clone(dapi),
+            _ => panic!("not a mock sdk"),
+        }
+    }
+
     /// Return freshness criteria (height tolerance and time tolerance) for given request method.
     ///
     /// Note that if self.metadata_height_tolerance or self.metadata_time_tolerance_ms is None,

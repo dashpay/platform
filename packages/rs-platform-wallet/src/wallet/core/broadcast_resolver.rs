@@ -1005,14 +1005,19 @@ struct Actor {
     /// can end its run instead of leaving the wallet stuck behind it.
     /// A probe job also names its root.
     job_runs: HashMap<task::Id, (WalletId, u64, Option<Txid>)>,
-    /// Sends dash-spv reported `Uncertain`, with the height they were
-    /// recorded at (`None` before any wallet height is known: stamped at the
-    /// next followed block): a later peer echo of one of them is its
-    /// acceptance. Removed by its echo, its settling, a holder lookup that
-    /// finds no unsettled own send, [`UNCERTAIN_EXPIRY`] followed blocks after
-    /// it was recorded, and all at switch-off. One no wallet resolves (its
-    /// wallet removed, say) lingers until it expires.
+    /// Sends dash-spv reported `Uncertain`, with the followed height their
+    /// echo window starts at (`None` until the next followed block after the
+    /// latest report — a report while the wallets catch up starts nothing):
+    /// a later peer echo of one of them is its acceptance. Removed by its
+    /// echo, its settling, a holder lookup that finds no unsettled own send,
+    /// [`UNCERTAIN_EXPIRY`] followed blocks into its window, and all at
+    /// switch-off. One no wallet resolves (its wallet removed, say) lingers
+    /// until it expires.
     uncertain: HashMap<Txid, Option<u32>>,
+    /// The highest height any wallet has followed the tip at: the one clock
+    /// the echo windows run on, so a wallet behind the others (rescanning,
+    /// rewound) neither stamps nor expires them.
+    followed_tip: Option<u32>,
     /// Echoes whose holder lookup is out, by the token their result carries.
     /// A send that settles, or a wallet that leaves or re-registers, withdraws
     /// them: an acceptance landing after that must not reach the host.
@@ -1037,6 +1042,7 @@ impl Actor {
             jobs: JoinSet::new(),
             job_runs: HashMap::new(),
             uncertain: HashMap::new(),
+            followed_tip: None,
             echo_lookups: HashMap::new(),
             next_echo_token: 0,
         }
@@ -1263,8 +1269,9 @@ impl Actor {
                 if !self.enabled {
                     return;
                 }
-                let recorded = self.wallets.values().filter_map(|entry| entry.height).max();
-                self.uncertain.entry(txid).or_insert(recorded);
+                // A new report restarts the window, from the next followed
+                // block.
+                self.uncertain.insert(txid, None);
                 // Routed to the registered wallets holding it, including ones
                 // no height step has reached yet.
                 let source = Arc::clone(&self.source);
@@ -1337,12 +1344,16 @@ impl Actor {
         deliver(&self.sink, events);
     }
 
-    /// A followed block at `height`: forget the `Uncertain` sends recorded
-    /// [`UNCERTAIN_EXPIRY`] blocks before it, and stamp those recorded before
-    /// any height was known.
+    /// A wallet followed the tip to `height`: advance the one clock, start
+    /// the echo windows of the sends reported since the last followed block,
+    /// and forget those [`UNCERTAIN_EXPIRY`] blocks into their window.
     fn expire_uncertain(&mut self, height: u32) {
-        self.uncertain.retain(|_, recorded| {
-            let at = *recorded.get_or_insert(height);
+        if self.followed_tip.is_some_and(|tip| tip >= height) {
+            return; // a wallet behind another: not the clock
+        }
+        self.followed_tip = Some(height);
+        self.uncertain.retain(|_, start| {
+            let at = *start.get_or_insert(height);
             height < at.saturating_add(UNCERTAIN_EXPIRY)
         });
     }
@@ -3030,9 +3041,9 @@ mod tests {
         assert!(rig.actor.uncertain.is_empty());
     }
 
-    /// An echo within [`UNCERTAIN_EXPIRY`] followed blocks of the `Uncertain`
-    /// result still makes an own send Accepted; one after it is ignored —
-    /// the send's own probes decide by then.
+    /// An echo within [`UNCERTAIN_EXPIRY`] followed blocks of the window an
+    /// `Uncertain` result starts (at the next followed block) still makes an
+    /// own send Accepted; one after it is ignored — the probes decide by then.
     #[tokio::test]
     async fn should_accept_an_echo_only_within_the_expiry() {
         for (blocks, accepted) in [(UNCERTAIN_EXPIRY - 1, true), (UNCERTAIN_EXPIRY, false)] {
@@ -3041,7 +3052,8 @@ mod tests {
             rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
             rig.follow(wallet(), 100).await; // at 101
             rig.send(Command::Uncertain(txid(1))).await;
-            for height in 102..=101 + blocks {
+            // The window starts at 102.
+            for height in 102..=102 + blocks {
                 rig.height(wallet(), height).await;
             }
             rig.sent();
@@ -3052,9 +3064,59 @@ mod tests {
                 rig.sent()
                     .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)),
                 accepted,
-                "after {blocks} blocks"
+                "{blocks} blocks into the window"
             );
         }
+    }
+
+    /// The window starts only once a wallet follows the tip, and runs on the
+    /// highest followed height: catch-up steps and a wallet behind the
+    /// others neither start nor end it.
+    #[tokio::test]
+    async fn should_run_the_echo_window_on_the_followed_tip_only() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        let behind = [9u8; 32];
+        rig.send(Command::WalletAdded(behind)).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        // Reported while nothing follows: no window yet.
+        rig.send(Command::Uncertain(txid(1))).await;
+        assert_eq!(rig.actor.uncertain.get(&txid(1)), Some(&None));
+
+        // Catch-up steps (the first step, then a jump) start nothing.
+        rig.height(wallet(), 500).await;
+        rig.height(wallet(), 1000).await;
+        assert_eq!(rig.actor.uncertain.get(&txid(1)), Some(&None));
+
+        // The first followed block starts it.
+        rig.height(wallet(), 1001).await;
+        assert_eq!(rig.actor.uncertain.get(&txid(1)), Some(&Some(1001)));
+
+        // A wallet far behind, following its own (lower) steps, changes
+        // nothing; nor does a catch-up jump far ahead.
+        rig.follow(behind, 600).await;
+        rig.height(wallet(), 1001 + UNCERTAIN_EXPIRY + 50).await;
+        assert!(rig.actor.uncertain.contains_key(&txid(1)));
+
+        // The tip followed past the window ends it.
+        rig.height(wallet(), 1001 + UNCERTAIN_EXPIRY + 51).await;
+        assert!(rig.actor.uncertain.is_empty());
+    }
+
+    /// A new `Uncertain` report of the same send restarts its echo window
+    /// from the next followed block.
+    #[tokio::test]
+    async fn should_restart_the_echo_window_on_a_new_report() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.height(wallet(), 102).await;
+        assert_eq!(rig.actor.uncertain.get(&txid(1)), Some(&Some(102)));
+
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.height(wallet(), 103).await;
+
+        assert_eq!(rig.actor.uncertain.get(&txid(1)), Some(&Some(103)));
     }
 
     /// Turning probing off forgets every `Uncertain` send.
