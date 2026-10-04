@@ -204,8 +204,8 @@ public final class CoreTransactionBuilder {
 
     /// Add a chosen subset of the account's UTXOs (as returned by
     /// `PlatformWalletManager.accountUtxos`) as inputs. Each must belong to
-    /// the account, be spendable (an immature coinbase output or a locked
-    /// coin is refused as an invalid parameter — waiting does not cure it),
+    /// the account, be spendable (a locked coin, or a coinbase output not yet
+    /// matured — 100 blocks — is refused as an invalid parameter, not code 59),
     /// not be pinned by an in-flight broadcast (refused as an unknown error
     /// naming the coin, until that refusal has a code of its own), and be
     /// final (code 59 otherwise).

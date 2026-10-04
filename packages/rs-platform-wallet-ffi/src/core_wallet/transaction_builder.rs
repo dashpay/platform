@@ -992,9 +992,10 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// are selected from the account's own UTXO set (the same ones
 /// `platform_wallet_account_utxos` returns). An outpoint not owned by the
 /// account is an error (`ErrorWalletOperation`); one owned is refused by name,
-/// in the finalizer's order: unspendable — an immature coinbase output or a
-/// locked coin, which confirmation alone does not cure —
-/// (`ErrorInvalidParameter`, "not spendable"), pinned by an in-flight
+/// in the finalizer's order: unspendable — a locked coin, or an immature
+/// coinbase output (spendable once it matures, 100 blocks after its block;
+/// neither is cured by the InstantSend lock or confirmation code 59 waits for)
+/// — (`ErrorInvalidParameter`, "not spendable"), pinned by an in-flight
 /// broadcast (input mid-broadcast; `ErrorUnknown` until it has a code of its
 /// own, the outpoint in the message), then not final yet (code 59). Nothing is
 /// recorded unless every outpoint passes.
@@ -2100,36 +2101,44 @@ mod real_finalizer_tests {
         unsafe { core_wallet_tx_builder_destroy(builder) };
     }
 
-    /// A final coin an in-flight broadcast pins is refused when it is named,
-    /// as the finalizer would refuse it (input mid-broadcast, which crosses
-    /// as `ErrorUnknown`) — not recorded, and not code 59.
+    /// A coin an in-flight broadcast pins is refused when it is named, as the
+    /// finalizer would refuse it (input mid-broadcast, which crosses as
+    /// `ErrorUnknown`) — final or not: the fence comes before code 59, since
+    /// waiting would not clear it. Not recorded.
     #[test]
     fn should_refuse_a_coin_pinned_by_an_in_flight_broadcast() {
-        let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
-        let platform_wallet = runtime()
-            .block_on(manager.get_wallet(&wallet_id))
-            .expect("wallet present");
-        let coin = runtime().block_on(add_bip44_coin(&platform_wallet, 8_999_774, true, COIN_TAG));
-        let _pin = runtime().block_on(pin_in_broadcast(&platform_wallet, coin));
-        let wallet = PLATFORM_WALLET_STORAGE.insert(platform_wallet.clone());
-        let builder = app_payment(1_000_000);
-        let chosen = [coin_outpoint()];
-        let added = unsafe {
-            core_wallet_tx_builder_add_inputs_from_outpoints(
-                builder,
-                wallet,
-                CoreAccountTypeFFI::BIP44,
-                0,
-                chosen.as_ptr(),
-                chosen.len(),
-            )
-        };
-        PLATFORM_WALLET_STORAGE.remove(wallet);
-        assert_eq!(added.code, PlatformWalletFFIResultCode::ErrorUnknown);
-        let message = unsafe { CStr::from_ptr(added.message) }.to_string_lossy();
-        assert!(message.contains(&coin.to_string()), "{message}");
-        assert!(unsafe { (*builder).state() }.inputs.is_empty());
-        unsafe { core_wallet_tx_builder_destroy(builder) };
+        for final_ in [true, false] {
+            let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
+            let platform_wallet = runtime()
+                .block_on(manager.get_wallet(&wallet_id))
+                .expect("wallet present");
+            let coin = runtime().block_on(add_bip44_coin(
+                &platform_wallet,
+                8_999_774,
+                final_,
+                COIN_TAG,
+            ));
+            let _pin = runtime().block_on(pin_in_broadcast(&platform_wallet, coin));
+            let wallet = PLATFORM_WALLET_STORAGE.insert(platform_wallet.clone());
+            let builder = app_payment(1_000_000);
+            let chosen = [coin_outpoint()];
+            let added = unsafe {
+                core_wallet_tx_builder_add_inputs_from_outpoints(
+                    builder,
+                    wallet,
+                    CoreAccountTypeFFI::BIP44,
+                    0,
+                    chosen.as_ptr(),
+                    chosen.len(),
+                )
+            };
+            PLATFORM_WALLET_STORAGE.remove(wallet);
+            assert_eq!(added.code, PlatformWalletFFIResultCode::ErrorUnknown);
+            let message = unsafe { CStr::from_ptr(added.message) }.to_string_lossy();
+            assert!(message.contains(&coin.to_string()), "{message}");
+            assert!(unsafe { (*builder).state() }.inputs.is_empty());
+            unsafe { core_wallet_tx_builder_destroy(builder) };
+        }
     }
 
     /// The app's Send: one output, default rate, the pooled sources.

@@ -214,7 +214,7 @@ fn record_facts(
 /// send — the same rule as [`merge_records`]: settled in any account means
 /// settled, and own in any account means own.
 fn is_unsettled_own<'a>(records: impl IntoIterator<Item = RecordFacts<'a>>) -> bool {
-    // No allocation: this runs per wallet on every late acceptance.
+    // No allocation: this runs per holding wallet on every holder lookup.
     records
         .into_iter()
         .try_fold(false, |own, record| {
@@ -764,15 +764,20 @@ fn holds(info: &PlatformWalletInfo, txid: &Txid) -> bool {
 fn holding(wallet: &Wallet, info: &PlatformWalletInfo, txid: &Txid) -> Option<bool> {
     let signs = wallet.can_sign();
     let accounts = info.core_wallet.accounts.all_accounts();
-    let records: Vec<RecordFacts<'_>> = accounts
-        .iter()
-        .filter_map(|account| {
-            account.transactions().get(txid).map(|record| {
-                record_facts(record, || account.transaction_is_finalized(txid), signs)
+    // No allocation: `is_unsettled_own` stops at the first settled record,
+    // which has been seen by then.
+    let mut held = false;
+    let own = is_unsettled_own(
+        accounts
+            .iter()
+            .filter_map(|account| {
+                account.transactions().get(txid).map(|record| {
+                    record_facts(record, || account.transaction_is_finalized(txid), signs)
+                })
             })
-        })
-        .collect();
-    (!records.is_empty()).then(|| is_unsettled_own(records))
+            .inspect(|_| held = true),
+    );
+    held.then_some(own)
 }
 
 struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);

@@ -819,8 +819,10 @@ pub async fn add_bip44_coin(
     outpoint
 }
 
-/// Pin `outpoint` the way an in-flight broadcast of `wallet` does, until the
-/// returned guard drops. For FFI tests of the mid-broadcast refusal.
+/// Pin `outpoint` the way an in-flight broadcast of `wallet` does. Dropping
+/// the returned guard settles it as a pending spend, so the outpoint stays
+/// pinned until the wallet sees it spent — use a fresh wallet per test. For
+/// FFI tests of the mid-broadcast refusal.
 pub async fn pin_in_broadcast(
     wallet: &PlatformWallet,
     outpoint: OutPoint,

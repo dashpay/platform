@@ -101,8 +101,9 @@ pub(crate) fn is_final(utxo: &Utxo) -> bool {
 }
 
 /// Whether a coin the caller chose as an input can go into a build, in the
-/// one order every entry point refuses in: unspendable first (an immature
-/// coinbase output, a locked coin — confirmation alone would not change it),
+/// one order every entry point refuses in: unspendable first (a locked coin,
+/// or an immature coinbase output until it matures — not what the network's
+/// confirmation of the coin cures),
 /// then pinned by an in-flight broadcast (`pinned`; the build would refuse it
 /// after selection anyway), then not final (code 59, the only refusal waiting
 /// cures). Public for platform-wallet-ffi only.
