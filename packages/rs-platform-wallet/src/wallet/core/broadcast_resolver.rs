@@ -732,10 +732,6 @@ pub(crate) trait WalletSource: Send + Sync {
     /// is an unsettled own send — one look under one lock.
     async fn holders(&self, txid: Txid) -> Holders;
 
-    /// The wallets in which `txid` is still an unsettled own send — the only
-    /// ones a late acceptance may still be news to.
-    async fn unsettled_own_holders(&self, txid: Txid) -> Vec<WalletId>;
-
     /// `None`: no such wallet. `Some(None)`: nothing to do (see
     /// [`forced_held`]) — decided without walking the records. `walk` is read
     /// once the wallet is at hand: a catch-up may clear it meanwhile.
@@ -790,20 +786,6 @@ impl WalletSource for ManagerSource {
             }
         }
         holders
-    }
-
-    async fn unsettled_own_holders(&self, txid: Txid) -> Vec<WalletId> {
-        let manager = self.0.read().await;
-        manager
-            .list_wallets()
-            .into_iter()
-            .filter(|wallet_id| {
-                manager
-                    .get_wallet_and_info(wallet_id)
-                    .is_some_and(|(wallet, info)| holds_unsettled_own(wallet, info, &txid))
-            })
-            .copied()
-            .collect()
     }
 
     async fn read(
@@ -910,11 +892,18 @@ enum Command {
 /// A send reported `Uncertain`: who holds it, as far as known.
 #[derive(Debug, Default)]
 struct Uncertain {
+    /// Names this entry: a lookup counts only against the entry it was
+    /// started for, not a later one for the same txid (after an echo, a
+    /// settle or a switch-off removed the first).
+    id: u64,
     /// Holder lookups still out for it.
     lookups: u32,
     /// The wallets the finished lookups found holding it as an unsettled own
     /// send.
     holders: HashSet<WalletId>,
+    /// Wallets removed while a lookup was out: a lookup that read the
+    /// manager before the removal must not bring them back.
+    removed: HashSet<WalletId>,
 }
 
 impl Uncertain {
@@ -1044,7 +1033,8 @@ struct Actor {
     uncertain: HashMap<Txid, Uncertain>,
     /// The `Uncertain` holder lookups out, by job: one that panics still
     /// counts as finished, with no holder found.
-    listed_jobs: HashMap<task::Id, Txid>,
+    listed_jobs: HashMap<task::Id, (Txid, u64)>,
+    next_uncertain_id: u64,
     /// Echoes whose holder lookup is out, by the token their result carries.
     /// A send that settles, or a wallet that leaves or re-registers, withdraws
     /// them: an acceptance landing after that must not reach the host.
@@ -1070,6 +1060,7 @@ impl Actor {
             job_runs: HashMap::new(),
             uncertain: HashMap::new(),
             listed_jobs: HashMap::new(),
+            next_uncertain_id: 0,
             echo_lookups: HashMap::new(),
             next_echo_token: 0,
         }
@@ -1104,16 +1095,16 @@ impl Actor {
                 self.job_runs.remove(&id);
                 // Counted only for a lookup still on the books: one from
                 // before probing was turned off belongs to no entry now.
-                if let (Some(txid), JobDone::Listed { own, .. }) =
+                if let (Some((txid, entry)), JobDone::Listed { own, .. }) =
                     (self.listed_jobs.remove(&id), &done)
                 {
-                    self.holders_found(txid, own);
+                    self.holders_found(txid, entry, own);
                 }
                 self.job_done(done);
             }
             Err(error) => {
-                if let Some(txid) = self.listed_jobs.remove(&error.id()) {
-                    self.holders_found(txid, &[]);
+                if let Some((txid, entry)) = self.listed_jobs.remove(&error.id()) {
+                    self.holders_found(txid, entry, &[]);
                 }
                 let owner = self.job_runs.remove(&error.id());
                 if !error.is_panic() {
@@ -1303,7 +1294,16 @@ impl Actor {
                 if !self.enabled {
                     return;
                 }
-                self.uncertain.entry(txid).or_default().lookups += 1;
+                let next_id = &mut self.next_uncertain_id;
+                let uncertain = self.uncertain.entry(txid).or_insert_with(|| {
+                    *next_id += 1;
+                    Uncertain {
+                        id: *next_id,
+                        ..Uncertain::default()
+                    }
+                });
+                uncertain.lookups += 1;
+                let entry = uncertain.id;
                 // Routed to the registered wallets holding it, including ones
                 // no height step has reached yet.
                 let source = Arc::clone(&self.source);
@@ -1311,7 +1311,7 @@ impl Actor {
                     let Holders { wallets, own } = source.holders(txid).await;
                     JobDone::Listed { txid, wallets, own }
                 });
-                self.listed_jobs.insert(job.id(), txid);
+                self.listed_jobs.insert(job.id(), (txid, entry));
             }
             Command::Echoed(txid) => {
                 // Every healthy send is echoed: only one that was `Uncertain`
@@ -1326,7 +1326,7 @@ impl Actor {
                 self.jobs.spawn(async move {
                     JobDone::EchoListed {
                         txid,
-                        wallets: source.unsettled_own_holders(txid).await,
+                        wallets: source.holders(txid).await.own,
                         token,
                     }
                 });
@@ -1379,6 +1379,9 @@ impl Actor {
         if removed {
             self.uncertain.retain(|_, uncertain| {
                 uncertain.holders.remove(wallet_id);
+                if uncertain.lookups > 0 {
+                    uncertain.removed.insert(*wallet_id);
+                }
                 !uncertain.is_orphaned()
             });
         }
@@ -1391,13 +1394,29 @@ impl Actor {
     /// a wallet's `WalletAdded` may still be on its way). Still awaiting its
     /// echo (not echoed or settled meanwhile), it is kept only while one of
     /// them holds it or another lookup is out.
-    fn holders_found(&mut self, txid: Txid, own: &[WalletId]) {
-        if let Some(uncertain) = self.uncertain.get_mut(&txid) {
-            uncertain.lookups = uncertain.lookups.saturating_sub(1);
-            uncertain.holders.extend(own.iter().copied());
-            if uncertain.is_orphaned() {
-                self.uncertain.remove(&txid);
-            }
+    /// `entry` names the entry the lookup was started for: one removed and
+    /// opened again since is not its business.
+    fn holders_found(&mut self, txid: Txid, entry: u64, own: &[WalletId]) {
+        let Some(uncertain) = self
+            .uncertain
+            .get_mut(&txid)
+            .filter(|uncertain| uncertain.id == entry)
+        else {
+            return;
+        };
+        uncertain.lookups = uncertain.lookups.saturating_sub(1);
+        let removed = &uncertain.removed;
+        let found: Vec<WalletId> = own
+            .iter()
+            .filter(|wallet_id| !removed.contains(*wallet_id))
+            .copied()
+            .collect();
+        uncertain.holders.extend(found);
+        if uncertain.lookups == 0 {
+            uncertain.removed.clear();
+        }
+        if uncertain.is_orphaned() {
+            self.uncertain.remove(&txid);
         }
     }
 
@@ -1449,13 +1468,9 @@ impl Actor {
                 if !self.enabled {
                     return;
                 }
-                // Only a wallet the actor was told about (see `WalletAdded`):
-                // one removed since the lookup is gone.
-                let wallets: Vec<WalletId> = wallets
-                    .into_iter()
-                    .filter(|wallet_id| self.wallets.contains_key(wallet_id))
-                    .collect();
                 for wallet_id in wallets {
+                    // Only a wallet the actor was told about (see
+                    // `WalletAdded`): one removed since the lookup is gone.
                     let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                         continue;
                     };
@@ -1992,6 +2007,7 @@ mod tests {
     use dashcore::Address;
     use dashcore::{BlockHash, OutPoint, TxIn};
     use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::managed_account::transaction_record::{
         InputDetail, TransactionDirection, TransactionRecord,
     };
@@ -2003,6 +2019,7 @@ mod tests {
     use tokio::time::{sleep, timeout};
 
     use super::*;
+    use crate::test_support::test_platform_wallet_manager;
 
     fn txid(n: u8) -> Txid {
         Txid::from_byte_array([n; 32])
@@ -2122,6 +2139,85 @@ mod tests {
             Vec::new(),
             -100_000,
         )
+    }
+
+    /// The production holder lookup, on a real wallet: every record holding
+    /// the txid makes the wallet a holder, and only an unsettled own send
+    /// (spends the wallet's coins, signed by it, not settled) makes it one an
+    /// echo could still be news to.
+    #[tokio::test]
+    async fn should_tell_holders_from_unsettled_own_holders_in_a_real_wallet() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let platform_wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let wallet_manager = Arc::clone(platform_wallet.wallet_manager());
+        {
+            let mut guard = wallet_manager.write().await;
+            let (_, info) = guard.get_wallet_and_info_mut(&wallet_id).expect("wallet");
+            let records = info
+                .core_wallet
+                .accounts
+                .funds_account_mut(&standard_account())
+                .expect("bip44 account")
+                .transactions_mut();
+            let own = spending_record(standard_account(), tx(1, &[outpoint(90, 0)]));
+            let incoming = record(2, TransactionContext::Mempool);
+            let mut settled = spending_record(standard_account(), tx(3, &[outpoint(91, 0)]));
+            settled.context = in_block();
+            for record in [own, incoming, settled] {
+                records.insert(record.txid, record);
+            }
+        }
+        // Records are keyed by the real txid.
+        let id = |n: u8| tx(n, &[]).txid();
+        let (own_txid, incoming_txid, settled_txid) = (
+            tx(1, &[outpoint(90, 0)]).txid(),
+            record(2, TransactionContext::Mempool).txid,
+            tx(3, &[outpoint(91, 0)]).txid(),
+        );
+        let source = ManagerSource(wallet_manager);
+
+        let own = source.holders(own_txid).await;
+        assert_eq!((own.wallets, own.own), (vec![wallet_id], vec![wallet_id]));
+        for not_own in [incoming_txid, settled_txid] {
+            let holders = source.holders(not_own).await;
+            assert_eq!(holders.wallets, vec![wallet_id], "held");
+            assert!(holders.own.is_empty(), "but not an unsettled own send");
+        }
+        assert!(source.holders(id(4)).await.wallets.is_empty());
+    }
+
+    /// A lookup started for an entry removed since (echoed, settled) is not
+    /// counted against the entry a later report opens for the same txid.
+    #[tokio::test]
+    async fn should_not_count_a_lookup_against_a_later_entry_for_the_same_txid() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.handle(Command::Uncertain(txid(1)));
+        let first = rig.actor.uncertain[&txid(1)].id;
+        rig.handle(Command::Settled {
+            wallet_id: wallet(),
+            txids: HashSet::from([txid(1)]),
+        });
+        rig.handle(Command::Uncertain(txid(1)));
+        assert_ne!(rig.actor.uncertain[&txid(1)].id, first);
+
+        rig.actor.holders_found(txid(1), first, &[]);
+
+        assert_eq!(rig.actor.uncertain[&txid(1)].lookups, 1, "not counted");
+    }
+
+    /// A lookup that read the manager before a wallet's removal does not bring
+    /// the removed wallet back as a holder.
+    #[tokio::test]
+    async fn should_not_bring_back_a_wallet_removed_while_its_lookup_was_out() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.handle(Command::Uncertain(txid(1)));
+
+        rig.handle(Command::WalletRemoved(wallet()));
+        rig.settle().await;
+
+        assert!(rig.actor.uncertain.is_empty());
     }
 
     /// The contact spending a payment it received from us: our watch-only
@@ -2857,21 +2953,6 @@ mod tests {
                 wallets: held(false),
                 own: held(true),
             }
-        }
-
-        async fn unsettled_own_holders(&self, txid: Txid) -> Vec<WalletId> {
-            self.views
-                .lock()
-                .expect("views")
-                .iter()
-                .filter(|(_, views)| {
-                    // Views are the wallet's unsettled records.
-                    views
-                        .iter()
-                        .any(|view| view.txid == txid && view.spends_own_coins)
-                })
-                .map(|(wallet_id, _)| *wallet_id)
-                .collect()
         }
 
         async fn read(

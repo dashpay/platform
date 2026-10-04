@@ -349,9 +349,9 @@ async fn confirm_by_lookup(
 
 /// Which node answered a `getTransaction` lookup and what the answer says. A
 /// reply is read the way the SDK reads one ([`transaction_from_reply`]): an
-/// empty one is the node not knowing the txid, like gRPC `NOT_FOUND`; bytes
-/// that do not decode, or decode to another transaction, are no answer — never
-/// evidence that it exists.
+/// empty one, or one carrying another transaction, is the node not showing the
+/// txid, like gRPC `NOT_FOUND`; bytes that do not decode are no answer —
+/// neither is evidence that it exists.
 fn lookup_reply(
     txid: &Txid,
     result: ExecutionResult<GetTransactionResponse, DapiClientError>,
@@ -841,9 +841,9 @@ mod tests {
     }
 
     /// The production lookup adapter reads a reply as the SDK does: empty
-    /// bytes are the node not knowing the txid, malformed bytes or another
-    /// transaction are no answer — neither is evidence that it exists — and
-    /// the node that answered is kept either way.
+    /// bytes or another transaction are the node not showing the txid,
+    /// malformed bytes are no answer — neither is evidence that it exists —
+    /// and the node that answered is kept either way.
     #[test]
     fn should_not_take_an_empty_or_malformed_lookup_reply_as_known() {
         let held = Transaction {
@@ -875,10 +875,7 @@ mod tests {
 
         let other = consensus::serialize(&transaction());
         let (_, mismatched) = lookup_reply(&txid, reply(other));
-        assert!(
-            matches!(mismatched, LookupAnswer::Unknown { .. }),
-            "{mismatched:?}"
-        );
+        assert_eq!(mismatched, LookupAnswer::NotFound);
 
         let (_, known) = lookup_reply(&txid, reply(consensus::serialize(&held)));
         assert_eq!(known, in_mempool());

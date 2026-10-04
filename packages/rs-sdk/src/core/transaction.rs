@@ -88,11 +88,12 @@ fn decode_transaction(bytes: &[u8]) -> Result<Transaction, Error> {
 }
 
 /// The transaction a successful `getTransaction` reply for `expected`
-/// carries: `Ok(None)` for an empty reply (the node does not know it — the
-/// same as gRPC `NOT_FOUND`), `Err` for bytes that do not decode or decode to
-/// another transaction — a node's reply is never taken on trust. Takes the
-/// reply alone, so a caller that executes the request itself keeps the
-/// serving node's address.
+/// carries. `Ok(None)` when the reply does not carry it: empty (the node does
+/// not know it — the same as gRPC `NOT_FOUND`) or another transaction (a
+/// faulty node; never returned in its place — a miss, so a caller retries as
+/// it would for one). `Err` for bytes that do not decode. Takes the reply
+/// alone, so a caller that executes the request itself keeps the serving
+/// node's address.
 pub fn transaction_from_reply(
     response: &GetTransactionResponse,
     expected: &Txid,
@@ -102,10 +103,12 @@ pub fn transaction_from_reply(
     }
     let transaction = decode_transaction(&response.transaction)?;
     if transaction.txid() != *expected {
-        return Err(Error::Generic(format!(
-            "getTransaction for {expected} answered with transaction {}",
-            transaction.txid()
-        )));
+        tracing::warn!(
+            requested = %expected,
+            answered = %transaction.txid(),
+            "getTransaction answered with another transaction; treated as a miss"
+        );
+        return Ok(None);
     }
     Ok(Some(transaction))
 }
@@ -498,10 +501,11 @@ mod tests {
         }
     }
 
-    /// A reply is read, never trusted: empty is absent, undecodable bytes or
-    /// another transaction are errors, only the requested one is returned.
+    /// A reply is read, never trusted: empty or another transaction is a
+    /// miss, undecodable bytes are an error, only the requested one is
+    /// returned.
     #[test]
-    fn transaction_from_reply_returns_only_the_requested_transaction() {
+    fn should_return_only_the_requested_transaction_from_a_reply() {
         let tx = |lock_time| Transaction {
             version: 1,
             lock_time,
@@ -517,7 +521,10 @@ mod tests {
             Ok(None)
         ));
         assert!(transaction_from_reply(&reply(vec![0xff, 0x01]), &txid).is_err());
-        assert!(transaction_from_reply(&reply(serialize(&tx(2))), &txid).is_err());
+        assert!(matches!(
+            transaction_from_reply(&reply(serialize(&tx(2))), &txid),
+            Ok(None)
+        ));
         assert_eq!(
             transaction_from_reply(&reply(serialize(&wanted)), &txid).expect("decodes"),
             Some(wanted)
