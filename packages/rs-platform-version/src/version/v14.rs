@@ -1964,12 +1964,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `create_owner_identity` 2 and `update_masternode_identities` 1
 ///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`), a masternode without an owner
 ///     address gets no owner identity, only its voter and operator identities;
-///     one with an owner address and a single payout address (the payout
-///     address, else the only entry of a one-entry payout list) gets the
-///     version 1 identity, TRANSFER key id 0 and OWNER key id 1, byte for byte;
-///     and one paid to several payouts gets an owner identity with only the
-///     OWNER key id 1. Updates are unchanged: only a `payoutAddress` change
-///     rotates the TRANSFER key, and a `payouts` change is not acted on. This
+///     one with an owner address and either a legacy payout address or a sole
+///     payout with a matching P2PKH script gets the version 1 identity,
+///     TRANSFER key id 0 and OWNER key id 1, byte for byte; other payout shapes
+///     get only OWNER key id 1. Legacy payout-address rotation is unchanged.
+///     Payout-list changes retain, re-enable or add the sole supported P2PKH
+///     TRANSFER key and disable obsolete TRANSFER keys. Split, empty or
+///     unsupported lists disable all TRANSFER authority while preserving OWNER
+///     and balance. Historical updaters keep their payout-list policy. This
 ///     version must be active on a network before its Dash Core activates V24,
 ///     since earlier versions keep failing on these masternodes.
 ///

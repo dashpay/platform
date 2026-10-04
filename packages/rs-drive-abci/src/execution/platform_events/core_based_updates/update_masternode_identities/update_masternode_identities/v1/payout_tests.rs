@@ -66,6 +66,10 @@ struct PayoutFixture {
 
 impl PayoutFixture {
     fn new() -> Self {
+        Self::with_split_payout(false)
+    }
+
+    fn with_split_payout(initial_split: bool) -> Self {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig {
@@ -110,10 +114,17 @@ impl PayoutFixture {
                 owner_address: Some(owner_key.public_key_hash().expect("owner hash")),
                 voting_address: [0x74; 20],
                 payout_address: None,
-                payouts: Some(vec![payout(
-                    original_key.public_key_hash().expect("payout hash"),
-                    10000,
-                )]),
+                payouts: Some(if initial_split {
+                    vec![
+                        payout(original_key.public_key_hash().expect("payout hash"), 5000),
+                        payout([0x76; 20], 5000),
+                    ]
+                } else {
+                    vec![payout(
+                        original_key.public_key_hash().expect("payout hash"),
+                        10000,
+                    )]
+                }),
                 pub_key_operator: vec![0x75; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
@@ -274,6 +285,64 @@ impl PayoutFixture {
             .expect("process signed withdrawal")
             .into_execution_results()
     }
+}
+
+#[tokio::test]
+async fn should_create_first_transfer_key_and_withdraw_from_an_initially_owner_only_identity() {
+    let mut fixture = PayoutFixture::with_split_payout(true);
+    let transaction = fixture.platform.drive.grove.start_transaction();
+    let initial = fixture.identity(&transaction);
+    assert_eq!(
+        initial.public_keys().keys().copied().collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert!(recent_keys(&fixture, &transaction).is_empty());
+    fixture.update(
+        vec![payout(
+            fixture
+                .original_key
+                .public_key_hash()
+                .expect("sole payout hash"),
+            10000,
+        )],
+        &transaction,
+    );
+    let identity = fixture.identity(&transaction);
+    assert_eq!(
+        identity.public_keys().keys().copied().collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    assert_eq!(
+        identity.public_keys().get(&1),
+        initial.public_keys().get(&1)
+    );
+    assert_eq!(identity.balance(), initial.balance());
+    let transfer = identity
+        .public_keys()
+        .get(&2)
+        .expect("first transfer key")
+        .clone();
+    assert_eq!(transfer.purpose(), Purpose::TRANSFER);
+    assert!(!transfer.is_disabled());
+    assert_eq!(
+        recent_keys(&fixture, &transaction),
+        BTreeMap::from([(2, transfer.clone())])
+    );
+    let secret = *fixture
+        .signer
+        .private_keys
+        .get(&fixture.original_key)
+        .expect("payout secret");
+    fixture
+        .signer
+        .add_identity_public_key(transfer.clone(), secret);
+    assert_matches!(
+        fixture
+            .withdraw(&identity, &transfer, 1, true, &transaction)
+            .await
+            .as_slice(),
+        [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+    );
 }
 
 #[tokio::test]

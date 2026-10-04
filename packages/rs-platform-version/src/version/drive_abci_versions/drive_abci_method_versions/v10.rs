@@ -24,8 +24,12 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// from the epochs it was priced for.
 /// `create_owner_identity` 2 and `update_masternode_identities` 1 decide the owner identity of
 /// the masternodes Dash Core lists from v24 on, on which version 1 fails: none without an owner
-/// address (a shared masternode), the version 1 identity for a payout list with one entry, and
-/// only the OWNER key for several payouts.
+/// address (a shared masternode), the version 1 identity for a legacy payout address or a sole
+/// payout with a matching P2PKH script, and only the OWNER key for other payout lists.
+/// Payout-list changes reconcile TRANSFER keys: retain, re-enable or add the supported sole
+/// recipient and disable obsolete authority; split, empty or unsupported lists disable all
+/// TRANSFER keys while preserving OWNER and balance. Historical updater behavior and legacy
+/// payout-address rotation remain unchanged.
 /// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
@@ -51,10 +55,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
             get_voter_identifier_from_masternode_list_item: 0,
             get_operator_identifier_from_masternode_list_item: 0,
             create_operator_identity: 0,
-            create_owner_identity: 2, // changed in v14: no owner identity without an owner address; only the OWNER key for several payouts
+            create_owner_identity: 2, // no owner identity without an owner; TRANSFER authority requires a sole supported payout
             create_voter_identity: 0,
             disable_identity_keys: 0,
-            update_masternode_identities: 1, // changed in v14: adds no owner identity where create_owner_identity gives none
+            update_masternode_identities: 1, // tolerates absent owner identities and reconciles payout-list TRANSFER authority
             update_operator_identity: 0,
             update_owner_withdrawal_address: 1,
             update_voter_identity: 0,
