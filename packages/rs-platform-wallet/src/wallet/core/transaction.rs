@@ -156,32 +156,40 @@ pub(crate) fn trial_with_waiting_coins(
     if reservation_only {
         return None;
     }
+    // The waiting coins of each offered account, read before anything is
+    // cloned: a shortfall with none (the common case) costs no copy.
     let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
-    let mut clones: HashMap<AccountType, ManagedCoreFundsAccount> = HashMap::new();
-    for (position, at) in offered.iter().enumerate() {
+    let mut pending: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
+    for at in offered {
         let Some(managed) = accounts.funds_account(at) else {
             continue;
         };
-        let pending: Vec<OutPoint> = managed
-            .spendable_utxos(height)
-            .into_iter()
-            .filter(|utxo| !is_final(utxo))
-            .map(|utxo| utxo.outpoint)
-            .collect();
-        if pending.is_empty() && position != 0 {
-            continue;
-        }
-        let mut clone = managed.clone();
-        for outpoint in pending {
-            if let Some(utxo) = clone.utxos.get_mut(&outpoint) {
-                utxo.is_instantlocked = true;
-                waiting.insert(outpoint, utxo.value());
+        for utxo in managed.spendable_utxos(height) {
+            if !is_final(utxo) {
+                waiting.insert(utxo.outpoint, utxo.value());
+                pending.entry(*at).or_default().push(utxo.outpoint);
             }
         }
-        clones.insert(*at, clone);
     }
     if waiting.is_empty() {
         return None;
+    }
+    let mut clones: HashMap<AccountType, ManagedCoreFundsAccount> = HashMap::new();
+    for (position, at) in offered.iter().enumerate() {
+        let outpoints = pending.remove(at);
+        if outpoints.is_none() && position != 0 {
+            continue;
+        }
+        let Some(managed) = accounts.funds_account(at) else {
+            continue;
+        };
+        let mut clone = managed.clone();
+        for outpoint in outpoints.into_iter().flatten() {
+            if let Some(utxo) = clone.utxos.get_mut(&outpoint) {
+                utxo.is_instantlocked = true;
+            }
+        }
+        clones.insert(*at, clone);
     }
     let mut trial = trial
         .set_current_height(height)
@@ -199,10 +207,12 @@ pub(crate) fn trial_with_waiting_coins(
             },
         };
     }
-    let (transaction, _, _) = trial.build_unsigned_reserved().ok()?;
-    for at in offered {
-        if let Some(managed) = accounts.funds_account(at) {
-            managed.release_reservation(&transaction);
+    let (transaction, _, token) = trial.build_unsigned_reserved().ok()?;
+    if let Some(token) = token {
+        for at in offered {
+            if let Some(managed) = accounts.funds_account(at) {
+                managed.release_reservation_if_owner(&transaction, token);
+            }
         }
     }
     let spent = transaction
@@ -1014,18 +1024,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // this guard.
             let (unsigned, fee, reservation_token) =
                 builder.build_unsigned_reserved().map_err(|error| {
+                    // Only a shortfall can be waiting on the network.
+                    let trial = make.filter(|_| is_shortfall(&error));
                     let error = map_builder_error(error, funding_context);
-                    let Some(make) = make else {
+                    let Some(make) = trial else {
                         return error;
                     };
-                    // Only a shortfall can be waiting on the network.
-                    if !matches!(
-                        error,
-                        PlatformWalletError::CoreInsufficientFunds { .. }
-                            | PlatformWalletError::CorePooledInsufficientFunds { .. }
-                    ) {
-                        return error;
-                    }
                     let waiting = make().ok().and_then(|trial| {
                         trial_with_waiting_coins(
                             trial,
