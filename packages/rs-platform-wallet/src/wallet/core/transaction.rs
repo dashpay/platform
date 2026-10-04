@@ -1402,10 +1402,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // An input the caller seeded on the builder itself is its
             // snapshot, and key-wallet keeps it over the resident entry, so a
             // coin a reorg has since demoted would pass on its old confirmed
-            // flag. The resident coins are what gets signed: check those,
-            // still under the write guard.
-            if let Some(stale) = selected.iter().find(|utxo| !is_final(utxo)) {
-                let error = input_awaiting_network(stale);
+            // flag (or as unlocked). The resident coins are what gets signed:
+            // check those, still under the write guard, in the one order
+            // every entry point refuses in — unspendable before not final, so
+            // a locked coin is not reported as waiting. Pins were refused
+            // above, for the whole transaction.
+            let no_pins = HashSet::new();
+            if let Some(error) = selected
+                .iter()
+                .find_map(|utxo| check_chosen_input(utxo, height, &no_pins).err())
+            {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(error);
             }
@@ -1605,7 +1611,7 @@ mod tests {
 
     use async_trait::async_trait;
     use dashcore::secp256k1::{ecdsa, PublicKey};
-    use dashcore::{Address as DashAddress, Network, Transaction, TxIn};
+    use dashcore::{Address as DashAddress, Network, OutPoint, Transaction, TxIn};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::signer::{Signer, SignerMethod};
     use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
@@ -3297,7 +3303,7 @@ mod tests {
             AccountTypePreference::BIP44,
             AccountTypePreference::AllDashpayReceivingFunds,
         ];
-        let refused = |result: &Result<_, PlatformWalletError>, seeded: dashcore::OutPoint| {
+        let refused = |result: &Result<_, PlatformWalletError>, seeded: OutPoint| {
             matches!(
                 result,
                 Err(PlatformWalletError::ChosenInputUnavailable {
@@ -3652,6 +3658,90 @@ mod tests {
                 .await
                 .unwrap_or_else(|error| panic!("{case}: {error:?}"));
         }
+    }
+
+    /// A coin seeded on the builder while final, then locked and demoted
+    /// before finalization: the resident coin is refused as unspendable —
+    /// not as waiting, which would not clear the lock — before anything is
+    /// signed, and leaves no reservation behind, in strict and pooled funding,
+    /// with ordinary and `reservation_only` funding.
+    #[tokio::test]
+    async fn should_refuse_a_seeded_coin_locked_and_demoted_as_unspendable() {
+        let pooled = [
+            AccountTypePreference::BIP44,
+            AccountTypePreference::AllDashpayReceivingFunds,
+        ];
+        let strict = [preference(StandardAccountType::BIP44Account)];
+        for (sources, reservation_only) in [
+            (&strict[..], false),
+            (&strict[..], true),
+            (&pooled[..], false),
+            (&pooled[..], true),
+        ] {
+            let case = format!(
+                "sources={} reservation_only={reservation_only}",
+                sources.len()
+            );
+            let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+            let seeded = bip44_coin(&core).await;
+            let options = || FinalizeOptions {
+                reservation_only,
+                ..FinalizeOptions::default()
+            };
+            set_bip44_finality(&manager, &wallet_id, false).await;
+            set_bip44_lock(&manager, &wallet_id, seeded.outpoint, true).await;
+
+            // The failing signer proves signing never ran.
+            let result = core
+                .finalize_transaction_with_options(
+                    payment_builder(80).add_inputs([seeded.clone()]),
+                    options(),
+                    sources,
+                    0,
+                    &FailingSigner,
+                )
+                .await;
+            assert!(
+                matches!(
+                    result,
+                    Err(PlatformWalletError::ChosenInputUnavailable {
+                        outpoint,
+                        problem: ChosenInputProblem::NotSpendable,
+                    }) if outpoint == seeded.outpoint
+                ),
+                "{case}: got {result:?}"
+            );
+
+            // Nothing stays reserved: unlocked and final again, it builds.
+            set_bip44_lock(&manager, &wallet_id, seeded.outpoint, false).await;
+            set_bip44_finality(&manager, &wallet_id, true).await;
+            core.finalize_transaction_with_options(
+                payment_builder(81).add_inputs([seeded.clone()]),
+                options(),
+                sources,
+                0,
+                &signer,
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{case}: {error:?}"));
+        }
+    }
+
+    async fn set_bip44_lock(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: &WalletId,
+        outpoint: OutPoint,
+        locked: bool,
+    ) {
+        let mut manager = manager.write().await;
+        let (_, info) = manager.get_wallet_and_info_mut(wallet_id).expect("wallet");
+        info.core_wallet
+            .first_bip44_managed_account_mut()
+            .expect("bip44 account")
+            .utxos
+            .get_mut(&outpoint)
+            .expect("coin")
+            .is_locked = locked;
     }
 
     /// A final coin chosen by outpoint that is not spendable (locked here; an
