@@ -1972,7 +1972,7 @@ mod tests {
     use key_wallet::Network;
     use key_wallet::WalletCoreBalance;
     use tokio::sync::Notify;
-    use tokio::time::{sleep, timeout};
+    use tokio::time::timeout;
 
     use super::*;
     use crate::test_support::test_platform_wallet_manager;
@@ -3566,29 +3566,6 @@ mod tests {
         assert!(state.schedules[&(wallet(), txid(1))].is_due(100));
     }
 
-    /// Two stops at once: the second waits for the first and never reports
-    /// the task gone while it still runs.
-    #[tokio::test]
-    async fn should_not_report_a_running_task_as_not_running_to_a_concurrent_stop() {
-        let (stop, _stopped) = oneshot::channel();
-        let handle = tokio::spawn(sleep(Duration::from_millis(200)));
-        let slot = Mutex::new(ActorSlot::Running(handle, stop));
-        let stopping = AsyncMutex::new(());
-        let started = Instant::now();
-
-        let (first, second) = tokio::join!(
-            stop_slot(&slot, &stopping, Duration::from_secs(5)),
-            stop_slot(&slot, &stopping, Duration::from_secs(5)),
-        );
-
-        assert_eq!(first, WorkerStatus::Ok);
-        assert_eq!(second, WorkerStatus::NotRunning);
-        assert!(
-            started.elapsed() >= Duration::from_millis(150),
-            "waited for the task"
-        );
-    }
-
     /// A task that ends only when the test releases it: no stop can finish
     /// before then, whatever the executor's timing.
     fn held_task() -> (JoinHandle<()>, oneshot::Sender<()>) {
@@ -3603,8 +3580,55 @@ mod tests {
         matches!(*slot.lock().expect("slot"), ActorSlot::Stopping(_))
     }
 
+    fn is_taken(slot: &Mutex<ActorSlot>) -> bool {
+        matches!(*slot.lock().expect("slot"), ActorSlot::Closed)
+    }
+
+    /// Poll `future` exactly once: its output if it is ready then.
+    async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> Option<F::Output> {
+        tokio::select! {
+            biased;
+            output = future => Some(output),
+            () = std::future::ready(()) => None,
+        }
+    }
+
+    /// A safety bound for a stop the test expects to return: a regression
+    /// that waits on the held task forever fails instead of hanging.
+    async fn bounded<F: std::future::Future>(future: F) -> F::Output {
+        tokio::time::timeout(Duration::from_secs(5), future)
+            .await
+            .expect("the stop returned within its bound")
+    }
+
+    /// Two stops at once: the second waits for the first and never reports
+    /// the task gone while it still runs.
+    #[tokio::test]
+    async fn should_not_report_a_running_task_as_not_running_to_a_concurrent_stop() {
+        let (stop, _stopped) = oneshot::channel();
+        let (handle, release) = held_task();
+        let slot = Mutex::new(ActorSlot::Running(handle, stop));
+        let stopping = AsyncMutex::new(());
+
+        let mut first = Box::pin(stop_slot(&slot, &stopping, Duration::from_secs(5)));
+        let mut second = Box::pin(stop_slot(&slot, &stopping, Duration::from_secs(5)));
+        assert!(
+            poll_once(&mut first).await.is_none(),
+            "waits on the held task"
+        );
+        assert!(
+            poll_once(&mut second).await.is_none(),
+            "waits for the first stop, not reporting the live task gone"
+        );
+
+        release.send(()).expect("task alive");
+        assert_eq!(bounded(first).await, WorkerStatus::Ok);
+        assert_eq!(bounded(second).await, WorkerStatus::NotRunning);
+    }
+
     /// A stop that runs out of budget keeps the task without aborting it: a
-    /// retried stop waits for it to end and reports it clean.
+    /// retried stop waits for it to end and reports it clean (an aborted task
+    /// would join as stopped, not Ok).
     #[tokio::test]
     async fn should_report_a_task_that_outlived_a_stop_clean_on_retry() {
         let (stop, _stopped) = oneshot::channel();
@@ -3612,13 +3636,14 @@ mod tests {
         let slot = Mutex::new(ActorSlot::Running(handle, stop));
         let stopping = AsyncMutex::new(());
 
-        let first = stop_slot(&slot, &stopping, Duration::from_millis(20)).await;
+        // No budget at all: the held task cannot end within it.
+        let first = bounded(stop_slot(&slot, &stopping, Duration::ZERO)).await;
         assert_eq!(first, WorkerStatus::Timeout, "the task is held");
-        assert!(is_stopping(&slot), "kept, not aborted");
+        assert!(is_stopping(&slot), "put back as Stopping");
 
         release.send(()).expect("task alive");
-        let second = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
-        let third = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
+        let second = bounded(stop_slot(&slot, &stopping, Duration::from_secs(5))).await;
+        let third = bounded(stop_slot(&slot, &stopping, Duration::from_secs(5))).await;
 
         assert_eq!(second, WorkerStatus::Ok);
         assert_eq!(third, WorkerStatus::NotRunning);
@@ -3633,18 +3658,22 @@ mod tests {
         let slot = Mutex::new(ActorSlot::Running(handle, stop));
         let stopping = AsyncMutex::new(());
 
-        // Poll the stop once — it waits on the held task — then drop it.
+        // Poll the stop once — it takes the task and waits on it — then drop
+        // it mid-wait.
         let mut cancelled = Box::pin(stop_slot(&slot, &stopping, Duration::from_secs(5)));
-        tokio::select! {
-            biased;
-            status = &mut cancelled => panic!("the held task cannot end: {status:?}"),
-            () = std::future::ready(()) => {}
-        }
+        assert!(
+            poll_once(&mut cancelled).await.is_none(),
+            "the task is held"
+        );
+        assert!(
+            is_taken(&slot),
+            "the stop took the task and is waiting on it"
+        );
         drop(cancelled);
         assert!(is_stopping(&slot), "the cancelled stop put the task back");
 
         release.send(()).expect("task alive");
-        let retried = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
+        let retried = bounded(stop_slot(&slot, &stopping, Duration::from_secs(5))).await;
 
         assert_eq!(retried, WorkerStatus::Ok, "the retry joined the live task");
     }
