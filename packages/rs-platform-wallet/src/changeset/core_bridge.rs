@@ -40,6 +40,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
+use crate::wallet::core::record_spends_own_coins;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -2039,15 +2040,6 @@ async fn wallet_slices_and_verdicts_for_txid(
 /// cannot drift apart.
 fn is_contact_watch_only(record: &TransactionRecord) -> bool {
     record.account_type.is_contact_owned()
-}
-
-/// Whether `record` spends coins the wallet owns: it recorded input details
-/// (entries keyed to inputs that spent the account's outpoints) and the
-/// account is not a contact's watch-only chain ([`is_contact_watch_only`]),
-/// whose input details record the *contact* spending. Shared with the
-/// broadcast resolver, whose "own send" is this rule.
-pub(crate) fn record_spends_own_coins(record: &TransactionRecord) -> bool {
-    !record.input_details.is_empty() && !is_contact_watch_only(record)
 }
 
 /// Derive the "ours" UTXOs created by a transaction's outputs.

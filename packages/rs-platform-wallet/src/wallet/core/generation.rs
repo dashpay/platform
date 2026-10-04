@@ -556,6 +556,13 @@ impl WalletGeneration {
             .find(|outpoint| pinned.contains_key(outpoint))
     }
 
+    /// Whether an in-flight broadcast pins `outpoint` now.
+    pub(crate) fn in_broadcast_conflict_outpoint(&self, outpoint: &OutPoint) -> bool {
+        let mut pinned = self.in_broadcast_lock();
+        pinned.retain(|_, fence| fence.blocks());
+        pinned.contains_key(outpoint)
+    }
+
     /// Every outpoint an in-flight broadcast pins now — what
     /// [`in_broadcast_conflict`](Self::in_broadcast_conflict) would refuse —
     /// pruned the same way.

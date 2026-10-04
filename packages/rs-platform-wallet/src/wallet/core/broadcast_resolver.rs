@@ -85,8 +85,8 @@ use tokio::task::{self, AbortHandle, JoinError, JoinHandle, JoinSet};
 use tokio::time::{timeout_at, Instant};
 
 use crate::broadcast_probe::{AcceptanceProbe, ProbeReport, ProbeVerdict, MINED_QUORUM};
-use crate::changeset::core_bridge::record_spends_own_coins;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
+use crate::wallet::core::record_spends_own_coins;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Blocks from the start of a root's window (see [`ProbeSchedule`]) during

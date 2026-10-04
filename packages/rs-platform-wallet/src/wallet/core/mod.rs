@@ -23,3 +23,17 @@ pub use transaction::{
     ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
 };
 pub use wallet::CoreWallet;
+
+use key_wallet::managed_account::transaction_record::TransactionRecord;
+
+/// Whether `record` spends coins the wallet owns: it recorded input details
+/// (entries keyed to inputs that spent the account's outpoints) and the
+/// account is not a contact's watch-only chain
+/// ([`AccountType::is_contact_owned`]), whose input details record the
+/// *contact* spending. The persisted projection's input rule and the
+/// broadcast resolver's "own send".
+///
+/// [`AccountType::is_contact_owned`]: key_wallet::account::AccountType::is_contact_owned
+pub(crate) fn record_spends_own_coins(record: &TransactionRecord) -> bool {
+    !record.input_details.is_empty() && !record.account_type.is_contact_owned()
+}

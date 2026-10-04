@@ -131,8 +131,9 @@ pub struct FinalizeOptions {
     /// funding accounts under the wallet-manager write guard and the wallet's
     /// current copy is seeded, so it is judged on its finality now, not on a
     /// snapshot taken when the caller chose it: a coin InstantSend-locked
-    /// since is spent, and one that is not final (any more) is refused by
-    /// name with `CoreFundsAwaitingNetwork`. One another in-flight build has
+    /// since may be spent, one that is not final (any more) is refused by
+    /// name with `CoreFundsAwaitingNetwork`, and one an in-flight broadcast
+    /// pins with `InputMidBroadcast`. One another in-flight build has
     /// reserved is left out by key-wallet's reservation filter, like any
     /// reserved coin. Inputs seeded on the builder itself
     /// (`TransactionBuilder::add_inputs`) stay the caller's snapshot: one not
@@ -184,17 +185,23 @@ pub(crate) fn trial_with_waiting_coins(
     }
     let generation = Arc::clone(&info.generation);
     let accounts = &mut info.core_wallet.accounts;
-    // Whether any coin is waiting, before anything is made, snapshotted or
-    // cloned: a shortfall with none (the common case) costs one scan.
-    let any_waiting = offered.iter().any(|at| {
-        accounts.funds_account(at).is_some_and(|managed| {
+    // One scan for the spendable coins that are not final, before anything
+    // is made, snapshotted or cloned: a shortfall with none (the common case)
+    // costs only this.
+    let mut candidates: Vec<(AccountType, OutPoint, u64)> = Vec::new();
+    for at in offered {
+        let Some(managed) = accounts.funds_account(at) else {
+            continue;
+        };
+        candidates.extend(
             managed
                 .utxos
                 .values()
-                .any(|utxo| utxo.is_spendable(height) && !is_final(utxo))
-        })
-    });
-    if !any_waiting {
+                .filter(|utxo| utxo.is_spendable(height) && !is_final(utxo))
+                .map(|utxo| (*at, utxo.outpoint, utxo.value())),
+        );
+    }
+    if candidates.is_empty() {
         return None;
     }
     // The build refuses an input an in-flight broadcast pins
@@ -202,26 +209,26 @@ pub(crate) fn trial_with_waiting_coins(
     let pinned = generation.in_broadcast_outpoints();
     let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
     let mut promote: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
+    for (at, outpoint, value) in candidates {
+        if !pinned.contains(&outpoint) {
+            waiting.insert(outpoint, value);
+            promote.entry(at).or_default().push(outpoint);
+        }
+    }
+    if waiting.is_empty() {
+        return None;
+    }
     let mut lock: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
     for at in offered {
         let Some(managed) = accounts.funds_account(at) else {
             continue;
         };
-        for utxo in managed
-            .utxos
-            .values()
-            .filter(|utxo| utxo.is_spendable(height))
+        for outpoint in pinned
+            .iter()
+            .filter(|outpoint| managed.utxos.contains_key(*outpoint))
         {
-            if pinned.contains(&utxo.outpoint) {
-                lock.entry(*at).or_default().push(utxo.outpoint);
-            } else if !is_final(utxo) {
-                waiting.insert(utxo.outpoint, utxo.value());
-                promote.entry(*at).or_default().push(utxo.outpoint);
-            }
+            lock.entry(*at).or_default().push(*outpoint);
         }
-    }
-    if waiting.is_empty() {
-        return None;
     }
     let trial = make().ok()?;
     // Funded through clones: an account with waiting coins (marked final) or
@@ -1086,6 +1093,13 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         waiting: utxo.value(),
                         required: None,
                         outpoint: Some(*outpoint),
+                    });
+                }
+                // Pinned by an in-flight broadcast: the build would refuse it
+                // after selection anyway; refuse it by name now.
+                if info.generation.in_broadcast_conflict_outpoint(outpoint) {
+                    return Err(PlatformWalletError::InputMidBroadcast {
+                        outpoint: *outpoint,
                     });
                 }
                 seeds.push(utxo.clone());
@@ -2674,10 +2688,10 @@ mod tests {
         );
     }
 
-    /// A pinned coin is passed over, not fatal, whether the account holds it or
-    /// the caller chose it: 600,000 final (pinned) + 1,500,000 waiting against
-    /// 1,000,000 — the waiting coin alone funds it once final, so it is
-    /// waiting on the network.
+    /// A pinned coin in the account is passed over, not fatal: 600,000 final
+    /// (pinned) + 1,500,000 waiting against 1,000,000 — the waiting coin alone
+    /// funds it once final, so it is waiting on the network. Chosen as an
+    /// input, the pinned coin is refused by name.
     #[tokio::test]
     async fn should_pass_over_a_pinned_coin_in_the_trial() {
         let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[600_000]).await;
@@ -2698,31 +2712,47 @@ mod tests {
             special_transaction_payload: None,
         };
         let _pin = core.test_generation_marker().pin_in_broadcast(&dispatch);
-        // Pinned in the account, and pinned after it was chosen by outpoint.
-        for inputs in [Vec::new(), vec![pinned.outpoint]] {
-            let result = core
-                .finalize_transaction_from(
-                    &|| Ok(payment_builder(94)),
-                    FinalizeOptions {
-                        inputs: inputs.clone(),
-                        reservation_only: false,
-                    },
-                    &SEND_FUNDING_SOURCES,
-                    0,
-                    &signer,
-                )
-                .await;
-            assert!(
-                matches!(
-                    result,
-                    Err(PlatformWalletError::CoreFundsAwaitingNetwork {
-                        waiting: 1_500_000,
-                        ..
-                    })
-                ),
-                "inputs {inputs:?}: got {result:?}"
-            );
-        }
+        let result = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(94)),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    waiting: 1_500_000,
+                    ..
+                })
+            ),
+            "got {result:?}"
+        );
+
+        // Chosen by outpoint, the pinned coin is refused by name, as the
+        // build would refuse it after selection.
+        let result = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(95)),
+                FinalizeOptions {
+                    inputs: vec![pinned.outpoint],
+                    reservation_only: false,
+                },
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::InputMidBroadcast { outpoint }) if outpoint == pinned.outpoint
+            ),
+            "got {result:?}"
+        );
     }
 
     /// A payment the unconfirmed coins would not cover either stays a plain
