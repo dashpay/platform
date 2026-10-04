@@ -309,8 +309,8 @@ pub(crate) mod property_names {
         /// among the approvals, default `false`), `approvals` (how many members of the team
         /// must approve, the leader counted, default 1) and `approversPredateDocument` (whether
         /// a member the leader added approves only when added before the document was created,
-        /// default `true`). See [`delete_settled`] for the keys. Needs `deleteWithin` and a
-        /// contract whose moderators are an elected team.
+        /// default `true` when more than one approval is needed). See [`delete_settled`] for
+        /// the keys. Needs `deleteWithin` and a contract whose moderators are an elected team.
         pub const DELETE_SETTLED: &str = "deleteSettled";
         /// The property paths whose values a moderator's removal record keeps, copied from
         /// the document as it was deleted: what of it stays public once it is gone (the
@@ -330,8 +330,9 @@ pub(crate) mod property_names {
             /// How many members of the seated team must approve, the leader counted.
             pub const APPROVALS: &str = "approvals";
             /// Whether a member the leader added approves only when its addition was made
-            /// before the document was created. Default `true`; needs `$createdAt` in the
-            /// type's `required` while on.
+            /// before the document was created. Default `true` when `approvals` is above 1,
+            /// `false` otherwise; needs `$createdAt` in the type's `required` at registration
+            /// while on.
             pub const APPROVERS_PREDATE_DOCUMENT: &str = "approversPredateDocument";
         }
     }

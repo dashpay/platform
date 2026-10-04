@@ -1348,12 +1348,13 @@ fn parse_elected(schema: Value, full_validation: bool) -> Result<DocumentType, P
 #[test]
 fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
     for (rule, expected) in [
+        // One approval: the leader meets it alone, so added members are not dated by default.
         (
             platform_value!({ "leader": true }),
             SettledDeletionRule {
                 leader: true,
                 approvals: 1,
-                approvers_predate_document: true,
+                approvers_predate_document: false,
             },
         ),
         (
@@ -1410,32 +1411,54 @@ fn should_need_the_creation_time_while_added_members_must_predate_the_document()
             "moderatorAbilities": { "delete": true, "deleteWithin": 86400, "deleteSettled": rule },
         }))
     };
-    for full_validation in [true, false] {
-        for rule in [
-            platform_value!({ "leader": true }),
+    let dated = |approvals: u16| SettledDeletionRule {
+        leader: true,
+        approvals,
+        approvers_predate_document: true,
+    };
+    for (rule, expected) in [
+        (
+            platform_value!({ "leader": true, "approvals": 2 }),
+            dated(2),
+        ),
+        (
             platform_value!({ "leader": true, "approversPredateDocument": true }),
+            dated(1),
+        ),
+    ] {
+        assert_refused_naming(
+            parse_elected(without_creation(rule.clone()), true),
+            &["deleteSettled", "approversPredateDocument", "$createdAt"],
+        );
+        // A registration rule: a stored type is read back whatever its schema lists, and a
+        // document of it without `$createdAt` admits no added member.
+        let stored = parse_elected(without_creation(rule), false).expect("a stored type is read");
+        assert_eq!(stored.moderator_settled_deletion(), Some(expected));
+    }
+    for full_validation in [true, false] {
+        for (rule, approvals) in [
+            (
+                platform_value!({
+                    "leader": true,
+                    "approvals": 2,
+                    "approversPredateDocument": false,
+                }),
+                2,
+            ),
+            // One approval dates nobody by default: the leader meets it alone.
+            (platform_value!({ "leader": true }), 1),
         ] {
-            assert_refused_naming(
-                parse_elected(without_creation(rule), full_validation),
-                &["deleteSettled", "approversPredateDocument", "$createdAt"],
+            let any_addition = parse_elected(without_creation(rule), full_validation)
+                .expect("a rule admitting every added member reads no creation time");
+            assert_eq!(
+                any_addition.moderator_settled_deletion(),
+                Some(SettledDeletionRule {
+                    leader: true,
+                    approvals,
+                    approvers_predate_document: false,
+                })
             );
         }
-        let any_addition = parse_elected(
-            without_creation(platform_value!({
-                "leader": true,
-                "approversPredateDocument": false,
-            })),
-            full_validation,
-        )
-        .expect("a rule admitting every added member reads no creation time");
-        assert_eq!(
-            any_addition.moderator_settled_deletion(),
-            Some(SettledDeletionRule {
-                leader: true,
-                approvals: 1,
-                approvers_predate_document: false,
-            })
-        );
     }
 }
 

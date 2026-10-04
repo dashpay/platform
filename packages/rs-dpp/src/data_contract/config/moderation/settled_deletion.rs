@@ -25,13 +25,17 @@ pub struct SettledDeletionRule {
     pub approvals: u16,
     /// Whether a member the leader added (an `addedModerator`) proposes or approves the
     /// deletion of a document only when its addition was made before the document was created
-    /// (`approversPredateDocument`, default `true`). The leader names whom it adds, so without
-    /// this it could add members who approve whatever it proposes, and take them off again
-    /// once they had. The leader and the elected members always count: the election seated
-    /// them, not the leader. Read from the document's `$createdAt`, which the type must then
-    /// require. What the rule needs is not lowered for it (see
-    /// [`Self::approvals_needed`]), so a team whose members from before a document are too few
-    /// never deletes that document once settled.
+    /// (`approversPredateDocument`, default `true` when `approvals` is above 1: a rule one
+    /// approval meets, the leader meets alone). The leader names whom it adds, so without this
+    /// it could add members who approve whatever it proposes, and take them off again once
+    /// they had. The leader and the elected members always count: the election seated them,
+    /// not the leader. Read from the document's `$createdAt`, which the type must then require
+    /// at registration; a document without it admits no added member. What the rule needs is
+    /// not lowered for it (see [`Self::approvals_needed`]), so a team whose members from before
+    /// a document are too few never deletes that document once settled. Every addition comes
+    /// after the seat, so a document written before the seat counts only the leader and the
+    /// elected members: under a rule asking for more approvals than those, the team never
+    /// deletes any document older than the seat once settled.
     pub approvers_predate_document: bool,
 }
 

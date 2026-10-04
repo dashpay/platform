@@ -304,12 +304,8 @@ impl SeatedModerationCharter {
             })
     }
 
-    /// The active members of the team besides the leader ([`ElectedCharter::active_members`]):
-    /// the charter's `members` less its `removedModerator` documents, plus its
-    /// `addedModerator` documents. Two billed queries of the `byElectedCharterMember` indexes,
-    /// each bounded: a removal names one of the charter's members, and the target's
-    /// `maxAddedModerators` caps the additions that exist. A query that can find nothing is not
-    /// made.
+    /// The active members of the team besides the leader: those
+    /// [`SeatedModerationCharter::fetch_active_seats`] seats, by the same two queries.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn fetch_active_members(
         &self,
@@ -320,26 +316,25 @@ impl SeatedModerationCharter {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeSet<Identifier>, Error> {
-        let (added, removed) = self.fetch_team_changes(
-            drive,
-            max_added_moderators,
-            epoch,
-            execution_context,
-            transaction,
-            platform_version,
-        )?;
-        let added = added
-            .iter()
-            .map(member_id_of)
-            .collect::<Result<Vec<_>, Error>>()?;
         Ok(self
-            .charter
-            .active_members(self.leader_id, &added, &removed))
+            .fetch_active_seats(
+                drive,
+                max_added_moderators,
+                epoch,
+                execution_context,
+                transaction,
+                platform_version,
+            )?
+            .into_keys()
+            .collect())
     }
 
-    /// The seats of the active members of the team besides the leader: the members
-    /// [`SeatedModerationCharter::fetch_active_members`] reads, by the same two queries, each
-    /// with where it sits ([`SeatedModerationCharter::seat_of`]).
+    /// The active members of the team besides the leader ([`ElectedCharter::active_members`]),
+    /// each with where it sits ([`SeatedModerationCharter::seat_of`]): the charter's `members`
+    /// less its `removedModerator` documents, plus its `addedModerator` documents. Two billed
+    /// queries of the `byElectedCharterMember` indexes, each bounded: a removal names one of the
+    /// charter's members, and the target's `maxAddedModerators` caps the additions that exist.
+    /// A query that can find nothing is not made.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn fetch_active_seats(
         &self,
@@ -358,17 +353,17 @@ impl SeatedModerationCharter {
             transaction,
             platform_version,
         )?;
-        let added_at = additions
+        let added_at_by_member = additions
             .iter()
             .map(|addition| Ok((member_id_of(addition)?, added_at(addition))))
             .collect::<Result<BTreeMap<_, _>, Error>>()?;
         Ok(self
             .charter
-            .active_members(self.leader_id, added_at.keys(), &removed)
+            .active_members(self.leader_id, added_at_by_member.keys(), &removed)
             .into_iter()
             .map(|member| {
                 // An elected member sits in its elected seat, whatever an addition says
-                let seat = match added_at.get(&member) {
+                let seat = match added_at_by_member.get(&member) {
                     Some(added_at) if !self.charter.members.contains(&member) => TeamSeat::Added {
                         added_at: *added_at,
                     },

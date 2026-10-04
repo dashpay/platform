@@ -1835,13 +1835,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     declaration's `maxAddedModerators`), the upper bound checked at
 ///     registration only; a seated team whose charter elects fewer members,
 ///     and so holds fewer than the rule asks for, must have all it can hold
-///     approve. Its `approversPredateDocument` (default `true`, which needs
-///     `$createdAt` in `required`, 10231) counts a member the leader added
-///     only for documents created after its addition (the `addedModerator`'s
+///     approve. Its `approversPredateDocument` (default `true` when `approvals`
+///     is above 1, which then needs `$createdAt` in `required` at
+///     registration, 10231) counts a member the leader added only for
+///     documents created after its addition (the `addedModerator`'s
 ///     `$createdAt` earlier than the document's): a proposal or approval by a
-///     later one is refused, and an approval that reads the team drops the
-///     approval of a member taken off and added again too late; the leader
-///     and the elected members always count.
+///     later one is refused, checked before an approval already given, and an
+///     approval that reads the team drops the approval of a member taken off
+///     and added again too late; the leader and the elected members always
+///     count.
 ///     `ContractUserModeration` gains two actions (appended), shaped like a
 ///     token group's action: `DeleteSettledDocument` proposes the deletion, kept
 ///     under the contract as a team action (other tree key `24`, `M` active and

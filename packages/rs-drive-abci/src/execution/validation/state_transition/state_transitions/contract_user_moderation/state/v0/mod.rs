@@ -758,12 +758,12 @@ fn transform_settled_deletion_proposal_v0<C: CoreRPCLike>(
 /// The approval of a team action another member proposed: the contract keeps team actions
 /// (a document type of it sets `moderatorAbilities.deleteSettled`), the action exists and has not
 /// run, a team is seated on it, the signer is on the team with the authority the action
-/// needs (for the deletion of a settled document, `deleteDocuments` on its type) and has not
-/// approved it already, the document the action names still exists, its owner not
-/// protected, as it was when proposed: an approval of a document changed since would approve
-/// the deletion of content the team never saw, and a signer the leader added was added before
-/// the document was created, unless the rule admits later additions. Every refusal is paid for
-/// by bumping the signer's contract nonce.
+/// needs (for the deletion of a settled document, `deleteDocuments` on its type), the document
+/// the action names still exists, its owner not protected, as it was when proposed: an approval
+/// of a document changed since would approve the deletion of content the team never saw, a
+/// signer the leader added was added before the document was created, unless the rule admits
+/// later additions, and the signer has not approved it already. Every refusal is paid for by
+/// bumping the signer's contract nonce.
 ///
 /// The approval is added to the action's. When the approvals given could meet the rule, the team
 /// is read: the approvals of members who left since no longer count and are dropped, refunded to
@@ -895,11 +895,6 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
         platform_version,
     )?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(signers_fee));
-    if signers.contains(&moderator_id) {
-        return refuse(
-            ContractTeamActionAlreadySignedError::new(contract_id, action_id, moderator_id).into(),
-        );
-    }
 
     let document = match fetch_deletable_document(
         &moderators,
@@ -926,6 +921,13 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
     }
     if let Some(error) = late_addition_refusal(contract_id, &rule, moderator_id, &seat, &document) {
         return refuse(error);
+    }
+    // After the late addition: a member the leader took off and added again after the document
+    // may still have an approval here, which no longer counts and goes at the next team read.
+    if signers.contains(&moderator_id) {
+        return refuse(
+            ContractTeamActionAlreadySignedError::new(contract_id, action_id, moderator_id).into(),
+        );
     }
 
     // The most members the seated team can hold (`ElectedCharter::seats`): its
@@ -1143,11 +1145,11 @@ fn late_addition_refusal(
     seat: &ModeratorSeat,
     document: &Document,
 ) -> Option<ConsensusError> {
-    let ModeratorSeat::Team(seat @ TeamSeat::Added { added_at }) = seat else {
+    let ModeratorSeat::Team(TeamSeat::Added { added_at }) = seat else {
         return None;
     };
     let document_created_at = document.created_at().unwrap_or_default();
-    (!seat.counts_toward(rule, document_created_at)).then(|| {
+    (!rule.admits_addition(*added_at, document_created_at)).then(|| {
         ContractTeamMemberAddedAfterDocumentError::new(
             contract_id,
             member_id,

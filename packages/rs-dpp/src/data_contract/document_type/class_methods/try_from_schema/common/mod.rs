@@ -2357,7 +2357,9 @@ pub(super) fn parse_moderator_abilities_keyword(
                 delete_settled::APPROVERS_PREDATE_DOCUMENT,
             )
             .map_err(consensus_or_protocol_value_error)?
-            .unwrap_or(true);
+            // On by default only where it protects something: a rule one approval meets, the
+            // leader meets alone, so the members it adds give it nothing.
+            .unwrap_or(approvals > 1);
             Some(SettledDeletionRule {
                 leader,
                 approvals,
@@ -2474,10 +2476,13 @@ pub(super) fn parse_moderator_abilities_keyword(
 ///   the declared team can hold: its leader,
 ///   `SystemLimits::max_moderation_charter_elected_members` elected members and
 ///   the declaration's `maxAddedModerators`;
-/// - while `approversPredateDocument` is on (the default), the type must list
-///   `$createdAt` in `required`: a member the leader added approves only the
-///   deletion of documents created after its addition, and a document without
-///   `$createdAt` says nothing of when it was.
+/// - while `approversPredateDocument` is on (the default when `approvals` is
+///   above 1), the type must list `$createdAt` in `required` under full
+///   validation: a member the leader added approves only the deletion of
+///   documents created after its addition, and a document without `$createdAt`
+///   says nothing of when it was. A registration rule, as the bound on
+///   `approvals` is: a stored type is read back without it, and a document of it
+///   without `$createdAt` admits no added member.
 ///
 /// `deleteKeepsFields` names what of a deleted document its removal record
 /// keeps, copied from the document as it was deleted: what stays public once
@@ -2712,12 +2717,15 @@ pub(super) fn apply_moderator_abilities(
                 rule.approvals,
             )));
         }
-        if rule.approvers_predate_document && !document_type.required_fields.contains(CREATED_AT) {
+        if full_validation
+            && rule.approvers_predate_document
+            && !document_type.required_fields.contains(CREATED_AT)
+        {
             return Err(structure_error(format!(
                 "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}`, whose \
                  approvers the leader added must have been added before the document was created \
-                 (`{}`, on unless set to false), which is read from `$createdAt`: list \
-                 `$createdAt` in `required`, or set `{}: false`",
+                 (`{}`, on by default when more than one approval is needed), which is read from \
+                 `$createdAt`: list `$createdAt` in `required`, or set `{}: false`",
                 delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 delete_settled::APPROVERS_PREDATE_DOCUMENT,
             )));

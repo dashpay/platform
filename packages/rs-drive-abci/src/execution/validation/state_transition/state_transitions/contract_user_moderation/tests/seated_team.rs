@@ -645,8 +645,8 @@ impl Team {
     }
 
     /// Ends the contest for the seat as the block at the end of the join window does: with a
-    /// single contender, the charter is awarded there.
-    fn award(&self) {
+    /// single contender, the charter is awarded there. Returns the time of that block.
+    fn award(&self) -> TimestampMillis {
         let platform_version = PlatformVersion::latest();
         let platform = &self.setup.platform;
         let (end_time, _) = VotePollsByEndDateDriveQuery {
@@ -704,6 +704,7 @@ impl Team {
             Some(self.leader.id()),
             "the contest is awarded to its single contender, the leader"
         );
+        end_time
     }
 
     /// The charter contract's document of `document_type_name` stored at `document_id`

@@ -1238,7 +1238,7 @@ mod tests {
             (
                 None,
                 Some(platform_value!({ "leader": true })),
-                "document type can not change who must approve a moderator's deletion of a settled document: changing from no deletion once settled to 1 approvals, the team's leader among them, added members only from before the document",
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from no deletion once settled to 1 approvals, the team's leader among them, added members whenever added",
             ),
             (
                 Some(platform_value!({ "leader": true, "approvals": 3 })),
