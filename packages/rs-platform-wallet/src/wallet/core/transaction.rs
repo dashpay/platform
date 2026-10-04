@@ -113,7 +113,7 @@ pub type BuilderFactory<'a> =
 /// prices candidate sets before it enforces the input limit, so the bound is
 /// not a standard transaction but every coin a wallet could hold: `u32::MAX`
 /// bytes is some 29 million 148-byte inputs.
-const MAX_PRICED_BYTES: u64 = u32::MAX as u64;
+const MAX_PRICED_BYTES: usize = u32::MAX as usize;
 
 /// key-wallet multiplies the fee rate by the size unchecked: a rate whose fee
 /// for the largest size it could price overflows is a typed error here, for a
@@ -121,15 +121,7 @@ const MAX_PRICED_BYTES: u64 = u32::MAX as u64;
 /// — not a panic, not a wrapped fee. Every rate up to about 42.9 DASH per kB
 /// passes.
 pub fn check_fee_rate(rate: FeeRate) -> Result<(), PlatformWalletError> {
-    rate.as_sat_per_kb()
-        .checked_mul(MAX_PRICED_BYTES)
-        .map(|_| ())
-        .ok_or_else(|| {
-            PlatformWalletError::TransactionBuild(format!(
-                "fee rate {} sat/kb overflows the fee arithmetic",
-                rate.as_sat_per_kb()
-            ))
-        })
+    checked_fee(rate, MAX_PRICED_BYTES).map(|_| ())
 }
 
 /// How a finalizer funds a build, beyond the builder itself.
@@ -202,7 +194,11 @@ pub(crate) fn trial_with_waiting_coins(
         let Some(managed) = accounts.funds_account(at) else {
             continue;
         };
-        for utxo in managed.spendable_utxos(height) {
+        for utxo in managed
+            .utxos
+            .values()
+            .filter(|utxo| utxo.is_spendable(height))
+        {
             if pinned.contains(&utxo.outpoint) {
                 lock.entry(*at).or_default().push(utxo.outpoint);
             } else if !is_final(utxo) {
@@ -215,18 +211,14 @@ pub(crate) fn trial_with_waiting_coins(
         return None;
     }
     // Funded through clones: an account with waiting coins (marked final) or
-    // pinned ones (locked, so selection passes them over), and every account
-    // up to the first standard one — key-wallet asks each in turn for a
-    // change address from its pool, and only a standard account has one.
-    let change_from = offered
-        .iter()
-        .position(|at| matches!(at, AccountType::Standard { .. }))
-        .unwrap_or(offered.len());
+    // pinned ones (locked, so selection passes them over), and every standard
+    // account — key-wallet asks each account in turn for a change address from
+    // its pool until one gives it, and only a standard account has a pool.
     let mut clones: HashMap<AccountType, ManagedCoreFundsAccount> = HashMap::new();
-    for (position, at) in offered.iter().enumerate() {
+    for at in offered {
         let promoted = promote.remove(at).unwrap_or_default();
         let locked = lock.remove(at).unwrap_or_default();
-        if promoted.is_empty() && locked.is_empty() && position > change_from {
+        if promoted.is_empty() && locked.is_empty() && !matches!(at, AccountType::Standard { .. }) {
             continue;
         }
         let Some(managed) = accounts.funds_account(at) else {
@@ -252,22 +244,16 @@ pub(crate) fn trial_with_waiting_coins(
         }
         seed
     });
-    let mut trial = trial
-        .set_current_height(height)
-        .require_final_inputs()
-        .add_inputs(seeds);
-    for at in offered {
-        let Some(account) = wallet.accounts.account_of_type(*at) else {
-            continue;
-        };
-        trial = match clones.get_mut(at) {
-            Some(clone) => trial.add_funding(clone, account),
-            None => match accounts.funds_account_mut(at) {
-                Some(managed) => trial.add_funding(managed, account),
-                None => trial,
-            },
-        };
-    }
+    let trial = fund(
+        trial,
+        wallet,
+        accounts,
+        &mut clones,
+        offered,
+        seeds,
+        false,
+        height,
+    );
     let (transaction, _, token) = trial.build_unsigned_reserved().ok()?;
     if let Some(token) = token {
         for at in offered {
@@ -286,6 +272,46 @@ pub(crate) fn trial_with_waiting_coins(
         .filter_map(|input| waiting.get(&input.previous_output))
         .fold(0u64, |sum, value| sum.saturating_add(*value));
     (spent > 0).then_some(spent)
+}
+
+/// The funding fold a build and its waiting-coins trial share: the wallet's
+/// height, final coins only, the seeded inputs, then every offered account in
+/// order — through its clone in `clones` where it has one — with
+/// `add_funding`, or `add_funding_reservation_only` for a `reservation_only`
+/// build.
+#[allow(clippy::too_many_arguments)]
+fn fund(
+    builder: TransactionBuilder,
+    wallet: &Wallet,
+    accounts: &mut ManagedAccountCollection,
+    clones: &mut HashMap<AccountType, ManagedCoreFundsAccount>,
+    offered: &[AccountType],
+    seeds: impl IntoIterator<Item = Utxo>,
+    reservation_only: bool,
+    height: u32,
+) -> TransactionBuilder {
+    let mut builder = builder
+        .set_current_height(height)
+        .require_final_inputs()
+        .add_inputs(seeds);
+    for at in offered {
+        let Some(account) = wallet.accounts.account_of_type(*at) else {
+            continue;
+        };
+        let managed = match clones.get_mut(at) {
+            Some(clone) => clone,
+            None => match accounts.funds_account_mut(at) {
+                Some(managed) => managed,
+                None => continue,
+            },
+        };
+        builder = if reservation_only {
+            builder.add_funding_reservation_only(managed, account)
+        } else {
+            builder.add_funding(managed, account)
+        };
+    }
+    builder
 }
 
 /// A shortfall the not-yet-final coins would fund
@@ -984,8 +1010,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // this build still owns, even if a TTL sweep re-reserved them under
             // a new token meanwhile.
             // Only final coins (InstantSend-locked or mined) are spent; see
-            // `is_final`.
-            let mut builder = builder.set_current_height(height).require_final_inputs();
+            // `is_final` and `fund`.
             // Accounts that took on this build's reservation bookkeeping, in
             // funding order — i.e. the ones a failure path must release. Under
             // `reservation_only` nothing is offered to selection at all; without
@@ -1051,15 +1076,13 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 }
                 seeds.push(utxo.clone());
             }
-            builder = builder.add_inputs(seeds.iter().cloned());
-
             for at in resolved {
                 // `resolved_funding_accounts` already dropped anything missing
-                // from either half, so this destructure is defensive only —
-                // the `continue` is not a reachable skip.
-                let (Some(account), Some(managed)) = (
+                // from either half, so this check is defensive only — the
+                // `continue` is not a reachable skip.
+                let (Some(_), Some(managed)) = (
                     wallet.accounts.account_of_type(at),
-                    info.core_wallet.accounts.funds_account_mut(&at),
+                    info.core_wallet.accounts.funds_account(&at),
                 ) else {
                     continue;
                 };
@@ -1068,13 +1091,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         paths.insert(utxo.address.clone(), path);
                     }
                 }
-                builder = if reservation_only {
-                    builder.add_funding_reservation_only(managed, account)
-                } else {
-                    builder.add_funding(managed, account)
-                };
                 offered_accounts.push(at);
             }
+            let builder = fund(
+                builder,
+                wallet,
+                &mut info.core_wallet.accounts,
+                &mut HashMap::new(),
+                &offered_accounts,
+                seeds.iter().cloned(),
+                reservation_only,
+                height,
+            );
 
             let funding_context = if strict {
                 FundingContext::Single {
@@ -2691,10 +2719,18 @@ mod tests {
     async fn should_keep_insufficient_funds_when_waiting_would_not_help() {
         let (core, signer, manager, wallet_id) = dual_core(&[700_000], &[700_000]).await;
         set_bip44_finality(&manager, &wallet_id, false).await;
-        let builder = TransactionBuilder::new()
-            .add_output(&DashAddress::dummy(Network::Testnet, 73), 5_000_000);
+        let builder = || {
+            TransactionBuilder::new()
+                .add_output(&DashAddress::dummy(Network::Testnet, 73), 5_000_000)
+        };
         let result = core
-            .finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction_from(
+                &|| Ok(builder()),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
             .await;
         assert!(
             matches!(
@@ -2713,10 +2749,18 @@ mod tests {
     async fn should_count_the_fee_before_calling_a_shortfall_waiting() {
         let (core, signer, manager, wallet_id) = dual_core(&[100_148], &[900_000]).await;
         set_bip44_finality(&manager, &wallet_id, false).await;
-        let builder = TransactionBuilder::new()
-            .add_output(&DashAddress::dummy(Network::Testnet, 75), 1_000_000);
+        let builder = || {
+            TransactionBuilder::new()
+                .add_output(&DashAddress::dummy(Network::Testnet, 75), 1_000_000)
+        };
         let result = core
-            .finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction_from(
+                &|| Ok(builder()),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
             .await;
         assert!(
             matches!(

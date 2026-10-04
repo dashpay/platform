@@ -712,8 +712,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_op_return(
         std::slice::from_raw_parts(data, data_len)
     };
 
-    // Rejected here, by the same policy constant `add_op_return` checks, so a
-    // recorded step can always be replayed.
+    // The one thing `add_op_return` refuses, by the same policy constant:
+    // checked here, so a recorded step always replays.
     if data_len > MAX_STANDARD_OP_RETURN_BYTES {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -723,12 +723,6 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_op_return(
         );
     }
 
-    if let Err(err) = TransactionBuilder::new().add_op_return(bytes) {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            err.to_string(),
-        );
-    }
     (*builder).record(Step::AddOpReturn(bytes.to_vec()));
 
     PlatformWalletFFIResult::ok()
