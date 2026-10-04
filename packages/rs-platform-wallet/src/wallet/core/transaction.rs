@@ -319,6 +319,23 @@ pub(crate) fn trial_with_waiting_coins(
     if generation.in_broadcast_conflict(&transaction).is_some() {
         return None;
     }
+    // The build refuses a selected input no funding account holds (a coin
+    // the configuration seeded itself from elsewhere): a trial that needs one
+    // is no promise either.
+    let owned = |outpoint: &OutPoint| {
+        offered.iter().any(|at| {
+            accounts
+                .funds_account(at)
+                .is_some_and(|managed| managed.utxos.contains_key(outpoint))
+        })
+    };
+    if !transaction
+        .input
+        .iter()
+        .all(|input| owned(&input.previous_output))
+    {
+        return None;
+    }
     let spent = transaction
         .input
         .iter()
@@ -3104,6 +3121,38 @@ mod tests {
                     waiting: 1_500_000,
                     ..
                 })
+            ),
+            "got {result:?}"
+        );
+    }
+
+    /// A trial that needs a coin no funding account holds promises nothing:
+    /// the factory seeds a final 700,000-duff BIP32 coin while only BIP44
+    /// (one waiting 700,000-duff coin) funds a 1,000,000 payment. The trial
+    /// would spend both, but the build refuses the BIP32 input, so
+    /// confirmation would not help: insufficient funds, not code 59.
+    #[tokio::test]
+    async fn should_not_report_waiting_on_a_trial_input_outside_the_funding_accounts() {
+        let (core, signer, manager, wallet_id) = dual_core(&[700_000], &[700_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let outside = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        let result = core
+            .finalize_transaction_from(
+                || Ok(payment_builder(103).add_inputs([outside.clone()])),
+                FinalizeOptions::default(),
+                &[preference(StandardAccountType::BIP44Account)],
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CoreInsufficientFunds { .. })
             ),
             "got {result:?}"
         );

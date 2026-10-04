@@ -102,6 +102,12 @@ pub(crate) const SLOW_INTERVAL: u32 = 10;
 /// height-driven pass waits for it.
 pub(crate) const CATCH_UP_STEP: u32 = 3;
 
+/// Blocks a root found mined by nodes — their word, not the wallet's — may go
+/// unseen by the wallet while it follows the tip. Past that the evidence is
+/// stale (the block was reorged away, or never on the chain the wallet
+/// follows): the root is probed again from scratch and its verdict cleared.
+pub(crate) const MINED_EVIDENCE_GRACE: u32 = 6;
+
 /// One unsettled transaction of the wallet, merged across the accounts that
 /// record it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,6 +229,10 @@ pub(crate) struct ChainGraph<'a> {
     /// Unsettled for the purpose of picking roots: every view except those a
     /// probe found mined.
     unsettled: BTreeSet<Txid>,
+    /// Transactions an ancestry traversal expanded, for the tests that pin
+    /// its cost.
+    #[cfg(test)]
+    expanded: std::cell::Cell<usize>,
 }
 
 impl<'a> ChainGraph<'a> {
@@ -237,7 +247,12 @@ impl<'a> ChainGraph<'a> {
             .filter(|txid| !mined.contains(*txid))
             .copied()
             .collect();
-        Self { by_txid, unsettled }
+        Self {
+            by_txid,
+            unsettled,
+            #[cfg(test)]
+            expanded: std::cell::Cell::new(0),
+        }
     }
 
     fn is_own(&self, txid: &Txid) -> bool {
@@ -259,18 +274,26 @@ impl<'a> ChainGraph<'a> {
             .collect()
     }
 
-    /// Unsettled transactions `txid` depends on, transitively, including
-    /// itself.
-    fn with_ancestors(&self, txid: &Txid) -> BTreeSet<Txid> {
+    /// The unsettled transactions any of `sources` depends on, transitively,
+    /// sources included — one traversal with one visited set, so each
+    /// transaction is expanded once however many sources share its ancestry
+    /// (a long chain of sends costs its length, not its square).
+    fn with_ancestors(&self, sources: impl IntoIterator<Item = Txid>) -> BTreeSet<Txid> {
         let mut found = BTreeSet::new();
-        let mut frontier = vec![*txid];
+        let mut frontier: Vec<Txid> = sources.into_iter().collect();
         while let Some(txid) = frontier.pop() {
             if !self.is_unsettled(&txid) || !found.insert(txid) {
                 continue;
             }
-            for input in &self.by_txid[&txid].transaction.input {
-                frontier.push(input.previous_output.txid);
-            }
+            #[cfg(test)]
+            self.expanded.set(self.expanded.get() + 1);
+            frontier.extend(
+                self.by_txid[&txid]
+                    .transaction
+                    .input
+                    .iter()
+                    .map(|input| input.previous_output.txid),
+            );
         }
         found
     }
@@ -285,22 +308,18 @@ impl<'a> ChainGraph<'a> {
     /// someone else's incoming payment — that spend no output of an unsettled
     /// transaction. A node that has not seen a parent refuses a valid child.
     pub(crate) fn roots(&self) -> Vec<&'a OutgoingView> {
-        let relevant: BTreeSet<Txid> = self
-            .own_unsettled()
-            .iter()
-            .flat_map(|txid| self.with_ancestors(txid))
-            .collect();
-        relevant
+        self.with_ancestors(self.own_unsettled())
             .iter()
             .filter(|txid| self.is_root(txid))
             .map(|txid| self.by_txid[txid])
             .collect()
     }
 
-    /// The roots of `txid`'s chain — what to probe when dash-spv reports
-    /// `txid` uncertain but it spends an unsettled parent.
-    pub(crate) fn roots_of(&self, txid: &Txid) -> BTreeSet<Txid> {
-        self.with_ancestors(txid)
+    /// The roots of the chains of `txids` — what to probe when dash-spv
+    /// reports them uncertain but they spend an unsettled parent. One
+    /// traversal for all of them.
+    pub(crate) fn roots_of(&self, txids: impl IntoIterator<Item = Txid>) -> BTreeSet<Txid> {
+        self.with_ancestors(txids)
             .into_iter()
             .filter(|txid| self.is_root(txid))
             .collect()
@@ -367,10 +386,13 @@ impl ProbeSchedule {
 }
 
 /// A root's final verdict: nothing is left to ask.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Final {
-    /// Found in a block by a probe (two nodes), before the wallet saw it.
-    Mined,
+    /// Found in a block by a probe (two nodes), before the wallet saw it,
+    /// at the wallet's synced height `at`. Advisory, not settlement: only the
+    /// wallet seeing it settles it, and evidence the wallet does not confirm
+    /// within [`MINED_EVIDENCE_GRACE`] blocks is dropped (see `begin_pass`).
+    Mined { at: u32 },
 }
 
 /// Whether two verdicts say the same thing to the host. Accepted and Mined
@@ -543,7 +565,9 @@ impl ResolverState {
     fn mined(&self, wallet_id: &WalletId) -> HashSet<Txid> {
         self.finished
             .iter()
-            .filter(|((wallet, _), result)| wallet == wallet_id && matches!(result, Final::Mined))
+            .filter(|((wallet, _), result)| {
+                wallet == wallet_id && matches!(result, Final::Mined { .. })
+            })
             .map(|((_, txid), _)| *txid)
             .collect()
     }
@@ -623,13 +647,38 @@ pub(crate) fn begin_pass(
         "settled-or-left",
     ));
 
+    // Nodes said mined, but the wallet — following the tip — has gone
+    // `MINED_EVIDENCE_GRACE` blocks without seeing it: a reorged-away block,
+    // or one the chain the wallet follows never had. The evidence is dropped,
+    // the verdict cleared, and the root probed again from scratch.
+    if anchor.is_some() {
+        let stale: HashSet<Txid> = state
+            .finished
+            .iter()
+            .filter(|((wallet, _), result)| {
+                *wallet == wallet_id
+                    && matches!(result, Final::Mined { at }
+                        if height >= at.saturating_add(MINED_EVIDENCE_GRACE))
+            })
+            .map(|((_, txid), _)| *txid)
+            .collect();
+        for txid in &stale {
+            let key = (wallet_id, *txid);
+            state.finished.remove(&key);
+            state.seen_in_block.remove(&key);
+            state.schedules.remove(&key);
+        }
+        events.extend(state.clear_where(
+            |wallet, txid| *wallet == wallet_id && stale.contains(txid),
+            Some(height),
+            "mined-not-seen",
+        ));
+    }
+
     let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
     let roots = graph.roots();
-    let forced_roots: BTreeSet<Txid> = forced
-        .iter()
-        .flat_map(|txid| graph.roots_of(txid))
-        .collect();
+    let forced_roots = graph.roots_of(forced.iter().copied());
 
     let mut due = VecDeque::new();
     for view in &roots {
@@ -699,7 +748,7 @@ pub(crate) fn record_probe(
         report.verdict.clone()
     };
     if matches!(verdict, ProbeVerdict::Mined) {
-        state.finished.insert(key, Final::Mined);
+        state.finished.insert(key, Final::Mined { at: height });
     }
     if root.own {
         state.publish_all(
@@ -724,14 +773,27 @@ pub(crate) fn next_pass_height(
     views: &[OutgoingView],
 ) -> u32 {
     let mined = state.mined(&wallet_id);
-    ChainGraph::new(views, &mined)
+    let due = ChainGraph::new(views, &mined)
         .roots()
         .iter()
         .map(|view| (wallet_id, view.txid))
         .filter(|key| !state.finished.contains_key(key))
         .map(|key| state.schedules.get(&key).map_or(0, ProbeSchedule::next_due))
         .min()
-        .unwrap_or(u32::MAX)
+        .unwrap_or(u32::MAX);
+    // A pass must also come round when mined evidence goes stale.
+    let stale_at = state
+        .finished
+        .iter()
+        .filter_map(|((wallet, _), result)| match result {
+            Final::Mined { at } if *wallet == wallet_id => {
+                Some(at.saturating_add(MINED_EVIDENCE_GRACE))
+            }
+            _ => None,
+        })
+        .min()
+        .unwrap_or(u32::MAX);
+    due.min(stale_at)
 }
 
 fn log_outgoing(item: &Outgoing) {
@@ -2255,8 +2317,53 @@ mod tests {
             send(3, &[outpoint(2, 1)]),
         ];
         let graph = ChainGraph::new(&views, &none());
-        assert_eq!(graph.roots_of(&txid(3)), BTreeSet::from([txid(1)]));
-        assert!(graph.roots_of(&txid(9)).is_empty(), "unknown txid");
+        assert_eq!(graph.roots_of([txid(3)]), BTreeSet::from([txid(1)]));
+        assert!(graph.roots_of([txid(9)]).is_empty(), "unknown txid");
+    }
+
+    /// A long chain of the wallet's own unsettled sends — each spending the
+    /// last one's change — is walked once: every send is expanded exactly one
+    /// time, not once per send that depends on it.
+    #[test]
+    fn should_expand_each_transaction_of_a_long_chain_once() {
+        let views: Vec<OutgoingView> = (1..=200u8)
+            .map(|n| {
+                if n == 1 {
+                    send(n, &[outpoint(250, 0)])
+                } else {
+                    send(n, &[outpoint(n - 1, 1)])
+                }
+            })
+            .collect();
+        let graph = ChainGraph::new(&views, &none());
+        let roots: Vec<Txid> = graph.roots().iter().map(|view| view.txid).collect();
+        assert_eq!(roots, vec![txid(1)]);
+        assert_eq!(graph.expanded.get(), 200);
+    }
+
+    /// Sends that share ancestry share the walk: 100 chained sends plus 50
+    /// sends each built on the last of them expand 150 transactions, and the
+    /// forced lookup for all of them is one more walk of the same size.
+    #[test]
+    fn should_walk_shared_ancestry_once_for_many_sends() {
+        let mut views: Vec<OutgoingView> = (1..=100u8)
+            .map(|n| {
+                if n == 1 {
+                    send(n, &[outpoint(250, 0)])
+                } else {
+                    send(n, &[outpoint(n - 1, 1)])
+                }
+            })
+            .collect();
+        views.extend((101..=150u8).map(|n| send(n, &[outpoint(100, u32::from(n))])));
+        let graph = ChainGraph::new(&views, &none());
+        assert_eq!(roots(&views), BTreeSet::from([txid(1)]));
+        let before = graph.expanded.get();
+        assert_eq!(
+            graph.roots_of((101..=150u8).map(txid)),
+            BTreeSet::from([txid(1)])
+        );
+        assert_eq!(graph.expanded.get() - before, 150);
     }
 
     // ---- ProbeSchedule / catch-up ------------------------------------------
@@ -2627,8 +2734,9 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1), txid(2)]);
     }
 
-    /// A wallet whose every root has a final verdict has nothing to probe and
-    /// may go idle; one with a root still open may not.
+    /// A wallet whose every root was found mined has nothing to probe until
+    /// that evidence would go stale (`MINED_EVIDENCE_GRACE` blocks on); one
+    /// with a root still open is due next block.
     #[tokio::test]
     async fn should_report_nothing_to_probe_only_when_every_root_is_final() {
         let state = Mutex::new(Harness::default());
@@ -2655,7 +2763,7 @@ mod tests {
         .await;
 
         assert_eq!(empty, u32::MAX);
-        assert_eq!(final_only, u32::MAX);
+        assert_eq!(final_only, 100 + MINED_EVIDENCE_GRACE);
         assert_eq!(open, 102, "the open root is due next block");
     }
 
@@ -4078,12 +4186,19 @@ mod tests {
         });
         let read = rig.actor.jobs.join_next_with_id().await.expect("read");
         rig.actor.joined(read); // root 1's probe spawned
-        task::yield_now().await; // ...and finished, not yet handled
+                                // Its finished answer, held back: completed, not yet handled.
+        let probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
+        assert!(matches!(
+            &probed,
+            Ok((_, JobDone::Probed { root, report, .. }))
+                if *root == txid(1) && report.verdict == ProbeVerdict::Mined
+        ));
 
         rig.handle(Command::Settled {
             wallet_id: wallet(),
             txids: HashSet::from([txid(1)]),
         });
+        rig.actor.joined(probed);
         rig.settle().await;
 
         assert!(!rig
@@ -4200,7 +4315,14 @@ mod tests {
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
         assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
-        assert_eq!(rig.actor.wallets[&wallet()].wait_until, Some(u32::MAX));
+        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))) else {
+            panic!("found mined");
+        };
+        assert_eq!(
+            rig.actor.wallets[&wallet()].wait_until,
+            Some(at + MINED_EVIDENCE_GRACE),
+            "idle until the mined evidence would go stale"
+        );
 
         rig.send(Command::WalletAdded(wallet())).await;
 
@@ -4208,6 +4330,40 @@ mod tests {
         let entry = &rig.actor.wallets[&wallet()];
         assert_eq!(entry.wait_until, None);
         assert_eq!(entry.height, None);
+    }
+
+    /// Two nodes said mined, but the wallet follows a chain that never had
+    /// it: once the wallet has followed the tip `MINED_EVIDENCE_GRACE` blocks
+    /// past that report without seeing the transaction, the verdict is
+    /// cleared and the root probed again from scratch.
+    #[tokio::test]
+    async fn should_probe_again_when_the_wallet_never_sees_a_mined_root() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), mined())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
+        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))).copied()
+        else {
+            panic!("found mined");
+        };
+        let probes_before = probe.probed().len();
+
+        // The wallet follows its chain, block by block, and never sees it.
+        for height in at + 1..=at + MINED_EVIDENCE_GRACE {
+            rig.height(wallet(), height).await;
+        }
+
+        let sent = rig.sent();
+        assert_eq!(
+            sent.first(),
+            Some(&ResolverEvent::Cleared(txid(1))),
+            "the stale verdict is withdrawn: {sent:?}"
+        );
+        assert!(
+            probe.probed().len() > probes_before,
+            "and the root is asked about again"
+        );
     }
 
     /// A rewind asks again about roots a probe found mined: the block it saw
@@ -4222,8 +4378,12 @@ mod tests {
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
         assert_eq!(
-            rig.actor.state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined)
+            rig.actor
+                .state
+                .finished
+                .get(&(wallet(), txid(1)))
+                .is_some_and(|result| matches!(result, Final::Mined { .. })),
+            true
         );
 
         rig.height(wallet(), 50).await;
@@ -4324,8 +4484,12 @@ mod tests {
         rig.height(wallet(), 103).await;
 
         assert_eq!(
-            rig.actor.state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined)
+            rig.actor
+                .state
+                .finished
+                .get(&(wallet(), txid(1)))
+                .is_some_and(|result| matches!(result, Final::Mined { .. })),
+            true
         );
         assert!(!rig
             .sent()
