@@ -3158,6 +3158,51 @@ mod tests {
         );
     }
 
+    /// A coin seeded on the builder that no funding account holds, once
+    /// selected (a drain takes every candidate), is the typed refusal naming
+    /// it — and the build's reservation is released: the same drain without
+    /// it builds at once.
+    #[tokio::test]
+    async fn should_refuse_a_selected_builder_seed_outside_the_funding_accounts() {
+        let (core, signer, _manager, _wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+        let outside = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        let drain = |tag| {
+            TransactionBuilder::new()
+                .set_selection_strategy(SelectionStrategy::All)
+                .add_output(&DashAddress::dummy(Network::Testnet, tag), 0)
+        };
+        let sources = [preference(StandardAccountType::BIP44Account)];
+
+        let result = core
+            .finalize_transaction(
+                drain(104).add_inputs([outside.clone()]),
+                &sources,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::ChosenInputUnavailable {
+                    outpoint,
+                    problem: ChosenInputProblem::NotInFundingAccounts,
+                }) if outpoint == outside.outpoint
+            ),
+            "got {result:?}"
+        );
+
+        let built = core
+            .finalize_transaction(drain(105), &sources, 0, &signer)
+            .await
+            .expect("nothing of the refused build stays reserved");
+        core.abandon_transaction(&built).await;
+    }
+
     /// A payment the unconfirmed coins would not cover either stays a plain
     /// shortfall: waiting would not help.
     #[tokio::test]

@@ -24,11 +24,12 @@
 //! shows. A root's verdict goes to the root when it is the wallet's send.
 //! A root found in a block that the wallet has not
 //! seen yet counts as settled, so the sends built on it become roots, due at
-//! the next pass.
+//! the next pass — until that evidence goes stale (see `MINED_EVIDENCE_GRACE`).
 //! Only changes are published — Unresolved never replaces a decided verdict,
 //! and Accepted and Mined count as the same. The host is told to drop a
 //! send's verdict (cleared) when the send settles or leaves the wallet, when
-//! its wallet is removed and, for every send, when probing is turned off;
+//! its wallet is removed, when mined evidence for it or the root it is built
+//! on goes stale and, for every send, when probing is turned off;
 //! cleared says only "forget the verdict", not that the send settled. A
 //! wallet event that reports a send settled (in a block or InstantSend-
 //! locked) or swept clears its verdict at once, even mid-scan; a pass
@@ -392,8 +393,9 @@ impl ProbeSchedule {
 /// A root's verdict that pauses its probing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Final {
-    /// Found in a block by a probe (two nodes), before the wallet saw it,
-    /// at the wallet's synced height `at`. Advisory, not settlement: only the
+    /// Found in a block by a probe (two nodes), before the wallet saw it;
+    /// `at` is the later of the wallet's synced height then and the block
+    /// height a node named. Advisory, not settlement: only the
     /// wallet seeing it settles it, and evidence the wallet does not confirm
     /// within [`MINED_EVIDENCE_GRACE`] blocks is dropped (see `begin_pass`).
     Mined { at: u32 },
@@ -430,8 +432,9 @@ pub(crate) enum ResolverEvent {
     /// A send's verdict changed.
     Verdict(Txid, ProbeVerdict),
     /// The host must drop the verdict it holds for a send: the send settled
-    /// or left the wallet, its wallet was removed, or probing was turned off.
-    /// Not a statement that the send settled.
+    /// or left the wallet, its wallet was removed, mined evidence for it (or
+    /// the root it is built on) went stale, or probing was turned off. Not a
+    /// statement that the send settled.
     Cleared(Txid),
 }
 
@@ -468,6 +471,10 @@ pub(crate) struct ResolverState {
     /// across probes while it stays unsettled: [`MINED_QUORUM`] of them make
     /// it mined even when no single probe heard two.
     seen_in_block: HashMap<(WalletId, Txid), BTreeSet<String>>,
+    /// Sends whose published verdict came from a peer echo of their own
+    /// broadcast, not from a probe of their chain's root: that verdict does
+    /// not rest on any ancestor's evidence.
+    echoed: HashSet<(WalletId, Txid)>,
 }
 
 impl ResolverState {
@@ -478,6 +485,7 @@ impl ResolverState {
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
         self.seen_in_block
             .retain(|(wallet, _), _| wallet != wallet_id);
+        self.echoed.retain(|(wallet, _)| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, trigger)
     }
 
@@ -486,6 +494,7 @@ impl ResolverState {
         self.schedules.clear();
         self.finished.clear();
         self.seen_in_block.clear();
+        self.echoed.clear();
         self.clear_where(|_, _| true, None, "disabled")
     }
 
@@ -509,6 +518,7 @@ impl ResolverState {
             self.schedules.remove(&key);
             self.finished.remove(&key);
             self.seen_in_block.remove(&key);
+            self.echoed.remove(&key);
         }
         self.clear_where(
             |wallet, txid| *wallet == wallet_id && txids.contains(txid),
@@ -709,7 +719,11 @@ pub(crate) fn begin_pass(
             .map(|((_, txid), _)| *txid)
             .collect();
         if !stale.is_empty() {
-            let withdrawn = with_descendants(views, stale);
+            // A descendant's own echo is its own evidence, not the parent's:
+            // that verdict stays.
+            let mut withdrawn = with_descendants(views, stale.clone());
+            withdrawn
+                .retain(|txid| stale.contains(txid) || !state.echoed.contains(&(wallet_id, *txid)));
             events.extend(state.forget(wallet_id, &withdrawn, Some(height), "mined-not-seen"));
         }
     }
@@ -788,7 +802,11 @@ pub(crate) fn record_probe(
         report.verdict.clone()
     };
     if matches!(verdict, ProbeVerdict::Mined) {
-        state.finished.insert(key, Final::Mined { at: height });
+        // The grace counts from the later of the wallet's height and the
+        // block the nodes named: a wallet still short of that block has not
+        // had the chance to see it.
+        let at = height.max(report.block_height.unwrap_or(0));
+        state.finished.insert(key, Final::Mined { at });
     }
     if root.own {
         state.publish_all(
@@ -799,6 +817,11 @@ pub(crate) fn record_probe(
             trigger_of(root.forced),
             &mut events,
         );
+        // A decided verdict from the probe replaces the echo's; Unresolved
+        // never replaces a decided one, so the echo still stands then.
+        if !matches!(verdict, ProbeVerdict::Unresolved { .. }) {
+            state.echoed.remove(&key);
+        }
     }
     events
 }
@@ -1574,6 +1597,7 @@ impl Actor {
                         "echo",
                         &mut events,
                     );
+                    self.state.echoed.insert((wallet_id, txid));
                 }
                 deliver(&self.sink, events);
             }
@@ -4406,6 +4430,99 @@ mod tests {
         );
     }
 
+    /// The grace counts from the block the nodes named when the wallet is
+    /// still short of it: evidence for block 120 reported while the wallet is
+    /// at 101 is not withdrawn before the wallet has had 120 + grace.
+    #[tokio::test]
+    async fn should_count_the_grace_from_the_reported_block() {
+        let mut state = ResolverState::default();
+        let root = DueRoot {
+            txid: txid(1),
+            transaction: Arc::new(tx(1, &[outpoint(90, 0)])),
+            own: true,
+            forced: false,
+        };
+        let report = ProbeReport {
+            verdict: ProbeVerdict::Mined,
+            in_block_by: BTreeSet::from(["a".to_string(), "b".to_string()]),
+            block_height: Some(120),
+        };
+        record_probe(&mut state, wallet(), 101, &root, &report);
+        assert_eq!(
+            state.finished.get(&(wallet(), txid(1))),
+            Some(&Final::Mined { at: 120 })
+        );
+        let views = [send(1, &[outpoint(90, 0)])];
+        assert_eq!(
+            next_pass_height(&state, wallet(), &views),
+            120 + MINED_EVIDENCE_GRACE
+        );
+    }
+
+    /// Mined evidence is stamped with the wallet's height when the answer
+    /// arrives: the wallet moved on while the probe was out, and the grace
+    /// counts from there, not from the height the pass started at.
+    #[tokio::test]
+    async fn should_stamp_mined_evidence_with_the_height_it_arrived_at() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // the probe is out
+        let probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 103,
+        });
+        rig.actor.joined(probed);
+        rig.settle().await;
+
+        assert_eq!(
+            rig.actor.state.finished.get(&(wallet(), txid(1))),
+            Some(&Final::Mined { at: 103 })
+        );
+    }
+
+    /// A child's own echo is its own evidence: when the parent's mined
+    /// evidence goes stale, the parent's verdict is withdrawn but the child's
+    /// echo-sourced acceptance stays.
+    #[tokio::test]
+    async fn should_keep_a_childs_echo_when_the_parents_mined_evidence_goes_stale() {
+        let probe = Arc::new(ScriptedProbe::new(&[
+            (txid(1), mined()),
+            (txid(2), unresolved()),
+        ]));
+        let mut rig = enabled(probe).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
+        );
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(2))).await;
+        rig.send(Command::Echoed(txid(2))).await;
+        let sent = rig.sent();
+        assert!(
+            sent.contains(&ResolverEvent::Verdict(txid(2), ProbeVerdict::Accepted)),
+            "{sent:?}"
+        );
+        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))).copied()
+        else {
+            panic!("found mined");
+        };
+
+        for height in 102..=at + MINED_EVIDENCE_GRACE {
+            rig.height(wallet(), height).await;
+        }
+
+        let sent = rig.sent();
+        assert!(sent.contains(&ResolverEvent::Cleared(txid(1))), "{sent:?}");
+        assert!(!sent.contains(&ResolverEvent::Cleared(txid(2))), "{sent:?}");
+    }
+
     /// Stale mined evidence is judged only while the wallet follows the tip:
     /// a catch-up jump past the grace does not withdraw it, the next followed
     /// block does.
@@ -4593,6 +4710,7 @@ mod tests {
         ProbeReport {
             verdict: ProbeVerdict::Accepted,
             in_block_by: BTreeSet::from([node.to_string()]),
+            block_height: None,
         }
     }
 

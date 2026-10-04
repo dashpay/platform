@@ -271,9 +271,10 @@ pub enum PlatformWalletError {
     )]
     InputMidBroadcast { outpoint: dashcore::OutPoint },
 
-    /// A coin the caller chose as an input by outpoint
-    /// (`FinalizeOptions::inputs`, FFI `add_inputs_from_outpoints`) cannot be
-    /// spent by this build: the finalizer's funding accounts don't hold it
+    /// A coin the caller chose as an input — by outpoint
+    /// (`FinalizeOptions::inputs`, FFI `add_inputs_from_outpoints`), or seeded
+    /// on the builder itself (`TransactionBuilder::add_inputs`) and selected —
+    /// cannot be spent by this build: the finalizer's funding accounts don't hold it
     /// (another account's coin, or spent since it was chosen — refresh the
     /// list), or it is not spendable yet (an immature coinbase output, a
     /// locked coin). Refused by name rather than left out: the caller picked

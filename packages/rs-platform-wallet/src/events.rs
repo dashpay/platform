@@ -71,8 +71,9 @@ pub trait PlatformEventHandler: EventHandler {
     /// settled (block or InstantSend lock) or left the wallet, its wallet was
     /// removed, probing was turned off (then for every send), or nodes had
     /// reported it (or the send it builds on) in a block the wallet has not
-    /// seen several blocks later — that evidence was withdrawn and a fresh
-    /// verdict follows. It does not mean the send settled. Hosts drop any state they kept for the verdict.
+    /// seen several blocks later — that evidence was withdrawn; the root is
+    /// probed again, and a send built on it has no verdict until probed or
+    /// echoed again. It does not mean the send settled. Hosts drop any state they kept for the verdict.
     ///
     /// Default impl is a no-op so existing handlers don't have to care.
     fn on_outgoing_transaction_cleared(&self, _wallet_id: &WalletId, _txid: &Txid) {}

@@ -61,7 +61,8 @@ pub const OUTGOING_PROBE_VERDICT_UNRESOLVED: u8 = 2;
 /// when the send settled or left the wallet, when its wallet was removed, for
 /// every send when probing is turned off, and when nodes' report of it (or of
 /// the send it builds on) in a block went unseen by the wallet for several
-/// blocks — a fresh verdict follows then. It does not mean the send settled.
+/// blocks — the root is probed again; a send built on it has no verdict until
+/// probed or echoed again. It does not mean the send settled.
 /// `reason` is null.
 pub const OUTGOING_PROBE_VERDICT_CLEARED: u8 = 3;
 

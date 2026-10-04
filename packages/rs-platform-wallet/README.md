@@ -176,7 +176,9 @@ source and behaviour changes:
 - `PlatformWalletError` gains `ChosenInputUnavailable { outpoint, problem:
   ChosenInputProblem }` (new public enum: `NotInFundingAccounts`,
   `NotSpendable`; FFI `ErrorInvalidParameter`): a coin chosen by outpoint the
-  build cannot spend. An exhaustive `match` needs an arm for it.
+  build cannot spend — and a coin seeded on the builder with `add_inputs`
+  that selection picked but no funding account holds, which used to be a
+  `TransactionBuild` string error. An exhaustive `match` needs an arm for it.
 - `PlatformWalletError` gains `CoreFundsAwaitingNetwork { available, waiting,
   required, outpoint }` (FFI code 59): the build's final coins fall short, but
   key-wallet would build it if the coins that are not yet confirmed or

@@ -134,8 +134,9 @@ pub enum ProbeVerdict {
 /// Whether one node knows a txid (DAPI `getTransaction`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LookupAnswer {
-    /// The node has the transaction; `mined` when it is in a block.
-    Known { mined: bool },
+    /// The node has the transaction; `mined` when it is in a block, at
+    /// `height` when the node named one.
+    Known { mined: bool, height: Option<u32> },
     /// The node answered and does not have it.
     NotFound,
     /// No answer: transport failure, timeout, anything else.
@@ -190,6 +191,9 @@ pub trait AcceptanceProbe: Send + Sync + 'static {
 pub struct ProbeReport {
     pub verdict: ProbeVerdict,
     pub in_block_by: BTreeSet<String>,
+    /// The highest block height a node's lookup placed the transaction at,
+    /// when one did (a submission's "already in the block chain" names none).
+    pub block_height: Option<u32>,
 }
 
 impl From<ProbeVerdict> for ProbeReport {
@@ -197,6 +201,7 @@ impl From<ProbeVerdict> for ProbeReport {
         Self {
             verdict,
             in_block_by: BTreeSet::new(),
+            block_height: None,
         }
     }
 }
@@ -286,6 +291,8 @@ enum LookupFor {
 #[derive(Default)]
 struct MinedEvidence {
     nodes: HashSet<String>,
+    /// The highest block height a lookup named.
+    height: Option<u32>,
     /// Any node said so, identified or not: the transaction exists.
     seen: bool,
 }
@@ -323,6 +330,7 @@ async fn confirm_by_lookup(
     let report = |verdict, mined: &MinedEvidence| ProbeReport {
         verdict,
         in_block_by: mined.nodes.iter().cloned().collect(),
+        block_height: mined.height,
     };
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
@@ -335,12 +343,18 @@ async fn confirm_by_lookup(
             "broadcast probe: txid lookup answered"
         );
         match answer {
-            LookupAnswer::Known { mined: true } => {
+            LookupAnswer::Known {
+                mined: true,
+                height,
+            } => {
+                mined.height = mined.height.max(height);
                 if mined.add(node) {
                     return report(ProbeVerdict::Mined, &mined);
                 }
             }
-            LookupAnswer::Known { mined: false } => return report(ProbeVerdict::Accepted, &mined),
+            LookupAnswer::Known { mined: false, .. } => {
+                return report(ProbeVerdict::Accepted, &mined)
+            }
             LookupAnswer::NotFound => {
                 if let Some(node) = node {
                     not_found.insert(node);
@@ -379,7 +393,10 @@ fn lookup_answer(tx: &GetTransactionResponse) -> LookupAnswer {
             reason: "known only from a block off the active chain".to_string(),
         };
     }
-    LookupAnswer::Known { mined }
+    LookupAnswer::Known {
+        mined,
+        height: u32::try_from(tx.height).ok().filter(|height| *height > 0),
+    }
 }
 
 /// One node per request: the probe decides whether to ask another, and it has
@@ -567,11 +584,17 @@ mod tests {
     }
 
     fn in_block() -> LookupAnswer {
-        LookupAnswer::Known { mined: true }
+        LookupAnswer::Known {
+            mined: true,
+            height: None,
+        }
     }
 
     fn in_mempool() -> LookupAnswer {
-        LookupAnswer::Known { mined: false }
+        LookupAnswer::Known {
+            mined: false,
+            height: None,
+        }
     }
 
     fn conflict() -> NodeVerdict {
@@ -815,6 +838,25 @@ mod tests {
         );
     }
 
+    /// The block height a lookup names rides on the report, for the resolver
+    /// to count its grace from.
+    #[tokio::test]
+    async fn should_report_the_block_height_a_lookup_named() {
+        let nodes = ScriptedNodes::with_lookups(
+            vec![(Some("a"), NodeVerdict::Mined)],
+            vec![(
+                Some("b"),
+                LookupAnswer::Known {
+                    mined: true,
+                    height: Some(1_234),
+                },
+            )],
+        );
+        let report = probe_with(&nodes, &transaction()).await;
+        assert_eq!(report.verdict, ProbeVerdict::Mined);
+        assert_eq!(report.block_height, Some(1_234));
+    }
+
     /// A node that has the transaction in a block makes it exist, whatever
     /// the refusals and lookups that follow say.
     #[tokio::test]
@@ -849,7 +891,14 @@ mod tests {
         };
 
         assert_eq!(answer(Vec::new(), 0, 0), in_mempool());
-        assert_eq!(answer(vec![1; 32], 100, 3), in_block());
+        assert_eq!(
+            answer(vec![1; 32], 100, 3),
+            LookupAnswer::Known {
+                mined: true,
+                height: Some(100),
+            },
+            "the node's block height is kept"
+        );
         assert!(matches!(
             answer(vec![1; 32], 0, 0),
             LookupAnswer::Unknown { .. }
