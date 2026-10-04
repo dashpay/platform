@@ -246,9 +246,9 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 
     let signer =
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
-    let make = || state.make();
+    let make = move || state.make();
     let finalized = runtime().block_on(wallet.core().finalize_transaction_from(
-        &make,
+        make,
         options,
         account_type.funding_sources(),
         account_index,
@@ -428,9 +428,9 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize_with_deliverable(
     // `core_wallet_tx_builder_use_only_added_inputs` and then finalized a
     // DEFERRED payment would otherwise have the restriction silently discarded,
     // and the account's UTXOs would be offered to selection after all.
-    let make = || state.make();
+    let make = move || state.make();
     let finalized = runtime().block_on(wallet.core().finalize_transaction_from(
-        &make,
+        make,
         options,
         account_type.funding_sources(),
         account_index,
@@ -1264,9 +1264,9 @@ mod pooled_balance_handle_tests {
     ) -> Result<platform_wallet::SignedCoreTransaction, PlatformWalletError> {
         let (_, BuildPlan { state, options }) =
             unsafe { FFITransactionBuilder::into_build(builder) };
-        let make = || state.make();
+        let make = move || state.make();
         runtime().block_on(core.finalize_transaction_from(
-            &make,
+            make,
             options,
             CoreAccountTypeFFI::AllSpendable.funding_sources(),
             0,
@@ -1834,5 +1834,181 @@ mod tests {
         let mut burn = op_return(b"credits");
         burn.value = 500_000;
         assert_eq!(sole_deliverable_value(&[burn]), 0);
+    }
+}
+
+#[cfg(test)]
+mod real_finalizer_tests {
+    //! The extern finalizers end to end: a wallet handle, a mnemonic
+    //! resolver handle, the recorded builder — no shortcut through the
+    //! Rust API — so their wiring (recipe replay, the waiting-coins trial,
+    //! options) is what is tested.
+
+    use super::*;
+    use crate::core_wallet::broadcast::core_wallet_signed_transaction_free;
+    use platform_wallet::test_support::{add_bip44_coin, test_platform_wallet_manager};
+    use rs_sdk_ffi::{
+        dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
+        mnemonic_resolver_result,
+    };
+
+    /// The mnemonic `test_platform_wallet_manager` creates its wallet from.
+    const PHRASE: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    unsafe extern "C" fn resolve(
+        _ctx: *const c_void,
+        _wallet_id_bytes: *const u8,
+        out_buf: *mut c_char,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        let phrase = PHRASE.as_bytes();
+        if phrase.len() + 1 > out_capacity {
+            return mnemonic_resolver_result::BUFFER_TOO_SMALL;
+        }
+        std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
+        *out_buf.add(phrase.len()) = 0;
+        *out_len = phrase.len();
+        mnemonic_resolver_result::SUCCESS
+    }
+
+    unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
+
+    /// A registered wallet whose only coin is `value` duffs, final or not.
+    fn wallet_with_coin(value: u64, final_: bool) -> (Handle, impl Drop) {
+        let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
+        let wallet = runtime()
+            .block_on(manager.get_wallet(&wallet_id))
+            .expect("wallet present");
+        runtime().block_on(add_bip44_coin(&wallet, value, final_, 0x5a));
+        let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
+        /// Unregisters the handle; keeps the manager (which owns the wallet's
+        /// event task) alive until then.
+        struct Release {
+            handle: Handle,
+            _manager: std::sync::Arc<dyn std::any::Any + Send + Sync>,
+        }
+        impl Drop for Release {
+            fn drop(&mut self) {
+                PLATFORM_WALLET_STORAGE.remove(self.handle);
+            }
+        }
+        (
+            handle,
+            Release {
+                handle,
+                _manager: manager,
+            },
+        )
+    }
+
+    /// The app's Send: one output, default rate, the pooled sources.
+    fn app_payment(amount: u64) -> *mut FFITransactionBuilder {
+        let builder = unsafe { core_wallet_tx_builder_new(FFINetwork::Testnet) };
+        let address =
+            CString::new(DashAddress::dummy(Network::Testnet, 97).to_string()).expect("address");
+        let added = unsafe { core_wallet_tx_builder_add_output(builder, address.as_ptr(), amount) };
+        assert_eq!(added.code, PlatformWalletFFIResultCode::Success);
+        builder
+    }
+
+    /// The app's shape through `core_wallet_tx_builder_finalize`: the only
+    /// coin is the change of a send whose broadcast outcome is unknown (not
+    /// final), and a second payment is code 59, with no handle published.
+    #[test]
+    fn should_return_code_59_from_the_real_finalizer_for_the_apps_second_payment() {
+        let (wallet, _release) = wallet_with_coin(8_999_774, false);
+        let resolver = unsafe {
+            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), resolve, noop_destroy)
+        };
+        let mut out: Handle = 7;
+        let result = unsafe {
+            core_wallet_tx_builder_finalize(
+                app_payment(1_000_000),
+                wallet,
+                CoreAccountTypeFFI::AllSpendable,
+                0,
+                resolver,
+                &mut out,
+            )
+        };
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
+        );
+        assert_eq!(out, 0, "nothing is published");
+    }
+
+    /// The same through the deferred finalizer, which shares the plumbing.
+    #[test]
+    fn should_return_code_59_from_the_deferred_finalizer_too() {
+        let _registry = crate::core_wallet::signed_payment::registry_test_guard();
+        let (wallet, _release) = wallet_with_coin(8_999_774, false);
+        let resolver = unsafe {
+            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), resolve, noop_destroy)
+        };
+        let (mut token, mut fee) = (0u64, 0u64);
+        let mut txid: *mut c_char = std::ptr::null_mut();
+        let mut tx = FFICoreTransaction {
+            tx_bytes: std::ptr::null_mut(),
+            tx_len: 0,
+            fee: 0,
+        };
+        let mut bytes: *const u8 = std::ptr::null();
+        let mut len: usize = 0;
+        let result = unsafe {
+            core_wallet_signed_payment_finalize(
+                app_payment(1_000_000),
+                wallet,
+                CoreAccountTypeFFI::AllSpendable,
+                0,
+                resolver,
+                &mut token,
+                &mut fee,
+                &mut txid,
+                &mut tx,
+                &mut bytes,
+                &mut len,
+            )
+        };
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
+        );
+        assert_eq!(token, 0);
+    }
+
+    /// A final coin funds the same payment: signed through the resolver, a
+    /// handle published.
+    #[test]
+    fn should_finalize_and_sign_through_the_real_finalizer() {
+        let (wallet, _release) = wallet_with_coin(8_999_774, true);
+        let resolver = unsafe {
+            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), resolve, noop_destroy)
+        };
+        let mut out: Handle = 0;
+        let result = unsafe {
+            core_wallet_tx_builder_finalize(
+                app_payment(1_000_000),
+                wallet,
+                CoreAccountTypeFFI::AllSpendable,
+                0,
+                resolver,
+                &mut out,
+            )
+        };
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        let message = (!result.message.is_null())
+            .then(|| unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy());
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::Success,
+            "{message:?}"
+        );
+        assert_ne!(out, 0);
+        core_wallet_signed_transaction_free(out);
     }
 }

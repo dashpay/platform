@@ -158,8 +158,9 @@ source and behaviour changes:
   is seeded under the write guard). `finalize_transaction` keeps its
   signature.
 - New `CoreWallet::finalize_transaction_from(make, options, sources,
-  source_index, signer)` takes a `BuilderFactory` (`Fn() ->
-  Result<TransactionBuilder, PlatformWalletError>`) instead of a builder. It
+  source_index, signer)` takes a factory (`Fn() ->
+  Result<TransactionBuilder, PlatformWalletError> + Send + Sync`, by value,
+  dropped before the signer runs) instead of a builder. It
   builds `make()`, and on a shortfall builds `make()` once more as a trial,
   without signing or keeping a reservation, with the coins that are not final
   yet treated as final: if key-wallet builds that, the shortfall is

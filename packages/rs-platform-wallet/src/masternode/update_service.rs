@@ -450,9 +450,11 @@ where
 {
     // Made again on a shortfall, so a fee only unconfirmed coins would cover
     // is reported as waiting on the network (code 59).
-    let make = || update_service_builder(placeholder.clone(), operator_secret.clone());
+    // The factory owns the one long-lived copy of the operator secret and is
+    // dropped before the signer runs (`finalize_transaction_from`).
+    let make = move || update_service_builder(placeholder.clone(), operator_secret.clone());
     core.finalize_transaction_from(
-        &make,
+        make,
         FinalizeOptions::default(),
         &SEND_FUNDING_SOURCES,
         0,

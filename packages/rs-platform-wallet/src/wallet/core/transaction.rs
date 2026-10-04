@@ -118,7 +118,7 @@ pub fn input_awaiting_network(utxo: &Utxo) -> PlatformWalletError {
 /// must pass [`check_fee_rate`]: key-wallet multiplies rate by size
 /// unchecked.
 pub type BuilderFactory<'a> =
-    dyn Fn() -> Result<TransactionBuilder, PlatformWalletError> + Sync + 'a;
+    dyn Fn() -> Result<TransactionBuilder, PlatformWalletError> + Send + Sync + 'a;
 
 /// The largest size key-wallet could be asked to price. Coin selection
 /// prices candidate sets before it enforces the input limit, so the bound is
@@ -140,7 +140,9 @@ pub fn check_fee_rate(rate: FeeRate) -> Result<(), PlatformWalletError> {
 pub struct FinalizeOptions {
     /// Coins the build may spend, by outpoint. Each is looked up in the
     /// funding accounts under the wallet-manager write guard and the wallet's
-    /// current copy is seeded, so it is judged on its finality now, not on a
+    /// current copy is seeded (one outside them is refused by name under
+    /// `reservation_only`, and otherwise stays a candidate selection may
+    /// skip), so it is judged on its finality now, not on a
     /// snapshot taken when the caller chose it: a coin InstantSend-locked
     /// since may be spent, one that is not final (any more) is refused by
     /// name with `CoreFundsAwaitingNetwork`, and one an in-flight broadcast
@@ -174,12 +176,13 @@ pub struct FinalizeOptions {
 /// waiting coins is funded through a clone with those coins marked final, and
 /// so is every standard account — key-wallet asks each account in turn for a
 /// change address from its pool, and only a standard account has one — so no
-/// account state moves; the others are funded as they are. Coins (and seeds)
-/// an in-flight broadcast pins (`pinned`, the caller's snapshot) are locked,
-/// so selection passes them over. The
-/// clones share the reservation sets, so what the trial reserves is released
-/// before returning. Nothing is signed (a
-/// payload finalizer on the configuration does run, as in the build). Runs
+/// account state moves; the others are funded as they are. Account coins an
+/// in-flight broadcast pins (`pinned`, the caller's snapshot) are locked, so
+/// selection passes them over; a pinned seed was refused before, and a seed
+/// outside the funding accounts is locked too, since the build fails if it
+/// selects one. The clones share the reservation sets, so what the trial
+/// reserves is released before returning. Nothing is signed (a payload
+/// finalizer on the configuration does run, as in the build). Runs
 /// under the caller's wallet-manager write guard, on the failure path only.
 pub(crate) fn trial_with_waiting_coins(
     make: &BuilderFactory<'_>,
@@ -244,14 +247,27 @@ pub(crate) fn trial_with_waiting_coins(
         }
         clones.insert(*at, clone);
     }
-    // Seeds were refused when pinned (`finalize`), so they go in as they are.
+    // A seed no funding account holds would fail the build if selected: the
+    // trial passes it over.
+    let seeds: Vec<Utxo> = seeds
+        .iter()
+        .cloned()
+        .map(|mut seed| {
+            seed.is_locked |= !offered.iter().any(|at| {
+                accounts
+                    .funds_account(at)
+                    .is_some_and(|managed| managed.utxos.contains_key(&seed.outpoint))
+            });
+            seed
+        })
+        .collect();
     let trial = fund(
         trial,
         wallet,
         accounts,
         &mut clones,
         offered,
-        seeds.iter().cloned(),
+        seeds,
         false,
         height,
     );
@@ -950,24 +966,40 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// key-wallet's own verdict, at the build's fee rate, outputs, payload and
     /// strategy; otherwise it stays insufficient funds. See
     /// [`BuilderFactory`] for what `make` must not do.
-    pub async fn finalize_transaction_from<S: TransactionSigner + ?Sized + Sync>(
+    ///
+    /// `make` is dropped as soon as the wallet-manager lock is released, before
+    /// the signer runs, so whatever it captures (a payload signing key, say)
+    /// does not outlive the build.
+    pub async fn finalize_transaction_from<F, S>(
         &self,
-        make: &BuilderFactory<'_>,
+        make: F,
         options: FinalizeOptions,
         sources: &[AccountTypePreference],
         source_index: u32,
         signer: &S,
-    ) -> Result<SignedCoreTransaction, PlatformWalletError> {
-        self.finalize(make()?, Some(make), options, sources, source_index, signer)
-            .await
+    ) -> Result<SignedCoreTransaction, PlatformWalletError>
+    where
+        F: Fn() -> Result<TransactionBuilder, PlatformWalletError> + Send + Sync,
+        S: TransactionSigner + ?Sized + Sync,
+    {
+        let builder = make()?;
+        self.finalize(
+            builder,
+            Some(Box::new(make)),
+            options,
+            sources,
+            source_index,
+            signer,
+        )
+        .await
     }
 
     async fn finalize<S: TransactionSigner + ?Sized + Sync>(
         &self,
         builder: TransactionBuilder,
         // Makes the build again for the waiting-coins trial; `None`: a
-        // shortfall stays insufficient funds.
-        make: Option<&BuilderFactory<'_>>,
+        // shortfall stays insufficient funds. Dropped before signing.
+        make: Option<Box<BuilderFactory<'_>>>,
         options: FinalizeOptions,
         // The funding sources to POOL, in order — the first supplies the
         // change address. A plain send passes [`SEND_FUNDING_SOURCES`]
@@ -1046,19 +1078,34 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 if !seeded.insert(*outpoint) {
                     continue;
                 }
-                let utxo = resolved
-                    .iter()
-                    .find_map(|at| {
-                        info.core_wallet
-                            .accounts
-                            .funds_account(at)
-                            .and_then(|managed| managed.utxos.get(outpoint))
-                    })
-                    .ok_or_else(|| {
-                        PlatformWalletError::TransactionBuild(format!(
+                let Some(utxo) = resolved.iter().find_map(|at| {
+                    info.core_wallet
+                        .accounts
+                        .funds_account(at)
+                        .and_then(|managed| managed.utxos.get(outpoint))
+                }) else {
+                    // Outside the funding accounts. Mandatory under
+                    // `reservation_only` (the seeds are all the build spends):
+                    // refused by name. Otherwise it stays what it always was, a
+                    // candidate selection may skip — the wallet's copy if it
+                    // holds the coin at all; a build that does select it fails
+                    // after selection like any input no funding account owns.
+                    if reservation_only {
+                        return Err(PlatformWalletError::TransactionBuild(format!(
                             "input {outpoint} is not a coin of any funding account"
-                        ))
-                    })?;
+                        )));
+                    }
+                    if let Some(utxo) = info
+                        .core_wallet
+                        .accounts
+                        .all_funding_accounts()
+                        .into_iter()
+                        .find_map(|managed| managed.utxos.get(outpoint))
+                    {
+                        seeds.push(utxo.clone());
+                    }
+                    continue;
+                };
                 // Unspendable — an immature coinbase output, or a locked coin:
                 // the selector would drop it silently, and confirmation alone
                 // would not change that, so this is checked first.
@@ -1128,7 +1175,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     // Only a shortfall can be waiting on the network, and a
                     // `reservation_only` build spends only its seeds, which are
                     // final by now: nothing it could spend is waiting.
-                    let trial = make.filter(|_| is_shortfall(&error) && !reservation_only);
+                    let trial = make
+                        .as_deref()
+                        .filter(|_| is_shortfall(&error) && !reservation_only);
                     let error = map_builder_error(error, funding_context);
                     let Some(make) = trial else {
                         return error;
@@ -1279,6 +1328,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 contributors,
             )
         };
+        // The factory, and whatever it captured, does not live across the
+        // signer.
+        drop(make);
 
         let signed = match signer
             .sign_tx(unsigned.clone(), selected, move |address| {
@@ -2536,7 +2588,7 @@ mod tests {
 
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(70)),
+                || Ok(payment_builder(70)),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2586,7 +2638,7 @@ mod tests {
             .expect("bip32 coin");
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(91).add_inputs([seeded.clone()])),
+                || Ok(payment_builder(91).add_inputs([seeded.clone()])),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2628,7 +2680,7 @@ mod tests {
         let pin = core.test_generation_marker().pin_in_broadcast(&dispatch);
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(92)),
+                || Ok(payment_builder(92)),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2649,7 +2701,7 @@ mod tests {
         set_bip44_finality(&manager, &wallet_id, false).await;
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(93)),
+                || Ok(payment_builder(93)),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2691,7 +2743,7 @@ mod tests {
         let _pin = core.test_generation_marker().pin_in_broadcast(&dispatch);
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(94)),
+                || Ok(payment_builder(94)),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2713,7 +2765,7 @@ mod tests {
         // build would refuse it after selection.
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(95)),
+                || Ok(payment_builder(95)),
                 FinalizeOptions {
                     inputs: vec![pinned.outpoint],
                     reservation_only: false,
@@ -2753,7 +2805,7 @@ mod tests {
         set_bip44_finality(&manager, &wallet_id, false).await;
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(96)),
+                || Ok(payment_builder(96)),
                 FinalizeOptions {
                     inputs: vec![chosen.outpoint],
                     reservation_only: false,
@@ -2772,6 +2824,59 @@ mod tests {
         );
     }
 
+    /// A coin chosen by outpoint outside the funding accounts is a candidate
+    /// selection may skip, as it always was: a payment the funding account
+    /// covers on its own builds without it. Under `reservation_only` the seeds
+    /// are all the build spends, so it is refused by name.
+    #[tokio::test]
+    async fn should_skip_or_refuse_an_input_outside_the_funding_accounts() {
+        let (core, signer, _manager, _wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+        let outside = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        let sources = [preference(StandardAccountType::BIP44Account)];
+
+        let built = core
+            .finalize_transaction_from(
+                || Ok(payment_builder(97)),
+                FinalizeOptions {
+                    inputs: vec![outside.outpoint],
+                    reservation_only: false,
+                },
+                &sources,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the funding account covers the payment");
+        assert!(built
+            .transaction()
+            .input
+            .iter()
+            .all(|input| input.previous_output != outside.outpoint));
+        core.abandon_transaction(&built).await;
+
+        let result = core
+            .finalize_transaction_from(
+                || Ok(payment_builder(98)),
+                FinalizeOptions {
+                    inputs: vec![outside.outpoint],
+                    reservation_only: true,
+                },
+                &sources,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBuild(ref message))
+                if message.contains(&outside.outpoint.to_string())),
+            "got {result:?}"
+        );
+    }
+
     /// A payment the unconfirmed coins would not cover either stays a plain
     /// shortfall: waiting would not help.
     #[tokio::test]
@@ -2784,7 +2889,7 @@ mod tests {
         };
         let result = core
             .finalize_transaction_from(
-                &|| Ok(builder()),
+                || Ok(builder()),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2814,7 +2919,7 @@ mod tests {
         };
         let result = core
             .finalize_transaction_from(
-                &|| Ok(builder()),
+                || Ok(builder()),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2848,7 +2953,7 @@ mod tests {
         set_bip44_finality(&manager, &wallet_id, false).await;
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(74)),
+                || Ok(payment_builder(74)),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2893,7 +2998,7 @@ mod tests {
 
         let described = core
             .finalize_transaction_from(
-                &|| Ok(high_rate(87)),
+                || Ok(high_rate(87)),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2904,7 +3009,7 @@ mod tests {
 
         let default_rate = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(88)),
+                || Ok(payment_builder(88)),
                 FinalizeOptions::default(),
                 &SEND_FUNDING_SOURCES,
                 0,
@@ -2943,7 +3048,7 @@ mod tests {
         for reservation_only in [false, true] {
             let result = core
                 .finalize_transaction_from(
-                    &|| Ok(payment_builder(76)),
+                    || Ok(payment_builder(76)),
                     FinalizeOptions {
                         inputs: vec![seeded.outpoint],
                         reservation_only,
@@ -2968,7 +3073,7 @@ mod tests {
 
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(77)),
+                || Ok(payment_builder(77)),
                 FinalizeOptions {
                     reservation_only: true,
                     ..FinalizeOptions::default()
@@ -3002,7 +3107,7 @@ mod tests {
 
             let finalized = core
                 .finalize_transaction_from(
-                    &|| Ok(payment_builder(85)),
+                    || Ok(payment_builder(85)),
                     FinalizeOptions {
                         inputs: vec![chosen.outpoint],
                         reservation_only,
@@ -3102,7 +3207,7 @@ mod tests {
         }
         let result = core
             .finalize_transaction_from(
-                &|| Ok(payment_builder(90)),
+                || Ok(payment_builder(90)),
                 FinalizeOptions {
                     inputs: vec![chosen.outpoint],
                     ..FinalizeOptions::default()

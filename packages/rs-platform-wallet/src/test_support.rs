@@ -13,9 +13,7 @@ use async_trait::async_trait;
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
-#[cfg(test)]
-use dashcore::Txid;
-use dashcore::{Network, Transaction};
+use dashcore::{Network, OutPoint, Transaction, TxOut, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
@@ -736,7 +734,14 @@ pub async fn test_platform_wallet_manager() -> (
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
 
-    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+    // The SDK's network is the wallet's (`PlatformWallet::network`): testnet,
+    // like the wallet created below.
+    let sdk = Arc::new(
+        dash_sdk::SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .build()
+            .expect("mock sdk"),
+    );
     let persister = Arc::new(NoopTestPersister);
     let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
         Arc::new(NoopTestEventHandler);
@@ -761,6 +766,57 @@ pub async fn test_platform_wallet_manager() -> (
         .expect("create test wallet");
     let wallet_id = wallet.wallet_id();
     (manager, wallet_id)
+}
+
+/// Give `wallet`'s BIP44 account 0 one coin of `value` duffs at its next
+/// receive address — final (InstantSend-locked) or not, as the network would
+/// see it — and return its outpoint. For FFI tests that drive the real
+/// finalizers through a wallet handle.
+pub async fn add_bip44_coin(
+    wallet: &crate::PlatformWallet,
+    value: u64,
+    final_: bool,
+    tag: u8,
+) -> OutPoint {
+    let mut manager = wallet.wallet_manager().write().await;
+    let (keys, info) = manager
+        .get_wallet_and_info_mut(&wallet.wallet_id())
+        .expect("wallet present in manager");
+    let xpub = keys
+        .accounts
+        .standard_bip44_accounts
+        .get(&0)
+        .expect("bip44 account")
+        .account_xpub;
+    let account = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let managed = info
+        .core_wallet
+        .accounts
+        .funds_account_mut(&account)
+        .expect("bip44 managed account");
+    let address = managed
+        .next_receive_address(Some(&xpub), true)
+        .expect("receive address");
+    let outpoint = OutPoint {
+        txid: Txid::from_byte_array([tag; 32]),
+        vout: 0,
+    };
+    let mut utxo = Utxo::new(
+        outpoint,
+        TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        },
+        address,
+        1,
+        false,
+    );
+    utxo.is_instantlocked = final_;
+    managed.utxos.insert(outpoint, utxo);
+    outpoint
 }
 
 /// Canonical all-`abandon` BIP-39 test vector. Fixed (not
