@@ -136,7 +136,9 @@ extension PlatformWalletManager {
     /// was removed, probing was turned off, or nodes' report of it (or of the
     /// send it is built on) in a block went unseen by the wallet for several
     /// blocks — the root is probed again; a send built on it has no verdict
-    /// until probed or echoed again. Not a statement that it settled.
+    /// until the root is found mined again and the send is probed in turn (or
+    /// the send is reported uncertain and echoed anew). Not a statement that
+    /// it settled.
     @MainActor
     func handleOutgoingTransactionCleared(_ key: OutgoingTransactionKey) {
         guard !shutdownRequested, isConfigured else { return }

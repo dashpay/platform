@@ -401,6 +401,18 @@ enum Final {
     Mined { at: u32 },
 }
 
+/// Where a published verdict came from. A probe never takes an echo's place:
+/// it can only confirm Accepted (or say Mined, the same for the host) or say
+/// nothing new (Unresolved) — so an echoed send keeps its own evidence until
+/// it settles, leaves, or is otherwise cleared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Source {
+    /// A probe of the send's chain root.
+    Probe,
+    /// A peer echoing the send's own broadcast.
+    Echo,
+}
+
 impl Final {
     /// The height from which this evidence is stale.
     fn stale_at(&self) -> u32 {
@@ -466,15 +478,12 @@ fn trigger_of(forced: bool) -> &'static str {
 pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     finished: HashMap<(WalletId, Txid), Final>,
-    published: HashMap<(WalletId, Txid), ProbeVerdict>,
+    /// What the host holds per send, and where it came from.
+    published: HashMap<(WalletId, Txid), (ProbeVerdict, Source)>,
     /// The identified nodes that reported each root in a block, added up
     /// across probes while it stays unsettled: [`MINED_QUORUM`] of them make
     /// it mined even when no single probe heard two.
     seen_in_block: HashMap<(WalletId, Txid), BTreeSet<String>>,
-    /// Sends whose published verdict came from a peer echo of their own
-    /// broadcast, not from a probe of their chain's root: that verdict does
-    /// not rest on any ancestor's evidence.
-    echoed: HashSet<(WalletId, Txid)>,
 }
 
 impl ResolverState {
@@ -485,7 +494,6 @@ impl ResolverState {
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
         self.seen_in_block
             .retain(|(wallet, _), _| wallet != wallet_id);
-        self.echoed.retain(|(wallet, _)| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, trigger)
     }
 
@@ -494,7 +502,6 @@ impl ResolverState {
         self.schedules.clear();
         self.finished.clear();
         self.seen_in_block.clear();
-        self.echoed.clear();
         self.clear_where(|_, _| true, None, "disabled")
     }
 
@@ -518,7 +525,6 @@ impl ResolverState {
             self.schedules.remove(&key);
             self.finished.remove(&key);
             self.seen_in_block.remove(&key);
-            self.echoed.remove(&key);
         }
         self.clear_where(
             |wallet, txid| *wallet == wallet_id && txids.contains(txid),
@@ -554,38 +560,47 @@ impl ResolverState {
             .collect()
     }
 
-    /// Record `verdict` for `send`; returns whether the host must hear it.
-    /// Unresolved never replaces a decided verdict (Accepted, Mined) —
-    /// one probe that only met transport errors says nothing new.
-    fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict) -> bool {
+    /// Record `verdict` for `send`, from `source`; returns whether the host
+    /// must hear it. Unresolved never replaces a decided verdict (Accepted,
+    /// Mined) — one probe that only met transport errors says nothing new.
+    /// A verdict that agrees with what the host holds keeps its source.
+    fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict, source: Source) -> bool {
         let changed = match self.published.get(&key) {
             None => true,
-            Some(previous)
+            Some((previous, _))
                 if !matches!(previous, ProbeVerdict::Unresolved { .. })
                     && matches!(verdict, ProbeVerdict::Unresolved { .. }) =>
             {
                 false
             }
-            Some(previous) => !same_for_host(previous, verdict),
+            Some((previous, _)) => !same_for_host(previous, verdict),
         };
         if changed {
-            self.published.insert(key, verdict.clone());
+            self.published.insert(key, (verdict.clone(), source));
         }
         changed
     }
 
+    /// Whether the verdict the host holds for `key` came from the send's own
+    /// echo — evidence of its own, not of any ancestor's.
+    fn echoed(&self, key: &(WalletId, Txid)) -> bool {
+        matches!(self.published.get(key), Some((_, Source::Echo)))
+    }
+
     /// Publish `verdict` for each of `sends`, collecting what changed.
+    #[allow(clippy::too_many_arguments)]
     fn publish_all(
         &mut self,
         wallet_id: WalletId,
         sends: impl IntoIterator<Item = Txid>,
         verdict: &ProbeVerdict,
+        source: Source,
         height: u32,
         trigger: &'static str,
         out: &mut Vec<Outgoing>,
     ) {
         for send in sends {
-            if self.publish((wallet_id, send), verdict) {
+            if self.publish((wallet_id, send), verdict, source) {
                 out.push(Outgoing {
                     wallet_id,
                     event: ResolverEvent::Verdict(send, verdict.clone()),
@@ -637,8 +652,14 @@ pub(crate) struct PassStart {
     pub due: VecDeque<DueRoot>,
 }
 
-/// `txids` and every transaction of `views` built on them, transitively.
-fn with_descendants(views: &[OutgoingView], txids: Vec<Txid>) -> HashSet<Txid> {
+/// `txids` and every transaction of `views` built on them, transitively —
+/// stopping at a descendant `keep` says stands on its own (not entered, nor
+/// anything built on it).
+fn with_descendants(
+    views: &[OutgoingView],
+    txids: &HashSet<Txid>,
+    keep: impl Fn(&Txid) -> bool,
+) -> HashSet<Txid> {
     let mut children: HashMap<Txid, Vec<Txid>> = HashMap::new();
     for view in views {
         for input in &view.transaction.input {
@@ -649,8 +670,11 @@ fn with_descendants(views: &[OutgoingView], txids: Vec<Txid>) -> HashSet<Txid> {
         }
     }
     let mut found = HashSet::new();
-    let mut frontier = txids;
+    let mut frontier: Vec<Txid> = txids.iter().copied().collect();
     while let Some(txid) = frontier.pop() {
+        if !txids.contains(&txid) && keep(&txid) {
+            continue;
+        }
         if found.insert(txid) {
             frontier.extend(children.get(&txid).into_iter().flatten().copied());
         }
@@ -695,7 +719,6 @@ pub(crate) fn begin_pass(
     state
         .seen_in_block
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
-    state.echoed.retain(|(wallet, txid)| !is_gone(wallet, txid));
     // Cleared because the send is no longer an unsettled own send: it
     // settled, or left the wallet — not a statement that it settled.
     events.extend(state.clear_where(
@@ -711,7 +734,7 @@ pub(crate) fn begin_pass(
     // Everything built on such a root goes with it: those sends became roots,
     // and earned their verdicts, only because it counted as mined.
     if anchor.is_some() {
-        let stale: Vec<Txid> = state
+        let stale: HashSet<Txid> = state
             .finished
             .iter()
             .filter(|((wallet, _), result)| *wallet == wallet_id && height >= result.stale_at())
@@ -719,10 +742,9 @@ pub(crate) fn begin_pass(
             .collect();
         if !stale.is_empty() {
             // A descendant's own echo is its own evidence, not the parent's:
-            // that verdict stays.
-            let mut withdrawn = with_descendants(views, stale.clone());
-            withdrawn
-                .retain(|txid| stale.contains(txid) || !state.echoed.contains(&(wallet_id, *txid)));
+            // it stays, and so does what is built on it.
+            let withdrawn =
+                with_descendants(views, &stale, |txid| state.echoed(&(wallet_id, *txid)));
             events.extend(state.forget(wallet_id, &withdrawn, Some(height), "mined-not-seen"));
         }
     }
@@ -780,14 +802,25 @@ pub(crate) fn record_probe(
     state: &mut ResolverState,
     wallet_id: WalletId,
     height: u32,
+    following: bool,
     root: &DueRoot,
     report: &ProbeReport,
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
     let key = (wallet_id, root.txid);
+    // A block the wallet, following the tip, has already passed by
+    // `MINED_EVIDENCE_GRACE` without seeing the transaction contradicts the
+    // report on arrival: it is not mined on the wallet's chain, only known —
+    // accepted, and its nodes do not count towards the quorum. Judged only
+    // while following, like stale evidence (`begin_pass`): during catch-up
+    // the scan may still be on its way to that block.
+    let behind = following
+        && report
+            .block_height
+            .is_some_and(|block| block.saturating_add(MINED_EVIDENCE_GRACE) <= height);
     // Nodes that saw it in a block, over every probe of this root: enough of
     // them make it mined whatever this probe's own verdict.
-    if !report.in_block_by.is_empty() {
+    if !report.in_block_by.is_empty() && !behind {
         state
             .seen_in_block
             .entry(key)
@@ -800,12 +833,6 @@ pub(crate) fn record_probe(
     } else {
         report.verdict.clone()
     };
-    // A block the wallet has already followed `MINED_EVIDENCE_GRACE` blocks
-    // past without seeing the transaction contradicts the report on
-    // arrival: it is not mined on the wallet's chain, only known — accepted.
-    let behind = report
-        .block_height
-        .is_some_and(|block| block.saturating_add(MINED_EVIDENCE_GRACE) <= height);
     if behind && matches!(verdict, ProbeVerdict::Mined) {
         state.seen_in_block.remove(&key);
         verdict = ProbeVerdict::Accepted;
@@ -828,21 +855,17 @@ pub(crate) fn record_probe(
         );
     }
     if root.own {
-        let before = events.len();
+        // A verdict that agrees with what the host holds leaves its source
+        // as it was (an echo stays an echo).
         state.publish_all(
             wallet_id,
             [root.txid],
             verdict,
+            Source::Probe,
             height,
             trigger_of(root.forced),
             &mut events,
         );
-        // The probe's verdict replaced the echo's only if it changed what the
-        // host holds; one that agrees (or says nothing new) leaves it the
-        // echo's.
-        if events.len() > before {
-            state.echoed.remove(&key);
-        }
     }
     events
 }
@@ -1167,6 +1190,8 @@ struct Run {
 struct Probing {
     views: Vec<OutgoingView>,
     height: u32,
+    /// The pass is anchored: the wallet follows the tip.
+    following: bool,
     due: VecDeque<DueRoot>,
     /// The root whose probe is out now.
     in_flight: Option<DueRoot>,
@@ -1614,11 +1639,16 @@ impl Actor {
                         wallet_id,
                         [txid],
                         &ProbeVerdict::Accepted,
+                        Source::Echo,
                         height,
                         "echo",
                         &mut events,
                     );
-                    self.state.echoed.insert((wallet_id, txid));
+                    // Already held as accepted: the echo is now its own
+                    // evidence for it too.
+                    if let Some((_, source)) = self.state.published.get_mut(&(wallet_id, txid)) {
+                        *source = Source::Echo;
+                    }
                 }
                 deliver(&self.sink, events);
             }
@@ -1688,6 +1718,7 @@ impl Actor {
                         current.probing = Some(Probing {
                             views,
                             height,
+                            following: current.anchor_at.is_some(),
                             due: start.due,
                             in_flight: None,
                         });
@@ -1754,7 +1785,14 @@ impl Actor {
                 // a pass of many probes can span blocks, and mined evidence
                 // gets its full grace from when it arrived.
                 let now = reported.map_or(probing.height, |height| height.max(probing.height));
-                let events = record_probe(&mut self.state, wallet_id, now, &root, &report);
+                let events = record_probe(
+                    &mut self.state,
+                    wallet_id,
+                    now,
+                    probing.following,
+                    &root,
+                    &report,
+                );
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
@@ -2638,7 +2676,7 @@ mod tests {
             );
             let report = probe.probe(&root.transaction).await;
             let mut guard = state.lock().expect("state");
-            let events = record_probe(&mut guard.state, wallet_id, height, &root, &report);
+            let events = record_probe(&mut guard.state, wallet_id, height, true, &root, &report);
             guard.push(events);
         }
         let guard = state.lock().expect("state");
@@ -2918,10 +2956,10 @@ mod tests {
         let mut state = ResolverState::default();
         let key = (wallet(), txid(1));
 
-        assert!(state.publish(key, &ProbeVerdict::Accepted));
-        assert!(!state.publish(key, &unresolved()));
-        assert!(!state.publish(key, &ProbeVerdict::Mined));
-        assert!(!state.publish(key, &ProbeVerdict::Accepted));
+        assert!(state.publish(key, &ProbeVerdict::Accepted, Source::Probe));
+        assert!(!state.publish(key, &unresolved(), Source::Probe));
+        assert!(!state.publish(key, &ProbeVerdict::Mined, Source::Probe));
+        assert!(!state.publish(key, &ProbeVerdict::Accepted, Source::Probe));
     }
 
     // ---- the actor ----------------------------------------------------------
@@ -4468,7 +4506,7 @@ mod tests {
             in_block_by: BTreeSet::from(["a".to_string(), "b".to_string()]),
             block_height: Some(105),
         };
-        record_probe(&mut state, wallet(), 101, &root, &report);
+        record_probe(&mut state, wallet(), 101, true, &root, &report);
         assert_eq!(
             state.finished.get(&(wallet(), txid(1))),
             Some(&Final::Mined { at: 105 })
@@ -4570,6 +4608,7 @@ mod tests {
             &mut state,
             wallet(),
             101,
+            true,
             &due_root(1),
             &mined_report(Some(4_000_000_000)),
         );
@@ -4590,6 +4629,7 @@ mod tests {
             &mut state,
             wallet(),
             200,
+            true,
             &due_root(1),
             &mined_report(Some(150)),
         );
@@ -4601,6 +4641,90 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
         );
+    }
+
+    /// Votes from a report naming a block the wallet already followed a grace
+    /// past do not count towards the quorum later: a second node's heightless
+    /// vote alone does not make it mined.
+    #[test]
+    fn should_not_count_votes_for_a_passed_block_towards_the_quorum() {
+        let mut state = ResolverState::default();
+        let one = |node: &str, block_height| ProbeReport {
+            verdict: ProbeVerdict::Accepted,
+            in_block_by: BTreeSet::from([node.to_string()]),
+            block_height,
+        };
+        record_probe(
+            &mut state,
+            wallet(),
+            200,
+            true,
+            &due_root(1),
+            &one("a", Some(150)),
+        );
+        let events = record_probe(
+            &mut state,
+            wallet(),
+            200,
+            true,
+            &due_root(1),
+            &one("b", None),
+        );
+        assert!(state.finished.is_empty());
+        assert_eq!(
+            state.seen_in_block.get(&(wallet(), txid(1))),
+            Some(&BTreeSet::from(["b".to_string()]))
+        );
+        assert!(events
+            .iter()
+            .all(|event| !matches!(event.event, ResolverEvent::Verdict(_, ProbeVerdict::Mined))));
+    }
+
+    /// During catch-up the wallet may still be on its way to the named
+    /// block: the report is not judged behind, like stale evidence.
+    #[test]
+    fn should_record_mined_evidence_for_a_passed_block_during_catch_up() {
+        let mut state = ResolverState::default();
+        record_probe(
+            &mut state,
+            wallet(),
+            200,
+            false,
+            &due_root(1),
+            &mined_report(Some(150)),
+        );
+        assert_eq!(
+            state.finished.get(&(wallet(), txid(1))),
+            Some(&Final::Mined { at: 200 })
+        );
+    }
+
+    /// A probe never takes an echo's place: agreeing, mined or saying
+    /// nothing new, the verdict stays the echo's.
+    #[test]
+    fn should_keep_the_echo_as_the_source_whatever_a_probe_says() {
+        let mut state = ResolverState::default();
+        let key = (wallet(), txid(1));
+        assert!(state.publish(key, &ProbeVerdict::Accepted, Source::Echo));
+        for verdict in [ProbeVerdict::Accepted, ProbeVerdict::Mined, unresolved()] {
+            assert!(!state.publish(key, &verdict, Source::Probe));
+            assert!(state.echoed(&key));
+        }
+    }
+
+    /// The withdrawal stops at a descendant that stands on its own evidence:
+    /// neither it nor what is built on it goes with the stale root.
+    #[test]
+    fn should_not_withdraw_what_is_built_on_a_kept_descendant() {
+        let views = vec![
+            send(1, &[outpoint(90, 0)]),
+            send(2, &[outpoint(1, 1)]),
+            send(3, &[outpoint(2, 1)]),
+            send(4, &[outpoint(1, 2)]),
+        ];
+        let withdrawn =
+            with_descendants(&views, &HashSet::from([txid(1)]), |kept| *kept == txid(2));
+        assert_eq!(withdrawn, HashSet::from([txid(1), txid(4)]));
     }
 
     /// An echoed child probed as a root, with a verdict that agrees, keeps
@@ -4644,7 +4768,7 @@ mod tests {
         rig.follow(wallet(), 100).await;
         rig.send(Command::Uncertain(txid(1))).await;
         rig.send(Command::Echoed(txid(1))).await;
-        assert!(rig.actor.state.echoed.contains(&(wallet(), txid(1))));
+        assert!(rig.actor.state.echoed(&(wallet(), txid(1))));
 
         rig.views(wallet(), Vec::new());
         rig.send(Command::Seen {
@@ -4654,7 +4778,7 @@ mod tests {
         .await;
         rig.height(wallet(), 102).await;
 
-        assert!(rig.actor.state.echoed.is_empty());
+        assert!(rig.actor.state.published.is_empty());
     }
 
     /// Stale mined evidence is judged only while the wallet follows the tip:

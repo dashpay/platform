@@ -1345,6 +1345,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // on a fresh copy of the build, on this failure path only.
                     // Only a shortfall or too many inputs can turn on coins
                     // that are not final.
+                    // The trial refuses only a coin chosen by outpoint that no
+                    // funding account holds; this builder chooses none, so a
+                    // refusal cannot come from here — and if one ever did, the
+                    // payment reports the build error, not a coin its caller
+                    // never named.
                     let waiting = if waiting_may_help(&e) {
                         trial_with_waiting_coins(
                             &|| Ok(make()),
@@ -1354,7 +1359,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             &[],
                             None,
                             current_height,
-                        )?
+                        )
+                        .ok()
+                        .flatten()
                     } else {
                         None
                     };

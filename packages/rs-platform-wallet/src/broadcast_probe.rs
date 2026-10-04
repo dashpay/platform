@@ -118,9 +118,11 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
 /// The answer a probe gives about one transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeVerdict {
-    /// A node holds the transaction in its mempool, or one node — short of
-    /// [`MINED_QUORUM`] — has it in a block. Not settlement: it can still
-    /// expire or lose to a conflict, so the resolver keeps asking.
+    /// A node holds the transaction in its mempool, or nodes have it in a
+    /// block short of `Mined`: fewer than [`MINED_QUORUM`] of them, or a
+    /// block the wallet, following the tip, already passed by a few blocks
+    /// without seeing it. Not settlement: it can still expire or lose to a
+    /// conflict, so the resolver keeps asking.
     Accepted,
     /// Two different nodes have the transaction in a block. The resolver stops
     /// asking — unless the wallet, following the tip, has not seen it a few
