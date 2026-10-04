@@ -148,7 +148,7 @@ The local shielded balance API introduces three Rust source compatibility change
 
 ## Final-inputs and broadcast-probe API migration
 
-Spending only final coins and probing unresolved broadcasts bring four Rust
+Spending only final coins and probing unresolved broadcasts bring these Rust
 source and behaviour changes:
 
 - `CoreWallet::finalize_transaction_with_options(builder, options, sources,

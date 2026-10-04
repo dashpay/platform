@@ -73,10 +73,13 @@ impl BuilderState {
     /// over the standard size) cannot fail here; it is still an error, not a
     /// panic.
     fn make(&self) -> Result<TransactionBuilder, PlatformWalletError> {
-        self.recipe.iter().try_for_each(|step| match step {
-            Step::SetFeeRate(rate) => checked_rate(*rate),
-            _ => Ok(()),
-        })?;
+        // Only the last rate set is the one key-wallet prices with.
+        if let Some(rate) = self.recipe.iter().rev().find_map(|step| match step {
+            Step::SetFeeRate(rate) => Some(*rate),
+            _ => None,
+        }) {
+            checked_rate(rate)?;
+        }
         self.recipe
             .iter()
             .try_fold(TransactionBuilder::new(), |builder, step| {
@@ -1726,6 +1729,19 @@ mod pooled_balance_handle_tests {
                 if message.contains("overflows")),
             "got {result:?}"
         );
+    }
+
+    /// Only the last rate set counts: an overflowing rate replaced by a sane
+    /// one builds.
+    #[test]
+    fn should_price_with_the_last_fee_rate_set() {
+        let (core, signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let builder = payment(Some(u64::MAX), 100_000);
+        let set = unsafe { core_wallet_tx_builder_set_fee_rate(builder, 1_000) };
+        assert_eq!(set.code, PlatformWalletFFIResultCode::Success);
+        let built = finalize_built(builder, &core, &signer).expect("the last rate is sane");
+        runtime().block_on(core.abandon_transaction(&built));
     }
 
     /// The output sum the builder saw stands in for the requirement
