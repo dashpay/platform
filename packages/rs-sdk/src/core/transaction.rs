@@ -87,17 +87,33 @@ fn decode_transaction(bytes: &[u8]) -> Result<Transaction, Error> {
     Transaction::consensus_decode(&mut &bytes[..]).map_err(|e| Error::CoreError(e.into()))
 }
 
-/// The transaction a successful `getTransaction` reply carries: `Ok(None)`
-/// for an empty reply (the node does not know it — the same as gRPC
-/// `NOT_FOUND`), `Err` for bytes that do not decode. Takes the reply alone, so
-/// a caller that executes the request itself keeps the serving node's address.
+/// The transaction a successful `getTransaction` reply for `expected`
+/// carries: `Ok(None)` for an empty reply (the node does not know it — the
+/// same as gRPC `NOT_FOUND`), `Err` for bytes that do not decode or decode to
+/// another transaction — a node's reply is never taken on trust. Takes the
+/// reply alone, so a caller that executes the request itself keeps the
+/// serving node's address.
 pub fn transaction_from_reply(
     response: &GetTransactionResponse,
+    expected: &Txid,
 ) -> Result<Option<Transaction>, Error> {
     if response.transaction.is_empty() {
         return Ok(None);
     }
-    decode_transaction(&response.transaction).map(Some)
+    let transaction = decode_transaction(&response.transaction)?;
+    if transaction.txid() != *expected {
+        return Err(Error::Generic(format!(
+            "getTransaction for {expected} answered with transaction {}",
+            transaction.txid()
+        )));
+    }
+    Ok(Some(transaction))
+}
+
+/// The txid `getTransaction` is asked for, as a reply is checked against.
+fn requested_txid(txid: &str) -> Result<Txid, Error> {
+    txid.parse()
+        .map_err(|e| Error::Generic(format!("invalid txid {txid}: {e}")))
 }
 
 impl Sdk {
@@ -113,13 +129,14 @@ impl Sdk {
         &self,
         txid: &str,
     ) -> Result<Option<FetchedCoreTransaction>, Error> {
+        let expected = requested_txid(txid)?;
         let Some(response) = self
             .fetch_core_transaction(txid, RequestSettings::default())
             .await?
         else {
             return Ok(None);
         };
-        let Some(transaction) = transaction_from_reply(&response)? else {
+        let Some(transaction) = transaction_from_reply(&response, &expected)? else {
             return Ok(None);
         };
 
@@ -143,10 +160,11 @@ impl Sdk {
         txid: &str,
         settings: RequestSettings,
     ) -> Result<Option<CoreTransactionPlacement>, Error> {
+        let expected = requested_txid(txid)?;
         let Some(response) = self.fetch_core_transaction(txid, settings).await? else {
             return Ok(None);
         };
-        let Some(transaction) = transaction_from_reply(&response)? else {
+        let Some(transaction) = transaction_from_reply(&response, &expected)? else {
             return Ok(None);
         };
 
@@ -471,6 +489,40 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::dashcore::consensus::serialize;
+
+    fn reply(transaction: Vec<u8>) -> GetTransactionResponse {
+        GetTransactionResponse {
+            transaction,
+            ..GetTransactionResponse::default()
+        }
+    }
+
+    /// A reply is read, never trusted: empty is absent, undecodable bytes or
+    /// another transaction are errors, only the requested one is returned.
+    #[test]
+    fn transaction_from_reply_returns_only_the_requested_transaction() {
+        let tx = |lock_time| Transaction {
+            version: 1,
+            lock_time,
+            input: Vec::new(),
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let wanted = tx(1);
+        let txid = wanted.txid();
+
+        assert!(matches!(
+            transaction_from_reply(&reply(Vec::new()), &txid),
+            Ok(None)
+        ));
+        assert!(transaction_from_reply(&reply(vec![0xff, 0x01]), &txid).is_err());
+        assert!(transaction_from_reply(&reply(serialize(&tx(2))), &txid).is_err());
+        assert_eq!(
+            transaction_from_reply(&reply(serialize(&wanted)), &txid).expect("decodes"),
+            Some(wanted)
+        );
+    }
 
     /// DAPI's display-order bytes come back as the hash's internal order.
     #[test]

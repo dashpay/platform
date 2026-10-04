@@ -101,6 +101,42 @@ pub fn is_final(utxo: &Utxo) -> bool {
     utxo.is_confirmed || utxo.is_instantlocked
 }
 
+/// Whether a coin the caller chose as an input can go into a build, in the
+/// one order every entry point refuses in: unspendable first (an immature
+/// coinbase output, a locked coin — confirmation alone would not change it),
+/// then pinned by an in-flight broadcast (`pinned`; the build would refuse it
+/// after selection anyway), then not final (code 59, the only refusal waiting
+/// cures). Public for platform-wallet-ffi only.
+#[doc(hidden)]
+pub fn check_chosen_input(
+    utxo: &Utxo,
+    height: u32,
+    pinned: &HashSet<OutPoint>,
+) -> Result<(), PlatformWalletError> {
+    if !utxo.is_spendable(height) {
+        return Err(PlatformWalletError::ChosenInputUnavailable {
+            outpoint: utxo.outpoint,
+            problem: ChosenInputProblem::NotSpendable,
+        });
+    }
+    if pinned.contains(&utxo.outpoint) {
+        return Err(PlatformWalletError::InputMidBroadcast {
+            outpoint: utxo.outpoint,
+        });
+    }
+    if !is_final(utxo) {
+        return Err(input_awaiting_network(utxo));
+    }
+    Ok(())
+}
+
+/// The coins in-flight broadcasts of this wallet pin, now — what
+/// [`check_chosen_input`] takes. Public for platform-wallet-ffi only.
+#[doc(hidden)]
+pub fn in_broadcast_outpoints(info: &PlatformWalletInfo) -> HashSet<OutPoint> {
+    info.generation.in_broadcast_outpoints()
+}
+
 /// Code 59 for a coin the caller chose as an input that is not final: it
 /// names the coin, and `waiting` is its value. Public for platform-wallet-ffi
 /// only.
@@ -321,15 +357,18 @@ pub(crate) fn trial_with_waiting_coins(
             }
         }
     }
+    // The build refuses a transaction that spends one coin twice (a coin the
+    // configuration seeds more than once): a trial that does is no promise,
+    // and it is the build's own refusal that stands in the way — decided
+    // before anything else can return. (A build with no waiting coin gets no
+    // trial and reports key-wallet's shortfall: the pinned builder has no
+    // getters to inspect its seeds before building.)
+    if let Some(error) = duplicate_prevout(&transaction) {
+        return Err(error);
+    }
     // Backstop: a pin taken since the caller's snapshot.
     if generation.in_broadcast_conflict(&transaction).is_some() {
         return Ok(None);
-    }
-    // The build refuses a transaction that spends one coin twice (a coin the
-    // configuration seeds more than once): a trial that does is no promise,
-    // and it is the build's own refusal that stands in the way.
-    if let Some(error) = duplicate_prevout(&transaction) {
-        return Err(error);
     }
     // The build refuses a selected input no funding account holds (a coin
     // the configuration seeded itself from elsewhere): a trial that needs one
@@ -1166,8 +1205,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // One snapshot of what in-flight broadcasts pin, taken only when
             // inputs were chosen; the waiting-coins trial reuses it, or takes
             // its own on a shortfall.
-            let pinned =
-                (!seed_outpoints.is_empty()).then(|| info.generation.in_broadcast_outpoints());
+            let pinned = (!seed_outpoints.is_empty()).then(|| in_broadcast_outpoints(info));
             let mut seeds: Vec<Utxo> = Vec::new();
             let mut seeded: HashSet<OutPoint> = HashSet::new();
             for outpoint in &seed_outpoints {
@@ -1191,28 +1229,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         problem: ChosenInputProblem::NotInFundingAccounts,
                     });
                 };
-                // Unspendable — an immature coinbase output, or a locked coin:
-                // the selector would drop it silently, and confirmation alone
-                // would not change that, so this is checked first.
-                if !utxo.is_spendable(height) {
-                    return Err(PlatformWalletError::ChosenInputUnavailable {
-                        outpoint: *outpoint,
-                        problem: ChosenInputProblem::NotSpendable,
-                    });
-                }
-                // Pinned by an in-flight broadcast: the build would refuse it
-                // after selection anyway, and confirmation would not change
-                // that, so this is checked before finality.
-                if pinned
-                    .as_ref()
-                    .is_some_and(|pinned| pinned.contains(outpoint))
-                {
-                    return Err(PlatformWalletError::InputMidBroadcast {
-                        outpoint: *outpoint,
-                    });
-                }
-                if !is_final(utxo) {
-                    return Err(input_awaiting_network(utxo));
+                // An unspendable coin would be dropped by the selector
+                // silently: refused by name, like a pinned or waiting one.
+                if let Some(pinned) = pinned.as_ref() {
+                    check_chosen_input(utxo, height, pinned)?;
                 }
                 seeds.push(utxo.clone());
             }

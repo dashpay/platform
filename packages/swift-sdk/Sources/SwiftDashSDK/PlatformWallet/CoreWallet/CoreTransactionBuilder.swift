@@ -204,7 +204,10 @@ public final class CoreTransactionBuilder {
 
     /// Add a chosen subset of the account's UTXOs (as returned by
     /// `PlatformWalletManager.accountUtxos`) as inputs. Each must belong to
-    /// the account and be final (code 59 otherwise).
+    /// the account, be spendable (an immature coinbase output or a locked
+    /// coin is refused as an invalid parameter — waiting does not cure it),
+    /// not be pinned by an in-flight broadcast, and be final (code 59
+    /// otherwise).
     ///
     /// The finalizer looks each one up again in the accounts it funds from
     /// (its own `accountType` and index) and never drops a chosen coin

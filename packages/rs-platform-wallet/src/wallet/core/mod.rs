@@ -20,8 +20,8 @@ pub(crate) use transaction::{
     waiting_may_help,
 };
 pub use transaction::{
-    check_fee_rate, input_awaiting_network, is_final, FinalizeOptions, SignedCoreTransaction,
-    ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
+    check_chosen_input, check_fee_rate, in_broadcast_outpoints, input_awaiting_network, is_final,
+    FinalizeOptions, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
 };
 pub use wallet::CoreWallet;
 

@@ -19,7 +19,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use platform_wallet::{
-    check_fee_rate, input_awaiting_network, is_final, ChosenInputProblem, FinalizeOptions,
+    check_chosen_input, check_fee_rate, in_broadcast_outpoints, FinalizeOptions,
     PlatformWalletError,
 };
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
@@ -991,7 +991,12 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// Add a caller-chosen subset of the account's UTXOs as inputs. `outpoints`
 /// are selected from the account's own UTXO set (the same ones
 /// `platform_wallet_account_utxos` returns). An outpoint not owned by the
-/// account is an error, and so is one not final yet (code 59, naming it).
+/// account is an error (`ErrorWalletOperation`); one owned is refused by name,
+/// in the finalizer's order: unspendable — an immature coinbase output or a
+/// locked coin, which confirmation alone does not cure —
+/// (`ErrorInvalidParameter`, "not spendable"), pinned by an in-flight
+/// broadcast (input mid-broadcast), then not final yet (code 59). Nothing is
+/// recorded unless every outpoint passes.
 ///
 /// The finalizers look each recorded outpoint up again, in the accounts THEY
 /// fund from (their own account type and index), and use the wallet's copy as
@@ -1066,28 +1071,16 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
             })?;
 
         let height = info.core_wallet.last_processed_height();
+        let pinned = in_broadcast_outpoints(info);
         let mut selected = Vec::with_capacity(requested.len());
         for op in &requested {
             let utxo = managed.utxos.get(op).ok_or_else(|| {
                 SeedError::Other(format!("outpoint {}:{} not in account", op.txid, op.vout))
             })?;
-            // In the native finalizer's order: an unspendable coin (an
-            // immature coinbase output, a locked coin) first — confirmation
-            // would not make it usable, so code 59 would mislead.
-            if !utxo.is_spendable(height) {
-                return Err(SeedError::Refused(
-                    PlatformWalletError::ChosenInputUnavailable {
-                        outpoint: *op,
-                        problem: ChosenInputProblem::NotSpendable,
-                    },
-                ));
-            }
-            // Builds spend only final coins (InstantSend-locked or mined):
-            // refuse one that is not, by name, as soon as it is named. The
-            // finalizers check again against the coin as it is then.
-            if !is_final(utxo) {
-                return Err(SeedError::Refused(input_awaiting_network(utxo)));
-            }
+            // Refused by name as soon as it is named, by the finalizer's own
+            // check and in its order (unspendable, mid-broadcast, not final).
+            // The finalizers check again against the coin as it is then.
+            check_chosen_input(utxo, height, &pinned).map_err(SeedError::Refused)?;
             selected.push(*op);
         }
 
@@ -1108,9 +1101,9 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
 
 /// Why `core_wallet_tx_builder_add_inputs_from_outpoints` refused its outpoints.
 enum SeedError {
-    /// A named coin is refused with a typed error: unspendable
-    /// (`ChosenInputUnavailable`, `ErrorInvalidParameter`) or not final yet
-    /// (code 59).
+    /// A named coin is refused with the finalizer's typed error: unspendable
+    /// (`ChosenInputUnavailable`, `ErrorInvalidParameter`), mid-broadcast
+    /// (`InputMidBroadcast`) or not final yet (code 59).
     Refused(PlatformWalletError),
     Other(String),
 }
@@ -1880,6 +1873,7 @@ mod real_finalizer_tests {
         dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
         mnemonic_resolver_result,
     };
+    use std::ffi::CStr;
 
     /// The mnemonic `test_platform_wallet_manager` creates its wallet from.
     const PHRASE: &str = "abandon abandon abandon abandon abandon abandon \
@@ -2091,6 +2085,13 @@ mod real_finalizer_tests {
         assert_eq!(
             added.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        // The refusal of this coin, not another invalid-parameter path.
+        let message = unsafe { CStr::from_ptr(added.message) }.to_string_lossy();
+        assert!(message.contains("not spendable"), "{message}");
+        assert!(
+            message.contains(&Txid::from_byte_array([COIN_TAG; 32]).to_string()),
+            "{message}"
         );
         assert!(unsafe { (*builder).state() }.inputs.is_empty());
         unsafe { core_wallet_tx_builder_destroy(builder) };

@@ -359,14 +359,11 @@ fn lookup_reply(
     match result {
         Ok(response) => {
             let node = Some(response.address.to_string());
-            let answer = match transaction_from_reply(&response.inner) {
+            let answer = match transaction_from_reply(&response.inner, txid) {
                 Ok(None) => LookupAnswer::NotFound,
-                Ok(Some(found)) if found.txid() == *txid => lookup_answer(&response.inner),
-                Ok(Some(found)) => LookupAnswer::Unknown {
-                    reason: format!("the reply carries another transaction, {}", found.txid()),
-                },
+                Ok(Some(_)) => lookup_answer(&response.inner),
                 Err(error) => LookupAnswer::Unknown {
-                    reason: format!("the reply's transaction does not decode: {error}"),
+                    reason: format!("unusable reply: {error}"),
                 },
             };
             (node, answer)
@@ -476,6 +473,7 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
+    use dash_sdk::dapi_client::ExecutionResponse;
     use dash_sdk::dapi_grpc::tonic::Code;
 
     use super::*;
@@ -848,8 +846,6 @@ mod tests {
     /// the node that answered is kept either way.
     #[test]
     fn should_not_take_an_empty_or_malformed_lookup_reply_as_known() {
-        use dash_sdk::dapi_client::ExecutionResponse;
-
         let held = Transaction {
             lock_time: 7,
             ..transaction()
