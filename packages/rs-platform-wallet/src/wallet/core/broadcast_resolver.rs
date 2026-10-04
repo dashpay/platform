@@ -99,6 +99,10 @@ pub(crate) const EVERY_BLOCK_WINDOW: u32 = 24;
 /// Blocks between probes once [`EVERY_BLOCK_WINDOW`] has passed.
 pub(crate) const SLOW_INTERVAL: u32 = 10;
 
+/// Followed blocks an `Uncertain` send waits for its peer echo: as long as
+/// the every-block probe window. Past that the probes decide alone.
+pub(crate) const UNCERTAIN_EXPIRY: u32 = EVERY_BLOCK_WINDOW;
+
 /// How far a wallet's synced height may advance in one step and still count
 /// as following the tip. Larger steps, and steps back (a rescan after a
 /// rewind), are catch-up: the scan itself settles most roots, so a
@@ -889,30 +893,6 @@ enum Command {
     WalletRemoved(WalletId),
 }
 
-/// A send reported `Uncertain`: who holds it, as far as known.
-#[derive(Debug, Default)]
-struct Uncertain {
-    /// Names this entry: a lookup counts only against the entry it was
-    /// started for, not a later one for the same txid (after an echo, a
-    /// settle or a switch-off removed the first).
-    id: u64,
-    /// Holder lookups still out for it.
-    lookups: u32,
-    /// The wallets the finished lookups found holding it as an unsettled own
-    /// send.
-    holders: HashSet<WalletId>,
-    /// Wallets removed while a lookup was out: a lookup that read the
-    /// manager before the removal must not bring them back.
-    removed: HashSet<WalletId>,
-}
-
-impl Uncertain {
-    /// Nothing left that could resolve it: no lookup out, no holder.
-    fn is_orphaned(&self) -> bool {
-        self.lookups == 0 && self.holders.is_empty()
-    }
-}
-
 /// What a finished job reports back to the actor.
 enum JobDone {
     /// The wallets holding a transaction reported `Uncertain` (`wallets`,
@@ -1025,16 +1005,14 @@ struct Actor {
     /// can end its run instead of leaving the wallet stuck behind it.
     /// A probe job also names its root.
     job_runs: HashMap<task::Id, (WalletId, u64, Option<Txid>)>,
-    /// Sends dash-spv reported `Uncertain` this session: a later peer echo of
-    /// one of them is its acceptance. One entry per such send while a
-    /// wallet holds it as an unsettled own send (or its holder lookup is still
-    /// out); removed by its echo, its settling, a lookup that finds no
-    /// holder, or the removal of its last holder.
-    uncertain: HashMap<Txid, Uncertain>,
-    /// The `Uncertain` holder lookups out, by job: one that panics still
-    /// counts as finished, with no holder found.
-    listed_jobs: HashMap<task::Id, (Txid, u64)>,
-    next_uncertain_id: u64,
+    /// Sends dash-spv reported `Uncertain`, with the height they were
+    /// recorded at (`None` before any wallet height is known: stamped at the
+    /// next followed block): a later peer echo of one of them is its
+    /// acceptance. Removed by its echo, its settling, a holder lookup that
+    /// finds no unsettled own send, [`UNCERTAIN_EXPIRY`] followed blocks after
+    /// it was recorded, and all at switch-off. One no wallet resolves (its
+    /// wallet removed, say) lingers until it expires.
+    uncertain: HashMap<Txid, Option<u32>>,
     /// Echoes whose holder lookup is out, by the token their result carries.
     /// A send that settles, or a wallet that leaves or re-registers, withdraws
     /// them: an acceptance landing after that must not reach the host.
@@ -1059,8 +1037,6 @@ impl Actor {
             jobs: JoinSet::new(),
             job_runs: HashMap::new(),
             uncertain: HashMap::new(),
-            listed_jobs: HashMap::new(),
-            next_uncertain_id: 0,
             echo_lookups: HashMap::new(),
             next_echo_token: 0,
         }
@@ -1093,19 +1069,9 @@ impl Actor {
         match joined {
             Ok((id, done)) => {
                 self.job_runs.remove(&id);
-                // Counted only for a lookup still on the books: one from
-                // before probing was turned off belongs to no entry now.
-                if let (Some((txid, entry)), JobDone::Listed { own, .. }) =
-                    (self.listed_jobs.remove(&id), &done)
-                {
-                    self.holders_found(txid, entry, own);
-                }
                 self.job_done(done);
             }
             Err(error) => {
-                if let Some((txid, entry)) = self.listed_jobs.remove(&error.id()) {
-                    self.holders_found(txid, entry, &[]);
-                }
                 let owner = self.job_runs.remove(&error.id());
                 if !error.is_panic() {
                     return; // aborted: its run was dropped on purpose
@@ -1189,6 +1155,9 @@ impl Actor {
                     }
                     let events = self.state.forget_wallet(&wallet_id, "rewound");
                     deliver(&self.sink, events);
+                }
+                if !is_catch_up_step(previous, height) {
+                    self.expire_uncertain(height);
                 }
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
@@ -1294,24 +1263,15 @@ impl Actor {
                 if !self.enabled {
                     return;
                 }
-                let next_id = &mut self.next_uncertain_id;
-                let uncertain = self.uncertain.entry(txid).or_insert_with(|| {
-                    *next_id += 1;
-                    Uncertain {
-                        id: *next_id,
-                        ..Uncertain::default()
-                    }
-                });
-                uncertain.lookups += 1;
-                let entry = uncertain.id;
+                let recorded = self.wallets.values().filter_map(|entry| entry.height).max();
+                self.uncertain.entry(txid).or_insert(recorded);
                 // Routed to the registered wallets holding it, including ones
                 // no height step has reached yet.
                 let source = Arc::clone(&self.source);
-                let job = self.jobs.spawn(async move {
+                self.jobs.spawn(async move {
                     let Holders { wallets, own } = source.holders(txid).await;
                     JobDone::Listed { txid, wallets, own }
                 });
-                self.listed_jobs.insert(job.id(), (txid, entry));
             }
             Command::Echoed(txid) => {
                 // Every healthy send is echoed: only one that was `Uncertain`
@@ -1349,7 +1309,6 @@ impl Actor {
                 }
                 if !enabled {
                     self.uncertain.clear();
-                    self.listed_jobs.clear();
                     self.echo_lookups.clear();
                     let events = self.state.forget_all();
                     deliver(&self.sink, events);
@@ -1358,71 +1317,34 @@ impl Actor {
             Command::WalletAdded(wallet_id) => {
                 // A fresh start: whatever was kept under this id (a same-id
                 // wallet whose removal never reached the resolver) is stale.
-                self.drop_wallet(&wallet_id, false, "re-registered");
+                self.drop_wallet(&wallet_id, "re-registered");
                 self.wallets.insert(wallet_id, WalletEntry::default());
             }
-            Command::WalletRemoved(wallet_id) => self.drop_wallet(&wallet_id, true, "removed"),
+            Command::WalletRemoved(wallet_id) => self.drop_wallet(&wallet_id, "removed"),
         }
     }
 
     /// Drop the wallet's entry, stop its pass and forget its state, the host
     /// told to clear what it showed (logged with `trigger`).
-    /// `removed`: the wallet is gone, not re-registered — the sends only it
-    /// held have no one left to accept them for.
-    fn drop_wallet(&mut self, wallet_id: &WalletId, removed: bool, trigger: &'static str) {
+    fn drop_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) {
         if let Some(run) = self.wallets.remove(wallet_id).and_then(|entry| entry.run) {
             run.abort.abort();
         }
         // Which wallet an echo's lookup will name is not known yet: withdraw
         // them all — at worst an acceptance waits for the next probe.
         self.echo_lookups.clear();
-        if removed {
-            self.uncertain.retain(|_, uncertain| {
-                uncertain.holders.remove(wallet_id);
-                if uncertain.lookups > 0 {
-                    uncertain.removed.insert(*wallet_id);
-                }
-                !uncertain.is_orphaned()
-            });
-        } else {
-            // Registered again: what a lookup out finds for it counts.
-            for uncertain in self.uncertain.values_mut() {
-                uncertain.removed.remove(wallet_id);
-            }
-        }
         let events = self.state.forget_wallet(wallet_id, trigger);
         deliver(&self.sink, events);
     }
 
-    /// A holder lookup for an `Uncertain` send finished, finding it an
-    /// unsettled own send of the wallets `own` (registered or about to be:
-    /// a wallet's `WalletAdded` may still be on its way). Still awaiting its
-    /// echo (not echoed or settled meanwhile), it is kept only while one of
-    /// them holds it or another lookup is out.
-    /// `entry` names the entry the lookup was started for: one removed and
-    /// opened again since is not its business.
-    fn holders_found(&mut self, txid: Txid, entry: u64, own: &[WalletId]) {
-        let Some(uncertain) = self
-            .uncertain
-            .get_mut(&txid)
-            .filter(|uncertain| uncertain.id == entry)
-        else {
-            return;
-        };
-        uncertain.lookups = uncertain.lookups.saturating_sub(1);
-        let removed = &uncertain.removed;
-        let found: Vec<WalletId> = own
-            .iter()
-            .filter(|wallet_id| !removed.contains(*wallet_id))
-            .copied()
-            .collect();
-        uncertain.holders.extend(found);
-        if uncertain.lookups == 0 {
-            uncertain.removed.clear();
-        }
-        if uncertain.is_orphaned() {
-            self.uncertain.remove(&txid);
-        }
+    /// A followed block at `height`: forget the `Uncertain` sends recorded
+    /// [`UNCERTAIN_EXPIRY`] blocks before it, and stamp those recorded before
+    /// any height was known.
+    fn expire_uncertain(&mut self, height: u32) {
+        self.uncertain.retain(|_, recorded| {
+            let at = *recorded.get_or_insert(height);
+            height < at.saturating_add(UNCERTAIN_EXPIRY)
+        });
     }
 
     /// Start the wallet's pending pass unless one is already running.
@@ -1469,9 +1391,14 @@ impl Actor {
 
     fn job_done(&mut self, done: JobDone) {
         match done {
-            JobDone::Listed { txid, wallets, .. } => {
+            JobDone::Listed { txid, wallets, own } => {
                 if !self.enabled {
                     return;
+                }
+                // No wallet holds it as an unsettled own send: its echo
+                // would be news to no one.
+                if own.is_empty() {
+                    self.uncertain.remove(&txid);
                 }
                 for wallet_id in wallets {
                     // Only a wallet the actor was told about (see
@@ -2191,77 +2118,6 @@ mod tests {
         assert!(source.holders(id(4)).await.wallets.is_empty());
     }
 
-    /// A wallet removed and registered again while a lookup was out counts
-    /// as a holder again when that lookup names it.
-    #[tokio::test]
-    async fn should_count_a_wallet_registered_again_while_its_lookup_was_out() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.handle(Command::Uncertain(txid(1)));
-
-        rig.handle(Command::WalletRemoved(wallet()));
-        rig.handle(Command::WalletAdded(wallet()));
-        rig.settle().await;
-
-        assert_eq!(
-            rig.actor.uncertain[&txid(1)].holders,
-            HashSet::from([wallet()])
-        );
-    }
-
-    /// A removal between two lookups of one entry is remembered until the last
-    /// of them returns: neither brings the removed wallet back.
-    #[tokio::test]
-    async fn should_keep_a_removal_until_the_last_overlapping_lookup_returns() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.handle(Command::Uncertain(txid(1)));
-        rig.handle(Command::WalletRemoved(wallet()));
-        rig.handle(Command::Uncertain(txid(1)));
-        let entry = rig.actor.uncertain[&txid(1)].id;
-        assert_eq!(rig.actor.uncertain[&txid(1)].lookups, 2);
-
-        rig.actor.holders_found(txid(1), entry, &[wallet()]);
-        assert!(rig.actor.uncertain[&txid(1)].holders.is_empty());
-        rig.actor.holders_found(txid(1), entry, &[wallet()]);
-
-        assert!(rig.actor.uncertain.is_empty());
-    }
-
-    /// A lookup started for an entry removed since (echoed, settled) is not
-    /// counted against the entry a later report opens for the same txid.
-    #[tokio::test]
-    async fn should_not_count_a_lookup_against_a_later_entry_for_the_same_txid() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.handle(Command::Uncertain(txid(1)));
-        let first = rig.actor.uncertain[&txid(1)].id;
-        rig.handle(Command::Settled {
-            wallet_id: wallet(),
-            txids: HashSet::from([txid(1)]),
-        });
-        rig.handle(Command::Uncertain(txid(1)));
-        assert_ne!(rig.actor.uncertain[&txid(1)].id, first);
-
-        rig.actor.holders_found(txid(1), first, &[]);
-
-        assert_eq!(rig.actor.uncertain[&txid(1)].lookups, 1, "not counted");
-    }
-
-    /// A lookup that read the manager before a wallet's removal does not bring
-    /// the removed wallet back as a holder.
-    #[tokio::test]
-    async fn should_not_bring_back_a_wallet_removed_while_its_lookup_was_out() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.handle(Command::Uncertain(txid(1)));
-
-        rig.handle(Command::WalletRemoved(wallet()));
-        rig.settle().await;
-
-        assert!(rig.actor.uncertain.is_empty());
-    }
-
     /// The contact spending a payment it received from us: our watch-only
     /// copy of its chain records the spend, but it is the contact's send.
     /// It gets no own-send verdict and no probe of its own.
@@ -2949,8 +2805,6 @@ mod tests {
         /// Reads wait while set, so a test can hold a pass in its read.
         paused: StdMutex<bool>,
         resume: Notify,
-        /// Holder lookups panic while set.
-        holders_panic: StdMutex<bool>,
     }
 
     impl FakeSource {
@@ -2975,10 +2829,6 @@ mod tests {
     #[async_trait]
     impl WalletSource for FakeSource {
         async fn holders(&self, txid: Txid) -> Holders {
-            assert!(
-                !*self.holders_panic.lock().expect("holders_panic"),
-                "scripted holder-lookup panic"
-            );
             let views = self.views.lock().expect("views");
             let held = |own: bool| {
                 views
@@ -3180,103 +3030,43 @@ mod tests {
         assert!(rig.actor.uncertain.is_empty());
     }
 
-    /// A re-registration is not a removal: the send its wallet still holds
-    /// keeps waiting for its echo.
+    /// An echo within [`UNCERTAIN_EXPIRY`] followed blocks of the `Uncertain`
+    /// result still makes an own send Accepted; one after it is ignored —
+    /// the send's own probes decide by then.
     #[tokio::test]
-    async fn should_keep_an_uncertain_result_across_a_re_registration() {
+    async fn should_accept_an_echo_only_within_the_expiry() {
+        for (blocks, accepted) in [(UNCERTAIN_EXPIRY - 1, true), (UNCERTAIN_EXPIRY, false)] {
+            let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+            let mut rig = enabled(probe).await;
+            rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+            rig.follow(wallet(), 100).await; // at 101
+            rig.send(Command::Uncertain(txid(1))).await;
+            for height in 102..=101 + blocks {
+                rig.height(wallet(), height).await;
+            }
+            rig.sent();
+
+            rig.send(Command::Echoed(txid(1))).await;
+
+            assert_eq!(
+                rig.sent()
+                    .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)),
+                accepted,
+                "after {blocks} blocks"
+            );
+        }
+    }
+
+    /// Turning probing off forgets every `Uncertain` send.
+    #[tokio::test]
+    async fn should_forget_uncertain_results_when_probing_goes_off() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.send(Command::Uncertain(txid(1))).await;
-
-        rig.send(Command::WalletAdded(wallet())).await;
-
         assert!(rig.actor.uncertain.contains_key(&txid(1)));
-    }
 
-    /// A holder lookup from before probing was turned off belongs to no entry
-    /// any more: it is not counted against the one a later report opens.
-    #[tokio::test]
-    async fn should_not_count_a_lookup_from_before_probing_was_turned_off() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.handle(Command::Uncertain(txid(1)));
-        assert_eq!(rig.actor.listed_jobs.len(), 1);
+        rig.send(Command::SetEnabled(false)).await;
 
-        rig.handle(Command::SetEnabled(false));
-        assert!(rig.actor.listed_jobs.is_empty());
-        rig.handle(Command::SetEnabled(true));
-        rig.handle(Command::Uncertain(txid(1)));
-        rig.settle().await;
-
-        let entry = &rig.actor.uncertain[&txid(1)];
-        assert_eq!(entry.lookups, 0);
-        assert_eq!(entry.holders, HashSet::from([wallet()]));
-    }
-
-    /// A lookup naming a wallet whose `WalletAdded` has not reached the
-    /// resolver yet keeps the entry for it.
-    #[tokio::test]
-    async fn should_keep_an_uncertain_result_for_a_wallet_not_registered_yet() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        let late = [9u8; 32];
-        rig.views(late, vec![send(1, &[outpoint(90, 0)])]);
-
-        rig.send(Command::Uncertain(txid(1))).await;
-
-        assert_eq!(rig.actor.uncertain[&txid(1)].holders, HashSet::from([late]));
-    }
-
-    /// A holder lookup that panics counts as finished with no holder: the
-    /// entry does not outlive it.
-    #[tokio::test]
-    async fn should_forget_an_uncertain_result_whose_lookup_panicked() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        *rig.source.holders_panic.lock().expect("holders_panic") = true;
-
-        rig.send(Command::Uncertain(txid(1))).await;
-
-        assert!(rig.actor.uncertain.is_empty());
-        assert!(rig.actor.listed_jobs.is_empty());
-    }
-
-    /// A send that settled before its `Uncertain` result is no unsettled own
-    /// send any more: nothing could accept it, so it is not kept.
-    #[tokio::test]
-    async fn should_not_keep_an_uncertain_result_for_a_send_already_settled() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        // Still recorded, but no longer an own unsettled send.
-        rig.views(wallet(), vec![incoming(1, &[outpoint(90, 0)])]);
-
-        rig.send(Command::Uncertain(txid(1))).await;
-
-        assert!(rig.actor.uncertain.is_empty());
-    }
-
-    /// The removal of the last wallet holding an `Uncertain` send forgets it;
-    /// one another registered wallet still holds is kept.
-    #[tokio::test]
-    async fn should_forget_an_uncertain_result_with_its_last_holder() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        let other = [9u8; 32];
-        rig.send(Command::WalletAdded(other)).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.views(
-            other,
-            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
-        );
-        rig.send(Command::Uncertain(txid(1))).await;
-        rig.send(Command::Uncertain(txid(2))).await;
-        assert_eq!(rig.actor.uncertain.len(), 2);
-
-        rig.send(Command::WalletRemoved(other)).await;
-        assert_eq!(
-            rig.actor.uncertain.keys().copied().collect::<Vec<_>>(),
-            vec![txid(1)],
-            "txid 1 is still held by the first wallet"
-        );
-
-        rig.send(Command::WalletRemoved(wallet())).await;
         assert!(rig.actor.uncertain.is_empty());
     }
 
