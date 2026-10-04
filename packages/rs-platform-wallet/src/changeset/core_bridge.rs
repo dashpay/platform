@@ -40,7 +40,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
-use crate::wallet::core::record_spends_own_coins;
+use crate::wallet::core::{is_contact_watch_only, record_spends_own_coins};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -1987,60 +1987,7 @@ async fn wallet_slices_and_verdicts_for_txid(
     Some((slices, verdicts))
 }
 
-/// Is this record owned by a contact's watch-only DashPay chain?
-///
-/// A `DashpayExternalAccount` derives its addresses from the
-/// **contact's** xpub, so this wallet can observe those outputs but can
-/// never sign for them. They are the contact's coins; this wallet only
-/// ever pays into them.
-///
-/// dashpay/rust-dashcore#926 established exactly that policy at the
-/// balance layer, dropping `dashpay_external_accounts` from
-/// `ManagedAccountCollection::all_funding_accounts` (and `_mut`), which
-/// covers `balance`, `account_balances`, `utxos` and
-/// `get_spendable_utxos` in one place. `dashpay_receival_accounts` were
-/// deliberately kept: those derive from *our* xpub, so a contact paying
-/// into them really is money arriving.
-///
-/// The persistence seam is the same rule's second home. Upstream
-/// `check_core_transaction` emits **one `TransactionRecord` per matched
-/// account** (`key_wallet::transaction_checking::wallet_checker`), so a
-/// payment to a contact produces two records sharing one txid:
-///
-/// | record's account          | `direction` | `net_amount`     |
-/// |---------------------------|-------------|------------------|
-/// | funding (BIP44/BIP32/…)   | `Outgoing`  | `change - spent` |
-/// | `DashpayExternalAccount`  | `Incoming`  | `+paid`          |
-///
-/// The external account's record is not *wrong* about its own account —
-/// that chain did receive an output. It is wrong as a description of the
-/// **wallet**, and the persisted `transactions` row is keyed by txid
-/// alone, with no per-account dimension to disambiguate (the
-/// `transaction_account_involvements` table is only written for
-/// provider-key accounts). Whichever record is stored last therefore
-/// defines the row, and the watch-only one — emitted last, because
-/// `all_accounts` visits the DashPay accounts after the standard ones —
-/// wins: a payment *away* is persisted as an incoming credit, and its
-/// output is written into `txos` as a wallet-owned coin no key of ours
-/// can spend.
-///
-/// So external-account records are excluded from the persist-time
-/// projection entirely, exactly as #926 excluded the accounts from
-/// balance aggregation. What survives from the same event is everything
-/// that is genuinely ours to remember: the address-used flips and
-/// highest-used watermarks (so contact address rotation keeps working),
-/// the derived-address rows, and `derive_spent_utxos` (so a contact
-/// spending an output persisted *before* this fix still clears the
-/// stale row).
-///
-/// The predicate itself is canonical upstream
-/// ([`AccountType::is_contact_owned`], dashpay/rust-dashcore#952): its
-/// exhaustive match forces any future account type to declare whether
-/// its coins are the wallet's or a contact's, so this seam and #926's
-/// cannot drift apart.
-fn is_contact_watch_only(record: &TransactionRecord) -> bool {
-    record.account_type.is_contact_owned()
-}
+// Contact-owned records: see `is_contact_watch_only` (wallet::core).
 
 /// Derive the "ours" UTXOs created by a transaction's outputs.
 ///

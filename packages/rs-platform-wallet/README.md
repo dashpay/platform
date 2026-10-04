@@ -186,8 +186,9 @@ source and behaviour changes:
   finalized: a candidate if final by then (the only kind with
   `reservation_only`), refused with `CoreFundsAwaitingNetwork` naming its
   outpoint if not, with `InputMidBroadcast` if an in-flight broadcast pins it.
-  One outside the funding accounts is left out (refused by name under
-  `reservation_only`). A coin
+  A chosen coin the funding accounts don't hold (another account's, or spent
+  since it was chosen) is refused by name in both funding modes: the caller
+  picked it, so it is never dropped silently. A coin
   seeded on the builder itself (`add_inputs`) is the caller's snapshot; a
   selected one that has lost its final status is refused the same way.
 

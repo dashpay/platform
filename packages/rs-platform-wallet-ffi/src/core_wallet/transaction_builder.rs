@@ -989,9 +989,15 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// Add a caller-chosen subset of the account's UTXOs as inputs. `outpoints`
 /// are selected from the account's own UTXO set (the same ones
 /// `platform_wallet_account_utxos` returns). An outpoint not owned by the
-/// account is an error, and so is one not final yet (code 59, naming it). The
-/// finalizers spend the wallet's copy of each as it is then, so a coin that
-/// lost its final status in between is refused there the same way.
+/// account is an error, and so is one not final yet (code 59, naming it).
+///
+/// The finalizers look each recorded outpoint up again, in the accounts THEY
+/// fund from (their own account type and index), and use the wallet's copy as
+/// it is then. A chosen coin is never dropped silently: one those accounts
+/// don't hold (chosen from another account, or spent since) fails the build
+/// by name, with or without `core_wallet_tx_builder_use_only_added_inputs`;
+/// one that lost its final status fails with code 59, one an in-flight
+/// broadcast pins with `ErrorInputMidBroadcast`.
 ///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer; `wallet` a valid platform-wallet handle;
