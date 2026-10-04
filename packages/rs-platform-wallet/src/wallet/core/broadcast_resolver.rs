@@ -402,10 +402,10 @@ enum Final {
 }
 
 impl Final {
-    /// The height from which this evidence is stale, if it can go stale.
-    fn stale_at(&self) -> Option<u32> {
+    /// The height from which this evidence is stale.
+    fn stale_at(&self) -> u32 {
         match self {
-            Final::Mined { at } => Some(at.saturating_add(MINED_EVIDENCE_GRACE)),
+            Final::Mined { at } => at.saturating_add(MINED_EVIDENCE_GRACE),
         }
     }
 }
@@ -695,6 +695,7 @@ pub(crate) fn begin_pass(
     state
         .seen_in_block
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
+    state.echoed.retain(|(wallet, txid)| !is_gone(wallet, txid));
     // Cleared because the send is no longer an unsettled own send: it
     // settled, or left the wallet — not a statement that it settled.
     events.extend(state.clear_where(
@@ -713,9 +714,7 @@ pub(crate) fn begin_pass(
         let stale: Vec<Txid> = state
             .finished
             .iter()
-            .filter(|((wallet, _), result)| {
-                *wallet == wallet_id && result.stale_at().is_some_and(|at| height >= at)
-            })
+            .filter(|((wallet, _), result)| *wallet == wallet_id && height >= result.stale_at())
             .map(|((_, txid), _)| *txid)
             .collect();
         if !stale.is_empty() {
@@ -796,19 +795,40 @@ pub(crate) fn record_probe(
             .extend(report.in_block_by.iter().cloned());
     }
     let seen = state.seen_in_block.get(&key).map_or(0, BTreeSet::len);
-    let verdict = &if seen >= MINED_QUORUM {
+    let mut verdict = if seen >= MINED_QUORUM {
         ProbeVerdict::Mined
     } else {
         report.verdict.clone()
     };
+    // A block the wallet has already followed `MINED_EVIDENCE_GRACE` blocks
+    // past without seeing the transaction contradicts the report on
+    // arrival: it is not mined on the wallet's chain, only known — accepted.
+    let behind = report
+        .block_height
+        .is_some_and(|block| block.saturating_add(MINED_EVIDENCE_GRACE) <= height);
+    if behind && matches!(verdict, ProbeVerdict::Mined) {
+        state.seen_in_block.remove(&key);
+        verdict = ProbeVerdict::Accepted;
+    }
+    let verdict = &verdict;
     if matches!(verdict, ProbeVerdict::Mined) {
         // The grace counts from the later of the wallet's height and the
-        // block the nodes named: a wallet still short of that block has not
-        // had the chance to see it.
-        let at = height.max(report.block_height.unwrap_or(0));
-        state.finished.insert(key, Final::Mined { at });
+        // block the nodes named — a wallet still short of that block has not
+        // had the chance to see it — but one node's height can push it at
+        // most one grace further, so no answer can make it final.
+        let named = report
+            .block_height
+            .unwrap_or(0)
+            .min(height.saturating_add(MINED_EVIDENCE_GRACE));
+        state.finished.insert(
+            key,
+            Final::Mined {
+                at: height.max(named),
+            },
+        );
     }
     if root.own {
+        let before = events.len();
         state.publish_all(
             wallet_id,
             [root.txid],
@@ -817,9 +837,10 @@ pub(crate) fn record_probe(
             trigger_of(root.forced),
             &mut events,
         );
-        // A decided verdict from the probe replaces the echo's; Unresolved
-        // never replaces a decided one, so the echo still stands then.
-        if !matches!(verdict, ProbeVerdict::Unresolved { .. }) {
+        // The probe's verdict replaced the echo's only if it changed what the
+        // host holds; one that agrees (or says nothing new) leaves it the
+        // echo's.
+        if events.len() > before {
             state.echoed.remove(&key);
         }
     }
@@ -849,7 +870,7 @@ pub(crate) fn next_pass_height(
         .finished
         .iter()
         .filter(|((wallet, _), _)| *wallet == wallet_id)
-        .filter_map(|(_, result)| result.stale_at())
+        .map(|(_, result)| result.stale_at())
         .min()
         .unwrap_or(u32::MAX);
     due.min(stale_at)
@@ -4431,8 +4452,8 @@ mod tests {
     }
 
     /// The grace counts from the block the nodes named when the wallet is
-    /// still short of it: evidence for block 120 reported while the wallet is
-    /// at 101 is not withdrawn before the wallet has had 120 + grace.
+    /// still short of it: evidence for block 105 reported while the wallet is
+    /// at 101 is not withdrawn before the wallet has had 105 + grace.
     #[tokio::test]
     async fn should_count_the_grace_from_the_reported_block() {
         let mut state = ResolverState::default();
@@ -4445,17 +4466,17 @@ mod tests {
         let report = ProbeReport {
             verdict: ProbeVerdict::Mined,
             in_block_by: BTreeSet::from(["a".to_string(), "b".to_string()]),
-            block_height: Some(120),
+            block_height: Some(105),
         };
         record_probe(&mut state, wallet(), 101, &root, &report);
         assert_eq!(
             state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined { at: 120 })
+            Some(&Final::Mined { at: 105 })
         );
         let views = [send(1, &[outpoint(90, 0)])];
         assert_eq!(
             next_pass_height(&state, wallet(), &views),
-            120 + MINED_EVIDENCE_GRACE
+            105 + MINED_EVIDENCE_GRACE
         );
     }
 
@@ -4521,6 +4542,119 @@ mod tests {
         let sent = rig.sent();
         assert!(sent.contains(&ResolverEvent::Cleared(txid(1))), "{sent:?}");
         assert!(!sent.contains(&ResolverEvent::Cleared(txid(2))), "{sent:?}");
+    }
+
+    fn mined_report(block_height: Option<u32>) -> ProbeReport {
+        ProbeReport {
+            verdict: ProbeVerdict::Mined,
+            in_block_by: BTreeSet::from(["a".to_string(), "b".to_string()]),
+            block_height,
+        }
+    }
+
+    fn due_root(n: u8) -> DueRoot {
+        DueRoot {
+            txid: txid(n),
+            transaction: Arc::new(tx(n, &[outpoint(90, 0)])),
+            own: true,
+            forced: false,
+        }
+    }
+
+    /// One node naming an absurd block height cannot make mined evidence
+    /// final: the grace moves at most one grace further.
+    #[test]
+    fn should_bound_the_grace_a_node_named_height_can_add() {
+        let mut state = ResolverState::default();
+        record_probe(
+            &mut state,
+            wallet(),
+            101,
+            &due_root(1),
+            &mined_report(Some(4_000_000_000)),
+        );
+        assert_eq!(
+            state.finished.get(&(wallet(), txid(1))),
+            Some(&Final::Mined {
+                at: 101 + MINED_EVIDENCE_GRACE
+            })
+        );
+    }
+
+    /// A block the wallet already followed a grace past without the
+    /// transaction contradicts the report on arrival: accepted, not mined.
+    #[test]
+    fn should_not_record_mined_evidence_for_a_block_the_wallet_passed() {
+        let mut state = ResolverState::default();
+        let events = record_probe(
+            &mut state,
+            wallet(),
+            200,
+            &due_root(1),
+            &mined_report(Some(150)),
+        );
+        assert!(state.finished.is_empty());
+        assert_eq!(
+            events
+                .iter()
+                .map(|item| item.event.clone())
+                .collect::<Vec<_>>(),
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
+        );
+    }
+
+    /// An echoed child probed as a root, with a verdict that agrees, keeps
+    /// its echo: the parent's stale evidence does not take it away.
+    #[tokio::test]
+    async fn should_keep_an_echo_a_probe_agreed_with() {
+        let probe = Arc::new(ScriptedProbe::new(&[
+            (txid(1), mined()),
+            (txid(2), ProbeVerdict::Accepted),
+        ]));
+        let mut rig = enabled(probe).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
+        );
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(2))).await;
+        rig.send(Command::Echoed(txid(2))).await;
+        rig.height(wallet(), 102).await;
+        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))).copied()
+        else {
+            panic!("found mined");
+        };
+        rig.sent();
+
+        for height in 103..=at + MINED_EVIDENCE_GRACE {
+            rig.height(wallet(), height).await;
+        }
+
+        let sent = rig.sent();
+        assert!(sent.contains(&ResolverEvent::Cleared(txid(1))), "{sent:?}");
+        assert!(!sent.contains(&ResolverEvent::Cleared(txid(2))), "{sent:?}");
+    }
+
+    /// An echoed send that leaves the wallet is forgotten by the next pass,
+    /// echo mark included.
+    #[tokio::test]
+    async fn should_forget_the_echo_of_a_send_that_left() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.send(Command::Echoed(txid(1))).await;
+        assert!(rig.actor.state.echoed.contains(&(wallet(), txid(1))));
+
+        rig.views(wallet(), Vec::new());
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: true,
+        })
+        .await;
+        rig.height(wallet(), 102).await;
+
+        assert!(rig.actor.state.echoed.is_empty());
     }
 
     /// Stale mined evidence is judged only while the wallet follows the tip:

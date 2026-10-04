@@ -194,7 +194,9 @@ impl FinalizeOptions {
 /// build, with every not-yet-final coin of
 /// the funding accounts treated as final. Returns the value of the
 /// not-yet-final coins that trial spends, or `None` when it fails too
-/// (confirmation would not help) or spends none of them.
+/// (confirmation would not help) or spends none of them; or the typed refusal
+/// of a coin the configuration seeded that no funding account holds, when the
+/// trial needs it — that coin, not confirmation, is what stands in the way.
 ///
 /// The trial is funded by the build's own fold ([`fund`]) from the same
 /// `offered` accounts after the same `seeds`, so key-wallet applies its own
@@ -220,7 +222,7 @@ pub(crate) fn trial_with_waiting_coins(
     seeds: &[Utxo],
     pinned: Option<&HashSet<OutPoint>>,
     height: u32,
-) -> Option<u64> {
+) -> Result<Option<u64>, PlatformWalletError> {
     let generation = Arc::clone(&info.generation);
     let accounts = &mut info.core_wallet.accounts;
     // One scan for the spendable coins that are not final, before anything
@@ -240,7 +242,7 @@ pub(crate) fn trial_with_waiting_coins(
         );
     }
     if candidates.is_empty() {
-        return None;
+        return Ok(None);
     }
     // A pinned one is left out: the build refuses an input an in-flight
     // broadcast pins (`InputMidBroadcast`), so the trial must not count on it.
@@ -262,9 +264,11 @@ pub(crate) fn trial_with_waiting_coins(
         }
     }
     if waiting.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let trial = make().ok()?;
+    let Ok(trial) = make() else {
+        return Ok(None);
+    };
     // Funded through clones: an account with waiting coins (marked final) or
     // pinned ones (locked, so selection passes them over), and every standard
     // account — key-wallet asks each account in turn for a change address from
@@ -307,7 +311,9 @@ pub(crate) fn trial_with_waiting_coins(
         false,
         height,
     );
-    let (transaction, _, token) = trial.build_unsigned_reserved().ok()?;
+    let Ok((transaction, _, token)) = trial.build_unsigned_reserved() else {
+        return Ok(None);
+    };
     if let Some(token) = token {
         for at in offered {
             if let Some(managed) = accounts.funds_account(at) {
@@ -317,11 +323,11 @@ pub(crate) fn trial_with_waiting_coins(
     }
     // Backstop: a pin taken since the caller's snapshot.
     if generation.in_broadcast_conflict(&transaction).is_some() {
-        return None;
+        return Ok(None);
     }
     // The build refuses a selected input no funding account holds (a coin
     // the configuration seeded itself from elsewhere): a trial that needs one
-    // is no promise either.
+    // is no promise, and that coin is what stands in the way.
     let owned = |outpoint: &OutPoint| {
         offered.iter().any(|at| {
             accounts
@@ -329,19 +335,23 @@ pub(crate) fn trial_with_waiting_coins(
                 .is_some_and(|managed| managed.utxos.contains_key(outpoint))
         })
     };
-    if !transaction
+    // The trial knows the actual cause then: name the coin.
+    if let Some(input) = transaction
         .input
         .iter()
-        .all(|input| owned(&input.previous_output))
+        .find(|input| !owned(&input.previous_output))
     {
-        return None;
+        return Err(PlatformWalletError::ChosenInputUnavailable {
+            outpoint: input.previous_output,
+            problem: ChosenInputProblem::NotInFundingAccounts,
+        });
     }
     let spent = transaction
         .input
         .iter()
         .filter_map(|input| waiting.get(&input.previous_output))
         .fold(0u64, |sum, value| sum.saturating_add(*value));
-    (spent > 0).then_some(spent)
+    Ok((spent > 0).then_some(spent))
 }
 
 /// The funding fold a build and its waiting-coins trial share: the wallet's
@@ -1237,7 +1247,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     let Some(make) = trial else {
                         return error;
                     };
-                    let waiting = trial_with_waiting_coins(
+                    let waiting = match trial_with_waiting_coins(
                         make,
                         wallet,
                         info,
@@ -1245,7 +1255,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         &seeds,
                         pinned.as_ref(),
                         height,
-                    );
+                    ) {
+                        Ok(waiting) => waiting,
+                        Err(refused) => return refused,
+                    };
                     match (too_many, waiting) {
                         (true, Some(waiting)) => funds_awaiting_network(None, None, waiting),
                         _ => awaiting_network(error, waiting),
@@ -3130,7 +3143,8 @@ mod tests {
     /// the factory seeds a final 700,000-duff BIP32 coin while only BIP44
     /// (one waiting 700,000-duff coin) funds a 1,000,000 payment. The trial
     /// would spend both, but the build refuses the BIP32 input, so
-    /// confirmation would not help: insufficient funds, not code 59.
+    /// confirmation would not help: not code 59, but the typed refusal naming
+    /// the seeded coin.
     #[tokio::test]
     async fn should_not_report_waiting_on_a_trial_input_outside_the_funding_accounts() {
         let (core, signer, manager, wallet_id) = dual_core(&[700_000], &[700_000]).await;

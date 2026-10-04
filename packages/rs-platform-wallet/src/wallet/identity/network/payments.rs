@@ -1345,7 +1345,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // on a fresh copy of the build, on this failure path only.
                     // Only a shortfall or too many inputs can turn on coins
                     // that are not final.
-                    let waiting = waiting_may_help(&e).then(|| {
+                    let waiting = if waiting_may_help(&e) {
                         trial_with_waiting_coins(
                             &|| Ok(make()),
                             wallet,
@@ -1354,9 +1354,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             &[],
                             None,
                             current_height,
-                        )
-                    });
-                    let waiting = waiting.flatten();
+                        )?
+                    } else {
+                        None
+                    };
                     return Err(build_error_awaiting_network(e, waiting));
                 }
             };
