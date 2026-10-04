@@ -1058,8 +1058,9 @@ mod tests {
         use dpp::identity::{Identity, KeyID, Purpose};
         use std::collections::BTreeMap;
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(4).expect("expected protocol version 4");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
