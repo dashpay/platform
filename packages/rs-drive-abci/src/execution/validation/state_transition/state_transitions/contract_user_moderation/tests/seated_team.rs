@@ -87,7 +87,8 @@ const NOTE: &str = "note";
 /// A document type whose `label` only moderators write, moderated with field changes only.
 const BADGE: &str = "badge";
 /// A document type moderators delete for a minute after its last modification, and once
-/// settled when the leader and two members of the seated team approve.
+/// settled when the leader and two members of the seated team approve, a member the leader
+/// added counting only for the stories written after its addition.
 const STORY: &str = "story";
 /// A document type moderators delete for a minute after its last modification, and once
 /// settled when the seated team's leader approves.
@@ -98,6 +99,9 @@ const CHRONICLE: &str = "chronicle";
 /// A document type moderators delete for a minute after its last modification, and once
 /// settled when the leader and more members approve than the team can hold: all of them.
 const EPIC: &str = "epic";
+/// A story whose deletion once settled every member the leader added approves, whenever added
+/// (`approversPredateDocument: false`).
+const LEGEND: &str = "legend";
 /// The window the stories and memos give their moderators.
 const SETTLING_WINDOW_SECONDS: u64 = 60;
 const DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE: u32 = 41124;
@@ -153,6 +157,10 @@ fn elected_posts(
                 ),
                 (
                     EPIC.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    LEGEND.to_string(),
                     BTreeSet::from([ModerationAbility::DeleteDocuments]),
                 ),
                 (
@@ -408,6 +416,14 @@ impl Team {
                     (MEMO, platform_value!({ "leader": true })),
                     // The most a registration admits with MAX_ADDED_MODERATORS additions.
                     (EPIC, platform_value!({ "leader": true, "approvals": 18 })),
+                    (
+                        LEGEND,
+                        platform_value!({
+                            "leader": true,
+                            "approvals": 3,
+                            "approversPredateDocument": false,
+                        }),
+                    ),
                 ] {
                     add_document_type(
                         c,
@@ -419,7 +435,7 @@ impl Team {
                                 "deleteSettled": rule,
                             },
                             "documentsMutable": true,
-                            "required": ["text", "$updatedAt"],
+                            "required": ["text", "$createdAt", "$updatedAt"],
                         })),
                     )
                 }
@@ -438,7 +454,7 @@ impl Team {
                             "changeFields": ["label"],
                         },
                         "documentsMutable": true,
-                        "required": ["text", "$updatedAt"],
+                        "required": ["text", "$createdAt", "$updatedAt"],
                     })),
                 );
             },
@@ -621,9 +637,16 @@ impl Team {
         self.setup.commit(transaction);
     }
 
+    /// `transition`, processed in a block at `time_ms` and committed
+    fn process_and_commit_at(&self, transition: &StateTransition, time_ms: TimestampMillis) {
+        let transaction = self.setup.platform.drive.grove.start_transaction();
+        assert_success(&self.setup.process_at(transition, time_ms, &transaction));
+        self.setup.commit(transaction);
+    }
+
     /// Ends the contest for the seat as the block at the end of the join window does: with a
-    /// single contender, the charter is awarded there.
-    fn award(&self) {
+    /// single contender, the charter is awarded there. Returns the time of that block.
+    fn award(&self) -> TimestampMillis {
         let platform_version = PlatformVersion::latest();
         let platform = &self.setup.platform;
         let (end_time, _) = VotePollsByEndDateDriveQuery {
@@ -681,6 +704,7 @@ impl Team {
             Some(self.leader.id()),
             "the contest is awarded to its single contender, the leader"
         );
+        end_time
     }
 
     /// The charter contract's document of `document_type_name` stored at `document_id`

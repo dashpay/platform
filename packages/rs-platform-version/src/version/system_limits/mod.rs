@@ -111,6 +111,33 @@ pub struct SystemLimits {
     ///   their siblings — which is why the withdrawal paths batch many documents safely. It is
     ///   not a drop-in for batch transitions: it carries no delete variant.
     ///
+    /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
+    ///   own code. Its balance write is absolute rather than a delta, so two pool operations in
+    ///   one batch would silently discard the first — value lost on every node, no disagreement
+    ///   to notice. And an outputs-only bundle's sighash binds the owner, but nothing that
+    ///   tells one of that owner's transitions from another, while its anchor is never checked
+    ///   against a pool at all — so the same authorized bytes can sit in two shields of one
+    ///   batch: state validation runs per transition against the transaction before any
+    ///   operation applies, so the second cannot see the first's pending insert, and the
+    ///   within-bundle check is scoped to one action set. The two inserts are then byte-identical
+    ///   in path, key and value, which a node running the shipped batching default folds in
+    ///   silence while a node verifying batch
+    ///   consistency refuses — the two disagree on one block and neither shows why. Raising the
+    ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
+    ///   not just making the ignored cases above pass.
+    ///
+    /// * The batch minimum balance pre-check reserves the compute fee of every shielded pool
+    ///   bundle a batch carries, on top of `document_batch_sub_transition` per sub-transition.
+    ///   It refuses nobody who could have paid only because a bundle-carrying sub-transition's
+    ///   metered fee is itself far above that flat minimum: the band the floor newly refuses is
+    ///   `metered_fee < flat_minimum` wide, and one pool action's ~550 metered storage bytes
+    ///   price it two orders of magnitude above the 100,000 flat minimum, so the band is empty.
+    ///   A cap above one does not by itself change that — the floor and the charge are both
+    ///   per sub-transition — but a later change that lets a batch carry a bundle alongside
+    ///   sub-transitions cheaper than the flat minimum would reopen it, and the floor would
+    ///   then start refusing batches that fee validation would have executed. Recheck the
+    ///   inequality rather than assuming it.
+    ///
     /// Five cases in `rs-drive`'s `batched_group_drain` suite are `#[ignore]`d for exactly this
     /// reason; the rest of that suite runs. Anyone raising this cap should un-ignore those five
     /// first and make them pass.
@@ -240,6 +267,13 @@ pub struct SystemLimits {
     /// v0 keeps reading.
     pub max_evonode_reward_claim_epochs: u16,
     pub max_shielded_transition_actions: u16,
+    /// Highest `minimumPoolNotesForOutgoing` a token's configuration may set. The threshold
+    /// refuses outflows from the token's shielded pool while the pool holds fewer notes, so
+    /// without an upper bound an issuer could set one no pool ever reaches and strand every
+    /// holder's shielded balance, irreversibly on a readonly contract. Read by the token
+    /// configuration validation of contract create and update and by `TokenConfigUpdate`
+    /// (protocol version 14), which never reach it before.
+    pub max_token_pool_notes_for_outgoing: u64,
     /// Maximum overlap factor (`range / step`) a `timeRange` index transform
     /// may declare, enforced at contract registration.
     ///
@@ -369,7 +403,8 @@ mod tests {
                     .max_transitions_in_documents_batch,
                 1,
                 "protocol version {} allows more than one transition per documents batch; \
-                 see the documentation on SystemLimits::max_transitions_in_documents_batch \
+                 token shielded pools rely on this cap for two separate properties, so read \
+                 the documentation on SystemLimits::max_transitions_in_documents_batch \
                  for what that exposes",
                 platform_version.protocol_version
             );
@@ -406,7 +441,8 @@ mod tests {
                     .max_transitions_in_documents_batch,
                 1,
                 "mock platform version {} allows more than one transition per documents \
-                 batch; see SystemLimits::max_transitions_in_documents_batch",
+                 batch; token shielded pools rely on this cap for two separate properties, so \
+                 read SystemLimits::max_transitions_in_documents_batch",
                 platform_version.protocol_version
             );
         }

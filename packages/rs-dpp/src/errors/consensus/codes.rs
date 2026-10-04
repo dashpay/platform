@@ -122,6 +122,7 @@ impl ErrorWithCode for BasicError {
             Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
             Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
             Self::PreProgrammedDistributionAmountOverLimitError(_) => 10277,
+            Self::TokenShieldedPoolIncompatibleRulesError(_) => 10278,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -452,6 +453,9 @@ impl ErrorWithCode for StateError {
             Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
             Self::TokenNotForDirectSale(_) => 40721,
             Self::TokenOncePerIdentityDistributionAlreadyClaimedError(_) => 40722,
+            Self::TokenShieldedPoolNotEnabledError(_) => 40723,
+            Self::TokenShieldedPaymentAmountMismatchError(_) => 40724,
+            Self::TokenShieldedPaymentNotRequiredError(_) => 40725,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,
@@ -513,6 +517,7 @@ impl ErrorWithCode for StateError {
             Self::SettledDeletionNotRestorableError(_) => 41209,
             Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
             Self::ContractTeamActionDocumentChangedError(_) => 41211,
+            Self::ContractTeamMemberAddedAfterDocumentError(_) => 41212,
         }
     }
 }

@@ -8,7 +8,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::common::seated_moderation_charter::{
-    fetch_seated_moderation_charter, SeatedModerationCharter,
+    fetch_seated_moderation_charter, SeatedModerationCharter, TeamSeat,
 };
 use dpp::block::epoch::Epoch;
 use dpp::consensus::state::contract_moderation::{
@@ -27,6 +27,15 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
+
+/// How an identity moderates a contract
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModeratorSeat {
+    /// As one of the moderators the declaration names
+    Declared,
+    /// From its seat on the seated team
+    Team(TeamSeat),
+}
 
 /// Who moderates a contract, as state has it now.
 ///
@@ -91,18 +100,47 @@ impl<'a> Moderators<'a> {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
-        match self {
-            Moderators::Declared(moderation) => {
-                Ok(moderation.may_moderate(&owner_id, &identity_id))
-            }
-            Moderators::Seated { charter, .. } => charter.seats(
-                drive,
+        Ok(self
+            .seat_of(
+                owner_id,
                 identity_id,
+                drive,
                 epoch,
                 execution_context,
                 tx,
                 platform_version,
-            ),
+            )?
+            .is_some())
+    }
+
+    /// How `identity_id` moderates the contract owned by `owner_id`, `None` when it does not:
+    /// [`Moderators::may_moderate`], by the same reads, with the seat of a member of a seated
+    /// team ([`SeatedModerationCharter::seat_of`]).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn seat_of(
+        &self,
+        owner_id: Identifier,
+        identity_id: Identifier,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ModeratorSeat>, Error> {
+        match self {
+            Moderators::Declared(moderation) => Ok(moderation
+                .may_moderate(&owner_id, &identity_id)
+                .then_some(ModeratorSeat::Declared)),
+            Moderators::Seated { charter, .. } => Ok(charter
+                .seat_of(
+                    drive,
+                    identity_id,
+                    epoch,
+                    execution_context,
+                    tx,
+                    platform_version,
+                )?
+                .map(ModeratorSeat::Team)),
         }
     }
 

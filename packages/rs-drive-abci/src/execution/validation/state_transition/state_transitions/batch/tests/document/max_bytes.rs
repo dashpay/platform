@@ -372,6 +372,7 @@ mod max_bytes_tests {
                     document_type_name: "profile".to_string(),
                     data_contract: contract_fetch_info.clone(),
                     token_cost: None,
+                    shielded_token_payment: None,
                     gas_fees_paid_by: GasFeesPaidBy::default(),
                     contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                     declared_action_fee: None,
