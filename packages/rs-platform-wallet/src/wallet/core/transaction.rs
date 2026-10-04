@@ -100,38 +100,56 @@ pub(crate) fn is_final(utxo: &Utxo) -> bool {
     utxo.is_confirmed || utxo.is_instantlocked
 }
 
-/// Whether a coin the caller chose as an input can go into a build, in the
-/// one order every entry point refuses in: unspendable first (a locked coin,
-/// or an immature coinbase output until it matures — not what the network's
-/// confirmation of the coin cures),
-/// then pinned by an in-flight broadcast (`pinned`; the build would refuse it
-/// after selection anyway), then not final (code 59, the only refusal waiting
-/// cures). Public for platform-wallet-ffi only.
+/// Whether the coins a build was given (chosen by the caller, or about to be
+/// signed) can go into it, in the one order every entry point refuses in —
+/// across all of them, so the refusal names what waiting would not cure:
+/// any unspendable first (a locked coin, or an immature coinbase output
+/// until it matures — not what the network's confirmation of the coin
+/// cures), then any pinned by an in-flight broadcast (`pinned`; the build
+/// would refuse it after selection anyway), then any not final (code 59, the
+/// only refusal waiting cures). Public for platform-wallet-ffi only.
 #[doc(hidden)]
-pub fn check_chosen_input(
-    utxo: &Utxo,
+pub fn check_chosen_inputs<'a>(
+    utxos: impl IntoIterator<Item = &'a Utxo> + Clone,
     height: u32,
     pinned: &HashSet<OutPoint>,
 ) -> Result<(), PlatformWalletError> {
-    if !utxo.is_spendable(height) {
-        return Err(PlatformWalletError::ChosenInputUnavailable {
-            outpoint: utxo.outpoint,
-            problem: ChosenInputProblem::NotSpendable,
-        });
+    if let Some(error) = unspendable(utxos.clone(), height) {
+        return Err(error);
     }
-    if pinned.contains(&utxo.outpoint) {
+    if let Some(utxo) = utxos
+        .clone()
+        .into_iter()
+        .find(|utxo| pinned.contains(&utxo.outpoint))
+    {
         return Err(PlatformWalletError::InputMidBroadcast {
             outpoint: utxo.outpoint,
         });
     }
-    if !is_final(utxo) {
+    if let Some(utxo) = utxos.into_iter().find(|utxo| !is_final(utxo)) {
         return Err(input_awaiting_network(utxo));
     }
     Ok(())
 }
 
+/// The refusal of the first coin of `utxos` that is not spendable at
+/// `height` — the first step of [`check_chosen_inputs`], and all the
+/// waiting-coins trial applies (it counts on the others being cured).
+fn unspendable<'a>(
+    utxos: impl IntoIterator<Item = &'a Utxo>,
+    height: u32,
+) -> Option<PlatformWalletError> {
+    utxos
+        .into_iter()
+        .find(|utxo| !utxo.is_spendable(height))
+        .map(|utxo| PlatformWalletError::ChosenInputUnavailable {
+            outpoint: utxo.outpoint,
+            problem: ChosenInputProblem::NotSpendable,
+        })
+}
+
 /// The coins in-flight broadcasts of this wallet pin, now — what
-/// [`check_chosen_input`] takes. Public for platform-wallet-ffi only.
+/// [`check_chosen_inputs`] takes. Public for platform-wallet-ffi only.
 #[doc(hidden)]
 pub fn in_broadcast_outpoints(info: &PlatformWalletInfo) -> HashSet<OutPoint> {
     info.generation.in_broadcast_outpoints()
@@ -373,23 +391,28 @@ pub(crate) fn trial_with_waiting_coins(
     // The build refuses a selected input no funding account holds (a coin
     // the configuration seeded itself from elsewhere): a trial that needs one
     // is no promise, and that coin is what stands in the way.
-    let owned = |outpoint: &OutPoint| {
-        offered.iter().any(|at| {
+    let resident = |outpoint: &OutPoint| {
+        offered.iter().find_map(|at| {
             accounts
                 .funds_account(at)
-                .is_some_and(|managed| managed.utxos.contains_key(outpoint))
+                .and_then(|managed| managed.utxos.get(outpoint))
         })
     };
     // The trial knows the actual cause then: name the coin.
-    if let Some(input) = transaction
-        .input
-        .iter()
-        .find(|input| !owned(&input.previous_output))
-    {
-        return Err(PlatformWalletError::ChosenInputUnavailable {
-            outpoint: input.previous_output,
-            problem: ChosenInputProblem::NotInFundingAccounts,
-        });
+    let mut residents = Vec::with_capacity(transaction.input.len());
+    for input in &transaction.input {
+        let Some(utxo) = resident(&input.previous_output) else {
+            return Err(PlatformWalletError::ChosenInputUnavailable {
+                outpoint: input.previous_output,
+                problem: ChosenInputProblem::NotInFundingAccounts,
+            });
+        };
+        residents.push(utxo);
+    }
+    // The build signs the resident coins and refuses an unspendable one (a
+    // builder seed locked since the caller's snapshot): no promise either.
+    if let Some(error) = unspendable(residents.iter().copied(), height) {
+        return Err(error);
     }
     let spent = transaction
         .input
@@ -1229,11 +1252,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         problem: ChosenInputProblem::NotInFundingAccounts,
                     });
                 };
-                // An unspendable coin would be dropped by the selector
-                // silently: refused by name, like a pinned or waiting one.
-                let pinned = pinned.get_or_insert_with(|| in_broadcast_outpoints(info));
-                check_chosen_input(utxo, height, pinned)?;
                 seeds.push(utxo.clone());
+            }
+            // An unspendable coin would be dropped by the selector silently:
+            // refused by name, like a pinned or waiting one — across all the
+            // chosen coins, in the shared order.
+            if !seeds.is_empty() {
+                let pinned = pinned.insert(in_broadcast_outpoints(info));
+                check_chosen_inputs(&seeds, height, pinned)?;
             }
             // The accounts that take on this build's reservation bookkeeping,
             // in funding order — the ones a failure path must release
@@ -1407,11 +1433,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // every entry point refuses in — unspendable before not final, so
             // a locked coin is not reported as waiting. Pins were refused
             // above, for the whole transaction.
-            let no_pins = HashSet::new();
-            if let Some(error) = selected
-                .iter()
-                .find_map(|utxo| check_chosen_input(utxo, height, &no_pins).err())
-            {
+            if let Err(error) = check_chosen_inputs(&selected, height, &HashSet::new()) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(error);
             }
@@ -1607,17 +1629,19 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use async_trait::async_trait;
+    use dashcore::hashes::Hash;
     use dashcore::secp256k1::{ecdsa, PublicKey};
-    use dashcore::{Address as DashAddress, Network, OutPoint, Transaction, TxIn};
+    use dashcore::{Address as DashAddress, Network, OutPoint, Transaction, TxIn, TxOut, Txid};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::signer::{Signer, SignerMethod};
     use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
     use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-    use key_wallet::DerivationPath;
+    use key_wallet::{DerivationPath, Utxo};
     use tokio::sync::Barrier;
 
     use crate::broadcaster::TransactionBroadcaster;
@@ -1635,8 +1659,8 @@ mod tests {
 
     use crate::error::ChosenInputProblem;
     use crate::wallet::core::transaction::{
-        build_error_awaiting_network, is_final, modeled_output_script, FinalizeOptions,
-        MAX_STANDARD_TX_INPUTS,
+        build_error_awaiting_network, check_chosen_inputs, is_final, modeled_output_script,
+        FinalizeOptions, MAX_STANDARD_TX_INPUTS,
     };
     use crate::wallet::core::CoreWallet;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -2616,14 +2640,10 @@ mod tests {
     ) {
         let mut manager = manager.write().await;
         let (_, info) = manager.get_wallet_and_info_mut(wallet_id).expect("wallet");
-        let account = AccountType::Standard {
-            index: 0,
-            standard_account_type: StandardAccountType::BIP44Account,
-        };
         let managed = info
             .core_wallet
             .accounts
-            .funds_account_mut(&account)
+            .funds_account_mut(&bip44_account())
             .expect("bip44 account");
         for utxo in managed.utxos.values_mut() {
             utxo.is_confirmed = false;
@@ -3500,7 +3520,7 @@ mod tests {
     }
 
     /// The BIP44 coin of a `dual_core` wallet, as the wallet holds it now.
-    async fn bip44_coin<B: TransactionBroadcaster>(core: &CoreWallet<B>) -> key_wallet::Utxo {
+    async fn bip44_coin<B: TransactionBroadcaster>(core: &CoreWallet<B>) -> Utxo {
         standard_account_coins(core, StandardAccountType::BIP44Account)
             .await
             .into_iter()
@@ -3660,88 +3680,199 @@ mod tests {
         }
     }
 
-    /// A coin seeded on the builder while final, then locked and demoted
-    /// before finalization: the resident coin is refused as unspendable —
-    /// not as waiting, which would not clear the lock — before anything is
-    /// signed, and leaves no reservation behind, in strict and pooled funding,
-    /// with ordinary and `reservation_only` funding.
+    /// A coin seeded on the builder while final and unlocked, then locked —
+    /// still final, or demoted too: the resident coin is refused as
+    /// unspendable (not as waiting, which would not clear the lock) before
+    /// anything is signed, and leaves no reservation behind. Strict funding
+    /// (BIP44 alone) and pooled funding (BIP44 and BIP32 — with ordinary
+    /// funding over both accounts: the payment needs the BIP32 coin too),
+    /// each with ordinary and `reservation_only` funding.
     #[tokio::test]
-    async fn should_refuse_a_seeded_coin_locked_and_demoted_as_unspendable() {
-        let pooled = [
-            AccountTypePreference::BIP44,
-            AccountTypePreference::AllDashpayReceivingFunds,
-        ];
+    async fn should_refuse_a_seeded_coin_locked_since_as_unspendable() {
+        let pooled = [AccountTypePreference::BIP44, AccountTypePreference::BIP32];
         let strict = [preference(StandardAccountType::BIP44Account)];
-        for (sources, reservation_only) in [
-            (&strict[..], false),
-            (&strict[..], true),
-            (&pooled[..], false),
-            (&pooled[..], true),
-        ] {
-            let case = format!(
-                "sources={} reservation_only={reservation_only}",
-                sources.len()
-            );
-            let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
-            let seeded = bip44_coin(&core).await;
-            let options = || FinalizeOptions {
-                reservation_only,
-                ..FinalizeOptions::default()
-            };
-            set_bip44_finality(&manager, &wallet_id, false).await;
-            set_bip44_lock(&manager, &wallet_id, seeded.outpoint, true).await;
+        for demoted in [false, true] {
+            for (sources, bip44, reservation_only) in [
+                (&strict[..], 1_500_000, false),
+                (&strict[..], 1_500_000, true),
+                (&pooled[..], 600_000, false),
+                // A `reservation_only` build spends no account coin beside
+                // its seeds, so the seed pays alone.
+                (&pooled[..], 1_500_000, true),
+            ] {
+                let case = format!(
+                    "demoted={demoted} sources={} reservation_only={reservation_only}",
+                    sources.len()
+                );
+                let (core, signer, manager, wallet_id) = dual_core(&[bip44], &[700_000]).await;
+                let seeded = bip44_coin(&core).await;
+                let options = || FinalizeOptions {
+                    reservation_only,
+                    ..FinalizeOptions::default()
+                };
+                with_bip44_coin(&manager, &wallet_id, seeded.outpoint, |utxo| {
+                    utxo.is_locked = true;
+                    if demoted {
+                        utxo.is_confirmed = false;
+                        utxo.is_instantlocked = false;
+                    }
+                })
+                .await;
 
-            // The failing signer proves signing never ran.
-            let result = core
-                .finalize_transaction_with_options(
-                    payment_builder(80).add_inputs([seeded.clone()]),
+                // The failing signer proves signing never ran.
+                let result = core
+                    .finalize_transaction_with_options(
+                        payment_builder(80).add_inputs([seeded.clone()]),
+                        options(),
+                        sources,
+                        0,
+                        &FailingSigner,
+                    )
+                    .await;
+                assert!(
+                    matches!(
+                        result,
+                        Err(PlatformWalletError::ChosenInputUnavailable {
+                            outpoint,
+                            problem: ChosenInputProblem::NotSpendable,
+                        }) if outpoint == seeded.outpoint
+                    ),
+                    "{case}: got {result:?}"
+                );
+
+                // Nothing stays reserved, in either account: restored, the
+                // same payment builds.
+                with_bip44_coin(&manager, &wallet_id, seeded.outpoint, |utxo| {
+                    *utxo = seeded.clone();
+                })
+                .await;
+                core.finalize_transaction_with_options(
+                    payment_builder(81).add_inputs([seeded.clone()]),
                     options(),
                     sources,
                     0,
-                    &FailingSigner,
+                    &signer,
                 )
-                .await;
-            assert!(
-                matches!(
-                    result,
-                    Err(PlatformWalletError::ChosenInputUnavailable {
-                        outpoint,
-                        problem: ChosenInputProblem::NotSpendable,
-                    }) if outpoint == seeded.outpoint
-                ),
-                "{case}: got {result:?}"
-            );
-
-            // Nothing stays reserved: unlocked and final again, it builds.
-            set_bip44_lock(&manager, &wallet_id, seeded.outpoint, false).await;
-            set_bip44_finality(&manager, &wallet_id, true).await;
-            core.finalize_transaction_with_options(
-                payment_builder(81).add_inputs([seeded.clone()]),
-                options(),
-                sources,
-                0,
-                &signer,
-            )
-            .await
-            .unwrap_or_else(|error| panic!("{case}: {error:?}"));
+                .await
+                .unwrap_or_else(|error| panic!("{case}: {error:?}"));
+            }
         }
     }
 
-    async fn set_bip44_lock(
+    /// The waiting-coins trial applies the build's spendability refusal to
+    /// the coins it would sign: a BIP32 coin seeded while unlocked and locked
+    /// since, which a waiting BIP44 coin would otherwise complete, is refused
+    /// as unspendable — not code 59, since waiting would not clear the lock.
+    #[tokio::test]
+    async fn should_not_report_waiting_on_a_trial_that_needs_a_locked_seed() {
+        let (core, signer, manager, wallet_id) = dual_core(&[400_000], &[700_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let seeded = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        {
+            let mut manager = manager.write().await;
+            let (_, info) = manager.get_wallet_and_info_mut(&wallet_id).expect("wallet");
+            info.core_wallet
+                .accounts
+                .funds_account_mut(&AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP32Account,
+                })
+                .expect("bip32 account")
+                .utxos
+                .get_mut(&seeded.outpoint)
+                .expect("coin")
+                .is_locked = true;
+        }
+        let result = core
+            .finalize_transaction_from(
+                || Ok(payment_builder(109).add_inputs([seeded.clone()])),
+                FinalizeOptions::default(),
+                &[AccountTypePreference::BIP44, AccountTypePreference::BIP32],
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::ChosenInputUnavailable {
+                    outpoint,
+                    problem: ChosenInputProblem::NotSpendable,
+                }) if outpoint == seeded.outpoint
+            ),
+            "got {result:?}"
+        );
+    }
+
+    /// The refusal order runs across the coins, not per coin: a locked coin is
+    /// named before a waiting one, whichever comes first.
+    #[test]
+    fn should_name_an_unspendable_coin_before_a_waiting_one() {
+        let coin = |tag: u8| {
+            let mut utxo = Utxo::new(
+                OutPoint {
+                    txid: Txid::from_byte_array([tag; 32]),
+                    vout: 0,
+                },
+                TxOut {
+                    value: 100_000,
+                    script_pubkey: DashAddress::dummy(Network::Testnet, 1).script_pubkey(),
+                },
+                DashAddress::dummy(Network::Testnet, 1),
+                1,
+                false,
+            );
+            utxo.is_instantlocked = true;
+            utxo
+        };
+        let mut waiting = coin(1);
+        waiting.is_instantlocked = false;
+        let mut locked = coin(2);
+        locked.is_locked = true;
+
+        let result = check_chosen_inputs([&waiting, &locked], 100, &HashSet::new());
+
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::ChosenInputUnavailable {
+                    outpoint,
+                    problem: ChosenInputProblem::NotSpendable,
+                }) if outpoint == locked.outpoint
+            ),
+            "got {result:?}"
+        );
+    }
+
+    /// Change one coin of the BIP44 account `set_bip44_finality` changes.
+    async fn with_bip44_coin(
         manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: &WalletId,
         outpoint: OutPoint,
-        locked: bool,
+        change: impl FnOnce(&mut Utxo),
     ) {
         let mut manager = manager.write().await;
         let (_, info) = manager.get_wallet_and_info_mut(wallet_id).expect("wallet");
-        info.core_wallet
-            .first_bip44_managed_account_mut()
-            .expect("bip44 account")
-            .utxos
-            .get_mut(&outpoint)
-            .expect("coin")
-            .is_locked = locked;
+        change(
+            info.core_wallet
+                .accounts
+                .funds_account_mut(&bip44_account())
+                .expect("bip44 account")
+                .utxos
+                .get_mut(&outpoint)
+                .expect("coin"),
+        );
+    }
+
+    fn bip44_account() -> AccountType {
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        }
     }
 
     /// A final coin chosen by outpoint that is not spendable (locked here; an

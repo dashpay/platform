@@ -19,7 +19,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use platform_wallet::{
-    check_chosen_input, check_fee_rate, in_broadcast_outpoints, FinalizeOptions,
+    check_chosen_inputs, check_fee_rate, in_broadcast_outpoints, FinalizeOptions,
     PlatformWalletError,
 };
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
@@ -1074,17 +1074,17 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
 
         let height = info.core_wallet.last_processed_height();
         let pinned = in_broadcast_outpoints(info);
-        let mut selected = Vec::with_capacity(requested.len());
+        let mut named = Vec::with_capacity(requested.len());
         for op in &requested {
-            let utxo = managed.utxos.get(op).ok_or_else(|| {
+            named.push(managed.utxos.get(op).ok_or_else(|| {
                 SeedError::Other(format!("outpoint {}:{} not in account", op.txid, op.vout))
-            })?;
-            // Refused by name as soon as it is named, by the finalizer's own
-            // check and in its order (unspendable, mid-broadcast, not final).
-            // The finalizers check again against the coin as it is then.
-            check_chosen_input(utxo, height, &pinned).map_err(SeedError::Refused)?;
-            selected.push(*op);
+            })?);
         }
+        // Refused by name as soon as they are named, by the finalizer's own
+        // check and in its order (unspendable, mid-broadcast, not final). The
+        // finalizers check again against the coins as they are then.
+        check_chosen_inputs(named.iter().copied(), height, &pinned).map_err(SeedError::Refused)?;
+        let selected = requested.clone();
 
         // Validation succeeded — only now record them.
         (*builder).state().inputs.extend(selected);
