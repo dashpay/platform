@@ -304,7 +304,7 @@ impl OutpointClass {
 /// (`DashpayExternalAccount`): coins there belong to the contact, so the
 /// inventory omits them and the classifier has no verdict for them.
 pub fn is_watch_only_contact(account_type: &AccountType) -> bool {
-    matches!(account_type, AccountType::DashpayExternalAccount { .. })
+    account_type.is_contact_owned()
 }
 
 /// One page of `wallet_id`'s UTXO inventory across every funds account

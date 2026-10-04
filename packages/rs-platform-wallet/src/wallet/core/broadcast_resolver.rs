@@ -77,6 +77,7 @@ use dashcore::{Transaction, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::Wallet;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, RwLock};
@@ -165,19 +166,62 @@ pub(crate) fn merge_records<'a>(
 /// This wallet's unsettled transactions. One walk over the records; only
 /// unsettled ones are cloned — on a healthy wallet there are none or a
 /// handful.
-pub(crate) fn collect_views(info: &PlatformWalletInfo) -> Vec<OutgoingView> {
+///
+/// `signs`: the wallet can sign ([`Wallet::can_sign`]); a watch-only wallet sends
+/// nothing, so none of its transactions is an own send.
+pub(crate) fn collect_views(info: &PlatformWalletInfo, signs: bool) -> Vec<OutgoingView> {
     let accounts = info.core_wallet.accounts.all_accounts();
     merge_records(accounts.iter().flat_map(|account| {
-        account
-            .transactions()
-            .values()
-            .map(move |record| RecordFacts {
-                txid: record.txid,
-                settled: is_settled(record) || account.transaction_is_finalized(&record.txid),
-                own: !record.input_details.is_empty(),
-                transaction: &record.transaction,
-            })
+        account.transactions().values().map(move |record| {
+            record_facts(
+                record,
+                || account.transaction_is_finalized(&record.txid),
+                signs,
+            )
+        })
     }))
+}
+
+/// Whether `record` shows the wallet spending its own coins, i.e. the wallet
+/// signed the transaction. A contact's watch-only chain
+/// (`DashpayExternalAccount`, [`AccountType::is_contact_owned`]) records
+/// input details when the *contact* spends a payment it received: that is
+/// the contact's send, not this wallet's — the same rule the changeset
+/// projection applies. Such a record still takes part in the chain walk as
+/// an ancestor of a send that is ours.
+///
+/// [`AccountType::is_contact_owned`]: key_wallet::account::AccountType::is_contact_owned
+fn spends_own_coins(record: &TransactionRecord) -> bool {
+    !record.input_details.is_empty() && !record.account_type.is_contact_owned()
+}
+
+/// One account's record as the resolver sees it; `finalized`: whether the
+/// account holds the transaction finalized, asked only of a record not
+/// already settled; `signs`: the wallet can sign ([`Wallet::can_sign`]).
+fn record_facts(
+    record: &TransactionRecord,
+    finalized: impl FnOnce() -> bool,
+    signs: bool,
+) -> RecordFacts<'_> {
+    RecordFacts {
+        txid: record.txid,
+        settled: is_settled(record) || finalized(),
+        own: signs && spends_own_coins(record),
+        transaction: &record.transaction,
+    }
+}
+
+/// Whether the accounts' records of one transaction make it an unsettled own
+/// send — the same rule as [`merge_records`]: settled in any account means
+/// settled, and own in any account means own.
+fn is_unsettled_own<'a>(records: impl IntoIterator<Item = RecordFacts<'a>>) -> bool {
+    // No allocation: this runs per wallet on every late acceptance.
+    records
+        .into_iter()
+        .try_fold(false, |own, record| {
+            (!record.settled).then_some(own || record.own)
+        })
+        .unwrap_or(false)
 }
 
 /// This wallet's unsettled transactions as chains. `views` hold one entry per
@@ -775,18 +819,15 @@ fn holds(info: &PlatformWalletInfo, txid: &Txid) -> bool {
 /// Whether `txid` is an own send of the wallet that no account has settled
 /// (in a block, InstantSend-locked, or finalized) — the same rule as
 /// [`merge_records`]: settled in any account means settled.
-fn holds_unsettled_own(info: &PlatformWalletInfo, txid: &Txid) -> bool {
-    let mut own = false;
-    for account in info.core_wallet.accounts.all_accounts() {
-        let Some(record) = account.transactions().get(txid) else {
-            continue;
-        };
-        if is_settled(record) || account.transaction_is_finalized(txid) {
-            return false;
-        }
-        own |= !record.input_details.is_empty();
-    }
-    own
+fn holds_unsettled_own(wallet: &Wallet, info: &PlatformWalletInfo, txid: &Txid) -> bool {
+    let signs = wallet.can_sign();
+    let accounts = info.core_wallet.accounts.all_accounts();
+    is_unsettled_own(accounts.iter().filter_map(|account| {
+        account
+            .transactions()
+            .get(txid)
+            .map(|record| record_facts(record, || account.transaction_is_finalized(txid), signs))
+    }))
 }
 
 struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
@@ -814,8 +855,8 @@ impl WalletSource for ManagerSource {
             .into_iter()
             .filter(|wallet_id| {
                 manager
-                    .get_wallet_info(wallet_id)
-                    .is_some_and(|info| holds_unsettled_own(info, &txid))
+                    .get_wallet_and_info(wallet_id)
+                    .is_some_and(|(wallet, info)| holds_unsettled_own(wallet, info, &txid))
             })
             .copied()
             .collect()
@@ -828,14 +869,14 @@ impl WalletSource for ManagerSource {
         forced: HashSet<Txid>,
     ) -> Option<Option<WalletRead>> {
         let manager = self.0.read().await;
-        let info = manager.get_wallet_info(&wallet_id)?;
+        let (wallet, info) = manager.get_wallet_and_info(&wallet_id)?;
         // Checked again under this lock: the record may have left since the
         // holders lookup (a sweep, a removal).
         let forced = forced_held(walk.load(Ordering::SeqCst), forced, |txid| {
             holds(info, txid)
         });
         Some(forced.map(|forced| WalletRead {
-            views: collect_views(info),
+            views: collect_views(info, wallet.can_sign()),
             synced_height: info.core_wallet.synced_height(),
             forced,
         }))
@@ -1933,13 +1974,15 @@ mod tests {
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::hashes::Hash;
+    use dashcore::Address;
     use dashcore::{BlockHash, OutPoint, TxIn};
-    use key_wallet::account::AccountType;
+    use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::{
-        TransactionDirection, TransactionRecord,
+        InputDetail, TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::transaction_router::TransactionType;
     use key_wallet::transaction_checking::BlockInfo;
+    use key_wallet::Network;
     use key_wallet::WalletCoreBalance;
     use tokio::sync::Notify;
     use tokio::time::{sleep, timeout};
@@ -2026,6 +2069,139 @@ mod tests {
         let t = tx(1, &[outpoint(90, 0)]);
         assert!(merge_records([facts(1, false, true, &t), facts(1, true, false, &t)]).is_empty());
         assert!(merge_records([facts(1, true, false, &t), facts(1, false, true, &t)]).is_empty());
+    }
+
+    // ---- ownership of a record ---------------------------------------------
+
+    fn standard_account() -> AccountType {
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        }
+    }
+
+    /// A contact's watch-only chain: we see its coins but hold no key.
+    fn contact_account() -> AccountType {
+        AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [1u8; 32],
+            friend_identity_id: [2u8; 32],
+        }
+    }
+
+    /// An unconfirmed record of `transaction` in `account` that spends one
+    /// coin the account tracked (upstream fills `input_details` from the
+    /// account's own UTXOs, watch-only ones included).
+    fn spending_record(account: AccountType, transaction: Transaction) -> TransactionRecord {
+        TransactionRecord::new(
+            transaction,
+            account,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 100_000,
+                address: Address::dummy(Network::Testnet, 3),
+            }],
+            Vec::new(),
+            -100_000,
+        )
+    }
+
+    /// The contact spending a payment it received from us: our watch-only
+    /// copy of its chain records the spend, but it is the contact's send.
+    /// It gets no own-send verdict and no probe of its own.
+    #[test]
+    fn should_not_treat_a_contact_spend_as_the_wallets_send() {
+        let record = spending_record(contact_account(), tx(1, &[outpoint(90, 0)]));
+        let facts = record_facts(&record, || false, true);
+        assert!(!facts.own, "a contact's spend is not the wallet's send");
+
+        let views = merge_records([record_facts(&record, || false, true)]);
+        assert_eq!(views.len(), 1);
+        assert!(!views[0].spends_own_coins);
+        let graph = ChainGraph::new(&views, &none());
+        assert!(graph.own_unsettled().is_empty());
+        assert!(roots(&views).is_empty(), "nothing of ours depends on it");
+        // Neither a scheduled pass nor an `Uncertain` report of it probes it.
+        let start = begin_pass(
+            &mut ResolverState::default(),
+            wallet(),
+            100,
+            &views,
+            &HashSet::from([record.txid]),
+            Some(100),
+        );
+        assert!(start.due.is_empty(), "no probe for a contact's own spend");
+        // A late acceptance is news to no wallet.
+        assert!(!is_unsettled_own([record_facts(&record, || false, true)]));
+    }
+
+    /// The same spend recorded by a signing account is the wallet's send.
+    #[test]
+    fn should_treat_a_spend_from_a_signing_account_as_the_wallets_send() {
+        let record = spending_record(standard_account(), tx(1, &[outpoint(90, 0)]));
+        assert!(record_facts(&record, || false, true).own);
+        assert!(is_unsettled_own([record_facts(&record, || false, true)]));
+        assert!(
+            !is_unsettled_own([record_facts(&record, || true, true)]),
+            "finalized"
+        );
+        let views = merge_records([record_facts(&record, || false, true)]);
+        assert_eq!(roots(&views), BTreeSet::from([record.txid]));
+    }
+
+    /// A watch-only wallet signs nothing: a spend of a coin it tracks is
+    /// someone else's, even in a standard account.
+    #[test]
+    fn should_not_treat_a_spend_seen_by_a_watch_only_wallet_as_its_send() {
+        let record = spending_record(standard_account(), tx(1, &[outpoint(90, 0)]));
+        assert!(!record_facts(&record, || false, false).own);
+        assert!(!is_unsettled_own([record_facts(&record, || false, false)]));
+        assert!(roots(&merge_records([record_facts(&record, || false, false)])).is_empty());
+    }
+
+    /// A contact's unsettled spend that one of our sends builds on is still
+    /// walked as its ancestor: the contact's transaction is the root probed,
+    /// while only our send can receive a verdict.
+    #[test]
+    fn should_walk_a_contact_spend_as_the_ancestor_of_an_own_send() {
+        let parent = spending_record(contact_account(), tx(5, &[outpoint(80, 0)]));
+        let child = spending_record(
+            standard_account(),
+            tx(
+                6,
+                &[OutPoint {
+                    txid: parent.txid,
+                    vout: 0,
+                }],
+            ),
+        );
+        let views = merge_records([
+            record_facts(&parent, || false, true),
+            record_facts(&child, || false, true),
+        ]);
+        let graph = ChainGraph::new(&views, &none());
+        assert_eq!(graph.own_unsettled(), BTreeSet::from([child.txid]));
+        assert_eq!(roots(&views), BTreeSet::from([parent.txid]));
+        assert!(!graph.is_own(&parent.txid));
+        let start = begin_pass(
+            &mut ResolverState::default(),
+            wallet(),
+            100,
+            &views,
+            &HashSet::new(),
+            Some(100),
+        );
+        let due: Vec<(Txid, bool)> = start.due.iter().map(|root| (root.txid, root.own)).collect();
+        assert_eq!(
+            due,
+            vec![(parent.txid, false)],
+            "probed, but no verdict of its own"
+        );
+        assert!(!is_unsettled_own([record_facts(&parent, || false, true)]));
+        assert!(is_unsettled_own([record_facts(&child, || false, true)]));
     }
 
     // ---- ChainGraph ---------------------------------------------------------
