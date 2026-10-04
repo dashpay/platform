@@ -62,6 +62,10 @@ pub struct TokenVersions {
     /// `TokenPreProgrammedDistribution::validate_amounts`. Called from protocol version 14 on
     /// (data contract create `basic_structure` v2 and `DataContract::validate_update` v1).
     pub validate_pre_programmed_distribution_amounts: FeatureVersion,
+    /// Accepted `TokenConfiguration` format versions. `max_version` 0 admits only `V0`; 1 also
+    /// admits `V1`, which adds the per-token shielded pool flag. Contract creates and updates
+    /// carrying a format above the bound are rejected with `UnsupportedVersionError`.
+    pub token_configuration_format: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

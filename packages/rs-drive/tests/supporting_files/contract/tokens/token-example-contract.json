@@ -11,6 +11,7 @@
         "$formatVersion": "0",
         "localizations": {
           "en": {
+            "$formatVersion": "0",
             "shouldCapitalize": true,
             "singularForm": "flurgon",
             "pluralForm": "flurgons"
@@ -20,36 +21,43 @@
       },
       "baseSupply": 10000000000,
       "maxSupply": 50000000000,
-      "transferable": true,
-      "keepsHistory": false,
+      "keepsHistory": {
+        "$formatVersion": "0",
+        "keepsTransferHistory": false,
+        "keepsFreezingHistory": false,
+        "keepsMintingHistory": false,
+        "keepsBurningHistory": false,
+        "keepsDirectPricingHistory": false,
+        "keepsDirectPurchaseHistory": false
+      },
       "freezeRules": {
         "$formatVersion": "0",
-        "authorizedToMakeChange": {"type": "contractOwner"},
-        "adminActionTakers": {"type": "contractOwner"},
+        "authorizedToMakeChange": {"$type": "contractOwner"},
+        "adminActionTakers": {"$type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false
       },
       "unfreezeRules": {
         "$formatVersion": "0",
-        "authorizedToMakeChange": {"type": "contractOwner"},
-        "adminActionTakers": {"type": "contractOwner"},
+        "authorizedToMakeChange": {"$type": "contractOwner"},
+        "adminActionTakers": {"$type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false
       },
       "destroyFrozenFundsRules": {
         "$formatVersion": "0",
-        "authorizedToMakeChange": {"type": "contractOwner"},
-        "adminActionTakers": {"type": "contractOwner"},
+        "authorizedToMakeChange": {"$type": "contractOwner"},
+        "adminActionTakers": {"$type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false
       },
       "emergencyActionRules": {
         "$formatVersion": "0",
-        "authorizedToMakeChange": {"type": "contractOwner"},
-        "adminActionTakers": {"type": "contractOwner"},
+        "authorizedToMakeChange": {"$type": "contractOwner"},
+        "adminActionTakers": {"$type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false

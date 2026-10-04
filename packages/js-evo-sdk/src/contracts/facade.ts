@@ -181,7 +181,9 @@ export class ContractsFacade {
    * Proposes, as a member of an elected contract's seated moderation team, the deletion of one
    * settled document: one last modified longer ago than its type's
    * `moderatorAbilities.deleteWithin` window, which no moderator deletes alone. The type must
-   * say who of the team must approve (`moderatorAbilities.deleteSettled`). The proposal is the
+   * say who of the team must approve (`moderatorAbilities.deleteSettled`). A member the leader
+   * added proposes only the deletion of documents created after its addition (41212), unless
+   * the rule sets `approversPredateDocument: false`. The proposal is the
    * proposer's own approval, kept under the contract as a team action; the other members
    * approve it by its `actionId` with `moderatorApproveTeamAction`, and the approval that meets
    * the rule, the leader among them if it says so, deletes the document as
@@ -204,7 +206,9 @@ export class ContractsFacade {
    * which `moderatorDeleteSettledDocument` proposes and `teamActions` lists. What the action
    * does and why are the proposal's. An action that does not exist (41207), one already
    * approved by the signer (41208), one already closed (41210) or one whose document changed
-   * since the proposal (41211) is refused. Signed like the other moderations. Resolves with
+   * since the proposal (41211) is refused, and so is a member the leader added no earlier than
+   * the document was created, unless the type's rule sets `approversPredateDocument: false`
+   * (41212). Signed like the other moderations. Resolves with
    * the action's `status`: `closed` once the action ran, by this approval or a later one.
    */
   async moderatorApproveTeamAction(

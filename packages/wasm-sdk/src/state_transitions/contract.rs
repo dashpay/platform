@@ -403,7 +403,9 @@ export interface ContractDocumentRemovalResult {
  * its type's `moderatorAbilities.deleteWithin` window, within which a moderator deletes it
  * alone. The type must say who of the team must approve (`moderatorAbilities.deleteSettled`,
  * else 41204), a team must be seated (41205), the signer must be on it (41101) with
- * `deleteDocuments` on the type (41201), and the document must be settled (41206). The proposal
+ * `deleteDocuments` on the type (41201), and the document must be settled (41206). A member the
+ * leader added proposes only the deletion of documents created after its addition (41212),
+ * unless the type's rule sets `approversPredateDocument: false`. The proposal
  * is the proposer's own approval, kept under the contract as a team action with the document's
  * last modification and revision and the reason; the other members approve it by its
  * `actionId` with `contractApproveTeamAction` until the approvals meet the type's rule, the
@@ -440,8 +442,10 @@ export interface ContractDeleteSettledDocumentOptions {
  * which `getContractTeamActions` lists. What the action does and why are the proposal's. An
  * action that does not exist (41207), one the signer already approved (41208), one already
  * closed (41210) or one whose document changed since the proposal (41211) is refused, and so is
- * a signer not on the seated team (41101) or without the authority the action needs (41201).
- * The approvals of members who left the team since no longer count. As for the other
+ * a signer not on the seated team (41101) or without the authority the action needs (41201),
+ * and a member the leader added no earlier than the document was created, unless the type's rule
+ * sets `approversPredateDocument: false` (41212). The approvals of members who left the team
+ * since no longer count, nor do those of members added again too late. As for the other
  * moderations, the signer must hold a CRITICAL authentication key without contract bounds of
  * the moderating identity.
  */
