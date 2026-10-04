@@ -17,6 +17,8 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::shield::transform_into_action::v0::ShieldStateTransitionTransformIntoActionValidationV0;
 use crate::execution::validation::state_transition::shield::transform_into_action::v1::ShieldStateTransitionTransformIntoActionValidationV1;
+use crate::execution::validation::state_transition::shield::transform_into_action::v2::ShieldStateTransitionTransformIntoActionValidationV2;
+use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
@@ -30,6 +32,7 @@ pub trait StateTransitionShieldTransitionActionTransformer {
         platform: &PlatformRef<C>,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         block_info: &BlockInfo,
+        validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -41,6 +44,7 @@ impl StateTransitionShieldTransitionActionTransformer for ShieldTransition {
         platform: &PlatformRef<C>,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         block_info: &BlockInfo,
+        validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -69,9 +73,20 @@ impl StateTransitionShieldTransitionActionTransformer for ShieldTransition {
                 execution_context,
                 platform_version,
             ),
+            2 => self.transform_into_action_v2(
+                platform.drive,
+                tx,
+                inputs_with_remaining_balance,
+                block_info,
+                validation_mode,
+                platform.state.last_committed_block_epoch_ref(),
+                platform.state.previous_fee_versions(),
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "shield transition: transform_into_action".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

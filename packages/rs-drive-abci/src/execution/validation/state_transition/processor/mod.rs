@@ -1,6 +1,7 @@
 /// Processor traits.
 pub mod traits;
 pub(crate) mod v0;
+pub(crate) mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -51,9 +52,16 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
             transaction,
             platform_version,
         ),
+        1 => v1::process_state_transition_v1(
+            platform,
+            block_info,
+            state_transition,
+            transaction,
+            platform_version,
+        ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "process_state_transition".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         })),
     }

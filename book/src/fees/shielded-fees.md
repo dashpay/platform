@@ -451,6 +451,16 @@ storage and processing, plus the `shielded_verification_fee` folded into process
 (into the pool), `surplus_amount` (to `surplus_output`, or `0`), and `fee_amount` (to the
 fee pools); see [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity).
 
+From protocol version 14, an authenticated `Shield` whose Orchard proof fails
+moves no credits into the pool. Its input nonces are consumed and its address
+inputs pay the metered failure fee plus `shielded_proof_verification_failure`.
+The penalty is capped at the funds reachable by the signed fee strategy after
+reserving the estimated base fee. It is charged once as a fixed processing fee,
+without the user's fee increase. If those funds cannot cover even the base fee,
+the refusal is unpaid and consumes no nonce. Duplicate-nullifier refusals remain
+unpaid. CheckTx rejects bad proofs before mempool admission; a directly proposed
+funded bad proof is a paid failure that validators can accept.
+
 ## Cryptographic Binding
 
 The fee is not just a field that the platform trusts. It is cryptographically bound

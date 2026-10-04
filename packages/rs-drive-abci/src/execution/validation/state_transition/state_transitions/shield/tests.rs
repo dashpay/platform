@@ -779,9 +779,10 @@ mod tests {
             // at the actual proof verification step.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-                )]
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    ..
+                }]
             );
         }
 
@@ -1080,9 +1081,10 @@ mod tests {
             // Mutated value_balance changes the sighash, causing signature verification to fail.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-                )]
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    ..
+                }]
             );
         }
 
@@ -1414,6 +1416,7 @@ mod tests {
             process_transition_and_commit, setup_platform_at_protocol_version,
             shielded_transfer_errors_revealing, OutputsOnlyBundle,
         };
+        use crate::execution::validation::state_transition::ValidationMode;
         use crate::platform_types::platform::PlatformRef;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
@@ -1554,6 +1557,7 @@ mod tests {
                     &platform_ref,
                     remaining,
                     &BlockInfo::default(),
+                    ValidationMode::NoValidation,
                     &mut execution_context,
                     None,
                 )
@@ -2962,14 +2966,23 @@ mod tests {
                 )],
                 "CheckTx must refuse it for its proof"
             );
-            assert_matches!(
-                process_transition(platform, transition.clone(), platform_version)
-                    .execution_results()
-                    .as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-                )]
-            );
+            let result = process_transition(platform, transition.clone(), platform_version);
+            if platform_version.protocol_version < 14 {
+                assert_matches!(
+                    result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    )]
+                );
+            } else {
+                assert_matches!(
+                    result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                        ..
+                    }]
+                );
+            }
         }
 
         /// Somebody funds a `Shield` from their own addresses and wraps it around a bundle proved
@@ -3088,6 +3101,469 @@ mod tests {
                 let bound = builder_made_shield(inputs, &signer, PlatformVersion::latest()).await;
                 assert_refused_for_its_proof(&platform, &bound, platform_version);
             }
+        }
+    }
+    mod paid_proof_failures {
+        use super::*;
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::execution::types::execution_event::ExecutionEvent;
+        use crate::execution::validation::state_transition::processor::process_state_transition;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            check_tx_errors, has_recorded_nullifier, insert_nullifier_into_state,
+            process_transition_and_commit, setup_platform_at_protocol_version,
+        };
+        use crate::platform_types::platform::PlatformRef;
+        use crate::platform_types::platform_state::PlatformStateV0Methods;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::block::block_info::BlockInfo;
+
+        #[tokio::test]
+        async fn should_charge_a_failed_shield_proof_and_consume_its_nonce() {
+            let pv = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let mut signer = TestAddressSigner::new();
+            let address = signer.add_p2pkh([91; 32]);
+            let balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, address, 0, balance);
+            let st = create_default_signed_shield_transition(&signer, address, 1, balance).await;
+            let result = process_transition_and_commit(&platform, st, pv);
+            let actual = match result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    actual_fees,
+                    ..
+                }] => actual_fees.total_base_fee(),
+                other => panic!("authenticated bad proof must be paid, got {other:?}"),
+            };
+            let penalty = pv
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .shielded_proof_verification_failure;
+            assert!(actual >= penalty, "a funded proof failure pays the penalty");
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_balance_and_nonce(&address, None, pv)
+                    .expect("address"),
+                Some((1, balance - actual))
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .read_shielded_pool_total_balance(None, &mut vec![], pv)
+                    .expect("pool"),
+                0
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .shielded_pool_notes_count(None, &mut vec![], pv)
+                    .expect("notes"),
+                0
+            );
+            assert!(!has_recorded_nullifier(
+                &platform,
+                &create_dummy_serialized_action().nullifier
+            ));
+        }
+        fn failure_fee_and_penalty(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            st: &StateTransition,
+        ) -> (Credits, Credits) {
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let mut event = process_state_transition(
+                &platform_ref,
+                &BlockInfo::default(),
+                st.clone(),
+                Some(&transaction),
+            )
+            .expect("prepare failure")
+            .data
+            .expect("failure event");
+            let ExecutionEvent::PaidFromAddressInputs {
+                ref mut additional_fixed_fee_cost,
+                ..
+            } = event
+            else {
+                panic!("address-paid failure event");
+            };
+            let penalty = additional_fixed_fee_cost.replace(0).expect("penalty");
+            let fee = platform
+                .platform
+                .validate_fees_of_event(
+                    &event,
+                    &BlockInfo::default(),
+                    Some(&transaction),
+                    PlatformVersion::latest(),
+                    state.previous_fee_versions(),
+                )
+                .expect("estimate failure fee")
+                .data
+                .expect("estimate")
+                .total_base_fee();
+            (fee, penalty)
+        }
+
+        async fn set_increase_and_resign(
+            st: &mut StateTransition,
+            signer: &TestAddressSigner,
+            increase: u16,
+        ) {
+            let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+                panic!("shield");
+            };
+            v0.user_fee_increase = increase;
+            let addresses: Vec<_> = v0.inputs.keys().copied().collect();
+            let bytes = st.signable_bytes().expect("signable");
+            let mut witnesses = vec![];
+            for address in addresses {
+                witnesses.push(
+                    signer
+                        .sign_create_witness(&address, &bytes)
+                        .await
+                        .expect("witness"),
+                );
+            }
+            let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+                panic!("shield");
+            };
+            v0.input_witnesses = witnesses;
+        }
+
+        #[tokio::test]
+        async fn should_bound_failed_proof_penalties_after_reserving_the_estimated_fee() {
+            let pv = PlatformVersion::latest();
+            let nominal = pv
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .shielded_proof_verification_failure;
+            for increase in [0, 100, u16::MAX] {
+                let mut funded = setup_platform();
+                let mut signer = TestAddressSigner::new();
+                let address = signer.add_p2pkh([92; 32]);
+                let nonpayer = signer.add_p2pkh([96; 32]);
+                setup_address_with_balance(&mut funded, nonpayer, 0, dash_to_credits!(1.0));
+                setup_address_with_balance(&mut funded, address, 0, dash_to_credits!(1.0));
+                let inputs = BTreeMap::from([
+                    (
+                        address,
+                        (1, pv.dpp.state_transitions.address_funds.min_input_amount),
+                    ),
+                    (nonpayer, (1, dash_to_credits!(1.0))),
+                ]);
+                let payer_index = inputs
+                    .keys()
+                    .position(|input| *input == address)
+                    .expect("payer") as u16;
+                let mut st = create_signed_shield_transition(
+                    &signer,
+                    inputs,
+                    vec![create_dummy_serialized_action()],
+                    1_000,
+                    vec![0; 100],
+                    [0; 64],
+                    AddressFundsFeeStrategy::from(vec![
+                        AddressFundsFeeStrategyStep::DeductFromInput(payer_index),
+                    ]),
+                )
+                .await;
+                set_increase_and_resign(&mut st, &signer, increase).await;
+                let (mut base, _) = failure_fee_and_penalty(&funded, &st);
+                // Storage estimation includes the sum item's balance encoding. Find
+                // the fee with an affordable balance in the boundary's own width.
+                for _ in 0..4 {
+                    setup_address_with_balance(&mut funded, address, 0, base + nominal + 1);
+                    let (next_base, _) = failure_fee_and_penalty(&funded, &st);
+                    if next_base == base {
+                        break;
+                    }
+                    base = next_base;
+                }
+                assert_eq!(failure_fee_and_penalty(&funded, &st).0, base);
+                let mut actual_without_penalty = None;
+                for balance in [base - 1, base, base + 1, base + nominal - 1, base + nominal] {
+                    let mut platform = setup_platform();
+                    setup_address_with_balance(&mut platform, address, 0, balance);
+                    setup_address_with_balance(&mut platform, nonpayer, 0, dash_to_credits!(1.0));
+                    let penalty = nominal.min(balance.saturating_sub(base));
+                    if balance >= base {
+                        let (estimated_base, prepared_penalty) =
+                            failure_fee_and_penalty(&platform, &st);
+                        assert_eq!(estimated_base, base);
+                        assert_eq!(prepared_penalty, penalty);
+                    }
+                    let result = process_transition_and_commit(&platform, st.clone(), pv);
+                    if balance < base {
+                        assert_matches!(
+                            result.execution_results().as_slice(),
+                            [StateTransitionExecutionResult::UnpaidConsensusError(
+                                ConsensusError::StateError(
+                                    StateError::AddressesNotEnoughFundsError(_)
+                                )
+                            )]
+                        );
+                        assert_eq!(
+                            platform
+                                .drive
+                                .fetch_balance_and_nonce(&address, None, pv)
+                                .expect("address"),
+                            Some((0, balance))
+                        );
+                    } else {
+                        let actual = match result.execution_results().as_slice() {
+                            [StateTransitionExecutionResult::PaidConsensusError {
+                                error:
+                                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                                actual_fees,
+                                ..
+                            }] => actual_fees.total_base_fee(),
+                            other => panic!("affordable failure must be paid: {other:?}"),
+                        };
+                        assert!(actual <= base + penalty, "estimate must cover the charge");
+                        let metered_base = *actual_without_penalty.get_or_insert(actual);
+                        assert_eq!(
+                            actual,
+                            metered_base + penalty,
+                            "the fixed penalty is included exactly once and is not increased"
+                        );
+                        assert_eq!(
+                            platform
+                                .drive
+                                .fetch_balance_and_nonce(&address, None, pv)
+                                .expect("address"),
+                            Some((1, balance - actual))
+                        );
+                    }
+                    let expected_nonce = if balance < base { 0 } else { 1 };
+                    assert_eq!(
+                        platform
+                            .drive
+                            .fetch_balance_and_nonce(&nonpayer, None, pv)
+                            .expect("nonpayer"),
+                        Some((expected_nonce, dash_to_credits!(1.0))),
+                        "nonpayer pays no fee or principal"
+                    );
+                    assert!(!has_recorded_nullifier(
+                        &platform,
+                        &create_dummy_serialized_action().nullifier
+                    ));
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn should_leave_duplicate_nullifiers_unpaid_even_with_a_bad_proof() {
+            let pv = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let mut signer = TestAddressSigner::new();
+            let address = signer.add_p2pkh([97; 32]);
+            let initial = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, address, 0, initial);
+            let nullifier = create_dummy_serialized_action().nullifier;
+            insert_nullifier_into_state(&platform, &nullifier);
+            let st = create_default_signed_shield_transition(&signer, address, 1, initial).await;
+            let result = process_transition_and_commit(&platform, st, pv);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))
+                )] if error.nullifier() == nullifier
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_balance_and_nonce(&address, None, pv)
+                    .expect("address"),
+                Some((0, initial))
+            );
+        }
+
+        #[tokio::test]
+        async fn should_cover_failed_proof_fees_at_the_input_and_action_limits() {
+            let pv = PlatformVersion::latest();
+            let initial = dash_to_credits!(1.0);
+            for action_count in [1, pv.system_limits.max_shielded_transition_actions as usize] {
+                for increase in [0, u16::MAX] {
+                    let mut platform = setup_platform();
+                    let mut signer = TestAddressSigner::new();
+                    let mut inputs = BTreeMap::new();
+                    for input in 0..pv.dpp.state_transitions.max_address_inputs {
+                        let address = signer.add_p2pkh([input as u8 + 100; 32]);
+                        setup_address_with_balance(&mut platform, address, 0, initial);
+                        inputs.insert(address, (1, initial));
+                    }
+                    let mut st = create_signed_shield_transition(
+                        &signer,
+                        inputs.clone(),
+                        (0..action_count)
+                            .map(|i| SerializedAction {
+                                nullifier: [i as u8; 32],
+                                ..create_dummy_serialized_action()
+                            })
+                            .collect(),
+                        1000,
+                        vec![0; 100],
+                        [0; 64],
+                        AddressFundsFeeStrategy::from(vec![
+                            AddressFundsFeeStrategyStep::DeductFromInput(0),
+                        ]),
+                    )
+                    .await;
+                    set_increase_and_resign(&mut st, &signer, increase).await;
+                    let (base, penalty) = failure_fee_and_penalty(&platform, &st);
+                    let result = process_transition_and_commit(&platform, st, pv);
+                    let actual = match result.execution_results().as_slice() {
+                        [StateTransitionExecutionResult::PaidConsensusError {
+                            error:
+                                ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                            actual_fees,
+                            ..
+                        }] => actual_fees.total_base_fee(),
+                        other => panic!("funded failure at the limits must pay: {other:?}"),
+                    };
+                    assert!(actual <= base + penalty, "the estimate covers execution");
+                    for (index, address) in inputs.keys().enumerate() {
+                        assert_eq!(
+                            platform
+                                .drive
+                                .fetch_balance_and_nonce(address, None, pv)
+                                .expect("address"),
+                            Some((1, initial - if index == 0 { actual } else { 0 })),
+                            "only the signed payer funds the failure"
+                        );
+                    }
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn should_leave_shipped_protocol_proof_failures_unpaid() {
+            for version in [12, 13] {
+                let pv = PlatformVersion::get(version).expect("shipped version");
+                let mut platform = setup_platform_at_protocol_version(version);
+                let mut signer = TestAddressSigner::new();
+                let address = signer.add_p2pkh([93; 32]);
+                let balance = dash_to_credits!(1.0);
+                setup_address_with_balance(&mut platform, address, 0, balance);
+                let st =
+                    create_default_signed_shield_transition(&signer, address, 1, balance).await;
+                let result = process_transition_and_commit(&platform, st, pv);
+                assert_matches!(
+                    result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    )]
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .fetch_balance_and_nonce(&address, None, pv)
+                        .expect("address"),
+                    Some((0, balance))
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_reject_failed_proofs_at_check_tx_without_consuming_a_nonce() {
+            let pv = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let mut signer = TestAddressSigner::new();
+            let address = signer.add_p2pkh([94; 32]);
+            let balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, address, 0, balance);
+            let st = create_default_signed_shield_transition(&signer, address, 1, balance).await;
+            assert_matches!(
+                check_tx_errors(&platform, &st).as_slice(),
+                [ConsensusError::StateError(
+                    StateError::InvalidShieldedProofError(_)
+                )]
+            );
+            let state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let recheck = platform
+                .check_tx(
+                    &st.serialize_to_bytes().expect("serialize"),
+                    CheckTxLevel::Recheck,
+                    &platform_ref,
+                    pv,
+                )
+                .expect("recheck performs no proof work");
+            assert!(recheck.is_valid());
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_balance_and_nonce(&address, None, pv)
+                    .expect("address"),
+                Some((0, balance))
+            );
+        }
+
+        #[tokio::test]
+        async fn should_charge_a_bad_proof_once_then_reject_its_same_block_replay() {
+            let pv = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let mut signer = TestAddressSigner::new();
+            let address = signer.add_p2pkh([95; 32]);
+            let balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, address, 0, balance);
+            let st = create_default_signed_shield_transition(&signer, address, 1, balance).await;
+            let bytes = st.serialize_to_bytes().expect("serialize");
+            let state = platform.state.load();
+            let tx = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[bytes.clone(), bytes],
+                    &state,
+                    &BlockInfo::default(),
+                    &tx,
+                    pv,
+                    false,
+                    None,
+                )
+                .expect("block processing");
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [
+                    StateTransitionExecutionResult::PaidConsensusError { .. },
+                    StateTransitionExecutionResult::UnpaidConsensusError(_)
+                ]
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(tx)
+                .unwrap()
+                .expect("commit");
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_balance_and_nonce(&address, None, pv)
+                    .expect("address")
+                    .expect("exists")
+                    .0,
+                1
+            );
+            assert!(!has_recorded_nullifier(
+                &platform,
+                &create_dummy_serialized_action().nullifier
+            ));
         }
     }
 }

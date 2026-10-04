@@ -356,7 +356,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 1, // changed: nullifier checks
+                transform_into_action: 2,
             },
             shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -449,7 +449,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
         validate_address_witnesses: 0,
         validate_shielded_proof: 1,
         validate_minimum_shielded_fee: 0,
-        process_state_transition: 0,
+        process_state_transition: 1,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {
             identity_id_not_correct: 50000000,

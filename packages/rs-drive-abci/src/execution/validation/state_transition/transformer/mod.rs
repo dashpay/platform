@@ -336,6 +336,7 @@ impl StateTransitionActionTransformer for StateTransition {
                     platform,
                     remaining_address_input_balances.clone(),
                     block_info,
+                    validation_mode,
                     execution_context,
                     tx,
                 )

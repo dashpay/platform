@@ -2010,6 +2010,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     version must be active on a network before its Dash Core activates V24,
 ///     since earlier versions keep failing on these masternodes.
 ///
+/// 74. **An authenticated Shield proof failure pays from its address inputs.**
+///     Processor generation 1 defers Shield proof verification to transform generation 2.
+///     A failed proof restores the input principal, consumes the input nonces, and charges
+///     the ordinary metered failure fee plus the configured proof-failure penalty, capped
+///     by the signed fee strategy's funds after reserving the estimated base fee. A failure
+///     unable to cover the base fee stays unpaid. CheckTx still refuses invalid proofs
+///     under its local proof permit; shipped protocol versions keep their unpaid refusal.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
