@@ -1017,15 +1017,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // a new token meanwhile.
             // Only final coins (InstantSend-locked or mined) are spent; see
             // `is_final` and `fund`.
-            // Accounts that took on this build's reservation bookkeeping, in
-            // funding order — i.e. the ones a failure path must release. Under
-            // `reservation_only` nothing is offered to selection at all; without
-            // it these are also the accounts whose UTXOs were offered. Either
-            // way this is NOT the list of accounts that end up contributing
-            // inputs — selection may take nothing from most of them — so it
-            // drives build-time cleanup only, and the contributor list stored on
-            // the transaction is derived from the selected inputs below.
-            let mut offered_accounts: Vec<AccountType> = Vec::new();
             let mut paths: HashMap<Address, DerivationPath> = HashMap::new();
             let resolved = resolved_funding_accounts(
                 &info.core_wallet.accounts,
@@ -1045,9 +1036,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // skips them as already present): the final-inputs rule judges
             // them as they are now. One that is not final is refused by name
             // instead of being dropped silently; nothing is reserved yet.
-            // One snapshot of what in-flight broadcasts pin, for the chosen
-            // inputs and the waiting-coins trial alike.
-            let pinned = info.generation.in_broadcast_outpoints();
+            // One snapshot of what in-flight broadcasts pin, taken only when
+            // inputs were chosen; the waiting-coins trial reuses it, or takes
+            // its own on a shortfall.
+            let pinned =
+                (!seed_outpoints.is_empty()).then(|| info.generation.in_broadcast_outpoints());
             let mut seeds: Vec<Utxo> = Vec::new();
             let mut seeded: HashSet<OutPoint> = HashSet::new();
             for outpoint in &seed_outpoints {
@@ -1078,7 +1071,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 // Pinned by an in-flight broadcast: the build would refuse it
                 // after selection anyway, and confirmation would not change
                 // that, so this is checked before finality.
-                if pinned.contains(outpoint) {
+                if pinned
+                    .as_ref()
+                    .is_some_and(|pinned| pinned.contains(outpoint))
+                {
                     return Err(PlatformWalletError::InputMidBroadcast {
                         outpoint: *outpoint,
                     });
@@ -1093,22 +1089,22 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 }
                 seeds.push(utxo.clone());
             }
-            for at in resolved {
-                // `resolved_funding_accounts` already dropped anything missing
-                // from either half, so this check is defensive only — the
-                // `continue` is not a reachable skip.
-                let (Some(_), Some(managed)) = (
-                    wallet.accounts.account_of_type(at),
-                    info.core_wallet.accounts.funds_account(&at),
-                ) else {
-                    continue;
-                };
+            // The accounts that take on this build's reservation bookkeeping,
+            // in funding order — the ones a failure path must release
+            // (`resolved_funding_accounts` already dropped anything missing
+            // from either half). NOT the accounts that end up contributing
+            // inputs — selection may take nothing from most of them — which
+            // are derived from the selected inputs below.
+            let offered_accounts = resolved;
+            for managed in offered_accounts
+                .iter()
+                .filter_map(|at| info.core_wallet.accounts.funds_account(at))
+            {
                 for utxo in managed.utxos.values() {
                     if let Some(path) = managed.address_derivation_path(&utxo.address) {
                         paths.insert(utxo.address.clone(), path);
                     }
                 }
-                offered_accounts.push(at);
             }
             let builder = fund(
                 builder,
@@ -1143,6 +1139,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     let Some(make) = trial else {
                         return error;
                     };
+                    let pinned = pinned.unwrap_or_else(|| info.generation.in_broadcast_outpoints());
                     let waiting = trial_with_waiting_coins(
                         make,
                         wallet,

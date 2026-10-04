@@ -528,7 +528,9 @@ impl WalletGeneration {
     /// on the wire, so the caller must release its fresh reservation (exact
     /// under the still-held write guard) and refuse the build. In the normal
     /// case a fenced input is still *reserved* and never reaches selection at
-    /// all; this check is the backstop for exactly the post-sweep window.
+    /// all; this check is the backstop for exactly the post-sweep window. (The
+    /// waiting-coins trial, which signs nothing, also uses it after releasing
+    /// its own trial reservation.)
     ///
     /// # No height parameter, deliberately
     ///
@@ -541,27 +543,34 @@ impl WalletGeneration {
     /// and no wall clock either — so this call retires nothing by consulting
     /// it.
     ///
-    /// Cleared entries are reaped here rather than by a timer: this is the only
-    /// place the fence is consulted, so pruning on read keeps the map free of
-    /// entries nothing holds without any background task. It is only a tidy-up
-    /// — [`observe_spent`](Self::observe_spent) already removes what it clears,
-    /// and a fence that still blocks is never pruned here for any reason.
+    /// Cleared entries are reaped on read ([`Self::pinned_fences`]).
     pub(crate) fn in_broadcast_conflict(&self, transaction: &Transaction) -> Option<OutPoint> {
-        let pinned = self.in_broadcast_outpoints();
+        let pinned = self.pinned_fences();
         transaction
             .input
             .iter()
             .map(|input| input.previous_output)
-            .find(|outpoint| pinned.contains(outpoint))
+            .find(|outpoint| pinned.contains_key(outpoint))
     }
 
     /// Every outpoint an in-flight broadcast pins now — what
-    /// [`in_broadcast_conflict`](Self::in_broadcast_conflict) refuses. The one
-    /// place cleared fences are pruned (see there).
+    /// [`in_broadcast_conflict`](Self::in_broadcast_conflict) refuses — as a
+    /// snapshot: the finalizer checks the inputs a caller chose against it
+    /// before selection, and the waiting-coins trial passes them over.
     pub(crate) fn in_broadcast_outpoints(&self) -> HashSet<OutPoint> {
+        self.pinned_fences().keys().copied().collect()
+    }
+
+    /// The fence map with cleared entries reaped. Reaping happens here, on
+    /// read, rather than by a timer: every consultation of the fence goes
+    /// through this, so pruning on read keeps the map free of entries nothing
+    /// holds without any background task. It is only a tidy-up —
+    /// [`observe_spent`](Self::observe_spent) already removes what it clears,
+    /// and a fence that still blocks is never pruned here for any reason.
+    fn pinned_fences(&self) -> MutexGuard<'_, HashMap<OutPoint, InBroadcastFence>> {
         let mut pinned = self.in_broadcast_lock();
         pinned.retain(|_, fence| fence.blocks());
-        pinned.keys().copied().collect()
+        pinned
     }
 
     /// Release the pending-spend fence on every outpoint in `outpoints` that
