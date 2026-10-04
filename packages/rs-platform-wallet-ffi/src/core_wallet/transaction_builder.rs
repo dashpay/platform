@@ -101,21 +101,23 @@ impl BuilderState {
     }
 }
 
-/// The largest transaction key-wallet could be asked to price: a standard
-/// transaction is at most 100,000 bytes.
-const MAX_STANDARD_TX_BYTES: u64 = 100_000;
+/// The largest size key-wallet could be asked to price. Coin selection
+/// prices candidate sets before it enforces the input limit, so the bound is
+/// not a standard transaction but every coin a wallet could hold: `u32::MAX`
+/// bytes is some 29 million 148-byte inputs.
+const MAX_PRICED_BYTES: u64 = u32::MAX as u64;
 
 /// key-wallet multiplies the rate by the size unchecked: a host rate whose fee
-/// for a standard-size transaction overflows is a typed error here, before
-/// any build (or waiting-coins trial) prices with it — not a panic, not a
-/// wrapped fee.
+/// for the largest size it could price overflows is a typed error here,
+/// before any build (or waiting-coins trial) prices with it — not a panic,
+/// not a wrapped fee. Every rate up to about 42.9 DASH per kB passes.
 fn checked_rate(rate: FeeRate) -> Result<(), PlatformWalletError> {
     rate.as_sat_per_kb()
-        .checked_mul(MAX_STANDARD_TX_BYTES)
+        .checked_mul(MAX_PRICED_BYTES)
         .map(|_| ())
         .ok_or_else(|| {
             PlatformWalletError::TransactionBuild(format!(
-                "fee rate {} sat/kb overflows for a standard-size transaction",
+                "fee rate {} sat/kb overflows the fee arithmetic",
                 rate.as_sat_per_kb()
             ))
         })

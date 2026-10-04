@@ -12,7 +12,7 @@ use key_wallet_manager::WalletManager;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::core::{build_error_awaiting_network, trial_with_waiting_coins};
+use crate::wallet::core::{build_error_awaiting_network, is_shortfall, trial_with_waiting_coins};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 // ---------------------------------------------------------------------------
@@ -1341,15 +1341,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // A shortfall the coins not final yet would fund is
                     // reported as waiting on the network: key-wallet decides
                     // on a fresh copy of the build, on this failure path only.
-                    let waiting = trial_with_waiting_coins(
-                        make(),
-                        wallet,
-                        &info.core_wallet.accounts,
-                        &offered_accounts,
-                        &[],
-                        false,
-                        current_height,
-                    );
+                    // Only a shortfall can be waiting on the network.
+                    let waiting = is_shortfall(&e).then(|| {
+                        trial_with_waiting_coins(
+                            make(),
+                            wallet,
+                            &mut info.core_wallet.accounts,
+                            &offered_accounts,
+                            &[],
+                            false,
+                            current_height,
+                        )
+                    });
+                    let waiting = waiting.flatten();
                     return Err(build_error_awaiting_network(e, waiting));
                 }
             };

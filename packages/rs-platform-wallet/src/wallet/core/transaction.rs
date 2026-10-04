@@ -12,6 +12,7 @@ use dashcore::{Address, OutPoint, PubkeyHash, ScriptBuf, Transaction};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_collection::ManagedAccountCollection;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
@@ -57,6 +58,11 @@ fn shortfall(error: &BuilderError) -> Option<(Option<u64>, Option<u64>)> {
         BuilderError::CoinSelection(SelectionError::NoUtxosAvailable) => Some((Some(0), None)),
         _ => None,
     }
+}
+
+/// Whether a build failed for lack of funds.
+pub(crate) fn is_shortfall(error: &BuilderError) -> bool {
+    shortfall(error).is_some()
 }
 
 fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> PlatformWalletError {
@@ -121,24 +127,25 @@ pub struct FinalizeOptions {
 
 /// Whether coins that are not final yet would fund a build that just fell
 /// short: key-wallet builds `trial` — a fresh copy of the build's
-/// configuration — over the same candidates with every not-yet-final one
-/// treated as final. Returns the value of the not-yet-final coins that trial
-/// spends, or `None` when it fails too (confirmation would not help) or
-/// nothing it could spend is waiting.
+/// configuration — funded like the build, with every not-yet-final coin of
+/// the funding accounts treated as final. Returns the value of the
+/// not-yet-final coins that trial spends, or `None` when it fails too
+/// (confirmation would not help) or spends none of them.
 ///
-/// The candidates are what the build could select: the seeded coins and,
-/// unless `reservation_only`, every spendable coin of the `offered` accounts.
-/// Funding goes through clones of those accounts with
-/// `add_funding_reservation_only`, so key-wallet applies the same reservation
-/// filter and change address as the build, and no account state (the change
-/// address pool) moves; the clones share the reservation sets, so what the
-/// trial reserves is released before returning. Nothing is signed (a payload
-/// finalizer on the configuration does run, as in the build). Runs under the
-/// caller's wallet-manager write guard, on the failure path only.
+/// The trial is funded with `add_funding` from the same `offered` accounts
+/// after the same `seeds`, so key-wallet applies its own de-duplication,
+/// reservation filter and change address. An account holding waiting coins
+/// is funded through a clone with those coins marked final, and the first
+/// account — the one `add_funding` takes the change address from — through a
+/// clone too, so no account state (the change address pool) moves; the
+/// others are funded as they are. The clones share the reservation sets, so
+/// what the trial reserves is released before returning. Nothing is signed (a
+/// payload finalizer on the configuration does run, as in the build). Runs
+/// under the caller's wallet-manager write guard, on the failure path only.
 pub(crate) fn trial_with_waiting_coins(
     trial: TransactionBuilder,
     wallet: &Wallet,
-    accounts: &ManagedAccountCollection,
+    accounts: &mut ManagedAccountCollection,
     offered: &[AccountType],
     seeds: &[Utxo],
     reservation_only: bool,
@@ -149,58 +156,61 @@ pub(crate) fn trial_with_waiting_coins(
     if reservation_only {
         return None;
     }
-    let seeded: HashSet<OutPoint> = seeds.iter().map(|seed| seed.outpoint).collect();
-    let mut waiting: HashSet<OutPoint> = HashSet::new();
-    let mut candidates: Vec<Utxo> = seeds.to_vec();
-    for managed in offered.iter().filter_map(|at| accounts.funds_account(at)) {
-        for utxo in managed.spendable_utxos(height) {
-            if seeded.contains(&utxo.outpoint) {
-                continue;
-            }
-            let mut candidate = utxo.clone();
-            if !is_final(&candidate) {
-                candidate.is_instantlocked = true;
-                waiting.insert(candidate.outpoint);
-            }
-            candidates.push(candidate);
+    let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
+    let mut clones: HashMap<AccountType, ManagedCoreFundsAccount> = HashMap::new();
+    for (position, at) in offered.iter().enumerate() {
+        let Some(managed) = accounts.funds_account(at) else {
+            continue;
+        };
+        let pending: Vec<OutPoint> = managed
+            .spendable_utxos(height)
+            .into_iter()
+            .filter(|utxo| !is_final(utxo))
+            .map(|utxo| utxo.outpoint)
+            .collect();
+        if pending.is_empty() && position != 0 {
+            continue;
         }
+        let mut clone = managed.clone();
+        for outpoint in pending {
+            if let Some(utxo) = clone.utxos.get_mut(&outpoint) {
+                utxo.is_instantlocked = true;
+                waiting.insert(outpoint, utxo.value());
+            }
+        }
+        clones.insert(*at, clone);
     }
     if waiting.is_empty() {
         return None;
     }
-    let mut clones = Vec::with_capacity(offered.len());
-    for at in offered {
-        let (Some(account), Some(managed)) = (
-            wallet.accounts.account_of_type(*at),
-            accounts.funds_account(at),
-        ) else {
-            continue;
-        };
-        clones.push((account, managed.clone()));
-    }
     let mut trial = trial
         .set_current_height(height)
         .require_final_inputs()
-        .add_inputs(candidates.iter().cloned());
-    for (account, managed) in clones.iter_mut() {
-        trial = trial.add_funding_reservation_only(managed, account);
+        .add_inputs(seeds.iter().cloned());
+    for at in offered {
+        let Some(account) = wallet.accounts.account_of_type(*at) else {
+            continue;
+        };
+        trial = match clones.get_mut(at) {
+            Some(clone) => trial.add_funding(clone, account),
+            None => match accounts.funds_account_mut(at) {
+                Some(managed) => trial.add_funding(managed, account),
+                None => trial,
+            },
+        };
     }
     let (transaction, _, _) = trial.build_unsigned_reserved().ok()?;
-    for (_, managed) in &clones {
-        managed.release_reservation(&transaction);
+    for at in offered {
+        if let Some(managed) = accounts.funds_account(at) {
+            managed.release_reservation(&transaction);
+        }
     }
-    Some(
-        transaction
-            .input
-            .iter()
-            .filter(|input| waiting.contains(&input.previous_output))
-            .filter_map(|input| {
-                candidates
-                    .iter()
-                    .find(|candidate| candidate.outpoint == input.previous_output)
-            })
-            .fold(0u64, |sum, coin| sum.saturating_add(coin.value())),
-    )
+    let spent = transaction
+        .input
+        .iter()
+        .filter_map(|input| waiting.get(&input.previous_output))
+        .fold(0u64, |sum, value| sum.saturating_add(*value));
+    (spent > 0).then_some(spent)
 }
 
 /// A shortfall the not-yet-final coins would fund
@@ -1008,11 +1018,19 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     let Some(make) = make else {
                         return error;
                     };
+                    // Only a shortfall can be waiting on the network.
+                    if !matches!(
+                        error,
+                        PlatformWalletError::CoreInsufficientFunds { .. }
+                            | PlatformWalletError::CorePooledInsufficientFunds { .. }
+                    ) {
+                        return error;
+                    }
                     let waiting = make().ok().and_then(|trial| {
                         trial_with_waiting_coins(
                             trial,
                             wallet,
-                            &info.core_wallet.accounts,
+                            &mut info.core_wallet.accounts,
                             &offered_accounts,
                             &seeds,
                             reservation_only,
@@ -2451,6 +2469,36 @@ mod tests {
             .await
             .expect("an InstantSend-locked coin is final");
         core.abandon_transaction(&finalized).await;
+    }
+
+    /// A coin the configuration seeds on the builder itself is one candidate
+    /// in the trial, not two: 600,000 final (seeded) + 100,000 waiting cannot
+    /// fund 1,000,000 even once confirmed, so it stays insufficient funds.
+    #[tokio::test]
+    async fn should_not_count_a_builder_seeded_coin_twice_in_the_trial() {
+        let (core, signer, manager, wallet_id) = dual_core(&[100_000], &[600_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let seeded = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        let result = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(91).add_inputs([seeded.clone()])),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CorePooledInsufficientFunds { .. })
+            ),
+            "got {result:?}"
+        );
     }
 
     /// A payment the unconfirmed coins would not cover either stays a plain
