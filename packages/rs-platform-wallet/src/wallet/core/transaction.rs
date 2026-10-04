@@ -166,10 +166,11 @@ pub struct FinalizeOptions {
 /// The trial is funded with `add_funding` from the same `offered` accounts
 /// after the same `seeds`, so key-wallet applies its own de-duplication,
 /// reservation filter and change address. An account holding waiting coins
-/// is funded through a clone with those coins marked final, and the first
-/// account — the one `add_funding` takes the change address from — through a
-/// clone too, so no account state (the change address pool) moves; the
-/// others are funded as they are. The clones share the reservation sets, so
+/// is funded through a clone with those coins marked final, and so is every
+/// account up to the first standard one — `add_funding` takes the change
+/// address from that account's pool — so no account state moves; the others
+/// are funded as they are. Coins (and seeds) an in-flight broadcast pins are
+/// locked, so selection passes them over. The clones share the reservation sets, so
 /// what the trial reserves is released before returning. Nothing is signed (a
 /// payload finalizer on the configuration does run, as in the build). Runs
 /// under the caller's wallet-manager write guard, on the failure path only.
@@ -214,13 +215,18 @@ pub(crate) fn trial_with_waiting_coins(
         return None;
     }
     // Funded through clones: an account with waiting coins (marked final) or
-    // pinned ones (locked, so selection passes them over), and the first
-    // account, which supplies the change address from its pool.
+    // pinned ones (locked, so selection passes them over), and every account
+    // up to the first standard one — key-wallet asks each in turn for a
+    // change address from its pool, and only a standard account has one.
+    let change_from = offered
+        .iter()
+        .position(|at| matches!(at, AccountType::Standard { .. }))
+        .unwrap_or(offered.len());
     let mut clones: HashMap<AccountType, ManagedCoreFundsAccount> = HashMap::new();
     for (position, at) in offered.iter().enumerate() {
         let promoted = promote.remove(at).unwrap_or_default();
         let locked = lock.remove(at).unwrap_or_default();
-        if promoted.is_empty() && locked.is_empty() && position != 0 {
+        if promoted.is_empty() && locked.is_empty() && position > change_from {
             continue;
         }
         let Some(managed) = accounts.funds_account(at) else {
@@ -239,10 +245,17 @@ pub(crate) fn trial_with_waiting_coins(
         }
         clones.insert(*at, clone);
     }
+    // A seed pinned since it was chosen is passed over the same way.
+    let seeds = seeds.iter().cloned().map(|mut seed| {
+        if pinned.contains(&seed.outpoint) {
+            seed.is_locked = true;
+        }
+        seed
+    });
     let mut trial = trial
         .set_current_height(height)
         .require_final_inputs()
-        .add_inputs(seeds.iter().cloned());
+        .add_inputs(seeds);
     for at in offered {
         let Some(account) = wallet.accounts.account_of_type(*at) else {
             continue;
@@ -263,8 +276,7 @@ pub(crate) fn trial_with_waiting_coins(
             }
         }
     }
-    // A seeded input is not from the clones: one pinned since it was chosen
-    // still makes the trial no promise.
+    // Backstop: a pin taken between the read above and here.
     if generation.in_broadcast_conflict(&transaction).is_some() {
         return None;
     }
@@ -2622,9 +2634,10 @@ mod tests {
         );
     }
 
-    /// A pinned coin is passed over, not fatal: 600,000 final (pinned) +
-    /// 1,500,000 waiting against 1,000,000 — the waiting coin alone funds it
-    /// once final, so it is waiting on the network.
+    /// A pinned coin is passed over, not fatal, whether the account holds it or
+    /// the caller chose it: 600,000 final (pinned) + 1,500,000 waiting against
+    /// 1,000,000 — the waiting coin alone funds it once final, so it is
+    /// waiting on the network.
     #[tokio::test]
     async fn should_pass_over_a_pinned_coin_in_the_trial() {
         let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[600_000]).await;
@@ -2645,25 +2658,31 @@ mod tests {
             special_transaction_payload: None,
         };
         let _pin = core.test_generation_marker().pin_in_broadcast(&dispatch);
-        let result = core
-            .finalize_transaction_from(
-                &|| Ok(payment_builder(94)),
-                FinalizeOptions::default(),
-                &SEND_FUNDING_SOURCES,
-                0,
-                &signer,
-            )
-            .await;
-        assert!(
-            matches!(
-                result,
-                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
-                    waiting: 1_500_000,
-                    ..
-                })
-            ),
-            "got {result:?}"
-        );
+        // Pinned in the account, and pinned after it was chosen by outpoint.
+        for inputs in [Vec::new(), vec![pinned.outpoint]] {
+            let result = core
+                .finalize_transaction_from(
+                    &|| Ok(payment_builder(94)),
+                    FinalizeOptions {
+                        inputs: inputs.clone(),
+                        reservation_only: false,
+                    },
+                    &SEND_FUNDING_SOURCES,
+                    0,
+                    &signer,
+                )
+                .await;
+            assert!(
+                matches!(
+                    result,
+                    Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                        waiting: 1_500_000,
+                        ..
+                    })
+                ),
+                "inputs {inputs:?}: got {result:?}"
+            );
+        }
     }
 
     /// A payment the unconfirmed coins would not cover either stays a plain
