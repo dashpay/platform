@@ -63,8 +63,11 @@ fn shortfall(error: &BuilderError) -> Option<(Option<u64>, Option<u64>)> {
 }
 
 /// Whether a build failed for lack of funds.
-pub(crate) fn is_shortfall(error: &BuilderError) -> bool {
-    shortfall(error).is_some()
+/// Whether coins that are not final yet could change the outcome of a build
+/// that failed with `error`: a shortfall, or too many inputs (a large waiting
+/// coin may fund with a few what the final coins need hundreds for).
+pub(crate) fn waiting_may_help(error: &BuilderError) -> bool {
+    shortfall(error).is_some() || matches!(error, BuilderError::TooManyInputs { .. })
 }
 
 fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> PlatformWalletError {
@@ -128,7 +131,14 @@ const MAX_PRICED_BYTES: usize = u32::MAX as usize;
 /// — not a panic, not a wrapped fee. Every rate up to about 42.9 DASH per kB
 /// passes.
 pub fn check_fee_rate(rate: FeeRate) -> Result<(), PlatformWalletError> {
-    checked_fee(rate, MAX_PRICED_BYTES).map(|_| ())
+    checked_fee(rate, MAX_PRICED_BYTES)
+        .map(|_| ())
+        .map_err(|_| {
+            PlatformWalletError::TransactionBuild(format!(
+                "fee rate {} sat/kB is above the maximum (about 42.9 DASH/kB)",
+                rate.as_sat_per_kb()
+            ))
+        })
 }
 
 /// How a finalizer funds a build, beyond the builder itself. Made with
@@ -208,26 +218,47 @@ pub(crate) fn trial_with_waiting_coins(
     info: &mut PlatformWalletInfo,
     offered: &[AccountType],
     seeds: &[Utxo],
-    pinned: &HashSet<OutPoint>,
+    pinned: Option<&HashSet<OutPoint>>,
     height: u32,
 ) -> Option<u64> {
     let generation = Arc::clone(&info.generation);
     let accounts = &mut info.core_wallet.accounts;
     // One scan for the spendable coins that are not final, before anything
-    // is made or cloned: a shortfall with none (the common case) costs only
-    // this. A pinned one is left out: the build refuses an input an in-flight
-    // broadcast pins (`InputMidBroadcast`), so the trial must not count on it.
-    let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
-    let mut promote: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
+    // is snapshotted, made or cloned: a shortfall with none (the common case)
+    // costs only this.
+    let mut candidates: Vec<(AccountType, OutPoint, u64)> = Vec::new();
     for at in offered {
         let Some(managed) = accounts.funds_account(at) else {
             continue;
         };
-        for utxo in managed.utxos.values().filter(|utxo| {
-            utxo.is_spendable(height) && !is_final(utxo) && !pinned.contains(&utxo.outpoint)
-        }) {
-            waiting.insert(utxo.outpoint, utxo.value());
-            promote.entry(*at).or_default().push(utxo.outpoint);
+        candidates.extend(
+            managed
+                .utxos
+                .values()
+                .filter(|utxo| utxo.is_spendable(height) && !is_final(utxo))
+                .map(|utxo| (*at, utxo.outpoint, utxo.value())),
+        );
+    }
+    if candidates.is_empty() {
+        return None;
+    }
+    // A pinned one is left out: the build refuses an input an in-flight
+    // broadcast pins (`InputMidBroadcast`), so the trial must not count on it.
+    // The caller's snapshot when it has one, else taken now.
+    let snapshot;
+    let pinned = match pinned {
+        Some(pinned) => pinned,
+        None => {
+            snapshot = generation.in_broadcast_outpoints();
+            &snapshot
+        }
+    };
+    let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
+    let mut promote: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
+    for (at, outpoint, value) in candidates {
+        if !pinned.contains(&outpoint) {
+            waiting.insert(outpoint, value);
+            promote.entry(at).or_default().push(outpoint);
         }
     }
     if waiting.is_empty() {
@@ -385,6 +416,9 @@ pub(crate) fn build_error_awaiting_network(
     match (shortfall(&error), waiting) {
         (Some((available, required)), Some(waiting)) => {
             funds_awaiting_network(available, required, waiting)
+        }
+        (None, Some(waiting)) if matches!(error, BuilderError::TooManyInputs { .. }) => {
+            funds_awaiting_network(None, None, waiting)
         }
         _ => PlatformWalletError::TransactionBuild(error.to_string()),
     }
@@ -1175,27 +1209,30 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // this guard.
             let (unsigned, fee, reservation_token) =
                 builder.build_unsigned_reserved().map_err(|error| {
-                    // Only a shortfall can be waiting on the network, and a
-                    // `reservation_only` build spends only its seeds, which are
-                    // final by now: nothing it could spend is waiting.
+                    // Only a shortfall or too many inputs can turn on coins
+                    // that are not final, and a `reservation_only` build spends
+                    // only its seeds, which are final by now.
                     let trial = make
                         .as_deref()
-                        .filter(|_| is_shortfall(&error) && !reservation_only);
+                        .filter(|_| waiting_may_help(&error) && !reservation_only);
+                    let too_many = matches!(error, BuilderError::TooManyInputs { .. });
                     let error = map_builder_error(error, funding_context);
                     let Some(make) = trial else {
                         return error;
                     };
-                    let pinned = pinned.unwrap_or_else(|| info.generation.in_broadcast_outpoints());
                     let waiting = trial_with_waiting_coins(
                         make,
                         wallet,
                         info,
                         &offered_accounts,
                         &seeds,
-                        &pinned,
+                        pinned.as_ref(),
                         height,
                     );
-                    awaiting_network(error, waiting)
+                    match (too_many, waiting) {
+                        (true, Some(waiting)) => funds_awaiting_network(None, None, waiting),
+                        _ => awaiting_network(error, waiting),
+                    }
                 })?;
 
             // Release across every contributing account on the error paths
@@ -3025,6 +3062,50 @@ mod tests {
             )
             .await,
             1
+        );
+    }
+
+    /// Too many inputs is waiting on the network when a coin that is not final
+    /// yet would fund it with few: 600 final coins of 2,000 duffs need more
+    /// than 500 inputs for 1,100,000, but one waiting coin of 1,500,000 pays it
+    /// alone once final.
+    #[tokio::test]
+    async fn should_report_waiting_when_too_many_inputs_would_shrink_once_a_coin_is_final() {
+        let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &vec![2_000; 600]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let make = || {
+            Ok(TransactionBuilder::new()
+                .set_selection_strategy(SelectionStrategy::LargestFirst)
+                .add_output(&DashAddress::dummy(Network::Testnet, 102), 1_100_000))
+        };
+
+        let plain = core
+            .finalize_transaction(make().expect("builder"), &SEND_FUNDING_SOURCES, 0, &signer)
+            .await;
+        assert!(
+            matches!(plain, Err(PlatformWalletError::TransactionBuild(ref message))
+                if message.contains("inputs")),
+            "without the trial it is the input limit: got {plain:?}"
+        );
+
+        let result = core
+            .finalize_transaction_from(
+                make,
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    waiting: 1_500_000,
+                    ..
+                })
+            ),
+            "got {result:?}"
         );
     }
 

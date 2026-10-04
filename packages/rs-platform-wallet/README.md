@@ -173,6 +173,10 @@ source and behaviour changes:
   arithmetic would overflow (`ErrorInvalidParameter`, above about 42.9 DASH
   per kB); `core_wallet_tx_builder_set_current_height` is accepted and ignored
   — the finalizers always built at the wallet's own height.
+- `PlatformWalletError` gains `ChosenInputUnavailable { outpoint, problem:
+  ChosenInputProblem }` (new public enum: `NotInFundingAccounts`,
+  `NotSpendable`; FFI `ErrorInvalidParameter`): a coin chosen by outpoint the
+  build cannot spend. An exhaustive `match` needs an arm for it.
 - `PlatformWalletError` gains `CoreFundsAwaitingNetwork { available, waiting,
   required, outpoint }` (FFI code 59): the build's final coins fall short, but
   key-wallet would build it if the coins that are not yet confirmed or

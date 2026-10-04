@@ -1894,7 +1894,7 @@ mod real_finalizer_tests {
         let wallet = runtime()
             .block_on(manager.get_wallet(&wallet_id))
             .expect("wallet present");
-        runtime().block_on(add_bip44_coin(&wallet, value, final_, 0x5a));
+        runtime().block_on(add_bip44_coin(&wallet, value, final_, COIN_TAG));
         let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
         /// Unregisters the handle; keeps the manager (which owns the wallet's
         /// event task) alive until then.
@@ -1914,6 +1914,124 @@ mod real_finalizer_tests {
                 _manager: manager,
             },
         )
+    }
+
+    /// The txid byte of the coin `wallet_with_coin` adds (vout 0).
+    const COIN_TAG: u8 = 0x5a;
+
+    fn coin_outpoint() -> OutPointFFI {
+        OutPointFFI {
+            txid: [COIN_TAG; 32],
+            vout: 0,
+        }
+    }
+
+    fn finalize_real(
+        builder: *mut FFITransactionBuilder,
+        wallet: Handle,
+    ) -> (PlatformWalletFFIResult, Handle) {
+        let resolver = unsafe {
+            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), resolve, noop_destroy)
+        };
+        let mut out: Handle = 0;
+        let result = unsafe {
+            core_wallet_tx_builder_finalize(
+                builder,
+                wallet,
+                CoreAccountTypeFFI::AllSpendable,
+                0,
+                resolver,
+                &mut out,
+            )
+        };
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        (result, out)
+    }
+
+    /// Coin control through the real finalizer: the coin recorded with
+    /// `add_inputs_from_outpoints` under `use_only_added_inputs` is the input.
+    #[test]
+    fn should_spend_the_recorded_input_through_the_real_finalizer() {
+        let (wallet, _release) = wallet_with_coin(8_999_774, true);
+        let builder = app_payment(1_000_000);
+        let chosen = [coin_outpoint()];
+        let added = unsafe {
+            core_wallet_tx_builder_add_inputs_from_outpoints(
+                builder,
+                wallet,
+                CoreAccountTypeFFI::BIP44,
+                0,
+                chosen.as_ptr(),
+                chosen.len(),
+            )
+        };
+        assert_eq!(added.code, PlatformWalletFFIResultCode::Success);
+        let only = unsafe { core_wallet_tx_builder_use_only_added_inputs(builder) };
+        assert_eq!(only.code, PlatformWalletFFIResultCode::Success);
+
+        let (result, out) = finalize_real(builder, wallet);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        let spent = CORE_SIGNED_TRANSACTION_STORAGE
+            .with_item(out, |tx| {
+                tx.transaction
+                    .transaction()
+                    .input
+                    .iter()
+                    .map(|input| input.previous_output)
+                    .collect::<Vec<_>>()
+            })
+            .expect("published handle");
+        assert_eq!(
+            spent,
+            vec![OutPoint {
+                txid: Txid::from_byte_array([COIN_TAG; 32]),
+                vout: 0,
+            }]
+        );
+        core_wallet_signed_transaction_free(out);
+    }
+
+    /// A recorded input spent before the build is refused by name, as
+    /// `ErrorInvalidParameter` (`ChosenInputUnavailable`), nothing published.
+    #[test]
+    fn should_refuse_a_recorded_input_spent_since_through_the_real_finalizer() {
+        let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
+        let platform_wallet = runtime()
+            .block_on(manager.get_wallet(&wallet_id))
+            .expect("wallet present");
+        runtime().block_on(add_bip44_coin(&platform_wallet, 8_999_774, true, COIN_TAG));
+        let wallet = PLATFORM_WALLET_STORAGE.insert(platform_wallet.clone());
+        let builder = app_payment(1_000_000);
+        let chosen = [coin_outpoint()];
+        let added = unsafe {
+            core_wallet_tx_builder_add_inputs_from_outpoints(
+                builder,
+                wallet,
+                CoreAccountTypeFFI::BIP44,
+                0,
+                chosen.as_ptr(),
+                chosen.len(),
+            )
+        };
+        assert_eq!(added.code, PlatformWalletFFIResultCode::Success);
+        runtime().block_on(async {
+            // Spent since it was chosen.
+            let mut wm = platform_wallet.wallet_manager().write().await;
+            let (_, info) = wm.get_wallet_and_info_mut(&wallet_id).expect("wallet");
+            info.core_wallet
+                .first_bip44_managed_account_mut()
+                .expect("bip44 account")
+                .utxos
+                .clear();
+        });
+
+        let (result, out) = finalize_real(builder, wallet);
+        PLATFORM_WALLET_STORAGE.remove(wallet);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(out, 0);
     }
 
     /// The app's Send: one output, default rate, the pooled sources.
