@@ -22,9 +22,13 @@ where
     ///
     /// # Arguments
     ///
-    /// * `state` - A mutable reference to the platform state to be updated.
+    /// * `platform_state` - The optional committed platform state used for identity updates.
+    /// * `block_platform_state` - The mutable platform state for the block being executed.
     /// * `core_block_height` - The current block height in the Dash Core.
+    /// * `is_init_chain` - Whether the update is initializing the chain.
+    /// * `block_info` - The block information used for identity updates.
     /// * `transaction` - The current groveDB transaction.
+    /// * `platform_version` - The protocol version governing the update.
     ///
     /// # Returns
     ///
