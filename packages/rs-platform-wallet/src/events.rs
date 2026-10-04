@@ -52,7 +52,8 @@ pub trait PlatformEventHandler: EventHandler {
     /// the network was asked about the root of its chain. `Accepted` means a
     /// node holds the transaction in its mempool (or one has it in a block);
     /// `Mined` that two distinct nodes have it in a block — in one probe or
-    /// over several of the same send; `Unresolved` that there is no verdict
+    /// over several of the same send; nodes' word, cleared again if the wallet
+    /// does not see that block (see `on_outgoing_transaction_cleared`); `Unresolved` that there is no verdict
     /// yet — refusals included, since no node's answer proves a transaction
     /// can never land; the resolver asks again on a later block. Nothing in
     /// the wallet changes either way.
@@ -68,8 +69,10 @@ pub trait PlatformEventHandler: EventHandler {
 
     /// Fired when the host must drop a send's published verdict: the send
     /// settled (block or InstantSend lock) or left the wallet, its wallet was
-    /// removed, or probing was turned off (then for every send). It does not
-    /// mean the send settled. Hosts drop any state they kept for the verdict.
+    /// removed, probing was turned off (then for every send), or nodes had
+    /// reported it (or the send it builds on) in a block the wallet has not
+    /// seen several blocks later — that evidence was withdrawn and a fresh
+    /// verdict follows. It does not mean the send settled. Hosts drop any state they kept for the verdict.
     ///
     /// Default impl is a no-op so existing handlers don't have to care.
     fn on_outgoing_transaction_cleared(&self, _wallet_id: &WalletId, _txid: &Txid) {}

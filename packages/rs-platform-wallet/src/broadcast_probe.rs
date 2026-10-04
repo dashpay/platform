@@ -35,8 +35,10 @@
 //! second opinion is asked by lookup, not by resubmitting. On a network with
 //! a single reachable evonode (a devnet pinned to one address) nothing is
 //! ever mined by probe, only accepted; the wallet's own block processing
-//! settles it. A block two nodes saw that a reorg drops before its ChainLock
-//! (seconds on Dash) is not revisited: Mined is final.
+//! settles it. Mined is the nodes' word, not settlement: the resolver drops it
+//! and asks again if the wallet, following the tip, has not seen the
+//! transaction a few blocks later (a block a reorg dropped, or one the chain
+//! the wallet follows never had).
 //!
 //! The two DAPI implementations surface those codes differently — the JS
 //! server maps `-25` to `InvalidArgument`, rs-dapi to `FailedPrecondition` —
@@ -120,8 +122,9 @@ pub enum ProbeVerdict {
     /// [`MINED_QUORUM`] — has it in a block. Not settlement: it can still
     /// expire or lose to a conflict, so the resolver keeps asking.
     Accepted,
-    /// Two different nodes have the transaction in a block. Final — there is
-    /// nothing left to ask, even if this wallet has not seen that block yet.
+    /// Two different nodes have the transaction in a block. The resolver stops
+    /// asking — unless the wallet, following the tip, has not seen it a few
+    /// blocks later; then the verdict is cleared and it asks again.
     Mined,
     /// Not enough evidence that it landed; the transaction stays ambiguous.
     /// The reason says what the nodes answered, refusals included.

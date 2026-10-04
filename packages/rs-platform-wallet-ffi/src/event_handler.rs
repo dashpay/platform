@@ -58,9 +58,11 @@ pub const OUTGOING_PROBE_VERDICT_ACCEPTED: u8 = 0;
 pub const OUTGOING_PROBE_VERDICT_DEAD: u8 = 1;
 pub const OUTGOING_PROBE_VERDICT_UNRESOLVED: u8 = 2;
 /// Not a verdict: drop whatever was kept for the send's earlier verdict. Sent
-/// when the send settled or left the wallet, when its wallet was removed, and
-/// for every send when probing is turned off — so it does not mean the send
-/// settled. `reason` is null.
+/// when the send settled or left the wallet, when its wallet was removed, for
+/// every send when probing is turned off, and when nodes' report of it (or of
+/// the send it builds on) in a block went unseen by the wallet for several
+/// blocks — a fresh verdict follows then. It does not mean the send settled.
+/// `reason` is null.
 pub const OUTGOING_PROBE_VERDICT_CLEARED: u8 = 3;
 
 /// A verdict on an unconfirmed send whose broadcast outcome was unknown.

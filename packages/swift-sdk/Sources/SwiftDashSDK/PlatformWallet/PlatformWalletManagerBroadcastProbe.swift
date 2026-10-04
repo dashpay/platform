@@ -131,7 +131,9 @@ extension PlatformWalletManager {
     }
 
     /// Drop the send's verdict: the send settled or left the wallet, its wallet
-    /// was removed, or probing was turned off. Not a statement that it settled.
+    /// was removed, probing was turned off, or nodes' report of it in a block
+    /// went unseen by the wallet for several blocks (a fresh verdict follows).
+    /// Not a statement that it settled.
     @MainActor
     func handleOutgoingTransactionCleared(_ key: OutgoingTransactionKey) {
         guard !shutdownRequested, isConfigured else { return }

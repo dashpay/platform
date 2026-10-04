@@ -1316,11 +1316,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                             }
                             utxo
                         })
-                        .ok_or_else(|| {
-                            PlatformWalletError::TransactionBuild(format!(
-                                "selected input {} is no longer in any funding account",
-                                input.previous_output
-                            ))
+                        .ok_or(PlatformWalletError::ChosenInputUnavailable {
+                            // Only a coin seeded on the builder itself can get
+                            // here: the funding accounts did not offer it.
+                            outpoint: input.previous_output,
+                            problem: ChosenInputProblem::NotInFundingAccounts,
                         })
                 })
                 .collect::<Result<_, _>>()
