@@ -164,7 +164,8 @@ pub struct FinalizeOptions {
 /// so is every standard account — key-wallet asks each account in turn for a
 /// change address from its pool, and only a standard account has one — so no
 /// account state moves; the others are funded as they are. Coins (and seeds)
-/// an in-flight broadcast pins are locked, so selection passes them over. The
+/// an in-flight broadcast pins (`pinned`, the caller's snapshot) are locked,
+/// so selection passes them over. The
 /// clones share the reservation sets, so what the trial reserves is released
 /// before returning. Nothing is signed (a
 /// payload finalizer on the configuration does run, as in the build). Runs
@@ -175,14 +176,9 @@ pub(crate) fn trial_with_waiting_coins(
     info: &mut PlatformWalletInfo,
     offered: &[AccountType],
     seeds: &[Utxo],
-    reservation_only: bool,
+    pinned: &HashSet<OutPoint>,
     height: u32,
 ) -> Option<u64> {
-    // A `reservation_only` build spends only its seeds, and those are final
-    // by now: nothing it could spend is waiting.
-    if reservation_only {
-        return None;
-    }
     let generation = Arc::clone(&info.generation);
     let accounts = &mut info.core_wallet.accounts;
     // One scan for the spendable coins that are not final, before anything
@@ -206,7 +202,6 @@ pub(crate) fn trial_with_waiting_coins(
     }
     // The build refuses an input an in-flight broadcast pins
     // (`InputMidBroadcast`): the trial must not count on one either.
-    let pinned = generation.in_broadcast_outpoints();
     let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
     let mut promote: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
     for (at, outpoint, value) in candidates {
@@ -218,18 +213,6 @@ pub(crate) fn trial_with_waiting_coins(
     if waiting.is_empty() {
         return None;
     }
-    let mut lock: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
-    for at in offered {
-        let Some(managed) = accounts.funds_account(at) else {
-            continue;
-        };
-        for outpoint in pinned
-            .iter()
-            .filter(|outpoint| managed.utxos.contains_key(*outpoint))
-        {
-            lock.entry(*at).or_default().push(*outpoint);
-        }
-    }
     let trial = make().ok()?;
     // Funded through clones: an account with waiting coins (marked final) or
     // pinned ones (locked, so selection passes them over), and every standard
@@ -237,14 +220,18 @@ pub(crate) fn trial_with_waiting_coins(
     // its pool until one gives it, and only a standard account has a pool.
     let mut clones: HashMap<AccountType, ManagedCoreFundsAccount> = HashMap::new();
     for at in offered {
-        let promoted = promote.remove(at).unwrap_or_default();
-        let locked = lock.remove(at).unwrap_or_default();
-        if promoted.is_empty() && locked.is_empty() && !matches!(at, AccountType::Standard { .. }) {
-            continue;
-        }
         let Some(managed) = accounts.funds_account(at) else {
             continue;
         };
+        let promoted = promote.remove(at).unwrap_or_default();
+        let locked: Vec<OutPoint> = pinned
+            .iter()
+            .filter(|outpoint| managed.utxos.contains_key(*outpoint))
+            .copied()
+            .collect();
+        if promoted.is_empty() && locked.is_empty() && !matches!(at, AccountType::Standard { .. }) {
+            continue;
+        }
         let mut clone = managed.clone();
         for outpoint in promoted {
             if let Some(utxo) = clone.utxos.get_mut(&outpoint) {
@@ -258,20 +245,14 @@ pub(crate) fn trial_with_waiting_coins(
         }
         clones.insert(*at, clone);
     }
-    // A seed pinned since it was chosen is passed over the same way.
-    let seeds = seeds.iter().cloned().map(|mut seed| {
-        if pinned.contains(&seed.outpoint) {
-            seed.is_locked = true;
-        }
-        seed
-    });
+    // Seeds were refused when pinned (`finalize`), so they go in as they are.
     let trial = fund(
         trial,
         wallet,
         accounts,
         &mut clones,
         offered,
-        seeds,
+        seeds.iter().cloned(),
         false,
         height,
     );
@@ -283,7 +264,7 @@ pub(crate) fn trial_with_waiting_coins(
             }
         }
     }
-    // Backstop: a pin taken between the read above and here.
+    // Backstop: a pin taken since the caller's snapshot.
     if generation.in_broadcast_conflict(&transaction).is_some() {
         return None;
     }
@@ -356,13 +337,22 @@ pub(crate) fn awaiting_network(
                 required,
                 ..
             },
-        ) => PlatformWalletError::CoreFundsAwaitingNetwork {
-            available: *available,
-            waiting,
-            required: *required,
-            outpoint: None,
-        },
+        ) => funds_awaiting_network(*available, *required, waiting),
         _ => error,
+    }
+}
+
+/// Code 59 for a shortfall the waiting coins would fund.
+fn funds_awaiting_network(
+    available: Option<u64>,
+    required: Option<u64>,
+    waiting: u64,
+) -> PlatformWalletError {
+    PlatformWalletError::CoreFundsAwaitingNetwork {
+        available,
+        waiting,
+        required,
+        outpoint: None,
     }
 }
 
@@ -374,12 +364,7 @@ pub(crate) fn build_error_awaiting_network(
 ) -> PlatformWalletError {
     match (shortfall(&error), waiting) {
         (Some((available, required)), Some(waiting)) => {
-            PlatformWalletError::CoreFundsAwaitingNetwork {
-                available,
-                waiting,
-                required,
-                outpoint: None,
-            }
+            funds_awaiting_network(available, required, waiting)
         }
         _ => PlatformWalletError::TransactionBuild(error.to_string()),
     }
@@ -1060,6 +1045,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // skips them as already present): the final-inputs rule judges
             // them as they are now. One that is not final is refused by name
             // instead of being dropped silently; nothing is reserved yet.
+            // One snapshot of what in-flight broadcasts pin, for the chosen
+            // inputs and the waiting-coins trial alike.
+            let pinned = info.generation.in_broadcast_outpoints();
             let mut seeds: Vec<Utxo> = Vec::new();
             let mut seeded: HashSet<OutPoint> = HashSet::new();
             for outpoint in &seed_outpoints {
@@ -1087,19 +1075,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         "input {outpoint} is not spendable yet (immature or locked)"
                     )));
                 }
+                // Pinned by an in-flight broadcast: the build would refuse it
+                // after selection anyway, and confirmation would not change
+                // that, so this is checked before finality.
+                if pinned.contains(outpoint) {
+                    return Err(PlatformWalletError::InputMidBroadcast {
+                        outpoint: *outpoint,
+                    });
+                }
                 if !is_final(utxo) {
                     return Err(PlatformWalletError::CoreFundsAwaitingNetwork {
                         available: None,
                         waiting: utxo.value(),
                         required: None,
                         outpoint: Some(*outpoint),
-                    });
-                }
-                // Pinned by an in-flight broadcast: the build would refuse it
-                // after selection anyway; refuse it by name now.
-                if info.generation.in_broadcast_conflict_outpoint(outpoint) {
-                    return Err(PlatformWalletError::InputMidBroadcast {
-                        outpoint: *outpoint,
                     });
                 }
                 seeds.push(utxo.clone());
@@ -1146,8 +1135,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // this guard.
             let (unsigned, fee, reservation_token) =
                 builder.build_unsigned_reserved().map_err(|error| {
-                    // Only a shortfall can be waiting on the network.
-                    let trial = make.filter(|_| is_shortfall(&error));
+                    // Only a shortfall can be waiting on the network, and a
+                    // `reservation_only` build spends only its seeds, which are
+                    // final by now: nothing it could spend is waiting.
+                    let trial = make.filter(|_| is_shortfall(&error) && !reservation_only);
                     let error = map_builder_error(error, funding_context);
                     let Some(make) = trial else {
                         return error;
@@ -1158,7 +1149,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         info,
                         &offered_accounts,
                         &seeds,
-                        reservation_only,
+                        &pinned,
                         height,
                     );
                     awaiting_network(error, waiting)
@@ -2750,6 +2741,46 @@ mod tests {
             matches!(
                 result,
                 Err(PlatformWalletError::InputMidBroadcast { outpoint }) if outpoint == pinned.outpoint
+            ),
+            "got {result:?}"
+        );
+    }
+
+    /// A chosen input that an in-flight broadcast pins and a reorg has since
+    /// demoted is refused as mid-broadcast, not as waiting: confirmation would
+    /// not free it.
+    #[tokio::test]
+    async fn should_refuse_a_pinned_demoted_input_as_mid_broadcast() {
+        let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[600_000]).await;
+        let chosen = bip44_coin(&core).await;
+        let dispatch = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: chosen.outpoint,
+                ..TxIn::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let _pin = core.test_generation_marker().pin_in_broadcast(&dispatch);
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let result = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(96)),
+                FinalizeOptions {
+                    inputs: vec![chosen.outpoint],
+                    reservation_only: false,
+                },
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::InputMidBroadcast { outpoint }) if outpoint == chosen.outpoint
             ),
             "got {result:?}"
         );

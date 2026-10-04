@@ -1349,7 +1349,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             info,
                             &offered_accounts,
                             &[],
-                            false,
+                            &info.generation.in_broadcast_outpoints(),
                             current_height,
                         )
                     });

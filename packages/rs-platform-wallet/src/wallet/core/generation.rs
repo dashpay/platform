@@ -547,25 +547,17 @@ impl WalletGeneration {
     /// — [`observe_spent`](Self::observe_spent) already removes what it clears,
     /// and a fence that still blocks is never pruned here for any reason.
     pub(crate) fn in_broadcast_conflict(&self, transaction: &Transaction) -> Option<OutPoint> {
-        let mut pinned = self.in_broadcast_lock();
-        pinned.retain(|_, fence| fence.blocks());
+        let pinned = self.in_broadcast_outpoints();
         transaction
             .input
             .iter()
             .map(|input| input.previous_output)
-            .find(|outpoint| pinned.contains_key(outpoint))
-    }
-
-    /// Whether an in-flight broadcast pins `outpoint` now.
-    pub(crate) fn in_broadcast_conflict_outpoint(&self, outpoint: &OutPoint) -> bool {
-        let mut pinned = self.in_broadcast_lock();
-        pinned.retain(|_, fence| fence.blocks());
-        pinned.contains_key(outpoint)
+            .find(|outpoint| pinned.contains(outpoint))
     }
 
     /// Every outpoint an in-flight broadcast pins now — what
-    /// [`in_broadcast_conflict`](Self::in_broadcast_conflict) would refuse —
-    /// pruned the same way.
+    /// [`in_broadcast_conflict`](Self::in_broadcast_conflict) refuses. The one
+    /// place cleared fences are pruned (see there).
     pub(crate) fn in_broadcast_outpoints(&self) -> HashSet<OutPoint> {
         let mut pinned = self.in_broadcast_lock();
         pinned.retain(|_, fence| fence.blocks());
