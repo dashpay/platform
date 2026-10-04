@@ -1729,6 +1729,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     with `==`. Every step is inert without a derived index property, which only generation 3
 ///     declares.
 ///
+/// 66. **Owner identities for shared and extended-address masternodes**: from
+///     v24 on, Dash Core lists shared masternodes, which have no owner, payout
+///     or collateral address, and extended-address masternodes, which have a
+///     `payouts` list instead of a `payoutAddress`. `create_owner_identity` 1
+///     needs both addresses and fails on such a masternode with
+///     `DashCoreBadResponseError`, which fails the block. With
+///     `create_owner_identity` 2 and `update_masternode_identities` 1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`), a masternode without an owner
+///     address gets no owner identity, only its voter and operator identities;
+///     one with an owner address and a single payout address (the payout
+///     address, else the only entry of a one-entry payout list) gets the
+///     version 1 identity, TRANSFER key id 0 and OWNER key id 1, byte for byte;
+///     and one paid to several payouts gets an owner identity with only the
+///     OWNER key id 1. Updates are unchanged: only a `payoutAddress` change
+///     rotates the TRANSFER key, and a `payouts` change is not acted on. This
+///     version must be active on a network before its Dash Core activates V24,
+///     since earlier versions keep failing on these masternodes.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

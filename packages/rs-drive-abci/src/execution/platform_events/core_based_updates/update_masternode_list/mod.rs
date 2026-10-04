@@ -80,9 +80,10 @@ mod test {
     use crate::platform_types::validator::v0::{NewValidatorIfMasternodeInState, ValidatorV0};
     use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
     use crate::platform_types::validator_set::{ValidatorSet, ValidatorSetExt};
-    use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
     use dpp::core_types::validator_set::v0::ValidatorSetV0;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
     use dpp::dashcore_rpc::json::{
@@ -536,34 +537,25 @@ mod test {
         }
     }
 
-    /// Dash Core v24 prints masternodes that differ from every earlier list: a shared
-    /// masternode has no owner, payout or collateral address; an extended-address masternode
-    /// has a `payouts` list instead of `payoutAddress`; a Tor primary address is not an
-    /// `ip:port` `service`; an Evo without addresses has `-1` platform ports. The list must be
-    /// processed rather than fail the block, and the masternode identities must be:
-    /// - shared: voter and operator identities, no owner identity (it has no owner key);
-    /// - one payout: the same owner identity as a legacy payout address (TRANSFER key 0,
-    ///   OWNER key 1);
-    /// - several payouts: an owner identity with only the OWNER key 1;
-    /// - a later payout change through `payouts`: no key change, since only a `payoutAddress`
-    ///   change rotates the TRANSFER key.
-    #[test]
-    fn should_update_masternode_identities_from_a_core_v24_masternode_list() {
-        let platform_version = PlatformVersion::latest();
-
+    /// A platform at `platform_version` whose mock Core returns Dash Core v24 `protx listdiff`
+    /// output: the diff from height 1 to 1250 adds a legacy Evo, a shared masternode, Regular
+    /// masternodes with one and with two payouts (one of them with a Tor primary address), an
+    /// Evo without addresses and an IPv6 Evo with two payouts; the diff to 1260 moves the
+    /// legacy Evo to extended addresses and changes two payout lists.
+    fn platform_with_core_v24_masternode_list(
+        platform_version: &PlatformVersion,
+    ) -> TempPlatform<MockCoreRPCLike> {
         let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
-
-        let genesis_core_block_height = 1250;
-        let first_block_core_block_height = 1260;
 
         platform
             .core_rpc
             .expect_get_protx_diff_with_masternodes()
             .returning(move |_base_block, block| {
-                let file_name = if block == genesis_core_block_height {
+                let file_name = if block == 1250 {
                     "1-1250.json"
                 } else {
                     "1250-1260.json"
@@ -578,6 +570,65 @@ mod test {
                 // response the client rejects fails the update with the same error.
                 Ok(serde_json::from_str(&json)?)
             });
+
+        platform
+    }
+
+    /// Up to protocol version 13 an added masternode needs a payout and an owner address for
+    /// its owner identity. A Dash Core v24 list adds shared and extended-address masternodes
+    /// that have neither or no payout address, so the update fails with
+    /// `DashCoreBadResponseError` and the block with it, as on every release that cannot parse
+    /// such a list.
+    #[test]
+    fn should_fail_on_a_core_v24_masternode_list_up_to_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let platform = platform_with_core_v24_masternode_list(platform_version);
+
+        let transaction = platform.drive.grove.start_transaction();
+        let mut init_chain_platform_state = platform.state.load().as_ref().clone();
+
+        match platform.update_masternode_list(
+            None,
+            &mut init_chain_platform_state,
+            1250,
+            true,
+            &BlockInfo {
+                height: 1,
+                core_height: 1250,
+                time_ms: 1,
+                ..Default::default()
+            },
+            &transaction,
+            platform_version,
+        ) {
+            Err(Error::Execution(ExecutionError::DashCoreBadResponseError(message))) => assert!(
+                message.ends_with("has no payout address"),
+                "unexpected message: {message}"
+            ),
+            other => panic!("expected DashCoreBadResponseError, got {other:?}"),
+        }
+    }
+
+    /// Dash Core v24 prints masternodes that differ from every earlier list: a shared
+    /// masternode has no owner, payout or collateral address; an extended-address masternode
+    /// has a `payouts` list instead of `payoutAddress`; a Tor primary address is not an
+    /// `ip:port` `service`; an Evo without addresses has `-1` platform ports. From protocol
+    /// version 14 the list is processed rather than failing the block, and the masternode
+    /// identities are:
+    /// - shared: voter and operator identities, no owner identity (it has no owner key);
+    /// - one payout: the same owner identity as a legacy payout address (TRANSFER key 0,
+    ///   OWNER key 1);
+    /// - several payouts: an owner identity with only the OWNER key 1;
+    /// - a later payout change through `payouts`: no key change, since only a `payoutAddress`
+    ///   change rotates the TRANSFER key.
+    #[test]
+    fn should_update_masternode_identities_from_a_core_v24_masternode_list() {
+        let platform_version = PlatformVersion::latest();
+
+        let platform = platform_with_core_v24_masternode_list(platform_version);
+
+        let genesis_core_block_height = 1250;
+        let first_block_core_block_height = 1260;
 
         let transaction = platform.drive.grove.start_transaction();
 

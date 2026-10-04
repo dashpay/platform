@@ -1,4 +1,4 @@
-use super::effective_payout_address;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -15,21 +15,13 @@ where
     pub(super) fn create_owner_identity_v0(
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<Identity>, Error> {
-        // The identity holds only the payout address's TRANSFER key, so a masternode without a
-        // single payout address (shared, or paid to several payouts) gets none. Only a Core v24
-        // masternode list has such a masternode, and no earlier binary can parse one, so no
-        // committed block reached this branch. A chain on Core v24 with V24 active must start at
-        // protocol version 4 or later: an Evo paid to several payouts gets no owner identity
-        // here, so paying it as a block proposer would fail.
-        let Some(payout_address) = effective_payout_address(&masternode.state) else {
-            tracing::debug!(
-                pro_tx_hash = %masternode.pro_tx_hash,
-                method = "create_owner_identity_v0",
-                "no owner identity: the masternode has no single payout address"
-            );
-            return Ok(None);
-        };
+    ) -> Result<Identity, Error> {
+        let payout_address = masternode.state.payout_address.ok_or_else(|| {
+            Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
+                "masternode {} has no payout address",
+                masternode.pro_tx_hash
+            )))
+        })?;
         let owner_identifier = Self::get_owner_identifier(masternode)?;
         let mut identity = Identity::create_basic_identity(owner_identifier, platform_version)?;
         identity.add_public_keys([Self::get_owner_identity_withdrawal_key(
@@ -37,7 +29,7 @@ where
             0,
             platform_version,
         )?]);
-        Ok(Some(identity))
+        Ok(identity)
     }
 
     pub(crate) fn get_owner_identifier(
@@ -113,8 +105,7 @@ mod tests {
         let mn = make_masternode(pro_tx, [0x12u8; 20]);
 
         let identity = Platform::<MockCoreRPCLike>::create_owner_identity_v0(&mn, platform_version)
-            .expect("create_owner_identity_v0 must succeed")
-            .expect("a masternode with a payout address has an owner identity");
+            .expect("create_owner_identity_v0 must succeed");
 
         assert_eq!(identity.id(), Identifier::from(pro_tx));
         assert_eq!(
@@ -131,12 +122,10 @@ mod tests {
         let a = make_masternode([0x01u8; 32], [0u8; 20]);
         let b = make_masternode([0x02u8; 32], [0u8; 20]);
 
-        let ia = Platform::<MockCoreRPCLike>::create_owner_identity_v0(&a, platform_version)
-            .expect("a")
-            .expect("a has an owner identity");
-        let ib = Platform::<MockCoreRPCLike>::create_owner_identity_v0(&b, platform_version)
-            .expect("b")
-            .expect("b has an owner identity");
+        let ia =
+            Platform::<MockCoreRPCLike>::create_owner_identity_v0(&a, platform_version).expect("a");
+        let ib =
+            Platform::<MockCoreRPCLike>::create_owner_identity_v0(&b, platform_version).expect("b");
         assert_ne!(ia.id(), ib.id());
     }
 }
