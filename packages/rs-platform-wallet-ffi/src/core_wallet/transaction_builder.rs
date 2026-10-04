@@ -995,7 +995,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// in the finalizer's order: unspendable — an immature coinbase output or a
 /// locked coin, which confirmation alone does not cure —
 /// (`ErrorInvalidParameter`, "not spendable"), pinned by an in-flight
-/// broadcast (input mid-broadcast), then not final yet (code 59). Nothing is
+/// broadcast (input mid-broadcast; `ErrorUnknown` until it has a code of its
+/// own, the outpoint in the message), then not final yet (code 59). Nothing is
 /// recorded unless every outpoint passes.
 ///
 /// The finalizers look each recorded outpoint up again, in the accounts THEY
@@ -1868,7 +1869,9 @@ mod real_finalizer_tests {
     use super::*;
     use crate::core_wallet::broadcast::core_wallet_signed_transaction_free;
     use crate::core_wallet::signed_payment::registry_test_guard;
-    use platform_wallet::test_support::{add_bip44_coin, test_platform_wallet_manager};
+    use platform_wallet::test_support::{
+        add_bip44_coin, pin_in_broadcast, test_platform_wallet_manager,
+    };
     use rs_sdk_ffi::{
         dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
         mnemonic_resolver_result,
@@ -2093,6 +2096,38 @@ mod real_finalizer_tests {
             message.contains(&Txid::from_byte_array([COIN_TAG; 32]).to_string()),
             "{message}"
         );
+        assert!(unsafe { (*builder).state() }.inputs.is_empty());
+        unsafe { core_wallet_tx_builder_destroy(builder) };
+    }
+
+    /// A final coin an in-flight broadcast pins is refused when it is named,
+    /// as the finalizer would refuse it (input mid-broadcast, which crosses
+    /// as `ErrorUnknown`) — not recorded, and not code 59.
+    #[test]
+    fn should_refuse_a_coin_pinned_by_an_in_flight_broadcast() {
+        let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
+        let platform_wallet = runtime()
+            .block_on(manager.get_wallet(&wallet_id))
+            .expect("wallet present");
+        let coin = runtime().block_on(add_bip44_coin(&platform_wallet, 8_999_774, true, COIN_TAG));
+        let _pin = runtime().block_on(pin_in_broadcast(&platform_wallet, coin));
+        let wallet = PLATFORM_WALLET_STORAGE.insert(platform_wallet.clone());
+        let builder = app_payment(1_000_000);
+        let chosen = [coin_outpoint()];
+        let added = unsafe {
+            core_wallet_tx_builder_add_inputs_from_outpoints(
+                builder,
+                wallet,
+                CoreAccountTypeFFI::BIP44,
+                0,
+                chosen.as_ptr(),
+                chosen.len(),
+            )
+        };
+        PLATFORM_WALLET_STORAGE.remove(wallet);
+        assert_eq!(added.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        let message = unsafe { CStr::from_ptr(added.message) }.to_string_lossy();
+        assert!(message.contains(&coin.to_string()), "{message}");
         assert!(unsafe { (*builder).state() }.inputs.is_empty());
         unsafe { core_wallet_tx_builder_destroy(builder) };
     }

@@ -96,8 +96,7 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
 /// send that never reached the network never becomes final, so a payment
 /// built on it is one no node accepts. The spendable and max figures count
 /// the same coins, so they never offer what a build refuses.
-#[doc(hidden)]
-pub fn is_final(utxo: &Utxo) -> bool {
+pub(crate) fn is_final(utxo: &Utxo) -> bool {
     utxo.is_confirmed || utxo.is_instantlocked
 }
 
@@ -138,10 +137,8 @@ pub fn in_broadcast_outpoints(info: &PlatformWalletInfo) -> HashSet<OutPoint> {
 }
 
 /// Code 59 for a coin the caller chose as an input that is not final: it
-/// names the coin, and `waiting` is its value. Public for platform-wallet-ffi
-/// only.
-#[doc(hidden)]
-pub fn input_awaiting_network(utxo: &Utxo) -> PlatformWalletError {
+/// names the coin, and `waiting` is its value.
+pub(crate) fn input_awaiting_network(utxo: &Utxo) -> PlatformWalletError {
     PlatformWalletError::CoreFundsAwaitingNetwork {
         available: None,
         waiting: utxo.value(),
@@ -230,9 +227,11 @@ impl FinalizeOptions {
 /// build, with every not-yet-final coin of
 /// the funding accounts treated as final. Returns the value of the
 /// not-yet-final coins that trial spends, or `None` when it fails too
-/// (confirmation would not help) or spends none of them; or the typed refusal
-/// of a coin the configuration seeded that no funding account holds, when the
-/// trial needs it — that coin, not confirmation, is what stands in the way.
+/// (confirmation would not help) or spends none of them; or the build's own
+/// refusal when the trial would meet it — what stands in the way then is not
+/// confirmation: a coin the configuration seeded that no funding account
+/// holds (`ChosenInputUnavailable`), or one it seeded twice
+/// (`TransactionBuild`, "spends … twice").
 ///
 /// The trial is funded by the build's own fold ([`fund`]) from the same
 /// `offered` accounts after the same `seeds`, so key-wallet applies its own
@@ -1205,7 +1204,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // One snapshot of what in-flight broadcasts pin, taken only when
             // inputs were chosen; the waiting-coins trial reuses it, or takes
             // its own on a shortfall.
-            let pinned = (!seed_outpoints.is_empty()).then(|| in_broadcast_outpoints(info));
+            let mut pinned: Option<HashSet<OutPoint>> = None;
             let mut seeds: Vec<Utxo> = Vec::new();
             let mut seeded: HashSet<OutPoint> = HashSet::new();
             for outpoint in &seed_outpoints {
@@ -1231,9 +1230,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 };
                 // An unspendable coin would be dropped by the selector
                 // silently: refused by name, like a pinned or waiting one.
-                if let Some(pinned) = pinned.as_ref() {
-                    check_chosen_input(utxo, height, pinned)?;
-                }
+                let pinned = pinned.get_or_insert_with(|| in_broadcast_outpoints(info));
+                check_chosen_input(utxo, height, pinned)?;
                 seeds.push(utxo.clone());
             }
             // The accounts that take on this build's reservation bookkeeping,

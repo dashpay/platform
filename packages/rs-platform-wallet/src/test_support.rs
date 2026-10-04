@@ -819,6 +819,29 @@ pub async fn add_bip44_coin(
     outpoint
 }
 
+/// Pin `outpoint` the way an in-flight broadcast of `wallet` does, until the
+/// returned guard drops. For FFI tests of the mid-broadcast refusal.
+pub async fn pin_in_broadcast(
+    wallet: &PlatformWallet,
+    outpoint: OutPoint,
+) -> Box<dyn std::any::Any + Send> {
+    let manager = wallet.wallet_manager().read().await;
+    let info = manager
+        .get_wallet_info(&wallet.wallet_id())
+        .expect("wallet present in manager");
+    let spend = Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![dashcore::TxIn {
+            previous_output: outpoint,
+            ..Default::default()
+        }],
+        output: Vec::new(),
+        special_transaction_payload: None,
+    };
+    Box::new(info.generation.pin_in_broadcast(&spend))
+}
+
 /// Canonical all-`abandon` BIP-39 test vector. Fixed (not
 /// `TestWalletContext::new_random`) so every key it derives is a stable golden —
 /// which is what lets the signed-message tests pin an RFC6979-deterministic

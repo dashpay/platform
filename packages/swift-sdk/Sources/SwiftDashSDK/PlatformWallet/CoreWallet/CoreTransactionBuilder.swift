@@ -206,8 +206,9 @@ public final class CoreTransactionBuilder {
     /// `PlatformWalletManager.accountUtxos`) as inputs. Each must belong to
     /// the account, be spendable (an immature coinbase output or a locked
     /// coin is refused as an invalid parameter — waiting does not cure it),
-    /// not be pinned by an in-flight broadcast, and be final (code 59
-    /// otherwise).
+    /// not be pinned by an in-flight broadcast (refused as an unknown error
+    /// naming the coin, until that refusal has a code of its own), and be
+    /// final (code 59 otherwise).
     ///
     /// The finalizer looks each one up again in the accounts it funds from
     /// (its own `accountType` and index) and never drops a chosen coin
