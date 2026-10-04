@@ -136,6 +136,10 @@ dangling references. Every check is deterministic — it reads consensus
 state plus the carried `$createdAt` and block time. Writes never target
 expired windows, so an update of a fully expired document simply leaves
 it without entries under the TTL'd index.
+An index-only window declaring `outlivesDelete` is not touched by a user
+delete at all: its entries stay until this cleanup drops their bucket, and
+the delete carries no `$createdAt` when only such windows involve it (see
+[Index-Only Document Types](index-only-document-types.md#entries-that-outlive-a-delete-outlivesdelete)).
 
 **Per-index semantics** — TTL removes entries from *this index only*.
 An indexOnly like whose windowed entries expire keeps counting in the

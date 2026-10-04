@@ -18,15 +18,22 @@ use drive::state_transition_action::batch::batched_transition::BatchedTransition
 use std::collections::{BTreeMap, BTreeSet};
 use v0::BatchTransitionContractModerationGateV0;
 
-/// What the gate hands back when it refuses part or all of a signer's transitions.
+/// What the gate hands back when it refuses part or all of a signer's transitions, or lets a
+/// barred signer's replaces through to be judged as retractions.
 pub(super) struct ContractModerationRefusal<'a> {
-    /// The refusal of every transition the gate covers, each with its nonce bump.
-    pub refused: ConsensusValidationResult<Vec<BatchedTransitionAction>>,
+    /// The refusal of every transition the gate refuses, each with its nonce bump; `None`
+    /// when it refuses none, which only a barred signer's batch of deletions and replaces on
+    /// types declaring `retractedWhen` leaves.
+    pub refused: Option<ConsensusValidationResult<Vec<BatchedTransitionAction>>>,
     /// The signer's transitions, by document type, the gate lets through: under a bar its
-    /// deletions, since a barred identity may still take its own documents down, and next to
-    /// an interim block everything on the types the block does not cover. They carry on
-    /// through the transformer.
+    /// deletions, since a barred identity may still take its own documents down, and its
+    /// replaces on the types declaring `retractedWhen`; next to an interim block everything on
+    /// the types the block does not cover. They carry on through the transformer.
     pub passed: BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
+    /// The signer's bar (`ContractUserBannedError` or `ContractUserSuspendedError`) when the
+    /// gate let one of its replaces through as a retraction: the transformer refuses with it
+    /// each such replace whose written document does not meet its type's `retractedWhen`.
+    pub retraction_bar: Option<ConsensusError>,
 }
 
 /// The contract moderation gate of the batch transformer (protocol version 14).
@@ -36,8 +43,9 @@ pub(super) trait BatchTransitionContractModerationGate {
     /// transition of a moderated document type until a charter is seated on the contract (read
     /// from the moderation charters contract), and on the contract's
     /// moderation lists. Returns the refusal when the block covers a transition, or when the
-    /// signer is banned or under a live suspension and asks for anything but deletions;
-    /// `None` to carry on with every transition. A suspension found lapsed is recorded in
+    /// signer is banned or under a live suspension and asks for anything but deletions and,
+    /// on the types declaring `retractedWhen`, replaces, which pass with the bar for the
+    /// transformer to judge; `None` to carry on with every transition. A suspension found lapsed is recorded in
     /// `lapsed_suspensions` for the batch to sweep.
     ///
     /// Before protocol version 14 the gate does not exist (`None` in the version table) and
@@ -374,9 +382,14 @@ mod tests {
         .expect("expected the banned signer to be refused");
 
         // Two refused creates, one bump and one error each; the one delete kept.
-        let refused_actions = refusal.refused.data.as_deref().unwrap_or_default();
+        let refused = refusal
+            .refused
+            .as_ref()
+            .expect("expected the creates refused");
+        let refused_actions = refused.data.as_deref().unwrap_or_default();
         assert_eq!(refused_actions.len(), 2);
-        assert_eq!(refusal.refused.errors.len(), 2);
+        assert_eq!(refused.errors.len(), 2);
+        assert!(refusal.retraction_bar.is_none());
         let bumped_nonces: BTreeSet<u64> = refused_actions
             .iter()
             .map(|action| match action {
@@ -396,6 +409,221 @@ mod tests {
         assert_eq!(kept, vec![2]);
         // The status read was billed once for the whole batch.
         assert_eq!(execution_context.operations_slice().len(), 1);
+    }
+
+    /// A banned signer's replace on a type declaring `retractedWhen` passes with the bar, for the
+    /// transformer to judge on the document it writes, while its create on that type and its
+    /// replace on a type declaring none are refused, each with its nonce bump. A batch of the
+    /// replace alone refuses nothing and still carries the bar.
+    #[tokio::test]
+    async fn should_pass_a_barred_signers_replaces_on_a_retractable_type_with_the_bar() {
+        use crate::execution::validation::state_transition::tests::setup_identity;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::dash_to_credits;
+        use dpp::data_contract::document_type::random_document::{
+            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+        };
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::platform_value::{platform_value, Bytes32};
+        use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+        use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, key) = setup_identity(&mut platform, 33, dash_to_credits!(1));
+        let mut contract = moderated_contract(platform_version.protocol_version);
+        contract
+            .set_document_schema(
+                "message",
+                platform_value!({
+                    "type": "object",
+                    "canBeDeleted": false,
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                        "deleted": { "type": "boolean", "position": 1 },
+                    },
+                    "additionalProperties": false,
+                    "retractedWhen": { "present": "deleted" },
+                }),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to add the message type");
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        platform
+            .drive
+            .add_contract_ban(
+                contract.id(),
+                identity.id(),
+                &ContractModerationReason::from_text("spam"),
+                contract.owner_id(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to ban");
+
+        // A replace and a create of a message, and a replace of a niceDocument
+        let mut rng = StdRng::seed_from_u64(5);
+        let mut batches = vec![];
+        for (nonce, document_type_name, replaces) in [
+            (1u64, "message", true),
+            (2, "message", false),
+            (3, "niceDocument", true),
+        ] {
+            let document_type = contract
+                .document_type_for_name(document_type_name)
+                .expect("expected the document type");
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let mut document = document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::MinDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+            document
+                .set_id_for_creation(document_type, &entropy.0, nonce, platform_version)
+                .expect("expected to set the document id");
+            let batch = if replaces {
+                BatchTransition::new_document_replacement_transition_from_document(
+                    document,
+                    document_type,
+                    &key,
+                    nonce,
+                    0,
+                    None,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+            } else {
+                BatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    document_type,
+                    entropy.0,
+                    &key,
+                    nonce,
+                    0,
+                    None,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+            }
+            .expect("expected a batch");
+            batches.push(batch);
+        }
+        let transitions: Vec<&DocumentTransition> = batches
+            .iter()
+            .flat_map(|batch| match batch {
+                StateTransition::Batch(batch) => batch.transitions_iter().collect::<Vec<_>>(),
+                _ => vec![],
+            })
+            .filter_map(|transition| match transition {
+                BatchedTransitionRef::Document(document_transition) => Some(document_transition),
+                BatchedTransitionRef::Token(_) => None,
+            })
+            .collect();
+        fn by_type<'a>(
+            transitions: &[&'a DocumentTransition],
+        ) -> BTreeMap<&'a String, Vec<&'a DocumentTransition>> {
+            let mut by_type: BTreeMap<&'a String, Vec<&'a DocumentTransition>> = BTreeMap::new();
+            for transition in transitions {
+                by_type
+                    .entry(transition.base().document_type_name())
+                    .or_default()
+                    .push(*transition);
+            }
+            by_type
+        }
+        fn gate<'a>(
+            drive: &Drive,
+            contract: &DataContract,
+            owner_id: Identifier,
+            document_transitions: &BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
+            platform_version: &PlatformVersion,
+        ) -> ContractModerationRefusal<'a> {
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("execution context");
+            BatchTransition::contract_moderation_gate(
+                drive,
+                &BlockInfo::default(),
+                contract,
+                owner_id,
+                document_transitions,
+                &mut BTreeSet::new(),
+                &mut execution_context,
+                None,
+                platform_version,
+            )
+            .expect("expected the gate to run")
+            .expect("expected the bar to apply")
+        }
+
+        let document_transitions = by_type(&transitions);
+        let outcome = gate(
+            &platform.drive,
+            &contract,
+            identity.id(),
+            &document_transitions,
+            platform_version,
+        );
+        let refused = outcome.refused.as_ref().expect("expected two refusals");
+        assert_eq!(refused.errors.len(), 2);
+        assert!(refused.errors.iter().all(|error| error.code() == 41107));
+        let passed: Vec<u64> = outcome
+            .passed
+            .values()
+            .flatten()
+            .map(|transition| transition.base().identity_contract_nonce())
+            .collect();
+        assert_eq!(passed, vec![1]);
+        assert_eq!(
+            outcome.retraction_bar.as_ref().map(|bar| bar.code()),
+            Some(41107)
+        );
+
+        let document_transitions = by_type(&transitions[..1]);
+        let outcome = gate(
+            &platform.drive,
+            &contract,
+            identity.id(),
+            &document_transitions,
+            platform_version,
+        );
+        assert!(outcome.refused.is_none());
+        assert_eq!(outcome.passed.values().flatten().count(), 1);
+        assert_eq!(
+            outcome.retraction_bar.as_ref().map(|bar| bar.code()),
+            Some(41107)
+        );
     }
 
     /// An elected contract whose interim names nobody: a create on the moderated type is
@@ -538,9 +766,13 @@ mod tests {
         )
         .expect("expected the gate to run")
         .expect("expected the moderated type to be refused");
-        assert_eq!(refusal.refused.data.as_deref().map(|a| a.len()), Some(1));
-        assert_eq!(refusal.refused.errors.len(), 1);
-        assert_eq!(refusal.refused.errors[0].code(), 41200);
+        let refused = refusal
+            .refused
+            .as_ref()
+            .expect("expected the create refused");
+        assert_eq!(refused.data.as_deref().map(|a| a.len()), Some(1));
+        assert_eq!(refused.errors.len(), 1);
+        assert_eq!(refused.errors[0].code(), 41200);
         let passed: Vec<u64> = refusal
             .passed
             .values()
@@ -569,7 +801,10 @@ mod tests {
         .expect("expected the gate to run")
         .expect("expected the moderated type to be refused");
         assert!(refusal.passed.is_empty());
-        assert_eq!(refusal.refused.errors.len(), 1);
+        assert_eq!(
+            refusal.refused.as_ref().map(|refused| refused.errors.len()),
+            Some(1)
+        );
         assert_eq!(execution_context.operations_slice().len(), 1);
     }
 }

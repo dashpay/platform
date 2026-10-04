@@ -382,21 +382,32 @@ The leader reads either with `sdk.encryptedFor.decrypt`.
 
 ## Immutable properties (`immutable`)
 
-From protocol version 14 a mutable document type can freeze some of its top-level properties at creation with the doctype-level `immutable` list, while the rest of the document stays replaceable. A second list, `immutableAllowSetting`, names the frozen properties a replace may still set while the stored document has no value for them; once present they are frozen too. Both are consensus-enforced on every replace, and a fetched contract can be asked what it declares:
+From protocol version 14 a mutable document type can freeze some of its top-level properties with the doctype-level `immutable` list, while the rest of the document stays replaceable. An entry naming a property freezes it at creation. An entry `{ property, when }` freezes it for any replace its condition holds for: the condition takes the grammar of a `propertyConstraints` rule, is judged on the document the replace writes (whose `$updatedAt` is the replace's block time), and reads the stored document through `$old.` paths.
+
+```json
+"immutable": [
+  "author",
+  { "property": "text", "when": { "greaterThan": [{ "subtract": ["$updatedAt", "$createdAt"] }, 300000] } },
+  { "property": "mood", "when": { "present": "$old.mood" } }
+]
+```
+
+Here `author` never changes, `text` can be edited for five minutes after the document is created, and `mood` can be set once. Both kinds are consensus-enforced on every replace, and a fetched contract can be asked what it declares:
 
 ```ts
 const contract = await sdk.contracts.fetch(contractId);
 
 contract.documentTypeImmutableProperties('post');
-// { immutable: ['author', 'mood'], immutableAllowSetting: ['mood'] }
-// Both arrays hold top-level property names, sorted. Listing an object
-// property freezes it whole, nested values included.
+// { immutable: ['author'], immutableWhen: { mood: { present: '$old.mood' }, text: { ... } } }
+// Both hold top-level property names, sorted, and each condition as the
+// contract declares it. Listing an object property freezes it whole,
+// nested values included.
 
 // Every document type that freezes at least one property.
 contract.documentImmutableProperties;
 ```
 
-The lists are only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports empty lists even when its raw schema carries the keywords.
+The keyword is only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports nothing frozen even when its raw schema carries it.
 
 A replace that changes, adds or removes a frozen property is rejected, and the consensus code reaches JS as `error.code`:
 
@@ -514,7 +525,7 @@ It follows protocol version 14 on; an earlier version is refused. A type whose d
 
 ## Chained queries (provable semi-join)
 
-A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents. For a `permanentDocument` join property a missing referenced document fails verification outright, since such a reference cannot dangle. For a `deletableDocument` join property a referenced document that was deleted since is proven absent: it has no entry in `outerDocuments` (so match the two halves by id, not by position) and its id is listed in `missingOuterIds`, in first-appearance order. For a `moderatedDocument` join property a referenced document a moderator removed has no entry in `outerDocuments` either, and is listed in `removedOuterDocuments` with its proven removal record (`documentId`, `documentOwnerId`, `moderatorId`, `reason`, `removedAt`, `documentHash`), in first-appearance order; one gone without a record fails verification. The node still cannot pass an existing document off as deleted, nor a removed one off as missing.
+A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents. For a `permanentDocument` join property a missing referenced document fails verification outright, since such a reference cannot dangle. For a `deletableDocument` join property a referenced document that was deleted since is proven absent: it has no entry in `outerDocuments` (so match the two halves by id, not by position) and its id is listed in `missingOuterIds`, in first-appearance order. For a `moderatedDocument` join property a referenced document a moderator removed has no entry in `outerDocuments` either, and is listed in `removedOuterDocuments` with its proven removal record (`documentId`, `documentOwnerId`, `moderatorId`, `reason`, `removedAt`, `documentHash`, and `keptFields`, the values of the fields its type keeps public under `moderatorAbilities.deleteKeepsFields`), in first-appearance order; one gone without a record fails verification. The node still cannot pass an existing document off as deleted, nor a removed one off as missing.
 
 ```ts
 // The posts I liked, newest page first by postId.

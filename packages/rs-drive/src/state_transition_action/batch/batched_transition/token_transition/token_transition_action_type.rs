@@ -25,6 +25,17 @@ impl TokenTransitionActionTypeGetter for TokenTransitionAction {
             TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => {
                 TokenTransitionActionType::SetPriceForDirectPurchase
             }
+            TokenTransitionAction::ShieldAction(_) => TokenTransitionActionType::Shield,
+            TokenTransitionAction::UnshieldAction(_) => TokenTransitionActionType::Unshield,
+            TokenTransitionAction::ShieldedTransferAction(_) => {
+                TokenTransitionActionType::ShieldedTransfer
+            }
+            TokenTransitionAction::MintToPoolAction(_) => TokenTransitionActionType::MintToPool,
+            TokenTransitionAction::BurnFromPoolAction(_) => TokenTransitionActionType::BurnFromPool,
+            TokenTransitionAction::ClaimToPoolAction(_) => TokenTransitionActionType::ClaimToPool,
+            TokenTransitionAction::DirectPurchaseToPoolAction(_) => {
+                TokenTransitionActionType::DirectPurchaseToPool
+            }
         }
     }
 }

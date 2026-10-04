@@ -242,6 +242,7 @@ mod tests {
             ranked_averageable,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             flat: false,
             skip_if_absent_properties: Vec::new(),
         }

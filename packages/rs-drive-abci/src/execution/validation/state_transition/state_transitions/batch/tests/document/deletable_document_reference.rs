@@ -327,7 +327,7 @@ mod deletable_document_reference_tests {
         assert_successful(&result, "clearing a dead immutable reference is allowed");
 
         // Once cleared it is an ordinary immutable property again: absent,
-        // and not settable (it is not listed under immutableAllowSetting).
+        // and not settable (it is listed without a condition).
         pinned.set("draftId", identifier_value(other_draft.id()));
         let result = setup.replace("pinnedComment", &mut pinned).await;
         assert_immutable(&result, "a cleared immutable reference stays cleared");

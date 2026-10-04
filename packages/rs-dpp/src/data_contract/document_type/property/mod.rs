@@ -983,9 +983,10 @@ pub enum DocumentPropertyReferenceTarget {
     /// when the value or a property it binds changes, or always for a writer
     /// gate, and an unchanged value whose document was removed resolves to
     /// its removal record. A removed document has no values to compare but
-    /// its owner, which the record keeps, so a re-check of a `where` entry on
-    /// any other of its properties refuses the replace until the reference is
-    /// repointed or the document restored. A join through it reports each
+    /// those its record keeps: its owner, its id, and the fields its type lists
+    /// under `moderatorAbilities.deleteKeepsFields`; a re-check of a `where`
+    /// entry on any other of its properties refuses the replace until the
+    /// reference is repointed or the document restored. A join through it reports each
     /// removed document by its proven removal record.
     ///
     /// The id form only: no `findBy` (a removal frees the unique index keys a
@@ -1454,16 +1455,40 @@ pub fn is_referring_system_agreement_property(name: &str) -> bool {
     REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
 }
 
+/// The property at the dotted `path` of `properties`, an object or a member of
+/// one included, `None` when the path names none.
+pub fn property_at_path<'a>(
+    properties: &'a IndexMap<String, DocumentProperty>,
+    path: &str,
+) -> Option<&'a DocumentProperty> {
+    let mut segments = path.split('.');
+    let mut property = properties.get(segments.next()?)?;
+    for segment in segments {
+        let DocumentPropertyType::Object(members) = &property.property_type else {
+            return None;
+        };
+        property = members.get(segment)?;
+    }
+    Some(property)
+}
+
+/// Whether the dotted `path` is one of `paths`, or inside an object one of
+/// them names: the rule every list of property paths a type declares is read
+/// by (its transient fields, the fields a moderator's removal record keeps),
+/// and the one a write's changed fields are matched by.
+pub fn is_path_listed(paths: &BTreeSet<String>, path: &str) -> bool {
+    path.match_indices('.')
+        .map(|(end, _)| &path[..end])
+        .chain(std::iter::once(path))
+        .any(|prefix| paths.contains(prefix))
+}
+
 /// Whether the property at the dotted `path` of `document_type`, or an object
 /// around it, is transient: either way its value is never stored.
 /// `transient_fields()` holds the paths as declared, so a leaf of a transient
 /// object is found only through the object's path, a prefix of its own.
 pub fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
-    let transient_fields = document_type.transient_fields();
-    path.match_indices('.')
-        .map(|(end, _)| &path[..end])
-        .chain(std::iter::once(path))
-        .any(|prefix| transient_fields.contains(prefix))
+    is_path_listed(document_type.transient_fields(), path)
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {

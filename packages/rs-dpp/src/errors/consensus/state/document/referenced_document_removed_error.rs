@@ -11,7 +11,8 @@ use thiserror::Error;
 /// A replace kept a `moderatedDocument` reference whose document the contract's moderators
 /// removed, and had to check a `where` entry against that document again (the referring
 /// property changed, or the entry is a writer gate): the removal record the reference now
-/// resolves to keeps the document's id and owner, not the property the entry compares.
+/// resolves to keeps the document's id, its owner and the fields its type lists under
+/// `moderatorAbilities.deleteKeepsFields`, not the property the entry compares.
 #[derive(
     Error,
     Debug,

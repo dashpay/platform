@@ -1,6 +1,7 @@
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
-    ContractDocumentRestorationContext, ContractUserModerationTransitionActionV0,
+    ContractDocumentRestorationContext, ContractTeamActionContext,
+    ContractUserModerationTransitionActionV0,
 };
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use dpp::data_contract::config::moderation::ContractModerationStatus;
@@ -73,6 +74,24 @@ impl ContractUserModerationTransitionAction {
                 ContractUserModerationTransitionActionV0::from_borrowed_transition_with_document_change(
                     v0,
                     document_change,
+                )
+                .into()
+            }
+        }
+    }
+
+    /// The action of a borrowed transition that proposes the deletion of a settled document or
+    /// approves a team action, carrying what the validation read and decided: the approval to
+    /// store, and the deletion when the approvals meet the rule
+    pub fn from_borrowed_transition_with_team_action(
+        value: &ContractUserModerationTransition,
+        team_action: ContractTeamActionContext,
+    ) -> Self {
+        match value {
+            ContractUserModerationTransition::V0(v0) => {
+                ContractUserModerationTransitionActionV0::from_borrowed_transition_with_team_action(
+                    v0,
+                    team_action,
                 )
                 .into()
             }

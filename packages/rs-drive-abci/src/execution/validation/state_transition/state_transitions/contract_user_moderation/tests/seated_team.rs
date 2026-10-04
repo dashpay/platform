@@ -56,6 +56,7 @@ use std::sync::Arc;
 
 mod pot;
 mod reasons;
+mod settled;
 
 const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
 const CONTRACT_MODERATION_ABILITY_NOT_GRANTED: u32 = 41201;
@@ -85,6 +86,24 @@ const REPLY: &str = "reply";
 const NOTE: &str = "note";
 /// A document type whose `label` only moderators write, moderated with field changes only.
 const BADGE: &str = "badge";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the leader and two members of the seated team approve, a member the leader
+/// added counting only for the stories written after its addition.
+const STORY: &str = "story";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the seated team's leader approves.
+const MEMO: &str = "memo";
+/// A story whose `label` only moderators write, the team holding both the deletion and the
+/// change of fields on it.
+const CHRONICLE: &str = "chronicle";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the leader and more members approve than the team can hold: all of them.
+const EPIC: &str = "epic";
+/// A story whose deletion once settled every member the leader added approves, whenever added
+/// (`approversPredateDocument: false`).
+const LEGEND: &str = "legend";
+/// The window the stories and memos give their moderators.
+const SETTLING_WINDOW_SECONDS: u64 = 60;
 const DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE: u32 = 41124;
 
 /// A document with a `title` and a `label` only the contract's moderators write
@@ -127,6 +146,29 @@ fn elected_posts(
                 (
                     BADGE.to_string(),
                     BTreeSet::from([ModerationAbility::ChangeDocumentFields]),
+                ),
+                (
+                    STORY.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    MEMO.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    EPIC.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    LEGEND.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    CHRONICLE.to_string(),
+                    BTreeSet::from([
+                        ModerationAbility::DeleteDocuments,
+                        ModerationAbility::ChangeDocumentFields,
+                    ]),
                 ),
             ]),
             interim,
@@ -369,6 +411,52 @@ impl Team {
                     )
                 }
                 add_document_type(c, BADGE, labelled_schema());
+                for (name, rule) in [
+                    (STORY, platform_value!({ "leader": true, "approvals": 3 })),
+                    (MEMO, platform_value!({ "leader": true })),
+                    // The most a registration admits with MAX_ADDED_MODERATORS additions.
+                    (EPIC, platform_value!({ "leader": true, "approvals": 18 })),
+                    (
+                        LEGEND,
+                        platform_value!({
+                            "leader": true,
+                            "approvals": 3,
+                            "approversPredateDocument": false,
+                        }),
+                    ),
+                ] {
+                    add_document_type(
+                        c,
+                        name,
+                        post_schema_with(platform_value!({
+                            "moderatorAbilities": {
+                                "delete": true,
+                                "deleteWithin": SETTLING_WINDOW_SECONDS,
+                                "deleteSettled": rule,
+                            },
+                            "documentsMutable": true,
+                            "required": ["text", "$createdAt", "$updatedAt"],
+                        })),
+                    )
+                }
+                add_document_type(
+                    c,
+                    CHRONICLE,
+                    post_schema_with(platform_value!({
+                        "properties": {
+                            "text": { "type": "string", "maxLength": 50, "position": 0 },
+                            "label": { "type": "string", "maxLength": 20, "position": 1 },
+                        },
+                        "moderatorAbilities": {
+                            "delete": true,
+                            "deleteWithin": SETTLING_WINDOW_SECONDS,
+                            "deleteSettled": { "leader": true, "approvals": 3 },
+                            "changeFields": ["label"],
+                        },
+                        "documentsMutable": true,
+                        "required": ["text", "$createdAt", "$updatedAt"],
+                    })),
+                );
             },
         )
         .await;
@@ -549,9 +637,16 @@ impl Team {
         self.setup.commit(transaction);
     }
 
+    /// `transition`, processed in a block at `time_ms` and committed
+    fn process_and_commit_at(&self, transition: &StateTransition, time_ms: TimestampMillis) {
+        let transaction = self.setup.platform.drive.grove.start_transaction();
+        assert_success(&self.setup.process_at(transition, time_ms, &transaction));
+        self.setup.commit(transaction);
+    }
+
     /// Ends the contest for the seat as the block at the end of the join window does: with a
-    /// single contender, the charter is awarded there.
-    fn award(&self) {
+    /// single contender, the charter is awarded there. Returns the time of that block.
+    fn award(&self) -> TimestampMillis {
         let platform_version = PlatformVersion::latest();
         let platform = &self.setup.platform;
         let (end_time, _) = VotePollsByEndDateDriveQuery {
@@ -609,6 +704,7 @@ impl Team {
             Some(self.leader.id()),
             "the contest is awarded to its single contender, the leader"
         );
+        end_time
     }
 
     /// The charter contract's document of `document_type_name` stored at `document_id`

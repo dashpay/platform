@@ -14,10 +14,8 @@ use dapi_grpc::platform::v0::get_shielded_encrypted_notes_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{
-    shielded_credit_pool_path, shielded_credit_pool_path_vec, SHIELDED_NOTES_CHUNK_POWER,
-    SHIELDED_NOTES_KEY,
-};
+use crate::query::shielded::ShieldedPoolSelector;
+use drive::drive::shielded::paths::{SHIELDED_NOTES_CHUNK_POWER, SHIELDED_NOTES_KEY};
 use drive::grovedb::{PathQuery, Query, QueryItem, SizedQuery, SubqueryBranch};
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -28,10 +26,22 @@ impl<C> Platform<C> {
             start_index,
             count,
             prove,
+            token_id,
         }: GetShieldedEncryptedNotesRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedEncryptedNotesResponseV0>, Error> {
+        // Protocol versions 1 through 13 select this generation as well, and the selector
+        // leaves a request any of them can make untouched: `token_id` is absent there,
+        // `from_request` maps that to the credit pool without consulting the version, the credit
+        // pool's path is the same one this handler used to build inline, and
+        // `validate_pool_exists` is a no-op for it. The query, the proof and the response
+        // therefore all stay as they were. A `token_id` is refused outright below the version
+        // that admits token pools.
+        let pool = match ShieldedPoolSelector::from_request(token_id, platform_version) {
+            Ok(pool) => pool,
+            Err(error) => return Ok(QueryValidationResult::new_with_error(error)),
+        };
         // Two distinct quantities:
         //   * `mmr_chunk_size` — the on-chain MMR chunk size
         //     (`1 << SHIELDED_NOTES_CHUNK_POWER` = 2048 today). This is the
@@ -77,7 +87,7 @@ impl<C> Platform<C> {
             );
 
             let path_query = PathQuery {
-                path: shielded_credit_pool_path_vec(),
+                path: pool.pool_path_vec(),
                 query: SizedQuery {
                     query: Query {
                         read_mode: None,
@@ -113,16 +123,20 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            check_validation_result_with_data!(
+                pool.validate_pool_exists(&self.drive, platform_version)?
+            );
+
             // Non-proved: one chunk-aligned range read. Each compacted chunk
             // the page overlaps is read and deserialized once, where reading
             // position by position would deserialize the whole chunk blob
             // again for every note in it.
-            let pool_path = shielded_credit_pool_path();
+            let pool_path = pool.pool_path_vec();
             let page = self
                 .drive
                 .grove
                 .commitment_tree_get_range(
-                    &pool_path,
+                    pool_path.as_slice(),
                     &[SHIELDED_NOTES_KEY],
                     start_index,
                     limit,
@@ -169,6 +183,7 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::dashcore::Network;
+    use drive::drive::shielded::paths::shielded_credit_pool_path;
     use grovedb_commitment_tree::{DashMemo, NoteBytesData, TransmittedNoteCiphertext};
 
     /// MMR chunk size used for alignment. Derived from
@@ -200,6 +215,7 @@ mod tests {
             start_index: chunk - 1, // not aligned to chunk size
             count: 10,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -222,6 +238,7 @@ mod tests {
             start_index: chunk + 1,
             count: 10,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -245,6 +262,7 @@ mod tests {
             start_index: chunk,
             count: 1,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -271,6 +289,7 @@ mod tests {
             start_index: chunk * 2,
             count: 1,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -289,6 +308,7 @@ mod tests {
             start_index: 0,
             count: 1,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -316,6 +336,7 @@ mod tests {
             start_index: 0,
             count: 16,
             prove: true,
+            token_id: None,
         };
 
         let result = platform
@@ -342,6 +363,7 @@ mod tests {
             start_index: 3,
             count: 4,
             prove: true,
+            token_id: None,
         };
 
         let result = platform
@@ -365,6 +387,7 @@ mod tests {
             start_index: 0,
             count: max,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -511,6 +534,7 @@ mod tests {
                         start_index,
                         count,
                         prove: false,
+                        token_id: None,
                     },
                     &state,
                     version,
@@ -542,6 +566,7 @@ mod tests {
             start_index: 0,
             count: 8,
             prove: false,
+            token_id: None,
         };
 
         let result = platform

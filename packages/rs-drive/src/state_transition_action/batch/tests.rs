@@ -134,6 +134,7 @@ fn test_document_base_v0() -> DocumentBaseTransitionActionV0 {
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
         declared_action_fee: None,
+        shielded_token_payment: None,
     }
 }
 
@@ -404,7 +405,6 @@ fn make_replace_v0() -> DocumentReplaceTransitionActionV0 {
         transferred_at_core_block_height: Some(300),
         data: BTreeMap::from([("field".to_string(), Value::U64(42))]),
         changed_data_fields: BTreeSet::from(["field".to_string()]),
-        added_data_fields: BTreeSet::new(),
         removed_identifier_fields: BTreeMap::new(),
         stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
@@ -2951,6 +2951,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
         declared_action_fee: None,
+        shielded_token_payment: None,
     });
     DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
         base,
@@ -2976,6 +2977,7 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
         declared_action_fee: None,
+        shielded_token_payment: None,
     });
     DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
         base,
@@ -2991,7 +2993,6 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         transferred_at_core_block_height: Some(300),
         data: BTreeMap::from([("field".to_string(), Value::U64(42))]),
         changed_data_fields: BTreeSet::from(["field".to_string()]),
-        added_data_fields: BTreeSet::new(),
         removed_identifier_fields: BTreeMap::new(),
         stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),

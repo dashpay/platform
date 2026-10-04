@@ -8,7 +8,8 @@ use super::address_funds::{
 };
 use super::data_contract::{
     VerifiedContractDocumentRemovalWasm, VerifiedContractFeeClaimWasm,
-    VerifiedContractModerationListStatusesWasm, VerifiedDataContractWasm,
+    VerifiedContractModerationListStatusesWasm, VerifiedContractTeamActionSignatureWasm,
+    VerifiedDataContractWasm,
 };
 use super::document::VerifiedDocumentsWasm;
 use super::helpers::{
@@ -22,13 +23,16 @@ use super::shielded::{
     VerifiedIdentityWithShieldedNullifiersWasm, VerifiedShieldedNullifiersWasm,
     VerifiedShieldedNullifiersWithAddressInfosWasm,
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
+    VerifiedTokenGroupActionWithShieldedNullifiersWasm,
 };
 use super::token::{
     VerifiedTokenActionWithDocumentWasm, VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceWasm,
-    VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithTokenBalanceWasm,
+    VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithShieldedPoolBalanceWasm,
+    VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm, VerifiedTokenIdentitiesBalancesWasm,
-    VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm, VerifiedTokenStatusWasm,
+    VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm,
+    VerifiedTokenShieldedPoolBalanceWasm, VerifiedTokenStatusWasm,
 };
 use super::voting::{VerifiedMasternodeVoteWasm, VerifiedNextDistributionWasm};
 use crate::IdentifierWasm;
@@ -71,12 +75,16 @@ export type StateTransitionProofResultType =
   | VerifiedAssetLockConsumed
   | VerifiedAssetLockConsumedWithAddressInfos
   | VerifiedShieldedNullifiers
+  | VerifiedTokenShieldedPoolBalance
   | VerifiedShieldedNullifiersWithAddressInfos
   | VerifiedShieldedNullifiersWithWithdrawalDocument
   | VerifiedIdentityWithShieldedNullifiers
   | VerifiedContractModerationListStatuses
   | VerifiedContractFeeClaim
-  | VerifiedContractDocumentRemoval;
+  | VerifiedContractDocumentRemoval
+  | VerifiedTokenGroupActionWithShieldedPoolBalance
+  | VerifiedTokenGroupActionWithShieldedNullifiers
+  | VerifiedContractTeamActionSignature;
 "#;
 
 #[wasm_bindgen]
@@ -290,6 +298,36 @@ pub fn convert_proof_result(
             VerifiedShieldedNullifiersWasm::from_map(build_nullifier_map(nullifiers)).into()
         }
 
+        StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(id, amount) => {
+            VerifiedTokenShieldedPoolBalanceWasm {
+                token_id: id.into(),
+                balance: amount,
+            }
+            .into()
+        }
+
+        StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+            power,
+            status,
+            maybe_balance,
+        ) => VerifiedTokenGroupActionWithShieldedPoolBalanceWasm {
+            group_power: power,
+            action_status: action_status_to_string(status),
+            balance: maybe_balance,
+        }
+        .into(),
+
+        StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+            power,
+            status,
+            nullifiers,
+        ) => VerifiedTokenGroupActionWithShieldedNullifiersWasm::new(
+            power,
+            action_status_to_string(status),
+            build_nullifier_map(nullifiers),
+        )
+        .into(),
+
         StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
             nullifiers,
             infos,
@@ -418,6 +456,17 @@ pub fn convert_proof_result(
                 .restoration
                 .as_ref()
                 .map(|restoration| restoration.restored_at),
+            kept_fields: removal.kept_fields,
+        }
+        .into(),
+        StateTransitionProofResult::VerifiedContractTeamActionSignature(
+            contract_id,
+            action_id,
+            status,
+        ) => VerifiedContractTeamActionSignatureWasm {
+            contract_id: contract_id.into(),
+            action_id: action_id.into(),
+            status,
         }
         .into(),
     };
