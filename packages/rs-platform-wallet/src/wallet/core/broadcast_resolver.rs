@@ -757,18 +757,22 @@ fn holds(info: &PlatformWalletInfo, txid: &Txid) -> bool {
         .any(|account| account.transactions().contains_key(txid))
 }
 
-/// Whether `txid` is an own send of the wallet that no account has settled
-/// (in a block, InstantSend-locked, or finalized) — the same rule as
-/// [`merge_records`]: settled in any account means settled.
-fn holds_unsettled_own(wallet: &Wallet, info: &PlatformWalletInfo, txid: &Txid) -> bool {
+/// Whether the wallet records `txid` (`None` if not) and, if it does, whether
+/// it is an own send no account has settled (in a block, InstantSend-locked,
+/// or finalized) — the same rule as [`merge_records`]: settled in any account
+/// means settled. One pass over the accounts.
+fn holding(wallet: &Wallet, info: &PlatformWalletInfo, txid: &Txid) -> Option<bool> {
     let signs = wallet.can_sign();
     let accounts = info.core_wallet.accounts.all_accounts();
-    is_unsettled_own(accounts.iter().filter_map(|account| {
-        account
-            .transactions()
-            .get(txid)
-            .map(|record| record_facts(record, || account.transaction_is_finalized(txid), signs))
-    }))
+    let records: Vec<RecordFacts<'_>> = accounts
+        .iter()
+        .filter_map(|account| {
+            account.transactions().get(txid).map(|record| {
+                record_facts(record, || account.transaction_is_finalized(txid), signs)
+            })
+        })
+        .collect();
+    (!records.is_empty()).then(|| is_unsettled_own(records))
 }
 
 struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
@@ -782,9 +786,9 @@ impl WalletSource for ManagerSource {
             let Some((wallet, info)) = manager.get_wallet_and_info(wallet_id) else {
                 continue;
             };
-            if holds(info, &txid) {
+            if let Some(own) = holding(wallet, info, &txid) {
                 holders.wallets.push(*wallet_id);
-                if holds_unsettled_own(wallet, info, &txid) {
+                if own {
                     holders.own.push(*wallet_id);
                 }
             }
@@ -1162,7 +1166,11 @@ impl Actor {
                     let events = self.state.forget_wallet(&wallet_id, "rewound");
                     deliver(&self.sink, events);
                 }
-                if !is_catch_up_step(previous, height) {
+                if is_catch_up_step(previous, height) {
+                    // The tip moved on, unfollowed: no lower wallet's steps
+                    // may run the echo windows now.
+                    self.followed_tip = self.followed_tip.max(Some(height));
+                } else {
                     self.expire_uncertain(height);
                 }
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
@@ -3117,6 +3125,47 @@ mod tests {
         rig.height(wallet(), 103).await;
 
         assert_eq!(rig.actor.uncertain.get(&txid(1)), Some(&Some(103)));
+    }
+
+    /// A wallet that jumped ahead (catch-up) holds the clock there: another
+    /// wallet still scanning far behind, in small steps, neither starts nor
+    /// ends an echo window.
+    #[tokio::test]
+    async fn should_not_let_a_wallet_behind_a_catch_up_run_the_echo_window() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        let behind = [9u8; 32];
+        rig.send(Command::WalletAdded(behind)).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 1000).await; // follows at 1001
+        rig.height(wallet(), 5000).await; // catch-up jump
+        rig.send(Command::Uncertain(txid(1))).await;
+
+        rig.follow(behind, 1500).await;
+        for height in 1502..1502 + 2 * UNCERTAIN_EXPIRY {
+            rig.height(behind, height).await;
+        }
+
+        assert_eq!(rig.actor.uncertain.get(&txid(1)), Some(&None));
+        rig.height(wallet(), 5001).await;
+        assert_eq!(rig.actor.uncertain.get(&txid(1)), Some(&Some(5001)));
+    }
+
+    /// A send a wallet holds but not as an unsettled own send (an incoming
+    /// payment): its echo would be news to no one, so the entry goes — and
+    /// the holder still probes its chain.
+    #[tokio::test]
+    async fn should_drop_an_uncertain_result_held_only_as_incoming_but_still_probe_it() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(
+            wallet(),
+            vec![incoming(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 0)])],
+        );
+
+        rig.send(Command::Uncertain(txid(1))).await;
+
+        assert!(rig.actor.uncertain.is_empty());
+        assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
     /// Turning probing off forgets every `Uncertain` send.

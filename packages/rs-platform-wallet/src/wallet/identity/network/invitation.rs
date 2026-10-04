@@ -653,8 +653,8 @@ impl IdentityWallet {
         .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(
                 "invitation funding transaction not found (tried both byte orders across \
-                 repeated attempts); it may not have propagated to the queried DAPI node yet — \
-                 retry shortly"
+                 repeated attempts); it may not have propagated to the queried DAPI node yet, \
+                 or the node answered with another transaction — retry shortly"
                     .to_string(),
             )
         })?;

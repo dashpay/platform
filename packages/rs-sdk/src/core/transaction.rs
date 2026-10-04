@@ -506,6 +506,7 @@ mod tests {
     }
 
     /// Script one `getTransaction` reply for `txid` on a mock SDK.
+    #[cfg(feature = "mocks")]
     async fn sdk_answering(txid: &str, transaction: Vec<u8>) -> Sdk {
         let sdk = Sdk::new_mock();
         sdk.mock_dapi_client()
@@ -525,6 +526,7 @@ mod tests {
         sdk
     }
 
+    #[cfg(feature = "mocks")]
     fn tx(lock_time: u32) -> Transaction {
         Transaction {
             version: 1,
@@ -538,6 +540,7 @@ mod tests {
     /// The getters' contract: the requested transaction is returned; an empty
     /// reply or another transaction is a miss; an unparsable txid is refused
     /// before any request.
+    #[cfg(feature = "mocks")]
     #[tokio::test]
     async fn should_return_only_the_requested_transaction_from_the_getters() {
         let wanted = tx(1);
