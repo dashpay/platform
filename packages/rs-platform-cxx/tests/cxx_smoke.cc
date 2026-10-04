@@ -35,7 +35,6 @@ int main()
 {
     platform_ffi::Config cfg;
     cfg.network = 1;
-    cfg.tenderdash_chain_id = "dash-testnet-51";
     cfg.platform_llmq_type = 106;
     cfg.proxy.kind = 0;
     cfg.proxy.isolate = false;
@@ -139,7 +138,6 @@ int main()
         return 1;
     platform_ffi::Config devnet_cfg;
     devnet_cfg.network = 2;
-    devnet_cfg.tenderdash_chain_id = "devnet";
     devnet_cfg.platform_llmq_type = 106;
     rust::Box<platform_ffi::PlatformClient> devnet = platform_ffi::new_platform_client(devnet_cfg);
     if (devnet->contested_vote_fund_credits() == 0) return fail("contested_vote_fund_credits");

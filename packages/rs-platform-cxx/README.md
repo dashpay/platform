@@ -25,18 +25,19 @@ the embedder pushes:
   core-chain-locked height trails the anchor by more than 288 blocks is
   refused as stale; there is no ceiling, since a node one ChainLock ahead of
   the embedder is honest.
-- **Chain id** (`Config.tenderdash_chain_id`). After the SDK verified the
-  quorum signature and its signed-time window, the shell (`src/ops.rs`)
-  compares the signed `chain_id` (`ChainIdMismatch`), then applies its own
-  monotonic Platform-height watermark (tolerance 3 blocks, `Rejected`), then
-  records the verified protocol version the builders use, then flags a
+- **Post-verification checks**. After the SDK verified the quorum
+  signature and its signed-time window, the shell (`src/ops.rs`) applies its
+  own monotonic Platform-height watermark (tolerance 3 blocks, `Rejected`),
+  then records the verified protocol version the builders use, then flags a
   `protocol_version` above what this build knows
   (`UnsupportedProtocolVersion`, the value is still returned). The SDK's own
-  height watermark is off and the shell keys its watermark and its verified
-  version after the chain-id check, so a validly signed proof from another
-  chain moves nothing the shell decides on (the SDK's internal version
-  ratchet, which runs inside verification, may move upward on it; nothing
-  reads that for building).
+  height watermark is off and the shell records its verified version only
+  after its watermark, so a stale response moves nothing the shell decides
+  on (the SDK's internal version ratchet, which runs inside verification,
+  may move upward on it; nothing reads that for building). The signed
+  Tenderdash `chain_id` is not compared to an expected value: it is part of
+  the signed message, and the signing quorum must be a Platform quorum of
+  the embedder's own Core chain.
 
 Absence is proven, never inferred: `ProvenAbsent` comes only after the SDK
 verified a proof of it, and carries the same verified metadata as a value
@@ -53,10 +54,10 @@ abort; the crate refuses to build with `panic = "abort"`.
 Namespace `platform_ffi`; the full declaration is `src/lib.rs`, the
 generated header `dash/platform/ffi.h`.
 
-- **Lifecycle**: `new_platform_client(Config{network, tenderdash_chain_id,
-  platform_llmq_type, proxy})`, `set_endpoints(&[String])` (`https://` only;
-  the host an IP address, or an onion name when a proxy is set, so nothing
-  is ever resolved locally), `set_quorum_keys`, `set_chainlock_height`,
+- **Lifecycle**: `new_platform_client(Config{network, platform_llmq_type,
+  proxy})`, `set_endpoints(&[String])` (`https://` only; the host an IP
+  address, or an onion name when a proxy is set, so nothing is ever
+  resolved locally), `set_quorum_keys`, `set_chainlock_height`,
   `shutdown()` (aborts the in-flight request, stops the runtime; idempotent,
   also run on drop).
   The SDK keeps a pooled connection per evonode it has talked to, and only
@@ -115,9 +116,8 @@ generated header `dash/platform/ffi.h`.
   or empty on a (contained) panic, which reads as a refusal.
 
 `Status.kind` is one of `Ok, ProvenAbsent, AlreadyExists, Consensus,
-Unavailable, Rejected, ChainIdMismatch, UnsupportedProtocolVersion,
-Internal`; a `Verified*` value is meaningful only under `Ok` and
-`UnsupportedProtocolVersion`.
+Unavailable, Rejected, UnsupportedProtocolVersion, Internal`; a `Verified*`
+value is meaningful only under `Ok` and `UnsupportedProtocolVersion`.
 
 ## Proxy
 

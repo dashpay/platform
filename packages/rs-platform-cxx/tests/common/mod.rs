@@ -99,7 +99,6 @@ pub fn paged_label(i: usize) -> String {
 pub fn config() -> Config {
     Config {
         network: 1,
-        tenderdash_chain_id: CHAIN_ID.to_string(),
         platform_llmq_type: PLATFORM_LLMQ_TYPE,
         proxy: Proxy {
             kind: 0,

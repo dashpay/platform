@@ -67,14 +67,12 @@ pub mod ffi {
         /// (a broadcast without a consensus code, a read it would not serve,
         /// a response above the size bound).
         Rejected = 5,
-        /// A verified response signed for another Tenderdash chain.
-        ChainIdMismatch = 6,
         /// A verified response from a protocol version this build does not
         /// know; the value is returned, writes must stop until an update.
-        UnsupportedProtocolVersion = 7,
+        UnsupportedProtocolVersion = 6,
         /// A bug: bad input from the embedder, a panic, or an SDK error that
         /// no other kind describes.
-        Internal = 8,
+        Internal = 7,
     }
 
     #[derive(Debug, Clone, Default)]
@@ -100,13 +98,10 @@ pub mod ffi {
     /// Network the client serves. `network`: 0 mainnet, 1 testnet,
     /// 2 devnet, 3 regtest. `platform_llmq_type`: the LLMQ type Platform
     /// quorums use on this network; a proof signed by any other type is
-    /// refused. `tenderdash_chain_id`: a verified response carrying another
-    /// id is a signed response from another chain. `proxy` is fixed for the
-    /// client's lifetime.
+    /// refused. `proxy` is fixed for the client's lifetime.
     #[derive(Debug, Clone)]
     struct Config {
         network: u8,
-        tenderdash_chain_id: String,
         platform_llmq_type: u8,
         proxy: Proxy,
     }
@@ -127,7 +122,6 @@ pub mod ffi {
         core_chain_locked_height: u32,
         time_ms: u64,
         protocol_version: u32,
-        chain_id: String,
     }
 
     /// Where an identity key may be used.

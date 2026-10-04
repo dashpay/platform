@@ -5,9 +5,8 @@
 //! The proved reads and the broadcast, one SDK request each. Every read
 //! goes through the SDK's `Fetch` / `FetchMany`, so the SDK verifies the
 //! response against the query it built, then through [`accept`]: the
-//! chain-id check, the shell's Platform-height watermark and the
-//! unsupported-protocol-version signal, in that order, on metadata the
-//! quorum signature already covers.
+//! shell's Platform-height watermark and the unsupported-protocol-version
+//! signal, in that order, on metadata the quorum signature already covers.
 //!
 //! Absence is proven, not inferred: `ProvenAbsent` comes back only after
 //! the SDK verified a proof of it. Every failure is classified into a
@@ -109,7 +108,6 @@ fn meta(metadata: &ResponseMetadata) -> ffi::Meta {
         core_chain_locked_height: metadata.core_chain_locked_height,
         time_ms: metadata.time_ms,
         protocol_version: metadata.protocol_version,
-        chain_id: metadata.chain_id.clone(),
     }
 }
 
@@ -166,21 +164,11 @@ pub fn classify(error: &Error) -> Status {
     Status::new(kind, error.to_string())
 }
 
-/// The shell's post-verification checks, in order: the chain id, then the
-/// height watermark (so a foreign chain never moves it), then the verified
-/// protocol version the builders use, then the protocol-version signal,
-/// which still returns the value.
+/// The shell's post-verification checks, in order: the height watermark
+/// (so a stale response never moves the rest), then the verified protocol
+/// version the builders use, then the protocol-version signal, which still
+/// returns the value.
 fn accept(client: &Client, metadata: &ResponseMetadata) -> Result<Status, Status> {
-    if metadata.chain_id != client.tenderdash_chain_id() {
-        return Err(Status::new(
-            StatusKind::ChainIdMismatch,
-            format!(
-                "response signed for tenderdash chain {:?}, expected {:?}",
-                metadata.chain_id,
-                client.tenderdash_chain_id()
-            ),
-        ));
-    }
     if !client.observe_height(metadata.height) {
         return Err(Status::new(
             StatusKind::Rejected,

@@ -51,7 +51,6 @@ const SHUT_DOWN: &str = "platform client is shut down";
 
 pub struct Client {
     network: Network,
-    tenderdash_chain_id: String,
     /// Fixed for the client's lifetime: the embedder's proxy settings do
     /// not change without a restart, so no SDK ever runs without it.
     proxy: Option<Socks5Proxy>,
@@ -66,7 +65,7 @@ pub struct Client {
     /// Highest protocol version a response the shell accepted has carried
     /// (0 = none yet), known to this build or not. Kept apart from the
     /// SDK's ratchet, which runs inside proof verification before the
-    /// shell's chain-id check.
+    /// shell's height watermark.
     verified_protocol_version: AtomicU32,
 }
 
@@ -79,12 +78,8 @@ impl Client {
             3 => Network::Regtest,
             other => return Err(format!("unknown network {other}")),
         };
-        if cfg.tenderdash_chain_id.is_empty() {
-            return Err("the tenderdash chain id must not be empty".to_string());
-        }
         Ok(Client {
             network,
-            tenderdash_chain_id: cfg.tenderdash_chain_id.clone(),
             proxy: proxy(&cfg.proxy)?,
             provider: Arc::new(LocalContextProvider::new(cfg.platform_llmq_type)),
             runtime: Runtime::new()?,
@@ -97,10 +92,6 @@ impl Client {
 
     pub fn provider(&self) -> &Arc<LocalContextProvider> {
         &self.provider
-    }
-
-    pub fn tenderdash_chain_id(&self) -> &str {
-        &self.tenderdash_chain_id
     }
 
     /// Replaces the evonode endpoint set. Only `https` endpoints are
@@ -310,9 +301,8 @@ impl Client {
 
     /// The SDK's view of the protocol version: the network floor until a
     /// verified response ratchets it. The SDK ratchets inside proof
-    /// verification, before the shell's chain-id check, so a validly signed
-    /// proof from another chain can move it; nothing the shell decides
-    /// reads it.
+    /// verification, before the shell's height watermark, so a response the
+    /// shell then refuses can move it; nothing the shell decides reads it.
     pub fn platform_version(&self) -> &'static PlatformVersion {
         match read(&self.sdk).as_ref() {
             Some(sdk) => sdk.version(),
@@ -326,8 +316,8 @@ impl Client {
     }
 
     /// Records the protocol version of a response the shell accepted (after
-    /// the chain-id check and the height watermark). Monotonic; the signed
-    /// metadata covers it, so it is trusted as far as the quorum is.
+    /// the height watermark). Monotonic; the signed metadata covers it, so
+    /// it is trusted as far as the quorum is.
     pub fn observe_protocol_version(&self, version: u32) {
         self.verified_protocol_version
             .fetch_max(version, Ordering::AcqRel);
@@ -452,7 +442,6 @@ mod tests {
     fn config(proxy: ffi::Proxy) -> ffi::Config {
         ffi::Config {
             network: 1,
-            tenderdash_chain_id: "dash-testnet-51".to_string(),
             platform_llmq_type: 106,
             proxy,
         }
@@ -475,11 +464,6 @@ mod tests {
     fn config_is_validated() {
         assert!(Client::new(&ffi::Config {
             network: 9,
-            ..config(no_proxy())
-        })
-        .is_err());
-        assert!(Client::new(&ffi::Config {
-            tenderdash_chain_id: String::new(),
             ..config(no_proxy())
         })
         .is_err());
@@ -903,7 +887,6 @@ mod tests {
         assert!(error.contains("no transition can be built"), "{error}");
         let devnet = Client::new(&ffi::Config {
             network: 2,
-            tenderdash_chain_id: "devnet".to_string(),
             ..config(no_proxy())
         })
         .expect("client");

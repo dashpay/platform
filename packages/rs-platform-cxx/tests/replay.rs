@@ -18,7 +18,7 @@ use common::{
     documents_response, execution_response, identity_by_key_hash_request,
     identity_by_key_hash_response, identity_proto_response, identity_request, install_at_floor,
     install_identity, install_ok, install_refusal, mock_client, mock_client_at, nonce_request,
-    nonce_response, now_ms, offline_sdk, paged_label, quorum, Fixture, ABSENT_LABEL, CHAIN_ID,
+    nonce_response, now_ms, offline_sdk, paged_label, quorum, Fixture, ABSENT_LABEL,
     CONTESTED_LABEL, CORE_CHAIN_LOCKED_HEIGHT, DEPLOYED_VERSION, DPNS_NONCE, HEIGHT, OWNED_LABEL,
     PAGED_NAME_COUNT, PLATFORM_LLMQ_TYPE,
 };
@@ -87,7 +87,6 @@ fn identity_verifies_end_to_end_with_its_keys(protocol_version: ProtocolVersion)
         result.meta.core_chain_locked_height,
         CORE_CHAIN_LOCKED_HEIGHT
     );
-    assert_eq!(result.meta.chain_id, CHAIN_ID);
     assert_eq!(
         result.meta.protocol_version,
         fixture.version.protocol_version
@@ -304,60 +303,42 @@ fn non_platform_quorum_type_is_rejected(protocol_version: ProtocolVersion) {
 }
 
 #[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
-fn foreign_chain_id_is_a_mismatch_and_moves_no_shell_state(protocol_version: ProtocolVersion) {
+fn relabelled_chain_id_is_rejected_and_moves_no_shell_state(protocol_version: ProtocolVersion) {
+    // The quorum signature covers the Tenderdash chain id, so metadata
+    // relabelled after signing fails verification.
+    let fixture = Fixture::get(protocol_version);
+    let client = mock_client();
+    let signed = fixture.metadata();
+    let proof = fixture.proof(fixture.prove_identity(fixture.alice.id()), &signed);
+    let mut relabelled = signed;
+    relabelled.chain_id = "dash-mainnet".to_string();
+    install_ok(
+        fixture,
+        &client,
+        &identity_request(fixture.alice.id()),
+        common::identity_response(proof, relabelled),
+    );
+    assert_kind(
+        &ops::get_identity(&client, alice_id(fixture)).status,
+        StatusKind::Rejected,
+    );
+    assert_eq!(client.last_seen_height(), 0, "the shell moved nothing");
+    assert!(client.verified_platform_version().is_err());
+}
+
+#[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
+fn any_chain_id_a_platform_quorum_signed_is_accepted(protocol_version: ProtocolVersion) {
+    // The shell has no expected chain id: the signing quorum must be one
+    // the embedder pushed from its own Core chain, which pins the chain.
     let fixture = Fixture::get(protocol_version);
     let mut metadata = fixture.metadata();
-    metadata.chain_id = "dash-mainnet".to_string();
+    metadata.chain_id = "dash-devnet-other".to_string();
     let client = identity_client(fixture, metadata);
-    let result = ops::get_identity(&client, alice_id(fixture));
-    assert_kind(&result.status, StatusKind::ChainIdMismatch);
-    assert_eq!(
-        client.last_seen_height(),
-        0,
-        "the shell watermark is untouched"
-    );
-    // The same signed proof under the configured chain id verifies.
-    let client = identity_client(fixture, fixture.metadata());
     assert_kind(
         &ops::get_identity(&client, alice_id(fixture)).status,
         StatusKind::Ok,
     );
     assert_eq!(client.last_seen_height(), HEIGHT);
-    assert!(client.verified_platform_version().is_ok());
-}
-
-#[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
-fn foreign_chain_id_still_ratchets_the_sdk_version(protocol_version: ProtocolVersion) {
-    // The SDK ratchets its protocol version inside proof verification,
-    // before the shell's chain-id check runs: a validly signed proof from
-    // another chain of a higher known version moves the SDK version (from
-    // the floor to 14; at 13 there is nothing to move). The shell keeps its
-    // own state untouched (above) and P1 (`with_expected_chain_id`) moves
-    // the check upstream; this pins the current order so a change is
-    // noticed.
-    let fixture = Fixture::get(protocol_version);
-    let client = mock_client();
-    let mut metadata = fixture.metadata();
-    metadata.chain_id = "dash-mainnet".to_string();
-    let proof = fixture.proof(fixture.prove_identity(fixture.alice.id()), &metadata);
-    install_at_floor(
-        &client,
-        &identity_request(fixture.alice.id()),
-        common::identity_response(proof, metadata),
-    );
-    assert_eq!(client.platform_version().protocol_version, DEPLOYED_VERSION);
-    let result = ops::get_identity(&client, alice_id(fixture));
-    assert_kind(&result.status, StatusKind::ChainIdMismatch);
-    assert_eq!(
-        client.platform_version().protocol_version,
-        fixture.version.protocol_version,
-        "the SDK ratcheted on the foreign chain's verified metadata"
-    );
-    assert_eq!(client.last_seen_height(), 0, "the shell moved nothing");
-    assert!(
-        client.verified_platform_version().is_err(),
-        "no transition can be built before a read the shell accepted"
-    );
 }
 
 #[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
