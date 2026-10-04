@@ -1,6 +1,5 @@
 use crate::fee::Credits;
 use crate::shielded::{
-    SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES, SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES,
     SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES, SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES,
     SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
 };
@@ -197,28 +196,26 @@ pub fn compute_shielded_unshield_fee_v0(
 /// v0 of the `ShieldFromIdentity` **admission floor**:
 ///
 ///   `floor = compute_minimum_shielded_fee_v0(num_actions)
-///            + (num_actions × SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES
-///               + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES) × (disk + processing) credits/byte`
+///            + (num_actions × shielded_identity_action_write_storage_bytes
+///               + shielded_identity_balance_write_storage_bytes) × (disk + processing)`
 ///
-/// [`compute_minimum_shielded_fee_v0`] plus a per-action component for the metered processing of
-/// the note and nullifier writes that the per-action allowance (sized for a spend's booked
-/// storage) does not price, see `SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES`, plus one flat
-/// component for the identity-side work (the nonce and balance rewrites and the reads around
-/// them), built the same way as [`compute_shielded_unshield_fee_v0`]'s address-write component,
-/// see `SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES`. `ShieldFromIdentity` is refused by
-/// `is_allowed` before protocol version 14, so this formula has never been applied at an earlier
-/// version, and its components were sized in place. The transition's real fee is metered at
-/// execution; this floor is the conservative stand-in the stateless balance pre-check uses so
-/// that a short identity is refused before the Orchard proof is verified, and the client-side
-/// estimate of the total fee.
+/// The versioned allowances cover the complete execution-event admission estimate,
+/// including note/nullifier writes, identity nonce/balance writes and validation.
+/// They are effective bytes priced at the full storage rate, not physical payload
+/// sizes. Execution charges the actual metered fee, which may be lower.
 ///
-/// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
-/// surfaces as `ProtocolError::Overflow` instead of silently wrapping.
+/// Identity shielding is refused by `is_allowed` before protocol version 14;
+/// historical tables retain the preceding wallet formula's zero per-action and
+/// 20-byte flat allowance. All arithmetic is checked.
 pub fn compute_shielded_identity_balance_write_fee_v0(
     num_actions: usize,
     platform_version: &PlatformVersion,
 ) -> Result<Credits, ProtocolError> {
     let storage = &platform_version.fee_version.storage;
+    let constants = &platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants;
 
     let base_fee = compute_minimum_shielded_fee_v0(num_actions, platform_version)?;
 
@@ -229,12 +226,12 @@ pub fn compute_shielded_identity_balance_write_fee_v0(
             "shielded storage per-byte rate overflow",
         ))?;
     let action_write_bytes = (num_actions as u64)
-        .checked_mul(SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES)
+        .checked_mul(constants.shielded_identity_action_write_storage_bytes)
         .ok_or(ProtocolError::Overflow(
             "shielded identity action write bytes overflow",
         ))?;
     let identity_write_fee = action_write_bytes
-        .checked_add(SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES)
+        .checked_add(constants.shielded_identity_balance_write_storage_bytes)
         .and_then(|bytes| bytes.checked_mul(per_byte_rate))
         .ok_or(ProtocolError::Overflow(
             "shielded identity balance write fee overflow",
@@ -396,11 +393,41 @@ mod tests {
             assert_eq!(
                 floor,
                 minimum
-                    + (num_actions as u64 * SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES
-                        + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES)
+                    + (num_actions as u64
+                        * platform_version
+                            .drive_abci
+                            .validation_and_processing
+                            .event_constants
+                            .shielded_identity_action_write_storage_bytes
+                        + platform_version
+                            .drive_abci
+                            .validation_and_processing
+                            .event_constants
+                            .shielded_identity_balance_write_storage_bytes)
                         * per_byte_rate
             );
             assert!(floor > compute);
+        }
+    }
+
+    #[test]
+    fn should_preserve_historical_identity_shield_wallet_estimates() {
+        // The transition is unavailable before protocol 14, but clients may still
+        // ask for the estimate at a historical protocol version.
+        for protocol in [12, 13] {
+            let platform_version = PlatformVersion::get(protocol).expect("historical version");
+            let storage = &platform_version.fee_version.storage;
+            let per_byte_rate = storage.storage_disk_usage_credit_per_byte
+                + storage.storage_processing_credit_per_byte;
+            for num_actions in [1, 2, 6, 16] {
+                assert_eq!(
+                    compute_shielded_identity_balance_write_fee_v0(num_actions, platform_version)
+                        .expect("historical estimate"),
+                    compute_minimum_shielded_fee_v0(num_actions, platform_version)
+                        .expect("historical minimum")
+                        + 20 * per_byte_rate,
+                );
+            }
         }
     }
 

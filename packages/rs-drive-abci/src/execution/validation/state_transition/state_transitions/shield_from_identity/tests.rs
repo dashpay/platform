@@ -1382,10 +1382,17 @@ mod tests {
 
     mod nullifiers {
         use super::*;
+        use crate::execution::types::execution_event::ExecutionEvent;
+        use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+        use crate::execution::types::execution_operation::ValidationOperation;
+        use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
         use crate::execution::validation::state_transition::state_transitions::test_helpers::{
-            build_outputs_only_bundle_bound, has_recorded_nullifier,
-            shielded_transfer_errors_revealing, OutputsOnlyBundle,
+            build_outputs_only_bundle_bound, build_outputs_only_bundle_bound_with_outputs,
+            check_tx_errors, has_recorded_nullifier, shielded_transfer_errors_revealing,
+            OutputsOnlyBundle,
         };
+        use crate::platform_types::platform_state::PlatformStateV0Methods;
+        use drive::fees::op::LowLevelDriveOperation;
 
         /// A bundle proved against `identity_id`. The sighash binds the identity funding the
         /// shield, so the bundle verifies for that identity's transitions and for no other's, and
@@ -1433,6 +1440,204 @@ mod tests {
                 .drive
                 .read_shielded_pool_total_balance(None, &mut vec![], PlatformVersion::latest())
                 .expect("fetch pool total")
+        }
+
+        fn populate_nullifier_tree(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            platform_version: &PlatformVersion,
+        ) {
+            let nullifiers: Vec<_> = (0u16..512)
+                .map(|i| {
+                    let mut nullifier = [0u8; 32];
+                    nullifier[..2].copy_from_slice(&i.to_le_bytes());
+                    nullifier
+                })
+                .collect();
+            let operations = platform
+                .drive
+                .insert_nullifiers(&nullifiers, platform_version)
+                .expect("nullifier operations");
+            platform
+                .drive
+                .grove_apply_batch(
+                    LowLevelDriveOperation::grovedb_operations_batch_consume(operations),
+                    false,
+                    None,
+                    &platform_version.drive,
+                )
+                .expect("populate nullifier tree");
+        }
+
+        /// Fee admission estimates the successful action before CheckTx verifies its proof.
+        /// Dummy proof bytes let every permitted action count exercise that complete estimate,
+        /// including the signature and state-read context, without proving sixteen circuits.
+        #[tokio::test]
+        async fn should_cover_complete_identity_shield_admission_estimates() {
+            let platform_version = PlatformVersion::latest();
+            let mut shortfalls = vec![];
+            for populated in [false, true] {
+                let mut platform = setup_platform();
+                if populated {
+                    populate_nullifier_tree(&platform, platform_version);
+                }
+                let (identity, signer) = funded_identity(&mut platform, 88, platform_version);
+                let state = platform.state.load();
+                let platform_ref = PlatformRef {
+                    drive: &platform.drive,
+                    state: &state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                };
+                for action_count in 1..=platform_version
+                    .system_limits
+                    .max_shielded_transition_actions
+                    as usize
+                {
+                    let mut bundle = dummy_bundle();
+                    bundle.actions = (0..action_count)
+                        .map(|i| {
+                            let mut action = create_dummy_serialized_action();
+                            action.nullifier[0] = i as u8 + 1;
+                            action
+                        })
+                        .collect();
+                    let st = create_signed_transition(
+                        &identity,
+                        &signer,
+                        bundle,
+                        1_000,
+                        1,
+                        0,
+                        platform_version,
+                    )
+                    .await;
+                    let mut event = state_transition_to_execution_event_for_check_tx(
+                        &platform_ref,
+                        &st,
+                        CheckTxLevel::FirstTimeCheck,
+                        &platform.check_tx_proof_verifier,
+                        platform_version,
+                    )
+                    .expect("build complete admission event")
+                    .into_data()
+                    .expect("valid admission event")
+                    .expect("first CheckTx produces an event");
+                    let ExecutionEvent::Paid {
+                        execution_operations,
+                        additional_fixed_fee_cost,
+                        ..
+                    } = &mut event
+                    else {
+                        panic!("identity shield must be identity-paid");
+                    };
+                    // BLS is the most expensive identity signature admitted by this transition.
+                    let mut signatures = 0;
+                    for operation in execution_operations {
+                        if let ValidationOperation::SignatureVerification(signature) = operation {
+                            *signature = SignatureVerificationOperation::new(KeyType::BLS12_381);
+                            signatures += 1;
+                        }
+                    }
+                    assert_eq!(signatures, 1);
+                    let compute_fee = additional_fixed_fee_cost.expect("shield compute fee");
+                    let estimated = platform
+                        .platform
+                        .validate_fees_of_event(
+                            &event,
+                            state.last_block_info(),
+                            None,
+                            platform_version,
+                            &Default::default(),
+                        )
+                        .expect("estimate complete event")
+                        .into_data()
+                        .expect("funded estimate")
+                        .total_base_fee()
+                        + compute_fee;
+                    let floor = dpp::shielded::compute_shielded_identity_balance_write_fee(
+                        action_count,
+                        platform_version,
+                    )
+                    .expect("wallet estimate");
+                    eprintln!(
+                        "actions={action_count} populated={populated} admission={estimated} floor={floor}"
+                    );
+                    if estimated > floor {
+                        shortfalls.push((action_count, populated, estimated, floor));
+                    }
+                }
+            }
+            assert!(
+                shortfalls.is_empty(),
+                "wallet estimates must cover complete fee admission: {shortfalls:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_admit_identity_shield_funded_at_wallet_estimate() {
+            let platform_version = PlatformVersion::latest();
+            let extra_sighash_data =
+                shield_from_identity_extra_sighash_data(&[88; 32], platform_version)
+                    .expect("funding identity binding");
+            for action_count in [2, 3, 4, 6] {
+                let bundle = build_outputs_only_bundle_bound_with_outputs(
+                    5_000,
+                    action_count,
+                    &extra_sighash_data,
+                );
+                let floor = dpp::shielded::compute_shielded_identity_balance_write_fee(
+                    bundle.actions.len(),
+                    platform_version,
+                )
+                .expect("wallet estimate");
+                for populated in [false, true] {
+                    let mut platform = setup_platform();
+                    if populated {
+                        populate_nullifier_tree(&platform, platform_version);
+                    }
+                    let mut rng = StdRng::seed_from_u64(88);
+                    let (identity, signer) = create_identity_with_transfer_key(
+                        [88; 32],
+                        bundle.amount + floor,
+                        &mut rng,
+                        platform_version,
+                    );
+                    add_identity_to_drive(&mut platform, &identity);
+                    let st = create_signed_transition(
+                        &identity,
+                        &signer,
+                        proven(&bundle),
+                        bundle.amount,
+                        1,
+                        0,
+                        platform_version,
+                    )
+                    .await;
+                    assert!(
+                        st.serialize_to_bytes().expect("serialize").len() as u64
+                            <= platform_version.system_limits.max_state_transition_size
+                    );
+                    let admission = check_tx_errors(&platform, &st);
+                    assert!(
+                        admission.is_empty(),
+                        "exact wallet funding must enter CheckTx: actions={action_count}, populated={populated}: {admission:?}"
+                    );
+                    let result = process_transition_and_commit(&platform, st, platform_version);
+                    let charged = match result.execution_results().as_slice() {
+                        [StateTransitionExecutionResult::SuccessfulExecution {
+                            fee_result, ..
+                        }] => fee_result.total_base_fee(),
+                        other => panic!("exact wallet funding must enter a block: {other:?}"),
+                    };
+                    assert!(charged <= floor, "charged fee {charged} exceeds {floor}");
+                    assert_eq!(identity_balance(&platform, &identity), floor - charged);
+                    assert_eq!(identity_nonce(&platform, &identity), 1);
+                    assert_eq!(pool_total(&platform), bundle.amount);
+                    for nullifier in bundle.nullifiers() {
+                        assert!(has_recorded_nullifier(&platform, &nullifier));
+                    }
+                }
+            }
         }
 
         #[tokio::test]

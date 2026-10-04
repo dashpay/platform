@@ -154,15 +154,17 @@ identity_balance_after = identity_balance_before - amount - fee
 
 `user_fee_increase` applies to the metered processing portion. The stateless
 floor requires `identity_balance >= amount + compute_shielded_identity_balance_write_fee`,
-the conservative complete fee: `compute_minimum_shielded_fee`, plus
-`SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES` (120 effective bytes) per action for the
-metered processing of the note and nullifier writes, which the per-action allowance
-(sized for the storage a spend books) does not price, plus the flat
-`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` identity-side component (60 effective
-bytes: the nonce and balance rewrites, which add no storage but replace 883 bytes of
-Merk path for a measured 466,760 credits of processing, and the reads and pool-total
-update around them, 1,076,280 credits in all), each at the storage rate and with
-headroom like the other shielded components. An identity that could not pay the
+the conservative complete admission estimate: `compute_minimum_shielded_fee`, plus
+PV14's versioned `shielded_identity_action_write_storage_bytes` (400 effective
+bytes per action) and `shielded_identity_balance_write_storage_bytes` (500 flat
+bytes), each priced at the storage rate. The allowances cover the complete
+execution-event estimate: note/nullifier writes at the estimator's depth 16,
+identity nonce/balance writes at its maximum-element depth, and the signature
+and state-read validation context. They are admission reserves, not physical
+payload sizes or changes to the actual metered charge. For two actions the
+base wallet estimate is `114,140,000 + (2 × 400 + 500) × 27,400 = 149,760,000`
+credits. Historical tables preserve the preceding zero per-action and 20-byte
+flat allowance. An identity that could not pay the
 complete fee is therefore refused before the Orchard proof is verified. The authoritative gate is the identity-paid fee
 validation of the execution event (`Paid`), which rejects with
 `IdentityInsufficientBalanceError`. The identity balance and the pool total are

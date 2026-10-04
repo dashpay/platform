@@ -1962,9 +1962,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     asset lock's flat pool fee already prices a note and a nullifier write
 ///     per action. The shield from identity's admission floor
 ///     (`compute_shielded_identity_balance_write_fee` 0, the client's estimate
-///     of its complete fee) gains 120 effective bytes per action and its flat
-///     identity component grows from 20 to 60, so it still covers the metered
-///     fee. Nullifiers revealed by shields before this version are not added.
+///     of its complete fee) uses versioned allowances of 400 effective bytes
+///     per action and 500 flat bytes, covering the complete execution-event
+///     admission estimate. Actual fees remain metered. Nullifiers revealed by
+///     shields before this version are not added.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

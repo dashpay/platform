@@ -494,6 +494,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             // so the storage component alone pays for the database work and
             // the compute fees above stay reserved for compute.
             shielded_storage_bytes_per_action: 550,
+            // Fee admission estimates note/nullifier paths at depth 16 and identity
+            // writes at the maximum-element depth. These effective-byte allowances
+            // cover that estimate and its validation context, including a BLS signature;
+            // they do not change the metered charge or the pool-paid fee formula.
+            shielded_identity_action_write_storage_bytes: 400,
+            shielded_identity_balance_write_storage_bytes: 500,
             shielded_implicit_fee_cap: 20_000_000_000,
             // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
             // v13 revises the v8 set: adds 0.03 and 0.25 DASH, retires 0.3 DASH.
