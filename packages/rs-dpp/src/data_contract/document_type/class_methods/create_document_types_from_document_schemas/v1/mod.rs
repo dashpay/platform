@@ -5,7 +5,8 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
-    resolve_derived_index_properties, validate_property_constraint_aggregates,
+    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+    validate_property_constraint_aggregates,
 };
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
@@ -106,6 +107,12 @@ impl DocumentType {
         if !full_validation {
             return Ok(contract_document_types);
         }
+
+        // Protocol version 14 and later: a preallocated index bound only through a
+        // moderatedDocument reference needs every key of its path kept by the removal record
+        // of the referenced document, a type a document type's parse can not see. Inert
+        // before 14: only parser generation 3 admits `preallocated` and `moderatedDocument`.
+        validate_preallocated_indexes_kept_on_removal(&contract_document_types)?;
 
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {

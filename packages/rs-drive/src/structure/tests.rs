@@ -323,9 +323,10 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::moderation::{
         ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
-        ContractModerators, ContractWarning, ElectedModerators, InterimModerators,
-        ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        ContractModerators, ContractTeamAction, ContractTeamActionEvent, ContractWarning, ElectedModerators,
+        InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
     };
+    use crate::drive::contract::moderation::types::ContractTeamActionWrite;
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
@@ -714,15 +715,17 @@ mod fixtures {
                         contract_id: contract.id(),
                         document_type_name: "post".to_string(),
                         document_id: Identifier::from([0x23; 32]),
-                        removal: ContractDocumentRemoval {
+                        removal: Box::new(ContractDocumentRemoval {
                             document_owner_id: Identifier::from([0x24; 32]),
                             moderator_id: contract.owner_id(),
                             reason: ContractModerationReason::from_text("spam"),
                             removed_at: 1_000,
                             document_hash: [0x25; 32],
                             restoration: None,
-                        },
-                        replaces_existing: false,
+                            kept_fields: Default::default(),
+                        }),
+                        replaced_record_size: None,
+                        estimated_kept_fields_size: 0,
                         moderator_id: contract.owner_id(),
                     },
                 )],
@@ -873,6 +876,134 @@ mod fixtures {
             )
             .expect("expected to count a moderation action");
         conformance_of(&drive, "elected_contract", run);
+    }
+
+    /// An elected contract whose team deletes settled posts once its leader approves, with one
+    /// team action still gathering approvals and one that ran. Kept apart from the elected
+    /// contract, whose other tree's shape is recorded.
+    fn contract_with_team_actions(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract.json",
+            Some([12; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: false,
+                        suspensions: false,
+                        warnings: false,
+                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            challenge_cool_down: None,
+                            election_delay: None,
+                            max_added_moderators: 0,
+                            moderated_document_types: BTreeMap::from([(
+                                "post".to_string(),
+                                BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                            )]),
+                            interim: InterimModerators::ContractOwner,
+                            owner_protected: false,
+                        })),
+                    },
+                )));
+                // After the config: the keyword needs an elected declaration.
+                contract
+                    .set_document_schema(
+                        "post",
+                        platform_value!({
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "maxLength": 50, "position": 0 },
+                            },
+                            "required": ["$createdAt", "$updatedAt"],
+                            "additionalProperties": false,
+                            "moderatorAbilities": {
+                                "delete": true,
+                                "deleteWithin": 86400,
+                                "deleteSettled": { "leader": true },
+                            },
+                        }),
+                        true,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected to add a document type whose settled posts a team deletes");
+            }),
+            None,
+            Some(platform_version),
+        );
+        let proposal = |document_id: [u8; 32]| ContractTeamAction {
+            proposer_id: Identifier::from([0x27; 32]),
+            proposed_at: 1_000,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from(document_id),
+                document_last_modified_at: 10,
+                document_revision: Some(1),
+                reason: ContractModerationReason::from_text("doxxing"),
+            },
+        };
+        let signature =
+            |action_id: [u8; 32], signer_id: [u8; 32], write: ContractTeamActionWrite| {
+                DriveOperation::ContractModerationOperation(
+                    ContractModerationOperationType::AddTeamActionSignature {
+                        contract_id: contract.id(),
+                        action_id: Identifier::from(action_id),
+                        signer_id: Identifier::from(signer_id),
+                        write,
+                    },
+                )
+            };
+        drive
+            .apply_drive_operations(
+                vec![
+                    // Proposed and approved once more, still short of the rule
+                    signature(
+                        [0x30; 32],
+                        [0x27; 32],
+                        ContractTeamActionWrite::Propose {
+                            action: proposal([0x26; 32]),
+                            closes: false,
+                        },
+                    ),
+                    // Proposed by a member who meets the rule alone, so it ran at once
+                    signature(
+                        [0x31; 32],
+                        [0x27; 32],
+                        ContractTeamActionWrite::Propose {
+                            action: proposal([0x28; 32]),
+                            closes: true,
+                        },
+                    ),
+                ],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to record the proposals of two team actions");
+        drive
+            .apply_drive_operations(
+                vec![signature(
+                    [0x30; 32],
+                    [0x29; 32],
+                    ContractTeamActionWrite::Approve {
+                        dropped_signers: vec![],
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to record an approval of a team action");
+        conformance_of(&drive, "contract_with_team_actions", run);
     }
 
     /// A contract that keeps the banlist and the warning list, with one identity carrying two
@@ -1556,6 +1687,53 @@ mod fixtures {
         conformance_of(&drive, "spent_nullifiers", run);
     }
 
+    fn token_shielded_pool(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let token_id = [7; 32];
+        let operations = drive
+            .create_token_shielded_pool_trees_operations(
+                token_id,
+                false,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the token pool operations");
+        apply_operations(&drive, operations);
+        apply_operations(
+            &drive,
+            Drive::insert_token_pool_note_op(
+                token_id,
+                [1; 32],
+                [2; 32],
+                [3; 32],
+                vec![1; 216],
+                platform_version,
+            )
+            .expect("expected the token note operations"),
+        );
+        apply_operations(
+            &drive,
+            Drive::insert_token_pool_nullifiers(token_id, &[[4; 32]], platform_version)
+                .expect("expected the token nullifier operations"),
+        );
+        let transaction = drive.grove.start_transaction();
+        drive
+            .record_token_shielded_pool_anchor_if_changed(
+                token_id,
+                1,
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to record the token pool anchor");
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the token anchor");
+        conformance_of(&drive, "token_shielded_pool", run);
+    }
     /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
     /// in the documents expirations tree under the time it expires, and a lifetime storage fee
     /// pool. Two of them expire together, created in the same block.
@@ -1659,6 +1837,7 @@ mod fixtures {
         warned_contract(&mut run);
         elected_contract(&mut run);
         contract_with_document_removals(&mut run);
+        contract_with_team_actions(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
         current_then_paid_epoch(&mut run);
@@ -1666,6 +1845,7 @@ mod fixtures {
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
+        token_shielded_pool(&mut run);
         run
     }
 

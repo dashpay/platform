@@ -10,6 +10,7 @@ impl StateTransitionStructureValidation for ShieldFromAssetLockTransition {
     ) -> SimpleConsensusValidationResult {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.validate_structure(platform_version),
+            ShieldFromAssetLockTransition::V1(v1) => v1.validate_structure(platform_version),
         }
     }
 }

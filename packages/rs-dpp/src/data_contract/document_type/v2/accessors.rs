@@ -1,3 +1,4 @@
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters, DocumentTypeV1Getters,
     DocumentTypeV2Getters, DocumentTypeV2Setters,
@@ -256,6 +257,14 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.moderator_deletions_refund_owner
     }
 
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        self.moderator_settled_deletion
+    }
+
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        &self.moderator_deletion_kept_fields
+    }
+
     fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
         &self.moderator_changeable_fields
     }
@@ -296,8 +305,12 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.generated_from_fields
     }
 
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
-        &self.immutable_fields_allow_setting
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.immutable_field_conditions
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        self.retracted_when.as_ref()
     }
 
     fn action_fees(&self) -> Option<&DocumentActionFees> {

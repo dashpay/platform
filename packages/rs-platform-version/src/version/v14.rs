@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts six consensus changes:
+/// v14 hosts thirty-one consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates**: an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -365,7 +365,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     update state validation (already 1 here) checks the named moderators.
 ///     `batch_state_transition.contract_moderation_gate = Some(0)` makes the
 ///     batch transformer refuse, paid, the document transitions of a banned or
-///     suspended signer, its deletions excepted, and collect a lapsed
+///     suspended signer, its deletions excepted (and its retractions, item 72),
+///     and collect a lapsed
 ///     suspension, which
 ///     `documents_batch_transition` 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`)
 ///     deletes when the batch executes; the same field gates the other
@@ -754,10 +755,60 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     refuses an `immutable` property holding a `deletableDocument`
 ///     reference no replace could clear (a typed array of them, or a single
 ///     one inside an immutable object), which could never be replaced once
-///     a target is deleted, and a single top-level one that is also listed
-///     under `immutableAllowSetting`, which a replace could clear once its
-///     target is deleted and the next one set to another document. A changed
+///     a target is deleted, and a single top-level one frozen only under a
+///     condition (see 66), which a replace could clear once its target is
+///     deleted and a later one the condition leaves free set to another
+///     document. A changed
 ///     element `refersTo` is an incompatible schema change on update.
+///
+/// 31. **Token shielded pools**: a token configuration in format version 1
+///     (`TokenConfiguration::V1`, admitted by `CONTRACT_VERSIONS_V6`'s
+///     `token_configuration_format` bounds) can set `hasShieldedPool`, which
+///     gives the token its own Orchard pool under
+///     `[Tokens, TOKEN_SHIELDED_POOLS_KEY, token_id]` laid out like the credit
+///     pool. A pooled token must leave its freeze, unfreeze and destroy-frozen-
+///     funds rules unassigned, since notes have no owner to freeze. Seven batch
+///     token transitions (`TokenShield`, `TokenUnshield`,
+///     `TokenShieldedTransfer`, `TokenMintToPool`, `TokenBurnFromPool`,
+///     `TokenClaimToPool` and `TokenDirectPurchaseToPool`, validated through
+///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` and gated by
+///     `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`) move tokens between an
+///     identity balance, the supply and the pool or inside it; the identity
+///     signs and pays the fee in credits, and every bundle binds its pool into
+///     the Orchard sighash, since all pools share the empty-tree anchor an
+///     unbound bundle would verify against: a spend bundle binds the token id
+///     and the batch owner (a burn binds the burner: the batch owner, or the
+///     proposer of a group action), plus the recipient and amount where tokens
+///     leave the pool; an outputs-only bundle (`TokenShield`,
+///     `TokenMintToPool`, `TokenClaimToPool`, `TokenDirectPurchaseToPool`),
+///     whose anchor is never checked against a pool, binds a per-kind tag,
+///     the token id and the batch owner (for a group action mint, the
+///     proposer).
+///     A batch carrying any of these bundles, or a document whose token cost
+///     is paid out of a pool, has to hold the compute fee the bundles will be
+///     charged (`compute_shielded_verification_fee` per bundle-carrying
+///     sub-transition): the batch minimum balance pre-check v1
+///     (`identity_minimum_balance_pre_check`) reserves it on top of the flat
+///     per-sub-transition minimum, which is orders of magnitude smaller. A
+///     batch without a bundle is asked for the flat minimum, unchanged, and
+///     one that asks the contract owner to pay its gas is asked for its
+///     principal alone as in item 11, the compute fee being gas. The floor
+///     refuses only what fee validation would refuse later, but it refuses it
+///     before the Halo 2 work: `TokenClaimToPool`'s proof is skipped in check
+///     tx, since its claimable amount is only known against state, so without
+///     the floor a signer between the two numbers cleared the mempool with no
+///     verification run and every validator then did the verification inside
+///     block validation, only to refuse the batch unpaid, leaving the same
+///     bytes replayable. The same holds for the bundle of a group action's
+///     non-proposing signer, whose proof check tx also skips.
+///     The pool balances are a term of the token conservation check
+///     (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
+///     `record_token_shielded_pool_anchors`
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`) records and prunes the anchors of the
+///     pools a block touched. The pools root tree is inserted by
+///     `transition_to_version_14` and by `create_initial_state_structure` v4;
+///     the six shielded queries accept an optional `token_id` to target a token
+///     pool.
 ///
 /// 32. **Document references resolved through a unique index**: a
 ///     `permanentDocument` `refersTo`, on an identifier property or on the
@@ -1214,7 +1265,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     ban, suspension, warning or deletion must name a `reason` document its
 ///     proposal lists (`ModerationReasonNotListedError`, 41203). No table moves
 ///     but the four
-///     new Drive method slots, `0` at every version.
+///     new Drive method slots, `0` at every version. The counts are read with
+///     the `getContractModerationActionCounts` query (an elected contract
+///     only), whose proof reads the whole counts tree; it adds a fifth contract
+///     method slot (`prove_contract_moderation_action_counts`), a verify slot
+///     (`verify_contract_moderation_action_counts`) and the query's bounds
+///     (`contract_moderation_action_counts`), `0` at every version as well.
 ///
 /// 42. **Repaid identity debt reaches the processing fee pool**: an identity
 ///     whose fee the balance could not fully cover keeps the unpaid processing
@@ -1277,8 +1333,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`SerializedObjectParsingError`, 10002), refused unpaid in `check_tx` and
 ///     in block processing. Version 0 ignored them, so the transition with
 ///     anything appended executed as the original under another transaction
-///     hash. Version 1 also reports a transition whose version is not active
-///     as `StateTransitionNotActiveError` (10603) instead of a decode failure.
+///     hash. Version 1 also reports a transition whose version is outside its
+///     active range as `StateTransitionNotActiveError` (10603) instead of a
+///     decode failure, naming whichever boundary of that range was missed: its
+///     start for a version not active yet, its end for one already superseded.
 ///
 /// 47. **A storage refund is clawed back from the epochs it was priced for**:
 ///     removing data in epoch E refunds its owner the shares of epochs E+1
@@ -1481,7 +1539,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (41119) and the deletion is proved by the document's absence, which the
 ///     verifier learns from the contract. `deleteRefundsOwner` (default false)
 ///     says whether the owner is refunded its storage instead of forfeiting it
-///     (the batch then carries no `ForfeitStorageRefunds`). A listed property must be declared,
+///     (the batch then carries no `ForfeitStorageRefunds`). `deleteKeepsFields`
+///     lists property paths at any depth, and the timestamps and block heights
+///     the type requires, whose values the removal record keeps, copied from
+///     the document as it was deleted: what stays public once it is gone. It
+///     needs a record, and is fixed with the type. A record keeping any
+///     carries them behind bit 1 of its tag byte, encoded as the document
+///     encodes its properties (a presence byte and the value per kept path,
+///     the paths themselves not written) and read under the document's type,
+///     and a record keeping none is written as before; the removals
+///     response carries the bytes as `kept_fields` (field 8), and a
+///     `moderatedDocument` reference's `where` pair on a kept property is
+///     checked against the record's value. A property `changeFields` lists must be declared,
 ///     optional, stored, not immutable, neither a reference nor read by one,
 ///     neither generated nor a generation parameter, and in no contested index,
 ///     on a type that is not indexOnly; a type listing any keeps `$revision` even
@@ -1664,7 +1733,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     moderation charters system contract is written in the new keywords;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
-///
 /// 64. **`refersTo: moderatedDocument`**: a third kind of document reference,
 ///     between `permanentDocument` and `deletableDocument` and disjoint from
 ///     both (`DocumentReferenceKind`, `DocumentTypeV2Getters::document_reference_kind`),
@@ -1709,10 +1777,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     keys a document of such a type, on insert (`add_document` 1), update (`update_document`
 ///     1, one read for both versions) and delete (`delete_read_document`, shared by owner and
 ///     moderator deletes and `ttl` expiry), it reads the referenced document, billed with the
-///     write, or, for a `moderatedDocument` target a moderator removed, the owner its removal
-///     record keeps, and puts the values into the document's properties under the derived
-///     names, where `get_raw_for_document_type` 0 reads them (a missing one is refused, never
-///     keyed under null) and the serialization ignores them. A create reads nothing more: the
+///     write, or, for a `moderatedDocument` target a moderator removed, the owner and the
+///     values its removal record keeps (`ContractDocumentRemoval::kept_values`, read at a
+///     path by `kept_value_at`), and puts the values into the document's properties under
+///     the derived names, where `get_raw_for_document_type` 0 reads them (a missing one is
+///     refused, never keyed under null) and the serialization ignores them. A create reads nothing more: the
 ///     document reference validation 0, given a map, records the values from the documents it
 ///     fetched, and the create action carries them to Drive. A dry run keys the document
 ///     under a value of each field's type. `serialize_value_for_key` 0,
@@ -1722,14 +1791,171 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `permanentDocument` or `moderatedDocument` reference by id, on a reference property
 ///     fixed once written; `$ownerId` of a type that can not change hands, `$creatorId` of a
 ///     type recording it, or a stored schema property fixed once written and indexable;
-///     through `moderatedDocument`, `$ownerId` only; not `$id`; not in a unique or contested
+///     through `moderatedDocument`, `$ownerId` or a schema property the referenced type keeps
+///     under `moderatorAbilities.deleteKeepsFields` (a kept path or one inside a kept object,
+///     `is_path_listed`, checked in every build); not `$id`; not in a unique or contested
 ///     index, as a `timeRange` or `integerRange` source or a `skipIfAbsent` property; not on
 ///     an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
 ///     document stores, is refused on an index whose derived properties the query does not fix
 ///     with `==`. Every step is inert without a derived index property, which only generation 3
 ///     declares.
 ///
-/// 66. **Owner identities for shared and extended-address masternodes**: from
+/// 66. **Properties frozen under a condition**: an `immutable` entry of
+///     meta-schema v3 and parser generation 3, in place, may be
+///     `{ "property", "when" }` beside a property name. The condition takes
+///     the grammar of a `propertyConstraints` rule, reads no `countOf` or
+///     `sumOf`, and is judged on the document the replace writes (its
+///     `$updatedAt` the replace's block time, so `$updatedAt - $createdAt`
+///     is the document's age), with the stored document's properties read
+///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), which only such a
+///     condition may read. Document replace state validation 1, extended in
+///     place, refuses a replace changing, adding or removing a property whose
+///     condition holds, or faults, with `DocumentImmutablePropertyChangedError`
+///     (40128); the stored properties are rebuilt from the written ones and
+///     `stored_changed_values`, and the replace action's `added_data_fields`
+///     is gone. `immutableAllowSetting`, which `{ "present": "$old.<p>" }`
+///     now says, is refused on every parse, naming its replacement. A
+///     conditional property is not fixed once written
+///     (`schema_property_is_fixed_once_written`), a `deletableDocument`
+///     reference by id may be listed only without a condition, and on
+///     contract update (document type update validation 1) a condition is
+///     kept as it is or dropped for listing the property without one.
+///
+/// 67. **A seated team deletes a settled document together**: past a type's
+///     `deleteWithin` window no moderator deletes a document alone (41116); the
+///     new `moderatorAbilities.deleteSettled: { leader, approvals,
+///     approversPredateDocument }` (meta-schema
+///     v3, `DocumentTypeV2::moderator_settled_deletion`, fixed with the type,
+///     40212) lets the members of an elected contract's seated team delete it
+///     once `approvals` of them approve, the leader among them when `leader` is
+///     set. It needs `deleteWithin` and an elected declaration giving the team
+///     `deleteDocuments` on the type (10231, 10900), `approvals` from 1 to the
+///     members the declared team can hold (its leader,
+///     `SystemLimits::max_moderation_charter_elected_members` and the
+///     declaration's `maxAddedModerators`), the upper bound checked at
+///     registration only; a seated team whose charter elects fewer members,
+///     and so holds fewer than the rule asks for, must have all it can hold
+///     approve. Its `approversPredateDocument` (default `true` when `approvals`
+///     is above 1, which then needs `$createdAt` in `required` at
+///     registration, 10231) counts a member the leader added only for
+///     documents created after its addition (the `addedModerator`'s
+///     `$createdAt` earlier than the document's): a proposal or approval by a
+///     later one is refused, checked before an approval already given, and an
+///     approval that reads the team drops the approval of a member taken off
+///     and added again too late; the leader and the elected members always
+///     count.
+///     `ContractUserModeration` gains two actions (appended), shaped like a
+///     token group's action: `DeleteSettledDocument` proposes the deletion, kept
+///     under the contract as a team action (other tree key `24`, `M` active and
+///     `X` closed, each `action id -> { I: the action, S: SumTree(member ->
+///     SumItem(1)) }`, created with the contract) by an id computed from the
+///     contract, the proposer, its nonce, the document and the reason,
+///     naming the document as it is (its last modification and `$revision`)
+///     and the reason; and
+///     `ApproveTeamAction { action_id }` approves it. Nothing lapses, but an
+///     approval of a document changed since (its `$revision` moved, a
+///     moderator's change of its fields included) is refused. Each approval is
+///     its own sum item, never rewritten; when the approvals given could meet
+///     the rule the team is read and the approvals of members who left are
+///     dropped, refunded to them, and the one whose counted approvals meet it
+///     deletes the document as `DeleteDocument` does, moves the action with the
+///     approvals that counted to the closed actions (refunding each), and counts
+///     toward the action share for every counted approver. The storage refund
+///     forfeiture of a moderator's deletion now takes the document operations
+///     alone (the document's bytes and any index subtree the deletion empties,
+///     whoever paid for them), applied as a GroveDB batch of their own when the
+///     batch also frees moderation storage someone is owed (a restored removal
+///     record replaced, approvals moved or dropped), which is refunded as ever.
+///     The proof is the signer's approval, active or closed
+///     (`VerifiedContractTeamActionSignature`, appended); the new
+///     `getContractTeamActions` (each action with its approval count, the sum
+///     of its approvals tree) and `getContractTeamActionSigners` queries read
+///     them. New errors, appended: `DocumentTypeNotDeletableOnceSettledError`
+///     (41204), `ContractModerationTeamNotSeatedError` (41205),
+///     `DocumentNotSettledError` (41206), `ContractTeamActionDoesNotExistError`
+///     (41207), `ContractTeamActionAlreadySignedError` (41208),
+///     `SettledDeletionNotRestorableError` (41209): a deletion the team approved
+///     is never restored, by the leader or any member,
+///     `ContractTeamActionAlreadyCompletedError` (41210),
+///     `ContractTeamActionDocumentChangedError` (41211) and
+///     `ContractTeamMemberAddedAfterDocumentError` (41212).
+///
+/// 68. **A preallocated index may be bound through `moderatedDocument`**:
+///     `Index::preallocation_bindings`, in place, binds through a same-contract
+///     `moderatedDocument` reference as through a `permanentDocument` one, and a
+///     binding records its kind (`PreallocationBinding::kind`). Through a moderated
+///     reference a binding holds only when the removal record of the referenced
+///     document keeps every key it binds, the referenced `$id`, `$ownerId` or a property
+///     the referenced type lists under `moderatorAbilities.deleteKeepsFields`
+///     (`is_path_listed`), never `$creatorId`
+///     (`PreallocationBinding::is_kept_on_removal`). `create_document_types_from_document_schemas`
+///     1 and `set_document_schema` refuse, under full validation, a preallocated index
+///     with no binding that holds (`validate_preallocated_indexes_kept_on_removal`,
+///     `InvalidContractStructure`); the reference validation 0 checks the key width of a
+///     `where` pair only through a binding that holds; and the Drive insert of a referenced document
+///     (`add_document_for_contract_operations` 1) and the document cost model
+///     preallocate only through one that holds
+///     (`Index::preallocation_bindings_for_target`, now given the referenced type).
+///     A moderator's removal leaves the trees, like its record, and a restore,
+///     which puts the document back through the create path, finds them in place.
+///     Inert for every contract that could be registered before: a moderated
+///     reference never bound a preallocated index.
+///
+/// 69. **Index entries that outlive a delete (`outlivesDelete`)**: an index
+///     keyword of meta-schema v3 and parser generation 3, in place
+///     (`Index::outlives_delete`, `IndexLevelTypeInfo::outlives_delete`,
+///     `IndexLevel::outlives_delete_at_or_below`), admitted only on a
+///     `timeRange` index with a `ttl` of an indexOnly type, without a sum and
+///     on a type without `entryPayload`; every schema property must also sit
+///     in an index that neither skips nor outlives deletes, the proof index
+///     may not outlive deletes (`index_only_proof_index`), and the flag is
+///     fixed with the index (`find_first_outlives_delete_change`). A delete
+///     leaves such an index's entries to expire with their window: document
+///     index-only delete state validation 0 and Drive's row-integrity gate do
+///     not probe it, and the delete walkers (top and index level 2) skip it
+///     (`level_removes_entry`, with `IndexLevel::cleared_on_delete_at_or_below`). The row commitment leaves `$createdAt` out when
+///     every index involving it outlives deletes
+///     (`index_only_row_commits_created_at`, read off the index structure's
+///     root, `IndexLevel::created_at_indexed_only_by_outliving`, and shared by
+///     the commitment, the delete transition's construction, advanced
+///     structure validation 0, which then refuses a carried `$createdAt`, and
+///     Drive's indexOnly delete, which refuses one too). Document create state
+///     validation 1 and the within-batch collision tracker do not probe such
+///     an index, and the indexOnly terminal insert writes over an entry
+///     already standing there, without reading it. Registration requires the
+///     index's key (its properties but `$createdAt`, and its terminal) to hold
+///     the key of an index a delete clears that skips nothing, so no two
+///     documents in state share one of its entries. Inert for every contract
+///     without the keyword, which every earlier grammar refuses.
+///
+/// 70. **A contested type sums only small values**: parser generation 3, in
+///     place, refuses under full validation a document type with a contested
+///     index and a summed property (`summable`, `averageable`,
+///     `documentsSummable` or `documentsAverageable`) unless the property's
+///     schema declares a `minimum` of at least -2^27 and a `maximum` of at most
+///     2^27 (`SYSTEM_LIMITS_V4.max_contested_summed_value_magnitude`, `None` in
+///     the earlier tables). The end of a contest writes the winner's document
+///     into the type's sums with no transition to refuse, so the values must be
+///     small enough that the sums stay in `i64`, which they do short of 2^36
+///     documents. A stored contract still parses.
+///
+/// 72. **A barred author may still retract (`retractedWhen`)**: a document
+///     type of meta-schema v3 and parser generation 3, in place, may declare
+///     `retractedWhen`, one condition in the grammar of an `immutable` entry's
+///     `when` (`$old.` reads, no `countOf` or `sumOf`), only on a mutable type
+///     of a contract keeping a banlist or a suspension list (10231 on every
+///     parse), and fixed on update (document type update validation 1, 40212).
+///     `contract_moderation_gate` v0, in place, lets a banned or suspended
+///     signer's replaces on such a type through with its bar
+///     (`ContractModerationRefusal::retraction_bar`, `refused` now optional),
+///     and the shared transformer, after fetching the stored document, refuses
+///     with the bar (41107, 41108), paid with the nonce bumped, each whose
+///     written document does not meet the condition or whose condition
+///     faults. Every other rule of the type still judges the replace. So an
+///     author whose documents can not be deleted can still take one back. Inert
+///     before this version: the gate and the keyword exist only here.
+///
+/// 73. **Owner identities for shared and extended-address masternodes**: from
 ///     v24 on, Dash Core lists shared masternodes, which have no owner, payout
 ///     or collateral address, and extended-address masternodes, which have a
 ///     `payouts` list instead of a `payoutAddress`. `create_owner_identity` 1
@@ -1762,8 +1988,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   structure, identity signature, and nonce validation. It moves credits
 ///   from an identity balance straight into the shielded pool: the funding
 ///   side is identity-signed like `IdentityCreditTransferToAddresses`, the
-///   pool side is an outputs-only Orchard bundle like `Shield`, and the fee
-///   is metered plus the shielded compute fee, paid from the identity.
+///   pool side is an outputs-only Orchard bundle like `Shield`, bound to the
+///   funding identity (next item), and the fee is metered plus the shielded
+///   compute fee, paid from the identity.
+///
+/// * The credit pool's outputs-only bundles bind `kind tag || owner` into their
+///   Orchard sighash (`DPP_METHOD_VERSIONS_V3` sets `credit_pool_bundle_binding`
+///   to `Some(0)`): `Shield` (`0x84`) the SHA-256 of its input addresses,
+///   checked by `validate_shielded_proof` v1; `ShieldFromIdentity` (`0x85`) its
+///   identity id; `ShieldFromAssetLock` (`0x86`) its asset lock identifier,
+///   checked by the `transform_into_action` v1 that
+///   `DRIVE_ABCI_VALIDATION_VERSIONS_V10` selects. A third party can no longer
+///   wrap a proved bundle in a transition of their own. v13 keeps both checks
+///   unbound. A sender rebuilding the same notes (Faerie Gold) is not stopped:
+///   that needs the bundles' dummy nullifiers recorded and checked.
+///   `ShieldFromAssetLock` also gains transition version 1
+///   (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`), the only version 14
+///   admits: version 0 is refused at decode by `active_version_range`, before
+///   any proof work, uncharged and with its asset lock left unspent, so one
+///   still waiting when 14 activates is not burned by the bound check.
 ///
 /// * `IdentityTopUpFromShieldedPool` (state transition type 22) activates at the
 ///   same gate (`IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION = 14`,
@@ -1811,11 +2054,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody unless its type sets `deleteRefundsOwner`; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 1 admits a document token cost paid from a token pool; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -1823,17 +2066,17 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
-        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; the ContractUserModeration transition
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; ShieldFromAssetLock moves to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math; reward_distribution_max_cycle_moment v1: the epoch claim cap no longer wraps; distribution_function_cycle_epochs v1: evonode cycles weighted by the epochs they span
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
+        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago; credit_pool_bundle_binding Some(0) — the credit pool's outputs-only bundles bind a kind tag and their owner
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status

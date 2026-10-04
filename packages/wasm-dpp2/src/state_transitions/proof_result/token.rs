@@ -50,6 +50,75 @@ impl VerifiedTokenBalanceWasm {
 impl_wasm_type_info!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
 impl_wasm_conversions_serde!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
 
+// --- VerifiedTokenShieldedPoolBalance ---
+
+/// The proven total balance of a token's shielded pool, returned by the pool transitions that
+/// only create notes (mint, claim and purchase into the pool).
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dpp")]
+#[wasm_bindgen(js_name = "VerifiedTokenShieldedPoolBalance")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedTokenShieldedPoolBalanceWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "tokenId")]
+    pub token_id: IdentifierWasm,
+    pub(super) balance: u64,
+}
+
+#[wasm_bindgen(js_class = VerifiedTokenShieldedPoolBalance)]
+impl VerifiedTokenShieldedPoolBalanceWasm {
+    #[wasm_bindgen(getter)]
+    pub fn balance(&self) -> JsValue {
+        BigInt::from(self.balance).into()
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedTokenShieldedPoolBalanceWasm,
+    VerifiedTokenShieldedPoolBalance
+);
+impl_wasm_conversions_serde!(
+    VerifiedTokenShieldedPoolBalanceWasm,
+    VerifiedTokenShieldedPoolBalance
+);
+
+// --- VerifiedTokenGroupActionWithShieldedPoolBalance ---
+
+/// A mint into a token's shielded pool submitted as a group action: the signer's recorded power,
+/// the action's status, and the pool's total balance. The mint runs only once the last required
+/// signature arrives, so an active action's balance is the one the pool already held, and is
+/// absent for a pool that has never held a note.
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dpp")]
+#[wasm_bindgen(js_name = "VerifiedTokenGroupActionWithShieldedPoolBalance")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedTokenGroupActionWithShieldedPoolBalanceWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: u32,
+    #[wasm_bindgen(getter_with_clone, js_name = "actionStatus")]
+    pub action_status: String,
+    pub(super) balance: Option<u64>,
+}
+
+#[wasm_bindgen(js_class = VerifiedTokenGroupActionWithShieldedPoolBalance)]
+impl VerifiedTokenGroupActionWithShieldedPoolBalanceWasm {
+    #[wasm_bindgen(getter)]
+    pub fn balance(&self) -> JsValue {
+        match self.balance {
+            Some(b) => BigInt::from(b).into(),
+            None => JsValue::undefined(),
+        }
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedTokenGroupActionWithShieldedPoolBalanceWasm,
+    VerifiedTokenGroupActionWithShieldedPoolBalance
+);
+impl_wasm_conversions_serde!(
+    VerifiedTokenGroupActionWithShieldedPoolBalanceWasm,
+    VerifiedTokenGroupActionWithShieldedPoolBalance
+);
+
 // --- VerifiedTokenIdentityInfo ---
 
 #[wasm_bindgen(js_name = "VerifiedTokenIdentityInfo")]

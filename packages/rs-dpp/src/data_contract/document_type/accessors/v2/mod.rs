@@ -1,3 +1,4 @@
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::DerivedIndexProperty;
 use crate::data_contract::document_type::property::{
@@ -68,6 +69,19 @@ pub trait DocumentTypeV2Getters {
     /// on those that predate the keyword.
     fn moderator_deletions_refund_owner(&self) -> bool;
 
+    /// Who must approve a moderator's deletion of a document of this type once it is settled,
+    /// past its `moderatorAbilities.deleteWithin` window (`moderatorAbilities.deleteSettled`,
+    /// protocol version 14). `None` when no moderator deletes a settled document, and on every
+    /// type that predates the keyword.
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule>;
+
+    /// The property paths whose values a moderator's removal record of a document of this
+    /// type keeps, copied from the document as it was deleted
+    /// (`moderatorAbilities.deleteKeepsFields`, protocol version 14): what of it stays public
+    /// once it is gone. Empty on a type whose deletions keep no record or list none, and on
+    /// those that predate the keyword.
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String>;
+
     /// The top-level properties only the contract's moderators write
     /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
     /// changes them with a `ContractUserModeration` transition, and a document's
@@ -100,12 +114,13 @@ pub trait DocumentTypeV2Getters {
     /// answer holds for good.
     fn document_reference_kind(&self) -> DocumentReferenceKind;
 
-    /// The top-level properties frozen at document creation on a mutable
-    /// document type (the `immutable` keyword, protocol version 14). A
-    /// replace that changes, adds or removes any of them is rejected with
-    /// `DocumentImmutablePropertyChangedError`. Empty on document types
-    /// that predate the keyword and on types whose documents are not
-    /// mutable, where every property is already immutable.
+    /// The top-level properties the `immutable` keyword (protocol version 14)
+    /// lists by name on a mutable document type: frozen at document creation.
+    /// A replace that changes, adds or removes any of them is rejected with
+    /// `DocumentImmutablePropertyChangedError`. Empty on document types that
+    /// predate the keyword and on types whose documents are not mutable, where
+    /// every property is already immutable. The properties it lists with a
+    /// condition are [`Self::immutable_field_conditions`].
     fn immutable_fields(&self) -> &BTreeSet<String>;
 
     /// The dotted paths of the properties that declare `distinctFrom`
@@ -119,13 +134,21 @@ pub trait DocumentTypeV2Getters {
     /// keyword.
     fn generated_from_fields(&self) -> &[(String, GeneratedFrom)];
 
-    /// The subset of [`Self::immutable_fields`] a replace may still set while
-    /// the stored document has no value for them (the
-    /// `immutableAllowSetting` keyword, protocol version 14). Once present
-    /// they are frozen like the rest of the list. Always a subset of
-    /// [`Self::immutable_fields`]; empty on document types that predate the
-    /// keyword.
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String>;
+    /// The top-level properties the `immutable` keyword lists with a
+    /// condition, each with it: a replace that changes, adds or removes one
+    /// while its condition holds is rejected with
+    /// `DocumentImmutablePropertyChangedError`. The condition is judged on the
+    /// document the replace writes, reading the stored one through `$old.`.
+    /// Disjoint from [`Self::immutable_fields`]; empty on document types that
+    /// predate the keyword.
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint>;
+
+    /// The `retractedWhen` condition: a replace whose written document meets
+    /// it is a retraction, the one replace a banned or suspended owner may
+    /// still make on a moderated contract. Judged as an
+    /// [`Self::immutable_field_conditions`] condition is. `None` on document
+    /// types that declare none and on those that predate the keyword.
+    fn retracted_when(&self) -> Option<&PropertyConstraint>;
 
     /// The fixed fees in credits this document type charges for actions on its documents
     /// (the `actionFees` keyword, protocol version 14). `None` on document types that

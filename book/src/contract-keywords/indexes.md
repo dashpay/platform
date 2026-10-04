@@ -227,7 +227,7 @@ An index entry may carry more keywords, each with its own chapter:
 - [Ranked Indexes](ranked.md): `rankedCountable`, `rankedSummable` and `rankedAverageable` order the indexed values by those totals, for "top 10" queries with proofs.
 - [Time-Range Indexes](time-range.md): `timeRange` groups documents into time windows, for "trending this hour" queries.
 - [Integer-Range Indexes](integer-range.md): `integerRange` groups documents into windows of an integer property, for counts and rankings per price or score band.
-- [Index-Only Types](index-only.md): `terminal`, `preallocated` and `skipIfAbsent` shape the indexes of a type whose documents live only in their indexes.
+- [Index-Only Types](index-only.md): `terminal`, `preallocated`, `skipIfAbsent` and `outlivesDelete` shape the indexes of a type whose documents live only in their indexes.
 - [Values of Referenced Documents](derived-index-properties.md): an index property `"<reference property>.<field>"` holds a value of the document a reference points at, which the document does not store.
 
 ## See also

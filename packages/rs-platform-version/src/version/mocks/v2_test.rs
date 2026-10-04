@@ -471,6 +471,21 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                contract_team_actions: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_team_action_signers: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_moderation_action_counts: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 contract_fee_pots: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
@@ -603,10 +618,12 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_moderation_challenge_cool_down_seconds: 94_608_000,
         contract_document_restore_window_ms: 604_800_000,
         max_contract_moderation_added_moderators: 15,
+        max_moderation_charter_elected_members: 15,
         max_contenders_per_contest: 1_000,
         max_token_redemption_cycles: 128,
         max_evonode_reward_claim_epochs: 100,
         max_shielded_transition_actions: 16,
+        max_token_pool_notes_for_outgoing: 250,
         max_time_range_overlap_factor: None,
         max_time_range_ttl_seconds: None,
         min_time_range_ttl_drop_operations_per_write: None,
@@ -615,6 +632,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_document_expirations_per_block: 0,
         max_document_expiration_weight_per_block: 0,
         minimum_grovedb_proof_envelope_version: 0,
+        max_contested_summed_value_magnitude: None,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

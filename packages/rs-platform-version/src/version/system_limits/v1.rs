@@ -64,6 +64,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     contract_document_restore_window_ms: 604_800_000,                // 7 days
     max_contract_moderation_added_moderators: 15,
+    max_moderation_charter_elected_members: 15,
     max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,
     max_evonode_reward_claim_epochs: 100,
@@ -75,6 +76,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: None,
     max_time_range_ttl_seconds: None,
     min_time_range_ttl_drop_operations_per_write: None,
@@ -83,4 +85,5 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_expirations_per_block: 0,
     max_document_expiration_weight_per_block: 0,
     minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
+    max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
 };

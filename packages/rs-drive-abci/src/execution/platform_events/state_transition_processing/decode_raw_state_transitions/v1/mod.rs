@@ -27,7 +27,10 @@ where
     /// anything appended decoded, validated and executed as the original. Here left over bytes
     /// are an `InvalidEncoding` carrying a `SerializedObjectParsingError`, which is unpaid. A
     /// transition whose version is not active at `platform_version` is an `InvalidEncoding`
-    /// carrying a `StateTransitionNotActiveError`, not a decode failure.
+    /// carrying a `StateTransitionNotActiveError`, not a decode failure. The range can be missed
+    /// from either side, and the boundary reported is the one that was missed: its start for a
+    /// version not active yet, its end for one already superseded, since naming the start there
+    /// would point at a version the chain is past.
     ///
     /// ## Arguments
     ///
@@ -113,10 +116,21 @@ where
                                     current_protocol_version,
                                 },
                             ) => {
+                                // The range can be missed from either side. Below its start, the
+                                // start is the version to reach. Above its end, the end is the
+                                // last protocol version that accepted these bytes; naming the
+                                // start there would point at a version the chain is already past.
+                                let boundary =
+                                    if current_protocol_version > *active_version_range.end() {
+                                        *active_version_range.end()
+                                    } else {
+                                        *active_version_range.start()
+                                    };
+
                                 let consensus_error = StateTransitionNotActiveError::new(
                                     state_transition_type,
                                     current_protocol_version,
-                                    *active_version_range.start(),
+                                    boundary,
                                 )
                                 .into();
 
@@ -294,15 +308,21 @@ mod tests {
             .into_iter()
             .collect();
 
+        // The range is missed from below, so the boundary reported is its start: the version the
+        // submitter has to reach. Pinning the number is what tells this side of the choice apart
+        // from the other, which reports the range's end.
         match decoded.as_slice() {
-            [DecodedStateTransition::InvalidEncoding(invalid)] => assert!(
-                matches!(
-                    &invalid.error,
-                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
-                ),
-                "expected StateTransitionNotActiveError, got {:?}",
-                invalid.error
-            ),
+            [DecodedStateTransition::InvalidEncoding(invalid)] => match &invalid.error {
+                ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)) => {
+                    assert_eq!(
+                        error.required_protocol_version(),
+                        9,
+                        "a batch version 1 is active from protocol version 9"
+                    );
+                    assert_eq!(error.current_protocol_version(), 1);
+                }
+                other => panic!("expected StateTransitionNotActiveError, got {other:?}"),
+            },
             other => panic!("expected one InvalidEncoding, got {other:?}"),
         }
     }

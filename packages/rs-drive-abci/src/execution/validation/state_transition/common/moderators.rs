@@ -8,7 +8,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::common::seated_moderation_charter::{
-    fetch_seated_moderation_charter, SeatedModerationCharter,
+    fetch_seated_moderation_charter, SeatedModerationCharter, TeamSeat,
 };
 use dpp::block::epoch::Epoch;
 use dpp::consensus::state::contract_moderation::{
@@ -27,6 +27,15 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
+
+/// How an identity moderates a contract
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModeratorSeat {
+    /// As one of the moderators the declaration names
+    Declared,
+    /// From its seat on the seated team
+    Team(TeamSeat),
+}
 
 /// Who moderates a contract, as state has it now.
 ///
@@ -91,18 +100,47 @@ impl<'a> Moderators<'a> {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
-        match self {
-            Moderators::Declared(moderation) => {
-                Ok(moderation.may_moderate(&owner_id, &identity_id))
-            }
-            Moderators::Seated { charter, .. } => charter.seats(
-                drive,
+        Ok(self
+            .seat_of(
+                owner_id,
                 identity_id,
+                drive,
                 epoch,
                 execution_context,
                 tx,
                 platform_version,
-            ),
+            )?
+            .is_some())
+    }
+
+    /// How `identity_id` moderates the contract owned by `owner_id`, `None` when it does not:
+    /// [`Moderators::may_moderate`], by the same reads, with the seat of a member of a seated
+    /// team ([`SeatedModerationCharter::seat_of`]).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn seat_of(
+        &self,
+        owner_id: Identifier,
+        identity_id: Identifier,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ModeratorSeat>, Error> {
+        match self {
+            Moderators::Declared(moderation) => Ok(moderation
+                .may_moderate(&owner_id, &identity_id)
+                .then_some(ModeratorSeat::Declared)),
+            Moderators::Seated { charter, .. } => Ok(charter
+                .seat_of(
+                    drive,
+                    identity_id,
+                    epoch,
+                    execution_context,
+                    tx,
+                    platform_version,
+                )?
+                .map(ModeratorSeat::Team)),
         }
     }
 
@@ -138,8 +176,8 @@ impl<'a> Moderators<'a> {
         }
     }
 
-    /// The refusal of a seated team's ban, suspension, warning, document deletion or field
-    /// change whose
+    /// The refusal of a seated team's ban, suspension, warning, document deletion, field change
+    /// or proposal of a settled document's deletion whose
     /// reason names no reason document its proposal lists (decentralized moderation teams): a
     /// team acts only on the grounds it proposed, and a proposal that lists none can take no
     /// such action. The proposal is read, billed, only when the reason names a document. A
@@ -164,11 +202,13 @@ impl<'a> Moderators<'a> {
             | ContractUserModerationAction::Suspend { reason, .. }
             | ContractUserModerationAction::Warn { reason, .. }
             | ContractUserModerationAction::DeleteDocument { reason, .. }
-            | ContractUserModerationAction::ChangeDocumentFields { reason, .. } => reason,
+            | ContractUserModerationAction::ChangeDocumentFields { reason, .. }
+            | ContractUserModerationAction::DeleteSettledDocument { reason, .. } => reason,
             ContractUserModerationAction::Unban { .. }
             | ContractUserModerationAction::Unsuspend { .. }
             | ContractUserModerationAction::ClearWarnings { .. }
-            | ContractUserModerationAction::RestoreDocument { .. } => return Ok(None),
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => return Ok(None),
         };
         let listed = match reason.reason_document_id {
             None => false,
@@ -194,7 +234,9 @@ impl<'a> Moderators<'a> {
     /// by. A reversal (an unban, an unsuspension, a clearing, a restore) counts for nothing, and
     /// neither does a field change: changes of one document have no bound, as deletions of the
     /// content that exists do, so counting them would let a member farm the share. Neither does
-    /// an action of the moderators a declaration names, who share the pot equally.
+    /// an action of the moderators a declaration names, who share the pot equally. A team
+    /// action is counted by its own transforms, for every approver whose approval counts, and
+    /// only once the approvals run it.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn count_for_signer(
         &self,
@@ -218,18 +260,17 @@ impl<'a> Moderators<'a> {
         if !counts {
             return Ok(action);
         }
-        let (fee, count) = drive.fetch_contract_moderation_action_count_with_fee(
+        let count = next_moderation_action_count(
+            drive,
             action.data_contract_id(),
             action.moderator_id(),
             epoch,
+            execution_context,
             tx,
             platform_version,
         )?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-        // A contract stored elected before the counts existed has nowhere to count: its team's
-        // actions go uncounted, and a settle splits the action share equally.
         Ok(match count {
-            Some(count) => action.with_moderation_action_count(count.saturating_add(1)),
+            Some(count) => action.with_moderation_action_count(count),
             None => action,
         })
     }
@@ -250,6 +291,32 @@ impl<'a> Moderators<'a> {
             },
         }
     }
+}
+
+/// The moderation action count of `identity_id`, a member of the seated team of the elected
+/// contract `contract_id`, with one more action counted: its count since the moderators pot was
+/// last settled (0 when it has none), plus one, for Drive to write. One point read, billed.
+/// `None` when the contract has no counts tree, being stored elected before the counts existed:
+/// its team's actions go uncounted, and a settle splits the action share equally.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn next_moderation_action_count(
+    drive: &Drive,
+    contract_id: Identifier,
+    identity_id: Identifier,
+    epoch: &Epoch,
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<u32>, Error> {
+    let (fee, count) = drive.fetch_contract_moderation_action_count_with_fee(
+        contract_id,
+        identity_id,
+        epoch,
+        tx,
+        platform_version,
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+    Ok(count.map(|count| count.saturating_add(1)))
 }
 
 /// The refusal of a document create or replace by `writer` that sets, changes or removes

@@ -133,12 +133,12 @@ impl<C> Platform<C> {
                 .drive
                 .fetch_contract_document_removals(contract_id, &query, None, platform_version));
 
+            let removals = entries.into_iter().map(removal_entry_to_response).collect();
+
             GetContractDocumentRemovalsResponseV0 {
                 result: Some(
                     get_contract_document_removals_response_v0::Result::Removals(
-                        ContractDocumentRemovals {
-                            removals: entries.into_iter().map(removal_entry_to_response).collect(),
-                        },
+                        ContractDocumentRemovals { removals },
                     ),
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
@@ -222,6 +222,13 @@ mod tests {
                 moderator_id: Identifier::from([0x78; 32]),
                 restored_at: 2_000 + seed as u64,
             }),
+            // Every odd record keeps fields of its document, as the document encoded them: the
+            // response carries them as the record stores them.
+            kept_fields: if seed.is_multiple_of(2) {
+                Vec::new()
+            } else {
+                vec![1, 3, b't', b'a', b'g', seed, 0]
+            },
         }
     }
 
@@ -233,8 +240,9 @@ mod tests {
                         contract_id: contract.id(),
                         document_type_name: POST.to_string(),
                         document_id: Identifier::from([seed; 32]),
-                        removal: removal(seed),
-                        replaces_existing: false,
+                        removal: Box::new(removal(seed)),
+                        replaced_record_size: None,
+                        estimated_kept_fields_size: 0,
                         moderator_id: Identifier::from([0x77; 32]),
                     },
                 )],
@@ -294,6 +302,7 @@ mod tests {
                     moderator_id: restoration.moderator_id.to_vec(),
                     restored_at: restoration.restored_at,
                 }),
+            kept_fields: removal.kept_fields,
         }
     }
 

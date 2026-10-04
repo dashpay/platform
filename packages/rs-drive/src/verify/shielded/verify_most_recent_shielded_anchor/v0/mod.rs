@@ -4,7 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use grovedb::{Element, GroveDb};
+use grovedb::{Element, GroveDb, PathQuery};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -23,8 +23,28 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<[u8; 32]>), Error> {
-        let path_query = shielded_latest_recorded_anchor_path_query();
+        // Every protocol version selects this generation, so splitting the body out behind a
+        // path parameter has to leave the credit pool alone, and it does: this entry point passes
+        // the same path the body used to build inline, so an existing credit pool proof is checked
+        // by the same PathQuery and yields the same root hash and the same result. A token pool
+        // path reaches the shared body only from a caller that cannot exist below the version
+        // that admits token pools.
+        Self::verify_pool_most_recent_anchor_v0(
+            proof,
+            shielded_latest_recorded_anchor_path_query(),
+            verify_subset_of_proof,
+            platform_version,
+        )
+    }
 
+    /// Verifies the most recent anchor of a pool given that pool's own `limit 1` reverse
+    /// scan, whichever shielded pool (credit or token) it is.
+    pub(super) fn verify_pool_most_recent_anchor_v0(
+        proof: &[u8],
+        path_query: PathQuery,
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Option<[u8; 32]>), Error> {
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
