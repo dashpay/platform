@@ -6709,6 +6709,68 @@ mod tests {
             );
     }
 
+    /// The contact payment decides code 59 with the same trial as a plain
+    /// send: its only coin is not final yet, so a payment that coin covers is
+    /// waiting on the network, and one it cannot cover stays a build error.
+    #[tokio::test]
+    async fn contact_payment_reports_waiting_only_when_the_trial_builds() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        fund_bip44_account_0(&manager, wallet_id, 0xD1, 200_000).await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let mut wm = wallet_arc.wallet_manager().write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            for utxo in info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("BIP-44 managed account 0")
+                .utxos
+                .values_mut()
+            {
+                utxo.is_confirmed = false;
+                utxo.is_instantlocked = false;
+            }
+        }
+        let iw = wallet_arc.identity();
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+        let accepting = with_accepting_broadcaster(iw);
+
+        let covered = accepting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect_err("nothing is final");
+        assert!(
+            matches!(
+                covered,
+                PlatformWalletError::CoreFundsAwaitingNetwork {
+                    waiting: 200_000,
+                    ..
+                }
+            ),
+            "got {covered:?}"
+        );
+
+        let beyond = accepting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 5_000_000, None, &signer, &provider)
+            .await
+            .expect_err("beyond every coin");
+        assert!(
+            matches!(beyond, PlatformWalletError::TransactionBuild(_)),
+            "got {beyond:?}"
+        );
+    }
+
     /// A definitively rejected broadcast must return the consumed payment
     /// address to the pool AND persist the revert — unlike a failed build,
     /// the used flip was already persisted before the broadcast attempt, so

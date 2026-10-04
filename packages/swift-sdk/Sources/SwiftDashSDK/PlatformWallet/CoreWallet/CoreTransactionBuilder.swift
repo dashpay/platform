@@ -210,7 +210,9 @@ public final class CoreTransactionBuilder {
     /// (its own `accountType` and index) and never drops a chosen coin
     /// silently: one those accounts don't hold (another account's, or spent
     /// since) fails the build by name, one no longer final fails with code
-    /// 59, one an in-flight broadcast pins as mid-broadcast.
+    /// 59, one an in-flight broadcast pins as mid-broadcast. The one
+    /// exception: a coin another in-flight build holds reserved (a pending
+    /// deferred payment) is left out.
     @discardableResult
     public func addInputs(
         wallet: ManagedPlatformWallet,

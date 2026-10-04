@@ -86,8 +86,6 @@ pub(crate) fn is_contact_watch_only(record: &TransactionRecord) -> bool {
 /// account is not a contact's watch-only chain ([`is_contact_watch_only`]),
 /// whose input details record the *contact* spending. The persisted projection's input rule and the
 /// broadcast resolver's "own send".
-///
-/// [`AccountType::is_contact_owned`]: key_wallet::account::AccountType::is_contact_owned
 pub(crate) fn record_spends_own_coins(record: &TransactionRecord) -> bool {
     !record.input_details.is_empty() && !is_contact_watch_only(record)
 }

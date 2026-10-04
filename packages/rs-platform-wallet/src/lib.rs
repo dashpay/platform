@@ -27,7 +27,7 @@ pub mod test_support;
 mod util;
 pub mod wallet;
 
-pub use error::PlatformWalletError;
+pub use error::{ChosenInputProblem, PlatformWalletError};
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 // Surface the upstream `DerivedAddress` event payload through this

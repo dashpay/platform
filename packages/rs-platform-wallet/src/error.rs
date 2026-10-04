@@ -271,6 +271,19 @@ pub enum PlatformWalletError {
     )]
     InputMidBroadcast { outpoint: dashcore::OutPoint },
 
+    /// A coin the caller chose as an input by outpoint
+    /// (`FinalizeOptions::inputs`, FFI `add_inputs_from_outpoints`) cannot be
+    /// spent by this build: the finalizer's funding accounts don't hold it
+    /// (another account's coin, or spent since it was chosen — refresh the
+    /// list), or it is not spendable yet (an immature coinbase output, a
+    /// locked coin). Refused by name rather than left out: the caller picked
+    /// it.
+    #[error("chosen input {outpoint} cannot be spent by this build: {problem}")]
+    ChosenInputUnavailable {
+        outpoint: dashcore::OutPoint,
+        problem: ChosenInputProblem,
+    },
+
     /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
     /// target at all: unparseable, encoded for a different network than the
     /// wallet's, or not P2PKH. A caller-input error — the classic Dash
@@ -1002,6 +1015,28 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+}
+
+/// Why a chosen input cannot be spent
+/// ([`PlatformWalletError::ChosenInputUnavailable`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChosenInputProblem {
+    /// The finalizer's funding accounts don't hold it: another account's
+    /// coin, or spent since it was chosen.
+    NotInFundingAccounts,
+    /// Held, but not spendable yet: an immature coinbase output, or locked.
+    NotSpendable,
+}
+
+impl std::fmt::Display for ChosenInputProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NotInFundingAccounts => {
+                "not a coin of any funding account (another account's, or spent since it was chosen)"
+            }
+            Self::NotSpendable => "not spendable yet (immature or locked)",
+        })
+    }
 }
 
 impl PlatformWalletError {

@@ -997,7 +997,10 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// don't hold (chosen from another account, or spent since) fails the build
 /// by name, with or without `core_wallet_tx_builder_use_only_added_inputs`;
 /// one that lost its final status fails with code 59, one an in-flight
-/// broadcast pins with `ErrorInputMidBroadcast`.
+/// broadcast pins with an input-mid-broadcast error. The one exception: a coin
+/// another in-flight build holds reserved (a pending deferred payment, say)
+/// is left out by the reservation filter, as reservations are not readable
+/// here.
 ///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer; `wallet` a valid platform-wallet handle;
@@ -1412,14 +1415,14 @@ mod pooled_balance_handle_tests {
         )
     }
 
-    /// A drain requests no amount, so its shortfall is judged against its own
-    /// no-change fee and the dust floor. A lone 1,600-duff coin that is not
-    /// final, drained at 10,000 duffs/kB, nets 120 duffs after its input —
-    /// below the fee and dust a drain needs even once it confirms: insufficient
-    /// funds. A 100,000-duff one would cover them: waiting.
+    /// A drain of a lone coin that is not final, at 10,000 duffs/kB (a
+    /// 1,920-duff fee): 1,600 duffs do not even pay the fee, and 2,400 pay it
+    /// but leave 480 — under the 546-duff dust floor key-wallet's drain
+    /// requires — so both are insufficient funds even once confirmed. 100,000
+    /// duffs drain fine once confirmed: waiting.
     #[test]
     fn should_judge_a_drain_shortfall_by_its_fee_and_dust() {
-        for (coin, waiting) in [(1_600, false), (100_000, true)] {
+        for (coin, waiting) in [(1_600, false), (2_400, false), (100_000, true)] {
             let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
                 StandardAccountType::BIP44Account,
                 &[coin],

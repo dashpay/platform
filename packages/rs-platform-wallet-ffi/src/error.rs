@@ -965,6 +965,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InputMidBroadcast { .. } => {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
+            // A chosen input the build cannot spend (not held by the funding
+            // accounts, or not spendable yet): the caller's parameter. The
+            // outpoint and the reason travel in the message.
+            PlatformWalletError::ChosenInputUnavailable { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY

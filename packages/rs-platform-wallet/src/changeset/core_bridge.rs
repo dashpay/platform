@@ -1987,8 +1987,6 @@ async fn wallet_slices_and_verdicts_for_txid(
     Some((slices, verdicts))
 }
 
-// Contact-owned records: see `is_contact_watch_only` (wallet::core).
-
 /// Derive the "ours" UTXOs created by a transaction's outputs.
 ///
 /// Walks `record.output_details`, keeps entries with role `Received` or

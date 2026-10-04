@@ -25,6 +25,7 @@ use key_wallet::{DerivationPath, ReservationToken, Utxo};
 
 use super::{CoreWallet, WalletGeneration};
 use crate::broadcaster::TransactionBroadcaster;
+use crate::error::ChosenInputProblem;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::wallet::reservations::reservation_expired;
 use crate::PlatformWalletError;
@@ -92,12 +93,15 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
 /// send that never reached the network never becomes final, so a payment
 /// built on it is one no node accepts. The spendable and max figures count
 /// the same coins, so they never offer what a build refuses.
+#[doc(hidden)]
 pub fn is_final(utxo: &Utxo) -> bool {
     utxo.is_confirmed || utxo.is_instantlocked
 }
 
 /// Code 59 for a coin the caller chose as an input that is not final: it
-/// names the coin, and `waiting` is its value.
+/// names the coin, and `waiting` is its value. Public for platform-wallet-ffi
+/// only.
+#[doc(hidden)]
 pub fn input_awaiting_network(utxo: &Utxo) -> PlatformWalletError {
     PlatformWalletError::CoreFundsAwaitingNetwork {
         available: None,
@@ -141,12 +145,15 @@ pub struct FinalizeOptions {
     /// snapshot taken when the caller chose it: a coin InstantSend-locked
     /// since may be spent, one that is not final (any more) is refused by
     /// name with `CoreFundsAwaitingNetwork`, and one an in-flight broadcast
-    /// pins with `InputMidBroadcast`. One another in-flight build has
-    /// reserved is left out by key-wallet's reservation filter, like any
-    /// reserved coin. Inputs seeded on the builder itself
+    /// pins with `InputMidBroadcast`. Inputs seeded on the builder itself
     /// (`TransactionBuilder::add_inputs`) stay the caller's snapshot: one not
     /// final in it is dropped by the final-inputs rule, and a selected one is
-    /// re-checked before signing. Name a coin one way, not both: the builder
+    /// re-checked before signing; one not final in that snapshot is not
+    /// considered by the waiting-coins trial either. A chosen coin that
+    /// another in-flight build has reserved is left out by key-wallet's
+    /// reservation filter (the pinned key-wallet keeps reservations private),
+    /// the one way a chosen coin can be left out without an error. Name a coin
+    /// one way, not both: the builder
     /// cannot be read back, so a coin seeded both ways is a candidate twice,
     /// and a build that selects both copies is refused for spending it twice.
     pub inputs: Vec<OutPoint>,
@@ -187,7 +194,11 @@ impl FinalizeOptions {
 /// change address from its pool, and only a standard account has one — so no
 /// account state moves; the others are funded as they are. Account coins an
 /// in-flight broadcast pins (`pinned`, the caller's snapshot) are locked, so
-/// selection passes them over; a pinned seed was refused before. The clones share the reservation sets, so what the trial
+/// selection passes them over; a pinned seed was refused before. A coin the
+/// configuration seeds on the builder itself is not promoted: key-wallet keeps
+/// the builder's copy over the clone's, so one not final there stays out of
+/// the trial as it stays out of the build (choose it through
+/// `FinalizeOptions::inputs` instead). The clones share the reservation sets, so what the trial
 /// reserves is released before returning. Nothing is signed (a payload
 /// finalizer on the configuration does run, as in the build). Runs
 /// under the caller's wallet-manager write guard, on the failure path only.
@@ -963,7 +974,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// by then (or refused), so nothing it could spend is waiting.
     ///
     /// `make` is called once before the wallet-manager lock is taken and, on a
-    /// shortfall, once more while its write guard is held: it must not touch
+    /// shortfall when the funding accounts hold a spendable coin that is not
+    /// final and not pinned (never for `reservation_only`), once more while
+    /// its write guard is held: it must not touch
     /// the wallet manager (or anything that waits on it), or that second call
     /// deadlocks. The trial may price coins the build never reached, so a fee
     /// rate it sets must pass [`check_fee_rate`] (key-wallet multiplies rate by
@@ -1090,17 +1103,19 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     // out silently — under a drain, sweeping everything else
                     // without it — would be worse than refusing a seed the
                     // build might not have needed.
-                    return Err(PlatformWalletError::TransactionBuild(format!(
-                        "input {outpoint} is not a coin of any funding account"
-                    )));
+                    return Err(PlatformWalletError::ChosenInputUnavailable {
+                        outpoint: *outpoint,
+                        problem: ChosenInputProblem::NotInFundingAccounts,
+                    });
                 };
                 // Unspendable — an immature coinbase output, or a locked coin:
                 // the selector would drop it silently, and confirmation alone
                 // would not change that, so this is checked first.
                 if !utxo.is_spendable(height) {
-                    return Err(PlatformWalletError::TransactionBuild(format!(
-                        "input {outpoint} is not spendable yet (immature or locked)"
-                    )));
+                    return Err(PlatformWalletError::ChosenInputUnavailable {
+                        outpoint: *outpoint,
+                        problem: ChosenInputProblem::NotSpendable,
+                    });
                 }
                 // Pinned by an in-flight broadcast: the build would refuse it
                 // after selection anyway, and confirmation would not change
@@ -1510,6 +1525,7 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
+    use crate::error::ChosenInputProblem;
     use crate::wallet::core::transaction::{
         build_error_awaiting_network, is_final, modeled_output_script, FinalizeOptions,
         MAX_STANDARD_TX_INPUTS,
@@ -2849,8 +2865,13 @@ mod tests {
                     )
                     .await;
                 assert!(
-                    matches!(result, Err(PlatformWalletError::TransactionBuild(ref message))
-                        if message.contains(&chosen.to_string())),
+                    matches!(
+                        result,
+                        Err(PlatformWalletError::ChosenInputUnavailable {
+                            outpoint,
+                            problem: ChosenInputProblem::NotInFundingAccounts,
+                        }) if outpoint == chosen
+                    ),
                     "{chosen} reservation_only={reservation_only}: got {result:?}"
                 );
             }
@@ -3348,8 +3369,13 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(PlatformWalletError::TransactionBuild(ref message))
-                if message.contains(&chosen.outpoint.to_string())),
+            matches!(
+                result,
+                Err(PlatformWalletError::ChosenInputUnavailable {
+                    outpoint,
+                    problem: ChosenInputProblem::NotSpendable,
+                }) if outpoint == chosen.outpoint
+            ),
             "got {result:?}"
         );
     }

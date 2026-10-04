@@ -188,7 +188,9 @@ source and behaviour changes:
   outpoint if not, with `InputMidBroadcast` if an in-flight broadcast pins it.
   A chosen coin the funding accounts don't hold (another account's, or spent
   since it was chosen) is refused by name in both funding modes: the caller
-  picked it, so it is never dropped silently. A coin
+  picked it, so it is not dropped silently. The one exception: a coin another
+  in-flight build holds reserved is left out by key-wallet's reservation
+  filter (reservations are not readable from platform-wallet). A coin
   seeded on the builder itself (`add_inputs`) is the caller's snapshot; a
   selected one that has lost its final status is refused the same way.
 
