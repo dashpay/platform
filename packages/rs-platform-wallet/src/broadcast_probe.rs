@@ -395,7 +395,7 @@ fn lookup_answer(tx: &GetTransactionResponse) -> LookupAnswer {
     }
     LookupAnswer::Known {
         mined,
-        height: u32::try_from(tx.height).ok().filter(|height| *height > 0),
+        height: Some(tx.height).filter(|height| *height > 0),
     }
 }
 
