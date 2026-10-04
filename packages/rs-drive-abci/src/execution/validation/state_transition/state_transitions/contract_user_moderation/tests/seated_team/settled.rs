@@ -7,6 +7,8 @@
 use super::*;
 use dpp::data_contract::config::moderation::{ContractTeamAction, ContractTeamActionEvent};
 use dpp::group::group_action_status::GroupActionStatus;
+use drive::drive::contract::moderation::types::ContractTeamActionWrite;
+use drive::util::batch::{ContractModerationOperationType, DriveOperation};
 
 const DOCUMENT_TYPE_NOT_DELETABLE_ONCE_SETTLED: u32 = 41204;
 const CONTRACT_MODERATION_TEAM_NOT_SEATED: u32 = 41205;
@@ -23,6 +25,15 @@ const DOCUMENT_NOT_FOUND: u32 = 40101;
 /// A month after the documents of these tests were written, and after the seat was awarded:
 /// every story and memo is settled.
 const SETTLED_AT: TimestampMillis = BLOCK_TIME_MS + 30 * 24 * 3_600 * 1_000;
+
+/// A story of a type a contract registered before a rule dating the members the leader adds
+/// needed `$createdAt` may hold (5.0.0-beta.1): its rule dates them (three approvals, the leader
+/// among them), but its documents carry no `$createdAt`.
+const UNDATED_STORY: &str = "undatedStory";
+
+/// The same, its rule opting out (`approversPredateDocument: false`): every member the leader
+/// added counts, whenever added.
+const UNDATED_LEGEND: &str = "undatedLegend";
 
 /// How long after the award the leader's additions of these tests are made
 const ADDED_AFTER_THE_SEAT: TimestampMillis = 1_000;
@@ -71,6 +82,113 @@ impl Team {
             "a document written after the seat is settled by SETTLED_AT"
         );
         seated_at
+    }
+
+    /// Stores straight to Drive a new version of the contract with `UNDATED_STORY` and
+    /// `UNDATED_LEGEND`, read without full validation as a stored contract is, the team holding
+    /// `deleteDocuments` on both: types registration refuses now, which a contract stored
+    /// before still holds.
+    fn store_undated_types(&mut self) {
+        let platform_version = PlatformVersion::latest();
+        let mut contract = self.setup.contract.clone();
+        let mut moderation = contract
+            .config()
+            .moderation()
+            .cloned()
+            .expect("expected the moderation declaration");
+        let ContractModerators::Elected(elected) = &mut moderation.moderators else {
+            panic!("expected an elected declaration");
+        };
+        for name in [UNDATED_STORY, UNDATED_LEGEND] {
+            elected.moderated_document_types.insert(
+                name.to_string(),
+                BTreeSet::from([ModerationAbility::DeleteDocuments]),
+            );
+        }
+        contract.set_config(contract.config().clone().with_moderation(Some(moderation)));
+        for (name, rule) in [
+            (
+                UNDATED_STORY,
+                platform_value!({ "leader": true, "approvals": 3 }),
+            ),
+            (
+                UNDATED_LEGEND,
+                platform_value!({
+                    "leader": true,
+                    "approvals": 3,
+                    "approversPredateDocument": false,
+                }),
+            ),
+        ] {
+            contract
+                .set_document_schema(
+                    name,
+                    post_schema_with(platform_value!({
+                        "moderatorAbilities": {
+                            "delete": true,
+                            "deleteWithin": SETTLING_WINDOW_SECONDS,
+                            "deleteSettled": rule,
+                        },
+                        "documentsMutable": true,
+                        "required": ["text", "$updatedAt"],
+                    })),
+                    false,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected a stored type to be read without full validation");
+        }
+        contract.increment_version();
+        let transaction = self.setup.platform.drive.grove.start_transaction();
+        self.setup
+            .platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to store the contract");
+        self.setup.commit(transaction);
+        // Written outside a block: the cached copy is the version before.
+        self.setup
+            .platform
+            .drive
+            .cache
+            .data_contracts
+            .remove(contract.id().to_buffer());
+        self.setup.contract = contract;
+    }
+
+    /// `member`'s approval of team action `action_id`, written straight to Drive as a node that
+    /// did not date the members the leader adds stored it
+    fn approval_stored_before(&self, member: &Actor, action_id: Identifier) {
+        let transaction = self.setup.platform.drive.grove.start_transaction();
+        self.setup
+            .platform
+            .drive
+            .apply_drive_operations(
+                vec![DriveOperation::ContractModerationOperation(
+                    ContractModerationOperationType::AddTeamActionSignature {
+                        contract_id: self.setup.contract.id(),
+                        action_id,
+                        signer_id: member.id(),
+                        write: ContractTeamActionWrite::Approve {
+                            dropped_signers: vec![],
+                        },
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("expected to store the approval");
+        self.setup.commit(transaction);
     }
 
     /// The leader's addition of `actor`, processed and committed `ADDED_AFTER_THE_SEAT` after
@@ -1146,5 +1264,143 @@ async fn should_drop_the_approval_of_a_member_added_again_after_the_story() {
             (team.member.id(), 1),
             (other_joiner.id(), 1),
         ])
+    );
+}
+
+/// A stored type whose rule dates the members the leader adds, but whose documents carry no
+/// `$createdAt`, registered before such a rule needed it: a document recording no creation time
+/// predates no addition, so no added member proposes or approves its deletion (41212), and the
+/// approvals of added members a node stored before are dropped, refunded, by the next approval
+/// that reads the team, by one point read each or by one read of the whole team. The leader and
+/// the elected member count.
+#[tokio::test]
+async fn should_count_no_added_member_on_a_stored_type_whose_documents_carry_no_creation_time() {
+    let mut team = Team::new(InterimModerators::ContractOwner).await;
+    team.store_undated_types();
+    let team = team;
+    let setup = &team.setup;
+    let seated_at = team.seated();
+    let [joiner, other_joiner, _] = &team.joiners;
+    team.add_after(joiner, seated_at).await;
+    team.add_after(other_joiner, seated_at).await;
+    let story = team
+        .written_at(
+            &setup.stranger,
+            UNDATED_STORY,
+            seated_at + WRITTEN_AFTER_THE_SEAT,
+        )
+        .await;
+    assert_eq!(
+        setup
+            .stored_document(UNDATED_STORY, story.id(), None)
+            .expect("expected the story")
+            .created_at(),
+        None
+    );
+
+    // A joiner's proposal is refused; the elected member proposes twice, for two reasons.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let by_the_joiner = setup
+        .moderate(joiner, propose(UNDATED_STORY, story.id(), "doxxing"))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&by_the_joiner, SETTLED_AT, &transaction),
+        CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT,
+    );
+    let one_by_one = setup
+        .moderate(&team.member, propose(UNDATED_STORY, story.id(), "doxxing"))
+        .await;
+    let whole_team = setup
+        .moderate(&team.member, propose(UNDATED_STORY, story.id(), "spam"))
+        .await;
+    for proposal in [&one_by_one, &whole_team] {
+        assert_success(&setup.process_at(proposal, SETTLED_AT, &transaction));
+    }
+    setup.commit(transaction);
+    let (one_by_one, whole_team) = (action_id_of(&one_by_one), action_id_of(&whole_team));
+
+    // Approvals of the joiners a node stored before: one on the first action, two on the
+    // second.
+    team.approval_stored_before(joiner, one_by_one);
+    team.approval_stored_before(joiner, whole_team);
+    team.approval_stored_before(other_joiner, whole_team);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let by_the_other_joiner = setup.moderate(other_joiner, approve(one_by_one)).await;
+    assert_paid_with_code(
+        &setup.process_at(&by_the_other_joiner, SETTLED_AT + 1, &transaction),
+        CONTRACT_TEAM_MEMBER_ADDED_AFTER_DOCUMENT,
+    );
+    // The leader's approvals could meet the rule, so each reads the team: two earlier approvers
+    // one point read each, three by one read of the whole team. The joiners' approvals are
+    // dropped and refunded; the member and the leader fall short of three, and the story stays.
+    let mut counted = vec![team.member.id(), team.leader.id()];
+    counted.sort();
+    for (action_id, dropped, at) in [
+        (one_by_one, vec![joiner], SETTLED_AT + 2),
+        (whole_team, vec![joiner, other_joiner], SETTLED_AT + 3),
+    ] {
+        let by_the_leader = setup.moderate(&team.leader, approve(action_id)).await;
+        let execution = setup.process_at(&by_the_leader, at, &transaction);
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = &execution
+        else {
+            panic!("expected the approval to pass, got {execution:?}");
+        };
+        let mut refunded: Vec<[u8; 32]> = fee_result.fee_refunds.0.keys().copied().collect();
+        refunded.sort();
+        let mut dropped: Vec<[u8; 32]> = dropped
+            .iter()
+            .map(|member| member.id().to_buffer())
+            .collect();
+        dropped.sort();
+        assert_eq!(refunded, dropped);
+        assert_eq!(
+            team.signers(GroupActionStatus::ActionActive, action_id, &transaction),
+            counted
+        );
+    }
+    assert!(team.is_stored(UNDATED_STORY, story.id(), &transaction));
+}
+
+/// A stored type opting out (`approversPredateDocument: false`) needs no creation time: members
+/// the leader added propose and approve the deletion of its documents, which carry none, and
+/// complete the rule with the leader.
+#[tokio::test]
+async fn should_let_added_members_delete_from_a_stored_opted_out_type_without_creation_times() {
+    let mut team = Team::new(InterimModerators::ContractOwner).await;
+    team.store_undated_types();
+    let team = team;
+    let setup = &team.setup;
+    let seated_at = team.seated();
+    let [joiner, other_joiner, _] = &team.joiners;
+    team.add_after(joiner, seated_at).await;
+    team.add_after(other_joiner, seated_at).await;
+    let legend = team
+        .written_at(
+            &setup.stranger,
+            UNDATED_LEGEND,
+            seated_at + WRITTEN_AFTER_THE_SEAT,
+        )
+        .await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let proposal = setup
+        .moderate(joiner, propose(UNDATED_LEGEND, legend.id(), "doxxing"))
+        .await;
+    assert_success(&setup.process_at(&proposal, SETTLED_AT, &transaction));
+    let action_id = action_id_of(&proposal);
+    for (approver, at) in [
+        (other_joiner, SETTLED_AT + 1),
+        (&team.leader, SETTLED_AT + 2),
+    ] {
+        let approval = setup.moderate(approver, approve(action_id)).await;
+        assert_success(&setup.process_at(&approval, at, &transaction));
+    }
+    assert!(!team.is_stored(UNDATED_LEGEND, legend.id(), &transaction));
+    let mut counted = vec![joiner.id(), other_joiner.id(), team.leader.id()];
+    counted.sort();
+    assert_eq!(
+        team.signers(GroupActionStatus::ActionClosed, action_id, &transaction),
+        counted
     );
 }
