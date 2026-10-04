@@ -3166,9 +3166,12 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(PlatformWalletError::CoreInsufficientFunds { .. })
+                Err(PlatformWalletError::ChosenInputUnavailable {
+                    outpoint,
+                    problem: ChosenInputProblem::NotInFundingAccounts,
+                }) if outpoint == outside.outpoint
             ),
-            "got {result:?}"
+            "the seeded coin is what stands in the way: got {result:?}"
         );
     }
 
