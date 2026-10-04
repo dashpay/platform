@@ -1345,11 +1345,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // on a fresh copy of the build, on this failure path only.
                     // Only a shortfall or too many inputs can turn on coins
                     // that are not final.
-                    // The trial refuses only a coin chosen by outpoint that no
-                    // funding account holds; this builder chooses none, so a
-                    // refusal cannot come from here — and if one ever did, the
-                    // payment reports the build error, not a coin its caller
-                    // never named.
+                    // The trial refuses only a coin seeded on the builder
+                    // (`add_inputs`) that selection picks but no funding
+                    // account holds; `make` seeds none, so a refusal cannot
+                    // come from here. Should `make` ever seed coins, map that
+                    // refusal through instead of dropping it: as it is, the
+                    // payment would report the build error.
                     let waiting = if waiting_may_help(&e) {
                         trial_with_waiting_coins(
                             &|| Ok(make()),

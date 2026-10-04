@@ -3220,6 +3220,63 @@ mod tests {
         core.abandon_transaction(&built).await;
     }
 
+    /// The same refusals when the build pools several sources (BIP44 and
+    /// DashPay receiving funds, BIP32 left out): the trial that needs the
+    /// outside seed, and the drain that selects it.
+    #[tokio::test]
+    async fn should_refuse_an_outside_builder_seed_in_a_pooled_build() {
+        let pooled = [
+            AccountTypePreference::BIP44,
+            AccountTypePreference::AllDashpayReceivingFunds,
+        ];
+        let refused = |result: &Result<_, PlatformWalletError>, seeded: dashcore::OutPoint| {
+            matches!(
+                result,
+                Err(PlatformWalletError::ChosenInputUnavailable {
+                    outpoint,
+                    problem: ChosenInputProblem::NotInFundingAccounts,
+                }) if *outpoint == seeded
+            )
+        };
+
+        let (core, signer, manager, wallet_id) = dual_core(&[700_000], &[700_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let outside = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        let result = core
+            .finalize_transaction_from(
+                || Ok(payment_builder(106).add_inputs([outside.clone()])),
+                FinalizeOptions::default(),
+                &pooled,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(refused(&result, outside.outpoint), "trial: got {result:?}");
+
+        let (core, signer, _manager, _wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+        let outside = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        let result = core
+            .finalize_transaction(
+                TransactionBuilder::new()
+                    .set_selection_strategy(SelectionStrategy::All)
+                    .add_output(&DashAddress::dummy(Network::Testnet, 107), 0)
+                    .add_inputs([outside.clone()]),
+                &pooled,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(refused(&result, outside.outpoint), "drain: got {result:?}");
+    }
+
     /// A payment the unconfirmed coins would not cover either stays a plain
     /// shortfall: waiting would not help.
     #[tokio::test]

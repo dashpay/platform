@@ -394,8 +394,9 @@ impl ProbeSchedule {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Final {
     /// Found in a block by a probe (two nodes), before the wallet saw it;
-    /// `at` is the later of the wallet's synced height then and the block
-    /// height a node named. Advisory, not settlement: only the
+    /// `at` is the later of the wallet's synced height when the answer
+    /// arrived and the block height a node named — that height capped at
+    /// one [`MINED_EVIDENCE_GRACE`] above the wallet's. Advisory, not settlement: only the
     /// wallet seeing it settles it, and evidence the wallet does not confirm
     /// within [`MINED_EVIDENCE_GRACE`] blocks is dropped (see `begin_pass`).
     Mined { at: u32 },
@@ -563,7 +564,8 @@ impl ResolverState {
     /// Record `verdict` for `send`, from `source`; returns whether the host
     /// must hear it. Unresolved never replaces a decided verdict (Accepted,
     /// Mined) — one probe that only met transport errors says nothing new.
-    /// A verdict that agrees with what the host holds keeps its source.
+    /// A probe's verdict that agrees with what the host holds keeps its
+    /// source; an echo always marks the verdict as its own.
     fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict, source: Source) -> bool {
         let changed = match self.published.get(&key) {
             None => true,
@@ -577,6 +579,11 @@ impl ResolverState {
         };
         if changed {
             self.published.insert(key, (verdict.clone(), source));
+        } else if source == Source::Echo {
+            // An echo is the send's own evidence even when it only agrees.
+            if let Some((_, held)) = self.published.get_mut(&key) {
+                *held = Source::Echo;
+            }
         }
         changed
     }
@@ -1190,8 +1197,6 @@ struct Run {
 struct Probing {
     views: Vec<OutgoingView>,
     height: u32,
-    /// The pass is anchored: the wallet follows the tip.
-    following: bool,
     due: VecDeque<DueRoot>,
     /// The root whose probe is out now.
     in_flight: Option<DueRoot>,
@@ -1644,11 +1649,6 @@ impl Actor {
                         "echo",
                         &mut events,
                     );
-                    // Already held as accepted: the echo is now its own
-                    // evidence for it too.
-                    if let Some((_, source)) = self.state.published.get_mut(&(wallet_id, txid)) {
-                        *source = Source::Echo;
-                    }
                 }
                 deliver(&self.sink, events);
             }
@@ -1718,7 +1718,6 @@ impl Actor {
                         current.probing = Some(Probing {
                             views,
                             height,
-                            following: current.anchor_at.is_some(),
                             due: start.due,
                             in_flight: None,
                         });
@@ -1747,6 +1746,9 @@ impl Actor {
                 // Cannot happen: a probe job is spawned only by a probing run
                 // with its root in flight. Fail safe — end the run rather than
                 // leave it blocking every later pass for the wallet.
+                // Whether the wallet follows the tip now: a catch-up step
+                // while the probe was out drops the run's anchor.
+                let following = current.anchor_at.is_some();
                 let Some(probing) = current.probing.as_mut() else {
                     tracing::error!(
                         wallet_id = %hex::encode(wallet_id),
@@ -1785,14 +1787,8 @@ impl Actor {
                 // a pass of many probes can span blocks, and mined evidence
                 // gets its full grace from when it arrived.
                 let now = reported.map_or(probing.height, |height| height.max(probing.height));
-                let events = record_probe(
-                    &mut self.state,
-                    wallet_id,
-                    now,
-                    probing.following,
-                    &root,
-                    &report,
-                );
+                let events =
+                    record_probe(&mut self.state, wallet_id, now, following, &root, &report);
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
@@ -4328,6 +4324,37 @@ mod tests {
             .sent()
             .contains(&ResolverEvent::Verdict(txid(2), mined())));
         assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(2))));
+    }
+
+    /// A catch-up step while a probe is out: the answer is not judged
+    /// against a block the scan may still be on its way to.
+    #[tokio::test]
+    async fn should_not_judge_a_passed_block_after_a_catch_up_during_the_probe() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // root 1's probe spawned
+        let mut probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
+        let Ok((_, JobDone::Probed { report, .. })) = &mut probed else {
+            panic!("a probe answer");
+        };
+        *report = mined_report(Some(105));
+
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101 + CATCH_UP_STEP + 30,
+        });
+        rig.actor.joined(probed);
+
+        assert!(matches!(
+            rig.actor.state.finished.get(&(wallet(), txid(1))),
+            Some(Final::Mined { .. })
+        ));
     }
 
     /// A settle unrelated to a forced send's chain does not probe that send

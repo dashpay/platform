@@ -178,7 +178,10 @@ source and behaviour changes:
   `NotSpendable`; FFI `ErrorInvalidParameter`): a coin chosen by outpoint the
   build cannot spend — and a coin seeded on the builder with `add_inputs`
   that selection picked but no funding account holds, which used to be a
-  `TransactionBuild` string error. An exhaustive `match` needs an arm for it.
+  `TransactionBuild` string error. A short build that would only succeed by
+  selecting such a seeded coin once waiting coins confirm now returns this
+  refusal too, where it used to return `CoreInsufficientFunds` /
+  `CorePooledInsufficientFunds`. An exhaustive `match` needs an arm for it.
 - `PlatformWalletError` gains `CoreFundsAwaitingNetwork { available, waiting,
   required, outpoint }` (FFI code 59): the build's final coins fall short, but
   key-wallet would build it if the coins that are not yet confirmed or
