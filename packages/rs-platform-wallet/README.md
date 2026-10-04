@@ -164,8 +164,15 @@ source and behaviour changes:
   builds `make()`, and on a shortfall builds `make()` once more as a trial,
   without signing or keeping a reservation, with the coins that are not final
   yet treated as final: if key-wallet builds that, the shortfall is
-  `CoreFundsAwaitingNetwork`. A finalizer handed a plain builder cannot make
+  `CoreFundsAwaitingNetwork` (not for a `reservation_only` build, which spends
+  only its final chosen inputs). A finalizer handed a plain builder cannot make
   it again, so its shortfall stays insufficient funds.
+- `FinalizeOptions` is `#[non_exhaustive]`: build it with
+  `FinalizeOptions::default()`, `with_inputs` and `with_reservation_only`.
+- FFI: `core_wallet_tx_builder_set_fee_rate` refuses a rate whose fee
+  arithmetic would overflow (`ErrorInvalidParameter`, above about 42.9 DASH
+  per kB); `core_wallet_tx_builder_set_current_height` is accepted and ignored
+  — the finalizers always built at the wallet's own height.
 - `PlatformWalletError` gains `CoreFundsAwaitingNetwork { available, waiting,
   required, outpoint }` (FFI code 59): the build's final coins fall short, but
   key-wallet would build it if the coins that are not yet confirmed or
@@ -174,10 +181,13 @@ source and behaviour changes:
   exhaustive `match` needs an arm for it.
 - Behaviour: every payment build that funds from the wallet, and
   `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
-  InstantSend-locked coins. A coin in `FinalizeOptions::inputs` is judged as
-  the wallet holds it when the build is finalized: a candidate if final by
-  then (the only kind with `reservation_only`), refused with
-  `CoreFundsAwaitingNetwork` naming its outpoint if not. A coin
+  InstantSend-locked coins. A coin in `FinalizeOptions::inputs` that a
+  funding account holds is judged as the wallet holds it when the build is
+  finalized: a candidate if final by then (the only kind with
+  `reservation_only`), refused with `CoreFundsAwaitingNetwork` naming its
+  outpoint if not, with `InputMidBroadcast` if an in-flight broadcast pins it.
+  One outside the funding accounts is left out (refused by name under
+  `reservation_only`). A coin
   seeded on the builder itself (`add_inputs`) is the caller's snapshot; a
   selected one that has lost its final status is refused the same way.
 

@@ -35,7 +35,7 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-use crate::CoreWallet;
+use crate::{CoreWallet, PlatformWallet};
 
 /// Broadcaster whose first call fails with a definitive pre-send rejection
 /// and which succeeds afterwards, to model a transient broadcast error
@@ -773,7 +773,7 @@ pub async fn test_platform_wallet_manager() -> (
 /// see it — and return its outpoint. For FFI tests that drive the real
 /// finalizers through a wallet handle.
 pub async fn add_bip44_coin(
-    wallet: &crate::PlatformWallet,
+    wallet: &PlatformWallet,
     value: u64,
     final_: bool,
     tag: u8,

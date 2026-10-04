@@ -108,10 +108,9 @@ impl FFITransactionBuilder {
     unsafe fn into_build(builder: *mut FFITransactionBuilder) -> (FFINetwork, BuildPlan) {
         let ffi = Box::from_raw(builder);
         let mut state = *Box::from_raw(ffi.inner as *mut BuilderState);
-        let options = FinalizeOptions {
-            inputs: std::mem::take(&mut state.inputs),
-            reservation_only: ffi.reservation_only,
-        };
+        let options = FinalizeOptions::default()
+            .with_inputs(std::mem::take(&mut state.inputs))
+            .with_reservation_only(ffi.reservation_only);
         (ffi.network, BuildPlan { state, options })
     }
 
@@ -782,6 +781,10 @@ pub unsafe extern "C" fn core_wallet_tx_builder_change_to_first_input(
     PlatformWalletFFIResult::ok()
 }
 
+/// Set the fee rate in duffs per kB. Refused with `ErrorInvalidParameter` when
+/// the rate's fee arithmetic would overflow (above about 42.9 DASH per kB —
+/// key-wallet multiplies rate by size unchecked); the builder is unchanged.
+///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer.
 #[no_mangle]
@@ -1846,6 +1849,7 @@ mod real_finalizer_tests {
 
     use super::*;
     use crate::core_wallet::broadcast::core_wallet_signed_transaction_free;
+    use crate::core_wallet::signed_payment::registry_test_guard;
     use platform_wallet::test_support::{add_bip44_coin, test_platform_wallet_manager};
     use rs_sdk_ffi::{
         dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
@@ -1944,7 +1948,7 @@ mod real_finalizer_tests {
     /// The same through the deferred finalizer, which shares the plumbing.
     #[test]
     fn should_return_code_59_from_the_deferred_finalizer_too() {
-        let _registry = crate::core_wallet::signed_payment::registry_test_guard();
+        let _registry = registry_test_guard();
         let (wallet, _release) = wallet_with_coin(8_999_774, false);
         let resolver = unsafe {
             dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), resolve, noop_destroy)

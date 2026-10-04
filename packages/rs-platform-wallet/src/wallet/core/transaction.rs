@@ -107,17 +107,9 @@ pub fn input_awaiting_network(utxo: &Utxo) -> PlatformWalletError {
     }
 }
 
-/// Makes a fresh copy of a build's configuration — what
-/// [`CoreWallet::finalize_transaction_from`] builds from, and what it tries
-/// again, on a shortfall, as if the coins not final yet were final.
-///
-/// Called once before the wallet-manager lock is taken and, on a shortfall,
-/// once more while its write guard is held: it must not touch the wallet
-/// manager (or anything that waits on it), or that second call deadlocks.
-/// The trial may price coins the build never reached, so a fee rate it sets
-/// must pass [`check_fee_rate`]: key-wallet multiplies rate by size
-/// unchecked.
-pub type BuilderFactory<'a> =
+/// Makes a fresh copy of a build's configuration — the `make` of
+/// [`CoreWallet::finalize_transaction_from`], whose doc states its contract.
+pub(crate) type BuilderFactory<'a> =
     dyn Fn() -> Result<TransactionBuilder, PlatformWalletError> + Send + Sync + 'a;
 
 /// The largest size key-wallet could be asked to price. Coin selection
@@ -135,14 +127,18 @@ pub fn check_fee_rate(rate: FeeRate) -> Result<(), PlatformWalletError> {
     checked_fee(rate, MAX_PRICED_BYTES).map(|_| ())
 }
 
-/// How a finalizer funds a build, beyond the builder itself.
+/// How a finalizer funds a build, beyond the builder itself. Made with
+/// `FinalizeOptions::default()` and the setters below, so options can be added
+/// without breaking callers.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct FinalizeOptions {
     /// Coins the build may spend, by outpoint. Each is looked up in the
     /// funding accounts under the wallet-manager write guard and the wallet's
     /// current copy is seeded (one outside them is refused by name under
-    /// `reservation_only`, and otherwise stays a candidate selection may
-    /// skip), so it is judged on its finality now, not on a
+    /// `reservation_only`, and otherwise left out: no funding account could
+    /// reserve or sign it, so selecting it could only fail the build; the
+    /// checks below apply to coins inside them), so it is judged on its finality now, not on a
     /// snapshot taken when the caller chose it: a coin InstantSend-locked
     /// since may be spent, one that is not final (any more) is refused by
     /// name with `CoreFundsAwaitingNetwork`, and one an in-flight broadcast
@@ -162,6 +158,20 @@ pub struct FinalizeOptions {
     pub reservation_only: bool,
 }
 
+impl FinalizeOptions {
+    /// The coins the build may spend, by outpoint (see [`Self::inputs`]).
+    pub fn with_inputs(mut self, inputs: impl IntoIterator<Item = OutPoint>) -> Self {
+        self.inputs = inputs.into_iter().collect();
+        self
+    }
+
+    /// Spend only the chosen inputs (see [`Self::reservation_only`]).
+    pub fn with_reservation_only(mut self, reservation_only: bool) -> Self {
+        self.reservation_only = reservation_only;
+        self
+    }
+}
+
 /// Whether coins that are not final yet would fund a build that just fell
 /// short: key-wallet builds `make()` — a fresh copy of the build's
 /// configuration, made only when a waiting coin exists — funded like the
@@ -178,9 +188,7 @@ pub struct FinalizeOptions {
 /// change address from its pool, and only a standard account has one — so no
 /// account state moves; the others are funded as they are. Account coins an
 /// in-flight broadcast pins (`pinned`, the caller's snapshot) are locked, so
-/// selection passes them over; a pinned seed was refused before, and a seed
-/// outside the funding accounts is locked too, since the build fails if it
-/// selects one. The clones share the reservation sets, so what the trial
+/// selection passes them over; a pinned seed was refused before. The clones share the reservation sets, so what the trial
 /// reserves is released before returning. Nothing is signed (a payload
 /// finalizer on the configuration does run, as in the build). Runs
 /// under the caller's wallet-manager write guard, on the failure path only.
@@ -247,27 +255,14 @@ pub(crate) fn trial_with_waiting_coins(
         }
         clones.insert(*at, clone);
     }
-    // A seed no funding account holds would fail the build if selected: the
-    // trial passes it over.
-    let seeds: Vec<Utxo> = seeds
-        .iter()
-        .cloned()
-        .map(|mut seed| {
-            seed.is_locked |= !offered.iter().any(|at| {
-                accounts
-                    .funds_account(at)
-                    .is_some_and(|managed| managed.utxos.contains_key(&seed.outpoint))
-            });
-            seed
-        })
-        .collect();
+    // Seeds are the funding accounts' own coins, checked when chosen.
     let trial = fund(
         trial,
         wallet,
         accounts,
         &mut clones,
         offered,
-        seeds,
+        seeds.iter().cloned(),
         false,
         height,
     );
@@ -964,10 +959,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// final ([`trial_with_waiting_coins`]). If that trial builds, the
     /// shortfall is [`PlatformWalletError::CoreFundsAwaitingNetwork`] —
     /// key-wallet's own verdict, at the build's fee rate, outputs, payload and
-    /// strategy; otherwise it stays insufficient funds. See
-    /// [`BuilderFactory`] for what `make` must not do.
+    /// strategy; otherwise it stays insufficient funds. A `reservation_only`
+    /// build gets no trial: it spends only the chosen inputs, which are final
+    /// by then (or refused), so nothing it could spend is waiting.
     ///
-    /// `make` is dropped as soon as the wallet-manager lock is released, before
+    /// `make` is called once before the wallet-manager lock is taken and, on a
+    /// shortfall, once more while its write guard is held: it must not touch
+    /// the wallet manager (or anything that waits on it), or that second call
+    /// deadlocks. The trial may price coins the build never reached, so a fee
+    /// rate it sets must pass [`check_fee_rate`] (key-wallet multiplies rate by
+    /// size unchecked). It is dropped as soon as the lock is released, before
     /// the signer runs, so whatever it captures (a payload signing key, say)
     /// does not outlive the build.
     pub async fn finalize_transaction_from<F, S>(
@@ -1084,25 +1085,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         .funds_account(at)
                         .and_then(|managed| managed.utxos.get(outpoint))
                 }) else {
-                    // Outside the funding accounts. Mandatory under
-                    // `reservation_only` (the seeds are all the build spends):
-                    // refused by name. Otherwise it stays what it always was, a
-                    // candidate selection may skip — the wallet's copy if it
-                    // holds the coin at all; a build that does select it fails
-                    // after selection like any input no funding account owns.
+                    // Outside the funding accounts: no account would reserve it
+                    // or supply its key, so the build could only fail by
+                    // selecting it. Mandatory under `reservation_only` (the
+                    // seeds are all the build spends): refused by name.
+                    // Otherwise it is one candidate fewer, which selection was
+                    // free to skip anyway.
                     if reservation_only {
                         return Err(PlatformWalletError::TransactionBuild(format!(
                             "input {outpoint} is not a coin of any funding account"
                         )));
-                    }
-                    if let Some(utxo) = info
-                        .core_wallet
-                        .accounts
-                        .all_funding_accounts()
-                        .into_iter()
-                        .find_map(|managed| managed.utxos.get(outpoint))
-                    {
-                        seeds.push(utxo.clone());
                     }
                     continue;
                 };
@@ -2875,6 +2867,76 @@ mod tests {
                 if message.contains(&outside.outpoint.to_string())),
             "got {result:?}"
         );
+    }
+
+    /// The trial leaves nothing behind: after a code 59, every standard
+    /// account's next change address is the one it was, and the final coin
+    /// the trial selected is free at once — a payment it covers builds.
+    #[tokio::test]
+    async fn should_leave_no_reservation_or_change_address_behind_after_the_trial() {
+        let (core, signer, manager, wallet_id) = dual_core(&[700_000], &[700_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let next_change = || async {
+            let mut manager = manager.write().await;
+            let (wallet, info) = manager.get_wallet_and_info_mut(&wallet_id).expect("wallet");
+            let mut addresses = Vec::new();
+            for standard_account_type in [
+                StandardAccountType::BIP44Account,
+                StandardAccountType::BIP32Account,
+            ] {
+                let at = AccountType::Standard {
+                    index: 0,
+                    standard_account_type,
+                };
+                let xpub = wallet
+                    .accounts
+                    .account_of_type(at)
+                    .expect("account")
+                    .account_xpub;
+                let managed = info
+                    .core_wallet
+                    .accounts
+                    .funds_account_mut(&at)
+                    .expect("managed account");
+                addresses.push(
+                    managed
+                        .next_change_address(Some(&xpub), false)
+                        .expect("change address"),
+                );
+            }
+            addresses
+        };
+        let before = next_change().await;
+
+        let result = core
+            .finalize_transaction_from(
+                || Ok(payment_builder(99)),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+            ),
+            "got {result:?}"
+        );
+        assert_eq!(next_change().await, before, "no change pool moved");
+
+        let built = core
+            .finalize_transaction(
+                TransactionBuilder::new()
+                    .add_output(&DashAddress::dummy(Network::Testnet, 100), 500_000),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the final coin is not left reserved by the trial");
+        core.abandon_transaction(&built).await;
     }
 
     /// A payment the unconfirmed coins would not cover either stays a plain

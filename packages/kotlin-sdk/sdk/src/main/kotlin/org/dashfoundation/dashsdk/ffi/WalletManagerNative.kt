@@ -199,7 +199,10 @@ internal object WalletManagerNative {
      */
     external fun coreTxBuilderChangeToFirstInput(builder: Long)
 
-    /** `core_wallet_tx_builder_set_fee_rate` — fee rate in duffs/kB (> 0). */
+    /**
+     * `core_wallet_tx_builder_set_fee_rate` — fee rate in duffs/kB (> 0);
+     * refused above about 42.9 DASH/kB (the fee arithmetic would overflow).
+     */
     external fun coreTxBuilderSetFeeRate(builder: Long, satPerKb: Long)
 
     /**
