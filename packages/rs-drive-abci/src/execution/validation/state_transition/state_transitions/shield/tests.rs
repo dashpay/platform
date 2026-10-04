@@ -1630,6 +1630,60 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_refuse_a_shield_repeating_a_nullifier_in_the_same_block() {
+            let pv = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (signer, address) = funded_address(&mut platform);
+            let bundle = bound_bundle(address, pv);
+            let first = signed_shield(&signer, address, 1, &bundle).await;
+            let repeat = signed_shield(&signer, address, 2, &bundle).await;
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[
+                        first.serialize_to_bytes().expect("first shield"),
+                        repeat.serialize_to_bytes().expect("repeated shield"),
+                    ],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    false,
+                    None,
+                )
+                .expect("block processing");
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))
+                    )
+                ] if error.nullifier() == bundle.nullifiers()[0]
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                    .expect("pool balance"),
+                bundle.amount,
+                "the repeated shield adds no credits"
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_balance_and_nonce(&address, Some(&transaction), pv)
+                    .expect("address")
+                    .expect("funded address")
+                    .0,
+                1,
+                "the nullifier refusal does not consume another nonce"
+            );
+        }
+
+        #[tokio::test]
         async fn should_refuse_a_spend_revealing_a_nullifier_a_shield_recorded() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();

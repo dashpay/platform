@@ -236,11 +236,10 @@ min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
 ### 1. Proof Verification Fee (per bundle)
 
 A single Halo 2 ZK proof covers the entire bundle regardless of action count.
-Verifying it is the most expensive operation — benchmarked at approximately
-30× the cost of a per-action signature verification. This is a fixed cost per
-bundle.
+The bundle's base verification work is benchmarked at approximately 5 ms.
+This is a fixed cost per bundle.
 
-**Current value:** `100,000,000` credits (100M)
+**Protocol version 14 value:** `40,000,000` credits (40M)
 
 ### 2. Per-Action Processing Fee
 
@@ -258,12 +257,8 @@ the same per-action processing charge — this fee tracks the marginal verificat
 work, not a fixed per-action checklist. From protocol version 14 it also prices the
 check of the nullifier each of their actions reveals.
 
-The fee is calibrated at roughly a 4.5:1 ratio against the fixed
-proof-verification fee (100M : 22M) rather than the looser ratio used before the
-recalibration. (Note the two ratios on this page use different baselines: the
-“30×” in §1 is the proof fee relative to a single RedPallas signature
-verification, whereas this 4.5:1 is the proof fee relative to the per-action
-processing fee.)
+At protocol version 14, the proof and per-action fees are versioned independently.
+Their numerical ratio is about 1.8:1 (40M : 22M).
 
 **Current value:** `22,000,000` credits (22M)
 
@@ -273,33 +268,33 @@ Each action permanently stores data in two places:
 
 | Storage | Bytes | Contents |
 |---|---|---|
-| BulkAppendTree (commitment tree) | 280 | 32 cmx + 32 rho + 216 encrypted note |
+| BulkAppendTree (commitment tree) | 312 | 32 cmx + 32 rho + 32 cv_net + 216 encrypted note |
 | Nullifier tree | 32 | nullifier key (value is empty) |
-| **Total** | **312** | |
+| **Total physical payload** | **344** | |
 
-The storage fee is derived from the platform's existing per-byte storage rates:
+Protocol version 14 prices a 550-byte allowance per action, covering the physical
+payload and database framing, at the platform's per-byte storage rates:
 
 ```
-storage_fee_per_action = 312 × (storage_disk_usage_credit_per_byte
+storage_fee_per_action = 550 × (storage_disk_usage_credit_per_byte
                               + storage_processing_credit_per_byte)
-                       = 312 × (27,000 + 400)
-                       = 312 × 27,400
-                       = 8,548,800
+                       = 550 × (27,000 + 400)
+                       = 550 × 27,400
+                       = 15,070,000
 ```
 
-This is not a separate constant — it is computed dynamically from the storage fee
-version, ensuring shielded storage costs stay consistent with transparent storage
-costs as fee parameters evolve.
+The byte allowance is versioned. Its per-byte rates come from the storage fee
+version, so the fee tracks changes to those rates.
 
 ## Fee Table
 
-Combining all three components:
+Combining all three components at protocol version 14:
 
 | Actions | Proof Fee | Processing | Storage | Total Minimum Fee |
 |---|---|---|---|---|
-| 2 | 100,000,000 | 44,000,000 | 17,097,600 | **161,097,600** |
-| 3 | 100,000,000 | 66,000,000 | 25,646,400 | **191,646,400** |
-| 4 | 100,000,000 | 88,000,000 | 34,195,200 | **222,195,200** |
+| 2 | 40,000,000 | 44,000,000 | 30,140,000 | **114,140,000** |
+| 3 | 40,000,000 | 66,000,000 | 45,210,000 | **151,210,000** |
+| 4 | 40,000,000 | 88,000,000 | 60,280,000 | **188,280,000** |
 
 Note: The Orchard protocol requires a minimum of 2 actions per bundle for privacy
 (even a single-input single-output transfer produces 2 actions with a dummy padding
@@ -312,13 +307,13 @@ add a flat component on top of this base:
 - **`Unshield` adds the output-address write cost**: a flat
   `unshield_address_storage_fee = 222 × per_byte_rate = 222 × 27,400 = 6,082,800` credits,
   independent of action count. So the 2-action Unshield fee is
-  `161,097,600 + 6,082,800 = 167,180,400` credits (and likewise `+6,082,800` at every action
+  `114,140,000 + 6,082,800 = 120,222,800` credits (and likewise `+6,082,800` at every action
   count). See the [Fee Extraction](#fee-extraction-by-transition-type) Unshield row for why this
   component exists.
 - **`ShieldedWithdrawal` adds the Core withdrawal-document storage cost**: a flat
   `withdrawal_document_storage_fee = 4100 × per_byte_rate = 4100 × 27,400 = 112,340,000` credits,
   independent of action count. So the 2-action ShieldedWithdrawal fee is
-  `161,097,600 + 112,340,000 = 273,437,600` credits (and likewise `+112,340,000` at every action
+  `114,140,000 + 112,340,000 = 226,480,000` credits (and likewise `+112,340,000` at every action
   count). See the [Fee Extraction](#fee-extraction-by-transition-type) ShieldedWithdrawal row for
   why this component exists.
 - **`IdentityTopUpFromShieldedPool` adds the identity balance write cost**: a flat
@@ -372,8 +367,9 @@ pub struct DriveAbciValidationConstants {
     pub minimum_pool_notes_for_outgoing: u64,
     pub shielded_anchor_retention_blocks: u64,
     pub shielded_anchor_pruning_interval: u64,
-    pub shielded_proof_verification_fee: u64,      // 100_000_000
+    pub shielded_proof_verification_fee: u64,      // 40_000_000 at protocol 14
     pub shielded_per_action_processing_fee: u64,    // 22_000_000
+    pub shielded_storage_bytes_per_action: u64,     // 550 at protocol 14
     pub shielded_implicit_fee_cap: u64,             // 20_000_000_000 (0.2 DASH)
 }
 ```
@@ -382,15 +378,15 @@ The `shielded_implicit_fee_cap` bounds the surplus that a `ShieldFromAssetLock` 
 implicitly donate to the fee pools when no `surplus_output` is set (see
 [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity)).
 
-The storage component is not a separate constant — it is derived at runtime from
+The storage component is derived at runtime from
 `fee_version.storage.storage_disk_usage_credit_per_byte` and
 `fee_version.storage.storage_processing_credit_per_byte`, multiplied by the
-constant `SHIELDED_STORAGE_BYTES_PER_ACTION = 312`.
+versioned `shielded_storage_bytes_per_action` allowance.
 
 This design means:
 - **Proof and processing fees** can be tuned independently via version bumps
 - **Storage fees** automatically track changes to the platform-wide storage rates
-- No "magic number" for storage cost exists in the version constants
+- **Storage allowances** can be calibrated independently of the per-byte rates
 
 ## How Fees Flow After Validation
 

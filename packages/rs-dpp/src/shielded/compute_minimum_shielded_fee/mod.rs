@@ -2,8 +2,8 @@ mod v0;
 
 use crate::fee::Credits;
 use crate::shielded::{
-    SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES, SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES,
-    SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES,
+    SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES, SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES,
+    SHIELDED_TOKEN_PURCHASE_OWNER_BALANCE_STORAGE_BYTES,
 };
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -302,8 +302,37 @@ pub fn compute_token_purchase_from_shielded_pool_fee(
     compute_token_pool_paid_shielded_fee(
         token_actions,
         fee_actions,
-        SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES
+        SHIELDED_TOKEN_PURCHASE_OWNER_BALANCE_STORAGE_BYTES
             .saturating_add(SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES),
         platform_version,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_preserve_token_purchase_fee_when_identity_shield_floor_changes() {
+        let platform_version = PlatformVersion::latest();
+        for (token_actions, fee_actions) in [(2, 2), (3, 4), (16, 16)] {
+            let historical_fee = compute_token_pool_paid_shielded_fee(
+                token_actions,
+                fee_actions,
+                28,
+                platform_version,
+            )
+            .expect("historical token purchase fee");
+            assert_eq!(
+                compute_token_purchase_from_shielded_pool_fee(
+                    token_actions,
+                    fee_actions,
+                    platform_version,
+                )
+                .expect("token purchase fee"),
+                historical_fee,
+                "identity shielding must not change the token purchase allowance"
+            );
+        }
+    }
 }

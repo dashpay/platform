@@ -34,8 +34,15 @@ use drive::drive::shielded::paths::{
     SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::grovedb::Element;
+use grovedb_commitment_tree::{
+    Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, DashMemo,
+    Flags as OrchardFlags, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+};
 use platform_version::version::PlatformVersion;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 // Re-export commonly used types for convenience
 pub use dpp::dashcore::blockdata::opcodes::all::{
@@ -543,13 +550,21 @@ pub fn build_outputs_only_bundle(value: u64) -> OutputsOnlyBundle {
 /// funding it, so it cannot be lifted into a transition funded by anything else. Orchard pads it to
 /// two actions.
 pub fn build_outputs_only_bundle_bound(value: u64, extra_sighash_data: &[u8]) -> OutputsOnlyBundle {
-    use grovedb_commitment_tree::{
-        Anchor, Builder, BundleType, Flags as OrchardFlags, FullViewingKey, NoteValue, Scope,
-        SpendingKey,
-    };
-    use rand::rngs::OsRng;
+    build_outputs_only_bundle_bound_with_outputs(value, 1, extra_sighash_data)
+}
 
-    let mut rng = OsRng;
+/// Builds a reproducible bundle with the requested number of outputs. Different
+/// values, output counts and funder bindings produce distinct dummy nullifiers.
+pub fn build_outputs_only_bundle_bound_with_outputs(
+    value: u64,
+    output_count: usize,
+    extra_sighash_data: &[u8],
+) -> OutputsOnlyBundle {
+    assert!(output_count > 0 && value >= output_count as u64);
+    let mut seed_data = value.to_be_bytes().to_vec();
+    seed_data.extend_from_slice(&(output_count as u64).to_be_bytes());
+    seed_data.extend_from_slice(extra_sighash_data);
+    let mut rng = StdRng::from_seed(sha256::Hash::hash(&seed_data).to_byte_array());
     let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
     let recipient = FullViewingKey::from(&sk).address_at(0u32, Scope::External);
 
@@ -560,9 +575,13 @@ pub fn build_outputs_only_bundle_bound(value: u64, extra_sighash_data: &[u8]) ->
         },
         Anchor::empty_tree(),
     );
-    builder
-        .add_output(None, recipient, NoteValue::from_raw(value), [0u8; 36])
-        .unwrap();
+    let per_output = value / output_count as u64;
+    for output in 0..output_count {
+        let amount = per_output + u64::from(output == 0) * (value % output_count as u64);
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(amount), [0u8; 36])
+            .unwrap();
+    }
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
     let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
@@ -573,6 +592,7 @@ pub fn build_outputs_only_bundle_bound(value: u64, extra_sighash_data: &[u8]) ->
 
     let (actions, _flags, value_balance, anchor, proof, binding_signature) =
         serialize_authorized_bundle_with_flags(&bundle);
+    assert_eq!(actions.len(), output_count.max(2));
     assert!(value_balance < 0, "value must enter the pool");
     OutputsOnlyBundle {
         actions,
@@ -801,12 +821,6 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
 // ==========================================
 // Shared Orchard Proving Key & Serialization
 // ==========================================
-
-use grovedb_commitment_tree::{
-    Authorized as OrchardAuthorized, Bundle, DashMemo, FullViewingKey, ProvingKey, Scope,
-    SpendingKey,
-};
-use std::sync::OnceLock;
 
 /// Single process-wide proving key shared by ALL shielded tests.
 ///

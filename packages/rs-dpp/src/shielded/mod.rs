@@ -181,6 +181,10 @@ pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 8;
 /// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
 pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 60;
 
+/// Effective storage bytes for crediting the contract owner's existing identity
+/// balance when tokens are bought from a shielded pool.
+pub const SHIELDED_TOKEN_PURCHASE_OWNER_BALANCE_STORAGE_BYTES: u64 = 20;
+
 /// Per-action component (in effective bytes at the per-byte storage rate) the `ShieldFromIdentity`
 /// admission floor adds on top of the per-action allowance of [`compute_minimum_shielded_fee`]
 /// (`shielded_storage_bytes_per_action`).
