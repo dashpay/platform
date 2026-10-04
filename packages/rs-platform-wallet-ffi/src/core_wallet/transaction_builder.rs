@@ -6,7 +6,6 @@ use crate::handle::{
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
-use dashcore::blockdata::script::{PushBytes, ScriptBuf};
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::Hash;
 use dashcore::{Address as DashAddress, OutPoint, TxOut, Txid};
@@ -18,19 +17,19 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-use platform_wallet::{OutputShape, PlatformWalletError, ShortfallBasis};
+use platform_wallet::{is_final, FinalizeOptions, PlatformWalletError};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 use std::str::FromStr;
 
 /// Opaque, C-compatible transaction builder. `inner` is a heap-boxed
-/// key-wallet `TransactionBuilder`; `network` is the wallet network output
-/// and change addresses are validated against.
+/// [`BuilderState`] (the recorded configuration and the inputs chosen by
+/// outpoint); `network` is the wallet network output and change addresses
+/// are validated against.
 ///
 /// NOT thread-safe: a single builder must be used from one thread at a time.
-/// The setters mutate `*inner` in place (`take_builder`/`store_builder`)
-/// without synchronization.
+/// The setters mutate `*inner` in place without synchronization.
 #[repr(C)]
 pub struct FFITransactionBuilder {
     inner: *mut c_void,
@@ -39,51 +38,130 @@ pub struct FFITransactionBuilder {
     /// this per funding call, which the finalizers make internally, so the
     /// intent has to be carried here and read when they run.
     reservation_only: bool,
-    /// The rate `core_wallet_tx_builder_set_fee_rate` set (`fee_rate_set` is
-    /// false until it runs: key-wallet's default; an explicit 0 is kept as 0 —
-    /// two plain fields, as this struct is `repr(C)`), the sum of
-    /// `core_wallet_tx_builder_add_output` amounts, the number of explicit
-    /// outputs and the total length of their scripts, the bytes a special
-    /// payload adds, and whether the strategy is a drain. The pinned key-wallet
-    /// builder exposes none of these, and the finalizers need them to tell a
-    /// shortfall the not-yet-final coins would cover from a genuine one
-    /// (code 59).
-    fee_rate_set: bool,
-    fee_rate_sat_per_kb: u64,
-    payload_bytes: usize,
-    output_sum: u64,
-    output_count: usize,
-    output_script_bytes: usize,
-    drain: bool,
+}
+
+/// What `FFITransactionBuilder::inner` points at — Rust-only, so the C
+/// layout stays as it was.
+#[derive(Default)]
+struct BuilderState {
+    /// The setters' calls, in order. The finalizers make the key-wallet
+    /// builder from them, and make it again for the waiting-coins trial on a
+    /// shortfall (`CoreWallet::finalize_transaction_from`).
+    recipe: Vec<Step>,
+    /// Set by `core_wallet_tx_builder_add_inputs_from_outpoints`: the
+    /// finalizers seed the wallet's current copy of each, so a coin's finality
+    /// is judged when the build is finalized, not when it was chosen.
+    inputs: Vec<OutPoint>,
+}
+
+/// One validated setter call, replayed onto a fresh `TransactionBuilder`.
+enum Step {
+    AddOutput(DashAddress, u64),
+    AddOpReturn(Vec<u8>),
+    SetChangeAddress(DashAddress),
+    PreserveOutputOrder,
+    ChangeToFirstInput,
+    SetFeeRate(FeeRate),
+    SetSelectionStrategy(SelectionStrategy),
+    SetCurrentHeight(u32),
+    SetSpecialPayload(TransactionPayload),
+}
+
+impl BuilderState {
+    /// A fresh key-wallet builder with every recorded call applied. The
+    /// setters validated each call, so the one fallible step (an OP_RETURN
+    /// over the standard size) cannot fail here; it is still an error, not a
+    /// panic.
+    fn make(&self) -> Result<TransactionBuilder, PlatformWalletError> {
+        self.recipe.iter().try_for_each(|step| match step {
+            Step::SetFeeRate(rate) => checked_rate(*rate),
+            _ => Ok(()),
+        })?;
+        self.recipe
+            .iter()
+            .try_fold(TransactionBuilder::new(), |builder, step| {
+                Ok(match step {
+                    Step::AddOutput(address, amount) => builder.add_output(address, *amount),
+                    Step::AddOpReturn(data) => builder
+                        .add_op_return(data)
+                        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?,
+                    Step::SetChangeAddress(address) => builder.set_change_address(address.clone()),
+                    Step::PreserveOutputOrder => builder.preserve_output_order(),
+                    Step::ChangeToFirstInput => builder.change_to_first_input(),
+                    Step::SetFeeRate(rate) => builder.set_fee_rate(*rate),
+                    Step::SetSelectionStrategy(strategy) => {
+                        builder.set_selection_strategy(*strategy)
+                    }
+                    Step::SetCurrentHeight(height) => builder.set_current_height(*height),
+                    Step::SetSpecialPayload(payload) => {
+                        builder.set_special_payload(payload.clone())
+                    }
+                })
+            })
+    }
+}
+
+/// The largest transaction key-wallet could be asked to price: a standard
+/// transaction is at most 100,000 bytes.
+const MAX_STANDARD_TX_BYTES: u64 = 100_000;
+
+/// key-wallet multiplies the rate by the size unchecked: a host rate whose fee
+/// for a standard-size transaction overflows is a typed error here, before
+/// any build (or waiting-coins trial) prices with it — not a panic, not a
+/// wrapped fee.
+fn checked_rate(rate: FeeRate) -> Result<(), PlatformWalletError> {
+    rate.as_sat_per_kb()
+        .checked_mul(MAX_STANDARD_TX_BYTES)
+        .map(|_| ())
+        .ok_or_else(|| {
+            PlatformWalletError::TransactionBuild(format!(
+                "fee rate {} sat/kb overflows for a standard-size transaction",
+                rate.as_sat_per_kb()
+            ))
+        })
 }
 
 impl FFITransactionBuilder {
-    /// Count one explicit output whose script is `script_len` bytes.
-    fn note_output(&mut self, script_len: usize) {
-        self.output_count = self.output_count.saturating_add(1);
-        self.output_script_bytes = self.output_script_bytes.saturating_add(script_len);
+    /// Reclaim both heap boxes of a builder a finalizer consumes: the network
+    /// it was made for, its recorded configuration and inputs, and how to fund
+    /// it.
+    ///
+    /// # Safety
+    /// `builder` must be a live pointer from `core_wallet_tx_builder_new`; it
+    /// is consumed.
+    unsafe fn into_build(builder: *mut FFITransactionBuilder) -> (FFINetwork, BuildPlan) {
+        let ffi = Box::from_raw(builder);
+        let mut state = *Box::from_raw(ffi.inner as *mut BuilderState);
+        let options = FinalizeOptions {
+            inputs: std::mem::take(&mut state.inputs),
+            reservation_only: ffi.reservation_only,
+        };
+        (ffi.network, BuildPlan { state, options })
     }
 
-    /// What this build pays and requests, for classifying a shortfall. A drain's
-    /// output amount is a placeholder the engine replaces, so it requests
-    /// nothing known.
-    fn shortfall_basis(&self) -> ShortfallBasis {
-        ShortfallBasis {
-            fee_rate: self
-                .fee_rate_set
-                .then(|| FeeRate::new(self.fee_rate_sat_per_kb)),
-            requested: (!self.drain && self.output_sum > 0).then_some(self.output_sum),
-            outputs: (self.output_count > 0).then_some(OutputShape {
-                count: self.output_count,
-                script_bytes: self.output_script_bytes,
-            }),
-            // `core_wallet_tx_builder_add_inputs_from_outpoints` refuses a
-            // non-final coin up front, so a seed here is always final.
-            seeded_inputs: Vec::new(),
-            payload_bytes: self.payload_bytes,
-            drain: self.drain,
-        }
+    /// The inner state.
+    ///
+    /// # Safety
+    /// `self.inner` must point at a live `BuilderState`, and no other
+    /// reference to it may be alive.
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn state(&self) -> &mut BuilderState {
+        &mut *(self.inner as *mut BuilderState)
     }
+
+    /// Record one validated setter call.
+    ///
+    /// # Safety
+    /// `self.inner` must point at a live `BuilderState`.
+    unsafe fn record(&self, step: Step) {
+        self.state().recipe.push(step);
+    }
+}
+
+/// A reclaimed builder, ready for `CoreWallet::finalize_transaction_from`.
+struct BuildPlan {
+    state: BuilderState,
+    options: FinalizeOptions,
 }
 
 /// Owned signed-transaction bytes handed across the C ABI as the `out_tx`
@@ -181,11 +259,10 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
     check_ptr!(out_transaction_handle);
     *out_transaction_handle = 0;
 
-    let ffi = Box::from_raw(builder);
-    let inner = *Box::from_raw(ffi.inner as *mut TransactionBuilder);
+    let (network, BuildPlan { state, options }) = FFITransactionBuilder::into_build(builder);
     let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
 
-    let builder_network: Network = ffi.network.into();
+    let builder_network: Network = network.into();
     if builder_network != wallet.network() {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -195,14 +272,13 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 
     let signer =
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
-    let reservation_only = ffi.reservation_only;
-    let finalized = runtime().block_on(wallet.core().finalize_transaction_with_options(
-        inner,
-        ffi.shortfall_basis(),
+    let make = || state.make();
+    let finalized = runtime().block_on(wallet.core().finalize_transaction_from(
+        &make,
+        options,
         account_type.funding_sources(),
         account_index,
         &signer,
-        reservation_only,
     ));
     let finalized = unwrap_result_or_return!(finalized);
 
@@ -351,12 +427,11 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize_with_deliverable(
 
     // `finalize_transaction` consumes the builder: reclaim both heap boxes up
     // front so they are freed on every return path below.
-    let ffi = Box::from_raw(builder);
-    let inner = *Box::from_raw(ffi.inner as *mut TransactionBuilder);
+    let (network, BuildPlan { state, options }) = FFITransactionBuilder::into_build(builder);
 
     let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
 
-    let builder_network: Network = ffi.network.into();
+    let builder_network: Network = network.into();
     if builder_network != wallet.network() {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -368,20 +443,21 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize_with_deliverable(
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
 
     // Atomic select + reserve + sign in one wallet-manager critical section.
-    // `reservation_only` is read off the reclaimed box (never through `builder`,
-    // whose provenance ends at `Box::from_raw`) and threaded through here for the
-    // same reason as in the immediate sibling: a host that called
+    // `options` (the `reservation_only` flag, the inputs chosen by outpoint and
+    // the recorded configuration) is read off the reclaimed boxes by `into_build`
+    // (never through `builder`, whose provenance ends at `Box::from_raw`) and
+    // threaded through here for the same reason as in the immediate sibling:
+    // a host that called
     // `core_wallet_tx_builder_use_only_added_inputs` and then finalized a
     // DEFERRED payment would otherwise have the restriction silently discarded,
     // and the account's UTXOs would be offered to selection after all.
-    let reservation_only = ffi.reservation_only;
-    let finalized = runtime().block_on(wallet.core().finalize_transaction_with_options(
-        inner,
-        ffi.shortfall_basis(),
+    let make = || state.make();
+    let finalized = runtime().block_on(wallet.core().finalize_transaction_from(
+        &make,
+        options,
         account_type.funding_sources(),
         account_index,
         &signer,
-        reservation_only,
     ));
     let finalized = unwrap_result_or_return!(finalized);
 
@@ -586,26 +662,6 @@ fn managed_account(
         .and_then(|at| accounts.funds_account(&at))
 }
 
-impl FFITransactionBuilder {
-    /// The inner builder taken out by value, leaving an empty one in its
-    /// place. Pair with [`FFITransactionBuilder::store_builder`] to apply a
-    /// fluent (`self -> Self`) method.
-    ///
-    /// # Safety
-    /// `self.inner` must point at a live `TransactionBuilder`
-    unsafe fn take_builder(&self) -> TransactionBuilder {
-        std::mem::take(&mut *(self.inner as *mut TransactionBuilder))
-    }
-
-    /// Store `builder` back into the inner slot.
-    ///
-    /// # Safety
-    /// `self.inner` must point at a live `TransactionBuilder`
-    unsafe fn store_builder(&self, builder: TransactionBuilder) {
-        *(self.inner as *mut TransactionBuilder) = builder;
-    }
-}
-
 /// Create a new transaction builder for `network`. Free with
 /// `core_wallet_tx_builder_destroy` (or the consuming finalizers
 /// `core_wallet_tx_builder_finalize` / `core_wallet_signed_payment_finalize`).
@@ -616,18 +672,11 @@ impl FFITransactionBuilder {
 pub unsafe extern "C" fn core_wallet_tx_builder_new(
     network: FFINetwork,
 ) -> *mut FFITransactionBuilder {
-    let inner = Box::into_raw(Box::new(TransactionBuilder::new())) as *mut c_void;
+    let inner = Box::into_raw(Box::<BuilderState>::default()) as *mut c_void;
     Box::into_raw(Box::new(FFITransactionBuilder {
         inner,
         network,
         reservation_only: false,
-        fee_rate_set: false,
-        fee_rate_sat_per_kb: 0,
-        payload_bytes: 0,
-        output_sum: 0,
-        output_count: 0,
-        output_script_bytes: 0,
-        drain: false,
     }))
 }
 
@@ -655,12 +704,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_output(
         }
     };
 
-    let script_len = address.script_pubkey().len();
-    let b = (*builder).take_builder();
-    let b = b.add_output(&address, amount);
-    (*builder).store_builder(b);
-    (*builder).output_sum = (*builder).output_sum.saturating_add(amount);
-    (*builder).note_output(script_len);
+    (*builder).record(Step::AddOutput(address, amount));
 
     PlatformWalletFFIResult::ok()
 }
@@ -687,11 +731,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_op_return(
         std::slice::from_raw_parts(data, data_len)
     };
 
-    // `add_op_return` takes the builder by value, so a rejected payload drops it and leaves
-    // `take_builder`'s `mem::take` default behind — silently discarding outputs and options
-    // the caller already configured. Reject an over-long payload *before* taking the builder
-    // so the slot keeps its real state. `add_op_return` re-checks; this is the same policy
-    // constant, not a second opinion.
+    // Rejected here, by the same policy constant `add_op_return` checks, so a
+    // recorded step can always be replayed.
     if data_len > MAX_STANDARD_OP_RETURN_BYTES {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -701,28 +742,13 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_op_return(
         );
     }
 
-    // The script key-wallet builds for it: OP_RETURN and one push of `data`.
-    let script_len = match <&PushBytes>::try_from(bytes) {
-        Ok(push) => ScriptBuf::new_op_return(&push).len(),
-        Err(err) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("OP_RETURN payload not pushable: {err}"),
-            );
-        }
-    };
-    let b = (*builder).take_builder();
-    let b = match b.add_op_return(bytes) {
-        Ok(b) => b,
-        Err(err) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                err.to_string(),
-            );
-        }
-    };
-    (*builder).store_builder(b);
-    (*builder).note_output(script_len);
+    if let Err(err) = TransactionBuilder::new().add_op_return(bytes) {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            err.to_string(),
+        );
+    }
+    (*builder).record(Step::AddOpReturn(bytes.to_vec()));
 
     PlatformWalletFFIResult::ok()
 }
@@ -750,9 +776,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_change_address(
         }
     };
 
-    let b = (*builder).take_builder();
-    let b = b.set_change_address(address);
-    (*builder).store_builder(b);
+    (*builder).record(Step::SetChangeAddress(address));
 
     PlatformWalletFFIResult::ok()
 }
@@ -767,9 +791,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_preserve_output_order(
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
 
-    let b = (*builder).take_builder();
-    let b = b.preserve_output_order();
-    (*builder).store_builder(b);
+    (*builder).record(Step::PreserveOutputOrder);
 
     PlatformWalletFFIResult::ok()
 }
@@ -784,9 +806,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_change_to_first_input(
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
 
-    let b = (*builder).take_builder();
-    let b = b.change_to_first_input();
-    (*builder).store_builder(b);
+    (*builder).record(Step::ChangeToFirstInput);
 
     PlatformWalletFFIResult::ok()
 }
@@ -800,11 +820,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_fee_rate(
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
 
-    let b = (*builder).take_builder();
-    let b = b.set_fee_rate(FeeRate::new(sat_per_kb));
-    (*builder).store_builder(b);
-    (*builder).fee_rate_set = true;
-    (*builder).fee_rate_sat_per_kb = sat_per_kb;
+    (*builder).record(Step::SetFeeRate(FeeRate::new(sat_per_kb)));
 
     PlatformWalletFFIResult::ok()
 }
@@ -917,10 +933,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_selection_strategy(
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
 
-    let b = (*builder).take_builder();
-    (*builder).drain = matches!(strategy, CoreSelectionStrategyFFI::All);
-    let b = b.set_selection_strategy(strategy.into());
-    (*builder).store_builder(b);
+    (*builder).record(Step::SetSelectionStrategy(strategy.into()));
 
     PlatformWalletFFIResult::ok()
 }
@@ -942,9 +955,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_current_height(
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
 
-    let b = (*builder).take_builder();
-    let b = b.set_current_height(height);
-    (*builder).store_builder(b);
+    (*builder).record(Step::SetCurrentHeight(height));
 
     PlatformWalletFFIResult::ok()
 }
@@ -989,16 +1000,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
         }
     };
 
-    // The payload rides in the transaction behind a compact-size length.
-    let length_prefix = match payload.len() {
-        0..=0xfc => 1,
-        0xfd..=0xffff => 3,
-        _ => 5,
-    };
-    (*builder).payload_bytes = payload.len().saturating_add(length_prefix);
-    let b = (*builder).take_builder();
-    let b = b.set_special_payload(payload);
-    (*builder).store_builder(b);
+    (*builder).record(Step::SetSpecialPayload(payload));
 
     PlatformWalletFFIResult::ok()
 }
@@ -1006,7 +1008,9 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// Add a caller-chosen subset of the account's UTXOs as inputs. `outpoints`
 /// are selected from the account's own UTXO set (the same ones
 /// `platform_wallet_account_utxos` returns). An outpoint not owned by the
-/// account is an error
+/// account is an error, and so is one not final yet (code 59, naming it). The
+/// finalizers spend the wallet's copy of each as it is then, so a coin that
+/// lost its final status in between is refused there the same way.
 ///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer; `wallet` a valid platform-wallet handle;
@@ -1071,13 +1075,13 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
 
         let mut selected = Vec::with_capacity(requested.len());
         for op in &requested {
-            let utxo = managed.utxos.get(op).cloned().ok_or_else(|| {
+            let utxo = managed.utxos.get(op).ok_or_else(|| {
                 SeedError::Other(format!("outpoint {}:{} not in account", op.txid, op.vout))
             })?;
-            // Builds spend only final coins (InstantSend-locked or mined), so a
-            // seeded coin that is not final would be dropped silently at build
-            // time; refuse it here, by name, instead.
-            if !(utxo.is_confirmed || utxo.is_instantlocked) {
+            // Builds spend only final coins (InstantSend-locked or mined):
+            // refuse one that is not, by name, as soon as it is named. The
+            // finalizers check again against the coin as it is then.
+            if !is_final(utxo) {
                 return Err(SeedError::NotFinal(
                     PlatformWalletError::CoreFundsAwaitingNetwork {
                         available: None,
@@ -1087,12 +1091,11 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
                     },
                 ));
             }
-            selected.push(utxo);
+            selected.push(*op);
         }
 
-        // Validation succeeded — only now consume the builder.
-        let taken = (*builder).take_builder();
-        (*builder).store_builder(taken.add_inputs(selected));
+        // Validation succeeded — only now record them.
+        (*builder).state().inputs.extend(selected);
         Ok::<_, SeedError>(())
     });
 
@@ -1124,7 +1127,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_destroy(builder: *mut FFITransac
     }
 
     let b = Box::from_raw(builder);
-    let _ = Box::from_raw(b.inner as *mut TransactionBuilder);
+    drop(Box::from_raw(b.inner as *mut BuilderState));
 }
 
 /// Free a transaction written by `core_wallet_signed_payment_finalize`.
@@ -1203,8 +1206,11 @@ mod pooled_balance_handle_tests {
     //! published a permanent 0, which zeroed Max and blocked every send on the
     //! 2026-09-03 QA build (dashwallet-ios#1107 / platform#4582).
 
+    use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
     use key_wallet::account::account_type::StandardAccountType;
-    use platform_wallet::test_support::funded_spv_core_wallet;
+    use platform_wallet::test_support::{
+        funded_spv_core_wallet, funded_spv_core_wallet_with_outputs, standard_account_coins,
+    };
     use platform_wallet::SEND_FUNDING_SOURCES;
 
     use super::*;
@@ -1285,15 +1291,15 @@ mod pooled_balance_handle_tests {
         core: &platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>,
         signer: &platform_wallet::test_support::WalletSigner,
     ) -> Result<platform_wallet::SignedCoreTransaction, PlatformWalletError> {
-        let ffi = unsafe { Box::from_raw(builder) };
-        let inner = *unsafe { Box::from_raw(ffi.inner as *mut TransactionBuilder) };
-        runtime().block_on(core.finalize_transaction_with_options(
-            inner,
-            ffi.shortfall_basis(),
+        let (_, BuildPlan { state, options }) =
+            unsafe { FFITransactionBuilder::into_build(builder) };
+        let make = || state.make();
+        runtime().block_on(core.finalize_transaction_from(
+            &make,
+            options,
             CoreAccountTypeFFI::AllSpendable.funding_sources(),
             0,
             signer,
-            ffi.reservation_only,
         ))
     }
 
@@ -1310,19 +1316,50 @@ mod pooled_balance_handle_tests {
         builder
     }
 
+    /// The app's Send right after a send whose broadcast outcome is unknown:
+    /// the wallet's only coin is that send's change, not final yet. A second
+    /// payment built the way the app builds it — one `add_output`, default
+    /// rate, the pooled `AllSpendable` sources — is refused with code 59 and
+    /// builds nothing.
+    #[test]
+    fn should_refuse_a_second_payment_on_an_unknown_sends_change_with_code_59() {
+        let change = 8_999_774;
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[change],
+            &[change],
+        ));
+        let result = finalize_built(payment(None, 1_000_000), &core, &signer);
+        assert!(
+            matches!(
+                &result,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    available: Some(0),
+                    waiting,
+                    outpoint: None,
+                    ..
+                }) if *waiting == change
+            ),
+            "got {result:?}"
+        );
+        let error = result.expect_err("refused");
+        assert_eq!(
+            PlatformWalletFFIResult::from(error).code,
+            PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
+        );
+    }
+
     /// 900,000 final + 101,000 waiting against a 1,000,000 payment. At the
     /// rate the builder set, 10,000 duffs/kB, the waiting coin nets too little
     /// once its input and the fee are paid: insufficient funds, not code 59.
     /// The same build at the default rate would be covered by waiting.
     #[test]
     fn should_price_a_waiting_shortfall_at_the_fee_rate_the_builder_set() {
-        let (core, signer) = runtime().block_on(
-            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
-                StandardAccountType::BIP44Account,
-                &[900_000, 101_000],
-                &[101_000],
-            ),
-        );
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[900_000, 101_000],
+            &[101_000],
+        ));
 
         let high = finalize_built(payment(Some(10_000), 1_000_000), &core, &signer);
         assert!(
@@ -1351,13 +1388,11 @@ mod pooled_balance_handle_tests {
     /// insufficient funds. The same 1,000,000 in one output is covered.
     #[test]
     fn should_price_a_waiting_shortfall_at_every_output_the_builder_added() {
-        let (core, signer) = runtime().block_on(
-            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
-                StandardAccountType::BIP44Account,
-                &[900_000, 100_400],
-                &[100_400],
-            ),
-        );
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[900_000, 100_400],
+            &[100_400],
+        ));
 
         let four = payment(None, 250_000);
         for tag in 91..94 {
@@ -1405,13 +1440,11 @@ mod pooled_balance_handle_tests {
     #[test]
     fn should_judge_a_drain_shortfall_by_its_fee_and_dust() {
         for (coin, waiting) in [(1_600, false), (100_000, true)] {
-            let (core, signer) = runtime().block_on(
-                platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
-                    StandardAccountType::BIP44Account,
-                    &[coin],
-                    &[coin],
-                ),
-            );
+            let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[coin],
+                &[coin],
+            ));
             let drain = payment(Some(10_000), 0);
             let set = unsafe {
                 core_wallet_tx_builder_set_selection_strategy(drain, CoreSelectionStrategyFFI::All)
@@ -1422,7 +1455,8 @@ mod pooled_balance_handle_tests {
                 assert!(
                     matches!(
                         result,
-                        Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+                        Err(PlatformWalletError::CoreFundsAwaitingNetwork { waiting, .. })
+                            if waiting == coin
                     ),
                     "coin {coin}: got {result:?}"
                 );
@@ -1438,19 +1472,173 @@ mod pooled_balance_handle_tests {
         }
     }
 
+    /// A drain cannot leave an uneconomic coin out, so its feasibility is the
+    /// gross value of every coin against the fee of spending all of them.
+    /// Two non-final outputs of one transaction, 2,467 and 600 duffs, drained
+    /// at 10,000 duffs/kB: once they confirm (together) the two-input
+    /// transaction's 3,400-duff fee alone exceeds their 3,067 duffs —
+    /// insufficient funds, not code 59. Coin by coin, net of each input's fee
+    /// (987 + 0 against a 986-duff one-output reserve), it looked covered.
+    #[test]
+    fn should_judge_a_drain_by_the_gross_value_of_every_coin() {
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[2_467, 600],
+            &[2_467, 600],
+        ));
+        let drain = payment(Some(10_000), 0);
+        let set = unsafe {
+            core_wallet_tx_builder_set_selection_strategy(drain, CoreSelectionStrategyFFI::All)
+        };
+        assert_eq!(set.code, PlatformWalletFFIResultCode::Success);
+
+        let result = finalize_built(drain, &core, &signer);
+        assert!(is_insufficient(&result), "got {result:?}");
+    }
+
+    /// key-wallet checks a drain's inputs against its placeholder amount
+    /// before draining: a 1,000,000-duff placeholder over one non-final
+    /// 100,000-duff coin is insufficient funds, not code 59.
+    #[test]
+    fn should_hold_a_drain_to_its_placeholder_amount() {
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[100_000],
+            &[100_000],
+        ));
+        let drain = payment(None, 1_000_000);
+        let set = unsafe {
+            core_wallet_tx_builder_set_selection_strategy(drain, CoreSelectionStrategyFFI::All)
+        };
+        assert_eq!(set.code, PlatformWalletFFIResultCode::Success);
+
+        let result = finalize_built(drain, &core, &signer);
+        assert!(is_insufficient(&result), "got {result:?}");
+    }
+
+    /// A drain key-wallet would refuse on its shape (two value outputs) is not
+    /// called waiting, however much is unconfirmed.
+    #[test]
+    fn should_not_call_a_misshapen_drain_waiting() {
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[100_000],
+            &[100_000],
+        ));
+        let drain = payment(None, 0);
+        let address =
+            CString::new(DashAddress::dummy(Network::Testnet, 96).to_string()).expect("address");
+        let added = unsafe { core_wallet_tx_builder_add_output(drain, address.as_ptr(), 0) };
+        assert_eq!(added.code, PlatformWalletFFIResultCode::Success);
+        let set = unsafe {
+            core_wallet_tx_builder_set_selection_strategy(drain, CoreSelectionStrategyFFI::All)
+        };
+        assert_eq!(set.code, PlatformWalletFFIResultCode::Success);
+
+        let result = finalize_built(drain, &core, &signer);
+        assert!(
+            !matches!(
+                result,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+            ) && result.is_err(),
+            "got {result:?}"
+        );
+    }
+
+    /// An asset lock spends what its credit outputs burn, set through the
+    /// payload setter with no explicit output. With every coin not final
+    /// (500,000 duffs), a burn beyond them is insufficient funds, not code 59;
+    /// one they cover is code 59.
+    #[test]
+    fn should_size_an_asset_lock_shortfall_by_its_burn() {
+        for (burn, waiting) in [(5_000_000, false), (100_000, true)] {
+            let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[500_000],
+                &[500_000],
+            ));
+            let payload =
+                TransactionPayload::AssetLockPayloadType(AssetLockPayload::new(vec![TxOut {
+                    value: burn,
+                    script_pubkey: DashAddress::dummy(Network::Testnet, 95).script_pubkey(),
+                }]));
+            let bytes = bincode::encode_to_vec(payload, bincode::config::standard())
+                .expect("encode an asset lock payload");
+            let lock = unsafe { core_wallet_tx_builder_new(FFINetwork::Testnet) };
+            let set = unsafe {
+                core_wallet_tx_builder_set_special_payload(lock, bytes.as_ptr(), bytes.len())
+            };
+            assert_eq!(set.code, PlatformWalletFFIResultCode::Success);
+
+            let result = finalize_built(lock, &core, &signer);
+            if waiting {
+                assert!(
+                    matches!(
+                        result,
+                        Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                            waiting: 500_000,
+                            ..
+                        })
+                    ),
+                    "burn {burn}: got {result:?}"
+                );
+            } else {
+                assert!(is_insufficient(&result), "burn {burn}: got {result:?}");
+            }
+        }
+    }
+
+    /// An input recorded on the builder is finalized from the wallet's copy as
+    /// it is then: one not final by that time is refused by name (code 59),
+    /// with and without `use_only_added_inputs`.
+    #[test]
+    fn should_refuse_a_recorded_input_that_is_not_final_when_finalized() {
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[900_000, 1_500_000],
+            &[1_500_000],
+        ));
+        let coin = runtime()
+            .block_on(standard_account_coins(
+                &core,
+                StandardAccountType::BIP44Account,
+            ))
+            .into_iter()
+            .find(|utxo| utxo.value() == 1_500_000)
+            .expect("the non-final coin")
+            .outpoint;
+        for only_added in [false, true] {
+            let builder = payment(None, 100_000);
+            unsafe { (*builder).state().inputs.push(coin) };
+            if only_added {
+                let set = unsafe { core_wallet_tx_builder_use_only_added_inputs(builder) };
+                assert_eq!(set.code, PlatformWalletFFIResultCode::Success);
+            }
+            let result = finalize_built(builder, &core, &signer);
+            assert!(
+                matches!(
+                    result,
+                    Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                        outpoint: Some(outpoint),
+                        ..
+                    }) if outpoint == coin
+                ),
+                "only_added={only_added}: got {result:?}"
+            );
+        }
+    }
+
     /// An explicit zero rate is the rate the build pays, not "unset": 900,000
     /// final + 100,100 waiting fund a 1,000,000 payment for free once the
     /// waiting coin confirms — code 59. Left unset, the default rate makes the
     /// same build short.
     #[test]
     fn should_price_an_explicit_zero_fee_rate_as_zero() {
-        let (core, signer) = runtime().block_on(
-            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
-                StandardAccountType::BIP44Account,
-                &[900_000, 100_100],
-                &[100_100],
-            ),
-        );
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[900_000, 100_100],
+            &[100_100],
+        ));
 
         let zero = finalize_built(payment(Some(0), 1_000_000), &core, &signer);
         assert!(
@@ -1475,13 +1663,11 @@ mod pooled_balance_handle_tests {
         use dashcore::hash_types::InputsHash;
         use dashcore::hashes::Hash;
 
-        let (core, signer) = runtime().block_on(
-            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
-                StandardAccountType::BIP44Account,
-                &[900_000, 100_400],
-                &[100_400],
-            ),
-        );
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[900_000, 100_400],
+            &[100_400],
+        ));
         let payload = TransactionPayload::ProviderUpdateRevocationPayloadType(
             ProviderUpdateRevocationPayload::new(
                 dashcore::Txid::all_zeros(),
@@ -1516,24 +1702,22 @@ mod pooled_balance_handle_tests {
     /// wallet's coins are in BIP32; the build funds from the empty BIP44.
     #[test]
     fn should_return_a_typed_error_for_an_overflowing_fee_rate_on_an_empty_account() {
-        let (core, signer) = runtime().block_on(
-            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
-                StandardAccountType::BIP32Account,
-                &[500_000],
-                &[],
-            ),
-        );
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP32Account,
+            &[500_000],
+            &[],
+        ));
 
         let builder = payment(Some(u64::MAX), 100_000);
-        let ffi = unsafe { Box::from_raw(builder) };
-        let inner = *unsafe { Box::from_raw(ffi.inner as *mut TransactionBuilder) };
-        let result = runtime().block_on(core.finalize_transaction_with_options(
-            inner,
-            ffi.shortfall_basis(),
+        let (_, BuildPlan { state, options }) =
+            unsafe { FFITransactionBuilder::into_build(builder) };
+        let make = || state.make();
+        let result = runtime().block_on(core.finalize_transaction_from(
+            &make,
+            options,
             CoreAccountTypeFFI::BIP44.funding_sources(),
             0,
             &signer,
-            ffi.reservation_only,
         ));
         assert!(
             matches!(result, Err(PlatformWalletError::TransactionBuild(ref message))
@@ -1547,13 +1731,11 @@ mod pooled_balance_handle_tests {
     /// coins could never cover is insufficient funds, not code 59.
     #[test]
     fn should_call_a_payment_beyond_every_coin_insufficient_with_no_final_coin() {
-        let (core, signer) = runtime().block_on(
-            platform_wallet::test_support::funded_spv_core_wallet_with_outputs(
-                StandardAccountType::BIP44Account,
-                &[500_000],
-                &[500_000],
-            ),
-        );
+        let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[500_000],
+            &[500_000],
+        ));
 
         let beyond = finalize_built(payment(None, 5_000_000), &core, &signer);
         assert!(

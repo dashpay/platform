@@ -151,25 +151,33 @@ The local shielded balance API introduces three Rust source compatibility change
 Spending only final coins and probing unresolved broadcasts bring four Rust
 source and behaviour changes:
 
-- `CoreWallet::finalize_transaction_with_options` takes a `ShortfallBasis`
-  as its second argument (after the builder). Pass `ShortfallBasis::default()`
-  to keep the old pricing; otherwise fill in what the build knows that the
-  key-wallet builder does not expose: `fee_rate` (`None` = default rate, an
-  explicit zero is zero), `requested` (the sum of the payment outputs; leave it
-  `None` for a drain), `outputs` (the explicit outputs' `OutputShape`),
-  `seeded_inputs`, `payload_bytes` (a special payload's length prefix plus
-  body) and `drain`. `finalize_transaction` keeps its signature.
+- `CoreWallet::finalize_transaction_with_options(builder, options, sources,
+  source_index, signer)` takes a `FinalizeOptions` after the builder in place
+  of the trailing `reservation_only: bool`: `reservation_only` and `inputs`
+  (coins the build may spend, by outpoint — the wallet's current copy of each
+  is seeded under the write guard). `finalize_transaction` keeps its
+  signature.
+- New `CoreWallet::finalize_transaction_from(make, options, sources,
+  source_index, signer)` takes a `BuilderFactory` (`Fn() ->
+  Result<TransactionBuilder, PlatformWalletError>`) instead of a builder. It
+  builds `make()`, and on a shortfall builds `make()` once more as a trial,
+  without signing or keeping a reservation, with the coins that are not final
+  yet treated as final: if key-wallet builds that, the shortfall is
+  `CoreFundsAwaitingNetwork`. A finalizer handed a plain builder cannot make
+  it again, so its shortfall stays insufficient funds.
 - `PlatformWalletError` gains `CoreFundsAwaitingNetwork { available, waiting,
   required, outpoint }` (FFI code 59): the build's final coins fall short, but
-  coins that are not yet confirmed or InstantSend-locked would cover it. An
-  exhaustive `match` needs an arm for it.
+  key-wallet would build it if the coins that are not yet confirmed or
+  InstantSend-locked were final. An exhaustive `match` needs an arm for it.
 - `WalletWorker` gains `BroadcastProbes`, reported in the shutdown report. An
   exhaustive `match` needs an arm for it.
 - Behaviour: every payment build that funds from the wallet, and
   `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
-  InstantSend-locked coins. A non-final coin seeded on the builder is refused
-  with `CoreFundsAwaitingNetwork` naming its outpoint, also when it was final
-  when seeded and lost that status before the build was finalized.
+  InstantSend-locked coins. A coin in `FinalizeOptions::inputs` is judged as
+  the wallet holds it when the build is finalized: spent if final by then,
+  refused with `CoreFundsAwaitingNetwork` naming its outpoint if not. A coin
+  seeded on the builder itself (`add_inputs`) is the caller's snapshot; a
+  selected one that has lost its final status is refused the same way.
 
 ## Dependencies
 

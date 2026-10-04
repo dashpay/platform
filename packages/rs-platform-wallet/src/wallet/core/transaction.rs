@@ -85,227 +85,181 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
 /// send that never reached the network never becomes final, so a payment
 /// built on it is one no node accepts. The spendable and max figures count
 /// the same coins, so they never offer what a build refuses.
-pub(crate) fn is_final(utxo: &Utxo) -> bool {
+pub fn is_final(utxo: &Utxo) -> bool {
     utxo.is_confirmed || utxo.is_instantlocked
 }
 
-/// What a caller knows about its build that the pinned key-wallet builder
-/// does not expose: the fee rate it set, the amount its outputs request, the
-/// shape of those outputs and of a special payload, whether it is a drain, and
-/// the inputs it seeded itself. Deciding whether a shortfall is "waiting on the
-/// network" prices it with these; without them the default fee rate, the
-/// selector's own `required` and one P2PKH output are used, and seeded coins
-/// are not counted.
+/// Makes a fresh copy of a build's configuration — what
+/// [`CoreWallet::finalize_transaction_from`] builds from, and what it tries
+/// again, on a shortfall, as if the coins not final yet were final.
+pub type BuilderFactory<'a> =
+    dyn Fn() -> Result<TransactionBuilder, PlatformWalletError> + Sync + 'a;
+
+/// How a finalizer funds a build, beyond the builder itself.
 #[derive(Debug, Clone, Default)]
-pub struct ShortfallBasis {
-    /// The rate the build pays; `None` for key-wallet's default.
-    pub fee_rate: Option<FeeRate>,
-    /// The sum of the payment outputs, when the caller knows it. Not for a
-    /// drain, whose output amount is a placeholder.
-    pub requested: Option<u64>,
-    /// The explicit outputs, change not included; `None` for one P2PKH.
-    pub outputs: Option<OutputShape>,
-    /// Inputs seeded on the builder (`add_inputs`); with `reservation_only`
-    /// they are the only coins the build can spend.
-    pub seeded_inputs: Vec<OutPoint>,
-    /// The bytes a special payload adds to the transaction (its length prefix
-    /// and body); 0 without one.
-    pub payload_bytes: usize,
-    /// A drain (`SelectionStrategy::All`): no change, and the one value output
-    /// receives whatever the inputs leave after the fee.
-    pub drain: bool,
+pub struct FinalizeOptions {
+    /// Coins the build may spend, by outpoint. Each is looked up in the
+    /// funding accounts under the wallet-manager write guard and the wallet's
+    /// current copy is seeded, so it is judged on its finality now, not on a
+    /// snapshot taken when the caller chose it: a coin InstantSend-locked
+    /// since is spent, and one that is not final (any more) is refused by
+    /// name with `CoreFundsAwaitingNetwork`. One another in-flight build has
+    /// reserved is left out by key-wallet's reservation filter, like any
+    /// reserved coin. Inputs seeded on the builder itself
+    /// (`TransactionBuilder::add_inputs`) stay the caller's snapshot: one not
+    /// final in it is dropped by the final-inputs rule, and a selected one is
+    /// re-checked before signing. Name a coin one way, not both: the builder
+    /// cannot be read back, so a coin seeded both ways is a candidate twice,
+    /// and a build that selects both copies is refused for spending it twice.
+    pub inputs: Vec<OutPoint>,
+    /// Fund through
+    /// [`TransactionBuilder::add_funding_reservation_only`]: the sources take
+    /// on their reservation bookkeeping but offer no candidates, so the build
+    /// spends only the seeded inputs.
+    pub reservation_only: bool,
 }
 
-impl ShortfallBasis {
-    fn rate(&self) -> FeeRate {
-        self.fee_rate.unwrap_or_else(FeeRate::normal)
-    }
-
-    /// The explicit outputs plus the special payload, as the bytes they add to
-    /// the transaction — the payload counts like more output script.
-    fn sized_outputs(&self) -> OutputShape {
-        let outputs = self.outputs.unwrap_or(OutputShape::ONE_P2PKH);
-        OutputShape {
-            count: outputs.count,
-            script_bytes: outputs.script_bytes.saturating_add(self.payload_bytes),
-        }
-    }
-
-    /// What a payment must leave for the fee of the final coins it already
-    /// spends: [`final_inputs_fee`]. A drain has no change, but its one value
-    /// output must still clear dust, so it reserves the no-change fee plus the
-    /// dust floor.
-    fn fee_reserve(&self, final_coins: usize) -> Result<u64, PlatformWalletError> {
-        let outputs = self.sized_outputs();
-        if !self.drain {
-            return final_inputs_fee(final_coins, outputs, self.rate());
-        }
-        let size =
-            estimate_tx_size(final_coins, 0, false).saturating_add(outputs.serialized_size());
-        Ok(checked_fee(self.rate(), size)?
-            .saturating_add(modeled_output_script().dust_value().to_sat()))
-    }
-}
-
-/// A build's explicit outputs as they serialize: how many, and the total
-/// length of their scripts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutputShape {
-    pub count: usize,
-    pub script_bytes: usize,
-}
-
-impl OutputShape {
-    /// One P2PKH output (a 25-byte script), the shape `estimate_tx_size`
-    /// assumes for every output.
-    pub const ONE_P2PKH: Self = Self {
-        count: 1,
-        script_bytes: 25,
-    };
-
-    /// Each output is its 8-byte value, a one-byte script length (a standard
-    /// script is under 253 bytes) and the script.
-    fn serialized_size(self) -> usize {
-        self.count
-            .saturating_mul(9)
-            .saturating_add(self.script_bytes)
-    }
-}
-
-/// The value the not-yet-final coins of `utxos` would bring to a payment at
-/// `fee_rate`, net of the input each one adds — what waiting for their
-/// confirmation could make available. A rate whose fee overflows is a typed
-/// error, as in [`checked_fee`].
-pub(crate) fn waiting_net_value<'a>(
-    utxos: impl IntoIterator<Item = &'a Utxo>,
-    fee_rate: FeeRate,
-) -> Result<u64, PlatformWalletError> {
-    let empty = estimate_tx_size(0, 1, false);
-    let per_input = estimate_tx_size(1, 1, false).saturating_sub(empty);
-    let input_cost = checked_fee(fee_rate, per_input)?;
-    Ok(utxos
-        .into_iter()
-        .filter(|utxo| !is_final(utxo))
-        .map(|utxo| utxo.value().saturating_sub(input_cost))
-        .sum())
-}
-
-/// The fee a payment pays for the final coins it already spends, at
-/// `fee_rate`: a transaction with every one of `final_coins` as an input,
-/// the build's explicit `outputs` and change. key-wallet can report a
-/// shortfall before it prices fees — `required` is then the outputs alone —
-/// so a shortfall is called "waiting" only when the waiting coins also cover
-/// this. When `required` already included the fee, or the payment would leave
-/// no change, this errs towards insufficient funds, never towards promising
-/// coins that would not suffice. A rate whose fee overflows is a typed error,
-/// as in [`checked_fee`].
-pub(crate) fn final_inputs_fee(
-    final_coins: usize,
-    outputs: OutputShape,
-    fee_rate: FeeRate,
-) -> Result<u64, PlatformWalletError> {
-    let size = estimate_tx_size(final_coins, 0, true).saturating_add(outputs.serialized_size());
-    checked_fee(fee_rate, size)
-}
-
-/// How many final coins `utxos` holds — the inputs a short build already used.
-pub(crate) fn final_count<'a>(utxos: impl IntoIterator<Item = &'a Utxo>) -> usize {
-    utxos.into_iter().filter(|utxo| is_final(utxo)).count()
-}
-
-/// A shortfall the not-yet-final coins would cover becomes
-/// [`PlatformWalletError::CoreFundsAwaitingNetwork`]; anything else is returned
-/// as it was mapped. `waiting` is [`waiting_net_value`] over the coins the build
-/// could spend, `fee_reserve` is [`final_inputs_fee`] over their final ones,
-/// both at the build's fee rate.
+/// Whether coins that are not final yet would fund a build that just fell
+/// short: key-wallet builds `trial` — a fresh copy of the build's
+/// configuration — over the same candidates with every not-yet-final one
+/// treated as final. Returns the value of the not-yet-final coins that trial
+/// spends, or `None` when it fails too (confirmation would not help) or
+/// nothing it could spend is waiting.
 ///
-/// When selection had nothing final to choose from at all, key-wallet reports
-/// no amount (`required` is `None`). With the caller's `requested` known the
-/// shortfall is sized from it; without it the coins that exist are all
-/// waiting, and that is what the user needs to hear, so it is reported as
-/// waiting too.
+/// The candidates are what the build could select: the seeded coins and,
+/// unless `reservation_only`, every spendable coin of the `offered` accounts.
+/// Funding goes through clones of those accounts with
+/// `add_funding_reservation_only`, so key-wallet applies the same reservation
+/// filter and change address as the build, and no account state (the change
+/// address pool) moves; the clones share the reservation sets, so what the
+/// trial reserves is released before returning. Nothing is signed (a payload
+/// finalizer on the configuration does run, as in the build). Runs under the
+/// caller's wallet-manager write guard, on the failure path only.
+pub(crate) fn trial_with_waiting_coins(
+    trial: TransactionBuilder,
+    wallet: &Wallet,
+    accounts: &ManagedAccountCollection,
+    offered: &[AccountType],
+    seeds: &[Utxo],
+    reservation_only: bool,
+    height: u32,
+) -> Option<u64> {
+    // A `reservation_only` build spends only its seeds, and those are final
+    // by now: nothing it could spend is waiting.
+    if reservation_only {
+        return None;
+    }
+    let seeded: HashSet<OutPoint> = seeds.iter().map(|seed| seed.outpoint).collect();
+    let mut waiting: HashSet<OutPoint> = HashSet::new();
+    let mut candidates: Vec<Utxo> = seeds.to_vec();
+    for managed in offered.iter().filter_map(|at| accounts.funds_account(at)) {
+        for utxo in managed.spendable_utxos(height) {
+            if seeded.contains(&utxo.outpoint) {
+                continue;
+            }
+            let mut candidate = utxo.clone();
+            if !is_final(&candidate) {
+                candidate.is_instantlocked = true;
+                waiting.insert(candidate.outpoint);
+            }
+            candidates.push(candidate);
+        }
+    }
+    if waiting.is_empty() {
+        return None;
+    }
+    let mut clones = Vec::with_capacity(offered.len());
+    for at in offered {
+        let (Some(account), Some(managed)) = (
+            wallet.accounts.account_of_type(*at),
+            accounts.funds_account(at),
+        ) else {
+            continue;
+        };
+        clones.push((account, managed.clone()));
+    }
+    let mut trial = trial
+        .set_current_height(height)
+        .require_final_inputs()
+        .add_inputs(candidates.iter().cloned());
+    for (account, managed) in clones.iter_mut() {
+        trial = trial.add_funding_reservation_only(managed, account);
+    }
+    let (transaction, _, _) = trial.build_unsigned_reserved().ok()?;
+    for (_, managed) in &clones {
+        managed.release_reservation(&transaction);
+    }
+    Some(
+        transaction
+            .input
+            .iter()
+            .filter(|input| waiting.contains(&input.previous_output))
+            .filter_map(|input| {
+                candidates
+                    .iter()
+                    .find(|candidate| candidate.outpoint == input.previous_output)
+            })
+            .fold(0u64, |sum, coin| sum.saturating_add(coin.value())),
+    )
+}
+
+/// A shortfall the not-yet-final coins would fund
+/// ([`trial_with_waiting_coins`] returned the `waiting` value they bring)
+/// becomes [`PlatformWalletError::CoreFundsAwaitingNetwork`], with the build's
+/// own `available` / `required`; anything else is returned as it was mapped.
 pub(crate) fn awaiting_network(
     error: PlatformWalletError,
-    waiting: u64,
-    fee_reserve: u64,
-    requested: Option<u64>,
-    drain: bool,
+    waiting: Option<u64>,
 ) -> PlatformWalletError {
-    let (available, required) = match &error {
-        PlatformWalletError::CoreInsufficientFunds {
-            available,
-            required,
-            ..
-        }
-        | PlatformWalletError::CorePooledInsufficientFunds {
-            available,
-            required,
-            ..
-        } => (*available, *required),
-        _ => return error,
-    };
-    waiting_error(available, required, waiting, fee_reserve, requested, drain).unwrap_or(error)
+    match (waiting, &error) {
+        (
+            Some(waiting),
+            PlatformWalletError::CoreInsufficientFunds {
+                available,
+                required,
+                ..
+            }
+            | PlatformWalletError::CorePooledInsufficientFunds {
+                available,
+                required,
+                ..
+            },
+        ) => PlatformWalletError::CoreFundsAwaitingNetwork {
+            available: *available,
+            waiting,
+            required: *required,
+            outpoint: None,
+        },
+        _ => error,
+    }
 }
 
 /// The same rule for a build whose failure is otherwise reported as a plain
 /// build error (the DashPay contact payment).
 pub(crate) fn build_error_awaiting_network(
     error: BuilderError,
-    waiting: u64,
-    fee_reserve: u64,
-    requested: Option<u64>,
+    waiting: Option<u64>,
 ) -> PlatformWalletError {
-    shortfall(&error)
-        .and_then(|(available, required)| {
-            waiting_error(available, required, waiting, fee_reserve, requested, false)
-        })
-        .unwrap_or_else(|| PlatformWalletError::TransactionBuild(error.to_string()))
+    match (shortfall(&error), waiting) {
+        (Some((available, required)), Some(waiting)) => {
+            PlatformWalletError::CoreFundsAwaitingNetwork {
+                available,
+                waiting,
+                required,
+                outpoint: None,
+            }
+        }
+        _ => PlatformWalletError::TransactionBuild(error.to_string()),
+    }
 }
 
-/// `requested`, when the caller knows it, stands in for an unknown `required`
-/// and is the floor of a known one (which key-wallet may report before
-/// fees). A drain requests no amount: it is waiting when the final and the
-/// waiting coins together clear its fee and dust floor (`fee_reserve`).
-fn waiting_error(
-    available: Option<u64>,
-    required: Option<u64>,
-    waiting: u64,
-    fee_reserve: u64,
-    requested: Option<u64>,
-    drain: bool,
-) -> Option<PlatformWalletError> {
-    if waiting == 0 {
-        return None;
-    }
-    if drain {
-        let available = available.unwrap_or(0);
-        return (available.saturating_add(waiting) >= fee_reserve).then_some(
-            PlatformWalletError::CoreFundsAwaitingNetwork {
-                available: Some(available),
-                waiting,
-                required: None,
-                outpoint: None,
-            },
-        );
-    }
-    let required = match (required, requested) {
-        (Some(required), Some(requested)) => Some(required.max(requested)),
-        (required, requested) => required.or(requested),
-    };
-    let available = available.or(requested.map(|_| 0));
-    let covered = match (available, required) {
-        (Some(available), Some(required)) => {
-            available.saturating_add(waiting) >= required.saturating_add(fee_reserve)
-        }
-        (available, None) => available.unwrap_or(0) == 0,
-        (None, Some(_)) => false,
-    };
-    covered.then_some(PlatformWalletError::CoreFundsAwaitingNetwork {
-        available,
-        waiting,
-        required,
-        outpoint: None,
-    })
+/// The fee one more input adds at `fee_rate`, from key-wallet's own estimator
+/// by difference, so no size is re-declared here.
+fn input_fee(fee_rate: FeeRate) -> Result<u64, PlatformWalletError> {
+    checked_fee(
+        fee_rate,
+        estimate_tx_size(1, 0, false).saturating_sub(estimate_tx_size(0, 0, false)),
+    )
 }
 
 /// key-wallet's `FeeRate::calculate_fee`, with the multiplication checked.
@@ -737,11 +691,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         fee_rate: Option<FeeRate>,
     ) -> Result<u64, PlatformWalletError> {
         let fee_rate = fee_rate.unwrap_or_else(FeeRate::normal);
-        // Per-input and per-output costs derived from key-wallet's estimator by
-        // difference, so this crate never re-declares a size that could drift
-        // from the one the build charges.
+        // The one-output shell and the per-input cost ([`input_fee`]) come
+        // from key-wallet's estimator, so this crate never re-declares a size
+        // that could drift from the one the build charges.
         let empty = estimate_tx_size(0, 1, false);
-        let per_input = estimate_tx_size(1, 1, false).saturating_sub(empty);
 
         let manager = self.wallet_manager.read().await;
         let (wallet, info) = manager
@@ -759,7 +712,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
         // A UTXO earns its place only if it brings in more than its own input
         // costs at this rate; the rest are dead weight and are dropped.
-        let input_cost = checked_fee(fee_rate, per_input)?;
+        let input_cost = input_fee(fee_rate)?;
         let mut values: Vec<u64> = Vec::new();
         for at in resolved {
             let Some(managed) = info.core_wallet.accounts.funds_account(&at) else {
@@ -829,6 +782,13 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
     /// Consume a configured builder, atomically fund and reserve its selected
     /// inputs, then sign without holding the wallet-manager lock.
+    ///
+    /// A builder cannot be read back or rebuilt (the pinned key-wallet has no
+    /// getters and no `Clone`), so a shortfall is reported as insufficient
+    /// funds even when coins that are not final yet would cover it. A caller
+    /// that can make its configuration again uses
+    /// [`Self::finalize_transaction_from`] to have such a shortfall reported
+    /// as [`PlatformWalletError::CoreFundsAwaitingNetwork`].
     pub async fn finalize_transaction<S: TransactionSigner + ?Sized + Sync>(
         &self,
         builder: TransactionBuilder,
@@ -836,32 +796,62 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         source_index: u32,
         signer: &S,
     ) -> Result<SignedCoreTransaction, PlatformWalletError> {
-        self.finalize_transaction_with_options(
+        self.finalize(
             builder,
-            ShortfallBasis::default(),
+            None,
+            FinalizeOptions::default(),
             sources,
             source_index,
             signer,
-            false,
         )
         .await
     }
 
-    /// `reservation_only` funds through
-    /// [`TransactionBuilder::add_funding_reservation_only`]: the sources take on
-    /// their reservation bookkeeping but offer no candidates, so the build spends
-    /// only the inputs already seeded on the builder.
+    /// [`Self::finalize_transaction`] with [`FinalizeOptions`]: inputs chosen
+    /// by outpoint, and `reservation_only` funding.
     ///
-    /// A caller draining an account in batches under the standard-transaction
-    /// input limit needs it — ordinary funding offers the whole account on top of
-    /// the batch, so every batch trips the cap and an account above it can never
-    /// be drained.
+    /// `reservation_only` is what a caller draining an account in batches
+    /// under the standard-transaction input limit needs — ordinary funding
+    /// offers the whole account on top of the batch, so every batch trips the
+    /// cap and an account above it can never be drained.
     pub async fn finalize_transaction_with_options<S: TransactionSigner + ?Sized + Sync>(
         &self,
         builder: TransactionBuilder,
-        // Classifies a shortfall the build's not-yet-final coins would cover
-        // as waiting on the network (see `ShortfallBasis`).
-        basis: ShortfallBasis,
+        options: FinalizeOptions,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+        signer: &S,
+    ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+        self.finalize(builder, None, options, sources, source_index, signer)
+            .await
+    }
+
+    /// [`Self::finalize_transaction_with_options`] for a build `make` can
+    /// configure again: the build is `make()`, and when it falls short a
+    /// second copy is tried with the coins that are not final yet treated as
+    /// final ([`trial_with_waiting_coins`]). If that trial builds, the
+    /// shortfall is [`PlatformWalletError::CoreFundsAwaitingNetwork`] —
+    /// key-wallet's own verdict, at the build's fee rate, outputs, payload and
+    /// strategy; otherwise it stays insufficient funds.
+    pub async fn finalize_transaction_from<S: TransactionSigner + ?Sized + Sync>(
+        &self,
+        make: &BuilderFactory<'_>,
+        options: FinalizeOptions,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+        signer: &S,
+    ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+        self.finalize(make()?, Some(make), options, sources, source_index, signer)
+            .await
+    }
+
+    async fn finalize<S: TransactionSigner + ?Sized + Sync>(
+        &self,
+        builder: TransactionBuilder,
+        // Makes the build again for the waiting-coins trial; `None`: a
+        // shortfall stays insufficient funds.
+        make: Option<&BuilderFactory<'_>>,
+        options: FinalizeOptions,
         // The funding sources to POOL, in order — the first supplies the
         // change address. A plain send passes [`SEND_FUNDING_SOURCES`]
         // (BIP44 + BIP32 + every DashPay receiving account); a single-element
@@ -871,8 +861,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         sources: &[AccountTypePreference],
         source_index: u32,
         signer: &S,
-        reservation_only: bool,
     ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+        let FinalizeOptions {
+            inputs: seed_outpoints,
+            reservation_only,
+        } = options;
         let primary = *sources.first().ok_or_else(|| {
             PlatformWalletError::TransactionBuild("no funding sources named".into())
         })?;
@@ -905,8 +898,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // this build still owns, even if a TTL sweep re-reserved them under
             // a new token meanwhile.
             // Only final coins (InstantSend-locked or mined) are spent; see
-            // `is_final`. A coin the caller seeded that is not final is
-            // refused where it is seeded (FFI `add_inputs_from_outpoints`).
+            // `is_final`.
             let mut builder = builder.set_current_height(height).require_final_inputs();
             // Accounts that took on this build's reservation bookkeeping, in
             // funding order — i.e. the ones a failure path must release. Under
@@ -925,6 +917,56 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 source_index,
                 strict,
             )?;
+            if resolved.is_empty() {
+                return Err(PlatformWalletError::WalletNotFound(format!(
+                    "no funding account of any named source at index {source_index}"
+                )));
+            }
+
+            // Inputs chosen by outpoint are seeded from the wallet's current
+            // copies, under this guard, before any funding call (which then
+            // skips them as already present): the final-inputs rule judges
+            // them as they are now. One that is not final is refused by name
+            // instead of being dropped silently; nothing is reserved yet.
+            let mut seeds: Vec<Utxo> = Vec::new();
+            let mut seeded: HashSet<OutPoint> = HashSet::new();
+            for outpoint in &seed_outpoints {
+                if !seeded.insert(*outpoint) {
+                    continue;
+                }
+                let utxo = resolved
+                    .iter()
+                    .find_map(|at| {
+                        info.core_wallet
+                            .accounts
+                            .funds_account(at)
+                            .and_then(|managed| managed.utxos.get(outpoint))
+                    })
+                    .ok_or_else(|| {
+                        PlatformWalletError::TransactionBuild(format!(
+                            "input {outpoint} is not a coin of any funding account"
+                        ))
+                    })?;
+                // Unspendable — an immature coinbase output, or a locked coin:
+                // the selector would drop it silently, and confirmation alone
+                // would not change that, so this is checked first.
+                if !utxo.is_spendable(height) {
+                    return Err(PlatformWalletError::TransactionBuild(format!(
+                        "input {outpoint} is not spendable yet (immature or locked)"
+                    )));
+                }
+                if !is_final(utxo) {
+                    return Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                        available: None,
+                        waiting: utxo.value(),
+                        required: None,
+                        outpoint: Some(*outpoint),
+                    });
+                }
+                seeds.push(utxo.clone());
+            }
+            builder = builder.add_inputs(seeds.iter().cloned());
+
             for at in resolved {
                 // `resolved_funding_accounts` already dropped anything missing
                 // from either half, so this destructure is defensive only —
@@ -947,11 +989,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 };
                 offered_accounts.push(at);
             }
-            if offered_accounts.is_empty() {
-                return Err(PlatformWalletError::WalletNotFound(format!(
-                    "no funding account of any named source at index {source_index}"
-                )));
-            }
 
             let funding_context = if strict {
                 FundingContext::Single {
@@ -961,53 +998,28 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             } else {
                 FundingContext::Pooled(sources)
             };
-            // What the build could spend that is not final yet: a shortfall
-            // those coins would cover is "waiting on the network", not
-            // insufficient funds. Ordinary funding offers the sources' coins;
-            // a `reservation_only` build spends only what was seeded on it.
-            let rate = basis.rate();
-            let offered: Vec<_> = offered_accounts
-                .iter()
-                .filter_map(|at| info.core_wallet.accounts.funds_account(at))
-                .collect();
-            let (waiting, finals): (u64, usize) = if reservation_only {
-                let seeded: Vec<&Utxo> = basis
-                    .seeded_inputs
-                    .iter()
-                    .filter_map(|outpoint| {
-                        offered
-                            .iter()
-                            .find_map(|managed| managed.utxos.get(outpoint))
-                    })
-                    .collect();
-                (
-                    waiting_net_value(seeded.iter().copied(), rate)?,
-                    final_count(seeded.iter().copied()),
-                )
-            } else {
-                (
-                    offered
-                        .iter()
-                        .map(|managed| waiting_net_value(managed.spendable_utxos(height), rate))
-                        .sum::<Result<u64, _>>()?,
-                    offered
-                        .iter()
-                        .map(|managed| final_count(managed.spendable_utxos(height)))
-                        .sum(),
-                )
-            };
-            let fee_reserve = basis.fee_reserve(finals)?;
-            let requested = basis.requested;
-            let drain = basis.drain;
+            // A shortfall the coins not final yet would fund is "waiting on
+            // the network", not insufficient funds: key-wallet decides, on a
+            // fresh copy of the build — on the failure path only, still under
+            // this guard.
             let (unsigned, fee, reservation_token) =
                 builder.build_unsigned_reserved().map_err(|error| {
-                    awaiting_network(
-                        map_builder_error(error, funding_context),
-                        waiting,
-                        fee_reserve,
-                        requested,
-                        drain,
-                    )
+                    let error = map_builder_error(error, funding_context);
+                    let Some(make) = make else {
+                        return error;
+                    };
+                    let waiting = make().ok().and_then(|trial| {
+                        trial_with_waiting_coins(
+                            trial,
+                            wallet,
+                            &info.core_wallet.accounts,
+                            &offered_accounts,
+                            &seeds,
+                            reservation_only,
+                            height,
+                        )
+                    });
+                    awaiting_network(error, waiting)
                 })?;
 
             // Release across every contributing account on the error paths
@@ -1090,10 +1102,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 }
             };
             // `require_final_inputs` judged the builder's copies of the coins.
-            // A seeded input is the caller's snapshot, and key-wallet keeps it
-            // over the resident entry, so a coin a reorg has since demoted
-            // would pass on its old confirmed flag. The resident coins are
-            // what gets signed: check those, still under the write guard.
+            // An input the caller seeded on the builder itself is its
+            // snapshot, and key-wallet keeps it over the resident entry, so a
+            // coin a reorg has since demoted would pass on its old confirmed
+            // flag. The resident coins are what gets signed: check those,
+            // still under the write guard.
             if let Some(stale) = selected.iter().find(|utxo| !is_final(utxo)) {
                 let error = PlatformWalletError::CoreFundsAwaitingNetwork {
                     available: None,
@@ -1328,8 +1341,8 @@ mod tests {
     use crate::broadcaster::TransactionBroadcaster;
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_dual_standard,
-        funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
-        AlwaysRejectedBroadcaster, WalletSigner,
+        funded_wallet_manager_with_contact, standard_account_coins, AlwaysMaybeSentBroadcaster,
+        AlwaysOkBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 
@@ -1339,12 +1352,13 @@ mod tests {
     use tokio::sync::RwLock;
 
     use crate::wallet::core::transaction::{
-        build_error_awaiting_network, final_inputs_fee, is_final, modeled_output_script,
-        waiting_net_value, OutputShape, ShortfallBasis, MAX_STANDARD_TX_INPUTS,
+        build_error_awaiting_network, is_final, modeled_output_script, FinalizeOptions,
+        MAX_STANDARD_TX_INPUTS,
     };
     use crate::wallet::core::CoreWallet;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use crate::PlatformWalletError;
+    use crate::SEND_FUNDING_SOURCES;
 
     fn preference(account_type: StandardAccountType) -> AccountTypePreference {
         match account_type {
@@ -1387,12 +1401,7 @@ mod tests {
 
         // 1_000_000 exceeds either family's 700_000, so selection must pool.
         let finalized = core
-            .finalize_transaction(
-                payment_builder(40),
-                &crate::SEND_FUNDING_SOURCES,
-                0,
-                &signer,
-            )
+            .finalize_transaction(payment_builder(40), &SEND_FUNDING_SOURCES, 0, &signer)
             .await
             .expect("pooled finalize must fund from both standard families");
         assert_eq!(
@@ -1409,12 +1418,7 @@ mod tests {
         // rebuild can only succeed if every pooled input returned to the pool.
         core.abandon_transaction(&finalized).await;
         let rebuilt = core
-            .finalize_transaction(
-                payment_builder(41),
-                &crate::SEND_FUNDING_SOURCES,
-                0,
-                &signer,
-            )
+            .finalize_transaction(payment_builder(41), &SEND_FUNDING_SOURCES, 0, &signer)
             .await
             .expect("abandon must release every contributing account's reservation");
         core.abandon_transaction(&rebuilt).await;
@@ -1440,12 +1444,7 @@ mod tests {
         );
 
         let finalized = core
-            .finalize_transaction(
-                payment_builder(60),
-                &crate::SEND_FUNDING_SOURCES,
-                0,
-                &signer,
-            )
+            .finalize_transaction(payment_builder(60), &SEND_FUNDING_SOURCES, 0, &signer)
             .await
             .expect("pooled finalize must reach contact funds");
         assert!(
@@ -1480,12 +1479,7 @@ mod tests {
         // And releasing must reach the contact account too.
         core.abandon_transaction(&finalized).await;
         let rebuilt = core
-            .finalize_transaction(
-                payment_builder(61),
-                &crate::SEND_FUNDING_SOURCES,
-                0,
-                &signer,
-            )
+            .finalize_transaction(payment_builder(61), &SEND_FUNDING_SOURCES, 0, &signer)
             .await
             .expect("abandon must release the contact account's reservation");
         core.abandon_transaction(&rebuilt).await;
@@ -1538,7 +1532,7 @@ mod tests {
         // draws on. An account counted here but skipped by the build (or the
         // reverse) breaks this number.
         assert_eq!(
-            core.pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+            core.pooled_spendable_balance(&SEND_FUNDING_SOURCES, 0)
                 .await
                 .expect("pooled balance"),
             1_400_000,
@@ -1588,11 +1582,11 @@ mod tests {
         );
 
         let gross = core
-            .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+            .pooled_spendable_balance(&SEND_FUNDING_SOURCES, 0)
             .await
             .expect("gross balance");
         let max = core
-            .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+            .pooled_max_sendable(&SEND_FUNDING_SOURCES, 0, None)
             .await
             .expect("max sendable");
         assert!(
@@ -1609,7 +1603,7 @@ mod tests {
 
         // The gross figure is unbuildable — the whole of review's point.
         let over = core
-            .finalize_transaction(spend(gross, 70), &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction(spend(gross, 70), &SEND_FUNDING_SOURCES, 0, &signer)
             .await;
         assert!(
             over.is_err(),
@@ -1618,7 +1612,7 @@ mod tests {
 
         // The net figure builds, and takes every UTXO with it.
         let finalized = core
-            .finalize_transaction(spend(max, 71), &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction(spend(max, 71), &SEND_FUNDING_SOURCES, 0, &signer)
             .await
             .expect("max sendable must be an amount a build accepts");
         assert_eq!(
@@ -1647,7 +1641,7 @@ mod tests {
             generation,
         );
         let baseline = plain
-            .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+            .pooled_max_sendable(&SEND_FUNDING_SOURCES, 0, None)
             .await
             .expect("max sendable");
 
@@ -1665,7 +1659,7 @@ mod tests {
 
         assert_eq!(
             with_dust
-                .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .pooled_spendable_balance(&SEND_FUNDING_SOURCES, 0)
                 .await
                 .expect("gross balance"),
             1_400_100,
@@ -1673,7 +1667,7 @@ mod tests {
         );
         assert_eq!(
             with_dust
-                .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+                .pooled_max_sendable(&SEND_FUNDING_SOURCES, 0, None)
                 .await
                 .expect("max sendable"),
             baseline,
@@ -1948,7 +1942,7 @@ mod tests {
             generation,
         );
         assert_eq!(
-            core.pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+            core.pooled_spendable_balance(&SEND_FUNDING_SOURCES, 0)
                 .await
                 .expect("pooled balance"),
             1_400_000,
@@ -1971,7 +1965,7 @@ mod tests {
         );
         assert_eq!(
             coinjoin_only
-                .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .pooled_spendable_balance(&SEND_FUNDING_SOURCES, 0)
                 .await
                 .expect("pooled balance"),
             0,
@@ -2108,16 +2102,20 @@ mod tests {
             utxos.remove(0)
         };
 
+        let only_seeded = || FinalizeOptions {
+            inputs: vec![seeded.outpoint],
+            reservation_only: true,
+        };
+
         // A payment neither UTXO covers alone. With the flag the unseeded one
         // is not a candidate, so selection must come up short.
         let err = core
             .finalize_transaction_with_options(
-                payment_builder(60).add_inputs([seeded.clone()]),
-                ShortfallBasis::default(),
+                payment_builder(60),
+                only_seeded(),
                 &[preference(account_type)],
                 0,
                 &signer,
-                true,
             )
             .await
             .expect_err("the account's other UTXO must not be reachable under the flag");
@@ -2131,13 +2129,11 @@ mod tests {
         let finalized = core
             .finalize_transaction_with_options(
                 TransactionBuilder::new()
-                    .add_output(&DashAddress::dummy(Network::Testnet, 61), 500_000)
-                    .add_inputs([seeded.clone()]),
-                ShortfallBasis::default(),
+                    .add_output(&DashAddress::dummy(Network::Testnet, 61), 500_000),
+                only_seeded(),
                 &[preference(account_type)],
                 0,
                 &signer,
-                true,
             )
             .await
             .expect("the seeded input alone covers this payment");
@@ -2154,11 +2150,10 @@ mod tests {
         let pooled = core
             .finalize_transaction_with_options(
                 payment_builder(62),
-                ShortfallBasis::default(),
+                FinalizeOptions::default(),
                 &[preference(account_type)],
                 0,
                 &signer,
-                false,
             )
             .await
             .expect("without the flag both UTXOs fund the payment");
@@ -2384,14 +2379,14 @@ mod tests {
         set_bip44_finality(&manager, &wallet_id, false).await;
 
         assert_eq!(
-            core.pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+            core.pooled_spendable_balance(&SEND_FUNDING_SOURCES, 0)
                 .await
                 .expect("spendable"),
             700_000,
             "only the BIP32 coin is final"
         );
         let max = core
-            .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+            .pooled_max_sendable(&SEND_FUNDING_SOURCES, 0, None)
             .await
             .expect("max");
         assert!(
@@ -2401,16 +2396,30 @@ mod tests {
     }
 
     /// A payment only the not-yet-final coins would cover is reported as
-    /// waiting on the network, not as a shortfall, and builds nothing.
+    /// waiting on the network, not as a shortfall, and builds nothing — when
+    /// the caller describes its build. `finalize_transaction` cannot price an
+    /// opaque builder, so there it stays insufficient funds.
     #[tokio::test]
     async fn should_report_waiting_when_unconfirmed_coins_would_cover_the_payment() {
         let (core, signer, manager, wallet_id) = dual_core(&[700_000], &[700_000]).await;
         set_bip44_finality(&manager, &wallet_id, false).await;
 
+        let unpriced = core
+            .finalize_transaction(payment_builder(69), &SEND_FUNDING_SOURCES, 0, &signer)
+            .await;
+        assert!(
+            matches!(
+                unpriced,
+                Err(PlatformWalletError::CorePooledInsufficientFunds { .. })
+            ),
+            "got {unpriced:?}"
+        );
+
         let result = core
-            .finalize_transaction(
-                payment_builder(70),
-                &crate::SEND_FUNDING_SOURCES,
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(70)),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
                 0,
                 &signer,
             )
@@ -2432,23 +2441,13 @@ mod tests {
         let (core, signer, manager, wallet_id) = dual_core(&[700_000], &[700_000]).await;
         set_bip44_finality(&manager, &wallet_id, false).await;
         assert!(core
-            .finalize_transaction(
-                payment_builder(71),
-                &crate::SEND_FUNDING_SOURCES,
-                0,
-                &signer,
-            )
+            .finalize_transaction(payment_builder(71), &SEND_FUNDING_SOURCES, 0, &signer,)
             .await
             .is_err());
 
         set_bip44_finality(&manager, &wallet_id, true).await;
         let finalized = core
-            .finalize_transaction(
-                payment_builder(72),
-                &crate::SEND_FUNDING_SOURCES,
-                0,
-                &signer,
-            )
+            .finalize_transaction(payment_builder(72), &SEND_FUNDING_SOURCES, 0, &signer)
             .await
             .expect("an InstantSend-locked coin is final");
         core.abandon_transaction(&finalized).await;
@@ -2463,7 +2462,7 @@ mod tests {
         let builder = TransactionBuilder::new()
             .add_output(&DashAddress::dummy(Network::Testnet, 73), 5_000_000);
         let result = core
-            .finalize_transaction(builder, &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, &signer)
             .await;
         assert!(
             matches!(
@@ -2485,7 +2484,7 @@ mod tests {
         let builder = TransactionBuilder::new()
             .add_output(&DashAddress::dummy(Network::Testnet, 75), 1_000_000);
         let result = core
-            .finalize_transaction(builder, &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, &signer)
             .await;
         assert!(
             matches!(
@@ -2496,45 +2495,9 @@ mod tests {
         );
     }
 
-    /// The fees that classify a shortfall are checked like every other: a
-    /// host-chosen rate that overflows is a typed error, even with no coin
-    /// to price.
-    #[test]
-    fn should_return_a_typed_error_when_a_diagnostic_fee_overflows() {
-        let rate = FeeRate::new(u64::MAX);
-
-        assert!(matches!(
-            waiting_net_value(std::iter::empty(), rate),
-            Err(PlatformWalletError::TransactionBuild(_))
-        ));
-        assert!(matches!(
-            final_inputs_fee(0, OutputShape::ONE_P2PKH, rate),
-            Err(PlatformWalletError::TransactionBuild(_))
-        ));
-    }
-
-    /// The fee reserve is the transaction's serialized size: the final inputs,
-    /// every explicit output as its value, length byte and script, and change.
-    #[test]
-    fn should_size_the_fee_reserve_by_every_explicit_output() {
-        let rate = FeeRate::normal();
-        let four = OutputShape {
-            count: 4,
-            script_bytes: 4 * 25,
-        };
-
-        assert_eq!(
-            final_inputs_fee(1, OutputShape::ONE_P2PKH, rate).expect("fee"),
-            rate.calculate_fee(estimate_tx_size(1, 1, true))
-        );
-        assert_eq!(
-            final_inputs_fee(1, four, rate).expect("fee"),
-            rate.calculate_fee(estimate_tx_size(1, 4, true))
-        );
-    }
-
-    /// With nothing final at all key-wallet names no requirement; the coins
-    /// that exist are all waiting, and that is what is reported.
+    /// With nothing final at all key-wallet names no requirement, and the
+    /// trial over the waiting coin funds the payment: code 59, with the coin
+    /// the trial spends as waiting and no invented requirement.
     #[tokio::test]
     async fn should_report_waiting_when_no_coin_is_final() {
         let (manager, wallet_id, generation, signer) =
@@ -2549,9 +2512,10 @@ mod tests {
         );
         set_bip44_finality(&manager, &wallet_id, false).await;
         let result = core
-            .finalize_transaction(
-                payment_builder(74),
-                &crate::SEND_FUNDING_SOURCES,
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(74)),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
                 0,
                 &signer,
             )
@@ -2559,62 +2523,128 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(PlatformWalletError::CoreFundsAwaitingNetwork { required: None, .. })
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    available: Some(0),
+                    waiting: 10_000_000,
+                    required: None,
+                    ..
+                })
             ),
             "got {result:?}"
         );
     }
 
-    /// A `reservation_only` build spends only its seeds. A seeded coin that is
-    /// not final yet is dropped by the final-inputs rule; when it would have
-    /// covered the payment the build is waiting on the network, not short —
-    /// and only the seeds count, not the account's other waiting coins.
+    /// The review's high-rate case through `finalize_transaction` with no
+    /// second description of the build: 900,000 final + 101,000 waiting
+    /// against 1,000,000 at 10,000 duffs/kB. Confirmation could not fund it
+    /// (1,001,000 is short of the payment plus even the 3,400-duff no-change
+    /// fee), and the opaque builder cannot be priced, so it is insufficient
+    /// funds, not code 59. Described accurately it is insufficient funds too;
+    /// at the default rate the same coins would cover it.
     #[tokio::test]
-    async fn should_report_waiting_when_a_seeded_coin_is_not_final_yet() {
-        let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+    async fn should_not_report_waiting_for_a_build_it_cannot_price() {
+        let (core, signer, manager, wallet_id) = dual_core(&[101_000], &[900_000]).await;
         set_bip44_finality(&manager, &wallet_id, false).await;
-        let seeded = {
-            let manager = manager.read().await;
-            let info = manager.get_wallet_info(&wallet_id).expect("wallet");
-            let account = AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            };
-            let managed = info
-                .core_wallet
-                .accounts
-                .funds_account(&account)
-                .expect("bip44 account");
-            managed.utxos.values().next().cloned().expect("bip44 coin")
-        };
-        let sources = [preference(StandardAccountType::BIP44Account)];
-        let build = |basis: ShortfallBasis| {
-            core.finalize_transaction_with_options(
-                payment_builder(76).add_inputs([seeded.clone()]),
-                basis,
-                &sources,
-                0,
-                &signer,
-                true,
+        let high_rate = |tag| payment_builder(tag).set_fee_rate(FeeRate::new(10_000));
+        let is_short = |result: &Result<_, PlatformWalletError>| {
+            matches!(
+                result,
+                Err(PlatformWalletError::CorePooledInsufficientFunds { .. })
             )
         };
 
-        let result = build(ShortfallBasis {
-            seeded_inputs: vec![seeded.outpoint],
-            ..ShortfallBasis::default()
-        })
-        .await;
+        let opaque = core
+            .finalize_transaction(high_rate(86), &SEND_FUNDING_SOURCES, 0, &signer)
+            .await;
+        assert!(is_short(&opaque), "got {opaque:?}");
+
+        let described = core
+            .finalize_transaction_from(
+                &|| Ok(high_rate(87)),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(is_short(&described), "got {described:?}");
+
+        let default_rate = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(88)),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
         assert!(
             matches!(
-                result,
-                Err(PlatformWalletError::CoreFundsAwaitingNetwork { waiting, .. })
-                    if waiting > 1_000_000
+                default_rate,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
             ),
-            "got {result:?}"
+            "got {default_rate:?}"
         );
+    }
 
-        // Not seeded: the coin is no candidate, so waiting would not help.
-        let result = build(ShortfallBasis::default()).await;
+    /// The BIP44 coin of a `dual_core` wallet, as the wallet holds it now.
+    async fn bip44_coin<B: TransactionBroadcaster>(core: &CoreWallet<B>) -> key_wallet::Utxo {
+        standard_account_coins(core, StandardAccountType::BIP44Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip44 coin")
+    }
+
+    /// A coin chosen by outpoint that is not final is refused by name, with
+    /// ordinary and with `reservation_only` funding — not dropped silently.
+    /// Not chosen, a `reservation_only` build has nothing waiting to spend:
+    /// insufficient funds.
+    #[tokio::test]
+    async fn should_refuse_an_input_chosen_by_outpoint_that_is_not_final_yet() {
+        let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let seeded = bip44_coin(&core).await;
+        let sources = [preference(StandardAccountType::BIP44Account)];
+
+        for reservation_only in [false, true] {
+            let result = core
+                .finalize_transaction_from(
+                    &|| Ok(payment_builder(76)),
+                    FinalizeOptions {
+                        inputs: vec![seeded.outpoint],
+                        reservation_only,
+                    },
+                    &sources,
+                    0,
+                    &signer,
+                )
+                .await;
+            assert!(
+                matches!(
+                    result,
+                    Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                        outpoint: Some(outpoint),
+                        waiting: 1_500_000,
+                        ..
+                    }) if outpoint == seeded.outpoint
+                ),
+                "reservation_only={reservation_only}: got {result:?}"
+            );
+        }
+
+        let result = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(77)),
+                FinalizeOptions {
+                    reservation_only: true,
+                    ..FinalizeOptions::default()
+                },
+                &sources,
+                0,
+                &signer,
+            )
+            .await;
         assert!(
             matches!(
                 result,
@@ -2624,42 +2654,81 @@ mod tests {
         );
     }
 
-    /// A coin seeded while final and demoted before finalization (a reorg) is
-    /// refused on its resident status, before anything is signed, and leaves no
-    /// reservation behind — with ordinary and with `reservation_only` funding.
+    /// A coin the caller chose while it was not final, InstantSend-locked
+    /// before the build is finalized, is spent: finalization judges the
+    /// wallet's copy as it is now, not the caller's snapshot — with ordinary
+    /// and with `reservation_only` funding.
     #[tokio::test]
-    async fn should_refuse_a_seeded_coin_demoted_before_finalization() {
+    async fn should_spend_an_input_chosen_before_it_became_final() {
         for reservation_only in [false, true] {
             let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
-            let seeded = {
-                let manager = manager.read().await;
-                let info = manager.get_wallet_info(&wallet_id).expect("wallet");
-                let account = AccountType::Standard {
-                    index: 0,
-                    standard_account_type: StandardAccountType::BIP44Account,
-                };
-                let managed = info
-                    .core_wallet
-                    .accounts
-                    .funds_account(&account)
-                    .expect("bip44 account");
-                managed.utxos.values().next().cloned().expect("bip44 coin")
-            };
+            set_bip44_finality(&manager, &wallet_id, false).await;
+            let chosen = bip44_coin(&core).await;
+            assert!(!is_final(&chosen), "chosen while not final");
+            set_bip44_finality(&manager, &wallet_id, true).await;
+
+            let finalized = core
+                .finalize_transaction_from(
+                    &|| Ok(payment_builder(85)),
+                    FinalizeOptions {
+                        inputs: vec![chosen.outpoint],
+                        reservation_only,
+                    },
+                    &[preference(StandardAccountType::BIP44Account)],
+                    0,
+                    &signer,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("reservation_only={reservation_only}: {error:?}"));
+            let inputs = &finalized.transaction().input;
+            assert_eq!(inputs.len(), 1, "reservation_only={reservation_only}");
+            assert_eq!(inputs[0].previous_output, chosen.outpoint);
+            core.abandon_transaction(&finalized).await;
+        }
+    }
+
+    /// A coin seeded while final and demoted before finalization (a reorg) is
+    /// refused on its current status by name, before anything is signed, and
+    /// leaves no reservation behind — with ordinary and with
+    /// `reservation_only` funding, whether it was chosen by outpoint or seeded
+    /// on the builder as the caller's snapshot (caught after selection).
+    #[tokio::test]
+    async fn should_refuse_a_seeded_coin_demoted_before_finalization() {
+        for (reservation_only, by_outpoint) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let case = format!("reservation_only={reservation_only} by_outpoint={by_outpoint}");
+            let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+            let seeded = bip44_coin(&core).await;
             assert!(is_final(&seeded), "seeded while final");
+            let build = |tag| {
+                let builder = payment_builder(tag);
+                if by_outpoint {
+                    (
+                        builder,
+                        FinalizeOptions {
+                            inputs: vec![seeded.outpoint],
+                            reservation_only,
+                        },
+                    )
+                } else {
+                    (
+                        builder.add_inputs([seeded.clone()]),
+                        FinalizeOptions {
+                            reservation_only,
+                            ..FinalizeOptions::default()
+                        },
+                    )
+                }
+            };
             set_bip44_finality(&manager, &wallet_id, false).await;
             let sources = [preference(StandardAccountType::BIP44Account)];
 
             // The failing signer proves signing never ran: reaching it would
             // turn the result into a build error.
+            let (builder, options) = build(78);
             let result = core
-                .finalize_transaction_with_options(
-                    payment_builder(78).add_inputs([seeded.clone()]),
-                    ShortfallBasis::default(),
-                    &sources,
-                    0,
-                    &FailingSigner,
-                    reservation_only,
-                )
+                .finalize_transaction_with_options(builder, options, &sources, 0, &FailingSigner)
                 .await;
             assert!(
                 matches!(
@@ -2667,22 +2736,54 @@ mod tests {
                     Err(PlatformWalletError::CoreFundsAwaitingNetwork { outpoint: Some(outpoint), .. })
                         if outpoint == seeded.outpoint
                 ),
-                "reservation_only={reservation_only}: got {result:?}"
+                "{case}: got {result:?}"
             );
 
             // Nothing stays reserved: once final again the same coin builds.
             set_bip44_finality(&manager, &wallet_id, true).await;
-            core.finalize_transaction_with_options(
-                payment_builder(79).add_inputs([seeded.clone()]),
-                ShortfallBasis::default(),
-                &sources,
+            let (builder, options) = build(79);
+            core.finalize_transaction_with_options(builder, options, &sources, 0, &signer)
+                .await
+                .unwrap_or_else(|error| panic!("{case}: {error:?}"));
+        }
+    }
+
+    /// A final coin chosen by outpoint that is not spendable (locked here; an
+    /// immature coinbase output alike) is refused by name, not dropped.
+    #[tokio::test]
+    async fn should_refuse_an_input_chosen_by_outpoint_that_is_not_spendable() {
+        let (core, signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+        let chosen = bip44_coin(&core).await;
+        {
+            let mut manager = manager.write().await;
+            let (_, info) = manager.get_wallet_and_info_mut(&wallet_id).expect("wallet");
+            let managed = info
+                .core_wallet
+                .first_bip44_managed_account_mut()
+                .expect("bip44 account");
+            managed
+                .utxos
+                .get_mut(&chosen.outpoint)
+                .expect("chosen coin")
+                .is_locked = true;
+        }
+        let result = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(90)),
+                FinalizeOptions {
+                    inputs: vec![chosen.outpoint],
+                    ..FinalizeOptions::default()
+                },
+                &SEND_FUNDING_SOURCES,
                 0,
                 &signer,
-                reservation_only,
             )
-            .await
-            .unwrap_or_else(|error| panic!("reservation_only={reservation_only}: {error:?}"));
-        }
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBuild(ref message))
+                if message.contains(&chosen.outpoint.to_string())),
+            "got {result:?}"
+        );
     }
 
     /// The contact payment reports its shortfall through the same rule.
@@ -2693,9 +2794,7 @@ mod tests {
                 available: 100_000,
                 required: 500_000,
             },
-            600_000,
-            0,
-            None,
+            Some(600_000),
         );
         assert!(matches!(
             covered,
@@ -2710,8 +2809,6 @@ mod tests {
                 available: 100_000,
                 required: 5_000_000,
             },
-            600_000,
-            0,
             None,
         );
         assert!(matches!(short, PlatformWalletError::TransactionBuild(_)));

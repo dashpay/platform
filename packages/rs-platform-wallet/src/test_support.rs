@@ -27,15 +27,17 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
-use key_wallet::{DerivationPath, Wallet};
+use key_wallet::{DerivationPath, Utxo, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
 #[cfg(test)]
-use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::broadcaster::BroadcastError;
+use crate::broadcaster::TransactionBroadcaster;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::CoreWallet;
 
 /// Broadcaster whose first call fails with a definitive pre-send rejection
 /// and which succeeds afterwards, to model a transient broadcast error
@@ -659,6 +661,30 @@ where
         info.core_wallet.update_last_processed_height(target);
     }
     target
+}
+
+/// The coins of `core`'s standard account 0 of `account_type`, as the wallet
+/// holds them now.
+pub async fn standard_account_coins<B>(
+    core: &CoreWallet<B>,
+    account_type: StandardAccountType,
+) -> Vec<Utxo>
+where
+    B: TransactionBroadcaster + ?Sized,
+{
+    let wm = core.wallet_manager.read().await;
+    let info = wm
+        .get_wallet_info(&core.wallet_id())
+        .expect("wallet present in manager");
+    let account = AccountType::Standard {
+        index: 0,
+        standard_account_type: account_type,
+    };
+    info.core_wallet
+        .accounts
+        .funds_account(&account)
+        .map(|managed| managed.utxos.values().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// No-op persister satisfying [`PlatformWalletManager`] construction for tests

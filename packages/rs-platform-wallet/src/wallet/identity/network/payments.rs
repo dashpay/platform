@@ -2,7 +2,6 @@
 
 use dpp::prelude::Identifier;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
 
 use std::sync::Arc;
 
@@ -13,9 +12,7 @@ use key_wallet_manager::WalletManager;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::core::{
-    build_error_awaiting_network, final_count, final_inputs_fee, waiting_net_value, OutputShape,
-};
+use crate::wallet::core::{build_error_awaiting_network, trial_with_waiting_coins};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 // ---------------------------------------------------------------------------
@@ -1246,17 +1243,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // *external* accounts, which hold the counterparty's xpub and no
             // key this wallet can sign with.
             // Final coins only, like every send (`is_final`).
-            let mut builder = TransactionBuilder::new()
-                .set_current_height(current_height)
-                .set_selection_strategy(SelectionStrategy::LargestFirst)
-                .require_final_inputs()
-                .add_output(&payment_address, amount_duffs);
-            // Not-yet-final coins of the offered accounts: a shortfall they
-            // would cover is reported as waiting on the network. Only a failed
-            // build reads it, after the payment address went back to the
-            // pool, so an overflowing fee is returned from there.
-            let mut waiting: Result<u64, PlatformWalletError> = Ok(0);
-            let mut finals: usize = 0;
+            // One configuration, made twice on a shortfall: the build, and
+            // the waiting-coins trial (`trial_with_waiting_coins`).
+            let make = || {
+                TransactionBuilder::new()
+                    .set_current_height(current_height)
+                    .set_selection_strategy(SelectionStrategy::LargestFirst)
+                    .require_final_inputs()
+                    .add_output(&payment_address, amount_duffs)
+            };
+            let mut builder = make();
 
             // Derivation paths for every offered UTXO, since the signer closure
             // below cannot resolve them from one account.
@@ -1293,14 +1289,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             funding_paths.insert(utxo.address.clone(), path);
                         }
                     }
-                    waiting = waiting.and_then(|sum| {
-                        Ok(sum
-                            + waiting_net_value(
-                                managed.spendable_utxos(current_height),
-                                FeeRate::normal(),
-                            )?)
-                    });
-                    finals += final_count(managed.spendable_utxos(current_height));
                     builder = builder.add_funding(managed, account);
                     offered_accounts.push(at);
                 }
@@ -1350,12 +1338,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     {
                         return_contact_payment_address_to_pool(external_account, &payment_address);
                     }
-                    return Err(build_error_awaiting_network(
-                        e,
-                        waiting?,
-                        final_inputs_fee(finals, OutputShape::ONE_P2PKH, FeeRate::normal())?,
-                        Some(amount_duffs),
-                    ));
+                    // A shortfall the coins not final yet would fund is
+                    // reported as waiting on the network: key-wallet decides
+                    // on a fresh copy of the build, on this failure path only.
+                    let waiting = trial_with_waiting_coins(
+                        make(),
+                        wallet,
+                        &info.core_wallet.accounts,
+                        &offered_accounts,
+                        &[],
+                        false,
+                        current_height,
+                    );
+                    return Err(build_error_awaiting_network(e, waiting));
                 }
             };
 

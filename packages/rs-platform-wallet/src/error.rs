@@ -402,9 +402,11 @@ pub enum PlatformWalletError {
     /// Not a shortfall: the host should say the money is waiting on the
     /// network.
     ///
-    /// `waiting` is the value of the not-yet-final coins among the offered
-    /// sources. `available` / `required` are the build's figures when known.
-    /// `outpoint` names a not-final coin the caller chose as an input itself.
+    /// `waiting` is the value of the not-yet-final coins the build would
+    /// spend once they are final; with `outpoint` set, of that one coin, which
+    /// the caller chose as an input itself and which is not final.
+    /// `available` / `required` are key-wallet's figures for the build when it
+    /// names them.
     #[error(
         "Core funds are waiting for network confirmation: {} DASH not yet confirmed{}{}{}",
         dash_amount(*waiting),
