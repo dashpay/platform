@@ -297,7 +297,9 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
 ///
 /// Formatting the host and port as a socket address writes an IPv6 host in
 /// brackets, as a URL authority requires. `node_ip` always holds a formatted
-/// IP address; anything else is written as it is.
+/// IP address; anything else is written as it is. This only formats Tenderdash's
+/// dialing text; persisted validator membership, keys and the validator-set hash
+/// do not depend on it, so every protocol version can use the same formatting.
 fn validator_node_address(node_id: &PubkeyHash, node_ip: &str, platform_p2p_port: u16) -> String {
     let host_port = match node_ip.parse::<IpAddr>() {
         Ok(ip) => SocketAddr::new(ip, platform_p2p_port).to_string(),

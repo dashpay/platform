@@ -1973,6 +1973,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     version must be active on a network before its Dash Core activates V24,
 ///     since earlier versions keep failing on these masternodes.
 ///
+/// 74. **Versioned Core masternode address resolution**: `update_masternode_list` 1
+///     resolves nested platform addresses first, then falls back to legacy ports,
+///     before storing the masternode state. Earlier protocol versions keep their
+///     flat-field interpretation. The stored layout and validator construction
+///     remain unchanged: new validators read the resolved stored ports, and an
+///     existing validator is refreshed on a ban, service or P2P-port change.
+///     Each diff starts from the old persisted representation so transient address
+///     data retained before activation cannot make a running node disagree with
+///     a restarted one. Payout lists remain outside the persisted representation.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

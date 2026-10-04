@@ -1,5 +1,6 @@
 mod update_state_masternode_list;
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -60,9 +61,18 @@ where
                 transaction,
                 platform_version,
             ),
+            1 => self.update_masternode_list_v1(
+                platform_state,
+                block_platform_state,
+                core_block_height,
+                is_init_chain,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_masternode_list".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -80,10 +90,10 @@ mod test {
     use crate::platform_types::validator::v0::{NewValidatorIfMasternodeInState, ValidatorV0};
     use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
     use crate::platform_types::validator_set::{ValidatorSet, ValidatorSetExt};
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
-    use dpp::core_types::validator_set::v0::ValidatorSetV0;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::core_types::validator_set::v0::ValidatorSetV0;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
     use dpp::dashcore_rpc::json::{
@@ -423,117 +433,127 @@ mod test {
     /// be exactly what those binaries build.
     #[test]
     fn should_build_the_validators_earlier_binaries_built_from_mainnet_masternode_lists() {
-        let platform_version = PlatformVersion::latest();
-        let init_core_height = 2128896;
-        let next_core_height = 2129440;
-        let quorum_hash = QuorumHash::from_byte_array([0x55; 32]);
+        for platform_version in [
+            PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::latest(),
+        ] {
+            let init_core_height = 2128896;
+            let next_core_height = 2129440;
+            let quorum_hash = QuorumHash::from_byte_array([0x55; 32]);
 
-        for core_23_addresses in [false, true] {
-            let context = if core_23_addresses {
-                "with Core 23 addresses"
-            } else {
-                "as listed"
-            };
-            let mut evonodes = BTreeSet::new();
-            let init_list = mainnet_list_diff("1-2128896.json", core_23_addresses, &mut evonodes);
-            let list_diff =
-                mainnet_list_diff("2128896-2129440.json", core_23_addresses, &mut evonodes);
-            assert!(
-                list_diff
-                    .updated_mns
+            for core_23_addresses in [false, true] {
+                let context = if core_23_addresses {
+                    "with Core 23 addresses"
+                } else {
+                    "as listed"
+                };
+                let mut evonodes = BTreeSet::new();
+                let init_list =
+                    mainnet_list_diff("1-2128896.json", core_23_addresses, &mut evonodes);
+                let list_diff =
+                    mainnet_list_diff("2128896-2129440.json", core_23_addresses, &mut evonodes);
+                assert!(
+                    list_diff
+                        .updated_mns
+                        .iter()
+                        .any(|(pro_tx_hash, state_diff)| {
+                            evonodes.contains(&pro_tx_hash.to_string())
+                                && state_diff.service.is_some()
+                        }),
+                    "the diff moves an evonode"
+                );
+
+                let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+                let responses = [init_list.clone(), list_diff.clone()];
+                platform
+                    .core_rpc
+                    .expect_get_protx_diff_with_masternodes()
+                    .returning(move |_base_block, block| {
+                        Ok(responses[usize::from(block != init_core_height)].clone())
+                    });
+                let mut state = PlatformState::default_with_protocol_versions(
+                    platform_version.protocol_version,
+                    platform_version.protocol_version,
+                    &PlatformConfig::default_for_network(Network::Mainnet),
+                )
+                .expect("platform state");
+
+                // The evonodes as every earlier binary holds them.
+                let is_evonode =
+                    |masternode: &&MasternodeListItem| masternode.node_type == MasternodeType::Evo;
+                let mut listed: BTreeMap<ProTxHash, MasternodeListItem> = init_list
+                    .added_mns
                     .iter()
-                    .any(|(pro_tx_hash, state_diff)| {
-                        evonodes.contains(&pro_tx_hash.to_string()) && state_diff.service.is_some()
-                    }),
-                "the diff moves an evonode"
-            );
+                    .filter(is_evonode)
+                    .map(|evonode| (evonode.pro_tx_hash, evonode.clone()))
+                    .collect();
 
-            let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-            let responses = [init_list.clone(), list_diff.clone()];
-            platform
-                .core_rpc
-                .expect_get_protx_diff_with_masternodes()
-                .returning(move |_base_block, block| {
-                    Ok(responses[usize::from(block != init_core_height)].clone())
-                });
-            let mut state = PlatformState::default_with_protocol_versions(
-                platform_version.protocol_version,
-                platform_version.protocol_version,
-                &PlatformConfig::default_for_network(Network::Mainnet),
-            )
-            .expect("platform state");
+                let update = |state: &mut PlatformState, core_height, from_scratch| {
+                    if platform_version.protocol_version == 13 {
+                        platform.update_state_masternode_list_v0(state, core_height, from_scratch)
+                    } else {
+                        platform.update_state_masternode_list_v1(state, core_height, from_scratch)
+                    }
+                    .expect("expected to apply the masternode list")
+                };
+                update(&mut state, init_core_height, true);
+                assert_validators_from_legacy_ports(&state, &listed, context);
 
-            // The evonodes as every earlier binary holds them.
-            let is_evonode =
-                |masternode: &&MasternodeListItem| masternode.node_type == MasternodeType::Evo;
-            let mut listed: BTreeMap<ProTxHash, MasternodeListItem> = init_list
-                .added_mns
-                .iter()
-                .filter(is_evonode)
-                .map(|evonode| (evonode.pro_tx_hash, evonode.clone()))
-                .collect();
-
-            platform
-                .update_state_masternode_list_v0(&mut state, init_core_height, true)
-                .expect("expected to apply the masternode list");
-            assert_validators_from_legacy_ports(&state, &listed, context);
-
-            let members: BTreeMap<ProTxHash, ValidatorV0> = listed
-                .iter()
-                .filter_map(|(pro_tx_hash, evonode)| {
-                    validator_from_legacy_ports(evonode).map(|member| (*pro_tx_hash, member))
-                })
-                .collect();
-            assert_eq!(
-                members.len(),
-                listed.len(),
-                "{context}: every evonode is a member"
-            );
-            state.insert_validator_set(
-                quorum_hash,
-                ValidatorSet::V0(ValidatorSetV0 {
+                let members: BTreeMap<ProTxHash, ValidatorV0> = listed
+                    .iter()
+                    .filter_map(|(pro_tx_hash, evonode)| {
+                        validator_from_legacy_ports(evonode).map(|member| (*pro_tx_hash, member))
+                    })
+                    .collect();
+                assert_eq!(
+                    members.len(),
+                    listed.len(),
+                    "{context}: every evonode is a member"
+                );
+                state.insert_validator_set(
                     quorum_hash,
-                    quorum_index: None,
-                    core_height: init_core_height,
-                    members: members.clone(),
-                    threshold_public_key: SecretKey::<Bls12381G2Impl>::random(
-                        &mut StdRng::seed_from_u64(1),
-                    )
-                    .public_key(),
-                }),
-            );
+                    ValidatorSet::V0(ValidatorSetV0 {
+                        quorum_hash,
+                        quorum_index: None,
+                        core_height: init_core_height,
+                        members: members.clone(),
+                        threshold_public_key: SecretKey::<Bls12381G2Impl>::random(
+                            &mut StdRng::seed_from_u64(1),
+                        )
+                        .public_key(),
+                    }),
+                );
 
-            platform
-                .update_state_masternode_list_v0(&mut state, next_core_height, false)
-                .expect("expected to apply the masternode list diff");
+                update(&mut state, next_core_height, false);
 
-            let mut refreshed_members = members.clone();
-            for evonode in list_diff.added_mns.iter().filter(is_evonode) {
-                listed.insert(evonode.pro_tx_hash, evonode.clone());
-            }
-            for (pro_tx_hash, state_diff) in &list_diff.updated_mns {
-                if let Some(evonode) = listed.get_mut(pro_tx_hash) {
-                    evonode.state.apply_diff(state_diff.clone());
+                let mut refreshed_members = members.clone();
+                for evonode in list_diff.added_mns.iter().filter(is_evonode) {
+                    listed.insert(evonode.pro_tx_hash, evonode.clone());
                 }
-                if let Some(member) = refreshed_members.get_mut(pro_tx_hash) {
-                    refresh_from_legacy_ports(member, state_diff);
+                for (pro_tx_hash, state_diff) in &list_diff.updated_mns {
+                    if let Some(evonode) = listed.get_mut(pro_tx_hash) {
+                        evonode.state.apply_diff(state_diff.clone());
+                    }
+                    if let Some(member) = refreshed_members.get_mut(pro_tx_hash) {
+                        refresh_from_legacy_ports(member, state_diff);
+                    }
                 }
-            }
-            for pro_tx_hash in &list_diff.removed_mns {
-                listed.remove(pro_tx_hash);
-                refreshed_members.remove(pro_tx_hash);
-            }
+                for pro_tx_hash in &list_diff.removed_mns {
+                    listed.remove(pro_tx_hash);
+                    refreshed_members.remove(pro_tx_hash);
+                }
 
-            assert_validators_from_legacy_ports(&state, &listed, context);
-            assert_ne!(
-                refreshed_members, members,
-                "{context}: the diff refreshes members"
-            );
-            assert_eq!(
-                state.validator_sets()[&quorum_hash].members(),
-                &refreshed_members,
-                "{context}: the refreshed members"
-            );
+                assert_validators_from_legacy_ports(&state, &listed, context);
+                assert_ne!(
+                    refreshed_members, members,
+                    "{context}: the diff refreshes members"
+                );
+                assert_eq!(
+                    state.validator_sets()[&quorum_hash].members(),
+                    &refreshed_members,
+                    "{context}: the refreshed members"
+                );
+            }
         }
     }
 
@@ -1101,3 +1121,6 @@ mod test {
         );
     }
 }
+
+#[cfg(test)]
+mod versioning_tests;
