@@ -1384,6 +1384,11 @@ impl Actor {
                 }
                 !uncertain.is_orphaned()
             });
+        } else {
+            // Registered again: what a lookup out finds for it counts.
+            for uncertain in self.uncertain.values_mut() {
+                uncertain.removed.remove(wallet_id);
+            }
         }
         let events = self.state.forget_wallet(wallet_id, trigger);
         deliver(&self.sink, events);
@@ -2184,6 +2189,43 @@ mod tests {
             assert!(holders.own.is_empty(), "but not an unsettled own send");
         }
         assert!(source.holders(id(4)).await.wallets.is_empty());
+    }
+
+    /// A wallet removed and registered again while a lookup was out counts
+    /// as a holder again when that lookup names it.
+    #[tokio::test]
+    async fn should_count_a_wallet_registered_again_while_its_lookup_was_out() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.handle(Command::Uncertain(txid(1)));
+
+        rig.handle(Command::WalletRemoved(wallet()));
+        rig.handle(Command::WalletAdded(wallet()));
+        rig.settle().await;
+
+        assert_eq!(
+            rig.actor.uncertain[&txid(1)].holders,
+            HashSet::from([wallet()])
+        );
+    }
+
+    /// A removal between two lookups of one entry is remembered until the last
+    /// of them returns: neither brings the removed wallet back.
+    #[tokio::test]
+    async fn should_keep_a_removal_until_the_last_overlapping_lookup_returns() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.handle(Command::Uncertain(txid(1)));
+        rig.handle(Command::WalletRemoved(wallet()));
+        rig.handle(Command::Uncertain(txid(1)));
+        let entry = rig.actor.uncertain[&txid(1)].id;
+        assert_eq!(rig.actor.uncertain[&txid(1)].lookups, 2);
+
+        rig.actor.holders_found(txid(1), entry, &[wallet()]);
+        assert!(rig.actor.uncertain[&txid(1)].holders.is_empty());
+        rig.actor.holders_found(txid(1), entry, &[wallet()]);
+
+        assert!(rig.actor.uncertain.is_empty());
     }
 
     /// A lookup started for an entry removed since (echoed, settled) is not

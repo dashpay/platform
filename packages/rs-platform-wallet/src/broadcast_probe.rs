@@ -473,8 +473,8 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
-    use dash_sdk::dapi_client::ExecutionResponse;
-    use dash_sdk::dapi_grpc::tonic::Code;
+    use dash_sdk::dapi_client::{ExecutionError, ExecutionResponse};
+    use dash_sdk::dapi_grpc::tonic::{Code, Status};
 
     use super::*;
 
@@ -879,6 +879,29 @@ mod tests {
 
         let (_, known) = lookup_reply(&txid, reply(consensus::serialize(&held)));
         assert_eq!(known, in_mempool());
+    }
+
+    /// A failed lookup: gRPC `NOT_FOUND` is the node not knowing the txid,
+    /// anything else no answer — the node, when known, is kept either way
+    /// (the refusal quorum counts distinct nodes).
+    #[test]
+    fn should_read_a_failed_lookup_by_its_status_and_keep_the_node() {
+        let failed = |status: Status| {
+            Err(ExecutionError {
+                inner: DapiClientError::Transport(TransportError::Grpc(status)),
+                retries: 0,
+                address: Some("http://127.0.0.1:1443".parse().expect("address")),
+            })
+        };
+        let txid = transaction().txid();
+
+        let (node, missing) = lookup_reply(&txid, failed(Status::not_found("no such tx")));
+        assert_eq!(missing, LookupAnswer::NotFound);
+        assert!(node.is_some(), "the node that answered is kept");
+
+        let (node, other) = lookup_reply(&txid, failed(Status::unavailable("down")));
+        assert!(matches!(other, LookupAnswer::Unknown { .. }), "{other:?}");
+        assert!(node.is_some());
     }
 
     #[tokio::test]

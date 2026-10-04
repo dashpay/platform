@@ -1319,6 +1319,19 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 };
             }
 
+            // Duplicate prevouts make a transaction invalid (Core rejects it),
+            // and additive funding is the shape that can produce them — an
+            // outpoint seeded by `add_inputs` that a funding account also
+            // offers. `add_funding` filters those (rust-dashcore#931); this
+            // asserts the invariant here too rather than handing a signer, and
+            // then the network, a transaction that cannot confirm. Checked
+            // first, as the waiting-coins trial checks it first: one
+            // configuration gets one refusal whichever path meets it.
+            if let Some(error) = duplicate_prevout(&unsigned) {
+                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
+                return Err(error);
+            }
+
             // Refuse a selection that picked an input pinned by an IN-FLIGHT
             // BROADCAST. A pinned input is normally still reserved and never
             // reaches selection; getting here means this build's own
@@ -1392,16 +1405,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // still under the write guard.
             if let Some(stale) = selected.iter().find(|utxo| !is_final(utxo)) {
                 let error = input_awaiting_network(stale);
-                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
-                return Err(error);
-            }
-            // Duplicate prevouts make a transaction invalid (Core rejects it),
-            // and additive funding is the shape that can produce them — an
-            // outpoint seeded by `add_inputs` that a funding account also
-            // offers. `add_funding` filters those (rust-dashcore#931); this
-            // asserts the invariant here too rather than handing a signer, and
-            // then the network, a transaction that cannot confirm.
-            if let Some(error) = duplicate_prevout(&unsigned) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(error);
             }

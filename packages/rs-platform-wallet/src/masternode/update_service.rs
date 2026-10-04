@@ -156,16 +156,18 @@ async fn fetch_operator_reward(
         })?
         .ok_or_else(|| {
             PlatformWalletError::InvalidParameter(format!(
-                "registration transaction {display} was not found; cannot determine the \
-                 operator reward"
+                "registration transaction {display} was not found (or the node answered \
+                 with another transaction); cannot determine the operator reward"
             ))
         })?;
     operator_reward_from_registration(pro_tx_hash, &fetched.transaction)
 }
 
 /// Read `operatorReward` out of a fetched registration transaction,
-/// binding the response to the request first: DAPI's get-transaction reply
-/// is not authenticated, so the decoded transaction must hash to the
+/// binding the response to the request first — defense in depth: the SDK's
+/// getter already reads a reply carrying another transaction as a miss, but
+/// this function trusts no caller to have used it. DAPI's get-transaction
+/// reply is not authenticated, so the decoded transaction must hash to the
 /// requested proTxHash before its payload is trusted. Only the operator
 /// reward is read from it; the service values come from the synced
 /// masternode list's entry for that proTxHash. Without the hash check a

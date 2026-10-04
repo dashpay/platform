@@ -124,10 +124,14 @@ impl Sdk {
     ///
     /// `txid` is the transaction id as a hex string (big-endian display form).
     /// Returns `Ok(Some(..))` with the decoded transaction plus its
-    /// confirmation/lock metadata; `Ok(None)` when the node does not know the tx
-    /// (empty response or gRPC `NOT_FOUND`) so the caller can retry with the id
-    /// byte-reversed; and `Err` for a transient/transport failure that must not
-    /// be masked by a doomed reversed-id retry.
+    /// confirmation/lock metadata; `Ok(None)` when the node does not give the
+    /// tx — it does not know it (empty response or gRPC `NOT_FOUND`), or it
+    /// answered with another transaction (a faulty node; see
+    /// [`transaction_from_reply`]) — so the caller can retry, with the id
+    /// byte-reversed or later on another node; and `Err` for a
+    /// transient/transport failure that must not be masked by a doomed
+    /// reversed-id retry, for bytes that do not decode, or for a `txid` that
+    /// is not a txid (refused before any request).
     pub async fn get_transaction(
         &self,
         txid: &str,
