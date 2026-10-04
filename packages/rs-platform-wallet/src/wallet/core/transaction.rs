@@ -325,6 +325,12 @@ pub(crate) fn trial_with_waiting_coins(
     if generation.in_broadcast_conflict(&transaction).is_some() {
         return Ok(None);
     }
+    // The build refuses a transaction that spends one coin twice (a coin the
+    // configuration seeds more than once): a trial that does is no promise,
+    // and it is the build's own refusal that stands in the way.
+    if let Some(error) = duplicate_prevout(&transaction) {
+        return Err(error);
+    }
     // The build refuses a selected input no funding account holds (a coin
     // the configuration seeded itself from elsewhere): a trial that needs one
     // is no promise, and that coin is what stands in the way.
@@ -352,6 +358,22 @@ pub(crate) fn trial_with_waiting_coins(
         .filter_map(|input| waiting.get(&input.previous_output))
         .fold(0u64, |sum, value| sum.saturating_add(*value));
     Ok((spent > 0).then_some(spent))
+}
+
+/// A transaction that spends one outpoint twice is invalid (Core rejects
+/// it); the refusal a build and its waiting-coins trial share.
+fn duplicate_prevout(transaction: &Transaction) -> Option<PlatformWalletError> {
+    let mut prevouts: HashSet<OutPoint> = HashSet::new();
+    transaction
+        .input
+        .iter()
+        .find(|input| !prevouts.insert(input.previous_output))
+        .map(|duplicate| {
+            PlatformWalletError::TransactionBuild(format!(
+                "built transaction spends {} twice",
+                duplicate.previous_output
+            ))
+        })
 }
 
 /// The funding fold a build and its waiting-coins trial share: the wallet's
@@ -1361,16 +1383,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // offers. `add_funding` filters those (rust-dashcore#931); this
             // asserts the invariant here too rather than handing a signer, and
             // then the network, a transaction that cannot confirm.
-            let mut prevouts: HashSet<OutPoint> = HashSet::new();
-            if let Some(duplicate) = unsigned
-                .input
-                .iter()
-                .find(|input| !prevouts.insert(input.previous_output))
-            {
-                let error = PlatformWalletError::TransactionBuild(format!(
-                    "built transaction spends {} twice",
-                    duplicate.previous_output
-                ));
+            if let Some(error) = duplicate_prevout(&unsigned) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(error);
             }
@@ -3218,6 +3231,39 @@ mod tests {
             .await
             .expect("nothing of the refused build stays reserved");
         core.abandon_transaction(&built).await;
+    }
+
+    /// A factory that seeds the same final coin twice: 2 × 400,000 duffs
+    /// (BIP32) plus one waiting 300,000-duff BIP44 coin would look like
+    /// 1,100,000 to a trial, but the wallet holds 700,000 and the build
+    /// refuses the duplicate input — the trial does too, instead of code 59.
+    #[tokio::test]
+    async fn should_not_report_waiting_on_a_trial_that_spends_a_seed_twice() {
+        let (core, signer, manager, wallet_id) = dual_core(&[300_000], &[400_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let seeded = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        let result = core
+            .finalize_transaction_from(
+                || {
+                    Ok(payment_builder(108)
+                        .set_selection_strategy(SelectionStrategy::LargestFirst)
+                        .add_inputs([seeded.clone(), seeded.clone()]))
+                },
+                FinalizeOptions::default(),
+                &[AccountTypePreference::BIP44, AccountTypePreference::BIP32],
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBuild(ref message))
+                if message.contains("twice")),
+            "got {result:?}"
+        );
     }
 
     /// The same refusals when the build pools several sources (BIP44 and

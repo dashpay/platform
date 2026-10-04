@@ -87,6 +87,19 @@ fn decode_transaction(bytes: &[u8]) -> Result<Transaction, Error> {
     Transaction::consensus_decode(&mut &bytes[..]).map_err(|e| Error::CoreError(e.into()))
 }
 
+/// The transaction a successful `getTransaction` reply carries: `Ok(None)`
+/// for an empty reply (the node does not know it — the same as gRPC
+/// `NOT_FOUND`), `Err` for bytes that do not decode. Takes the reply alone, so
+/// a caller that executes the request itself keeps the serving node's address.
+pub fn transaction_from_reply(
+    response: &GetTransactionResponse,
+) -> Result<Option<Transaction>, Error> {
+    if response.transaction.is_empty() {
+        return Ok(None);
+    }
+    decode_transaction(&response.transaction).map(Some)
+}
+
 impl Sdk {
     /// Fetch a Core transaction by its id via DAPI `getTransaction`.
     ///
@@ -106,9 +119,12 @@ impl Sdk {
         else {
             return Ok(None);
         };
+        let Some(transaction) = transaction_from_reply(&response)? else {
+            return Ok(None);
+        };
 
         Ok(Some(FetchedCoreTransaction {
-            transaction: decode_transaction(&response.transaction)?,
+            transaction,
             height: response.height,
             is_chain_locked: response.is_chain_locked,
             is_instant_locked: response.is_instant_locked,
@@ -130,9 +146,12 @@ impl Sdk {
         let Some(response) = self.fetch_core_transaction(txid, settings).await? else {
             return Ok(None);
         };
+        let Some(transaction) = transaction_from_reply(&response)? else {
+            return Ok(None);
+        };
 
         Ok(Some(CoreTransactionPlacement {
-            transaction: decode_transaction(&response.transaction)?,
+            transaction,
             height: response.height,
             block_hash: block_hash_from_display_bytes(&response.block_hash),
             is_chain_locked: response.is_chain_locked,
@@ -182,8 +201,9 @@ impl Sdk {
             .map_err(|e| Error::CoreError(e.into()))
     }
 
-    /// Run `getTransaction`, mapping an unknown transaction (gRPC `NOT_FOUND`
-    /// or an empty reply) to `Ok(None)` and every other failure to `Err`.
+    /// Run `getTransaction`, mapping gRPC `NOT_FOUND` to `Ok(None)` and every
+    /// other failure to `Err`; an empty reply is read by
+    /// [`transaction_from_reply`].
     async fn fetch_core_transaction(
         &self,
         txid: &str,
@@ -210,9 +230,7 @@ impl Sdk {
             }
         };
 
-        if response.transaction.is_empty() {
-            return Ok(None);
-        }
+        // An empty reply is decided by `transaction_from_reply`.
         Ok(Some(response))
     }
 

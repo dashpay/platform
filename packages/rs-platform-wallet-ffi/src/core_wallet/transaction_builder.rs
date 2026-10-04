@@ -17,8 +17,10 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use platform_wallet::{
-    check_fee_rate, input_awaiting_network, is_final, FinalizeOptions, PlatformWalletError,
+    check_fee_rate, input_awaiting_network, is_final, ChosenInputProblem, FinalizeOptions,
+    PlatformWalletError,
 };
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use std::ffi::CString;
@@ -1063,16 +1065,28 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
                 ))
             })?;
 
+        let height = info.core_wallet.last_processed_height();
         let mut selected = Vec::with_capacity(requested.len());
         for op in &requested {
             let utxo = managed.utxos.get(op).ok_or_else(|| {
                 SeedError::Other(format!("outpoint {}:{} not in account", op.txid, op.vout))
             })?;
+            // In the native finalizer's order: an unspendable coin (an
+            // immature coinbase output, a locked coin) first — confirmation
+            // would not make it usable, so code 59 would mislead.
+            if !utxo.is_spendable(height) {
+                return Err(SeedError::Refused(
+                    PlatformWalletError::ChosenInputUnavailable {
+                        outpoint: *op,
+                        problem: ChosenInputProblem::NotSpendable,
+                    },
+                ));
+            }
             // Builds spend only final coins (InstantSend-locked or mined):
             // refuse one that is not, by name, as soon as it is named. The
             // finalizers check again against the coin as it is then.
             if !is_final(utxo) {
-                return Err(SeedError::NotFinal(input_awaiting_network(utxo)));
+                return Err(SeedError::Refused(input_awaiting_network(utxo)));
             }
             selected.push(*op);
         }
@@ -1084,7 +1098,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
 
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
-        Err(SeedError::NotFinal(error)) => PlatformWalletFFIResult::from(error),
+        Err(SeedError::Refused(error)) => PlatformWalletFFIResult::from(error),
         Err(SeedError::Other(e)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("add_inputs_from_outpoints failed: {e}"),
@@ -1094,8 +1108,10 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
 
 /// Why `core_wallet_tx_builder_add_inputs_from_outpoints` refused its outpoints.
 enum SeedError {
-    /// A named coin is not final yet (code 59).
-    NotFinal(PlatformWalletError),
+    /// A named coin is refused with a typed error: unspendable
+    /// (`ChosenInputUnavailable`, `ErrorInvalidParameter`) or not final yet
+    /// (code 59).
+    Refused(PlatformWalletError),
     Other(String),
 }
 
@@ -2032,6 +2048,52 @@ mod real_finalizer_tests {
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
         assert_eq!(out, 0);
+    }
+
+    /// A locked coin that is not final either: confirmation would not make
+    /// it usable, so naming it is the native finalizer's refusal
+    /// (`ChosenInputUnavailable::NotSpendable`, `ErrorInvalidParameter`), not
+    /// code 59.
+    #[test]
+    fn should_refuse_a_locked_coin_as_unspendable_before_finality() {
+        let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
+        let platform_wallet = runtime()
+            .block_on(manager.get_wallet(&wallet_id))
+            .expect("wallet present");
+        runtime().block_on(add_bip44_coin(&platform_wallet, 8_999_774, false, COIN_TAG));
+        runtime().block_on(async {
+            let mut wm = platform_wallet.wallet_manager().write().await;
+            let (_, info) = wm.get_wallet_and_info_mut(&wallet_id).expect("wallet");
+            for utxo in info
+                .core_wallet
+                .first_bip44_managed_account_mut()
+                .expect("bip44 account")
+                .utxos
+                .values_mut()
+            {
+                utxo.is_locked = true;
+            }
+        });
+        let wallet = PLATFORM_WALLET_STORAGE.insert(platform_wallet.clone());
+        let builder = app_payment(1_000_000);
+        let chosen = [coin_outpoint()];
+        let added = unsafe {
+            core_wallet_tx_builder_add_inputs_from_outpoints(
+                builder,
+                wallet,
+                CoreAccountTypeFFI::BIP44,
+                0,
+                chosen.as_ptr(),
+                chosen.len(),
+            )
+        };
+        PLATFORM_WALLET_STORAGE.remove(wallet);
+        assert_eq!(
+            added.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert!(unsafe { (*builder).state() }.inputs.is_empty());
+        unsafe { core_wallet_tx_builder_destroy(builder) };
     }
 
     /// The app's Send: one output, default rate, the pooled sources.

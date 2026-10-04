@@ -53,8 +53,11 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use dash_sdk::core::transaction_from_reply;
 use dash_sdk::dapi_client::transport::TransportError;
-use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, RequestSettings};
+use dash_sdk::dapi_client::{
+    DapiClientError, DapiRequestExecutor, ExecutionResult, RequestSettings,
+};
 use dash_sdk::dapi_grpc::core::v0::{
     BroadcastTransactionRequest, GetTransactionRequest, GetTransactionResponse,
 };
@@ -344,7 +347,49 @@ async fn confirm_by_lookup(
     }
 }
 
-/// What a node's `getTransaction` answer says. A block hash with no height and
+/// Which node answered a `getTransaction` lookup and what the answer says. A
+/// reply is read the way the SDK reads one ([`transaction_from_reply`]): an
+/// empty one is the node not knowing the txid, like gRPC `NOT_FOUND`; bytes
+/// that do not decode, or decode to another transaction, are no answer — never
+/// evidence that it exists.
+fn lookup_reply(
+    txid: &Txid,
+    result: ExecutionResult<GetTransactionResponse, DapiClientError>,
+) -> (Option<String>, LookupAnswer) {
+    match result {
+        Ok(response) => {
+            let node = Some(response.address.to_string());
+            let answer = match transaction_from_reply(&response.inner) {
+                Ok(None) => LookupAnswer::NotFound,
+                Ok(Some(found)) if found.txid() == *txid => lookup_answer(&response.inner),
+                Ok(Some(found)) => LookupAnswer::Unknown {
+                    reason: format!("the reply carries another transaction, {}", found.txid()),
+                },
+                Err(error) => LookupAnswer::Unknown {
+                    reason: format!("the reply's transaction does not decode: {error}"),
+                },
+            };
+            (node, answer)
+        }
+        Err(error) => {
+            let node = error.address.as_ref().map(ToString::to_string);
+            let answer = match &error.inner {
+                DapiClientError::Transport(TransportError::Grpc(status))
+                    if status.code() == Code::NotFound =>
+                {
+                    LookupAnswer::NotFound
+                }
+                other => LookupAnswer::Unknown {
+                    reason: other.to_string(),
+                },
+            };
+            (node, answer)
+        }
+    }
+}
+
+/// What a node's `getTransaction` answer says about a transaction it holds.
+/// A block hash with no height and
 /// no confirmations is a block off the node's active chain (a stale fork; both
 /// DAPI servers send height 0 for Core's -1): neither mined nor in a mempool.
 fn lookup_answer(tx: &GetTransactionResponse) -> LookupAnswer {
@@ -402,26 +447,7 @@ impl NodeSubmitter for DapiNodeSubmitter {
         let request = GetTransactionRequest {
             id: txid.to_string(),
         };
-        match self.sdk.execute(request, single_node()).await {
-            Ok(response) => (
-                Some(response.address.to_string()),
-                lookup_answer(&response.inner),
-            ),
-            Err(error) => {
-                let node = error.address.as_ref().map(ToString::to_string);
-                let answer = match &error.inner {
-                    DapiClientError::Transport(TransportError::Grpc(status))
-                        if status.code() == Code::NotFound =>
-                    {
-                        LookupAnswer::NotFound
-                    }
-                    other => LookupAnswer::Unknown {
-                        reason: other.to_string(),
-                    },
-                };
-                (node, answer)
-            }
-        }
+        lookup_reply(txid, self.sdk.execute(request, single_node()).await)
     }
 }
 
@@ -814,6 +840,52 @@ mod tests {
             answer(vec![1; 32], 0, 0),
             LookupAnswer::Unknown { .. }
         ));
+    }
+
+    /// The production lookup adapter reads a reply as the SDK does: empty
+    /// bytes are the node not knowing the txid, malformed bytes or another
+    /// transaction are no answer — neither is evidence that it exists — and
+    /// the node that answered is kept either way.
+    #[test]
+    fn should_not_take_an_empty_or_malformed_lookup_reply_as_known() {
+        use dash_sdk::dapi_client::ExecutionResponse;
+
+        let held = Transaction {
+            lock_time: 7,
+            ..transaction()
+        };
+        let reply = |bytes: Vec<u8>| {
+            Ok(ExecutionResponse {
+                inner: GetTransactionResponse {
+                    transaction: bytes,
+                    ..GetTransactionResponse::default()
+                },
+                retries: 0,
+                address: "http://127.0.0.1:1443".parse().expect("address"),
+            })
+        };
+        let txid = held.txid();
+
+        let (node, empty) = lookup_reply(&txid, reply(Vec::new()));
+        assert_eq!(empty, LookupAnswer::NotFound);
+        assert!(node.is_some(), "the serving node is kept");
+
+        let (node, malformed) = lookup_reply(&txid, reply(vec![0xff, 0x01]));
+        assert!(
+            matches!(malformed, LookupAnswer::Unknown { .. }),
+            "{malformed:?}"
+        );
+        assert!(node.is_some());
+
+        let other = consensus::serialize(&transaction());
+        let (_, mismatched) = lookup_reply(&txid, reply(other));
+        assert!(
+            matches!(mismatched, LookupAnswer::Unknown { .. }),
+            "{mismatched:?}"
+        );
+
+        let (_, known) = lookup_reply(&txid, reply(consensus::serialize(&held)));
+        assert_eq!(known, in_mempool());
     }
 
     #[tokio::test]
