@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{PubkeyHash, ScriptBuf};
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
@@ -23,7 +25,7 @@ where
     ///   voter and operator identities of the masternode do not depend on it;
     /// - an owner address and a single payout address (see `effective_payout_address`): the
     ///   identity of version 1, TRANSFER key id 0 and OWNER key id 1, byte for byte;
-    /// - an owner address and several payouts: an identity with only the OWNER key id 1, as no
+    /// - an owner address and no sole supported P2PKH payout: only the OWNER key id 1, as no
     ///   single address can hold the TRANSFER key; key id 0 stays free.
     pub(super) fn create_owner_identity_v2(
         masternode: &MasternodeListItem,
@@ -63,16 +65,21 @@ where
 
 /// The one address the owner reward of a masternode is paid to, which its owner identity's
 /// TRANSFER key holds: the payout address, or the only entry of a payout list with one entry
-/// (Core turns a payout address into such a list when a masternode moves to extended
-/// addresses). `None` for a shared masternode, which has neither, and for a reward split
-/// between several payouts.
+/// with a matching P2PKH script (Core turns a payout address into such a list when a
+/// masternode moves to extended addresses). Other scripts and reward splits have no single
+/// supported TRANSFER authority.
 ///
 /// The stored masternode list does not keep payout lists, so this is only meaningful for a
 /// masternode as Core reported it, never for one read from the stored list.
 fn effective_payout_address(state: &DMNState) -> Option<[u8; 20]> {
     match (state.payout_address, state.payouts.as_deref()) {
         (Some(payout_address), _) => Some(payout_address),
-        (None, Some([payout])) => Some(payout.address),
+        (None, Some([payout]))
+            if payout.script
+                == ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array(payout.address)) =>
+        {
+            Some(payout.address)
+        }
         _ => None,
     }
 }
@@ -82,7 +89,7 @@ mod tests {
     use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
     use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::{ProTxHash, PubkeyHash, ScriptBuf, Txid};
+    use dpp::dashcore::{ProTxHash, PubkeyHash, ScriptBuf, ScriptHash, Txid};
     use dpp::dashcore_rpc::dashcore_rpc_json::{
         DMNPayout, DMNState, MasternodeListItem, MasternodeType,
     };
@@ -144,6 +151,33 @@ mod tests {
 
     fn legacy_masternode() -> MasternodeListItem {
         masternode(Some(OWNER_ADDRESS), Some(PAYOUT_ADDRESS), None)
+    }
+
+    #[test]
+    fn should_not_grant_transfer_authority_to_unsupported_or_inconsistent_payout_scripts() {
+        for script in [
+            ScriptBuf::new_p2sh(&ScriptHash::from_byte_array(PAYOUT_ADDRESS)),
+            ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array(SECOND_PAYOUT_ADDRESS)),
+        ] {
+            let identity = create_owner_identity(
+                &masternode(
+                    Some(OWNER_ADDRESS),
+                    None,
+                    Some(vec![DMNPayout {
+                        address: PAYOUT_ADDRESS,
+                        script,
+                        reward: 10000,
+                    }]),
+                ),
+                PlatformVersion::latest(),
+            )
+            .expect("owner identity");
+            assert_eq!(identity.public_keys().len(), 1);
+            assert_eq!(
+                identity.public_keys().get(&1).expect("owner key").purpose(),
+                Purpose::OWNER
+            );
+        }
     }
 
     fn create_owner_identity(
