@@ -149,25 +149,27 @@ pub struct FinalizeOptions {
 }
 
 /// Whether coins that are not final yet would fund a build that just fell
-/// short: key-wallet builds `trial` — a fresh copy of the build's
-/// configuration — funded like the build, with every not-yet-final coin of
+/// short: key-wallet builds `make()` — a fresh copy of the build's
+/// configuration, made only when a waiting coin exists — funded like the
+/// build, with every not-yet-final coin of
 /// the funding accounts treated as final. Returns the value of the
 /// not-yet-final coins that trial spends, or `None` when it fails too
 /// (confirmation would not help) or spends none of them.
 ///
-/// The trial is funded with `add_funding` from the same `offered` accounts
-/// after the same `seeds`, so key-wallet applies its own de-duplication,
-/// reservation filter and change address. An account holding waiting coins
-/// is funded through a clone with those coins marked final, and so is every
-/// account up to the first standard one — `add_funding` takes the change
-/// address from that account's pool — so no account state moves; the others
-/// are funded as they are. Coins (and seeds) an in-flight broadcast pins are
-/// locked, so selection passes them over. The clones share the reservation sets, so
-/// what the trial reserves is released before returning. Nothing is signed (a
+/// The trial is funded by the build's own fold ([`fund`]) from the same
+/// `offered` accounts after the same `seeds`, so key-wallet applies its own
+/// de-duplication, reservation filter and change address. An account holding
+/// waiting coins is funded through a clone with those coins marked final, and
+/// so is every standard account — key-wallet asks each account in turn for a
+/// change address from its pool, and only a standard account has one — so no
+/// account state moves; the others are funded as they are. Coins (and seeds)
+/// an in-flight broadcast pins are locked, so selection passes them over. The
+/// clones share the reservation sets, so what the trial reserves is released
+/// before returning. Nothing is signed (a
 /// payload finalizer on the configuration does run, as in the build). Runs
 /// under the caller's wallet-manager write guard, on the failure path only.
 pub(crate) fn trial_with_waiting_coins(
-    trial: TransactionBuilder,
+    make: &BuilderFactory<'_>,
     wallet: &Wallet,
     info: &mut PlatformWalletInfo,
     offered: &[AccountType],
@@ -182,11 +184,22 @@ pub(crate) fn trial_with_waiting_coins(
     }
     let generation = Arc::clone(&info.generation);
     let accounts = &mut info.core_wallet.accounts;
+    // Whether any coin is waiting, before anything is made, snapshotted or
+    // cloned: a shortfall with none (the common case) costs one scan.
+    let any_waiting = offered.iter().any(|at| {
+        accounts.funds_account(at).is_some_and(|managed| {
+            managed
+                .utxos
+                .values()
+                .any(|utxo| utxo.is_spendable(height) && !is_final(utxo))
+        })
+    });
+    if !any_waiting {
+        return None;
+    }
     // The build refuses an input an in-flight broadcast pins
     // (`InputMidBroadcast`): the trial must not count on one either.
     let pinned = generation.in_broadcast_outpoints();
-    // The waiting coins of each offered account, read before anything is
-    // cloned: a shortfall with none (the common case) costs no copy.
     let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
     let mut promote: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
     let mut lock: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
@@ -210,6 +223,7 @@ pub(crate) fn trial_with_waiting_coins(
     if waiting.is_empty() {
         return None;
     }
+    let trial = make().ok()?;
     // Funded through clones: an account with waiting coins (marked final) or
     // pinned ones (locked, so selection passes them over), and every standard
     // account — key-wallet asks each account in turn for a change address from
@@ -1124,17 +1138,15 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     let Some(make) = trial else {
                         return error;
                     };
-                    let waiting = make().ok().and_then(|trial| {
-                        trial_with_waiting_coins(
-                            trial,
-                            wallet,
-                            info,
-                            &offered_accounts,
-                            &seeds,
-                            reservation_only,
-                            height,
-                        )
-                    });
+                    let waiting = trial_with_waiting_coins(
+                        make,
+                        wallet,
+                        info,
+                        &offered_accounts,
+                        &seeds,
+                        reservation_only,
+                        height,
+                    );
                     awaiting_network(error, waiting)
                 })?;
 
@@ -2513,8 +2525,8 @@ mod tests {
 
     /// A payment only the not-yet-final coins would cover is reported as
     /// waiting on the network, not as a shortfall, and builds nothing — when
-    /// the caller describes its build. `finalize_transaction` cannot price an
-    /// opaque builder, so there it stays insufficient funds.
+    /// the build can be made again for the trial. A plain builder passed to
+    /// `finalize_transaction` cannot, so there it stays insufficient funds.
     #[tokio::test]
     async fn should_report_waiting_when_unconfirmed_coins_would_cover_the_payment() {
         let (core, signer, manager, wallet_id) = dual_core(&[700_000], &[700_000]).await;
@@ -2810,13 +2822,11 @@ mod tests {
         );
     }
 
-    /// The review's high-rate case through `finalize_transaction` with no
-    /// second description of the build: 900,000 final + 101,000 waiting
-    /// against 1,000,000 at 10,000 duffs/kB. Confirmation could not fund it
-    /// (1,001,000 is short of the payment plus even the 3,400-duff no-change
-    /// fee), and the opaque builder cannot be priced, so it is insufficient
-    /// funds, not code 59. Described accurately it is insufficient funds too;
-    /// at the default rate the same coins would cover it.
+    /// A high fee rate: 900,000 final + 101,000 waiting against 1,000,000 at
+    /// 10,000 duffs/kB. Confirmation could not fund it (1,001,000 is short of
+    /// the payment plus even the 3,400-duff no-change fee): insufficient funds,
+    /// not code 59 — through a plain builder (no trial) and through the trial
+    /// alike. At the default rate the trial builds: code 59.
     #[tokio::test]
     async fn should_not_report_waiting_for_a_build_it_cannot_price() {
         let (core, signer, manager, wallet_id) = dual_core(&[101_000], &[900_000]).await;

@@ -1344,7 +1344,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // Only a shortfall can be waiting on the network.
                     let waiting = is_shortfall(&e).then(|| {
                         trial_with_waiting_coins(
-                            make(),
+                            &|| Ok(make()),
                             wallet,
                             info,
                             &offered_accounts,

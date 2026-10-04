@@ -63,7 +63,6 @@ enum Step {
     ChangeToFirstInput,
     SetFeeRate(FeeRate),
     SetSelectionStrategy(SelectionStrategy),
-    SetCurrentHeight(u32),
     SetSpecialPayload(TransactionPayload),
 }
 
@@ -95,7 +94,6 @@ impl BuilderState {
                     Step::SetSelectionStrategy(strategy) => {
                         builder.set_selection_strategy(*strategy)
                     }
-                    Step::SetCurrentHeight(height) => builder.set_current_height(*height),
                     Step::SetSpecialPayload(payload) => {
                         builder.set_special_payload(payload.clone())
                     }
@@ -916,10 +914,9 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_selection_strategy(
 /// Set the block height coin selection treats as the chain tip (used for
 /// coinbase maturity and locktime).
 ///
-/// This value is advisory: the wallet-aware finalizers override it with the
-/// wallet's last processed height when they run, so the wallet height always
-/// wins for the funded/signed build. Use this only when building without a
-/// wallet.
+/// Accepted and ignored: the finalizers (the only way this builder is
+/// built) always build at the wallet's last processed height, so a height
+/// set here never reached a build.
 ///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer.
@@ -929,8 +926,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_current_height(
     height: u32,
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
-
-    (*builder).record(Step::SetCurrentHeight(height));
+    let _ = height;
 
     PlatformWalletFFIResult::ok()
 }
@@ -1259,8 +1255,8 @@ mod pooled_balance_handle_tests {
         assert_eq!(out, 0);
     }
 
-    /// Finalize what the FFI setters built, with the shortfall basis the
-    /// finalizers read off the builder.
+    /// Finalize what the FFI setters built, the way the finalizers do: from
+    /// the recorded configuration, so a shortfall gets the waiting-coins trial.
     fn finalize_built(
         builder: *mut FFITransactionBuilder,
         core: &platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>,
