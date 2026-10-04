@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let probe = DapiAcceptanceProbe::new(sdk);
 
     for transaction in &transactions {
-        let verdict = probe.probe(transaction).await.verdict;
+        let verdict = probe.probe(transaction).await;
         println!("{}  {verdict:?}", transaction.txid());
     }
     Ok(())

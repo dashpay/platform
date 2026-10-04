@@ -110,10 +110,10 @@ extension PlatformWalletManager {
     /// first did so for that root, and every 10 blocks after — a return from
     /// the background does not restart the 24. It publishes each *change* of
     /// verdict for the wallet's own sends in `outgoingTransactionVerdicts` /
-    /// `lastOutgoingTransactionProbe`. An entry is removed when its send
-    /// settles or leaves the wallet, when its wallet is deleted, when nodes
-    /// reported it (or the send it is built on) in a block the wallet did not
-    /// see within a few blocks — the root is asked about again — and every
+    /// `lastOutgoingTransactionProbe` (an accepted send whose nodes' block
+    /// evidence comes or goes may be published accepted again). Every verdict
+    /// is advisory: only the wallet's own sync settles a send. An entry is removed when its send
+    /// settles or leaves the wallet, when its wallet is deleted, and every
     /// entry when probing is turned off; a removal does not mean the send
     /// settled.
     /// Resubmitting sends the same signed bytes: it can deliver a payment, it
@@ -133,12 +133,7 @@ extension PlatformWalletManager {
     }
 
     /// Drop the send's verdict: the send settled or left the wallet, its wallet
-    /// was removed, probing was turned off, or nodes' report of it (or of the
-    /// send it is built on) in a block went unseen by the wallet for several
-    /// blocks — the root is probed again; a send built on it has no verdict
-    /// until the root is found mined again and the send is probed in turn (or
-    /// the send is reported uncertain and echoed anew). Not a statement that
-    /// it settled.
+    /// was removed, or probing was turned off. Not a statement that it settled.
     @MainActor
     func handleOutgoingTransactionCleared(_ key: OutgoingTransactionKey) {
         guard !shutdownRequested, isConfigured else { return }

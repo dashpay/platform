@@ -50,12 +50,12 @@ pub trait PlatformEventHandler: EventHandler {
 
     /// Fired when the verdict on an unconfirmed send of this wallet changes —
     /// the network was asked about the root of its chain. `Accepted` means a
-    /// node holds the transaction in its mempool, or nodes have it in a block
-    /// short of `Mined` (one node, or a block the wallet already followed
-    /// several blocks past without seeing it);
-    /// `Mined` that two distinct nodes have it in a block — in one probe or
-    /// over several of the same send; nodes' word, cleared again if the wallet
-    /// does not see that block (see `on_outgoing_transaction_cleared`); `Unresolved` that there is no verdict
+    /// node holds the transaction in its mempool (or one has it in a block);
+    /// `Mined` that two distinct nodes have it in a block within one probe —
+    /// advisory like `Accepted`: the resolver keeps asking until the wallet
+    /// settles the send, a later probe may turn it back into `Accepted`, and
+    /// one dropped by a reorg stays published until a probe disagrees or the
+    /// send settles; `Unresolved` that there is no verdict
     /// yet — refusals included, since no node's answer proves a transaction
     /// can never land; the resolver asks again on a later block. Nothing in
     /// the wallet changes either way.
@@ -71,13 +71,8 @@ pub trait PlatformEventHandler: EventHandler {
 
     /// Fired when the host must drop a send's published verdict: the send
     /// settled (block or InstantSend lock) or left the wallet, its wallet was
-    /// removed, probing was turned off (then for every send), or nodes had
-    /// reported it (or the send it builds on) in a block the wallet has not
-    /// seen several blocks later — that evidence was withdrawn; the root is
-    /// probed again, and a send built on it has no verdict until the root is
-    /// found mined again and the send is probed in turn (or the send is
-    /// reported uncertain and echoed anew). It does not mean the send
-    /// settled. Hosts drop any state they kept for the verdict.
+    /// removed, or probing was turned off (then for every send). It does not
+    /// mean the send settled. Hosts drop any state they kept for the verdict.
     ///
     /// Default impl is a no-op so existing handlers don't have to care.
     fn on_outgoing_transaction_cleared(&self, _wallet_id: &WalletId, _txid: &Txid) {}

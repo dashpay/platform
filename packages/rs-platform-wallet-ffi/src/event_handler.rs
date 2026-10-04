@@ -53,18 +53,17 @@ pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
 );
 
 /// Verdict codes for [`OutgoingTransactionProbedFn`].
+/// A node holds the send in its mempool, or nodes have it in a block: the
+/// resolver's Accepted and Mined both arrive as this code, so a move between
+/// them (a later probe may disagree with an earlier one) delivers it again.
 pub const OUTGOING_PROBE_VERDICT_ACCEPTED: u8 = 0;
 /// Reserved; not emitted by this version.
 pub const OUTGOING_PROBE_VERDICT_DEAD: u8 = 1;
 pub const OUTGOING_PROBE_VERDICT_UNRESOLVED: u8 = 2;
 /// Not a verdict: drop whatever was kept for the send's earlier verdict. Sent
-/// when the send settled or left the wallet, when its wallet was removed, for
-/// every send when probing is turned off, and when nodes' report of it (or of
-/// the send it builds on) in a block went unseen by the wallet for several
-/// blocks — the root is probed again; a send built on it has no verdict until
-/// the root is found mined again and the send is probed in turn (or the send
-/// is reported uncertain and echoed anew). It does not mean the send settled.
-/// `reason` is null.
+/// when the send settled or left the wallet, when its wallet was removed, and
+/// for every send when probing is turned off — so it does not mean the send
+/// settled. `reason` is null.
 pub const OUTGOING_PROBE_VERDICT_CLEARED: u8 = 3;
 
 /// A verdict on an unconfirmed send whose broadcast outcome was unknown.

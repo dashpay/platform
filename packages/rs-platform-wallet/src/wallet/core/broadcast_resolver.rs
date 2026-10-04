@@ -22,15 +22,16 @@
 //!
 //! What is published: verdicts per **own send**, which is what the host
 //! shows. A root's verdict goes to the root when it is the wallet's send.
-//! A root found in a block that the wallet has not
-//! seen yet counts as settled, so the sends built on it become roots, due at
-//! the next pass — until that evidence goes stale (see `MINED_EVIDENCE_GRACE`).
-//! Only changes are published — Unresolved never replaces a decided verdict,
-//! and Accepted and Mined count as the same. The host is told to drop a
-//! send's verdict (cleared) when the send settles or leaves the wallet, when
-//! its wallet is removed, when mined evidence for it or the root it is built
-//! on goes stale and, for every send, when probing is turned off;
-//! cleared says only "forget the verdict", not that the send settled. A
+//! Every verdict is advisory, Mined included: only the wallet itself (a
+//! block, an InstantSend lock) settles a send, so a root found mined stays a
+//! root — probed on its schedule like any other — until the wallet settles
+//! it, and a later probe may turn it back into Accepted. Only changes are
+//! published: Unresolved never replaces a decided verdict (Accepted, Mined),
+//! so a Mined a reorg dropped stays published until a probe disagrees or the
+//! wallet settles the send. The host is told to drop a send's verdict
+//! (cleared) when the send settles or leaves the wallet, when its wallet is
+//! removed and, for every send, when probing is turned off; cleared says
+//! only "forget the verdict", not that the send settled. A
 //! wallet event that reports a send settled (in a block or InstantSend-
 //! locked) or swept clears its verdict at once, even mid-scan; a pass
 //! clears whatever else left the wallet when it next reads it.
@@ -51,12 +52,9 @@
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
 //! InstantSend-locked transaction, a block that changed records, a sweep) or
-//! an `Uncertain` result for one of its transactions wakes it. `Mined` (two
-//! nodes have it in a block) pauses the probing of a root, but is the nodes'
-//! word, not settlement: if the wallet, following the tip, has not seen it
-//! [`MINED_EVIDENCE_GRACE`] blocks later, the verdict is cleared and the root
-//! (with the sends built on it) is probed again. `Accepted` does not pause it
-//! — a mempool is not settlement.
+//! an `Uncertain` result for one of its transactions wakes it. No verdict
+//! pauses the probing of a root: neither a mempool nor the nodes' word on a
+//! block is settlement.
 //! Probes run only while the SPV client delivers blocks, i.e. while the app is
 //! in the foreground.
 //!
@@ -89,7 +87,7 @@ use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, RwLock};
 use tokio::task::{self, AbortHandle, JoinError, JoinHandle, JoinSet};
 use tokio::time::{timeout_at, Instant};
 
-use crate::broadcast_probe::{AcceptanceProbe, ProbeReport, ProbeVerdict, MINED_QUORUM};
+use crate::broadcast_probe::{AcceptanceProbe, ProbeVerdict};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::wallet::core::record_spends_own_coins;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -106,12 +104,6 @@ pub(crate) const SLOW_INTERVAL: u32 = 10;
 /// rewind), are catch-up: the scan itself settles most roots, so a
 /// height-driven pass waits for it.
 pub(crate) const CATCH_UP_STEP: u32 = 3;
-
-/// Blocks a root found mined by nodes — their word, not the wallet's — may go
-/// unseen by the wallet while it follows the tip. Past that the evidence is
-/// stale (the block was reorged away, or never on the chain the wallet
-/// follows): the root is probed again from scratch and its verdict cleared.
-pub(crate) const MINED_EVIDENCE_GRACE: u32 = 6;
 
 /// One unsettled transaction of the wallet, merged across the accounts that
 /// record it.
@@ -231,9 +223,6 @@ fn is_unsettled_own<'a>(records: impl IntoIterator<Item = RecordFacts<'a>>) -> b
 /// transaction (see [`merge_records`]).
 pub(crate) struct ChainGraph<'a> {
     by_txid: HashMap<Txid, &'a OutgoingView>,
-    /// Unsettled for the purpose of picking roots: every view except those a
-    /// probe found mined.
-    unsettled: BTreeSet<Txid>,
     /// Transactions an ancestry traversal expanded, for the tests that pin
     /// its cost.
     #[cfg(test)]
@@ -241,20 +230,11 @@ pub(crate) struct ChainGraph<'a> {
 }
 
 impl<'a> ChainGraph<'a> {
-    /// `mined` are transactions a probe found in a block that this wallet has
-    /// not seen yet: settled for the purpose of picking roots, so the sends
-    /// built on them become roots in turn.
-    pub(crate) fn new(views: &'a [OutgoingView], mined: &HashSet<Txid>) -> Self {
-        let by_txid: HashMap<Txid, &OutgoingView> =
-            views.iter().map(|view| (view.txid, view)).collect();
-        let unsettled: BTreeSet<Txid> = by_txid
-            .keys()
-            .filter(|txid| !mined.contains(*txid))
-            .copied()
-            .collect();
+    /// Only the wallet settles a transaction: a probe's verdict, Mined
+    /// included, changes nothing here.
+    pub(crate) fn new(views: &'a [OutgoingView]) -> Self {
         Self {
-            by_txid,
-            unsettled,
+            by_txid: views.iter().map(|view| (view.txid, view)).collect(),
             #[cfg(test)]
             expanded: std::cell::Cell::new(0),
         }
@@ -267,13 +247,13 @@ impl<'a> ChainGraph<'a> {
     }
 
     fn is_unsettled(&self, txid: &Txid) -> bool {
-        self.unsettled.contains(txid)
+        self.by_txid.contains_key(txid)
     }
 
     /// The wallet's unsettled sends.
     pub(crate) fn own_unsettled(&self) -> BTreeSet<Txid> {
-        self.unsettled
-            .iter()
+        self.by_txid
+            .keys()
             .filter(|txid| self.is_own(txid))
             .copied()
             .collect()
@@ -331,10 +311,10 @@ impl<'a> ChainGraph<'a> {
     }
 }
 
-/// The roots of `views` with nothing known to be mined — see [`ChainGraph::roots`].
+/// The roots of `views` — see [`ChainGraph::roots`].
 #[cfg(test)]
 fn ambiguous_roots(views: &[OutgoingView]) -> Vec<&OutgoingView> {
-    ChainGraph::new(views, &HashSet::new()).roots()
+    ChainGraph::new(views).roots()
 }
 
 /// When a root is next due for a probe.
@@ -390,53 +370,19 @@ impl ProbeSchedule {
     }
 }
 
-/// A root's verdict that pauses its probing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Final {
-    /// Found in a block by a probe (two nodes), before the wallet saw it;
-    /// `at` is the later of the wallet's synced height when the answer
-    /// arrived and the block height a node named — that height capped at
-    /// one [`MINED_EVIDENCE_GRACE`] above the wallet's. Advisory, not settlement: only the
-    /// wallet seeing it settles it, and evidence the wallet does not confirm
-    /// within [`MINED_EVIDENCE_GRACE`] blocks is dropped (see `begin_pass`).
-    Mined { at: u32 },
-}
-
-/// Where a published verdict came from. A probe never takes an echo's place:
-/// it can only confirm Accepted (or say Mined, the same for the host) or say
-/// nothing new (Unresolved) — so an echoed send keeps its own evidence until
-/// it settles, leaves, or is otherwise cleared.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Source {
-    /// A probe of the send's chain root.
-    Probe,
-    /// A peer echoing the send's own broadcast.
-    Echo,
-}
-
-impl Final {
-    /// The height from which this evidence is stale.
-    fn stale_at(&self) -> u32 {
-        match self {
-            Final::Mined { at } => at.saturating_add(MINED_EVIDENCE_GRACE),
-        }
+/// Whether two verdicts say the same thing. Every Unresolved counts as one,
+/// since its reason varies from probe to probe. Accepted and Mined differ —
+/// though the FFI host receives both as the same code (see
+/// `OUTGOING_PROBE_VERDICT_ACCEPTED`).
+fn same_verdict(a: &ProbeVerdict, b: &ProbeVerdict) -> bool {
+    match (a, b) {
+        (ProbeVerdict::Unresolved { .. }, ProbeVerdict::Unresolved { .. }) => true,
+        _ => a == b,
     }
 }
 
-/// Whether two verdicts say the same thing to the host. Accepted and Mined
-/// both mean "going through" and reach the host as the same code; every
-/// Unresolved counts as one, since its reason varies from probe to probe.
-fn same_for_host(a: &ProbeVerdict, b: &ProbeVerdict) -> bool {
-    matches!(
-        (a, b),
-        (
-            ProbeVerdict::Accepted | ProbeVerdict::Mined,
-            ProbeVerdict::Accepted | ProbeVerdict::Mined
-        ) | (
-            ProbeVerdict::Unresolved { .. },
-            ProbeVerdict::Unresolved { .. }
-        )
-    )
+fn is_decided(verdict: &ProbeVerdict) -> bool {
+    !matches!(verdict, ProbeVerdict::Unresolved { .. })
 }
 
 /// What the host must hear, per own send.
@@ -445,9 +391,8 @@ pub(crate) enum ResolverEvent {
     /// A send's verdict changed.
     Verdict(Txid, ProbeVerdict),
     /// The host must drop the verdict it holds for a send: the send settled
-    /// or left the wallet, its wallet was removed, mined evidence for it (or
-    /// the root it is built on) went stale, or probing was turned off. Not a
-    /// statement that the send settled.
+    /// or left the wallet, its wallet was removed, or probing was turned off.
+    /// Not a statement that the send settled.
     Cleared(Txid),
 }
 
@@ -470,21 +415,16 @@ fn trigger_of(forced: bool) -> &'static str {
     }
 }
 
-/// Bookkeeping for every wallet. Schedules and final verdicts are per probed
-/// root; published verdicts are per own send, which is what the host shows.
+/// Bookkeeping for every wallet. Schedules are per probed root; published
+/// verdicts are per own send, which is what the host shows.
 /// Everything for a transaction is kept while it stays unsettled in the
 /// wallet, and dropped once it settles or leaves. Owned by the resolver's
 /// actor, so every change happens in one sequence.
 #[derive(Debug, Default)]
 pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
-    finished: HashMap<(WalletId, Txid), Final>,
-    /// What the host holds per send, and where it came from.
-    published: HashMap<(WalletId, Txid), (ProbeVerdict, Source)>,
-    /// The identified nodes that reported each root in a block, added up
-    /// across probes while it stays unsettled: [`MINED_QUORUM`] of them make
-    /// it mined even when no single probe heard two.
-    seen_in_block: HashMap<(WalletId, Txid), BTreeSet<String>>,
+    /// What the host holds per send.
+    published: HashMap<(WalletId, Txid), ProbeVerdict>,
 }
 
 impl ResolverState {
@@ -492,45 +432,25 @@ impl ResolverState {
     /// had a verdict for.
     fn forget_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) -> Vec<Outgoing> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
-        self.finished.retain(|(wallet, _), _| wallet != wallet_id);
-        self.seen_in_block
-            .retain(|(wallet, _), _| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, trigger)
     }
 
     /// Drop everything; a clear for every published send.
     fn forget_all(&mut self) -> Vec<Outgoing> {
         self.schedules.clear();
-        self.finished.clear();
-        self.seen_in_block.clear();
         self.clear_where(|_, _| true, None, "disabled")
     }
 
     /// A wallet event reported `txids` settled or gone: forget them and clear
     /// their verdicts.
     fn settle(&mut self, wallet_id: WalletId, txids: &HashSet<Txid>) -> Vec<Outgoing> {
-        self.forget(wallet_id, txids, None, "settled-or-left")
-    }
-
-    /// Forget everything kept for `txids` of `wallet_id` and clear their
-    /// verdicts.
-    fn forget(
-        &mut self,
-        wallet_id: WalletId,
-        txids: &HashSet<Txid>,
-        height: Option<u32>,
-        trigger: &'static str,
-    ) -> Vec<Outgoing> {
         for txid in txids {
-            let key = (wallet_id, *txid);
-            self.schedules.remove(&key);
-            self.finished.remove(&key);
-            self.seen_in_block.remove(&key);
+            self.schedules.remove(&(wallet_id, *txid));
         }
         self.clear_where(
             |wallet, txid| *wallet == wallet_id && txids.contains(txid),
-            height,
-            trigger,
+            None,
+            "settled-or-left",
         )
     }
 
@@ -561,53 +481,33 @@ impl ResolverState {
             .collect()
     }
 
-    /// Record `verdict` for `send`, from `source`; returns whether the host
-    /// must hear it. Unresolved never replaces a decided verdict (Accepted,
-    /// Mined) — one probe that only met transport errors says nothing new.
-    /// A probe's verdict that agrees with what the host holds keeps its
-    /// source; an echo always marks the verdict as its own.
-    fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict, source: Source) -> bool {
+    /// Record `verdict` for `send`; returns whether the host must hear it.
+    /// Unresolved never replaces a decided verdict (Accepted, Mined) — one
+    /// probe that only met transport errors says nothing new.
+    fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict) -> bool {
         let changed = match self.published.get(&key) {
             None => true,
-            Some((previous, _))
-                if !matches!(previous, ProbeVerdict::Unresolved { .. })
-                    && matches!(verdict, ProbeVerdict::Unresolved { .. }) =>
-            {
-                false
-            }
-            Some((previous, _)) => !same_for_host(previous, verdict),
+            Some(previous) if is_decided(previous) && !is_decided(verdict) => false,
+            Some(previous) => !same_verdict(previous, verdict),
         };
         if changed {
-            self.published.insert(key, (verdict.clone(), source));
-        } else if source == Source::Echo {
-            // An echo is the send's own evidence even when it only agrees.
-            if let Some((_, held)) = self.published.get_mut(&key) {
-                *held = Source::Echo;
-            }
+            self.published.insert(key, verdict.clone());
         }
         changed
     }
 
-    /// Whether the verdict the host holds for `key` came from the send's own
-    /// echo — evidence of its own, not of any ancestor's.
-    fn echoed(&self, key: &(WalletId, Txid)) -> bool {
-        matches!(self.published.get(key), Some((_, Source::Echo)))
-    }
-
     /// Publish `verdict` for each of `sends`, collecting what changed.
-    #[allow(clippy::too_many_arguments)]
     fn publish_all(
         &mut self,
         wallet_id: WalletId,
         sends: impl IntoIterator<Item = Txid>,
         verdict: &ProbeVerdict,
-        source: Source,
         height: u32,
         trigger: &'static str,
         out: &mut Vec<Outgoing>,
     ) {
         for send in sends {
-            if self.publish((wallet_id, send), verdict, source) {
+            if self.publish((wallet_id, send), verdict) {
                 out.push(Outgoing {
                     wallet_id,
                     event: ResolverEvent::Verdict(send, verdict.clone()),
@@ -616,17 +516,6 @@ impl ResolverState {
                 });
             }
         }
-    }
-
-    /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
-    fn mined(&self, wallet_id: &WalletId) -> HashSet<Txid> {
-        self.finished
-            .iter()
-            .filter(|((wallet, _), result)| {
-                wallet == wallet_id && matches!(result, Final::Mined { .. })
-            })
-            .map(|((_, txid), _)| *txid)
-            .collect()
     }
 }
 
@@ -659,44 +548,13 @@ pub(crate) struct PassStart {
     pub due: VecDeque<DueRoot>,
 }
 
-/// `txids` and every transaction of `views` built on them, transitively —
-/// stopping at a descendant `keep` says stands on its own (not entered, nor
-/// anything built on it).
-fn with_descendants(
-    views: &[OutgoingView],
-    txids: &HashSet<Txid>,
-    keep: impl Fn(&Txid) -> bool,
-) -> HashSet<Txid> {
-    let mut children: HashMap<Txid, Vec<Txid>> = HashMap::new();
-    for view in views {
-        for input in &view.transaction.input {
-            children
-                .entry(input.previous_output.txid)
-                .or_default()
-                .push(view.txid);
-        }
-    }
-    let mut found = HashSet::new();
-    let mut frontier: Vec<Txid> = txids.iter().copied().collect();
-    while let Some(txid) = frontier.pop() {
-        if !txids.contains(&txid) && keep(&txid) {
-            continue;
-        }
-        if found.insert(txid) {
-            frontier.extend(children.get(&txid).into_iter().flatten().copied());
-        }
-    }
-    found
-}
-
 /// Start a pass over one wallet at `height`: forget what settled or left
 /// (clearing the sends the host had a verdict for) and pick the roots due for
 /// a probe. The
 /// roots of every `forced` transaction's chain (dash-spv has just reported
 /// it `Uncertain`) are due regardless of their schedule — even if one went
 /// out at this height already: a repeat probe is cheaper than bookkeeping
-/// that tells the two apart. A root found mined counts as settled when
-/// picking roots, so its children become roots, due at the next pass.
+/// that tells the two apart.
 /// `anchor`: the tip height
 /// a height-driven pass knows the wallet follows — it starts the every-block
 /// window of every root that has none yet.
@@ -720,12 +578,6 @@ pub(crate) fn begin_pass(
     state
         .schedules
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
-    state
-        .finished
-        .retain(|(wallet, txid), _| !is_gone(wallet, txid));
-    state
-        .seen_in_block
-        .retain(|(wallet, txid), _| !is_gone(wallet, txid));
     // Cleared because the send is no longer an unsettled own send: it
     // settled, or left the wallet — not a statement that it settled.
     events.extend(state.clear_where(
@@ -734,39 +586,13 @@ pub(crate) fn begin_pass(
         "settled-or-left",
     ));
 
-    // Nodes said mined, but the wallet — following the tip — has gone
-    // `MINED_EVIDENCE_GRACE` blocks without seeing it: a reorged-away block,
-    // or one the chain the wallet follows never had. The evidence is dropped,
-    // the verdict cleared, and the root probed again from scratch.
-    // Everything built on such a root goes with it: those sends became roots,
-    // and earned their verdicts, only because it counted as mined.
-    if anchor.is_some() {
-        let stale: HashSet<Txid> = state
-            .finished
-            .iter()
-            .filter(|((wallet, _), result)| *wallet == wallet_id && height >= result.stale_at())
-            .map(|((_, txid), _)| *txid)
-            .collect();
-        if !stale.is_empty() {
-            // A descendant's own echo is its own evidence, not the parent's:
-            // it stays, and so does what is built on it.
-            let withdrawn =
-                with_descendants(views, &stale, |txid| state.echoed(&(wallet_id, *txid)));
-            events.extend(state.forget(wallet_id, &withdrawn, Some(height), "mined-not-seen"));
-        }
-    }
-
-    let mined = state.mined(&wallet_id);
-    let graph = ChainGraph::new(views, &mined);
+    let graph = ChainGraph::new(views);
     let roots = graph.roots();
     let forced_roots = graph.roots_of(forced.iter().copied());
 
     let mut due = VecDeque::new();
     for view in &roots {
         let key = (wallet_id, view.txid);
-        if state.finished.contains_key(&key) {
-            continue;
-        }
         let schedule = state.schedules.entry(key).or_default();
         if let Some(anchor) = anchor {
             schedule.anchor(anchor);
@@ -802,73 +628,21 @@ pub(crate) fn withdraw_send(state: &mut ResolverState, wallet_id: WalletId, root
     }
 }
 
-/// Record one root's probe result: Mined pauses its probing (until the
-/// evidence goes stale, see `begin_pass`), and the verdict goes to the root
-/// when it is the wallet's own send. `height` is the wallet's height now.
+/// Record one root's probe result: the verdict goes to the root when it is
+/// the wallet's own send. `height` is the pass's.
 pub(crate) fn record_probe(
     state: &mut ResolverState,
     wallet_id: WalletId,
     height: u32,
-    following: bool,
     root: &DueRoot,
-    report: &ProbeReport,
+    verdict: &ProbeVerdict,
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
-    let key = (wallet_id, root.txid);
-    // A block the wallet, following the tip, has already passed by
-    // `MINED_EVIDENCE_GRACE` without seeing the transaction contradicts the
-    // report on arrival: it is not mined on the wallet's chain, only known —
-    // accepted, and its nodes do not count towards the quorum. Judged only
-    // while following, like stale evidence (`begin_pass`): during catch-up
-    // the scan may still be on its way to that block.
-    let behind = following
-        && report
-            .block_height
-            .is_some_and(|block| block.saturating_add(MINED_EVIDENCE_GRACE) <= height);
-    // Nodes that saw it in a block, over every probe of this root: enough of
-    // them make it mined whatever this probe's own verdict.
-    if !report.in_block_by.is_empty() && !behind {
-        state
-            .seen_in_block
-            .entry(key)
-            .or_default()
-            .extend(report.in_block_by.iter().cloned());
-    }
-    let seen = state.seen_in_block.get(&key).map_or(0, BTreeSet::len);
-    let mut verdict = if seen >= MINED_QUORUM {
-        ProbeVerdict::Mined
-    } else {
-        report.verdict.clone()
-    };
-    if behind && matches!(verdict, ProbeVerdict::Mined) {
-        state.seen_in_block.remove(&key);
-        verdict = ProbeVerdict::Accepted;
-    }
-    let verdict = &verdict;
-    if matches!(verdict, ProbeVerdict::Mined) {
-        // The grace counts from the later of the wallet's height and the
-        // block the nodes named — a wallet still short of that block has not
-        // had the chance to see it — but one node's height can push it at
-        // most one grace further, so no answer can make it final.
-        let named = report
-            .block_height
-            .unwrap_or(0)
-            .min(height.saturating_add(MINED_EVIDENCE_GRACE));
-        state.finished.insert(
-            key,
-            Final::Mined {
-                at: height.max(named),
-            },
-        );
-    }
     if root.own {
-        // A verdict that agrees with what the host holds leaves its source
-        // as it was (an echo stays an echo).
         state.publish_all(
             wallet_id,
             [root.txid],
             verdict,
-            Source::Probe,
             height,
             trigger_of(root.forced),
             &mut events,
@@ -878,32 +652,24 @@ pub(crate) fn record_probe(
 }
 
 /// The lowest height at which a root of the wallet can be due, if nothing new
-/// happens to it: a root without a schedule yet (the child of one just found
-/// mined) is due at once, and mined evidence is due a re-check when it would
-/// go stale; `u32::MAX` when there is nothing to probe or re-check.
+/// happens to it: a root without a schedule yet is due at once; `u32::MAX`
+/// when there is nothing to probe.
 pub(crate) fn next_pass_height(
     state: &ResolverState,
     wallet_id: WalletId,
     views: &[OutgoingView],
 ) -> u32 {
-    let mined = state.mined(&wallet_id);
-    let due = ChainGraph::new(views, &mined)
+    ChainGraph::new(views)
         .roots()
         .iter()
-        .map(|view| (wallet_id, view.txid))
-        .filter(|key| !state.finished.contains_key(key))
-        .map(|key| state.schedules.get(&key).map_or(0, ProbeSchedule::next_due))
+        .map(|view| {
+            state
+                .schedules
+                .get(&(wallet_id, view.txid))
+                .map_or(0, ProbeSchedule::next_due)
+        })
         .min()
-        .unwrap_or(u32::MAX);
-    // A pass must also come round when mined evidence goes stale.
-    let stale_at = state
-        .finished
-        .iter()
-        .filter(|((wallet, _), _)| *wallet == wallet_id)
-        .map(|(_, result)| result.stale_at())
-        .min()
-        .unwrap_or(u32::MAX);
-    due.min(stale_at)
+        .unwrap_or(u32::MAX)
 }
 
 fn log_outgoing(item: &Outgoing) {
@@ -1151,7 +917,7 @@ enum JobDone {
         /// The root it probed: a result for a root no longer in flight (its
         /// probe was stopped, but had already finished) is not this one's.
         root: Txid,
-        report: ProbeReport,
+        verdict: ProbeVerdict,
     },
 }
 
@@ -1361,9 +1127,8 @@ impl Actor {
                 let rewound = previous.is_some_and(|previous| height < previous);
                 if rewound {
                     // A rewind replays the chain: whatever the resolver kept
-                    // for the wallet may rest on blocks the replay drops — a
-                    // root found mined, a child that became a root only then —
-                    // so it starts over: every verdict cleared, every root due
+                    // for the wallet may rest on blocks the replay drops, so
+                    // it starts over: every verdict cleared, every root due
                     // at once, its window from the next following pass. A run
                     // under way rests on that state too: it is stopped, and what
                     // `Uncertain` results forced it to probe goes to the next pass.
@@ -1634,9 +1399,15 @@ impl Actor {
                     let Some(entry) = self.wallets.get(&wallet_id) else {
                         continue;
                     };
-                    // A mined verdict is not reopened by an echo; anything
-                    // else becomes accepted.
-                    if self.state.finished.contains_key(&(wallet_id, txid)) {
+                    // An echo says only that the send is out there: it adds
+                    // nothing to a decided verdict (and must not turn a Mined
+                    // back into Accepted).
+                    if self
+                        .state
+                        .published
+                        .get(&(wallet_id, txid))
+                        .is_some_and(is_decided)
+                    {
                         continue;
                     }
                     let height = entry.height.unwrap_or(0);
@@ -1644,7 +1415,6 @@ impl Actor {
                         wallet_id,
                         [txid],
                         &ProbeVerdict::Accepted,
-                        Source::Echo,
                         height,
                         "echo",
                         &mut events,
@@ -1732,9 +1502,8 @@ impl Actor {
                 wallet_id,
                 run,
                 root: probed,
-                report,
+                verdict,
             } => {
-                let reported = self.wallets.get(&wallet_id).and_then(|entry| entry.height);
                 let Some(current) = self
                     .wallets
                     .get_mut(&wallet_id)
@@ -1746,9 +1515,6 @@ impl Actor {
                 // Cannot happen: a probe job is spawned only by a probing run
                 // with its root in flight. Fail safe — end the run rather than
                 // leave it blocking every later pass for the wallet.
-                // Whether the wallet follows the tip now: a catch-up step
-                // while the probe was out drops the run's anchor.
-                let following = current.anchor_at.is_some();
                 let Some(probing) = current.probing.as_mut() else {
                     tracing::error!(
                         wallet_id = %hex::encode(wallet_id),
@@ -1783,12 +1549,8 @@ impl Actor {
                     self.probe_next(wallet_id);
                     return;
                 }
-                // Stamped with the wallet's height now, not the pass's start:
-                // a pass of many probes can span blocks, and mined evidence
-                // gets its full grace from when it arrived.
-                let now = reported.map_or(probing.height, |height| height.max(probing.height));
                 let events =
-                    record_probe(&mut self.state, wallet_id, now, following, &root, &report);
+                    record_probe(&mut self.state, wallet_id, probing.height, &root, &verdict);
                 deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
@@ -1812,12 +1574,12 @@ impl Actor {
             let transaction = Arc::clone(&root.transaction);
             let root_txid = root.txid;
             run.abort = self.jobs.spawn(async move {
-                let report = probe.probe(&transaction).await;
+                let verdict = probe.probe(&transaction).await;
                 JobDone::Probed {
                     wallet_id,
                     run: id,
                     root: root_txid,
-                    report,
+                    verdict,
                 }
             });
             self.job_runs
@@ -2294,7 +2056,7 @@ mod tests {
         let views = merge_records([record_facts(&record, || false, true)]);
         assert_eq!(views.len(), 1);
         assert!(!views[0].spends_own_coins);
-        let graph = ChainGraph::new(&views, &none());
+        let graph = ChainGraph::new(&views);
         assert!(graph.own_unsettled().is_empty());
         assert!(roots(&views).is_empty(), "nothing of ours depends on it");
         // Neither a scheduled pass nor an `Uncertain` report of it probes it.
@@ -2355,7 +2117,7 @@ mod tests {
             record_facts(&parent, || false, true),
             record_facts(&child, || false, true),
         ]);
-        let graph = ChainGraph::new(&views, &none());
+        let graph = ChainGraph::new(&views);
         assert_eq!(graph.own_unsettled(), BTreeSet::from([child.txid]));
         assert_eq!(roots(&views), BTreeSet::from([parent.txid]));
         assert!(!graph.is_own(&parent.txid));
@@ -2435,7 +2197,7 @@ mod tests {
             send(2, &[outpoint(1, 1)]),
             send(3, &[outpoint(2, 1)]),
         ];
-        let graph = ChainGraph::new(&views, &none());
+        let graph = ChainGraph::new(&views);
         assert_eq!(graph.roots_of([txid(3)]), BTreeSet::from([txid(1)]));
         assert!(graph.roots_of([txid(9)]).is_empty(), "unknown txid");
     }
@@ -2454,7 +2216,7 @@ mod tests {
                 }
             })
             .collect();
-        let graph = ChainGraph::new(&views, &none());
+        let graph = ChainGraph::new(&views);
         let roots: Vec<Txid> = graph.roots().iter().map(|view| view.txid).collect();
         assert_eq!(roots, vec![txid(1)]);
         assert_eq!(graph.expanded.get(), 200);
@@ -2475,7 +2237,7 @@ mod tests {
             })
             .collect();
         views.extend((101..=150u8).map(|n| send(n, &[outpoint(100, u32::from(n))])));
-        let graph = ChainGraph::new(&views, &none());
+        let graph = ChainGraph::new(&views);
         assert_eq!(roots(&views), BTreeSet::from([txid(1)]));
         let before = graph.expanded.get();
         assert_eq!(
@@ -2577,7 +2339,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for ScriptedProbe {
-        async fn probe(&self, transaction: &Transaction) -> ProbeReport {
+        async fn probe(&self, transaction: &Transaction) -> ProbeVerdict {
             let id = txid(transaction.lock_time as u8);
             self.probed.lock().expect("probed").push(id);
             self.answers
@@ -2586,7 +2348,6 @@ mod tests {
                 .unwrap_or(ProbeVerdict::Unresolved {
                     reason: "scripted".to_string(),
                 })
-                .into()
         }
     }
 
@@ -2670,9 +2431,9 @@ mod tests {
                 root.txid,
                 height,
             );
-            let report = probe.probe(&root.transaction).await;
+            let verdict = probe.probe(&root.transaction).await;
             let mut guard = state.lock().expect("state");
-            let events = record_probe(&mut guard.state, wallet_id, height, true, &root, &report);
+            let events = record_probe(&mut guard.state, wallet_id, height, &root, &verdict);
             guard.push(events);
         }
         let guard = state.lock().expect("state");
@@ -2794,7 +2555,6 @@ mod tests {
         assert_eq!(gone, vec![ResolverEvent::Cleared(txid(1))]);
         let guard = state.lock().expect("state");
         assert!(guard.state.schedules.is_empty());
-        assert!(guard.state.finished.is_empty());
         assert!(guard.state.published.is_empty());
     }
 
@@ -2810,19 +2570,70 @@ mod tests {
         assert_eq!(state.lock().expect("state").state.schedules.len(), 1);
     }
 
-    /// A mined transaction the wallet has not caught up with yet: nothing left
-    /// to ask, so it is not probed again.
+    /// Answers in turn, then Unresolved; counts the probes.
+    struct SequenceProbe {
+        answers: StdMutex<VecDeque<ProbeVerdict>>,
+        calls: StdMutex<usize>,
+    }
+
+    impl SequenceProbe {
+        fn new(answers: &[ProbeVerdict]) -> Self {
+            Self {
+                answers: StdMutex::new(answers.iter().cloned().collect()),
+                calls: StdMutex::new(0),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            *self.calls.lock().expect("calls")
+        }
+    }
+
+    #[async_trait]
+    impl AcceptanceProbe for SequenceProbe {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+            *self.calls.lock().expect("calls") += 1;
+            self.answers
+                .lock()
+                .expect("answers")
+                .pop_front()
+                .unwrap_or_else(unresolved)
+        }
+    }
+
+    /// Nodes' word that a send is mined is not settlement: the root keeps
+    /// being probed on its schedule, a later probe that finds it only in a
+    /// mempool turns the verdict back into Accepted, a probe that learns
+    /// nothing keeps the last decided verdict, and only the wallet settling
+    /// the send ends it.
     #[tokio::test]
-    async fn should_stop_probing_a_root_found_in_a_block() {
+    async fn should_keep_probing_a_mined_root_until_the_wallet_settles_it() {
         let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined)]);
-        let views = [send(1, &[outpoint(90, 0)])];
+        let probe = SequenceProbe::new(&[ProbeVerdict::Mined, ProbeVerdict::Accepted]);
+        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 0)])];
 
-        pass(&state, &probe, 100, &views).await;
-        let again = pass(&state, &probe, 101, &views).await;
+        assert_eq!(
+            pass(&state, &probe, 100, &views).await,
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Mined)]
+        );
+        assert_eq!(
+            pass(&state, &probe, 101, &views).await,
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)],
+            "a later probe disagrees"
+        );
+        assert!(pass(&state, &probe, 102, &views).await.is_empty());
+        assert_eq!(probe.calls(), 3, "only the root, on every block");
 
-        assert!(again.is_empty());
-        assert_eq!(probe.probed(), vec![txid(1)]);
+        // The wallet settles the root: it is cleared and its child is the
+        // root now.
+        let settled = [send(2, &[outpoint(1, 0)])];
+        assert_eq!(
+            pass(&state, &probe, 103, &settled).await,
+            vec![
+                ResolverEvent::Cleared(txid(1)),
+                ResolverEvent::Verdict(txid(2), unresolved()),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -2832,58 +2643,6 @@ mod tests {
         let views = [incoming(5, &[outpoint(80, 0)]), send(6, &[outpoint(5, 0)])];
 
         assert!(pass(&state, &probe, 100, &views).await.is_empty());
-    }
-
-    /// A root found in a block that the wallet has not caught up with is
-    /// settled for picking roots, so the send built on it is probed next.
-    #[tokio::test]
-    async fn should_probe_the_children_of_a_root_found_in_a_block() {
-        let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined), (txid(2), mined())]);
-        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
-
-        let first = pass(&state, &probe, 100, &views).await;
-        let second = pass(&state, &probe, 101, &views).await;
-
-        assert_eq!(
-            first,
-            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Mined)]
-        );
-        assert_eq!(second, vec![ResolverEvent::Verdict(txid(2), mined())]);
-        assert_eq!(probe.probed(), vec![txid(1), txid(2)]);
-    }
-
-    /// A wallet whose every root was found mined has nothing to probe until
-    /// that evidence would go stale (`MINED_EVIDENCE_GRACE` blocks on); one
-    /// with a root still open is due next block.
-    #[tokio::test]
-    async fn should_wait_for_stale_mined_evidence_or_the_next_open_root() {
-        let state = Mutex::new(Harness::default());
-        let probe = ScriptedProbe::new(&[(txid(1), mined()), (txid(2), unresolved())]);
-
-        let empty = run(&state, &probe, wallet(), 100, &[], &none()).await;
-        let final_only = run(
-            &state,
-            &probe,
-            wallet(),
-            100,
-            &[send(1, &[outpoint(90, 0)])],
-            &none(),
-        )
-        .await;
-        let open = run(
-            &state,
-            &probe,
-            wallet(),
-            101,
-            &[send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
-            &none(),
-        )
-        .await;
-
-        assert_eq!(empty, u32::MAX);
-        assert_eq!(final_only, 100 + MINED_EVIDENCE_GRACE);
-        assert_eq!(open, 102, "the open root is due next block");
     }
 
     // ---- ResolverState ------------------------------------------------------
@@ -2936,26 +2695,25 @@ mod tests {
 
         assert_eq!(outbox(&state).len(), 2);
         let guard = state.lock().expect("state");
-        assert!(
-            guard.state.published.is_empty()
-                && guard.state.schedules.is_empty()
-                && guard.state.finished.is_empty()
-        );
+        assert!(guard.state.published.is_empty() && guard.state.schedules.is_empty());
     }
 
     /// One probe that met only transport errors says nothing new about a send
-    /// already seen accepted; the UI must not flicker back to "unknown". And
-    /// Accepted → Mined is no news to the host either: both mean "going
-    /// through" and reach it as the same code.
+    /// already seen accepted or mined; the UI must not flicker back to
+    /// "unknown". Accepted and Mined replace each other — a later probe may
+    /// disagree with an earlier one either way — and a repeat is no news.
     #[test]
-    fn should_publish_only_what_the_host_would_see_as_a_change() {
+    fn should_publish_only_a_change_of_verdict() {
         let mut state = ResolverState::default();
         let key = (wallet(), txid(1));
 
-        assert!(state.publish(key, &ProbeVerdict::Accepted, Source::Probe));
-        assert!(!state.publish(key, &unresolved(), Source::Probe));
-        assert!(!state.publish(key, &ProbeVerdict::Mined, Source::Probe));
-        assert!(!state.publish(key, &ProbeVerdict::Accepted, Source::Probe));
+        assert!(state.publish(key, &ProbeVerdict::Accepted));
+        assert!(!state.publish(key, &unresolved()));
+        assert!(!state.publish(key, &ProbeVerdict::Accepted));
+        assert!(state.publish(key, &ProbeVerdict::Mined));
+        assert!(!state.publish(key, &unresolved()));
+        assert!(!state.publish(key, &ProbeVerdict::Mined));
+        assert!(state.publish(key, &ProbeVerdict::Accepted));
     }
 
     // ---- the actor ----------------------------------------------------------
@@ -3216,6 +2974,30 @@ mod tests {
         );
     }
 
+    /// An echo adds nothing to a decided verdict: a send probed Mined stays
+    /// Mined, not turned back into Accepted.
+    #[tokio::test]
+    async fn should_not_turn_a_mined_send_back_into_accepted_on_its_echo() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), mined())]));
+        let mut rig = enabled(probe).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
+
+        rig.send(Command::Echoed(txid(1))).await;
+
+        assert!(rig.sent().is_empty());
+        assert_eq!(
+            rig.actor.state.published.get(&(wallet(), txid(1))),
+            Some(&mined())
+        );
+    }
+
     /// An acceptance whose lookup was out when the send settled must not
     /// reach the host after the send's verdict was cleared.
     #[tokio::test]
@@ -3279,15 +3061,15 @@ mod tests {
         assert!(rig.sent().is_empty());
     }
 
-    /// Once every root is final the wallet is idle: height advances do not walk
-    /// its records again until an event that touched them.
+    /// With no root left to probe the wallet is idle: height advances do not
+    /// walk its records again until an event that touched them.
     #[tokio::test]
-    async fn should_go_idle_when_every_root_is_final_until_a_touch() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+    async fn should_go_idle_when_no_root_is_left_until_a_touch() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), Vec::new());
 
         rig.follow(wallet(), 100).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
+        assert!(rig.sent().is_empty());
         assert_eq!(rig.walks(), 1);
 
         rig.height(wallet(), 102).await;
@@ -3466,19 +3248,13 @@ mod tests {
     /// gets its next-block probe.
     #[tokio::test]
     async fn should_keep_a_height_that_arrives_during_a_forced_pass() {
-        let probe = Arc::new(ScriptedProbe::new(&[
-            (txid(1), mined()),
-            (txid(2), unresolved()),
-        ]));
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(2), unresolved())]));
         let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.views(wallet(), Vec::new());
         rig.follow(wallet(), 100).await;
         rig.height(wallet(), 102).await;
-        assert_eq!(probe.probed(), vec![txid(1)], "idle after the mined root");
-        rig.views(
-            wallet(),
-            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
-        );
+        assert!(probe.probed().is_empty(), "idle: nothing to probe");
+        rig.views(wallet(), vec![send(2, &[outpoint(91, 0)])]);
 
         rig.actor.handle(Command::Uncertain(txid(2)));
         let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
@@ -3492,7 +3268,7 @@ mod tests {
         });
         rig.settle().await;
 
-        assert_eq!(probe.probed(), vec![txid(1), txid(2), txid(2)]);
+        assert_eq!(probe.probed(), vec![txid(2), txid(2)]);
     }
 
     /// A run that ends early (a probe panicked) leaves the roots it never sent
@@ -4048,7 +3824,6 @@ mod tests {
 
         assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
         assert!(rig.actor.state.schedules.is_empty());
-        assert!(rig.actor.state.finished.is_empty());
         assert_eq!(rig.actor.wallets[&wallet()].wait_until, None);
     }
 
@@ -4309,8 +4084,8 @@ mod tests {
         let probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
         assert!(matches!(
             &probed,
-            Ok((_, JobDone::Probed { root, report, .. }))
-                if *root == txid(1) && report.verdict == ProbeVerdict::Mined
+            Ok((_, JobDone::Probed { root, verdict, .. }))
+                if *root == txid(1) && *verdict == ProbeVerdict::Mined
         ));
 
         rig.handle(Command::Settled {
@@ -4323,38 +4098,10 @@ mod tests {
         assert!(!rig
             .sent()
             .contains(&ResolverEvent::Verdict(txid(2), mined())));
-        assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(2))));
-    }
-
-    /// A catch-up step while a probe is out: the answer is not judged
-    /// against a block the scan may still be on its way to.
-    #[tokio::test]
-    async fn should_not_judge_a_passed_block_after_a_catch_up_during_the_probe() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.height(wallet(), 100).await;
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 101,
-        });
-        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
-        rig.actor.joined(read); // root 1's probe spawned
-        let mut probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
-        let Ok((_, JobDone::Probed { report, .. })) = &mut probed else {
-            panic!("a probe answer");
-        };
-        *report = mined_report(Some(105));
-
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 101 + CATCH_UP_STEP + 30,
-        });
-        rig.actor.joined(probed);
-
-        assert!(matches!(
-            rig.actor.state.finished.get(&(wallet(), txid(1))),
-            Some(Final::Mined { .. })
-        ));
+        assert_ne!(
+            rig.actor.state.published.get(&(wallet(), txid(2))),
+            Some(&mined())
+        );
     }
 
     /// A settle unrelated to a forced send's chain does not probe that send
@@ -4465,14 +4212,7 @@ mod tests {
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
         assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
-        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))) else {
-            panic!("found mined");
-        };
-        assert_eq!(
-            rig.actor.wallets[&wallet()].wait_until,
-            Some(at + MINED_EVIDENCE_GRACE),
-            "idle until the mined evidence would go stale"
-        );
+        assert!(rig.actor.wallets[&wallet()].wait_until.is_some());
 
         rig.send(Command::WalletAdded(wallet())).await;
 
@@ -4482,312 +4222,8 @@ mod tests {
         assert_eq!(entry.height, None);
     }
 
-    /// Two nodes said mined, but the wallet follows a chain that never had
-    /// it: once the wallet has followed the tip `MINED_EVIDENCE_GRACE` blocks
-    /// past that report without seeing the transaction, the verdict is
-    /// cleared and the root probed again from scratch.
-    #[tokio::test]
-    async fn should_probe_again_when_the_wallet_never_sees_a_mined_root() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), mined())]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
-        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))).copied()
-        else {
-            panic!("found mined");
-        };
-        let probes_before = probe.probed().len();
-
-        // The wallet follows its chain, block by block, and never sees it.
-        for height in at + 1..=at + MINED_EVIDENCE_GRACE {
-            rig.height(wallet(), height).await;
-        }
-
-        let sent = rig.sent();
-        assert_eq!(
-            sent.first(),
-            Some(&ResolverEvent::Cleared(txid(1))),
-            "the stale verdict is withdrawn: {sent:?}"
-        );
-        assert!(
-            probe.probed().len() > probes_before,
-            "and the root is asked about again"
-        );
-    }
-
-    /// The grace counts from the block the nodes named when the wallet is
-    /// still short of it: evidence for block 105 reported while the wallet is
-    /// at 101 is not withdrawn before the wallet has had 105 + grace.
-    #[tokio::test]
-    async fn should_count_the_grace_from_the_reported_block() {
-        let mut state = ResolverState::default();
-        let root = DueRoot {
-            txid: txid(1),
-            transaction: Arc::new(tx(1, &[outpoint(90, 0)])),
-            own: true,
-            forced: false,
-        };
-        let report = ProbeReport {
-            verdict: ProbeVerdict::Mined,
-            in_block_by: BTreeSet::from(["a".to_string(), "b".to_string()]),
-            block_height: Some(105),
-        };
-        record_probe(&mut state, wallet(), 101, true, &root, &report);
-        assert_eq!(
-            state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined { at: 105 })
-        );
-        let views = [send(1, &[outpoint(90, 0)])];
-        assert_eq!(
-            next_pass_height(&state, wallet(), &views),
-            105 + MINED_EVIDENCE_GRACE
-        );
-    }
-
-    /// Mined evidence is stamped with the wallet's height when the answer
-    /// arrives: the wallet moved on while the probe was out, and the grace
-    /// counts from there, not from the height the pass started at.
-    #[tokio::test]
-    async fn should_stamp_mined_evidence_with_the_height_it_arrived_at() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.height(wallet(), 100).await;
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 101,
-        });
-        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
-        rig.actor.joined(read); // the probe is out
-        let probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 103,
-        });
-        rig.actor.joined(probed);
-        rig.settle().await;
-
-        assert_eq!(
-            rig.actor.state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined { at: 103 })
-        );
-    }
-
-    /// A child's own echo is its own evidence: when the parent's mined
-    /// evidence goes stale, the parent's verdict is withdrawn but the child's
-    /// echo-sourced acceptance stays.
-    #[tokio::test]
-    async fn should_keep_a_childs_echo_when_the_parents_mined_evidence_goes_stale() {
-        let probe = Arc::new(ScriptedProbe::new(&[
-            (txid(1), mined()),
-            (txid(2), unresolved()),
-        ]));
-        let mut rig = enabled(probe).await;
-        rig.views(
-            wallet(),
-            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
-        );
-        rig.follow(wallet(), 100).await;
-        rig.send(Command::Uncertain(txid(2))).await;
-        rig.send(Command::Echoed(txid(2))).await;
-        let sent = rig.sent();
-        assert!(
-            sent.contains(&ResolverEvent::Verdict(txid(2), ProbeVerdict::Accepted)),
-            "{sent:?}"
-        );
-        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))).copied()
-        else {
-            panic!("found mined");
-        };
-
-        for height in 102..=at + MINED_EVIDENCE_GRACE {
-            rig.height(wallet(), height).await;
-        }
-
-        let sent = rig.sent();
-        assert!(sent.contains(&ResolverEvent::Cleared(txid(1))), "{sent:?}");
-        assert!(!sent.contains(&ResolverEvent::Cleared(txid(2))), "{sent:?}");
-    }
-
-    fn mined_report(block_height: Option<u32>) -> ProbeReport {
-        ProbeReport {
-            verdict: ProbeVerdict::Mined,
-            in_block_by: BTreeSet::from(["a".to_string(), "b".to_string()]),
-            block_height,
-        }
-    }
-
-    fn due_root(n: u8) -> DueRoot {
-        DueRoot {
-            txid: txid(n),
-            transaction: Arc::new(tx(n, &[outpoint(90, 0)])),
-            own: true,
-            forced: false,
-        }
-    }
-
-    /// One node naming an absurd block height cannot make mined evidence
-    /// final: the grace moves at most one grace further.
-    #[test]
-    fn should_bound_the_grace_a_node_named_height_can_add() {
-        let mut state = ResolverState::default();
-        record_probe(
-            &mut state,
-            wallet(),
-            101,
-            true,
-            &due_root(1),
-            &mined_report(Some(4_000_000_000)),
-        );
-        assert_eq!(
-            state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined {
-                at: 101 + MINED_EVIDENCE_GRACE
-            })
-        );
-    }
-
-    /// A block the wallet already followed a grace past without the
-    /// transaction contradicts the report on arrival: accepted, not mined.
-    #[test]
-    fn should_not_record_mined_evidence_for_a_block_the_wallet_passed() {
-        let mut state = ResolverState::default();
-        let events = record_probe(
-            &mut state,
-            wallet(),
-            200,
-            true,
-            &due_root(1),
-            &mined_report(Some(150)),
-        );
-        assert!(state.finished.is_empty());
-        assert_eq!(
-            events
-                .iter()
-                .map(|item| item.event.clone())
-                .collect::<Vec<_>>(),
-            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
-        );
-    }
-
-    /// Votes from a report naming a block the wallet already followed a grace
-    /// past do not count towards the quorum later: a second node's heightless
-    /// vote alone does not make it mined.
-    #[test]
-    fn should_not_count_votes_for_a_passed_block_towards_the_quorum() {
-        let mut state = ResolverState::default();
-        let one = |node: &str, block_height| ProbeReport {
-            verdict: ProbeVerdict::Accepted,
-            in_block_by: BTreeSet::from([node.to_string()]),
-            block_height,
-        };
-        record_probe(
-            &mut state,
-            wallet(),
-            200,
-            true,
-            &due_root(1),
-            &one("a", Some(150)),
-        );
-        let events = record_probe(
-            &mut state,
-            wallet(),
-            200,
-            true,
-            &due_root(1),
-            &one("b", None),
-        );
-        assert!(state.finished.is_empty());
-        assert_eq!(
-            state.seen_in_block.get(&(wallet(), txid(1))),
-            Some(&BTreeSet::from(["b".to_string()]))
-        );
-        assert!(events
-            .iter()
-            .all(|event| !matches!(event.event, ResolverEvent::Verdict(_, ProbeVerdict::Mined))));
-    }
-
-    /// During catch-up the wallet may still be on its way to the named
-    /// block: the report is not judged behind, like stale evidence.
-    #[test]
-    fn should_record_mined_evidence_for_a_passed_block_during_catch_up() {
-        let mut state = ResolverState::default();
-        record_probe(
-            &mut state,
-            wallet(),
-            200,
-            false,
-            &due_root(1),
-            &mined_report(Some(150)),
-        );
-        assert_eq!(
-            state.finished.get(&(wallet(), txid(1))),
-            Some(&Final::Mined { at: 200 })
-        );
-    }
-
-    /// A probe never takes an echo's place: agreeing, mined or saying
-    /// nothing new, the verdict stays the echo's.
-    #[test]
-    fn should_keep_the_echo_as_the_source_whatever_a_probe_says() {
-        let mut state = ResolverState::default();
-        let key = (wallet(), txid(1));
-        assert!(state.publish(key, &ProbeVerdict::Accepted, Source::Echo));
-        for verdict in [ProbeVerdict::Accepted, ProbeVerdict::Mined, unresolved()] {
-            assert!(!state.publish(key, &verdict, Source::Probe));
-            assert!(state.echoed(&key));
-        }
-    }
-
-    /// The withdrawal stops at a descendant that stands on its own evidence:
-    /// neither it nor what is built on it goes with the stale root.
-    #[test]
-    fn should_not_withdraw_what_is_built_on_a_kept_descendant() {
-        let views = vec![
-            send(1, &[outpoint(90, 0)]),
-            send(2, &[outpoint(1, 1)]),
-            send(3, &[outpoint(2, 1)]),
-            send(4, &[outpoint(1, 2)]),
-        ];
-        let withdrawn =
-            with_descendants(&views, &HashSet::from([txid(1)]), |kept| *kept == txid(2));
-        assert_eq!(withdrawn, HashSet::from([txid(1), txid(4)]));
-    }
-
-    /// An echoed child probed as a root, with a verdict that agrees, keeps
-    /// its echo: the parent's stale evidence does not take it away.
-    #[tokio::test]
-    async fn should_keep_an_echo_a_probe_agreed_with() {
-        let probe = Arc::new(ScriptedProbe::new(&[
-            (txid(1), mined()),
-            (txid(2), ProbeVerdict::Accepted),
-        ]));
-        let mut rig = enabled(probe).await;
-        rig.views(
-            wallet(),
-            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
-        );
-        rig.follow(wallet(), 100).await;
-        rig.send(Command::Uncertain(txid(2))).await;
-        rig.send(Command::Echoed(txid(2))).await;
-        rig.height(wallet(), 102).await;
-        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))).copied()
-        else {
-            panic!("found mined");
-        };
-        rig.sent();
-
-        for height in 103..=at + MINED_EVIDENCE_GRACE {
-            rig.height(wallet(), height).await;
-        }
-
-        let sent = rig.sent();
-        assert!(sent.contains(&ResolverEvent::Cleared(txid(1))), "{sent:?}");
-        assert!(!sent.contains(&ResolverEvent::Cleared(txid(2))), "{sent:?}");
-    }
-
     /// An echoed send that leaves the wallet is forgotten by the next pass,
-    /// echo mark included.
+    /// its echo's verdict cleared.
     #[tokio::test]
     async fn should_forget_the_echo_of_a_send_that_left() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
@@ -4795,7 +4231,10 @@ mod tests {
         rig.follow(wallet(), 100).await;
         rig.send(Command::Uncertain(txid(1))).await;
         rig.send(Command::Echoed(txid(1))).await;
-        assert!(rig.actor.state.echoed(&(wallet(), txid(1))));
+        assert_eq!(
+            rig.actor.state.published.get(&(wallet(), txid(1))),
+            Some(&ProbeVerdict::Accepted)
+        );
 
         rig.views(wallet(), Vec::new());
         rig.send(Command::Seen {
@@ -4806,144 +4245,6 @@ mod tests {
         rig.height(wallet(), 102).await;
 
         assert!(rig.actor.state.published.is_empty());
-    }
-
-    /// Stale mined evidence is judged only while the wallet follows the tip:
-    /// a catch-up jump past the grace does not withdraw it, the next followed
-    /// block does.
-    #[tokio::test]
-    async fn should_withdraw_stale_mined_evidence_only_while_following() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))).copied()
-        else {
-            panic!("found mined");
-        };
-        rig.sent();
-
-        rig.height(wallet(), at + MINED_EVIDENCE_GRACE + 10).await; // catch-up
-        assert!(rig.sent().is_empty(), "a catch-up step withdraws nothing");
-
-        rig.height(wallet(), at + MINED_EVIDENCE_GRACE + 11).await; // following
-        assert_eq!(rig.sent().first(), Some(&ResolverEvent::Cleared(txid(1))));
-    }
-
-    /// Mined evidence the wallet confirms in time is settled, not withdrawn:
-    /// once settled, nothing about it is sent again however far the wallet
-    /// follows.
-    #[tokio::test]
-    async fn should_not_withdraw_mined_evidence_the_wallet_settled() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), mined())]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        rig.send(Command::Settled {
-            wallet_id: wallet(),
-            txids: HashSet::from([txid(1)]),
-        })
-        .await;
-        rig.views(wallet(), Vec::new());
-        rig.sent();
-        let probes = probe.probed().len();
-
-        for height in 102..=102 + MINED_EVIDENCE_GRACE {
-            rig.height(wallet(), height).await;
-        }
-
-        assert!(rig.sent().is_empty());
-        assert_eq!(probe.probed().len(), probes, "not asked about again");
-    }
-
-    /// A send built on a root reported mined became a root and got its own
-    /// verdict only because of that report: when the parent's evidence goes
-    /// stale, the child's verdict is withdrawn with it.
-    #[tokio::test]
-    async fn should_withdraw_the_verdicts_built_on_stale_mined_evidence() {
-        let probe = Arc::new(ScriptedProbe::new(&[
-            (txid(1), mined()),
-            (txid(2), ProbeVerdict::Accepted),
-        ]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(
-            wallet(),
-            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
-        );
-        rig.follow(wallet(), 100).await;
-        rig.height(wallet(), 102).await;
-        let sent = rig.sent();
-        assert!(
-            sent.contains(&ResolverEvent::Verdict(txid(1), mined())),
-            "{sent:?}"
-        );
-        assert!(
-            sent.contains(&ResolverEvent::Verdict(txid(2), ProbeVerdict::Accepted)),
-            "{sent:?}"
-        );
-        let Some(Final::Mined { at }) = rig.actor.state.finished.get(&(wallet(), txid(1))).copied()
-        else {
-            panic!("found mined");
-        };
-
-        for height in 103..=at + MINED_EVIDENCE_GRACE {
-            rig.height(wallet(), height).await;
-        }
-
-        let sent = rig.sent();
-        assert!(sent.contains(&ResolverEvent::Cleared(txid(1))), "{sent:?}");
-        assert!(sent.contains(&ResolverEvent::Cleared(txid(2))), "{sent:?}");
-    }
-
-    /// A rewind asks again about roots a probe found mined: the block it saw
-    /// may be one the replay drops.
-    #[tokio::test]
-    async fn should_forget_probe_found_mined_roots_on_a_rewind() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
-            txid(1),
-            ProbeVerdict::Mined,
-        )])))
-        .await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        assert_eq!(
-            rig.actor
-                .state
-                .finished
-                .get(&(wallet(), txid(1)))
-                .is_some_and(|result| matches!(result, Final::Mined { .. })),
-            true
-        );
-
-        rig.height(wallet(), 50).await;
-
-        assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
-    }
-
-    /// A probe sent before a rewind would answer Mined: the rewind stops it,
-    /// so nothing ends the root's probing across the replay.
-    #[tokio::test]
-    async fn should_not_record_a_final_verdict_from_a_probe_sent_before_a_rewind() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
-            txid(1),
-            ProbeVerdict::Mined,
-        )])))
-        .await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.height(wallet(), 100).await;
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 101,
-        });
-        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
-        rig.actor.joined(read); // root 1's probe is out
-
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 50,
-        });
-        rig.settle().await;
-
-        assert!(!rig.actor.state.finished.contains_key(&(wallet(), txid(1))));
     }
 
     /// A probe sent before a rewind would answer Mined: the answer belongs to
@@ -4971,58 +4272,7 @@ mod tests {
         rig.settle().await;
 
         assert!(rig.sent().is_empty());
-        assert!(rig.actor.state.finished.is_empty());
-    }
-
-    /// A probe whose every answer is one node's "in a block", a different
-    /// node each time — then, after that, Mined from the probe alone.
-    struct OneNodeInBlockPerProbe {
-        answers: StdMutex<VecDeque<ProbeReport>>,
-    }
-
-    #[async_trait]
-    impl AcceptanceProbe for OneNodeInBlockPerProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
-            self.answers
-                .lock()
-                .expect("answers")
-                .pop_front()
-                .unwrap_or_else(|| mined().into())
-        }
-    }
-
-    fn seen_by(node: &str) -> ProbeReport {
-        ProbeReport {
-            verdict: ProbeVerdict::Accepted,
-            in_block_by: BTreeSet::from([node.to_string()]),
-            block_height: None,
-        }
-    }
-
-    /// Two distinct nodes reporting the root in a block over two probes make
-    /// it mined, final — the root is not probed again.
-    #[tokio::test]
-    async fn should_settle_as_mined_when_two_nodes_saw_it_across_probes() {
-        let mut rig = enabled(Arc::new(OneNodeInBlockPerProbe {
-            answers: StdMutex::new(VecDeque::from([seen_by("a"), seen_by("b")])),
-        }))
-        .await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-        rig.height(wallet(), 102).await;
-        rig.height(wallet(), 103).await;
-
-        assert_eq!(
-            rig.actor
-                .state
-                .finished
-                .get(&(wallet(), txid(1)))
-                .is_some_and(|result| matches!(result, Final::Mined { .. })),
-            true
-        );
-        assert!(!rig
-            .sent()
-            .contains(&ResolverEvent::Verdict(txid(1), mined())));
+        assert!(rig.actor.state.published.is_empty());
     }
 
     /// A probe that panics on its `nth` call and accepts otherwise.
@@ -5033,7 +4283,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for PanicOnCall {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
             let call = {
                 let mut calls = self.calls.lock().expect("calls");
                 *calls += 1;
@@ -5042,7 +4292,7 @@ mod tests {
             if call == self.nth {
                 panic!("probe bug");
             }
-            ProbeVerdict::Accepted.into()
+            ProbeVerdict::Accepted
         }
     }
 
@@ -5081,7 +4331,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for PanickingProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
             panic!("probe bug");
         }
     }
@@ -5142,7 +4392,7 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for HangingProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
             let _torn_down = DropFlag(Arc::clone(&self.dropped));
             self.started.notify_one();
             std::future::pending().await
@@ -5190,9 +4440,9 @@ mod tests {
 
     #[async_trait]
     impl AcceptanceProbe for SnapshotProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeReport {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
             *self.seen.lock().expect("seen") = self.sink.0.lock().expect("sink").clone();
-            ProbeVerdict::Accepted.into()
+            ProbeVerdict::Accepted
         }
     }
 

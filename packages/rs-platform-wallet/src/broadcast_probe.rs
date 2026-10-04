@@ -35,10 +35,11 @@
 //! second opinion is asked by lookup, not by resubmitting. On a network with
 //! a single reachable evonode (a devnet pinned to one address) nothing is
 //! ever mined by probe, only accepted; the wallet's own block processing
-//! settles it. Mined is the nodes' word, not settlement: the resolver drops it
-//! and asks again if the wallet, following the tip, has not seen the
-//! transaction a few blocks later (a block a reorg dropped, or one the chain
-//! the wallet follows never had).
+//! settles it. Each probe judges on its own: there is no adding up of nodes
+//! across probes. Mined is the nodes' word, not settlement — the resolver
+//! keeps probing a mined send like any other until the wallet settles it, and
+//! a later probe may say only accepted (a block a reorg dropped, or one the
+//! chain the wallet follows never had).
 //!
 //! The two DAPI implementations surface those codes differently — the JS
 //! server maps `-25` to `InvalidArgument`, rs-dapi to `FailedPrecondition` —
@@ -48,7 +49,7 @@
 //!
 //! [`BroadcastError::MaybeSent`]: crate::broadcaster::BroadcastError::MaybeSent
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -118,15 +119,13 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
 /// The answer a probe gives about one transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeVerdict {
-    /// A node holds the transaction in its mempool, or nodes have it in a
-    /// block short of `Mined`: fewer than [`MINED_QUORUM`] of them, or a
-    /// block the wallet, following the tip, already passed by a few blocks
-    /// without seeing it. Not settlement: it can still expire or lose to a
-    /// conflict, so the resolver keeps asking.
+    /// A node holds the transaction in its mempool, or one node — short of
+    /// [`MINED_QUORUM`] — has it in a block. Not settlement: it can still
+    /// expire or lose to a conflict, so the resolver keeps asking.
     Accepted,
-    /// Two different nodes have the transaction in a block. The resolver stops
-    /// asking — unless the wallet, following the tip, has not seen it a few
-    /// blocks later; then the verdict is cleared and it asks again.
+    /// Two different nodes have the transaction in a block, within one probe.
+    /// Advisory, like Accepted: the resolver keeps asking until the wallet
+    /// settles the send, and a later probe may turn it back into Accepted.
     Mined,
     /// Not enough evidence that it landed; the transaction stays ambiguous.
     /// The reason says what the nodes answered, refusals included.
@@ -136,9 +135,8 @@ pub enum ProbeVerdict {
 /// Whether one node knows a txid (DAPI `getTransaction`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LookupAnswer {
-    /// The node has the transaction; `mined` when it is in a block, at
-    /// `height` when the node named one.
-    Known { mined: bool, height: Option<u32> },
+    /// The node has the transaction; `mined` when it is in a block.
+    Known { mined: bool },
     /// The node answered and does not have it.
     NotFound,
     /// No answer: transport failure, timeout, anything else.
@@ -168,10 +166,10 @@ const MAX_LOOKUPS_PER_PROBE: usize = 4;
 const REFUSAL_QUORUM: usize = 2;
 
 /// How many *distinct* nodes must report a transaction in a block before it
-/// counts as mined — final, never asked about again, its children probed in
-/// its place. One node on a stale fork, or one whose block is about to be
-/// reorged out, would otherwise settle it on false evidence. A single such
-/// answer still shows the transaction exists: it counts as accepted.
+/// counts as mined, within one probe. One node on a stale fork, or one whose
+/// block is about to be reorged out, would otherwise report it mined on false
+/// evidence. A single such answer still shows the transaction exists: it
+/// counts as accepted.
 pub(crate) const MINED_QUORUM: usize = 2;
 
 /// Resubmits a transaction whose broadcast outcome is unknown and turns the
@@ -182,30 +180,8 @@ pub(crate) const MINED_QUORUM: usize = 2;
 /// it will not. It can never create a second payment.
 #[async_trait]
 pub trait AcceptanceProbe: Send + Sync + 'static {
-    /// The verdict, and what else the probe learned.
-    async fn probe(&self, transaction: &Transaction) -> ProbeReport;
-}
-
-/// A probe's verdict, and the identified nodes that reported the transaction
-/// in a block. The resolver adds these up across probes of one root:
-/// [`MINED_QUORUM`] distinct nodes over several probes make it mined too.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProbeReport {
-    pub verdict: ProbeVerdict,
-    pub in_block_by: BTreeSet<String>,
-    /// The highest block height a node's lookup placed the transaction at,
-    /// when one did (a submission's "already in the block chain" names none).
-    pub block_height: Option<u32>,
-}
-
-impl From<ProbeVerdict> for ProbeReport {
-    fn from(verdict: ProbeVerdict) -> Self {
-        Self {
-            verdict,
-            in_block_by: BTreeSet::new(),
-            block_height: None,
-        }
-    }
+    /// What the nodes answered, judged within this one probe.
+    async fn probe(&self, transaction: &Transaction) -> ProbeVerdict;
 }
 
 /// Evidence rules shared by every probe: a node holding the transaction in its
@@ -219,11 +195,10 @@ impl From<ProbeVerdict> for ProbeReport {
 pub(crate) async fn probe_with(
     submitter: &dyn NodeSubmitter,
     transaction: &Transaction,
-) -> ProbeReport {
+) -> ProbeVerdict {
     let mut refusing_nodes: HashSet<String> = HashSet::new();
     let mut first_refusal: Option<String> = None;
     let mut last_other = String::from("no submission was answered");
-    let report = ProbeReport::from;
 
     for _ in 0..MAX_SUBMISSIONS_PER_PROBE {
         let (node, verdict) = submitter.submit(transaction).await;
@@ -234,7 +209,7 @@ pub(crate) async fn probe_with(
             "broadcast probe: node answered"
         );
         match verdict {
-            NodeVerdict::Accepted => return report(ProbeVerdict::Accepted),
+            NodeVerdict::Accepted => return ProbeVerdict::Accepted,
             NodeVerdict::Mined => {
                 // In a block by this node's word. A second opinion comes from
                 // a lookup, not from sending it again.
@@ -268,7 +243,7 @@ pub(crate) async fn probe_with(
         }
     }
 
-    report(ProbeVerdict::Unresolved {
+    ProbeVerdict::Unresolved {
         reason: match first_refusal {
             None => last_other,
             Some(reason) => format!(
@@ -276,7 +251,7 @@ pub(crate) async fn probe_with(
                 refusing_nodes.len()
             ),
         },
-    })
+    }
 }
 
 /// Why a probe turns to lookups.
@@ -293,8 +268,6 @@ enum LookupFor {
 #[derive(Default)]
 struct MinedEvidence {
     nodes: HashSet<String>,
-    /// The highest block height a lookup named.
-    height: Option<u32>,
     /// Any node said so, identified or not: the transaction exists.
     seen: bool,
 }
@@ -319,7 +292,7 @@ async fn confirm_by_lookup(
     submitter: &dyn NodeSubmitter,
     transaction: &Transaction,
     purpose: LookupFor,
-) -> ProbeReport {
+) -> ProbeVerdict {
     let txid = &transaction.txid();
     let mut mined = MinedEvidence::default();
     let refused = match purpose {
@@ -328,11 +301,6 @@ async fn confirm_by_lookup(
             None
         }
         LookupFor::Refused { reason } => Some(reason),
-    };
-    let report = |verdict, mined: &MinedEvidence| ProbeReport {
-        verdict,
-        in_block_by: mined.nodes.iter().cloned().collect(),
-        block_height: mined.height,
     };
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
@@ -345,18 +313,12 @@ async fn confirm_by_lookup(
             "broadcast probe: txid lookup answered"
         );
         match answer {
-            LookupAnswer::Known {
-                mined: true,
-                height,
-            } => {
-                mined.height = mined.height.max(height);
+            LookupAnswer::Known { mined: true } => {
                 if mined.add(node) {
-                    return report(ProbeVerdict::Mined, &mined);
+                    return ProbeVerdict::Mined;
                 }
             }
-            LookupAnswer::Known { mined: false, .. } => {
-                return report(ProbeVerdict::Accepted, &mined)
-            }
+            LookupAnswer::Known { mined: false } => return ProbeVerdict::Accepted,
             LookupAnswer::NotFound => {
                 if let Some(node) = node {
                     not_found.insert(node);
@@ -372,17 +334,14 @@ async fn confirm_by_lookup(
     }
     // A node's word that it is in a block: it exists, not settled as final.
     let Some(reason) = refused.filter(|_| !mined.seen) else {
-        return report(ProbeVerdict::Accepted, &mined);
+        return ProbeVerdict::Accepted;
     };
-    report(
-        ProbeVerdict::Unresolved {
-            reason: format!(
-                "refused as {reason}; {} node(s) do not know the txid; last other lookup answer: {last_unknown}",
-                not_found.len()
-            ),
-        },
-        &mined,
-    )
+    ProbeVerdict::Unresolved {
+        reason: format!(
+            "refused as {reason}; {} node(s) do not know the txid; last other lookup answer: {last_unknown}",
+            not_found.len()
+        ),
+    }
 }
 
 /// What a node's `getTransaction` answer says. A block hash with no height and
@@ -395,10 +354,7 @@ fn lookup_answer(tx: &GetTransactionResponse) -> LookupAnswer {
             reason: "known only from a block off the active chain".to_string(),
         };
     }
-    LookupAnswer::Known {
-        mined,
-        height: Some(tx.height).filter(|height| *height > 0),
-    }
+    LookupAnswer::Known { mined }
 }
 
 /// One node per request: the probe decides whether to ask another, and it has
@@ -484,7 +440,7 @@ impl DapiAcceptanceProbe {
 
 #[async_trait]
 impl AcceptanceProbe for DapiAcceptanceProbe {
-    async fn probe(&self, transaction: &Transaction) -> ProbeReport {
+    async fn probe(&self, transaction: &Transaction) -> ProbeVerdict {
         probe_with(&self.submitter, transaction).await
     }
 }
@@ -586,17 +542,11 @@ mod tests {
     }
 
     fn in_block() -> LookupAnswer {
-        LookupAnswer::Known {
-            mined: true,
-            height: None,
-        }
+        LookupAnswer::Known { mined: true }
     }
 
     fn in_mempool() -> LookupAnswer {
-        LookupAnswer::Known {
-            mined: false,
-            height: None,
-        }
+        LookupAnswer::Known { mined: false }
     }
 
     fn conflict() -> NodeVerdict {
@@ -701,7 +651,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            probe_with(&nodes, &transaction()).await.verdict,
+            probe_with(&nodes, &transaction()).await,
             ProbeVerdict::Accepted
         );
         assert_eq!(nodes.submissions(), 2);
@@ -717,7 +667,7 @@ mod tests {
             vec![(Some("a"), conflict()), (Some("b"), refused())],
         ] {
             let nodes = ScriptedNodes::new(answers);
-            let verdict = probe_with(&nodes, &transaction()).await.verdict;
+            let verdict = probe_with(&nodes, &transaction()).await;
 
             assert!(is_unresolved(&verdict), "{verdict:?}");
             assert_eq!(nodes.lookups_made(), REFUSAL_QUORUM);
@@ -728,8 +678,7 @@ mod tests {
     async fn should_keep_the_refusal_in_the_unresolved_reason() {
         let nodes = ScriptedNodes::new(vec![(Some("a"), conflict()), (Some("b"), conflict())]);
 
-        let ProbeVerdict::Unresolved { reason } = probe_with(&nodes, &transaction()).await.verdict
-        else {
+        let ProbeVerdict::Unresolved { reason } = probe_with(&nodes, &transaction()).await else {
             panic!("expected unresolved");
         };
         assert!(reason.contains("tx-txlock-conflict"), "{reason}");
@@ -746,9 +695,7 @@ mod tests {
             (Some("a"), refused()),
         ]);
 
-        assert!(is_unresolved(
-            &probe_with(&nodes, &transaction()).await.verdict
-        ));
+        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
         assert_eq!(nodes.submissions(), MAX_SUBMISSIONS_PER_PROBE);
         assert_eq!(nodes.lookups_made(), 0);
     }
@@ -757,9 +704,7 @@ mod tests {
     async fn should_not_count_an_unidentified_node_towards_the_refusal_quorum() {
         let nodes = ScriptedNodes::new(vec![(Some("a"), refused()), (None, refused())]);
 
-        assert!(is_unresolved(
-            &probe_with(&nodes, &transaction()).await.verdict
-        ));
+        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
         assert_eq!(nodes.lookups_made(), 0);
     }
 
@@ -777,9 +722,7 @@ mod tests {
             (Some("d"), unknown()),
         ]);
 
-        assert!(is_unresolved(
-            &probe_with(&nodes, &transaction()).await.verdict
-        ));
+        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
         assert_eq!(nodes.submissions(), MAX_SUBMISSIONS_PER_PROBE);
     }
 
@@ -791,9 +734,7 @@ mod tests {
             (Some("c"), refused()),
         ]);
 
-        assert!(is_unresolved(
-            &probe_with(&nodes, &transaction()).await.verdict
-        ));
+        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
         assert_eq!(nodes.submissions(), 3);
         assert_eq!(nodes.lookups_made(), REFUSAL_QUORUM);
     }
@@ -809,7 +750,7 @@ mod tests {
         );
 
         assert_eq!(
-            probe_with(&nodes, &transaction()).await.verdict,
+            probe_with(&nodes, &transaction()).await,
             ProbeVerdict::Mined
         );
         assert_eq!(nodes.lookups_made(), 2);
@@ -828,35 +769,13 @@ mod tests {
             vec![(Some("a"), in_block())],
         );
 
-        assert_eq!(
-            probe_with(&two, &transaction()).await.verdict,
-            ProbeVerdict::Mined
-        );
+        assert_eq!(probe_with(&two, &transaction()).await, ProbeVerdict::Mined);
         assert_eq!(two.submissions(), 1, "the second opinion is a lookup");
         assert_eq!(
-            probe_with(&same_twice, &transaction()).await.verdict,
+            probe_with(&same_twice, &transaction()).await,
             ProbeVerdict::Accepted,
             "one node's word: it exists, not that it is final"
         );
-    }
-
-    /// The block height a lookup names rides on the report, for the resolver
-    /// to count its grace from.
-    #[tokio::test]
-    async fn should_report_the_block_height_a_lookup_named() {
-        let nodes = ScriptedNodes::with_lookups(
-            vec![(Some("a"), NodeVerdict::Mined)],
-            vec![(
-                Some("b"),
-                LookupAnswer::Known {
-                    mined: true,
-                    height: Some(1_234),
-                },
-            )],
-        );
-        let report = probe_with(&nodes, &transaction()).await;
-        assert_eq!(report.verdict, ProbeVerdict::Mined);
-        assert_eq!(report.block_height, Some(1_234));
     }
 
     /// A node that has the transaction in a block makes it exist, whatever
@@ -872,12 +791,9 @@ mod tests {
             ],
         );
 
-        let report = probe_with(&refused_then_seen_mined, &transaction()).await;
-        assert_eq!(report.verdict, ProbeVerdict::Accepted);
         assert_eq!(
-            report.in_block_by,
-            BTreeSet::from(["c".to_string()]),
-            "reported, for the resolver to add up across probes"
+            probe_with(&refused_then_seen_mined, &transaction()).await,
+            ProbeVerdict::Accepted
         );
     }
 
@@ -893,14 +809,7 @@ mod tests {
         };
 
         assert_eq!(answer(Vec::new(), 0, 0), in_mempool());
-        assert_eq!(
-            answer(vec![1; 32], 100, 3),
-            LookupAnswer::Known {
-                mined: true,
-                height: Some(100),
-            },
-            "the node's block height is kept"
-        );
+        assert_eq!(answer(vec![1; 32], 100, 3), in_block());
         assert!(matches!(
             answer(vec![1; 32], 0, 0),
             LookupAnswer::Unknown { .. }
@@ -919,9 +828,7 @@ mod tests {
             ],
         );
 
-        assert!(is_unresolved(
-            &probe_with(&nodes, &transaction()).await.verdict
-        ));
+        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
         assert_eq!(nodes.lookups_made(), MAX_LOOKUPS_PER_PROBE);
     }
 
@@ -944,7 +851,7 @@ mod tests {
         );
 
         assert_eq!(
-            probe_with(&nodes, &transaction()).await.verdict,
+            probe_with(&nodes, &transaction()).await,
             ProbeVerdict::Accepted
         );
     }
