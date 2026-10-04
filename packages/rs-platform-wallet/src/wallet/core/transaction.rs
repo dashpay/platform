@@ -96,6 +96,17 @@ pub fn is_final(utxo: &Utxo) -> bool {
     utxo.is_confirmed || utxo.is_instantlocked
 }
 
+/// Code 59 for a coin the caller chose as an input that is not final: it
+/// names the coin, and `waiting` is its value.
+pub fn input_awaiting_network(utxo: &Utxo) -> PlatformWalletError {
+    PlatformWalletError::CoreFundsAwaitingNetwork {
+        available: None,
+        waiting: utxo.value(),
+        required: None,
+        outpoint: Some(utxo.outpoint),
+    }
+}
+
 /// Makes a fresh copy of a build's configuration — what
 /// [`CoreWallet::finalize_transaction_from`] builds from, and what it tries
 /// again, on a shortfall, as if the coins not final yet were final.
@@ -182,32 +193,20 @@ pub(crate) fn trial_with_waiting_coins(
     let generation = Arc::clone(&info.generation);
     let accounts = &mut info.core_wallet.accounts;
     // One scan for the spendable coins that are not final, before anything
-    // is made, snapshotted or cloned: a shortfall with none (the common case)
-    // costs only this.
-    let mut candidates: Vec<(AccountType, OutPoint, u64)> = Vec::new();
+    // is made or cloned: a shortfall with none (the common case) costs only
+    // this. A pinned one is left out: the build refuses an input an in-flight
+    // broadcast pins (`InputMidBroadcast`), so the trial must not count on it.
+    let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
+    let mut promote: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
     for at in offered {
         let Some(managed) = accounts.funds_account(at) else {
             continue;
         };
-        candidates.extend(
-            managed
-                .utxos
-                .values()
-                .filter(|utxo| utxo.is_spendable(height) && !is_final(utxo))
-                .map(|utxo| (*at, utxo.outpoint, utxo.value())),
-        );
-    }
-    if candidates.is_empty() {
-        return None;
-    }
-    // The build refuses an input an in-flight broadcast pins
-    // (`InputMidBroadcast`): the trial must not count on one either.
-    let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
-    let mut promote: HashMap<AccountType, Vec<OutPoint>> = HashMap::new();
-    for (at, outpoint, value) in candidates {
-        if !pinned.contains(&outpoint) {
-            waiting.insert(outpoint, value);
-            promote.entry(at).or_default().push(outpoint);
+        for utxo in managed.utxos.values().filter(|utxo| {
+            utxo.is_spendable(height) && !is_final(utxo) && !pinned.contains(&utxo.outpoint)
+        }) {
+            waiting.insert(utxo.outpoint, utxo.value());
+            promote.entry(*at).or_default().push(utxo.outpoint);
         }
     }
     if waiting.is_empty() {
@@ -1080,12 +1079,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     });
                 }
                 if !is_final(utxo) {
-                    return Err(PlatformWalletError::CoreFundsAwaitingNetwork {
-                        available: None,
-                        waiting: utxo.value(),
-                        required: None,
-                        outpoint: Some(*outpoint),
-                    });
+                    return Err(input_awaiting_network(utxo));
                 }
                 seeds.push(utxo.clone());
             }
@@ -1238,12 +1232,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // flag. The resident coins are what gets signed: check those,
             // still under the write guard.
             if let Some(stale) = selected.iter().find(|utxo| !is_final(utxo)) {
-                let error = PlatformWalletError::CoreFundsAwaitingNetwork {
-                    available: None,
-                    waiting: stale.value(),
-                    required: None,
-                    outpoint: Some(stale.outpoint),
-                };
+                let error = input_awaiting_network(stale);
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(error);
             }

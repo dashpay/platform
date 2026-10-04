@@ -19,8 +19,8 @@ pub(crate) use transaction::{
     build_error_awaiting_network, is_shortfall, resolve_source_accounts, trial_with_waiting_coins,
 };
 pub use transaction::{
-    check_fee_rate, is_final, BuilderFactory, FinalizeOptions, SignedCoreTransaction,
-    ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
+    check_fee_rate, input_awaiting_network, is_final, BuilderFactory, FinalizeOptions,
+    SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
 };
 pub use wallet::CoreWallet;
 
