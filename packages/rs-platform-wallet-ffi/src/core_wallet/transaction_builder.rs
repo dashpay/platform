@@ -17,7 +17,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-use platform_wallet::{is_final, FinalizeOptions, PlatformWalletError};
+use platform_wallet::{check_fee_rate, is_final, FinalizeOptions, PlatformWalletError};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
@@ -78,7 +78,7 @@ impl BuilderState {
             Step::SetFeeRate(rate) => Some(*rate),
             _ => None,
         }) {
-            checked_rate(rate)?;
+            check_fee_rate(rate)?;
         }
         self.recipe
             .iter()
@@ -104,28 +104,6 @@ impl BuilderState {
     }
 }
 
-/// The largest size key-wallet could be asked to price. Coin selection
-/// prices candidate sets before it enforces the input limit, so the bound is
-/// not a standard transaction but every coin a wallet could hold: `u32::MAX`
-/// bytes is some 29 million 148-byte inputs.
-const MAX_PRICED_BYTES: u64 = u32::MAX as u64;
-
-/// key-wallet multiplies the rate by the size unchecked: a host rate whose fee
-/// for the largest size it could price overflows is a typed error here,
-/// before any build (or waiting-coins trial) prices with it — not a panic,
-/// not a wrapped fee. Every rate up to about 42.9 DASH per kB passes.
-fn checked_rate(rate: FeeRate) -> Result<(), PlatformWalletError> {
-    rate.as_sat_per_kb()
-        .checked_mul(MAX_PRICED_BYTES)
-        .map(|_| ())
-        .ok_or_else(|| {
-            PlatformWalletError::TransactionBuild(format!(
-                "fee rate {} sat/kb overflows the fee arithmetic",
-                rate.as_sat_per_kb()
-            ))
-        })
-}
-
 impl FFITransactionBuilder {
     /// Reclaim both heap boxes of a builder a finalizer consumes: the network
     /// it was made for, its recorded configuration and inputs, and how to fund
@@ -147,10 +125,8 @@ impl FFITransactionBuilder {
     /// The inner state.
     ///
     /// # Safety
-    /// `self.inner` must point at a live `BuilderState`, and no other
-    /// reference to it may be alive.
-    #[allow(clippy::mut_from_ref)]
-    unsafe fn state(&self) -> &mut BuilderState {
+    /// `self.inner` must point at a live `BuilderState`.
+    unsafe fn state(&mut self) -> &mut BuilderState {
         &mut *(self.inner as *mut BuilderState)
     }
 
@@ -158,7 +134,7 @@ impl FFITransactionBuilder {
     ///
     /// # Safety
     /// `self.inner` must point at a live `BuilderState`.
-    unsafe fn record(&self, step: Step) {
+    unsafe fn record(&mut self, step: Step) {
         self.state().recipe.push(step);
     }
 }
@@ -1744,9 +1720,8 @@ mod pooled_balance_handle_tests {
         runtime().block_on(core.abandon_transaction(&built));
     }
 
-    /// The output sum the builder saw stands in for the requirement
-    /// key-wallet does not name when no coin is final: a payment the waiting
-    /// coins could never cover is insufficient funds, not code 59.
+    /// With no coin final, the trial decides: a payment the waiting coins
+    /// could never cover is insufficient funds, one they cover is code 59.
     #[test]
     fn should_call_a_payment_beyond_every_coin_insufficient_with_no_final_coin() {
         let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(

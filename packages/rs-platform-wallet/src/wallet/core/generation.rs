@@ -3,7 +3,7 @@
 //! in-broadcast outpoint pins that fence a mid-dispatch transaction's inputs
 //! against concurrent re-selection.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -554,6 +554,15 @@ impl WalletGeneration {
             .iter()
             .map(|input| input.previous_output)
             .find(|outpoint| pinned.contains_key(outpoint))
+    }
+
+    /// Every outpoint an in-flight broadcast pins now — what
+    /// [`in_broadcast_conflict`](Self::in_broadcast_conflict) would refuse —
+    /// pruned the same way.
+    pub(crate) fn in_broadcast_outpoints(&self) -> HashSet<OutPoint> {
+        let mut pinned = self.in_broadcast_lock();
+        pinned.retain(|_, fence| fence.blocks());
+        pinned.keys().copied().collect()
     }
 
     /// Release the pending-spend fence on every outpoint in `outpoints` that

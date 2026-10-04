@@ -183,19 +183,6 @@ pub(crate) fn collect_views(info: &PlatformWalletInfo, signs: bool) -> Vec<Outgo
     }))
 }
 
-/// Whether `record` shows the wallet spending its own coins, i.e. the wallet
-/// signed the transaction. A contact's watch-only chain
-/// (`DashpayExternalAccount`, [`AccountType::is_contact_owned`]) records
-/// input details when the *contact* spends a payment it received: that is
-/// the contact's send, not this wallet's — the same rule the changeset
-/// projection applies. Such a record still takes part in the chain walk as
-/// an ancestor of a send that is ours.
-///
-/// [`AccountType::is_contact_owned`]: key_wallet::account::AccountType::is_contact_owned
-fn spends_own_coins(record: &TransactionRecord) -> bool {
-    record_spends_own_coins(record)
-}
-
 /// One account's record as the resolver sees it; `finalized`: whether the
 /// account holds the transaction finalized, asked only of a record not
 /// already settled; `signs`: the wallet can sign ([`Wallet::can_sign`]).
@@ -207,7 +194,11 @@ fn record_facts(
     RecordFacts {
         txid: record.txid,
         settled: is_settled(record) || finalized(),
-        own: signs && spends_own_coins(record),
+        // The wallet signed it: it spends coins the wallet owns
+        // ([`record_spends_own_coins`]; a contact's watch-only chain records
+        // the contact's spends). Other records still take part in the chain
+        // walk as ancestors of a send that is ours.
+        own: signs && record_spends_own_coins(record),
         transaction: &record.transaction,
     }
 }

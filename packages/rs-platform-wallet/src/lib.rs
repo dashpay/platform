@@ -61,7 +61,7 @@ pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
 pub use wallet::core::WalletBalance;
 pub use wallet::core::{
-    is_final, BuilderFactory, CoreWallet, FinalizeOptions, SignedCoreTransaction,
+    check_fee_rate, is_final, BuilderFactory, CoreWallet, FinalizeOptions, SignedCoreTransaction,
     ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
 };
 pub use wallet::signed_payment_registry::{
