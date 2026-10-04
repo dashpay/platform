@@ -33,6 +33,11 @@ use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use dpp::ProtocolError;
 use drive::grovedb::TransactionArg;
 
+/// Version 0's validation pipeline, with Shield proof verification deferred to its
+/// action transformer after authentication and input balance/nonce checks. This
+/// lets a funded proof failure produce a fee-paying nonce-bump action instead of
+/// returning an unpaid refusal in the shared proof step. Other transitions keep
+/// their existing proof-validation path.
 pub(super) fn process_state_transition_v1<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     block_info: &BlockInfo,

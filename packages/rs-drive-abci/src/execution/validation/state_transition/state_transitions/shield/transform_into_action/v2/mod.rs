@@ -49,6 +49,13 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
 }
 
 impl ShieldStateTransitionTransformIntoActionValidationV2 for ShieldTransition {
+    /// Version 1's nullifier checks and successful shielding, with proof verification
+    /// performed here during block validation so an authenticated bad proof can return
+    /// a paid nonce-bump action. The input principal is restored, and the fixed penalty
+    /// is capped by signed fee-payer funds left after reserving the estimated base fee.
+    /// Insufficient base-fee funds and duplicate nullifiers still produce unpaid
+    /// refusals; nullifiers are checked before the proof. CheckTx keeps proof
+    /// verification in its caller, and rechecks do not verify it again.
     #[allow(clippy::too_many_arguments)]
     fn transform_into_action_v2(
         &self,
