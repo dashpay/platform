@@ -2238,7 +2238,9 @@ mod tests {
             .collect();
         views.extend((101..=150u8).map(|n| send(n, &[outpoint(100, u32::from(n))])));
         let graph = ChainGraph::new(&views);
-        assert_eq!(roots(&views), BTreeSet::from([txid(1)]));
+        let found: BTreeSet<Txid> = graph.roots().iter().map(|view| view.txid).collect();
+        assert_eq!(found, BTreeSet::from([txid(1)]));
+        assert_eq!(graph.expanded.get(), 150, "roots(): one walk for all sends");
         let before = graph.expanded.get();
         assert_eq!(
             graph.roots_of((101..=150u8).map(txid)),
@@ -2355,7 +2357,8 @@ mod tests {
         [7u8; 32]
     }
 
-    /// A final verdict: the root is not probed again.
+    /// The nodes' advisory word that a send is in a block: the root is still
+    /// probed until the wallet settles it.
     fn mined() -> ProbeVerdict {
         ProbeVerdict::Mined
     }
@@ -4080,7 +4083,8 @@ mod tests {
         });
         let read = rig.actor.jobs.join_next_with_id().await.expect("read");
         rig.actor.joined(read); // root 1's probe spawned
-                                // Its finished answer, held back: completed, not yet handled.
+
+        // Its finished answer, held back: completed, not yet handled.
         let probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
         assert!(matches!(
             &probed,
@@ -4236,6 +4240,8 @@ mod tests {
             Some(&ProbeVerdict::Accepted)
         );
 
+        rig.sent();
+
         rig.views(wallet(), Vec::new());
         rig.send(Command::Seen {
             wallet_id: wallet(),
@@ -4244,6 +4250,7 @@ mod tests {
         .await;
         rig.height(wallet(), 102).await;
 
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
         assert!(rig.actor.state.published.is_empty());
     }
 
