@@ -80,16 +80,13 @@ mod tests {
             None
         );
 
-        for (core_height, balance) in [(10u32, 1_000u64), (11, 1_100), (12, 1_200)] {
-            drive
-                .record_core_credit_pool_block(
-                    core_height,
-                    balance,
-                    Some(&transaction),
-                    platform_version,
-                )
-                .expect("expected to record the block");
-        }
+        drive
+            .record_core_credit_pool_blocks(
+                &[(10, 1_000), (11, 1_100), (12, 1_200)],
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the blocks");
 
         assert_eq!(
             drive

@@ -79,15 +79,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
 ///    withdrawal eventually fits and cannot block the pooling queue. The base has
 ///    no fixed cap: what Core will mine bounds pooling through the Core-anchored
-///    limit of note 70 instead. The credit inflows of the active window — every
+///    limit of note 74 instead. The credit inflows of the active window — every
 ///    credit mint, recorded per block by `record_credit_inflows_for_withdrawals`
 ///    in the credit inflows sum tree — are added to the base, so the limit
 ///    counts net outflow and a matching deposit -> withdraw cycle does not
 ///    consume the budget of other users (#4471), mirroring Core v24's net
-///    credit-pool rule. An asset lock Core mined longer ago than its window
-///    minus its asset unlock validity (`core_expiration_blocks`) adds no
-///    inflow: Core no longer counts it in full either. Both the
-///    inflows and the pooled reservations count over the
+///    credit-pool rule. Both the inflows and the pooled reservations count over the
 ///    interval after the base snapshot only — an entry the snapshot already
 ///    reflects is neither added nor subtracted again. The base is
 ///    the total credits recorded at the latest block at least 24 hours before
@@ -106,7 +103,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    exactly as before. Pre-V24 Core caps unlocks at `LimitAmountV22` (2000
 ///    Dash) per *block*, with the amount checked only at block level, so any
 ///    daily total is still minable across blocks; V24 limits the net drop of
-///    its credit pool per 576-block window, which note 70 follows.
+///    its credit pool per 576-block window, which note 74 follows.
 /// 5. **Time-range indexes**: an index can declare a `timeRange` transform
 ///    that buckets a required system timestamp (`$createdAt` /
 ///    `$updatedAt` / `$transferredAt`) into fixed-length, regularly-spaced,
@@ -1864,7 +1861,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the key of an index a delete clears that skips nothing, so no two
 ///     documents in state share one of its entries. Inert for every contract
 ///     without the keyword, which every earlier grammar refuses.
-/// 70. **Withdrawals also fit a Core-anchored limit**: pooling
+/// 70. **A contested type sums only small values**: parser generation 3, in
+///     place, refuses under full validation a document type with a contested
+///     index and a summed property (`summable`, `averageable`,
+///     `documentsSummable` or `documentsAverageable`) unless the property's
+///     schema declares a `minimum` of at least -2^27 and a `maximum` of at most
+///     2^27 (`SYSTEM_LIMITS_V4.max_contested_summed_value_magnitude`, `None` in
+///     the earlier tables). The end of a contest writes the winner's document
+///     into the type's sums with no transition to refuse, so the values must be
+///     small enough that the sums stay in `i64`, which they do short of 2^36
+///     documents. A stored contract still parses.
+/// 74. **Withdrawals also fit a Core-anchored limit**: pooling
 ///     (`pool_withdrawals_into_transactions_queue` 2, which reuses version 1's
 ///     pooling through a shared helper) admits withdrawals up to the smaller of
 ///     the daily withdrawal limit (note 4) and
@@ -1878,31 +1885,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     height, up to Core's asset unlock validity, `core_expiration_blocks` 48,
 ///     later), at least
 ///     `core_credit_pool_unlock_limit_floor` (1500 Dash; Core's floor is 2000),
-///     less what is queued or broadcast and not mined yet. The formula is
+///     less what is queued or broadcast and not completed yet. The formula is
 ///     `core_credit_pool_unlock_limit` 0 in `DPP_METHOD_VERSIONS_V3`. Before
 ///     pooling, `scan_core_blocks_for_withdrawals` reads the Core blocks the
 ///     chain locked height passed (at most `core_blocks_scanned_per_block_limit`,
 ///     32, per block) and records each one's credit pool balance, read from the
 ///     block's coinbase alone (`getspecialtxes`), under the withdrawals tree. The
-///     Platform-side
-///     accounting can grant more than Core will mine (an asset lock published to
+///     Platform-side accounting can grant more than Core will mine (an asset lock published to
 ///     Platform after Core mined it, a whole epoch of Core rewards minted in one
 ///     block); over Core's limit an unlock waits unmined and is re-signed, and
 ///     while Core's mempool holds more than the limit Core InstantSend-locks no
 ///     withdrawal at all. The balance tree is created at genesis and by
 ///     `transition_to_version_14`, and `cleanup_expired_locks_of_withdrawal_amounts`
 ///     1 prunes it by Core height.
-///
-/// 70. **A contested type sums only small values**: parser generation 3, in
-///     place, refuses under full validation a document type with a contested
-///     index and a summed property (`summable`, `averageable`,
-///     `documentsSummable` or `documentsAverageable`) unless the property's
-///     schema declares a `minimum` of at least -2^27 and a `maximum` of at most
-///     2^27 (`SYSTEM_LIMITS_V4.max_contested_summed_value_magnitude`, `None` in
-///     the earlier tables). The end of a contest writes the winner's document
-///     into the type's sums with no transition to refuse, so the values must be
-///     small enough that the sums stay in `i64`, which they do short of 2^36
-///     documents. A stored contract still parses.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

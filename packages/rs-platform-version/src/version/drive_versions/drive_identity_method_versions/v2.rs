@@ -63,7 +63,7 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 ///   tree so the daily withdrawal limit counts net outflow instead of gross —
 ///   a deposit -> withdraw cycle no longer consumes the budget of other users.
 ///   The subtree does not exist before v14, so V1 keeps the slot `None`.
-/// * `withdrawals.record_core_credit_pool_block`,
+/// * `withdrawals.record_core_credit_pool_blocks`,
 ///   `withdrawals.fetch_core_credit_pool_balances` and
 ///   `withdrawals.fetch_in_flight_withdrawal_amount` `None -> Some(0)`: the
 ///   Core-anchored withdrawal limit, which reads Core's credit pool balance as
@@ -228,7 +228,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             record_total_credits_history: Some(0), // new in v14: total credits history for the day-lagged daily withdrawal limit
             fetch_total_credits_in_platform_a_day_ago: Some(0), // new in v14
             record_credit_inflows: Some(0), // new in v14: credit inflows sum tree for the net daily withdrawal limit
-            record_core_credit_pool_block: Some(0), // new in v14: Core credit pool balances for the Core-anchored withdrawal limit
+            record_core_credit_pool_blocks: Some(0), // new in v14: Core credit pool balances for the Core-anchored withdrawal limit
             fetch_core_credit_pool_balances: Some(0), // new in v14
             fetch_in_flight_withdrawal_amount: Some(0), // new in v14
         },

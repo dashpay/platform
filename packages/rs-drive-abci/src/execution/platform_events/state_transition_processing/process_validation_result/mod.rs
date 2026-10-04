@@ -5,12 +5,12 @@ use super::StateTransitionAwareError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::fee::Credits;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -57,7 +57,7 @@ where
         validation_result: ConsensusValidationResult<ExecutionEvent>,
         block_info: &BlockInfo,
         transaction: &Transaction,
-        block_credit_mints: &mut BlockCreditMints,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
@@ -150,7 +150,7 @@ mod tests {
                 validation_result,
                 &BlockInfo::default(),
                 &transaction,
-                &mut BlockCreditMints::default(),
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )
@@ -161,7 +161,7 @@ mod tests {
                 validation_result,
                 &BlockInfo::default(),
                 &transaction,
-                &mut BlockCreditMints::default(),
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )

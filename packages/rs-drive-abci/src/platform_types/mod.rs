@@ -1,5 +1,3 @@
-/// The credits a block's state transitions minted into Platform, per asset lock
-pub mod block_credit_mints;
 /// The outcome of a block execution
 pub mod block_execution_outcome;
 /// The block proposal

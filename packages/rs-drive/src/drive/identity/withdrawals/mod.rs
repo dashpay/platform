@@ -21,7 +21,7 @@ pub mod fetch_total_credits_in_platform_a_day_ago;
 /// Functions and constants related to GroveDB paths
 pub mod paths;
 /// Functions related to the Core blocks the Core-anchored withdrawal limit reads
-pub mod record_core_credit_pool_block;
+pub mod record_core_credit_pool_blocks;
 /// Functions related to the per-block record of credit inflows the daily withdrawal limit adds
 pub mod record_credit_inflow;
 /// Functions related to the per-block record of total credits the daily withdrawal limit reads

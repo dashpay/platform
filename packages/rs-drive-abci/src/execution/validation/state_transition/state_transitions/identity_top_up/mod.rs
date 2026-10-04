@@ -106,7 +106,6 @@ impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::platform_types::block_credit_mints::BlockCreditMints;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::{Network, PrivateKey};
@@ -533,13 +532,8 @@ mod tests {
         assert_eq!(control_result.valid_count(), 1);
         let expected_mint = control_result.credit_mints();
         assert!(
-            expected_mint.total() > 0,
+            expected_mint > 0,
             "sanity: a successful asset-lock top up must report its mint"
-        );
-        assert_eq!(
-            expected_mint.by_asset_lock().values().sum::<u64>(),
-            expected_mint.total(),
-            "sanity: the top up's mint is attributed to the asset lock it spent"
         );
         platform
             .drive
@@ -579,7 +573,7 @@ mod tests {
         );
         assert_eq!(
             processing_result.credit_mints(),
-            &BlockCreditMints::default(),
+            0,
             "PHANTOM MINT: a transition dropped from the proposal left its mint in the \
              block's credit-mint accumulator"
         );

@@ -32,8 +32,7 @@ use crate::version::system_limits::SystemLimits;
 ///   up to Core's asset unlock validity, `withdrawal_constants.core_expiration_blocks` 48,
 ///   later), at least
 ///   `core_credit_pool_unlock_limit_floor` (1500 Dash, Core's floor is 2000), less what is
-///   pooled and not yet mined. An asset lock Core mined longer ago than its window minus those
-///   48 blocks adds no credit inflow.
+///   queued or broadcast and not completed yet.
 /// * `max_time_range_overlap_factor` is set: a `timeRange` index transform may declare at most
 ///   24 overlapping windows per timestamp (a day-long window sliding hourly). The rule cannot
 ///   exist before v14 because the `timeRange` keyword itself is only admitted by the v14

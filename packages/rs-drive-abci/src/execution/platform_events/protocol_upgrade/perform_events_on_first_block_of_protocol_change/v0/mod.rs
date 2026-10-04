@@ -768,15 +768,6 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // Withdrawal limit trees under the withdrawals tree: the total credits history (the
-        // daily withdrawal limit becomes a share of the total credits Platform held a day ago,
-        // recorded every block), the credit inflows sum tree (every credit mint, so the daily
-        // limit counts net outflow instead of gross) and Core's credit pool balance per Core
-        // block read (the Core-anchored withdrawal limit). Through the same helper as genesis,
-        // so both build the withdrawals Merk by the same sequence of inserts.
-        self.drive
-            .insert_withdrawal_limit_trees(Some(transaction), platform_version)?;
-
         // Contract version items: from this version the storage writer stores every
         // contract's version as a four-byte item beside it, and
         // `getDataContractsLatestVersions` reads and proves that item instead of the
@@ -824,9 +815,20 @@ impl<C> Platform<C> {
         // indexes every document of a type declaring a `ttl` (a keyword protocol version 14
         // introduces) by when it expires, and the lifetime storage fee pools sum tree under
         // `Pools`, which holds their storage fees until an epoch change spreads them. Fresh
-        // chains call the same helper last in `create_initial_state_structure` v4.
+        // chains call the same helper in `create_initial_state_structure` v4, in the same
+        // position: just before the withdrawal limit trees.
         self.drive
             .insert_document_ttl_trees(Some(transaction), platform_version)?;
+
+        // Withdrawal limit trees under the withdrawals tree: the total credits history (the
+        // daily withdrawal limit becomes a share of the total credits Platform held a day ago,
+        // recorded every block), the credit inflows sum tree (every credit mint, so the daily
+        // limit counts net outflow instead of gross) and Core's credit pool balance per Core
+        // block read (the Core-anchored withdrawal limit). Through the same helper as genesis,
+        // which also calls it last, so both build the withdrawals Merk by the same sequence of
+        // inserts.
+        self.drive
+            .insert_withdrawal_limit_trees(Some(transaction), platform_version)?;
 
         Ok(())
     }
@@ -2284,10 +2286,12 @@ mod tests {
         }
     }
 
-    /// Genesis creates the withdrawal trees of version 14 in one batch, the upgrade adds the
-    /// new ones one insert at a time, and Merk's shape depends on insertion order: the
+    /// Merk's shape depends on insertion order, and genesis builds the withdrawals tree's first
+    /// keys in its batch while the upgrade adds the trees of version 14 to an existing one:
+    /// both insert those trees one at a time through `insert_withdrawal_limit_trees`, so the
     /// withdrawals tree element (its root key), every element below it and the shape of its
-    /// Merk are the same on a chain born at 14 and one upgraded to it.
+    /// Merk are the same on a chain born at 14 and one upgraded to it. Batching them into
+    /// genesis again would root the Merk at another key.
     #[test]
     fn should_build_the_withdrawal_trees_as_a_chain_born_at_14_does() {
         let platform_version = PlatformVersion::latest();

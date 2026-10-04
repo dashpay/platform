@@ -1,9 +1,8 @@
 use crate::rpc::prefetch::CorePrefetcher;
-use dpp::dashcore::consensus::encode::{self, deserialize_partial};
-use dpp::dashcore::consensus::Decodable;
+use dpp::dashcore::consensus::encode::deserialize_partial;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dpp::dashcore::transaction::special_transaction::coinbase::CoinbasePayload;
-use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, TxIn, TxOut, Txid};
+use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
     AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
@@ -19,45 +18,33 @@ use std::time::Duration;
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
 
-/// The most transaction ids Core's `gettxchainlocks` answers in one call.
-const MAX_TRANSACTIONS_PER_CHAIN_LOCK_STATUS_REQUEST: usize = 100;
-
 /// The special transaction type of a coinbase (`TRANSACTION_COINBASE` in Dash Core).
 const COINBASE_TRANSACTION_TYPE: u16 = 5;
 
 /// Reads Core's credit pool balance after a block, in duffs, from the block's serialized
-/// coinbase transaction; `0` when its payload predates version 3, before the credit pool
-/// existed, which is how Core's own unlock limit reads such a block.
+/// coinbase transaction; `0` when it carries no payload or its payload predates version 3,
+/// before the credit pool existed, which is how Core's own unlock limit reads such a block.
 ///
-/// The parts are read with dashcore's decoders, but not as one `Transaction`: the pinned decoder
-/// ignores the payload's length prefix and cannot read the version 4 payload Core v24 requires,
-/// which appends `merkleRootAssetUnlocks` after the balance. So the payload is taken by its own
-/// length and read only up to the balance. Core has only ever appended fields to it, and its
-/// consensus rules (`CheckCbTx`) refuse versions it does not know, so the balance stays where
-/// version 3 put it unless a Core release moves it, which Platform would have to follow anyway.
+/// Decoded with `deserialize_partial`: the pinned payload decoder reads the fields of version 3
+/// for every later version and stops after the balance, while the version 4 payload Core v24
+/// requires appends `merkleRootAssetUnlocks` after it. A strict `deserialize`, and so a whole
+/// `Block` decode, refuses those unread bytes. Core has only ever appended fields to the
+/// payload, and its consensus rules (`CheckCbTx`) refuse versions it does not know, so the
+/// balance stays where version 3 put it unless a Core release moves it, which Platform would
+/// have to follow anyway.
 pub(crate) fn credit_pool_balance_from_coinbase(coinbase: &[u8]) -> Result<u64, String> {
-    let decode_error = |e: encode::Error| format!("coinbase cannot be decoded: {e}");
-    let mut reader = coinbase;
-
-    let version_and_type = u32::consensus_decode(&mut reader).map_err(decode_error)?;
-    Vec::<TxIn>::consensus_decode(&mut reader).map_err(decode_error)?;
-    Vec::<TxOut>::consensus_decode(&mut reader).map_err(decode_error)?;
-    u32::consensus_decode(&mut reader).map_err(decode_error)?; // the lock time
-
-    let version = (version_and_type & 0xffff) as u16;
-    let transaction_type = (version_and_type >> 16) as u16;
-    if version < 3 || transaction_type == 0 {
-        return Ok(0);
+    let (transaction, _) = deserialize_partial::<Transaction>(coinbase)
+        .map_err(|e| format!("coinbase cannot be decoded: {e}"))?;
+    match transaction.special_transaction_payload {
+        None => Ok(0),
+        Some(TransactionPayload::CoinbasePayloadType(payload)) => {
+            Ok(payload.asset_locked_amount.unwrap_or_default())
+        }
+        Some(payload) => Err(format!(
+            "coinbase carries a {:?} payload",
+            payload.get_type()
+        )),
     }
-    if transaction_type != COINBASE_TRANSACTION_TYPE {
-        return Err(format!(
-            "coinbase has special transaction type {transaction_type}"
-        ));
-    }
-
-    let payload = Vec::<u8>::consensus_decode(&mut reader).map_err(decode_error)?;
-    let (payload, _) = deserialize_partial::<CoinbasePayload>(&payload).map_err(decode_error)?;
-    Ok(payload.asset_locked_amount.unwrap_or_default())
 }
 
 /// Core height must be of type u32 (Platform heights are u64)
@@ -175,15 +162,6 @@ pub trait CoreRPCLike {
     /// block's coinbase (only the coinbase is transferred). Only ask for a chain locked height:
     /// the answer is then the same on every node.
     fn get_credit_pool_balance(&self, height: CoreHeight) -> Result<u64, Error>;
-
-    /// Get the height of the active chain block each transaction was mined in, in the order of
-    /// `tx_ids`; `None` for one Core does not know, or holds in its mempool only. A height is
-    /// the same on every node only when it is at or below a chain locked height, so callers
-    /// treat anything above theirs as not mined yet.
-    fn get_transactions_mined_heights(
-        &self,
-        tx_ids: &[Txid],
-    ) -> Result<Vec<Option<CoreHeight>>, Error>;
 }
 
 #[derive(Debug)]
@@ -465,30 +443,6 @@ impl CoreRPCLike for DefaultCoreRPC {
             Error::UnexpectedStructure(format!("getspecialtxes answered invalid hex: {e}"))
         })?;
         credit_pool_balance_from_coinbase(&coinbase).map_err(Error::UnexpectedStructure)
-    }
-
-    fn get_transactions_mined_heights(
-        &self,
-        tx_ids: &[Txid],
-    ) -> Result<Vec<Option<CoreHeight>>, Error> {
-        let mut heights = Vec::with_capacity(tx_ids.len());
-        for chunk in tx_ids.chunks(MAX_TRANSACTIONS_PER_CHAIN_LOCK_STATUS_REQUEST) {
-            let statuses: Vec<_> = retry!(self.inner.get_transaction_are_locked(chunk))?;
-            if statuses.len() != chunk.len() {
-                return Err(Error::UnexpectedStructure(format!(
-                    "gettxchainlocks answered {} of {} transactions",
-                    statuses.len(),
-                    chunk.len()
-                )));
-            }
-            // Core reports -1 for a transaction it does not know or holds in its mempool only.
-            heights.extend(
-                statuses.into_iter().map(|status| {
-                    status.and_then(|status| CoreHeight::try_from(status.height).ok())
-                }),
-            );
-        }
-        Ok(heights)
     }
 }
 

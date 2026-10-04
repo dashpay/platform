@@ -40,16 +40,40 @@ where
             return Ok(());
         }
 
+        // The Core-anchored limit never reads a balance older than its farthest window start.
+        let oldest_read_core_height =
+            block_info
+                .core_height
+                .checked_sub(core_credit_pool_window_blocks(
+                    self.config.network,
+                    platform_version,
+                )?);
+
+        // Each tree with the key its expired entries sort below: the reservations and the
+        // credit inflows by the block time they stop counting, the recorded Core credit pool
+        // balances by Core height.
+        let expired_below = [
+            Some((
+                get_withdrawal_transactions_sum_tree_path_vec(),
+                block_info.time_ms.to_be_bytes().to_vec(),
+            )),
+            Some((
+                get_withdrawal_credit_inflows_sum_tree_path_vec(),
+                block_info.time_ms.to_be_bytes().to_vec(),
+            )),
+            oldest_read_core_height.map(|core_height| {
+                (
+                    get_withdrawal_core_credit_pool_balances_path_vec(),
+                    core_height.to_be_bytes().to_vec(),
+                )
+            }),
+        ];
+
         let mut batch_operations = vec![];
 
-        for path in [
-            get_withdrawal_transactions_sum_tree_path_vec(),
-            get_withdrawal_credit_inflows_sum_tree_path_vec(),
-        ] {
-            let mut path_query = PathQuery::new_single_query_item(
-                path,
-                QueryItem::RangeTo(..block_info.time_ms.to_be_bytes().to_vec()),
-            );
+        for (path, before_key) in expired_below.into_iter().flatten() {
+            let mut path_query =
+                PathQuery::new_single_query_item(path, QueryItem::RangeTo(..before_key));
 
             path_query.query.limit = Some(limit);
 
@@ -57,33 +81,6 @@ where
                 &path_query,
                 true,
                 // we know that we are not deleting a subtree
-                BatchDeleteApplyType::StatefulBatchDelete {
-                    is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
-                },
-                Some(transaction),
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
-        }
-
-        // The Core-anchored limit never reads a balance older than its farthest window start.
-        if let Some(oldest_read_height) =
-            block_info
-                .core_height
-                .checked_sub(core_credit_pool_window_blocks(
-                    self.config.network,
-                    platform_version,
-                )?)
-        {
-            let mut path_query = PathQuery::new_single_query_item(
-                get_withdrawal_core_credit_pool_balances_path_vec(),
-                QueryItem::RangeTo(..oldest_read_height.to_be_bytes().to_vec()),
-            );
-            path_query.query.limit = Some(limit);
-
-            self.drive.batch_delete_items_in_path_query(
-                &path_query,
-                true,
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                 },
@@ -217,12 +214,14 @@ mod tests {
             .set_initial_state_structure();
         let transaction = platform.drive.grove.start_transaction();
 
-        for core_height in [423, 424, 425] {
-            platform
-                .drive
-                .record_core_credit_pool_block(core_height, 1, Some(&transaction), platform_version)
-                .expect("expected to record the block");
-        }
+        platform
+            .drive
+            .record_core_credit_pool_blocks(
+                &[(423, 1), (424, 1), (425, 1)],
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the blocks");
 
         platform
             .cleanup_expired_locks_of_withdrawal_amounts_v1(

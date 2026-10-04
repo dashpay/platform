@@ -144,9 +144,9 @@ pub struct SystemLimits {
     /// Core's credit pool window on mainnet, testnet and devnets (`CreditPoolPeriodBlocks` in
     /// Dash Core's chain parameters): how many Core blocks before an asset unlock's block lies
     /// the balance Core v24 measures the unlock limit from. The Core-anchored withdrawal limit
-    /// reads its window starts this far back, an asset lock Core mined this far back (less
-    /// Core's asset unlock validity, `withdrawal_constants.core_expiration_blocks`) adds no
-    /// credit inflow, and recorded balances older than it are pruned. Read through
+    /// reads its window starts this far back, up to Core's asset unlock validity
+    /// (`withdrawal_constants.core_expiration_blocks`) later, so the window must be at least
+    /// that long, and recorded balances older than it are pruned. Read through
     /// `core_credit_pool_window_blocks` in dpp. `None` for the protocol versions that predate
     /// the Core-anchored limit.
     pub core_credit_pool_window_blocks: Option<u32>,
@@ -478,6 +478,45 @@ mod tests {
                 platform_version.protocol_version,
                 floor,
                 platform_version.system_limits.max_withdrawal_amount
+            );
+        }
+    }
+
+    /// The Core-anchored withdrawal limit reads window starts from the chain locked height back
+    /// by Core's credit pool window up to Core's asset unlock validity later. A window shorter
+    /// than that validity would put the nearest window start above the chain locked height,
+    /// whose balance is not final and so not the same on every node.
+    #[test]
+    fn should_keep_every_core_credit_pool_window_at_least_the_unlock_validity() {
+        let with_a_window: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .flat_map(|platform_version| {
+                let system_limits = &platform_version.system_limits;
+                [
+                    system_limits.core_credit_pool_window_blocks,
+                    system_limits.regtest_core_credit_pool_window_blocks,
+                ]
+                .into_iter()
+                .flatten()
+                .map(move |window_blocks| (platform_version, window_blocks))
+            })
+            .collect();
+        assert!(
+            !with_a_window.is_empty(),
+            "no protocol version sets a Core credit pool window; this test would assert nothing"
+        );
+        for (platform_version, window_blocks) in with_a_window {
+            let unlock_validity_blocks = platform_version
+                .drive_abci
+                .withdrawal_constants
+                .core_expiration_blocks;
+            assert!(
+                window_blocks >= unlock_validity_blocks,
+                "protocol version {} sets a Core credit pool window of {} blocks, shorter than \
+                 Core's asset unlock validity ({} blocks)",
+                platform_version.protocol_version,
+                window_blocks,
+                unlock_validity_blocks
             );
         }
     }

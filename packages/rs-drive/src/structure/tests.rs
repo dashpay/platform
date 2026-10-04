@@ -1228,7 +1228,7 @@ mod fixtures {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         drive
-            .record_core_credit_pool_block(100, 5_000_000, None, platform_version)
+            .record_core_credit_pool_blocks(&[(100, 5_000_000)], None, platform_version)
             .expect("expected to record a Core block");
         conformance_of(&drive, "core_anchored_withdrawal_accounting", run);
     }

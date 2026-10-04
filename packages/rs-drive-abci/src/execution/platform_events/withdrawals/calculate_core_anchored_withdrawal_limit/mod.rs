@@ -15,14 +15,14 @@ where
 {
     /// How many more credits withdrawals pooled now may take out of Core's credit pool: a
     /// stricter copy of Core's own asset unlock limit (`core_credit_pool_unlock_limit`), less
-    /// what is pooled and not mined yet. It reads Core's credit pool balance at the block's
-    /// chain locked height, and the highest balance among the window starts Core may measure
-    /// an unlock pooled now from: Core's credit pool window (576 blocks, 100 on regtest) back
-    /// from the chain locked height, up to `core_credit_pool_unlock_mining_delay_blocks`
-    /// later, as Core mines an unlock until that many blocks past the height it is signed at
-    /// while its window moves on and older deposits leave it. A balance the scan has not
-    /// recorded yet is read from Core, which every node answers alike for a chain locked
-    /// height.
+    /// what is queued or broadcast and not completed yet. It reads Core's credit pool balance
+    /// at the block's chain locked height, and the highest balance among the window starts
+    /// Core may measure an unlock pooled now from: Core's credit pool window (576 blocks, 100
+    /// on regtest) back from the chain locked height, up to Core's asset unlock validity
+    /// (`withdrawal_constants.core_expiration_blocks`, 48) later, as Core mines an unlock
+    /// until that many blocks past the height it is signed at while its window moves on and
+    /// older deposits leave it. A balance the scan has not recorded yet is read from Core,
+    /// which every node answers alike for a chain locked height.
     ///
     /// # Parameters
     ///

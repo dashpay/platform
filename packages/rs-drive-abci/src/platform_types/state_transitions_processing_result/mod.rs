@@ -1,10 +1,10 @@
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
 use dpp::consensus::ConsensusError;
+use dpp::fee::Credits;
 use std::collections::BTreeMap;
 
 use crate::error::Error;
-use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::event_execution_result::EstimatedFeeResult;
 use dpp::fee::fee_result::FeeResult;
 
@@ -69,7 +69,7 @@ pub struct StateTransitionsProcessingResult {
     valid_count: usize,
     failed_count: usize,
     fees: FeeResult,
-    credit_mints: BlockCreditMints,
+    credit_mints: Credits,
 }
 
 impl StateTransitionsProcessingResult {
@@ -177,16 +177,15 @@ impl StateTransitionsProcessingResult {
     }
 
     /// Sets the credits the block's applied state transitions minted into Platform
-    pub fn set_credit_mints(&mut self, credit_mints: BlockCreditMints) {
+    pub fn set_credit_mints(&mut self, credit_mints: Credits) {
         self.credit_mints = credit_mints;
     }
 
     /// Returns the credits the block's applied state transitions minted into Platform
-    /// (their `AddToSystemCredits` operations), in total and per asset lock: the
-    /// state-transition share of the block's credit inflow, recorded for the net daily
-    /// withdrawal limit.
-    pub fn credit_mints(&self) -> &BlockCreditMints {
-        &self.credit_mints
+    /// (their `AddToSystemCredits` operations): the state-transition share of the block's
+    /// credit inflow, recorded for the net daily withdrawal limit.
+    pub fn credit_mints(&self) -> Credits {
+        self.credit_mints
     }
 
     /// Returns the aggregated fees

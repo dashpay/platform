@@ -2,18 +2,14 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
 use dpp::fee::Credits;
 use dpp::identity::convert_duffs_to_credits;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::core_credit_pool_unlock_limit::{
     core_credit_pool_unlock_limit, core_credit_pool_window_blocks,
 };
-use dpp::withdrawal::WithdrawalTransactionIndex;
 use drive::grovedb::TransactionArg;
-
-/// The most asset unlock indexes Core's `getassetunlockstatuses` answers in one call.
-const MAX_ASSET_UNLOCK_STATUSES_PER_REQUEST: usize = 100;
+use std::ops::RangeInclusive;
 
 impl<C> Platform<C>
 where
@@ -47,69 +43,64 @@ where
             .checked_sub(window_blocks)
         {
             None => 0,
-            Some(nearest_window_start) => {
-                let farthest_window_start = chain_locked_height.saturating_sub(window_blocks);
-                let recorded = self.drive.fetch_core_credit_pool_balances(
-                    farthest_window_start..=nearest_window_start,
-                    transaction,
-                    platform_version,
-                )?;
-                let mut highest: Credits = 0;
-                for core_height in farthest_window_start..=nearest_window_start {
-                    let balance = match recorded.get(&core_height) {
-                        Some(balance) => *balance,
-                        None => self.core_credit_pool_balance_from_core(core_height)?,
-                    };
-                    highest = highest.max(balance);
-                }
-                highest
-            }
-        };
-
-        let balance = match self
-            .drive
-            .fetch_core_credit_pool_balances(
-                chain_locked_height..=chain_locked_height,
+            Some(nearest_window_start) => self.highest_core_credit_pool_balance(
+                chain_locked_height.saturating_sub(window_blocks)..=nearest_window_start,
                 transaction,
                 platform_version,
-            )?
-            .get(&chain_locked_height)
-        {
-            Some(balance) => *balance,
-            None => self.core_credit_pool_balance_from_core(chain_locked_height)?,
+            )?,
         };
+
+        let balance = self.highest_core_credit_pool_balance(
+            chain_locked_height..=chain_locked_height,
+            transaction,
+            platform_version,
+        )?;
 
         let limit = core_credit_pool_unlock_limit(balance, window_start_balance, platform_version)?;
 
-        // Core's own limit only reflects unlocks already mined: subtract the queued ones and
-        // the broadcast ones Core has not mined by the chain locked height. The broadcast tree
-        // keeps mined ones until their documents are updated, a bounded number per Core block.
+        // Core's own limit only reflects unlocks already mined: subtract every queued and
+        // broadcast one. `update_broadcasted_withdrawal_statuses` removes the ones Core mined by
+        // the chain locked height from the broadcast tree in the first block at that height,
+        // up to its batch of withdrawal documents, and one signed since cannot be mined by it,
+        // so only a broadcast backlog beyond that batch is subtracted again after Core mined
+        // it: the limit is then lower than Core's, never higher, until the statuses catch up.
         let in_flight = self
             .drive
             .fetch_in_flight_withdrawal_amount(transaction, platform_version)?;
-        let broadcast_indices: Vec<WithdrawalTransactionIndex> =
-            in_flight.broadcast.keys().copied().collect();
-        let mut not_mined = in_flight.queued;
-        for indices in broadcast_indices.chunks(MAX_ASSET_UNLOCK_STATUSES_PER_REQUEST) {
-            let statuses = self.fetch_transactions_block_inclusion_status(
-                chain_locked_height,
-                indices,
-                platform_version,
-            )?;
-            for index in indices {
-                if statuses.get(index) != Some(&AssetUnlockStatus::Chainlocked) {
-                    let amount = in_flight.broadcast.get(index).copied().unwrap_or_default();
-                    not_mined = not_mined.saturating_add(amount);
-                }
-            }
-        }
 
-        Ok(limit.saturating_sub(not_mined))
+        Ok(limit.saturating_sub(in_flight))
+    }
+
+    /// The highest of Core's credit pool balances after the chain locked Core blocks at
+    /// `core_heights`, in credits: recorded by the scan where it has, read from Core otherwise.
+    fn highest_core_credit_pool_balance(
+        &self,
+        core_heights: RangeInclusive<u32>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, Error> {
+        let recorded = self.drive.fetch_core_credit_pool_balances(
+            core_heights.clone(),
+            transaction,
+            platform_version,
+        )?;
+        let mut highest: Credits = 0;
+        for core_height in core_heights {
+            let balance = match recorded.get(&core_height) {
+                Some(balance) => *balance,
+                None => self.core_credit_pool_balance_from_core(core_height)?,
+            };
+            highest = highest.max(balance);
+        }
+        Ok(highest)
     }
 
     /// Core's credit pool balance after the chain locked Core block at `core_height`, in
-    /// credits, read from Core because the scan has not recorded it (yet).
-    fn core_credit_pool_balance_from_core(&self, core_height: u32) -> Result<Credits, Error> {
+    /// credits, as Core answers it.
+    pub(in crate::execution::platform_events::withdrawals) fn core_credit_pool_balance_from_core(
+        &self,
+        core_height: u32,
+    ) -> Result<Credits, Error> {
         Ok(convert_duffs_to_credits(
             self.core_rpc.get_credit_pool_balance(core_height)?,
         )?)
@@ -127,10 +118,11 @@ mod tests {
         AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
     };
     use dpp::dashcore::{ScriptBuf, TxOut};
-    use dpp::dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
+    use dpp::fee::Credits;
     use dpp::version::PlatformVersion;
     use drive::grovedb::Transaction;
     use drive::util::batch::DriveOperation;
+    use std::sync::{Arc, Mutex};
 
     const DUFFS_PER_DASH: u64 = 100_000_000;
 
@@ -347,36 +339,19 @@ mod tests {
         );
     }
 
-    /// Core's balance at the chain locked height already reflects a broadcast unlock it mined
-    /// by then, even while the broadcast tree still holds it.
+    /// Queued and broadcast unlocks are both subtracted, from state alone: Core is not asked
+    /// whether it mined a broadcast one (the mock has no answer for that and would panic).
     #[test]
-    fn should_not_subtract_a_broadcast_unlock_core_already_mined() {
+    fn should_subtract_queued_and_broadcast_unlocks_without_asking_core() {
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
             .build_with_mock_rpc()
             .set_initial_state_structure();
-        let mut core_rpc = core_with_balances(|_| 37_000);
-        core_rpc
-            .expect_get_asset_unlock_statuses()
-            .withf(|_, core_height| *core_height == 10_000)
-            .returning(|indices, _| {
-                Ok(indices
-                    .iter()
-                    .map(|index| AssetUnlockStatusResult {
-                        index: *index,
-                        status: if *index == 0 {
-                            AssetUnlockStatus::Chainlocked
-                        } else {
-                            AssetUnlockStatus::Mempooled
-                        },
-                    })
-                    .collect())
-            });
-        platform.core_rpc = core_rpc;
+        platform.core_rpc = core_with_balances(|_| 37_000);
         let platform_version = PlatformVersion::latest();
         let transaction = platform.drive.grove.start_transaction();
 
-        // Index 0 is mined, index 1 broadcast and not mined, index 2 still queued.
+        // Indices 0 and 1 broadcast, index 2 still queued.
         pool_withdrawals(&platform, &[0, 1, 2], 2, &transaction, platform_version);
 
         assert_eq!(
@@ -387,8 +362,91 @@ mod tests {
                     platform_version
                 )
                 .expect("expected the limit"),
-            dash_to_credits!(3550) - 2_000_000
+            dash_to_credits!(2550) - 3_000_000
         );
+    }
+
+    /// The scan, the limit and the cleanup over a chain locked height that advances one Core
+    /// block per Platform block, as in run_block_proposal: once the scan has caught up, the
+    /// only balance asked of Core is the new chain locked height's, the limit follows a deposit
+    /// out of the band, and the cleanup keeps exactly the heights the band can still read.
+    #[test]
+    fn should_read_only_the_new_core_block_once_the_scan_has_caught_up() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let platform_version = PlatformVersion::latest();
+        // 37,000 Dash, plus a 5,000 Dash asset lock mined at Core height 10,000.
+        let reads = Arc::new(Mutex::new(vec![]));
+        let read = reads.clone();
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc
+            .expect_get_credit_pool_balance()
+            .returning(move |core_height| {
+                read.lock().expect("lock").push(core_height);
+                let dash = if core_height >= 10_000 {
+                    42_000
+                } else {
+                    37_000
+                };
+                Ok(dash * DUFFS_PER_DASH)
+            });
+        platform.core_rpc = core_rpc;
+        let transaction = platform.drive.grove.start_transaction();
+
+        let run_block = |core_height: u32| -> Credits {
+            let block_info = BlockInfo {
+                time_ms: 1_000_000,
+                core_height,
+                ..Default::default()
+            };
+            platform
+                .scan_core_blocks_for_withdrawals(&block_info, Some(&transaction), platform_version)
+                .expect("expected to scan");
+            let limit = platform
+                .calculate_core_anchored_withdrawal_limit(
+                    &block_info,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the limit");
+            platform
+                .clean_up_expired_locks_of_withdrawal_amounts(
+                    &block_info,
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected the cleanup");
+            limit
+        };
+
+        // The scan reads 32 Core blocks per Platform block: 577 from 9,424 to 10,000 take 19.
+        for _ in 0..19 {
+            run_block(10_000);
+        }
+
+        for core_height in 10_001..=10_600 {
+            reads.lock().expect("lock").clear();
+            let limit = run_block(core_height);
+            assert_eq!(*reads.lock().expect("lock"), vec![core_height]);
+
+            // The deposit counts in full until the nearest window start reaches it.
+            let expected = if core_height < 10_528 {
+                dash_to_credits!(10550)
+            } else {
+                dash_to_credits!(6300)
+            };
+            assert_eq!(limit, expected, "at Core height {core_height}");
+        }
+
+        let recorded: Vec<u32> = platform
+            .drive
+            .fetch_core_credit_pool_balances(0..=u32::MAX, Some(&transaction), platform_version)
+            .expect("expected the balances")
+            .into_keys()
+            .collect();
+        assert_eq!(recorded, (10_600 - 576..=10_600).collect::<Vec<_>>());
     }
 
     /// Recorded balances are read from state; Core is asked only for what is missing.
@@ -406,9 +464,8 @@ mod tests {
         // The scan recorded 40,000 Dash at one window start of the band.
         platform
             .drive
-            .record_core_credit_pool_block(
-                9_430,
-                dash_to_credits!(40000),
+            .record_core_credit_pool_blocks(
+                &[(9_430, dash_to_credits!(40000))],
                 Some(&transaction),
                 platform_version,
             )

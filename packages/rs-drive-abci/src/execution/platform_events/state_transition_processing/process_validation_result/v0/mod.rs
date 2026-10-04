@@ -1,6 +1,5 @@
 use super::super::StateTransitionAwareError;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -8,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
 use dpp::util::hash::hash_single;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -33,11 +33,7 @@ where
         mut validation_result: ConsensusValidationResult<ExecutionEvent>,
         block_info: &BlockInfo,
         transaction: &Transaction,
-        // Changed in place from `&mut Credits`, inert for protocol versions 1 to 12 (all that
-        // select this generation): it is only passed on to `execute_event`, whose total is
-        // the same sum, and the per-asset-lock part is read only by
-        // `record_credit_inflows_for_withdrawals` (`None` before 14, reading it is new in 14).
-        block_credit_mints: &mut BlockCreditMints,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {

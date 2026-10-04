@@ -27,9 +27,9 @@ pub struct DriveIdentityWithdrawalMethodVersions {
     /// tree the net daily withdrawal limit reads back. The subtree exists from protocol
     /// version 14.
     pub record_credit_inflows: OptionalFeatureVersion,
-    /// Record a Core block's credit pool balance for the Core-anchored withdrawal limit. The
+    /// Record Core blocks' credit pool balances for the Core-anchored withdrawal limit. The
     /// subtree exists from protocol version 14.
-    pub record_core_credit_pool_block: OptionalFeatureVersion,
+    pub record_core_credit_pool_blocks: OptionalFeatureVersion,
     /// Read the recorded Core credit pool balances. Exists from protocol version 14.
     pub fetch_core_credit_pool_balances: OptionalFeatureVersion,
     /// Sum what the queued and broadcast withdrawal transactions take out of Core's credit

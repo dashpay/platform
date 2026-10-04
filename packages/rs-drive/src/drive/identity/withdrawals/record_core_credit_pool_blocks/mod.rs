@@ -8,24 +8,23 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Records Core's credit pool balance after a Core block, under the block's height, for the
-    /// Core-anchored withdrawal limit.
+    /// Records Core's credit pool balance after each of the given Core blocks, under the block's
+    /// height, for the Core-anchored withdrawal limit, in one batch.
     ///
     /// # Parameters
     ///
-    /// * `core_height`: The height of the Core block.
-    /// * `credit_pool_balance`: Core's credit pool balance after the block, in credits.
+    /// * `balances`: Each Core block's height with Core's credit pool balance after it, in
+    ///   credits.
     /// * `transaction`: The GroveDB transaction.
     /// * `platform_version`: The platform version.
     ///
     /// # Returns
     ///
-    /// * `Ok(())` once the balance is stored.
+    /// * `Ok(())` once the balances are stored, or at once when there are none.
     /// * `Err(Error)` when the method version is unknown or not active, or the write fails.
-    pub fn record_core_credit_pool_block(
+    pub fn record_core_credit_pool_blocks(
         &self,
-        core_height: u32,
-        credit_pool_balance: Credits,
+        balances: &[(u32, Credits)],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -34,21 +33,18 @@ impl Drive {
             .methods
             .identity
             .withdrawals
-            .record_core_credit_pool_block
+            .record_core_credit_pool_blocks
         {
-            Some(0) => self.record_core_credit_pool_block_v0(
-                core_height,
-                credit_pool_balance,
-                transaction,
-                platform_version,
-            ),
+            Some(0) => {
+                self.record_core_credit_pool_blocks_v0(balances, transaction, platform_version)
+            }
             Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "record_core_credit_pool_block".to_string(),
+                method: "record_core_credit_pool_blocks".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
             None => Err(Error::Drive(DriveError::VersionNotActive {
-                method: "record_core_credit_pool_block".to_string(),
+                method: "record_core_credit_pool_blocks".to_string(),
                 known_versions: vec![0],
             })),
         }

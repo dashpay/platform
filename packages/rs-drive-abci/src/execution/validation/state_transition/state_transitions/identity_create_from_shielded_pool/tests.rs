@@ -24,7 +24,6 @@
 use super::state::v0::IdentityCreateFromShieldedPoolStateTransitionStateValidationV0;
 use super::transform_into_action::v0::IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV0;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::platform_types::block_credit_mints::BlockCreditMints;
 use crate::execution::validation::state_transition::state_transitions::test_helpers::{
     insert_anchor_into_state, insert_dummy_encrypted_notes, set_pool_total_balance, setup_platform,
 };
@@ -578,7 +577,7 @@ fn failure_path_charge_executes_through_execute_event() {
             &block_info,
             &transaction,
             None,
-            &mut BlockCreditMints::default(),
+            &mut 0,
             platform_version,
             &fee_versions,
         )
@@ -1048,7 +1047,7 @@ fn executed_transition_result_proof_roundtrips() {
             &block_info,
             &transaction,
             None,
-            &mut BlockCreditMints::default(),
+            &mut 0,
             platform_version,
             &fee_versions,
         )

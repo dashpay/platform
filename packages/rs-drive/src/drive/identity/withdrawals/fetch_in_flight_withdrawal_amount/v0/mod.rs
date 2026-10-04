@@ -1,4 +1,3 @@
-use crate::drive::identity::withdrawals::fetch_in_flight_withdrawal_amount::InFlightWithdrawalAmounts;
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_transactions_broadcasted_path_vec, get_withdrawal_transactions_queue_path_vec,
 };
@@ -9,7 +8,6 @@ use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
 use dpp::fee::Credits;
 use dpp::identity::convert_duffs_to_credits;
-use dpp::withdrawal::WithdrawalTransactionIndex;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -19,38 +17,32 @@ impl Drive {
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<InFlightWithdrawalAmounts, Error> {
-        let mut queued: Credits = 0;
-        for (_, amount) in self.fetch_withdrawal_transaction_amounts(
+    ) -> Result<Credits, Error> {
+        let mut in_flight: Credits = 0;
+        for path in [
             get_withdrawal_transactions_queue_path_vec(),
-            transaction,
-            platform_version,
-        )? {
-            queued = queued.checked_add(amount).ok_or(Error::Drive(
-                DriveError::CriticalCorruptedState("in-flight withdrawal amount overflow"),
-            ))?;
+            get_withdrawal_transactions_broadcasted_path_vec(),
+        ] {
+            for amount in
+                self.fetch_withdrawal_transaction_amounts(path, transaction, platform_version)?
+            {
+                in_flight = in_flight.checked_add(amount).ok_or(Error::Drive(
+                    DriveError::CriticalCorruptedState("in-flight withdrawal amount overflow"),
+                ))?;
+            }
         }
 
-        let broadcast = self
-            .fetch_withdrawal_transaction_amounts(
-                get_withdrawal_transactions_broadcasted_path_vec(),
-                transaction,
-                platform_version,
-            )?
-            .into_iter()
-            .collect();
-
-        Ok(InFlightWithdrawalAmounts { queued, broadcast })
+        Ok(in_flight)
     }
 
-    /// Each untied withdrawal transaction under `path` with what it takes out of Core's credit
-    /// pool, in credits: its outputs plus its fee.
+    /// What each untied withdrawal transaction under `path` takes out of Core's credit pool, in
+    /// credits: its outputs plus its fee.
     fn fetch_withdrawal_transaction_amounts(
         &self,
         path: Vec<Vec<u8>>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(WithdrawalTransactionIndex, Credits)>, Error> {
+    ) -> Result<Vec<Credits>, Error> {
         let mut query = Query::new();
         query.insert_all();
         let path_query = PathQuery::new_unsized(path, query);
@@ -94,10 +86,7 @@ impl Drive {
                     duffs = duffs.checked_add(output.value).ok_or_else(overflow)?;
                 }
 
-                Ok((
-                    untied.base_payload.index,
-                    convert_duffs_to_credits(duffs).map_err(|_| overflow())?,
-                ))
+                convert_duffs_to_credits(duffs).map_err(|_| overflow())
             })
             .collect()
     }
@@ -105,7 +94,6 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::identity::withdrawals::fetch_in_flight_withdrawal_amount::InFlightWithdrawalAmounts;
     use crate::util::batch::DriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -115,7 +103,6 @@ mod tests {
     };
     use dpp::dashcore::{ScriptBuf, TxOut};
     use dpp::version::PlatformVersion;
-    use std::collections::BTreeMap;
 
     fn untied_transaction(index: u64, payout_duffs: u64, fee_duffs: u32) -> Vec<u8> {
         let transaction = AssetUnlockBaseTransactionInfo {
@@ -148,7 +135,7 @@ mod tests {
             drive
                 .fetch_in_flight_withdrawal_amount(Some(&transaction), platform_version)
                 .expect("expected the amount"),
-            InFlightWithdrawalAmounts::default()
+            0
         );
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -195,16 +182,12 @@ mod tests {
             )
             .expect("expected to apply");
 
-        // Queued: 50,000 + 1,000 duffs; broadcast: index 0 with 100,000 + 2,000 duffs; in
-        // credits.
+        // Queued: 50,000 + 1,000 duffs; broadcast: 100,000 + 2,000 duffs; in credits.
         assert_eq!(
             drive
                 .fetch_in_flight_withdrawal_amount(Some(&transaction), platform_version)
                 .expect("expected the amount"),
-            InFlightWithdrawalAmounts {
-                queued: 51_000_000,
-                broadcast: BTreeMap::from([(0, 102_000_000)]),
-            }
+            153_000_000
         );
     }
 }

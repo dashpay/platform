@@ -38,17 +38,9 @@ where
 
         self.pool_withdrawals_up_to_limit_v1(
             block_info,
-            transaction,
-            platform_version,
-            |available, daily_maximum, oldest_queued_amount| {
-                // Nothing fits Platform's own limit, and the Core side can only lower it: skip
-                // its reads and Core calls.
-                if available < oldest_queued_amount {
-                    gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE).set(available as f64);
-                    gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL).set(daily_maximum as f64);
-                    return Ok(available);
-                }
-
+            |available, daily_maximum| {
+                // Computed whenever withdrawals are queued, so its gauge stays current. Once the
+                // scan has recorded the band and the chain locked height, it reads state only.
                 let core_anchored_withdrawal_limit = self
                     .calculate_core_anchored_withdrawal_limit(
                         block_info,
@@ -73,6 +65,8 @@ where
 
                 Ok(current_withdrawal_limit)
             },
+            transaction,
+            platform_version,
         )
     }
 }
@@ -210,11 +204,12 @@ mod tests {
         assert_eq!(pool(PlatformVersion::latest(), 1000, 1).0, 1);
     }
 
-    /// While the oldest queued withdrawal does not fit Platform's own limit nothing pools, so
-    /// the Core side is not read: only the scan asks Core (32 Core blocks from 10,000 - 576),
-    /// not the 18 window starts and chain locked height it has not recorded yet.
+    /// While the oldest queued withdrawal does not fit Platform's own limit nothing pools,
+    /// however much Core's pool admits, and the Core side is still read so its gauge stays
+    /// current: the scan asks Core for 32 Core blocks from 10,000 - 576, the limit for the 17
+    /// window starts and the chain locked height the scan has not recorded yet.
     #[test]
-    fn should_not_read_the_core_side_when_nothing_fits_the_daily_limit() {
+    fn should_pool_nothing_while_the_oldest_does_not_fit_the_daily_limit() {
         // 3,000 Dash each, over the flat 2,000 Dash before any history.
         assert_eq!(
             pool(
@@ -222,7 +217,7 @@ mod tests {
                 dash_to_credits!(3000),
                 1_000_000_000_000
             ),
-            (0, 32)
+            (0, 50)
         );
         assert_eq!(
             pool(PlatformVersion::latest(), 1000, 1_000_000_000_000),

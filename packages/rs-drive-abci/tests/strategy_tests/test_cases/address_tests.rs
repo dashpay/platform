@@ -29,7 +29,6 @@ mod tests {
     use dpp::dash_to_credits;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::QuorumHash;
-    use dpp::dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::data_contract::TokenConfiguration;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -1195,19 +1194,6 @@ mod tests {
             .core_rpc
             .expect_send_raw_transaction()
             .returning(move |_| Ok(Txid::all_zeros()));
-        // Core has mined none of them (pooling asks to subtract what is still in flight).
-        platform
-            .core_rpc
-            .expect_get_asset_unlock_statuses()
-            .returning(|indices, _| {
-                Ok(indices
-                    .iter()
-                    .map(|index| AssetUnlockStatusResult {
-                        index: *index,
-                        status: AssetUnlockStatus::Unknown,
-                    })
-                    .collect())
-            });
 
         let outcome = run_chain_for_strategy(
             &mut platform,
@@ -1814,19 +1800,6 @@ mod tests {
             .core_rpc
             .expect_send_raw_transaction()
             .returning(move |_| Ok(Txid::all_zeros()));
-        // Core has mined none of them (pooling asks to subtract what is still in flight).
-        platform
-            .core_rpc
-            .expect_get_asset_unlock_statuses()
-            .returning(|indices, _| {
-                Ok(indices
-                    .iter()
-                    .map(|index| AssetUnlockStatusResult {
-                        index: *index,
-                        status: AssetUnlockStatus::Unknown,
-                    })
-                    .collect())
-            });
 
         let outcome = run_chain_for_strategy(
             &mut platform,

@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::convert_duffs_to_credits;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::core_credit_pool_unlock_limit::core_credit_pool_window_blocks;
 use drive::grovedb::TransactionArg;
@@ -51,17 +50,17 @@ where
         let last_height =
             chain_locked_height.min(first_height.saturating_add(u32::from(limit) - 1));
 
-        for core_height in first_height..=last_height {
-            let credit_pool_balance =
-                convert_duffs_to_credits(self.core_rpc.get_credit_pool_balance(core_height)?)?;
+        let balances = (first_height..=last_height)
+            .map(|core_height| {
+                Ok((
+                    core_height,
+                    self.core_credit_pool_balance_from_core(core_height)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
 
-            self.drive.record_core_credit_pool_block(
-                core_height,
-                credit_pool_balance,
-                transaction,
-                platform_version,
-            )?;
-        }
+        self.drive
+            .record_core_credit_pool_blocks(&balances, transaction, platform_version)?;
 
         Ok(())
     }

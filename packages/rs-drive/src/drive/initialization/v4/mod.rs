@@ -109,14 +109,15 @@ impl Drive {
         // it expires, and the lifetime storage fee pools sum tree under `Pools`, which holds
         // their storage fees until an epoch change spreads them. After the batch apply, which
         // creates `Misc` and the fee pools under `Pools`, and through the same helper as the
-        // upgrade path (`Platform::transition_to_version_14`), in the same position: last.
+        // upgrade path (`Platform::transition_to_version_14`), in the same position: just
+        // before the withdrawal limit trees.
         self.insert_document_ttl_trees(transaction, platform_version)?;
 
         // Withdrawal limit trees (protocol version 14): the total credits history, the credit
         // inflows and the Core credit pool balances under the withdrawals tree, which the batch
         // apply creates. Inserted one after the other through the same helper as the upgrade
-        // path (`Platform::transition_to_version_14`), so the withdrawals Merk is built by the
-        // same sequence of inserts on both node populations.
+        // path (`Platform::transition_to_version_14`), in the same position: last, so the
+        // withdrawals Merk is built by the same sequence of inserts on both node populations.
         self.insert_withdrawal_limit_trees(transaction, platform_version)?;
 
         Ok(())

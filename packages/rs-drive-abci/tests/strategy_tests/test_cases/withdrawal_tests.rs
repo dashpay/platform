@@ -2320,8 +2320,6 @@ mod tests {
                 .core_rpc
                 .expect_get_asset_unlock_statuses()
                 .returning(move |indices, _| {
-                    // An index the test has not set a status for is one Core has not mined;
-                    // pooling asks for the broadcast ones to subtract what is still in flight.
                     Ok(indices
                         .iter()
                         .map(|index| {
@@ -2331,10 +2329,7 @@ mod tests {
                                 .asset_unlock_statuses
                                 .get(index)
                                 .cloned()
-                                .unwrap_or(AssetUnlockStatusResult {
-                                    index: *index,
-                                    status: AssetUnlockStatus::Unknown,
-                                })
+                                .unwrap()
                         })
                         .collect())
                 });
@@ -3134,10 +3129,6 @@ mod tests {
             .core_rpc
             .expect_get_credit_pool_balance()
             .returning(|_| Ok(dash_to_duffs!(120)));
-        platform
-            .core_rpc
-            .expect_get_transactions_mined_heights()
-            .returning(|tx_ids| Ok(vec![None; tx_ids.len()]));
         platform
             .core_rpc
             .expect_send_raw_transaction()
