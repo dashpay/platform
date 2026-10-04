@@ -3589,20 +3589,37 @@ mod tests {
         );
     }
 
+    /// A task that ends only when the test releases it: no stop can finish
+    /// before then, whatever the executor's timing.
+    fn held_task() -> (JoinHandle<()>, oneshot::Sender<()>) {
+        let (release, released) = oneshot::channel::<()>();
+        let handle = tokio::spawn(async move {
+            let _ = released.await;
+        });
+        (handle, release)
+    }
+
+    fn is_stopping(slot: &Mutex<ActorSlot>) -> bool {
+        matches!(*slot.lock().expect("slot"), ActorSlot::Stopping(_))
+    }
+
     /// A stop that runs out of budget keeps the task without aborting it: a
     /// retried stop waits for it to end and reports it clean.
     #[tokio::test]
     async fn should_report_a_task_that_outlived_a_stop_clean_on_retry() {
         let (stop, _stopped) = oneshot::channel();
-        let handle = tokio::spawn(sleep(Duration::from_millis(300)));
+        let (handle, release) = held_task();
         let slot = Mutex::new(ActorSlot::Running(handle, stop));
         let stopping = AsyncMutex::new(());
 
         let first = stop_slot(&slot, &stopping, Duration::from_millis(20)).await;
+        assert_eq!(first, WorkerStatus::Timeout, "the task is held");
+        assert!(is_stopping(&slot), "kept, not aborted");
+
+        release.send(()).expect("task alive");
         let second = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
         let third = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
 
-        assert_eq!(first, WorkerStatus::Timeout);
         assert_eq!(second, WorkerStatus::Ok);
         assert_eq!(third, WorkerStatus::NotRunning);
     }
@@ -3612,18 +3629,23 @@ mod tests {
     #[tokio::test]
     async fn should_keep_the_task_joinable_when_a_stop_is_cancelled() {
         let (stop, _stopped) = oneshot::channel();
-        let handle = tokio::spawn(sleep(Duration::from_millis(300)));
+        let (handle, release) = held_task();
         let slot = Mutex::new(ActorSlot::Running(handle, stop));
         let stopping = AsyncMutex::new(());
 
-        let cancelled = tokio::time::timeout(
-            Duration::from_millis(20),
-            stop_slot(&slot, &stopping, Duration::from_secs(5)),
-        )
-        .await;
+        // Poll the stop once — it waits on the held task — then drop it.
+        let mut cancelled = Box::pin(stop_slot(&slot, &stopping, Duration::from_secs(5)));
+        tokio::select! {
+            biased;
+            status = &mut cancelled => panic!("the held task cannot end: {status:?}"),
+            () = std::future::ready(()) => {}
+        }
+        drop(cancelled);
+        assert!(is_stopping(&slot), "the cancelled stop put the task back");
+
+        release.send(()).expect("task alive");
         let retried = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
 
-        assert!(cancelled.is_err(), "the first stop was cancelled mid-wait");
         assert_eq!(retried, WorkerStatus::Ok, "the retry joined the live task");
     }
 
