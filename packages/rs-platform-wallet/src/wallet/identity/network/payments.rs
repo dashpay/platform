@@ -1346,7 +1346,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         trial_with_waiting_coins(
                             make(),
                             wallet,
-                            &mut info.core_wallet.accounts,
+                            info,
                             &offered_accounts,
                             &[],
                             false,

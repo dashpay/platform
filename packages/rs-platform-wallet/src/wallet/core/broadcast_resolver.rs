@@ -85,6 +85,7 @@ use tokio::task::{self, AbortHandle, JoinError, JoinHandle, JoinSet};
 use tokio::time::{timeout_at, Instant};
 
 use crate::broadcast_probe::{AcceptanceProbe, ProbeReport, ProbeVerdict, MINED_QUORUM};
+use crate::changeset::core_bridge::record_spends_own_coins;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -192,7 +193,7 @@ pub(crate) fn collect_views(info: &PlatformWalletInfo, signs: bool) -> Vec<Outgo
 ///
 /// [`AccountType::is_contact_owned`]: key_wallet::account::AccountType::is_contact_owned
 fn spends_own_coins(record: &TransactionRecord) -> bool {
-    !record.input_details.is_empty() && !record.account_type.is_contact_owned()
+    record_spends_own_coins(record)
 }
 
 /// One account's record as the resolver sees it; `finalized`: whether the

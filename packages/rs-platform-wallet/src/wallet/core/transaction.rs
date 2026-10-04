@@ -25,6 +25,7 @@ use key_wallet::{DerivationPath, ReservationToken, Utxo};
 
 use super::{CoreWallet, WalletGeneration};
 use crate::broadcaster::TransactionBroadcaster;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::wallet::reservations::reservation_expired;
 use crate::PlatformWalletError;
 
@@ -145,7 +146,7 @@ pub struct FinalizeOptions {
 pub(crate) fn trial_with_waiting_coins(
     trial: TransactionBuilder,
     wallet: &Wallet,
-    accounts: &mut ManagedAccountCollection,
+    info: &mut PlatformWalletInfo,
     offered: &[AccountType],
     seeds: &[Utxo],
     reservation_only: bool,
@@ -156,6 +157,8 @@ pub(crate) fn trial_with_waiting_coins(
     if reservation_only {
         return None;
     }
+    let generation = Arc::clone(&info.generation);
+    let accounts = &mut info.core_wallet.accounts;
     // The waiting coins of each offered account, read before anything is
     // cloned: a shortfall with none (the common case) costs no copy.
     let mut waiting: HashMap<OutPoint, u64> = HashMap::new();
@@ -214,6 +217,11 @@ pub(crate) fn trial_with_waiting_coins(
                 managed.release_reservation_if_owner(&transaction, token);
             }
         }
+    }
+    // The build would refuse an input an in-flight broadcast pins
+    // (`InputMidBroadcast`), so a trial that needs one is no promise.
+    if generation.in_broadcast_conflict(&transaction).is_some() {
+        return None;
     }
     let spent = transaction
         .input
@@ -1034,7 +1042,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         trial_with_waiting_coins(
                             trial,
                             wallet,
-                            &mut info.core_wallet.accounts,
+                            info,
                             &offered_accounts,
                             &seeds,
                             reservation_only,
@@ -1351,7 +1359,7 @@ mod tests {
 
     use async_trait::async_trait;
     use dashcore::secp256k1::{ecdsa, PublicKey};
-    use dashcore::{Address as DashAddress, Network};
+    use dashcore::{Address as DashAddress, Network, Transaction, TxIn};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::signer::{Signer, SignerMethod};
     use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
@@ -2500,6 +2508,69 @@ mod tests {
             matches!(
                 result,
                 Err(PlatformWalletError::CorePooledInsufficientFunds { .. })
+            ),
+            "got {result:?}"
+        );
+    }
+
+    /// The build refuses an input an in-flight broadcast pins, so a trial
+    /// that needs one promises nothing: 600,000 final (pinned) + 500,000
+    /// waiting against 1,000,000 stays insufficient funds. With nothing
+    /// pinned, the same wallet is waiting on the network.
+    #[tokio::test]
+    async fn should_not_promise_a_coin_an_inflight_broadcast_pins() {
+        let (core, signer, manager, wallet_id) = dual_core(&[500_000], &[600_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let pinned = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .into_iter()
+            .next()
+            .expect("bip32 coin");
+        let dispatch = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: pinned.outpoint,
+                ..TxIn::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let pin = core.test_generation_marker().pin_in_broadcast(&dispatch);
+        let result = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(92)),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CorePooledInsufficientFunds { .. })
+            ),
+            "got {result:?}"
+        );
+
+        drop(pin);
+        // Control: the same wallet shape with nothing pinned.
+        let (core, signer, manager, wallet_id) = dual_core(&[500_000], &[600_000]).await;
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let result = core
+            .finalize_transaction_from(
+                &|| Ok(payment_builder(93)),
+                FinalizeOptions::default(),
+                &SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
             ),
             "got {result:?}"
         );

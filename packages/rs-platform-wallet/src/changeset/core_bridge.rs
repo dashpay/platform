@@ -2041,6 +2041,15 @@ fn is_contact_watch_only(record: &TransactionRecord) -> bool {
     record.account_type.is_contact_owned()
 }
 
+/// Whether `record` spends coins the wallet owns: it recorded input details
+/// (entries keyed to inputs that spent the account's outpoints) and the
+/// account is not a contact's watch-only chain ([`is_contact_watch_only`]),
+/// whose input details record the *contact* spending. Shared with the
+/// broadcast resolver, whose "own send" is this rule.
+pub(crate) fn record_spends_own_coins(record: &TransactionRecord) -> bool {
+    !record.input_details.is_empty() && !is_contact_watch_only(record)
+}
+
 /// Derive the "ours" UTXOs created by a transaction's outputs.
 ///
 /// Walks `record.output_details`, keeps entries with role `Received` or
@@ -2062,9 +2071,8 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     );
     let is_instant = matches!(record.context, TransactionContext::InstantSend(_));
     let is_coinbase = record.transaction.is_coin_base();
-    // We own at least one input iff the wallet recorded any input details
-    // (those entries are keyed to inputs that spent our outpoints).
-    let owns_any_input = !record.input_details.is_empty();
+    // Contact-owned records returned above, so this is the input rule alone.
+    let owns_any_input = record_spends_own_coins(record);
 
     record
         .output_details

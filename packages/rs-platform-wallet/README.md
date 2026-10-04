@@ -174,8 +174,9 @@ source and behaviour changes:
 - Behaviour: every payment build that funds from the wallet, and
   `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
   InstantSend-locked coins. A coin in `FinalizeOptions::inputs` is judged as
-  the wallet holds it when the build is finalized: spent if final by then,
-  refused with `CoreFundsAwaitingNetwork` naming its outpoint if not. A coin
+  the wallet holds it when the build is finalized: a candidate if final by
+  then (the only kind with `reservation_only`), refused with
+  `CoreFundsAwaitingNetwork` naming its outpoint if not. A coin
   seeded on the builder itself (`add_inputs`) is the caller's snapshot; a
   selected one that has lost its final status is refused the same way.
 
