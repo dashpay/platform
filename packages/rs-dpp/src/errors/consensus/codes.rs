@@ -517,6 +517,7 @@ impl ErrorWithCode for StateError {
             Self::SettledDeletionNotRestorableError(_) => 41209,
             Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
             Self::ContractTeamActionDocumentChangedError(_) => 41211,
+            Self::ContractTeamMemberAddedAfterDocumentError(_) => 41212,
         }
     }
 }

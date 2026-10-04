@@ -64,7 +64,7 @@ fn post_schema(rule: Option<Value>) -> Value {
         "properties": {
             "text": { "type": "string", "maxLength": 50, "position": 0 },
         },
-        "required": ["text", "$updatedAt"],
+        "required": ["text", "$createdAt", "$updatedAt"],
         "additionalProperties": false,
         "moderatorAbilities": abilities,
     })

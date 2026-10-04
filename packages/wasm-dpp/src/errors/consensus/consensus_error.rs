@@ -112,6 +112,7 @@ use dpp::consensus::state::contract_moderation::{
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
     ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    ContractTeamMemberAddedAfterDocumentError,
     SettledDeletionNotRestorableError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
@@ -757,6 +758,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ContractTeamActionDocumentChangedError(e) => {
             generic_consensus_error!(ContractTeamActionDocumentChangedError, e).into()
+        }
+        StateError::ContractTeamMemberAddedAfterDocumentError(e) => {
+            generic_consensus_error!(ContractTeamMemberAddedAfterDocumentError, e).into()
         }
         StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
             generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()
