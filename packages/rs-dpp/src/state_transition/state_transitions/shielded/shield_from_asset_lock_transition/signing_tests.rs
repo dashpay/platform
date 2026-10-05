@@ -97,6 +97,66 @@ fn make_chain_asset_lock_proof() -> AssetLockProof {
     })
 }
 
+/// Rebuilds the Orchard bundle from a transition's fields and verifies its proof and signatures
+/// against the sighash bound to `asset_lock_proof`, mirroring drive-abci's
+/// `shield_from_asset_lock` `transform_into_action` (v1) → `reconstruct_and_verify_bundle`
+/// (outputs-only flags, `value_balance = -shield_amount`).
+fn bundle_verifies_like_consensus(
+    v1: &ShieldFromAssetLockTransitionV1,
+    asset_lock_proof: &AssetLockProof,
+    vk: &grovedb_commitment_tree::VerifyingKey,
+    platform_version: &PlatformVersion,
+) -> bool {
+    use crate::shielded::{compute_platform_sighash, shield_from_asset_lock_extra_sighash_data};
+    use grovedb_commitment_tree::{
+        redpallas, Action, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
+        ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, ProofSizeEnforcement,
+        TransmittedNoteCiphertext, ValueCommitment,
+    };
+
+    let actions: Vec<_> = v1
+        .actions
+        .iter()
+        .map(|a| {
+            let note = &a.encrypted_note;
+            Action::from_parts(
+                Nullifier::from_bytes(&a.nullifier).unwrap(),
+                redpallas::VerificationKey::try_from(a.rk).unwrap(),
+                ExtractedNoteCommitment::from_bytes(&a.cmx).unwrap(),
+                TransmittedNoteCiphertext::<DashMemo>::from_parts(
+                    note[..32].try_into().unwrap(),
+                    NoteBytesData(note[32..136].try_into().unwrap()),
+                    note[136..].try_into().unwrap(),
+                ),
+                ValueCommitment::from_bytes(&a.cv_net).unwrap(),
+                redpallas::Signature::from(a.spend_auth_sig),
+            )
+            .expect("well-formed action")
+        })
+        .collect();
+    let bundle: Bundle<Authorized, i64, DashMemo> = Bundle::try_from_parts(
+        nonempty::NonEmpty::from_vec(actions).expect("actions"),
+        Flags::from_byte(0x02).expect("outputs-only flags"),
+        -(v1.value_balance as i64),
+        Anchor::from_bytes(v1.anchor).unwrap(),
+        Authorized::from_parts(
+            Proof::new(v1.proof.clone()),
+            redpallas::Signature::from(v1.binding_signature),
+        ),
+        ProofSizeEnforcement::Strict,
+    )
+    .expect("well-formed bundle");
+
+    let extra_sighash_data =
+        shield_from_asset_lock_extra_sighash_data(asset_lock_proof, platform_version)
+            .expect("binding");
+    let commitment: [u8; 32] = bundle.commitment().into();
+    let sighash = compute_platform_sighash(&commitment, &extra_sighash_data);
+    let mut batch = BatchValidator::new();
+    batch.add_bundle(&bundle, sighash);
+    batch.validate(vk, rand::rngs::OsRng)
+}
+
 /// An InstantSend proof of a one-output asset-lock transaction. Its InstantSend lock is not
 /// valid; nothing here verifies it.
 fn make_instant_asset_lock_proof() -> AssetLockProof {
@@ -425,6 +485,24 @@ async fn proved_bundle_assembles_around_instant_and_chain_proofs_of_its_outpoint
     let over_instant = extract_v1(assemble(instant.clone()).await.expect("instant assembly"));
     let resubmitted = extract_v1(assemble(instant).await.expect("instant re-assembly"));
     let over_chain = extract_v1(assemble(chain).await.expect("chain assembly"));
+
+    // Each transition's bundle verifies the way consensus checks it: rebuilt from the
+    // transition's own fields, against the sighash bound to the transition's OWN asset lock
+    // proof — not merely against the sighash it was proved with.
+    let vk = grovedb_commitment_tree::VerifyingKey::build();
+    for v1 in [&over_instant, &resubmitted, &over_chain] {
+        assert!(
+            bundle_verifies_like_consensus(v1, &v1.asset_lock_proof, &vk, platform_version),
+            "an assembled transition's bundle must verify against its own asset lock proof"
+        );
+    }
+    // And the check has teeth: under another lock's binding the same bundle is refused.
+    assert!(!bundle_verifies_like_consensus(
+        &over_chain,
+        &other_lock,
+        &vk,
+        platform_version
+    ));
 
     for v1 in [&over_instant, &resubmitted, &over_chain] {
         assert_eq!(v1.value_balance, shield_amount);
