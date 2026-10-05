@@ -294,10 +294,11 @@ impl Scan {
                 return Err(Stop::Closed);
             }
 
-            // Catching up on many blocks: share the replay capacity, a page at a time. The
-            // permit covers only reading from Tenderdash and is given up before anything is
-            // sent, so a client that stops reading cannot hold it.
-            let mut replay_permit = if tip - self.next_height >= META_PAGE {
+            // Catching up on many blocks: share the replay capacity. The permit covers only
+            // reading from Tenderdash: it is given up before anything is sent, so a client that
+            // stops reading cannot hold it, and taken again before the next read.
+            let catching_up = tip - self.next_height >= META_PAGE;
+            let mut replay_permit = if catching_up {
                 Some(self.replay_permit(&mut last_checkpoint).await?)
             } else {
                 None
@@ -320,6 +321,9 @@ impl Scan {
                         ))));
                     }
                     HeightMeta::HasTxs => {
+                        if catching_up && replay_permit.is_none() {
+                            replay_permit = Some(self.replay_permit(&mut last_checkpoint).await?);
+                        }
                         let block = self.read_block(height).await?;
                         let matches = self.match_block(&block)?;
                         if !matches.is_empty() {
@@ -420,7 +424,15 @@ impl Scan {
                     matched_batch_positions: filter_match.matched_batch_positions,
                 });
             }
-            self.filters.follow(state_transition, platform_version);
+            self.filters
+                .follow(state_transition, platform_version)
+                .map_err(|e| {
+                    Stop::Fail(Status::failed_precondition(format!(
+                        "block {height} transaction {} updates a subscribed data contract this \
+                         node cannot read ({e}); resume from {height} on an upgraded node",
+                        tx.index
+                    )))
+                })?;
         }
         Ok(matches)
     }

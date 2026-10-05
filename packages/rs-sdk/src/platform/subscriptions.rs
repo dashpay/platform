@@ -14,7 +14,8 @@
 //! # What a subscription proves
 //!
 //! Every transition a node sends is checked here: its hash, and that it matches the filters,
-//! evaluated against data contracts fetched with proofs. A node that sends a transition the
+//! evaluated against data contracts fetched with proofs. A data contract update in the stream
+//! is only a signal: the contract is read again with a proof before the filters on it rebind. A node that sends a transition the
 //! filters do not match is skipped. What a node cannot be held to is completeness: it may
 //! leave a matching transition out, and block heights and times are its word. To act on a
 //! transition, read the state it changed with a proved query; to catch up on what happened
@@ -31,12 +32,13 @@ use dash_platform_queries::subscriptions::{
 };
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::data_contract::DataContract;
+use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::{sleep, TransportError};
 use rs_dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -94,6 +96,9 @@ pub struct StateTransitionSubscription {
     /// Where the next stream starts; `None` until the first checkpoint of a live-only start.
     resume_from: Option<u64>,
     consecutive_failures: u32,
+    /// Bound data contracts a delivered update changed; re-read with proofs before the next
+    /// message is checked.
+    contracts_to_refresh: BTreeSet<Identifier>,
 }
 
 impl Sdk {
@@ -113,6 +118,19 @@ impl Sdk {
     ) -> Result<StateTransitionSubscription, Error> {
         let caller_filters = filters.len();
         let data_contract_ids = ResolvedFilters::data_contract_ids(&filters);
+        // Bound the request before fetching anything for it.
+        let max_filters = if data_contract_ids.is_empty() {
+            MAX_FILTERS
+        } else {
+            // One filter is needed to follow updates of the data contracts.
+            MAX_FILTERS - 1
+        };
+        if filters.is_empty() || filters.len() > max_filters {
+            return Err(Error::Config(format!(
+                "a subscription takes 1 to {max_filters} filters here, got {}",
+                filters.len()
+            )));
+        }
         let mut contracts = BTreeMap::new();
         for data_contract_id in &data_contract_ids {
             if let Some(contract) = DataContract::fetch(self, *data_contract_id).await? {
@@ -120,13 +138,6 @@ impl Sdk {
             }
         }
         if !data_contract_ids.is_empty() {
-            if filters.len() >= MAX_FILTERS {
-                return Err(Error::Config(format!(
-                    "with document filters at most {} filters may be given: one is needed to \
-                     follow updates of their data contracts",
-                    MAX_FILTERS - 1
-                )));
-            }
             filters.push(StateTransitionFilter::DataContracts {
                 data_contract_ids: data_contract_ids.into_iter().collect(),
             });
@@ -147,6 +158,7 @@ impl Sdk {
             stream_messages: 0,
             resume_from: from_block_height,
             consecutive_failures: 0,
+            contracts_to_refresh: BTreeSet::new(),
         };
         // Open the first stream now, so a refused request fails here rather than on `next`.
         subscription.stream = Some(subscription.open().await?);
@@ -160,6 +172,7 @@ impl StateTransitionSubscription {
     /// in a row failed).
     pub async fn next(&mut self) -> Result<SubscriptionEvent, Error> {
         loop {
+            self.refresh_contracts().await?;
             let stream = match self.stream.as_mut() {
                 Some(stream) => stream,
                 None => {
@@ -249,6 +262,24 @@ impl StateTransitionSubscription {
         }
     }
 
+    /// Rebind the filters on contracts a delivered update changed to their current version,
+    /// read with a proof. A contract that can no longer be read ends the subscription.
+    async fn refresh_contracts(&mut self) -> Result<(), Error> {
+        while let Some(data_contract_id) = self.contracts_to_refresh.pop_first() {
+            let contract = DataContract::fetch(&self.sdk, data_contract_id)
+                .await?
+                .ok_or_else(|| {
+                    Error::MissingDependency(
+                        "DataContract".to_string(),
+                        format!("data contract {data_contract_id} not found after its update"),
+                    )
+                })?;
+            self.resolved
+                .rebind_data_contract(Arc::new(contract), self.sdk.version());
+        }
+        Ok(())
+    }
+
     /// The event a response carries, after checking it; `None` for a response to skip. A
     /// transition the node should not have sent (wrong hash, not matching) is skipped; one this
     /// SDK cannot judge (a protocol version or transition it does not know) is an error, since
@@ -257,12 +288,18 @@ impl StateTransitionSubscription {
         &mut self,
         response: SubscribeToStateTransitionsResponse,
     ) -> Result<Option<SubscriptionEvent>, Error> {
+        let unsupported = || {
+            Error::Generic(
+                "the node sent a subscription response this SDK does not understand; upgrade \
+                 the SDK"
+                    .to_string(),
+            )
+        };
         let Some(Version::V0(response)) = response.version else {
-            tracing::warn!("skipping a state transition subscription response of unknown version");
-            return Ok(None);
+            return Err(unsupported());
         };
         let Some(responses) = response.responses else {
-            return Ok(None);
+            return Err(unsupported());
         };
         Ok(match responses {
             Responses::Checkpoint(checkpoint) => {
@@ -285,7 +322,12 @@ impl StateTransitionSubscription {
                 let state_transition =
                     StateTransition::deserialize_from_bytes_untrusted(&matched.state_transition)?;
                 let local_match = self.resolved.matches(&state_transition, platform_version);
-                self.resolved.follow(&state_transition, platform_version);
+                if let Some(data_contract_id) =
+                    self.resolved.followed_data_contract(&state_transition)
+                {
+                    // Never install the contract the node sent: re-read it with a proof.
+                    self.contracts_to_refresh.insert(data_contract_id);
+                }
                 let Some(mut local_match) = local_match else {
                     tracing::warn!(
                         height = matched.block_height,
@@ -381,6 +423,7 @@ mod tests {
             stream_messages: 0,
             resume_from: None,
             consecutive_failures: 0,
+            contracts_to_refresh: BTreeSet::new(),
         }
     }
 
@@ -500,5 +543,84 @@ mod tests {
         for code in [Code::InvalidArgument, Code::NotFound, Code::Unimplemented] {
             assert!(!resumable(&Status::new(code, "")), "{code:?}");
         }
+    }
+
+    #[test]
+    fn should_fail_on_a_response_envelope_this_sdk_does_not_know() {
+        let mut subscription = subscription();
+        assert!(subscription
+            .accept(SubscribeToStateTransitionsResponse { version: None })
+            .is_err());
+        assert!(subscription
+            .accept(SubscribeToStateTransitionsResponse {
+                version: Some(Version::V0(SubscribeToStateTransitionsResponseV0 {
+                    responses: None,
+                })),
+            })
+            .is_err());
+    }
+
+    #[test]
+    fn should_not_install_a_contract_a_node_sends_but_refresh_it_with_a_proof() {
+        use dash_platform_queries::subscriptions::DocumentFilter;
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use dpp::version::TryFromPlatformVersioned;
+
+        let proved = Arc::new(
+            get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+                .data_contract_owned(),
+        );
+        let filters = vec![
+            StateTransitionFilter::Documents(
+                DocumentFilter::new(proved.id()).with_document_type("niceDocument"),
+            ),
+            StateTransitionFilter::DataContracts {
+                data_contract_ids: vec![proved.id()],
+            },
+        ];
+        let resolved = ResolvedFilters::resolve(
+            filters.clone(),
+            |_| Some(proved.clone()),
+            PlatformVersion::latest(),
+        )
+        .expect("filters resolve");
+        let mut subscription = StateTransitionSubscription {
+            filters,
+            caller_filters: 1,
+            resolved,
+            ..subscription()
+        };
+
+        // A node fabricates an update of the watched contract.
+        let mut fabricated = (*proved).clone();
+        fabricated.set_version(proved.version() + 7);
+        let update = StateTransition::DataContractUpdate(
+            DataContractUpdateTransition::try_from_platform_versioned(
+                (fabricated, 1),
+                PlatformVersion::latest(),
+            )
+            .expect("update transition"),
+        )
+        .serialize_to_bytes()
+        .expect("serializable");
+
+        let event = subscription
+            .accept(response(Responses::StateTransition(matched(update))))
+            .expect("accepted");
+        // The internal follow filter's match is not reported...
+        assert!(event.is_none());
+        // ...the proved binding is untouched...
+        assert_eq!(
+            subscription
+                .resolved
+                .data_contract(proved.id())
+                .expect("bound")
+                .version(),
+            proved.version()
+        );
+        // ...and the contract is queued to be read again with a proof.
+        assert!(subscription.contracts_to_refresh.contains(&proved.id()));
     }
 }

@@ -490,8 +490,21 @@ fn should_round_trip_filters_through_their_wire_form() {
     assert_eq!(decoded, filters);
 }
 
+fn contract_update(contract: DataContract) -> StateTransition {
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::version::TryFromPlatformVersioned;
+    StateTransition::DataContractUpdate(
+        DataContractUpdateTransition::try_from_platform_versioned(
+            (contract, 1),
+            PlatformVersion::latest(),
+        )
+        .expect("update transition"),
+    )
+}
+
 #[test]
-fn should_rebind_document_filters_to_an_updated_contract() {
+fn should_rebind_document_filters_to_the_contract_an_update_carries() {
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     let contract = contract();
     let mut filters = resolve(
         vec![StateTransitionFilter::Documents(
@@ -500,9 +513,46 @@ fn should_rebind_document_filters_to_an_updated_contract() {
         &contract,
     )
     .unwrap();
+    assert_eq!(
+        filters.data_contract(contract.id()).unwrap().version(),
+        contract.version()
+    );
+
+    let mut updated = (*contract).clone();
+    updated.set_version(contract.version() + 1);
+    let update = contract_update(updated);
+    assert_eq!(filters.followed_data_contract(&update), Some(contract.id()));
+    filters
+        .follow(&update, PlatformVersion::latest())
+        .expect("update converts");
+    assert_eq!(
+        filters.data_contract(contract.id()).unwrap().version(),
+        contract.version() + 1
+    );
+    // Still matches documents of the type under the new version.
     let state_transition = batch(id(1), vec![create_document(&contract, 10, "bob")]);
-    filters.rebind_data_contract(contract.clone(), PlatformVersion::latest());
     assert!(matches(&filters, &state_transition).is_some());
+}
+
+#[test]
+fn should_ignore_updates_of_contracts_no_filter_is_bound_to() {
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    let contract = contract();
+    let mut filters = resolve(
+        vec![StateTransitionFilter::Identities {
+            identity_ids: vec![id(7)],
+            role: Role::Any,
+        }],
+        &contract,
+    )
+    .unwrap();
+    let mut other = (*contract).clone();
+    other.set_id(id(42));
+    let update = contract_update(other);
+    assert_eq!(filters.followed_data_contract(&update), None);
+    filters
+        .follow(&update, PlatformVersion::latest())
+        .expect("nothing to follow");
 }
 
 #[test]

@@ -28,7 +28,7 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Request, Status};
 use dash_platform_queries::subscriptions::{
-    ResolvedFilters, StateTransitionFilter, SubscriptionFilterError,
+    MAX_FILTERS, ResolvedFilters, StateTransitionFilter, SubscriptionFilterError,
 };
 use dpp::data_contract::DataContract;
 use dpp::prelude::Identifier;
@@ -56,6 +56,13 @@ impl PlatformServiceImpl {
             return Err(Status::invalid_argument(
                 "from_block_height starts at 1; leave it unset to start after the current tip",
             ));
+        }
+        // Bound the request before any work is done for it, Drive lookups included.
+        if request.filters.is_empty() || request.filters.len() > MAX_FILTERS {
+            return Err(Status::invalid_argument(format!(
+                "a subscription takes 1 to {MAX_FILTERS} filters, got {}",
+                request.filters.len()
+            )));
         }
         let filters = request
             .filters

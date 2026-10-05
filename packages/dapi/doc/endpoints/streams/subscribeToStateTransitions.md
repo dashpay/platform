@@ -85,7 +85,9 @@ Filters are evaluated against what a transition itself names, so:
 ## Trust
 
 Clients can check every delivered transition: its hash, and that it matches their filters
-evaluated against proved data contracts (the Rust SDK does). They cannot check completeness:
+evaluated against proved data contracts (the Rust SDK does). A data contract update in the
+stream is only a signal to a client: it reads the contract again with a proof before matching
+against the new version, rather than trusting the contract the node sent. They cannot check completeness:
 a node may leave a match out, and block heights and times are its assertion. Act on a
 transition by reading the state it changed with a proved query; catch up after being offline
 from a proved read's `metadata.height + 1`.

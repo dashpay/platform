@@ -16,6 +16,7 @@ use dpp::state_transition::StateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tokio_stream::StreamExt;
 
 /// A chain held in memory: height → successful transactions.
@@ -24,6 +25,10 @@ struct FakeChain {
     blocks: Mutex<BTreeMap<u64, Vec<Vec<u8>>>>,
     /// A height whose execution results are not saved yet.
     results_withheld: Mutex<Option<u64>>,
+    /// Block reads of heights up to `counted_below` in flight, and the most seen at once.
+    reads_in_flight: AtomicUsize,
+    max_reads_in_flight: AtomicUsize,
+    counted_below: AtomicU64,
 }
 
 impl FakeChain {
@@ -46,6 +51,12 @@ impl TenderdashBlocks for FakeChain {
     }
 
     async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
+        if height < self.counted_below.load(Ordering::SeqCst) {
+            let now = self.reads_in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_reads_in_flight.fetch_max(now, Ordering::SeqCst);
+            sleep(Duration::from_millis(2)).await;
+            self.reads_in_flight.fetch_sub(1, Ordering::SeqCst);
+        }
         Ok(ResultBlock {
             block: self.txs(height).map(|txs| Block {
                 header: BlockHeader {
@@ -399,4 +410,41 @@ async fn should_not_let_a_client_that_stops_reading_hold_the_replay_capacity() {
         .unwrap();
     expect_checkpoint(&mut reader, 0).await;
     expect_match(&mut reader, height, 0).await;
+}
+
+#[tokio::test]
+async fn should_bound_concurrent_catch_up_reads_after_sending_matches() {
+    let harness = harness(SubscriptionLimits {
+        max_replaying: 1,
+        ..Default::default()
+    });
+    for _ in 0..100 {
+        harness.commit(vec![credit_transfer(7)]);
+    }
+    // Heights read while a subscription is at least a page behind the tip of 100.
+    harness.chain.counted_below.store(81, Ordering::SeqCst);
+
+    let mut drains = Vec::new();
+    for from in [1, 41] {
+        let mut stream = harness
+            .service
+            .start(
+                harness.service.admit(None).unwrap(),
+                recipient_filter(7),
+                Some(from),
+            )
+            .await
+            .unwrap();
+        drains.push(tokio::spawn(async move {
+            loop {
+                if let Message::Checkpoint(100) = next(&mut stream).await {
+                    return;
+                }
+            }
+        }));
+    }
+    for drain in drains {
+        drain.await.unwrap();
+    }
+    assert_eq!(harness.chain.max_reads_in_flight.load(Ordering::SeqCst), 1);
 }

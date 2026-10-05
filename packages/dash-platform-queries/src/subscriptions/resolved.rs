@@ -21,6 +21,7 @@ use dpp::state_transition::batch_transition::document_base_transition::v0::v0_me
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::query::filter::{
     DocumentActionMatchClauses, DriveDocumentQueryFilter, TransitionCheckResult,
 };
@@ -179,22 +180,63 @@ impl ResolvedFilters {
 
     /// Take note of a transition the stream has passed, matched or not: after a data contract
     /// update, the document filters on that contract match against the version it carries.
-    /// Both the node and the client call this, so they keep matching against the same version.
+    ///
+    /// This trusts the update's embedded contract, so only a party that trusts the block
+    /// source may call it: the node, reading its own Tenderdash. A client must not install a
+    /// contract a node sent it; it re-reads the contract with a proof instead (see
+    /// [`Self::followed_data_contract`]). Fails when the update's contract cannot be built.
     pub fn follow(
         &mut self,
         state_transition: &StateTransition,
         platform_version: &PlatformVersion,
-    ) {
-        if let StateTransition::DataContractUpdate(update) = state_transition {
-            if let Ok(contract) = DataContract::try_from_platform_versioned(
-                update.data_contract().clone(),
-                false,
-                &mut vec![],
-                platform_version,
-            ) {
-                self.rebind_data_contract(Arc::new(contract), platform_version);
-            }
+    ) -> Result<(), ProtocolError> {
+        let StateTransition::DataContractUpdate(update) = state_transition else {
+            return Ok(());
+        };
+        if !self.binds(update.data_contract().id()) {
+            return Ok(());
         }
+        let contract = DataContract::try_from_platform_versioned(
+            update.data_contract().clone(),
+            false,
+            &mut vec![],
+            platform_version,
+        )?;
+        self.rebind_data_contract(Arc::new(contract), platform_version);
+        Ok(())
+    }
+
+    /// The bound data contract a transition updates, if any: after it, the filters on that
+    /// contract should be rebound to the contract's new version.
+    pub fn followed_data_contract(&self, state_transition: &StateTransition) -> Option<Identifier> {
+        match state_transition {
+            StateTransition::DataContractUpdate(update)
+                if self.binds(update.data_contract().id()) =>
+            {
+                Some(update.data_contract().id())
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether a document filter is bound to `data_contract_id`.
+    fn binds(&self, data_contract_id: Identifier) -> bool {
+        self.filters.iter().any(|filter| {
+            matches!(filter, ResolvedFilter::Documents(document_filter)
+                if document_filter.contract.id() == data_contract_id)
+        })
+    }
+
+    /// The version of `data_contract_id` the document filters on it are bound to.
+    pub fn data_contract(&self, data_contract_id: Identifier) -> Option<&DataContract> {
+        self.filters.iter().find_map(|filter| match filter {
+            ResolvedFilter::Documents(document_filter)
+                if document_filter.contract.id() == data_contract_id =>
+            {
+                Some(document_filter.contract.as_ref())
+            }
+            _ => None,
+        })
     }
 
     /// Rebind the document filters on `data_contract` to this version of it, as carried by a
