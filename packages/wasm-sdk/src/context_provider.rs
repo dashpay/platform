@@ -682,3 +682,45 @@ mod tests {
             .expect("the hook must fetch the current and previous quorum lists");
     }
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::into_send;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// Resume only after a trip through the JS microtask queue, so the bridged
+    /// refresh really suspends before it completes.
+    async fn yield_to_js() {
+        let resolved = js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED);
+        wasm_bindgen_futures::JsFuture::from(resolved)
+            .await
+            .expect("a resolved promise");
+    }
+
+    fn assert_send<T: Send>(_: &T) {}
+
+    /// Browser fetches are not `Send`. The bridge runs such a refresh on the
+    /// local executor and hands its result, success or failure, to the caller
+    /// awaiting the `Send` future the SDK's hook requires.
+    #[wasm_bindgen_test]
+    async fn into_send_delivers_the_outcome_of_a_non_send_refresh() {
+        for outcome in [Ok(()), Err("quorum service down".to_string())] {
+            // `Rc` makes the refresh future `!Send`.
+            let progress = Rc::new(Cell::new(0));
+            let reported = Rc::clone(&progress);
+            let expected = outcome.clone();
+            let bridged = into_send(async move {
+                reported.set(1);
+                yield_to_js().await;
+                reported.set(2);
+                expected
+            });
+            assert_send(&bridged);
+
+            assert_eq!(bridged.await, outcome);
+            assert_eq!(progress.get(), 2, "the refresh ran to completion");
+        }
+    }
+}
