@@ -3,6 +3,7 @@ const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmn
 const DAPIAddress = require('../../../lib/dapiAddressProvider/DAPIAddress');
 
 const SimplifiedMasternodeListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider');
+const ListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/ListDAPIAddressProvider');
 
 describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
   let smlDAPIAddressProvider;
@@ -11,9 +12,10 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
   let smlMock;
   let validMasternodeList;
   let addresses;
+  let mnListDiffFixture;
 
   beforeEach(function beforeEach() {
-    const mnListDiffFixture = [{
+    mnListDiffFixture = [{
       proRegTxHash: 'f5ec54aed788c434da2fc535ea6b125ec6fc54e58bc0a00a005d1a8d5e477a90',
       confirmedHash: '53125505b0e9d11b371cf3e12c92d164296dfa215fde6201d28ea44bed992187',
       service: '192.168.65.2:20101',
@@ -193,6 +195,68 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(smlProviderMock.getSimplifiedMNList).to.be.calledOnceWithExactly();
       expect(listDAPIAddressProviderMock.getAllAddresses).to.be.calledOnceWithExactly();
       expect(listDAPIAddressProviderMock.getLiveAddress).to.be.calledOnceWithExactly();
+    });
+  });
+
+  describe('#getLiveAddress on a regtest network', () => {
+    const options = { network: 'local' };
+
+    it('should rewrite a masternode-list address to the local gateway', async () => {
+      // The fixture masternodes registered a docker-internal IP, which the
+      // host cannot reach on macOS.
+      smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
+        smlProviderMock,
+        new ListDAPIAddressProvider([], options),
+        [],
+        options,
+      );
+
+      const liveAddress = await smlDAPIAddressProvider.getLiveAddress();
+
+      expect(liveAddress.getProRegTxHash()).to.be.oneOf(
+        validMasternodeList.map((smlEntry) => smlEntry.proRegTxHash),
+      );
+      expect(liveAddress.getHost()).to.equal('127.0.0.1');
+      expect(liveAddress.getPort()).to.be.oneOf([2443, 2543, 2643]);
+      expect(liveAddress.getProtocol()).to.equal('https');
+      expect(liveAddress.isSelfSignedCertificateAllowed()).to.be.true();
+    });
+
+    it('should rewrite a loopback masternode-list address to the self-signed local gateway', async () => {
+      // A loopback host still needs the gateway's port and self-signed TLS.
+      smlMock.getValidMasternodesList.returns([
+        new SimplifiedMNListEntry({ ...mnListDiffFixture[2], service: '127.0.0.1:20001' }),
+      ]);
+      smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
+        smlProviderMock,
+        new ListDAPIAddressProvider([], options),
+        [],
+        options,
+      );
+
+      const liveAddress = await smlDAPIAddressProvider.getLiveAddress();
+
+      expect(liveAddress.getHost()).to.equal('127.0.0.1');
+      expect(liveAddress.getPort()).to.equal(2443);
+      expect(liveAddress.isSelfSignedCertificateAllowed()).to.be.true();
+    });
+
+    it('should not rewrite a masternode-list address outside regtest', async () => {
+      // Mainnet: dashcore-lib's regtest is a global flag on its testnet object,
+      // which the regtest cases above have switched on.
+      const mainnetOptions = { network: 'mainnet' };
+      smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
+        smlProviderMock,
+        new ListDAPIAddressProvider([], mainnetOptions),
+        [],
+        mainnetOptions,
+      );
+
+      const liveAddress = await smlDAPIAddressProvider.getLiveAddress();
+
+      expect(liveAddress.getHost()).to.equal(validMasternodeList[0].getIp());
+      expect(liveAddress.getPort()).to.equal(validMasternodeList[0].platformHTTPPort);
+      expect(liveAddress.isSelfSignedCertificateAllowed()).to.be.false();
     });
   });
 

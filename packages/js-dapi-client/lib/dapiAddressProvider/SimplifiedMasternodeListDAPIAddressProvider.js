@@ -1,3 +1,5 @@
+const networks = require('@dashevo/dashcore-lib/lib/networks');
+
 const DAPIAddress = require('./DAPIAddress');
 
 class SimplifiedMasternodeListDAPIAddressProvider {
@@ -5,9 +7,11 @@ class SimplifiedMasternodeListDAPIAddressProvider {
    * @param {SimplifiedMasternodeListProvider} smlProvider
    * @param {ListDAPIAddressProvider} listDAPIAddressProvider
    * @param {DAPIAddress[]} addressWhiteList
+   * @param {DAPIClientOptions} [options]
    */
-  constructor(smlProvider, listDAPIAddressProvider, addressWhiteList) {
+  constructor(smlProvider, listDAPIAddressProvider, addressWhiteList, options = {}) {
     this.smlProvider = smlProvider;
+    this.options = options;
     this.listDAPIAddressProvider = listDAPIAddressProvider;
     this.addressWhiteStrings = addressWhiteList.map((dapiAddress) => dapiAddress.toString());
   }
@@ -60,7 +64,30 @@ class SimplifiedMasternodeListDAPIAddressProvider {
 
     this.listDAPIAddressProvider.setAddresses(filteredAddresses);
 
-    return this.listDAPIAddressProvider.getLiveAddress();
+    const liveAddress = await this.listDAPIAddressProvider.getLiveAddress();
+
+    // This is a temporary fix for a localhost masternode.
+    // On macOS, internal docker IP is used to register masternode, and it's
+    // not really possible to bind to that address, so that workaround is introduced.
+    //
+    // It lives here, and only here, because only addresses discovered from the
+    // masternode list can hold such an unreachable docker-internal host. An
+    // address list the caller supplies (`dapiAddresses`, `seeds`) already names
+    // the exact gateway to talk to (dashmate e2e suites move the stock ports on
+    // purpose), and clobbering it with the stock local ports silently redirects
+    // every request to whichever network squats those ports on the machine.
+    const network = networks.get(this.options.network);
+    if (liveAddress && network && network.regtestEnabled) {
+      const liveAddressCount = this.listDAPIAddressProvider.getLiveAddresses().length;
+      const randomNodeIndex = Math.floor(Math.random() * liveAddressCount);
+
+      liveAddress.protocol = 'https';
+      liveAddress.host = '127.0.0.1';
+      liveAddress.allowSelfSignedCertificate = true;
+      liveAddress.port = 2443 + randomNodeIndex * 100;
+    }
+
+    return liveAddress;
   }
 
   /**

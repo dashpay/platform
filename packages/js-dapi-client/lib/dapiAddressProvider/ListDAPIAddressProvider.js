@@ -1,5 +1,4 @@
 const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const networks = require('@dashevo/dashcore-lib/lib/networks');
 
 class ListDAPIAddressProvider {
   /**
@@ -20,38 +19,11 @@ class ListDAPIAddressProvider {
    * @returns {Promise<DAPIAddress|undefined>}
    */
   async getLiveAddress() {
-    const liveAddresses = this.getLiveAddresses();
-
-    const liveAddress = sample(liveAddresses);
-
-    if (liveAddress === undefined) {
-      return undefined;
-    }
-
-    // This is a temporary fix for a localhost masternode.
-    // On macOS, internal docker IP is used to register masternode, and it's
-    // not really possible to bind to that address, so that workaround is introduced.
-    //
-    // Only addresses discovered from the masternode list (they carry the
-    // masternode's proRegTxHash) can hold such an unreachable docker-internal
-    // host, so only those are rewritten. A caller-supplied address — a
-    // moved-port loopback, a secondary loopback like 127.0.0.2, a LAN IP, or a
-    // container hostname — already names the exact gateway to talk to
-    // (dashmate e2e suites move the stock ports on purpose), and clobbering it
-    // with the stock local ports silently redirects every request to whichever
-    // network squats those ports on the machine.
-    const network = networks.get(this.options.network);
-    const isFromMasternodeList = Boolean(liveAddress.getProRegTxHash());
-    if (network && network.regtestEnabled && isFromMasternodeList) {
-      const randomNodeIndex = Math.floor(Math.random() * liveAddresses.length);
-
-      liveAddress.protocol = 'https';
-      liveAddress.host = '127.0.0.1';
-      liveAddress.allowSelfSignedCertificate = true;
-      liveAddress.port = 2443 + randomNodeIndex * 100;
-    }
-
-    return liveAddress;
+    // Addresses are returned as configured. The regtest compatibility rewrite
+    // for masternode-list addresses lives in
+    // SimplifiedMasternodeListDAPIAddressProvider, so an explicit list is
+    // never rewritten.
+    return sample(this.getLiveAddresses());
   }
 
   /**

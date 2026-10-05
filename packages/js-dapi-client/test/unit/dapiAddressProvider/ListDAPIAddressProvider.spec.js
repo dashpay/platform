@@ -100,54 +100,30 @@ describe('ListDAPIAddressProvider', () => {
       expect(address).to.be.undefined();
     });
 
-    it('should return modified address for a masternode-list node on localhost network', async () => {
+    it('should not modify an explicit address that carries a proRegTxHash', async () => {
       options = {
         network: 'local',
       };
 
-      // Addresses discovered from the masternode list carry the masternode's
-      // proRegTxHash and may hold a docker-internal IP that cannot be reached
-      // from the host (macOS), so they are rewritten to the local gateway.
-      const discoveredAddress = new DAPIAddress({
-        host: '172.16.0.2',
+      // The regtest rewrite belongs to the masternode-list provider. A list
+      // the caller supplies is used as given, even when an entry names the
+      // masternode it belongs to.
+      const explicitAddress = new DAPIAddress({
+        host: '127.0.0.2',
+        port: 45003,
         proRegTxHash: 'a'.repeat(64),
       });
 
       listDAPIAddressProvider = new ListDAPIAddressProvider(
-        [discoveredAddress],
+        [explicitAddress],
         options,
       );
 
       const liveAddress = await listDAPIAddressProvider.getLiveAddress();
 
-      expect(liveAddress.host).to.equal('127.0.0.1');
-      expect(liveAddress.protocol).to.equal('https');
-      expect(liveAddress.allowSelfSignedCertificate).to.be.true();
-    });
-
-    it('should rewrite a loopback masternode-list node to the self-signed local gateway', async () => {
-      options = {
-        network: 'local',
-      };
-
-      // A loopback host from the masternode list still needs the local
-      // gateway's self-signed TLS, so provenance alone decides the rewrite.
-      const discoveredAddress = new DAPIAddress({
-        host: '127.0.0.1',
-        port: 20001,
-        proRegTxHash: 'b'.repeat(64),
-      });
-
-      listDAPIAddressProvider = new ListDAPIAddressProvider(
-        [discoveredAddress],
-        options,
-      );
-
-      const liveAddress = await listDAPIAddressProvider.getLiveAddress();
-
-      expect(liveAddress.host).to.equal('127.0.0.1');
-      expect(liveAddress.port).to.equal(2443);
-      expect(liveAddress.allowSelfSignedCertificate).to.be.true();
+      expect(liveAddress.host).to.equal('127.0.0.2');
+      expect(liveAddress.port).to.equal(45003);
+      expect(liveAddress.allowSelfSignedCertificate).to.be.false();
     });
 
     it('should not modify a caller-supplied non-loopback address', async () => {
@@ -155,9 +131,8 @@ describe('ListDAPIAddressProvider', () => {
         network: 'local',
       };
 
-      // A caller-supplied address (no proRegTxHash — it did not come from the
-      // masternode list) names the exact gateway to talk to, even when the
-      // host is a secondary loopback, LAN IP, or container hostname.
+      // A caller-supplied address names the exact gateway to talk to, even
+      // when the host is a secondary loopback, LAN IP, or container hostname.
       const explicitAddress = new DAPIAddress('127.0.0.2:45003:self-signed');
 
       listDAPIAddressProvider = new ListDAPIAddressProvider(
