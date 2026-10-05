@@ -652,3 +652,384 @@ async fn should_drop_replay_credit_for_contact_only_script() {
         .contains_key(&our_coin));
     assert_eq!(info.balance.total(), 7_000);
 }
+
+#[tokio::test]
+async fn should_restore_extra_input_released_by_a_persisted_conflict_after_restart() {
+    assert_conflict_restart(ConflictCase::Released).await;
+}
+
+#[tokio::test]
+async fn should_restore_released_input_with_height_only_funding_after_restart() {
+    assert_conflict_restart(ConflictCase::HeightOnlyFunding).await;
+}
+
+#[tokio::test]
+async fn should_keep_extra_input_reserved_by_a_surviving_spend_after_restart() {
+    assert_conflict_restart(ConflictCase::SurvivingClaim).await;
+}
+
+#[tokio::test]
+async fn should_resolve_locked_competitor_using_persisted_chainlock_after_restart() {
+    assert_conflict_restart(ConflictCase::PersistedChainLock).await;
+}
+
+#[tokio::test]
+async fn should_not_rewrite_conflicting_history_during_recovery_load() {
+    assert_conflict_restart(ConflictCase::Recovery).await;
+}
+
+#[tokio::test]
+async fn should_preserve_a_recordless_winners_claim_during_replay() {
+    assert_conflict_restart(ConflictCase::RecordlessClaim).await;
+}
+
+#[tokio::test]
+async fn should_preserve_a_recordless_winners_placeholder_during_replay() {
+    assert_conflict_restart(ConflictCase::RecordlessPlaceholder).await;
+}
+
+#[tokio::test]
+async fn should_roll_back_a_failed_replay_repair() {
+    assert_conflict_restart(ConflictCase::FailedRepair).await;
+}
+
+#[tokio::test]
+async fn should_not_let_a_defeated_lock_remove_a_surviving_spender() {
+    assert_conflict_restart(ConflictCase::DefeatedLock).await;
+}
+
+#[derive(Clone, Copy)]
+enum ConflictCase {
+    Released,
+    HeightOnlyFunding,
+    SurvivingClaim,
+    PersistedChainLock,
+    Recovery,
+    RecordlessClaim,
+    RecordlessPlaceholder,
+    FailedRepair,
+    DefeatedLock,
+}
+
+async fn assert_conflict_restart(case: ConflictCase) {
+    let record_funding = !matches!(case, ConflictCase::HeightOnlyFunding);
+    let surviving_claim = matches!(
+        case,
+        ConflictCase::SurvivingClaim | ConflictCase::DefeatedLock
+    );
+    let chainlocked = matches!(
+        case,
+        ConflictCase::PersistedChainLock | ConflictCase::DefeatedLock
+    );
+    let recordless_claim = matches!(
+        case,
+        ConflictCase::RecordlessClaim | ConflictCase::RecordlessPlaceholder
+    );
+    let expect_released = !surviving_claim && !recordless_claim;
+    let recovery = matches!(case, ConflictCase::Recovery);
+
+    use dashcore::ephemerealdata::instant_lock::InstantLock;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let mut wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+    let address = info
+        .accounts
+        .standard_bip44_accounts
+        .get_mut(&0)
+        .unwrap()
+        .next_receive_address(Some(&xpub), true)
+        .unwrap();
+    let funding = Transaction {
+        version: 1,
+        lock_time: 0,
+        input: vec![TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([71; 32]), 0),
+            ..Default::default()
+        }],
+        output: [100_000, 20_000]
+            .into_iter()
+            .map(|value| TxOut {
+                value,
+                script_pubkey: address.script_pubkey(),
+            })
+            .collect(),
+        special_transaction_payload: None,
+    };
+    let coins: Vec<_> = funding
+        .output
+        .iter()
+        .enumerate()
+        .map(|(vout, output)| {
+            Utxo::new(
+                OutPoint::new(funding.txid(), vout as u32),
+                output.clone(),
+                address.clone(),
+                100,
+                false,
+            )
+        })
+        .collect();
+    let loser = Transaction {
+        version: 1,
+        lock_time: 0,
+        input: coins
+            .iter()
+            .map(|coin| TxIn {
+                previous_output: coin.outpoint,
+                ..Default::default()
+            })
+            .collect(),
+        output: vec![TxOut {
+            value: 119_000,
+            script_pubkey: address.script_pubkey(),
+        }],
+        special_transaction_payload: None,
+    };
+    let winner = Transaction {
+        version: 1,
+        lock_time: 0,
+        input: vec![TxIn {
+            previous_output: coins[0].outpoint,
+            ..Default::default()
+        }],
+        output: vec![TxOut {
+            value: 99_000,
+            script_pubkey: ScriptBuf::new(),
+        }],
+        special_transaction_payload: None,
+    };
+    let mut records = info
+        .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+        .await
+        .new_records;
+    if !record_funding {
+        records.clear();
+    }
+    let mut competing = info.clone();
+    let mut other_spender = info.clone();
+    records.extend(
+        info.check_core_transaction(&loser, TransactionContext::Mempool, &mut wallet, true, true)
+            .await
+            .new_records,
+    );
+    records.extend(
+        competing
+            .check_core_transaction(
+                &winner,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+    );
+    let mut surviving_txid = None;
+    if surviving_claim {
+        let mut extra_spender = winner.clone();
+        extra_spender.input[0].previous_output = coins[1].outpoint;
+        extra_spender.output[0].value = 19_000;
+        surviving_txid = Some(extra_spender.txid());
+        records.extend(
+            other_spender
+                .check_core_transaction(
+                    &extra_spender,
+                    TransactionContext::Mempool,
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await
+                .new_records,
+        );
+    }
+    let mut locks = std::collections::BTreeMap::new();
+    if chainlocked {
+        records
+            .iter_mut()
+            .find(|record| record.txid == winner.txid())
+            .unwrap()
+            .context = block(101);
+        locks.insert(
+            loser.txid(),
+            InstantLock {
+                inputs: coins.iter().map(|coin| coin.outpoint).collect(),
+                txid: loser.txid(),
+                ..Default::default()
+            },
+        );
+    } else {
+        locks.insert(
+            winner.txid(),
+            InstantLock {
+                inputs: vec![coins[0].outpoint],
+                txid: winner.txid(),
+                ..Default::default()
+            },
+        );
+    }
+    let dir = common::secure_tempdir().unwrap();
+    let path = dir.path().join("released-input.sqlite");
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 0,
+                }),
+                account_registrations: wallet
+                    .accounts
+                    .all_accounts()
+                    .into_iter()
+                    .map(|account| AccountRegistrationEntry {
+                        account_type: account.account_type,
+                        account_xpub: account.account_xpub,
+                    })
+                    .collect(),
+                core: Some(CoreChangeSet {
+                    records,
+                    new_utxos: coins
+                        .iter()
+                        .cloned()
+                        .chain([Utxo::new(
+                            OutPoint::new(loser.txid(), 0),
+                            loser.output[0].clone(),
+                            address,
+                            0,
+                            false,
+                        )])
+                        .collect(),
+                    spent_utxos: coins.clone(),
+                    instant_locks_for_non_final_records: locks,
+                    last_applied_chain_lock: chainlocked.then_some(ChainLock {
+                        block_height: 101,
+                        block_hash: BlockHash::from_byte_array([101; 32]),
+                        signature: [0; 96].into(),
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let extra_key: Vec<u8> = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT outpoint FROM core_utxos WHERE wallet_id = ?1 AND value = 20000",
+            [wallet.wallet_id.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let missing_winner = Txid::from_byte_array([72; 32]);
+    if recordless_claim {
+        let conn = persister.lock_conn_for_test();
+        conn.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized) VALUES (?1, ?2, 101, 0)",
+            rusqlite::params![wallet.wallet_id.as_slice(), missing_winner.as_byte_array().as_slice()]).unwrap();
+        conn.execute(
+            "UPDATE core_utxos SET spent_in_txid = ?1 WHERE wallet_id = ?2 AND value = 20000",
+            rusqlite::params![
+                missing_winner.as_byte_array().as_slice(),
+                wallet.wallet_id.as_slice()
+            ],
+        )
+        .unwrap();
+    }
+    if matches!(case, ConflictCase::RecordlessPlaceholder) {
+        persister.lock_conn_for_test().execute(
+            "UPDATE core_utxos SET value = 0, script = X'', is_sweep_placeholder = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
+            rusqlite::params![wallet.wallet_id.as_slice(), &extra_key]).unwrap();
+    }
+    if matches!(case, ConflictCase::FailedRepair) {
+        persister.lock_conn_for_test().execute_batch(
+            "CREATE TRIGGER fail_replay_repair BEFORE UPDATE OF spent ON core_utxos WHEN NEW.spent = 0 BEGIN SELECT RAISE(ABORT, 'injected replay repair failure'); END;",
+        ).unwrap();
+        assert!(persister.load().is_err());
+        assert!(persister
+            .get_core_tx_record(wallet.wallet_id, &loser.txid())
+            .unwrap()
+            .is_some());
+        let spent: bool = persister
+            .lock_conn_for_test()
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                rusqlite::params![wallet.wallet_id.as_slice(), &extra_key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(spent);
+        persister
+            .lock_conn_for_test()
+            .execute_batch("DROP TRIGGER fail_replay_repair")
+            .unwrap();
+    }
+    drop(persister);
+    for _ in 0..2 {
+        let policy = if recovery {
+            platform_wallet_storage::LoadPolicy::Recovery
+        } else {
+            platform_wallet_storage::LoadPolicy::Strict
+        };
+        let persister =
+            SqlitePersister::open(SqlitePersisterConfig::new(&path).with_load_policy(policy))
+                .unwrap();
+        let state = persister.load().unwrap();
+        let info = &state.wallets[&wallet.wallet_id].wallet_info;
+        let account = &info.accounts.standard_bip44_accounts[&0];
+        assert!(!account.transactions().contains_key(&loser.txid()));
+        if let Some(txid) = surviving_txid {
+            assert!(account.transactions().contains_key(&txid));
+            assert!(persister
+                .get_core_tx_record(wallet.wallet_id, &txid)
+                .unwrap()
+                .is_some());
+        }
+        assert!(
+            !account.utxos.contains_key(&coins[0].outpoint),
+            "winner still spends the shared input"
+        );
+        assert_eq!(
+            account.utxos.contains_key(&coins[1].outpoint),
+            expect_released,
+            "the extra input is free only when no surviving transaction claims it"
+        );
+        assert_eq!(
+            info.balance.total(),
+            if expect_released { 20_000 } else { 0 }
+        );
+        assert_eq!(
+            persister
+                .get_core_tx_record(wallet.wallet_id, &loser.txid())
+                .unwrap()
+                .is_some(),
+            recovery
+        );
+        if recordless_claim {
+            let claim: Vec<u8> = persister
+                .lock_conn_for_test()
+                .query_row(
+                    "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                    rusqlite::params![wallet.wallet_id.as_slice(), &extra_key],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(claim, missing_winner.as_byte_array());
+        }
+        let selection = CoinSelector::new(SelectionStrategy::LargestFirst).select_coins(
+            account.utxos.values(),
+            5_000,
+            FeeRate::default(),
+            100,
+        );
+        if !expect_released {
+            assert!(selection.is_err());
+        } else {
+            assert_eq!(selection.unwrap().selected[0].outpoint, coins[1].outpoint);
+        }
+    }
+}

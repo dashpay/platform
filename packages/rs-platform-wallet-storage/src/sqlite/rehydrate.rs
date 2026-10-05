@@ -11,6 +11,7 @@ use dashcore::{OutPoint, Txid};
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
@@ -19,6 +20,7 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
+use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
@@ -435,7 +437,7 @@ pub(crate) fn restore_recorded_transactions(
     wallet: &mut Wallet,
     records: Vec<TransactionRecord>,
     instant_locks: &BTreeMap<Txid, InstantLock>,
-) {
+) -> Vec<SweepBatch> {
     // Where the load projection parked each unspent outpoint; its keys are
     // the outputs persistence still considers unspent.
     let placed: HashMap<OutPoint, AccountType> = wallet_info
@@ -448,7 +450,7 @@ pub(crate) fn restore_recorded_transactions(
         })
         .collect();
     if records.is_empty() {
-        return;
+        return Vec::new();
     }
     // TODO(bound-load-history-replay): every stored record is replayed on each
     // load; bounding it to records above the last chain lock needs care so
@@ -458,36 +460,58 @@ pub(crate) fn restore_recorded_transactions(
     // outpoint keeps its reservation across load and rescan; only a conflicting
     // IS-locked or confirmed spend releases it. Sibling of
     // TODO(release-repair-spends-after-reorg) in `core_history`.
-    let replay = replay_order(records);
+    let mut replay = replay_order(records);
+    for record in &mut replay {
+        record.context = match &record.context {
+            TransactionContext::InBlock(block)
+                if wallet_info
+                    .metadata
+                    .last_applied_chain_lock
+                    .as_ref()
+                    .is_some_and(|lock| block.height() <= lock.block_height) =>
+            {
+                TransactionContext::InChainLockedBlock(*block)
+            }
+            TransactionContext::Mempool => instant_locks
+                .get(&record.txid)
+                .filter(|lock| lock_matches_record(lock, record))
+                .map(|lock| TransactionContext::InstantSend(lock.clone()))
+                .unwrap_or(TransactionContext::Mempool),
+            context => context.clone(),
+        };
+    }
 
     // Kept only to undo a replay the checker suspended part-way through.
     let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
+    let mut sweeps = plan_replay_sweeps(wallet_info, &replay);
+    let removed: HashSet<_> = sweeps
+        .iter()
+        .flat_map(|sweep| sweep.txids.iter().copied())
+        .collect();
+    replay.retain(|record| !removed.contains(&record.txid));
+    for account in wallet_info.accounts.all_funding_accounts_mut() {
+        account
+            .utxos
+            .retain(|outpoint, _| !removed.contains(&outpoint.txid));
+    }
     stage_recorded_spent_inputs(wallet_info, &replay, &placed);
-    let mut settled_winners = Vec::new();
     let completed = poll_ready(async {
-        for record in replay {
-            // The lock set already holds this txid (load marked the restored
-            // UTXOs), so a later lock event is deduplicated: the InstantSend
-            // context, and the conflict sweep it runs, must come from here.
-            let lock = instant_locks
-                .get(&record.txid)
-                .filter(|lock| lock_matches_record(lock, &record));
-            let context = match (record.context, lock) {
-                (TransactionContext::Mempool, Some(lock)) => {
-                    TransactionContext::InstantSend(lock.clone())
-                }
-                (context, _) => context,
-            };
-            wallet_info
-                .check_core_transaction(&record.transaction, context.clone(), wallet, true, false)
+        for record in &replay {
+            let result = wallet_info
+                .check_core_transaction(
+                    &record.transaction,
+                    record.context.clone(),
+                    wallet,
+                    true,
+                    false,
+                )
                 .await;
-            if matches!(
-                context,
-                TransactionContext::InstantSend(_)
-                    | TransactionContext::InBlock(_)
-                    | TransactionContext::InChainLockedBlock(_)
-            ) {
-                settled_winners.push((record.transaction, context));
+            if !result.swept_transactions.is_empty() {
+                sweeps.push(replay_sweep(
+                    record,
+                    result.swept_transactions,
+                    result.released_outpoints,
+                ));
             }
         }
     })
@@ -501,12 +525,19 @@ pub(crate) fn restore_recorded_transactions(
         );
         *wallet_info = info_before;
         *wallet = wallet_before;
-        return;
+        return Vec::new();
     }
     // A settled spend's first sweep cannot reach competitors replayed later.
     // The upstream sweep preserves ChainLock/InstantSend precedence.
-    for (transaction, context) in &settled_winners {
-        wallet_info.sweep_conflicts(transaction, context);
+    for record in &replay {
+        let result = wallet_info.sweep_conflicts(&record.transaction, &record.context);
+        if !result.txids.is_empty() {
+            sweeps.push(replay_sweep(
+                record,
+                result.txids,
+                result.released_outpoints,
+            ));
+        }
     }
 
     let spent: HashSet<_> = wallet_info
@@ -545,6 +576,86 @@ pub(crate) fn restore_recorded_transactions(
         wallet_info.apply_chain_lock(chain_lock);
     }
     wallet_info.update_balance();
+    sweeps
+}
+
+fn replay_sweep(
+    record: &TransactionRecord,
+    txids: Vec<Txid>,
+    released_outpoints: Vec<OutPoint>,
+) -> SweepBatch {
+    SweepBatch {
+        txids,
+        superseded_by: record.txid,
+        winner_mined_height: record.block_info().map(|block| block.height()),
+        released_outpoints,
+    }
+}
+
+/// Resolve the full history before a defeated lock can sweep another spender.
+fn plan_replay_sweeps(
+    wallet_info: &ManagedWalletInfo,
+    records: &[TransactionRecord],
+) -> Vec<SweepBatch> {
+    let mut conflicts = wallet_info.clone();
+    // A scratch account lets the upstream sweep see descendants across account boundaries.
+    let Some(account) = conflicts
+        .accounts
+        .all_funding_accounts_mut()
+        .into_iter()
+        .next()
+    else {
+        return Vec::new();
+    };
+    account
+        .transactions_mut()
+        .extend(records.iter().map(|record| (record.txid, record.clone())));
+    let mut winners: Vec<_> = records
+        .iter()
+        .filter(|record| !matches!(record.context, TransactionContext::Mempool))
+        .collect();
+    winners.sort_by_key(|record| {
+        let priority = match record.context {
+            TransactionContext::InChainLockedBlock(_) => 0,
+            TransactionContext::InstantSend(_) => 1,
+            _ => 2,
+        };
+        (priority, record.txid)
+    });
+    let mut removed = HashSet::new();
+    let mut sweeps = Vec::new();
+    for record in winners {
+        if removed.contains(&record.txid) {
+            continue;
+        }
+        let result = conflicts.sweep_conflicts(&record.transaction, &record.context);
+        if !result.txids.is_empty() {
+            removed.extend(result.txids.iter().copied());
+            sweeps.push(replay_sweep(
+                record,
+                result.txids,
+                result.released_outpoints,
+            ));
+        }
+    }
+    // An input released by an earlier sweep can be claimed by a later surviving winner.
+    let claimed: HashSet<_> = records
+        .iter()
+        .filter(|record| !removed.contains(&record.txid))
+        .flat_map(|record| {
+            record
+                .transaction
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+        })
+        .collect();
+    for sweep in &mut sweeps {
+        sweep
+            .released_outpoints
+            .retain(|outpoint| !removed.contains(&outpoint.txid) && !claimed.contains(outpoint));
+    }
+    sweeps
 }
 
 /// Park every owned input a record spends whose funding no replayed record credits.
@@ -3721,6 +3832,8 @@ mod tests {
             ("chainlock", false),
             ("block", true),
             ("chainlock", true),
+            ("persisted_chainlock", true),
+            ("persisted_chainlock_below", true),
         ] {
             for winner_later_txid in [false, true] {
                 let case = format!("{settlement}, locked_competitor={locked_competitor}, winner_later_txid={winner_later_txid}");
@@ -3819,6 +3932,18 @@ mod tests {
                         TransactionContext::InBlock(block)
                     };
                 }
+                if settlement.starts_with("persisted_chainlock") {
+                    restored.metadata.last_applied_chain_lock =
+                        Some(dashcore::ephemerealdata::chain_lock::ChainLock {
+                            block_height: if settlement == "persisted_chainlock" {
+                                101
+                            } else {
+                                100
+                            },
+                            block_hash: BlockHash::from_byte_array([10; 32]),
+                            signature: [0; 96].into(),
+                        });
+                }
                 if locked_competitor {
                     locks.insert(
                         loser.txid(),
@@ -3833,7 +3958,8 @@ mod tests {
                 restore_recorded_transactions(&mut restored, &mut wallet, records, &locks);
 
                 let account = &restored.accounts.standard_bip44_accounts[&0];
-                let keep_competitor = settlement == "block" && locked_competitor;
+                let keep_competitor = matches!(settlement, "block" | "persisted_chainlock_below")
+                    && locked_competitor;
                 assert_eq!(
                     account.transactions().contains_key(&loser.txid()),
                     keep_competitor,
@@ -3857,6 +3983,223 @@ mod tests {
                 assert_eq!(restored.balance.total(), expected_balance, "{case}");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn should_remove_cross_account_descendant_of_conflicting_spend_after_replay() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn, TxOut};
+        use key_wallet::transaction_checking::BlockInfo;
+        use key_wallet::Utxo;
+
+        let mut wallet = Wallet::new_random(
+            Network::Testnet,
+            WalletAccountCreationOptions::BIP44AccountsOnly([0, 1].into_iter().collect()),
+        )
+        .unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let addresses: Vec<_> = [0, 1]
+            .into_iter()
+            .map(|index| {
+                let xpub = wallet.accounts.standard_bip44_accounts[&index].account_xpub;
+                info.accounts
+                    .standard_bip44_accounts
+                    .get_mut(&index)
+                    .unwrap()
+                    .next_receive_address(Some(&xpub), true)
+                    .unwrap()
+            })
+            .collect();
+        let tx = |previous_output: OutPoint, output: TxOut| Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output,
+                ..Default::default()
+            }],
+            output: vec![output],
+            special_transaction_payload: None,
+        };
+        let funding = tx(
+            OutPoint::new(Txid::from_byte_array([41; 32]), 0),
+            TxOut {
+                value: 100_000,
+                script_pubkey: addresses[0].script_pubkey(),
+            },
+        );
+        let root = tx(
+            OutPoint::new(funding.txid(), 0),
+            TxOut {
+                value: 99_000,
+                script_pubkey: addresses[0].script_pubkey(),
+            },
+        );
+        let child = tx(
+            OutPoint::new(root.txid(), 0),
+            TxOut {
+                value: 98_000,
+                script_pubkey: addresses[1].script_pubkey(),
+            },
+        );
+        let winner = tx(
+            OutPoint::new(funding.txid(), 0),
+            TxOut {
+                value: 97_000,
+                script_pubkey: dashcore::ScriptBuf::new(),
+            },
+        );
+        let block = |height| {
+            TransactionContext::InBlock(BlockInfo::new(
+                height,
+                BlockHash::from_byte_array([42; 32]),
+                height,
+            ))
+        };
+        let mut records = info
+            .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+            .await
+            .new_records;
+        let funding_info = info.clone();
+        records.extend(
+            info.check_core_transaction(
+                &root,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+        );
+        records.extend(
+            info.check_core_transaction(
+                &child,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+        );
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        assert!(info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&root.txid()));
+        assert!(!info.accounts.standard_bip44_accounts[&1]
+            .transactions()
+            .contains_key(&root.txid()));
+        assert!(info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&child.txid()));
+        assert!(info.accounts.standard_bip44_accounts[&1]
+            .transactions()
+            .contains_key(&child.txid()));
+        let mut winner_info = funding_info;
+        records.extend(
+            winner_info
+                .check_core_transaction(&winner, block(101), &mut wallet, true, true)
+                .await
+                .new_records,
+        );
+        platform_wallet::test_support::fold_wallet_records(&mut records);
+        let child_outpoint = OutPoint::new(child.txid(), 0);
+        use crate::{SqlitePersister, SqlitePersisterConfig};
+        use platform_wallet::changeset::{
+            PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let path = dir.path().join("cross-account-replay.sqlite");
+        let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+        let funded = Utxo::new(
+            OutPoint::new(funding.txid(), 0),
+            funding.output[0].clone(),
+            addresses[0].clone(),
+            100,
+            false,
+        );
+        let root_coin = Utxo::new(
+            OutPoint::new(root.txid(), 0),
+            root.output[0].clone(),
+            addresses[0].clone(),
+            0,
+            false,
+        );
+        let child_coin = Utxo::new(
+            child_outpoint,
+            child.output[0].clone(),
+            addresses[1].clone(),
+            0,
+            false,
+        );
+        persister
+            .store(
+                wallet.wallet_id,
+                PlatformWalletChangeSet {
+                    wallet_metadata: Some(WalletMetadataEntry {
+                        network: Network::Testnet,
+                        wallet_group_id: [0; 32],
+                        birth_height: 0,
+                    }),
+                    account_registrations: manifest_for(&wallet),
+                    core: Some(CoreChangeSet {
+                        records,
+                        new_utxos: vec![funded.clone(), root_coin.clone(), child_coin],
+                        spent_utxos: vec![funded, root_coin],
+                        synced_height: Some(101),
+                        last_processed_height: Some(101),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        drop(persister);
+        let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+        let mut loaded = persister.load().unwrap();
+        let loaded = loaded
+            .wallets
+            .remove(&wallet.wallet_id)
+            .unwrap()
+            .wallet_info;
+        let loaded_coins = &loaded.accounts.standard_bip44_accounts[&1].utxos;
+        use key_wallet::wallet::managed_wallet_info::coin_selection::{
+            CoinSelector, SelectionStrategy,
+        };
+        use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
+        let selection = CoinSelector::new(SelectionStrategy::LargestFirst).select_coins(
+            loaded_coins.values(),
+            10_000,
+            FeeRate::default(),
+            101,
+        );
+        assert!(
+            !loaded_coins.contains_key(&child_outpoint),
+            "SQLite store/load must discard a cross-account descendant of a conflicting spend"
+        );
+        assert!(
+            selection.is_err(),
+            "a conflicting descendant cannot fund a spend"
+        );
+        assert_eq!(loaded.balance.total(), 0);
+        for txid in [root.txid(), child.txid()] {
+            assert!(persister
+                .get_core_tx_record(wallet.wallet_id, &txid)
+                .unwrap()
+                .is_none());
+        }
+        assert_eq!(
+            persister.load().unwrap().wallets[&wallet.wallet_id]
+                .wallet_info
+                .balance
+                .total(),
+            0
+        );
     }
 
     /// A persisted lock is trusted only when it names the record it is keyed

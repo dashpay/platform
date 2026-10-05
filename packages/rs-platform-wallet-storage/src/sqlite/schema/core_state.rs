@@ -10,7 +10,7 @@ use dashcore::ephemerealdata::chain_lock::ChainLock;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
-use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+use platform_wallet::changeset::changeset::{SweepBatch, UtxoCreditVerdict};
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -504,6 +504,63 @@ fn surviving_stored_input_claims(
         );
     }
     Ok(claims)
+}
+
+/// Apply replay settlement without releasing a recordless winner's durable claim.
+pub fn apply_replay_sweeps(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    mut sweeps: Vec<SweepBatch>,
+) -> Result<(), WalletStorageError> {
+    use dashcore::hashes::Hash;
+
+    let removed: HashSet<_> = sweeps
+        .iter()
+        .flat_map(|sweep| sweep.txids.iter().copied())
+        .collect();
+    let candidates: HashSet<_> = sweeps
+        .iter()
+        .flat_map(|sweep| sweep.released_outpoints.iter().copied())
+        .collect();
+    let mut held = HashMap::new();
+    for outpoint in candidates {
+        let key = blob::encode_outpoint(&outpoint)?;
+        let length: Option<i64> = tx.query_row(
+            "SELECT length(spent_in_txid) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 1",
+            params![wallet_id.as_slice(), &key[..]], |row| row.get(0),
+        ).optional()?.flatten();
+        let Some(length) = length else { continue };
+        blob::check_fixed_width(length, 32, "core_utxos.spent_in_txid")?;
+        let (claim, height): (Vec<u8>, Option<i64>) = tx.query_row(
+            "SELECT spent_in_txid, winner_mined_height FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![wallet_id.as_slice(), &key[..]], |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if !removed.contains(&dashcore::Txid::from_slice(&claim)?) {
+            held.insert(outpoint, (claim, height));
+        }
+    }
+    for sweep in &mut sweeps {
+        sweep
+            .released_outpoints
+            .retain(|outpoint| !held.contains_key(outpoint));
+    }
+    apply(
+        tx,
+        wallet_id,
+        &CoreChangeSet {
+            sweeps,
+            ..Default::default()
+        },
+    )?;
+    // The generic sweep attributes held inputs to its winner; retain other winners' provenance.
+    for (outpoint, (claim, height)) in held {
+        let key = blob::encode_outpoint(&outpoint)?;
+        tx.execute(
+            "UPDATE core_utxos SET spent = 1, spent_in_txid = ?3, winner_mined_height = ?4 WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![wallet_id.as_slice(), &key[..], claim, height],
+        )?;
+    }
+    Ok(())
 }
 
 /// Delete a swept transaction's row and outputs, then resolve the coins it

@@ -420,6 +420,14 @@ when its referenced `core_transactions` row is deleted (instead of a native
 `ON DELETE SET NULL`, which would also null the NOT NULL `wallet_id`
 column) — and by a later sweep that releases the same outpoint.
 
+On load, recorded conflicts are reconciled wallet-wide using persisted
+ChainLock and InstantSend finality. The loader applies the sweep results and
+rebuilds the wallet from the repaired rows in one transaction, so losing
+outputs disappear and genuinely released materialized inputs become available.
+Replay preserves a surviving `spent_in_txid` claim even when its winner has
+no stored transaction body. Strict loads commit this repair; Recovery loads
+return the repaired projection but roll back all database changes.
+
 What gates the funding UTXO's own later upsert (`execute_upsert_utxo`) is
 the row's shape, not that link: a never-materialised held row (`is_sweep_placeholder = 1`, `spent = 1` — the placeholder `apply_sweep` writes for an input whose
 funding this store had not seen) stays spent when the funding arrives, with
