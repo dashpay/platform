@@ -59,8 +59,8 @@
 //! [`MAX_NO_ANSWER_RETRIES`] per height). Probes never ban a DAPI address
 //! themselves. Each Uncertain report forces a probe of its chain's current
 //! root in the next pass (reports queued together share it); a pass under
-//! way gives way to it after its probe in flight — once per height; a later
-//! request waits behind it. A pass probes at most
+//! way in a wallet whose own send it is gives way to it after its probe in
+//! flight — once per height; a later request waits behind it. A pass probes at most
 //! [`MAX_ROOTS_PER_PASS`] scheduled roots, those probed longest ago first —
 //! a wallet's records can be fed by a peer, so one pass's network work is
 //! bounded and the rest come round at the next heights. The roots of sends
@@ -1291,7 +1291,7 @@ struct Actor {
     /// lookup completes: only that completion counts (see `JobDone::Listed`).
     /// A newer report or a switch-off withdraws it; a wallet leaving or
     /// re-registering makes the lookup again (see `drop_wallet`). A lookup
-    /// that panicked leaves its token until one of those.
+    /// that panicked gives its report up.
     /// The job's handle: a superseded lookup is stopped, not left to scan.
     report_lookups: HashMap<Txid, (u64, AbortHandle)>,
     next_report_token: u64,
