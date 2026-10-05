@@ -49,9 +49,9 @@
 //! catch-up skipped runs at the tip without waiting for the next block (a
 //! completion while probing is off is ignored: the next one covers it). A
 //! root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks, counted
-//! from the first height-driven pass that sees it while the wallet follows
-//! the tip (a forced pass does not start it), and every [`SLOW_INTERVAL`]
-//! blocks after. A probe no node answered (DAPI unreachable — its addresses
+//! from its first probe by a height-driven pass while the wallet follows the
+//! tip (a forced pass does not start it), and every [`SLOW_INTERVAL`] blocks
+//! after. A probe no node answered (DAPI unreachable — its addresses
 //! still banned just after an outage) does not count: its root is due again
 //! at the next block, whatever its phase, and at the same height a retry
 //! probes it again (as does any `Uncertain` report, which forces a probe) — after [`NO_ANSWER_RETRY`] if no block comes
@@ -115,7 +115,8 @@ pub(crate) const EVERY_BLOCK_WINDOW: u32 = 24;
 pub(crate) const SLOW_INTERVAL: u32 = 10;
 
 /// Scheduled roots a pass probes at most; forced ones (an `Uncertain`
-/// report's) come on top. A wallet's records are not all its own doing — a
+/// report's, a no-answer retry's) come on top, and the roots of sends still
+/// waiting for their echo after an `Uncertain` report go first in the queue. A wallet's records are not all its own doing — a
 /// peer can feed it transactions that make many roots — so the work of one
 /// pass is bounded, and the roots probed longest ago (or never) go first:
 /// the rest stay due and come round at the next heights.
@@ -357,11 +358,11 @@ fn ambiguous_roots(views: &[OutgoingView]) -> Vec<&OutgoingView> {
 /// When a root is next due for a probe.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct ProbeSchedule {
-    /// Where the every-block window starts: the first height-driven pass that
-    /// saw the root while the wallet followed the tip. `None` until then —
-    /// the root was only seen by a forced pass, whose height may be a stale
-    /// stored tip. Only anchored passes probe unforced roots, and they set the
-    /// window first; `None` counting as in-window matters for `next_due`.
+    /// Where the every-block window starts: the root's first probe by a
+    /// height-driven pass while the wallet followed the tip. `None` until
+    /// then — waiting in a backlog, or probed only by forced passes, whose
+    /// height may be a stale stored tip; `None` counting as in-window matters
+    /// for `next_due`.
     window_start: Option<u32>,
     /// The first height a pass that followed the tip saw the root at: its
     /// place in the queue until its first probe (see `MAX_ROOTS_PER_PASS`).
@@ -473,6 +474,10 @@ pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     /// What the host holds per send.
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
+    /// Sends dash-spv reported `Uncertain` and still waiting for their echo:
+    /// this process's own broadcasts. Their roots, when due, go first in a
+    /// pass's queue — a backlog fed by a peer never holds them back.
+    priority: HashSet<Txid>,
 }
 
 impl ResolverState {
@@ -615,6 +620,20 @@ pub(crate) struct DueRoot {
     /// Labels its verdict in the log, and is the only kind of root a pass
     /// without an anchor probes.
     pub forced: bool,
+    /// A no-answer retry repeats it (see [`NO_ANSWER_RETRY`]): labels its
+    /// verdict.
+    pub retry: bool,
+}
+
+impl DueRoot {
+    /// What made this probe happen, for the log.
+    fn trigger(&self) -> &'static str {
+        if self.retry {
+            "no-answer-retry"
+        } else {
+            trigger_of(self.forced)
+        }
+    }
 }
 
 /// The start of a pass: what the host must hear now, and the roots to probe.
@@ -632,8 +651,8 @@ pub(crate) struct PassStart {
 /// out at this height already: a repeat probe is cheaper than bookkeeping
 /// that tells the two apart.
 /// `anchor`: the tip height
-/// a height-driven pass knows the wallet follows — it starts the every-block
-/// window of every root that has none yet.
+/// a height-driven pass knows the wallet follows — a root it takes starts
+/// its every-block window when its probe goes out (see [`mark_sent`]).
 pub(crate) fn begin_pass(
     state: &mut ResolverState,
     wallet_id: WalletId,
@@ -670,11 +689,13 @@ pub(crate) fn begin_pass(
     // in turn: those probed longest ago first, a never-probed one by the
     // height it was first seen at — a queue, so fresh roots (a peer can feed
     // them at will) wait behind older ones and cannot starve them.
+    let priority = graph.roots_of(state.priority.iter().copied());
     let due_root = |view: &OutgoingView, forced| DueRoot {
         txid: view.txid,
         transaction: Arc::clone(&view.transaction),
         own: graph.is_own(&view.txid),
         forced,
+        retry: false,
     };
     let mut due = VecDeque::new();
     let mut scheduled: Vec<((u32, bool, Txid), &OutgoingView)> = Vec::new();
@@ -689,11 +710,15 @@ pub(crate) fn begin_pass(
             // Without an anchor the pass is confined to forced roots.
             // At the same height, one still waiting for its first probe goes
             // before one probed there.
-            let turn = (
-                schedule.last_probe.or(schedule.seen_at).unwrap_or(0),
-                schedule.last_probe.is_some(),
-                view.txid,
-            );
+            let turn = if priority.contains(&view.txid) {
+                (0, false, view.txid)
+            } else {
+                (
+                    schedule.last_probe.or(schedule.seen_at).unwrap_or(0),
+                    schedule.last_probe.is_some(),
+                    view.txid,
+                )
+            };
             scheduled.push((turn, view));
         }
     }
@@ -703,23 +728,26 @@ pub(crate) fn begin_pass(
     }
     scheduled.sort_unstable_by_key(|(turn, _)| *turn);
     due.extend(scheduled.into_iter().map(|(_, view)| due_root(view, false)));
-    // A root's every-block window starts when a pass that follows the tip
-    // first takes it — not while it waits in a backlog.
-    if let Some(anchor) = anchor {
-        for root in &due {
-            if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root.txid)) {
-                schedule.anchor(anchor);
-            }
-        }
-    }
     PassStart { events, due }
 }
 
 /// A root is being sent to the network at `height`: its schedule counts from
 /// here. Marked when the probe goes out, not when the pass is planned, so a
 /// root the pass never reached stays due.
-pub(crate) fn mark_sent(state: &mut ResolverState, wallet_id: WalletId, root: Txid, height: u32) {
+pub(crate) fn mark_sent(
+    state: &mut ResolverState,
+    wallet_id: WalletId,
+    root: Txid,
+    height: u32,
+    anchor: Option<u32>,
+) {
     if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root)) {
+        // A root's every-block window starts at its first probe by a pass
+        // that follows the tip — not while it waits in a backlog, nor when a
+        // pass that planned it gave way before sending it.
+        if let Some(anchor) = anchor {
+            schedule.anchor(anchor);
+        }
         schedule.probed_at(height);
     }
 }
@@ -774,7 +802,7 @@ pub(crate) fn record_probe(
             [root.txid],
             verdict,
             height,
-            trigger_of(root.forced),
+            root.trigger(),
             &mut events,
         );
     }
@@ -1166,11 +1194,6 @@ struct NoAnswerRetries {
     height: u32,
     armed: u32,
     waiting: bool,
-    /// Some unanswered probe of the series ran in an anchored pass: the
-    /// retry is an anchored pass. Otherwise (forced passes only, whose
-    /// height may be a stale stored tip or a catch-up) it forces the roots
-    /// and starts no window.
-    anchored: bool,
 }
 
 /// Owns all of the resolver's state. One task; commands and job results are
@@ -1784,8 +1807,14 @@ impl Actor {
                             .copied()
                             .collect();
                         let anchor = current.anchor_at;
+                        self.state.priority = self.uncertain.keys().copied().collect();
                         let start =
                             begin_pass(&mut self.state, wallet_id, height, &views, &forced, anchor);
+                        let mut start = start;
+                        for root in start.due.iter_mut() {
+                            root.retry = current.retried.contains(&root.txid)
+                                && !current.forced.contains(&root.txid);
+                        }
                         if anchor.is_some() {
                             entry.followed_pass_at = Some(height);
                         }
@@ -1815,14 +1844,11 @@ impl Actor {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                let anchored = match entry.retry_series.as_mut() {
-                    Some(retries) if retries.series == series => {
-                        retries.waiting = false;
-                        retries.anchored
-                    }
+                match entry.retry_series.as_mut() {
+                    Some(retries) if retries.series == series => retries.waiting = false,
                     // Reset since (a rewind, a switch-off, a new height).
                     _ => return,
-                };
+                }
                 // Still at that height: a new block's pass probes the
                 // unanswered roots anyway (due at the next height).
                 if entry.height.is_some_and(|now| now != height) {
@@ -1847,16 +1873,12 @@ impl Actor {
                 if !self.enabled {
                     return;
                 }
-                // The roots go as retried — ahead of the per-pass cap, like
-                // the forced probes they repeat. The pass is anchored when
-                // any of those probes was; otherwise it starts no window at
-                // a height the wallet may not follow.
+                // A pass of exactly those roots, ahead of the per-pass cap and
+                // of nothing else: it takes no scheduled roots (they would
+                // fail too while no node answers) and starts no window.
                 let pending = entry.pending.get_or_insert_with(PendingPass::default);
                 pending.height = pending.height.max(height);
                 pending.retried.extend(roots);
-                if anchored {
-                    pending.anchor_at = Some(height);
-                }
                 self.start(wallet_id);
             }
             JobDone::Probed {
@@ -1873,9 +1895,6 @@ impl Actor {
                 else {
                     return; // a dropped run's result
                 };
-                // The pass follows the tip: its height is one a retry may
-                // anchor at.
-                let anchored = current.anchor_at.is_some();
                 // Cannot happen: a probe job is spawned only by a probing run
                 // with its root in flight. Fail safe — end the run rather than
                 // leave it blocking every later pass for the wallet.
@@ -1918,7 +1937,7 @@ impl Actor {
                 deliver(&self.sink, events);
                 mark_answered(&mut self.state, wallet_id, root.txid, answered);
                 if !answered {
-                    self.arm_no_answer_retry(wallet_id, root.txid, height, anchored);
+                    self.arm_no_answer_retry(wallet_id, root.txid, height);
                 }
                 self.probe_next(wallet_id);
             }
@@ -1951,21 +1970,14 @@ impl Actor {
     /// it — and at this height only a retry does: after [`NO_ANSWER_RETRY`],
     /// then twice and four times that again (about 1, 3 and 7 minutes after
     /// the first probe), at most [`MAX_NO_ANSWER_RETRIES`] per height, while
-    /// no block has come. A retry is an anchored pass when any of the
-    /// height's unanswered probes ran in one; after forced passes only (an
-    /// `Uncertain` report's, whose height may be a stale stored tip or a
-    /// catch-up) it forces the roots instead and starts no window. While DAPI
+    /// no block has come. A retry is a pass of exactly those roots (still
+    /// roots), ahead of the per-pass cap: it takes no scheduled roots and
+    /// starts no window. While DAPI
     /// stays down, an unanswered root is due once at every block (in its turn
     /// under [`MAX_ROOTS_PER_PASS`] when a backlog is larger) plus the
     /// retries, which go ahead of the cap, until the next block comes. One info line per such root and
     /// probe — an unchanged Unresolved publishes nothing otherwise.
-    fn arm_no_answer_retry(
-        &mut self,
-        wallet_id: WalletId,
-        root: Txid,
-        height: u32,
-        anchored: bool,
-    ) {
+    fn arm_no_answer_retry(&mut self, wallet_id: WalletId, root: Txid, height: u32) {
         let Some(entry) = self.wallets.get_mut(&wallet_id) else {
             return;
         };
@@ -1978,16 +1990,9 @@ impl Actor {
                     height,
                     armed: 0,
                     waiting: false,
-                    anchored: false,
                 }
             }
         };
-        let retries = NoAnswerRetries {
-            anchored: retries.anchored || anchored,
-            ..retries
-        };
-        // Kept before any return: an anchored probe joining a waiting series
-        // makes its retry anchored.
         entry.retry_series = Some(retries);
         if retries.waiting {
             tracing::info!(
@@ -2059,7 +2064,13 @@ impl Actor {
             });
             self.job_runs
                 .insert(run.abort.id(), (wallet_id, id, Some(root_txid)));
-            mark_sent(&mut self.state, wallet_id, root.txid, probing.height);
+            mark_sent(
+                &mut self.state,
+                wallet_id,
+                root.txid,
+                probing.height,
+                run.anchor_at,
+            );
             probing.in_flight = Some(root);
             return;
         }
@@ -2986,6 +2997,7 @@ mod tests {
                 wallet_id,
                 root.txid,
                 height,
+                Some(height),
             );
             let verdict = probe.probe(&root.transaction).await.verdict;
             let mut guard = state.lock().expect("state");
@@ -4121,22 +4133,6 @@ mod tests {
         assert_eq!(rig.walks(), walks);
     }
 
-    /// An anchored probe that joins a waiting series opened by a forced one
-    /// makes the retry anchored.
-    #[tokio::test(start_paused = true)]
-    async fn should_make_a_waiting_retry_anchored_when_an_anchored_probe_joins() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.follow(wallet(), 100).await;
-
-        rig.actor.arm_no_answer_retry(wallet(), txid(1), 101, false);
-        rig.actor.arm_no_answer_retry(wallet(), txid(2), 101, true);
-
-        let series = rig.actor.wallets[&wallet()].retry_series.expect("series");
-        assert!(series.waiting && series.anchored);
-        assert_eq!(series.armed, 1, "one timer for both");
-    }
-
     /// A retried root that has since become a child (its parent showed up
     /// unsettled) is not forced: the retry would resolve it to the parent,
     /// already probed at that height.
@@ -4480,7 +4476,92 @@ mod tests {
             .iter()
             .filter(|probed| **probed == txid(200))
             .count();
-        assert_eq!(genuine, 1 + MAX_NO_ANSWER_RETRIES as usize);
+        assert!(
+            genuine > MAX_NO_ANSWER_RETRIES as usize,
+            "its probe and every retry, whatever the backlog: {genuine}"
+        );
+    }
+
+    /// A genuine send reported `Uncertain` keeps its place ahead of a
+    /// peer-fed backlog after its first probe: it is probed at every block
+    /// of its window, not once per trip round the queue.
+    #[tokio::test]
+    async fn should_keep_an_uncertain_send_ahead_of_a_backlog_after_its_first_probe() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..40);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(200))).await;
+        let after_report = probe.probed().iter().filter(|p| **p == txid(200)).count();
+
+        for height in 102..=104 {
+            rig.height(wallet(), height).await;
+        }
+
+        let probed = probe.probed().iter().filter(|p| **p == txid(200)).count();
+        assert_eq!(probed, after_report + 3, "once at each block");
+    }
+
+    /// While no node answers, a retry probes only the roots that went
+    /// unanswered: the work at one height does not grow with each retry.
+    #[tokio::test(start_paused = true)]
+    async fn should_not_widen_a_retry_with_more_scheduled_roots() {
+        let probe = Arc::new(SequenceProbe::new(&vec![unreachable_verdict(); 200]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), peer_injected(10..40));
+
+        rig.follow(wallet(), 100).await;
+
+        assert_eq!(
+            probe.calls(),
+            MAX_ROOTS_PER_PASS * (1 + MAX_NO_ANSWER_RETRIES as usize)
+        );
+    }
+
+    /// Roots a run planned but dropped when it gave way keep their place in
+    /// the queue and their window is not started: the next height takes them.
+    #[tokio::test]
+    async fn should_keep_the_place_of_roots_a_run_dropped_for_a_forced_request() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..40);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 100,
+        });
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // the first of 8 scheduled roots is out
+        let planned: Vec<Txid> = rig.actor.wallets[&wallet()]
+            .run
+            .as_ref()
+            .and_then(|run| run.probing.as_ref())
+            .map(|probing| probing.due.iter().map(|root| root.txid).collect())
+            .expect("probing");
+
+        rig.send(Command::Uncertain(txid(200))).await;
+        // The probe in flight finishes first and the next planned root goes
+        // out before the report is routed; the rest are dropped unsent.
+        for txid in planned.iter().skip(1) {
+            assert_eq!(
+                rig.actor.state.schedules[&(wallet(), *txid)].window_start,
+                None
+            );
+        }
+        rig.height(wallet(), 102).await;
+
+        let probed = probe.probed();
+        assert!(
+            planned.iter().all(|txid| probed.contains(txid)),
+            "taken at 102"
+        );
     }
 
     /// A refusal is an answer: no early retry.
@@ -4850,7 +4931,7 @@ mod tests {
         assert_eq!(planned.len(), 2);
 
         // Only the first root goes out before the run ends.
-        mark_sent(&mut state, wallet(), planned[0], 100);
+        mark_sent(&mut state, wallet(), planned[0], 100, Some(100));
         let again = begin_pass(
             &mut state,
             wallet(),
@@ -4880,7 +4961,7 @@ mod tests {
             &HashSet::new(),
             Some(100),
         );
-        mark_sent(&mut state, wallet(), txid(1), 100);
+        mark_sent(&mut state, wallet(), txid(1), 100, Some(100));
         assert!(!state.schedules[&(wallet(), txid(1))].is_due(100));
 
         withdraw_send(&mut state, wallet(), txid(1));
