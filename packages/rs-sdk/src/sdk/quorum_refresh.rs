@@ -22,6 +22,7 @@ use rs_dapi_client::{ExecutionError, ExecutionResult};
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, PoisonError};
+use web_time::{Duration, Instant};
 
 /// Refreshes the quorum keys held by the SDK's context provider. See
 /// [`SdkBuilder::with_quorum_refresher`](super::SdkBuilder::with_quorum_refresher).
@@ -33,7 +34,10 @@ type RefreshFuture = Shared<BoxFuture<'static, Result<(), String>>>;
 /// less often than this, and a node is never banned for naming an unknown
 /// quorum, so without the window a node that keeps doing so would cost a
 /// refresh on every request it serves.
-const REFRESH_COOLDOWN: chrono::TimeDelta = chrono::TimeDelta::seconds(10);
+///
+/// Measured on a monotonic clock, so a wall-clock change can neither stretch
+/// the reuse of a stale refresh nor cut the window short.
+const REFRESH_COOLDOWN: Duration = Duration::from_secs(10);
 
 /// A [`QuorumRefreshFn`] that runs at most one refresh at a time and at most
 /// one per [`REFRESH_COOLDOWN`].
@@ -43,7 +47,7 @@ pub(crate) struct QuorumRefresher {
     /// within the cooldown after it started, gets its result instead of
     /// starting another, so a burst of requests that all meet the new quorum
     /// costs a single refresh.
-    latest: Mutex<Option<(RefreshFuture, chrono::DateTime<chrono::Utc>)>>,
+    latest: Mutex<Option<(RefreshFuture, Instant)>>,
 }
 
 impl QuorumRefresher {
@@ -57,23 +61,16 @@ impl QuorumRefresher {
     async fn refresh(&self) -> Result<(), String> {
         let refresh = {
             let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
-            let now = chrono::Utc::now();
+            let now = Instant::now();
             match latest.as_ref() {
                 Some((refresh, started))
-                    if refresh.peek().is_none() || now - *started < REFRESH_COOLDOWN =>
+                    if refresh.peek().is_none()
+                        || now.duration_since(*started) < REFRESH_COOLDOWN =>
                 {
                     refresh.clone()
                 }
                 _ => {
-                    // `Shared` re-raises a panic on every later poll and `peek`,
-                    // so a hook that panicked once would break every later miss.
-                    let started = AssertUnwindSafe((self.refresh)())
-                        .catch_unwind()
-                        .map(|outcome| {
-                            outcome.unwrap_or_else(|_| Err("quorum refresh panicked".to_string()))
-                        })
-                        .boxed()
-                        .shared();
+                    let started = self.start();
                     *latest = Some((started.clone(), now));
                     started
                 }
@@ -81,6 +78,25 @@ impl QuorumRefresher {
         };
         refresh.await
     }
+
+    /// Call the hook. `Shared` re-raises a panic on every later poll and
+    /// `peek`, so a hook that panicked once would break every later miss. The
+    /// hook can panic while building its future as well as while it runs; both
+    /// become an `Err`.
+    fn start(&self) -> RefreshFuture {
+        match std::panic::catch_unwind(AssertUnwindSafe(|| (self.refresh)())) {
+            Ok(refresh) => AssertUnwindSafe(refresh)
+                .catch_unwind()
+                .map(|outcome| outcome.unwrap_or_else(|_| Err(refresh_panicked())))
+                .boxed(),
+            Err(_) => futures::future::ready(Err(refresh_panicked())).boxed(),
+        }
+        .shared()
+    }
+}
+
+fn refresh_panicked() -> String {
+    "quorum refresh panicked".to_string()
 }
 
 /// Whether `error` is a proof the context provider could not check because it
@@ -311,6 +327,26 @@ mod tests {
                 Ok(())
             }
             .boxed()
+        }));
+
+        assert_eq!(
+            refresher.refresh().await,
+            Err("quorum refresh panicked".to_string())
+        );
+        refresher.expire_cooldown();
+        assert_eq!(refresher.refresh().await, Ok(()));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn hook_panicking_before_its_future_does_not_escape() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let refresher = QuorumRefresher::new(Arc::new(move || {
+            if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+                panic!("refresh hook bug");
+            }
+            async { Ok(()) }.boxed()
         }));
 
         assert_eq!(

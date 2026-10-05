@@ -46,6 +46,8 @@ derive_more = { version = "1.0", features = ["from"] }
 lru = { version = "0.16.3" }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
+# Monotonic `Instant` that also works on wasm32 (`performance.now()`).
+web-time = "1.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
