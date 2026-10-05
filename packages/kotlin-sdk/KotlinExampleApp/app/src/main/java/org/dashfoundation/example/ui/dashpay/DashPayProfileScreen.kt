@@ -87,8 +87,9 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
         }
     }
     val tipBalance by remember(walletId, tipAccount) {
-        if (walletId == null || tipAccount == null) flowOf(0L)
-        else container.database.shieldedDao().observeNotesByWalletAccount(walletId, tipAccount)
+        val account = tipAccount
+        if (walletId == null || account == null) flowOf(0L)
+        else container.database.shieldedDao().observeNotesByWalletAccount(walletId, account)
             .map { notes -> notes.filter { !it.isSpent }.sumOf { it.value } }
     }.collectAsStateWithLifecycle(initialValue = 0L)
 
