@@ -934,6 +934,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None,
             signer,
             None,
+            |_| {},
         )
         .await
     }
@@ -950,6 +951,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_broadcast: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             AssetLockBuildAmount::Exact(amount_duffs),
@@ -960,6 +962,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             shielded_recipient,
             signer,
             on_built,
+            on_broadcast,
         )
         .await
     }
@@ -986,6 +989,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None,
             signer,
             None,
+            |_| {},
         )
         .await
     }
@@ -1004,6 +1008,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_broadcast: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             amount,
@@ -1014,6 +1019,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             shielded_recipient,
             signer,
             on_built,
+            on_broadcast,
         )
         .await
     }
@@ -1036,6 +1042,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_broadcast: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         let (path, out_point) = self
             .broadcast_funded_asset_lock_tracked(
@@ -1050,6 +1057,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 on_built,
             )
             .await?;
+        on_broadcast(out_point);
         let proof = self
             .wait_for_funded_asset_lock_proof(&out_point, source_index)
             .await?;
@@ -1126,6 +1134,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         signer: &S,
         operation: &AssetLockOperationContext,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_broadcast: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.require_wallet_drain_persistence()?;
         let (path, out_point) = self
@@ -1141,6 +1150,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 on_built,
             )
             .await?;
+        on_broadcast(out_point);
         let proof = self
             .wait_for_funded_asset_lock_proof(&out_point, account_index)
             .await?;
