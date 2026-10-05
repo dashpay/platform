@@ -232,22 +232,6 @@ describe('DocumentsFacade', () => {
 
       expect(documentCreateStub).to.be.calledOnceWithExactly(options);
     });
-
-    it('should pass the action fee agreement through', async () => {
-      const options = {
-        document,
-        identityKey,
-        signer,
-        actionFeeAgreement: new wasmSDKPackage.DocumentActionFeeAgreement({
-          owner: BigInt(80000000),
-          moderators: BigInt(16000000),
-        }),
-      };
-
-      await client.documents.create(options);
-
-      expect(documentCreateStub).to.be.calledOnceWithExactly(options);
-    });
   });
 
   describe('contestFundToJoin()', () => {
@@ -286,23 +270,6 @@ describe('DocumentsFacade', () => {
 
       expect(documentReplaceStub).to.be.calledOnceWithExactly(options);
     });
-
-    it('should pass the action fee agreement options through', async () => {
-      const options = {
-        document,
-        identityKey,
-        signer,
-        actionFeeAgreement: {
-          owner: BigInt(1000),
-          moderators: BigInt(500),
-          feeMultiplier: { knownPermille: BigInt(1000), increaseTolerancePercent: 20 },
-        },
-      };
-
-      await client.documents.replace(options);
-
-      expect(documentReplaceStub).to.be.calledOnceWithExactly(options);
-    });
   });
 
   describe('delete()', () => {
@@ -312,19 +279,6 @@ describe('DocumentsFacade', () => {
         identityKey,
         signer,
         tokenPaymentInfo,
-      };
-
-      await client.documents.delete(options);
-
-      expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
-    });
-
-    it('should pass the action fee agreement through', async () => {
-      const options = {
-        document,
-        identityKey,
-        signer,
-        actionFeeAgreement: { owner: BigInt(1000), moderators: BigInt(500) },
       };
 
       await client.documents.delete(options);

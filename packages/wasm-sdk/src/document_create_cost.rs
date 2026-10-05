@@ -12,6 +12,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_dpp2::data_contract::model::DataContractWasm;
 use wasm_dpp2::serialization::conversions::platform_value_to_object;
+use wasm_dpp2::utils::refuse_unknown_keys;
 use wasm_dpp2::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -148,25 +149,6 @@ struct Options {
 struct FieldOption {
     present: Option<bool>,
     length: Option<u32>,
-}
-
-/// Refuses a key of `object` that is not one of `known`: `serde_wasm_bindgen`
-/// reads only the keys a struct names, so a misspelled option would be
-/// silently ignored.
-fn refuse_unknown_keys(object: &JsValue, known: &[&str], what: &str) -> Result<(), WasmSdkError> {
-    let Some(object) = object.dyn_ref::<js_sys::Object>() else {
-        return Ok(());
-    };
-    for key in js_sys::Object::keys(object).iter() {
-        let key = key.as_string().unwrap_or_default();
-        if !known.contains(&key.as_str()) {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "unknown {what} {key:?}; expected one of {}",
-                known.join(", ")
-            )));
-        }
-    }
-    Ok(())
 }
 
 fn key_type(name: &str) -> Result<KeyType, WasmSdkError> {

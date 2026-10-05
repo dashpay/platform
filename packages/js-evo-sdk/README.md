@@ -272,30 +272,24 @@ From protocol version 14 a create may state more, as headroom for contenders joi
 
 From protocol version 14 a document type may charge a fee for an action (its `actionFees`: an `owner` part paid to the contract owner and a `moderators` part paid to its moderators). The contract is read when the transition executes, not when it was signed, so every transition on an action that charges a fee carries an action fee agreement naming the fee its signer saw. Without one Platform refuses the transition with error 40132, with other amounts 40133, and when the executing epoch's fee multiplier is above what the agreement tolerates 40134. Each refusal still spends the identity contract nonce, and charges no action fee.
 
-`create`, `replace`, `delete`, `transfer`, `purchase` and `setPrice` take it as `actionFeeAgreement`, a `DocumentActionFeeAgreement` or the options to build one. Name the amounts from the contract you showed the user, never from one fetched behind their back at signing time, so that a fee changed since is refused instead of paid:
+`create`, `replace`, `delete`, `transfer`, `purchase` and `setPrice` take it as `actionFeeAgreement`, a `DocumentActionFeeAgreement` or the options to build one (a plain object; an unknown key is refused, as it would otherwise leave an agreement to pay nothing). `DocumentActionFeeAgreement.forDocumentTypeAction` builds it from a contract, or returns `undefined` when the document type charges nothing for the action. Pass it the contract you showed the user, never one fetched behind their back at signing time, so that a fee changed since is refused instead of paid. For the same reason `knownPermille` is the fee multiplier the fee you showed was priced with (the current epoch's is `(await sdk.epoch.current()).feeMultiplierPermille`), not one read at signing time:
 
 ```ts
-// { pricing?: 'fixed' | 'feeMultiplier', create?: { owner?, moderators? }, ... }, amounts as bigints.
-// No `pricing` means 'feeMultiplier'; a part left out of the schema is 0.
-const declared = (contract.schemas as Record<string, any>).post.actionFees;
-await sdk.documents.create({
-  document,
-  identityKey,
-  signer,
-  actionFeeAgreement: {
-    owner: declared.create.owner ?? 0n,
-    moderators: declared.create.moderators ?? 0n,
-    // Unless `pricing: 'fixed'`: the multiplier you priced the fee with, and how far above it
-    // (in percent) the multiplier of the epoch the transition executes in may be.
-    feeMultiplier: {
-      knownPermille: (await sdk.epoch.current()).feeMultiplierPermille,
-      increaseTolerancePercent: 20,
-    },
-  },
-});
+import { DocumentActionFeeAgreement } from '@dashevo/evo-sdk';
+
+// `shownContract` and `shownFeeMultiplierPermille` are what the fee the user saw was priced from
+const actionFeeAgreement = DocumentActionFeeAgreement.forDocumentTypeAction(
+  shownContract,
+  'post',
+  'create', // or 'replace', 'delete', 'transfer', 'purchase', 'updatePrice'
+  // How far above the known multiplier (in percent) the multiplier of the epoch the transition
+  // executes in may be. Required unless the fee is fixed, which names none (one given is only checked).
+  { knownPermille: shownFeeMultiplierPermille, increaseTolerancePercent: 20 },
+);
+await sdk.documents.create({ document, identityKey, signer, actionFeeAgreement });
 ```
 
-A fixed fee (`pricing: 'fixed'`) names no `feeMultiplier`, and a fee priced by the multiplier must name one: getting that wrong is refused as 40133. An agreement on an action that charges nothing is ignored. On a document type an elected contract moderates, `moderators` may name exactly the share of the declared part the contract's seated moderation charter takes (its `moderatorsShare`, in percent, rounded down to the credit); any other lower amount is refused (40139). A transition built by hand passes a `new DocumentActionFeeAgreement({...})` as `actionFeeAgreement` to `new DocumentCreateTransition(...)` and the other document transition constructors. The SDK refuses an agreement before any request when it runs a protocol version before 14.
+A fixed fee (`pricing: 'fixed'`) names no `feeMultiplier`, and a fee priced by the multiplier (any type without `pricing: 'fixed'`) must name one: getting that wrong is refused as 40133, and `forDocumentTypeAction` reads it off the contract. An agreement on an action that charges nothing is ignored. On a document type an elected contract moderates, `moderators` may name exactly the share of the declared part the contract's seated moderation charter takes (its `moderatorsShare`, in percent, rounded down to the credit); any other lower amount is refused (40139). A transition built by hand passes a `DocumentActionFeeAgreement` as `actionFeeAgreement` to `new DocumentCreateTransition(...)` and the other document transition constructors. The SDK refuses an agreement before it reserves a nonce when it runs a protocol version before 14.
 
 ## Encrypted properties (`encryptedFor`)
 

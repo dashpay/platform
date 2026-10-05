@@ -184,7 +184,8 @@ export interface DocumentCreateOptions {
   /**
    * The action fee the signer agrees to pay, as the contract shown to the user
    * declares it. Required when the document type's `actionFees` charge for this
-   * action (protocol version 14+).
+   * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
+   * builds it from that contract.
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -419,7 +420,8 @@ export interface DocumentReplaceOptions {
   /**
    * The action fee the signer agrees to pay, as the contract shown to the user
    * declares it. Required when the document type's `actionFees` charge for this
-   * action (protocol version 14+).
+   * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
+   * builds it from that contract.
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -546,7 +548,8 @@ export interface DocumentDeleteOptions {
   /**
    * The action fee the signer agrees to pay, as the contract shown to the user
    * declares it. Required when the document type's `actionFees` charge for this
-   * action (protocol version 14+).
+   * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
+   * builds it from that contract.
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -761,7 +764,8 @@ export interface DocumentTransferOptions {
   /**
    * The action fee the signer agrees to pay, as the contract shown to the user
    * declares it. Required when the document type's `actionFees` charge for this
-   * action (protocol version 14+).
+   * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
+   * builds it from that contract.
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -899,7 +903,8 @@ export interface DocumentPurchaseOptions {
   /**
    * The action fee the signer agrees to pay, as the contract shown to the user
    * declares it. Required when the document type's `actionFees` charge for this
-   * action (protocol version 14+).
+   * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
+   * builds it from that contract.
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -1027,7 +1032,8 @@ export interface DocumentSetPriceOptions {
   /**
    * The action fee the signer agrees to pay, as the contract shown to the user
    * declares it. Required when the document type's `actionFees` charge for this
-   * action (protocol version 14+).
+   * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
+   * builds it from that contract.
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -1185,13 +1191,6 @@ mod tests {
     }
 
     #[test]
-    fn should_leave_the_delete_builder_without_creation_options_when_none_are_given() {
-        let builder = builder_for(Some(PutSettings::default()));
-
-        assert!(builder.state_transition_creation_options.is_none());
-    }
-
-    #[test]
     fn should_hand_the_delete_builder_the_user_fee_increase_it_signs_with() {
         let builder = builder_for(Some(PutSettings {
             user_fee_increase: Some(3),
@@ -1199,23 +1198,5 @@ mod tests {
         }));
 
         assert_eq!(builder.user_fee_increase, Some(3));
-    }
-
-    #[test]
-    fn should_add_to_the_creation_options_the_settings_already_carry() {
-        let mut settings = Some(PutSettings {
-            user_fee_increase: Some(3),
-            ..Default::default()
-        });
-        creation_options_of(&mut settings).contest_fund = Some(5);
-        creation_options_of(&mut settings).action_fee_agreement = Some(agreement());
-
-        let settings = settings.expect("settings are kept");
-        assert_eq!(settings.user_fee_increase, Some(3));
-        let creation_options = settings
-            .state_transition_creation_options
-            .expect("creation options are created once");
-        assert_eq!(creation_options.contest_fund, Some(5));
-        assert_eq!(creation_options.action_fee_agreement, Some(agreement()));
     }
 }

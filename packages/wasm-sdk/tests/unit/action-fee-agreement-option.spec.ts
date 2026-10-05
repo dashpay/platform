@@ -116,6 +116,14 @@ describe('actionFeeAgreement option', () => {
     ).to.be.rejectedWith(/must be a DocumentActionFeeAgreement or its options, not an instance of IdentityPublicKey/);
   });
 
+  it('should refuse an agreement naming an unknown key before reading anything', async () => {
+    await expect(
+      client.documentCreate({
+        document, identityKey, signer, actionFeeAgreement: { ownr: BigInt(80000000) } as never,
+      }),
+    ).to.be.rejectedWith(/unknown DocumentActionFeeAgreement option "ownr"/);
+  });
+
   it('should refuse a primitive value', async () => {
     await expect(
       client.documentReplace({

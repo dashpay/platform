@@ -51,6 +51,134 @@ describe('DocumentActionFeeAgreement', () => {
 
       agreement.free();
     });
+    it('should refuse an unknown key, which would leave an agreement to pay nothing', () => {
+      expect(() => new wasm.DocumentActionFeeAgreement({ ownr: 80000000n } as never))
+        .to.throw(/unknown DocumentActionFeeAgreement option "ownr"/);
+      expect(() => new wasm.DocumentActionFeeAgreement({
+        owner: 1000n,
+        feeMultiplier: { knownPermile: 1000n, increaseTolerancePercent: 20 },
+      } as never)).to.throw(/unknown feeMultiplier option "knownPermile"/);
+    });
+
+    it('should refuse an unknown key on an object without a prototype', () => {
+      const options = Object.assign(Object.create(null), { ownr: 80000000n });
+      expect(() => new wasm.DocumentActionFeeAgreement(options))
+        .to.throw(/unknown DocumentActionFeeAgreement option "ownr"/);
+    });
+
+    it('should refuse an array or a Map, which would read as an agreement too', () => {
+      for (const options of [[80000000n, 16000000n], new Map()]) {
+        expect(() => new wasm.DocumentActionFeeAgreement(options as never))
+          .to.throw(/must be a plain object/);
+      }
+    });
+  });
+
+  describe('forDocumentTypeAction()', () => {
+    let contract: InstanceType<typeof wasm.DataContract>;
+    const feeMultiplier = { knownPermille: 1000n, increaseTolerancePercent: 20 };
+
+    before(() => {
+      const properties = { text: { type: 'string', maxLength: 60, position: 0 } };
+      contract = new wasm.DataContract({
+        ownerId: '11111111111111111111111111111111',
+        identityNonce: 1n,
+        schemas: {
+          post: {
+            type: 'object',
+            properties,
+            additionalProperties: false,
+            actionFees: { create: { owner: 80000000, moderators: 16000000 } },
+          },
+          note: {
+            type: 'object',
+            properties,
+            additionalProperties: false,
+            actionFees: { pricing: 'fixed', create: { owner: 1000 } },
+          },
+          plain: { type: 'object', properties, additionalProperties: false },
+        },
+        fullValidation: true,
+        platformVersion: new wasm.PlatformVersion(14),
+      });
+    });
+
+    after(() => {
+      contract.free();
+    });
+
+    it('should name the declared fee and the multiplier for a fee priced by the multiplier', () => {
+      const agreement = wasm.DocumentActionFeeAgreement.forDocumentTypeAction(
+        contract,
+        'post',
+        'create',
+        feeMultiplier,
+      );
+
+      expect(agreement?.owner).to.equal(80000000n);
+      expect(agreement?.moderators).to.equal(16000000n);
+      expect(agreement?.pricing).to.equal('feeMultiplier');
+      expect(agreement?.knownFeeMultiplierPermille).to.equal(1000n);
+      expect(agreement?.feeMultiplierIncreaseTolerancePercent).to.equal(20);
+    });
+
+    it('should refuse a fee priced by the multiplier without one', () => {
+      expect(() => wasm.DocumentActionFeeAgreement.forDocumentTypeAction(contract, 'post', 'create'))
+        .to.throw(/feeMultiplier is required/);
+    });
+
+    it('should name no multiplier for a fixed fee, a part left out as 0', () => {
+      for (const multiplier of [undefined, feeMultiplier]) {
+        const agreement = wasm.DocumentActionFeeAgreement.forDocumentTypeAction(
+          contract,
+          'note',
+          'create',
+          multiplier,
+        );
+
+        expect(agreement?.owner).to.equal(1000n);
+        expect(agreement?.moderators).to.equal(0n);
+        expect(agreement?.pricing).to.equal('fixed');
+        expect(agreement?.knownFeeMultiplierPermille).to.be.undefined();
+      }
+    });
+
+    it('should return undefined for an action the type charges nothing for, with no multiplier', () => {
+      expect(wasm.DocumentActionFeeAgreement.forDocumentTypeAction(contract, 'post', 'delete'))
+        .to.be.undefined();
+      expect(wasm.DocumentActionFeeAgreement.forDocumentTypeAction(contract, 'plain', 'create'))
+        .to.be.undefined();
+    });
+
+    it('should read the action as a BatchType too', () => {
+      const agreement = wasm.DocumentActionFeeAgreement.forDocumentTypeAction(
+        contract,
+        'note',
+        wasm.BatchType.Create,
+      );
+
+      expect(agreement?.owner).to.equal(1000n);
+    });
+
+    it('should refuse an unknown feeMultiplier key, even for a fixed fee', () => {
+      expect(() => wasm.DocumentActionFeeAgreement.forDocumentTypeAction(
+        contract,
+        'note',
+        'create',
+        { knownPermile: 1000n, increaseTolerancePercent: 20 } as never,
+      )).to.throw(/unknown feeMultiplier option "knownPermile"/);
+    });
+
+    it('should refuse an unknown document type or action', () => {
+      expect(() => wasm.DocumentActionFeeAgreement.forDocumentTypeAction(contract, 'missing', 'create'))
+        .to.throw(/document type not found/);
+      expect(() => wasm.DocumentActionFeeAgreement.forDocumentTypeAction(contract, 'post', 'vote' as never))
+        .to.throw(/unknown batch type value: vote/);
+      [Number.NaN, -1, 0.5].forEach((action) => {
+        expect(() => wasm.DocumentActionFeeAgreement.forDocumentTypeAction(contract, 'note', action as never))
+          .to.throw(/unknown batch type value/);
+      });
+    });
   });
 
   describe('toJSON()', () => {

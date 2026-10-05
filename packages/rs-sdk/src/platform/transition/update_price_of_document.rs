@@ -227,9 +227,11 @@ mod tests {
             .expect_err("an agreement is refused before protocol version 14");
 
         assert!(
-            error
-                .to_string()
-                .contains("validate_base_carries_action_fee_agreement"),
+            matches!(
+                &error,
+                crate::Error::Protocol(ProtocolError::UnknownVersionMismatch { method, .. })
+                    if method.ends_with("validate_base_carries_action_fee_agreement")
+            ),
             "unexpected error: {error}"
         );
     }
