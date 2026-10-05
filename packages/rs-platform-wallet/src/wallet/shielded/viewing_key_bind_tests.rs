@@ -1134,3 +1134,62 @@ async fn should_rebind_retired_tip_accounts_without_profile_or_identity() {
         .await
         .contains(&SubwalletId::new(wallet.wallet_id(), account)));
 }
+
+/// A host rebind passes only ordinary accounts (FFI and host SDKs cap the
+/// request at 64 entries); Rust adds every persisted tip account itself. With
+/// more than 64 tip accounts on record, a `[0]` request must still bind them
+/// all, both seedlessly and from the seed, and the resulting
+/// `shielded_account_indices` snapshot exceeds the request cap, which is why
+/// hosts must not echo it back as a bind request.
+#[tokio::test]
+async fn should_bind_more_than_64_persisted_tip_accounts_from_an_ordinary_request() {
+    let seed = [0x42; 64];
+    let tips: Vec<u32> = (0..70)
+        .map(|index| crate::shielded_tip_account_index(index).unwrap())
+        .collect();
+    for (tag, seeded) in [("many_tips_persisted", false), ("many_tips_seeded", true)] {
+        let persister = Arc::new(CapturingPersistence::default());
+        let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+        let mut rows = BTreeMap::new();
+        for &account in std::iter::once(&0).chain(tips.iter()) {
+            let keys =
+                super::OrchardKeySet::from_seed(&seed, wallet.sdk().network, account).unwrap();
+            rows.insert(
+                SubwalletId::new(wallet.wallet_id(), account),
+                keys.full_viewing_key.to_bytes().to_vec(),
+            );
+        }
+        persister.serve_viewing_keys(rows);
+        let coordinator = coordinator_at(&temp_dir(tag));
+        if seeded {
+            wallet
+                .bind_shielded(&seed, &[0], &coordinator)
+                .await
+                .unwrap();
+        } else {
+            assert!(wallet
+                .bind_shielded_from_persisted(&[0], &coordinator)
+                .await
+                .unwrap());
+        }
+        let bound = wallet.shielded_account_indices().await;
+        assert_eq!(bound.len(), 71, "{tag}");
+        assert!(
+            bound.len() > 64,
+            "{tag}: the snapshot exceeds the request cap"
+        );
+        let ordinary: Vec<u32> = bound
+            .iter()
+            .copied()
+            .filter(|&account| !super::is_shielded_tip_account(account))
+            .collect();
+        assert_eq!(ordinary, vec![0], "{tag}");
+        let registered = coordinator.registered_subwallets().await;
+        for &account in &tips {
+            assert!(
+                registered.contains(&SubwalletId::new(wallet.wallet_id(), account)),
+                "{tag}: tip account {account} registered for sync"
+            );
+        }
+    }
+}

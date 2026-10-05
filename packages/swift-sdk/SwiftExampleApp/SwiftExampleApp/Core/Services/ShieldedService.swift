@@ -185,6 +185,16 @@ class ShieldedService: ObservableObject {
 
     // MARK: - Lifecycle
 
+    /// The accounts to request when rebinding from a native snapshot: only the
+    /// ordinary ones, defaulting to `[0]`. The snapshot also lists the dedicated
+    /// tip accounts Rust binds on its own (discovered and retired ones); echoing
+    /// them back could exceed the 64-entry bind request cap and stop later
+    /// discovery from registering new accounts.
+    static func ordinaryBindRequest(_ snapshot: [UInt32]) -> [UInt32] {
+        let ordinary = snapshot.filter { !PlatformWalletManager.isShieldedTipAccount($0) }
+        return ordinary.isEmpty ? [0] : ordinary
+    }
+
     /// Re-register newly discovered identity accounts while retaining the engine's
     /// existing ordinary accounts. Binding remains independent of discovery success.
     @discardableResult
@@ -201,7 +211,7 @@ class ShieldedService: ObservableObject {
             lastError = error.localizedDescription
             return false
         }
-        let accounts = existing.isEmpty ? [0] : existing
+        let accounts = Self.ordinaryBindRequest(existing)
         if boundWalletId == walletId || boundWalletId == nil {
             bind(walletManager: walletManager, walletId: walletId, network: network,
                  resolver: resolver, accounts: accounts)
@@ -575,7 +585,7 @@ class ShieldedService: ObservableObject {
                 let resolver,
                 let network
             else { return }
-            let accounts = boundAccounts.isEmpty ? [0] : boundAccounts
+            let accounts = Self.ordinaryBindRequest(boundAccounts)
             bind(
                 walletManager: walletManager,
                 walletId: walletId,
