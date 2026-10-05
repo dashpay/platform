@@ -1449,7 +1449,7 @@ fn having_operator_to_proto(op: HavingOperator) -> having_clause::Operator {
     }
 }
 
-fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
+pub(crate) fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
     match op {
         WhereOperator::Equal => ProtoWhereOperator::Equal,
         WhereOperator::GreaterThan => ProtoWhereOperator::GreaterThan,
@@ -1502,7 +1502,7 @@ fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
 ///   discriminant carries meaning)
 /// - `Map`/`EnumU8`/`EnumString` → `Error` (no wire-format
 ///   counterpart for these shapes in a WhereClause operand)
-fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
+pub(crate) fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
     value_to_proto_at_depth(value, 0)
 }
 
