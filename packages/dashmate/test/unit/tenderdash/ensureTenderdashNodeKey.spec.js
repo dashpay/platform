@@ -74,6 +74,23 @@ describe('ensureTenderdashNodeKey', () => {
     expect(config.isChanged()).to.be.false();
   });
 
+  // A recovery reset bypasses validation, so a stored config may lack nesting.
+  ['tenderdash', 'node'].forEach(missing => {
+    it(`should complete the identity when the stored ${missing} object is missing`, () => {
+      const options = config.getStoredOptions();
+      const parent = missing === 'node' ? options.platform.drive.tenderdash : options.platform.drive;
+      delete parent[missing];
+      config = new Config('fullnode', options, true);
+
+      ensureTenderdashNodeKey(config);
+
+      const key = config.get(NODE_KEY_PATH);
+      expect(validateTenderdashNodeKey(key)).to.equal(true);
+      expect(config.get(NODE_ID_PATH)).to.equal(deriveTenderdashNodeId(key));
+      expect(config.isChanged()).to.be.true();
+    });
+  });
+
   [
     ['disabled platform', 'fullnode', 'platform.enable', false],
     ['base template', 'base', 'platform.enable', true],

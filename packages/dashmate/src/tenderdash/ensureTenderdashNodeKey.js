@@ -6,19 +6,25 @@ import deriveTenderdashNodeId from './deriveTenderdashNodeId.js';
  * @param {Config} config
  */
 export default function ensureTenderdashNodeKey(config) {
+  // Read stored options rather than config.get(): a recovery reset bypasses
+  // validation, so nested objects may be missing and must not abort the save.
+  const options = config.getStoredOptions();
+
   // The base template is cloned into new configs, which must not share an identity.
-  if (config.get('platform.enable') !== true || config.getName() === 'base') {
+  if (options.platform?.enable !== true || config.getName() === 'base') {
     return;
   }
 
-  const options = config.getStoredOptions();
+  options.platform.drive ??= {};
+  options.platform.drive.tenderdash ??= {};
+  options.platform.drive.tenderdash.node ??= {};
   const { node } = options.platform.drive.tenderdash;
   const { key = null, id = null } = node;
   if (key !== null && id !== null) {
     return;
   }
   // Masternodes must use the identity registered on chain by their operator.
-  if (key === null && config.get('core.masternode.enable') === true) {
+  if (key === null && options.core?.masternode?.enable === true) {
     return;
   }
 
