@@ -22,6 +22,26 @@ pub(super) fn js_obj(entries: &[(&str, JsValue)]) -> JsValue {
     obj.into()
 }
 
+/// Read a numeric property from an ingested JS value, as the `u32` a group power is.
+pub(super) fn read_u32_property(value: &JsValue, name: &str) -> WasmDppResult<u32> {
+    js_sys::Reflect::get(value, &name.into())
+        .ok()
+        .and_then(|raw| raw.as_f64())
+        .and_then(|number| {
+            (number.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&number))
+                .then_some(number as u32)
+        })
+        .ok_or_else(|| WasmDppError::generic(format!("Property {} must be a u32 number", name)))
+}
+
+/// Read a string property from an ingested JS value.
+pub(super) fn read_string_property(value: &JsValue, name: &str) -> WasmDppResult<String> {
+    js_sys::Reflect::get(value, &name.into())
+        .ok()
+        .and_then(|raw| raw.as_string())
+        .ok_or_else(|| WasmDppError::generic(format!("Property {} must be a string", name)))
+}
+
 /// Read a `Map`-shaped property from an ingested JS value.
 ///
 /// `toJSON` normalizes a `Map` to a plain object so it survives

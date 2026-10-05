@@ -1,0 +1,35 @@
+{
+  "$formatVersion": "1",
+  "id": "4umqPMee5ANsHu3MAuYUpo45m5ZdtNgsfCabcufc2GmV",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 100,
+          "position": 0
+        },
+        "likeId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1,
+          "refersTo": {
+            "type": "deletableDocument",
+            "contractId": "AwW2H8VLdwJ9crM8utk3Ym5x8GxCurB89HCEEmRRP9fg",
+            "documentType": "like"
+          }
+        }
+      },
+      "required": [
+        "likeId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
