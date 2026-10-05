@@ -1327,7 +1327,7 @@ impl PlatformWallet {
         &self,
         seed: &[u8],
         account: u32,
-    ) -> Result<super::shielded::OrchardKeySet, PlatformWalletError> {
+    ) -> Result<Arc<super::shielded::OrchardKeySet>, PlatformWalletError> {
         use super::shielded::OrchardKeySet;
         let bound_fvk = {
             let guard = self.shielded_keys.read().await;
@@ -1347,7 +1347,9 @@ impl PlatformWallet {
                 "seed does not derive the bound viewing key for shielded account {account}"
             )));
         }
-        Ok(keyset)
+        // `Arc` so the spend proof can move the keyset onto a blocking
+        // thread without copying the spend authority.
+        Ok(Arc::new(keyset))
     }
 
     /// Send a private shielded → shielded transfer from `account`'s
@@ -1357,20 +1359,21 @@ impl PlatformWallet {
     /// `coordinator` supplies the shared, network-scoped
     /// commitment-tree store; `seed` supplies the spend authority —
     /// the full `OrchardKeySet` (with the `SpendAuthorizingKey`) is
-    /// re-derived from it for this call only and dropped on return.
+    /// re-derived from it for this call only and dropped on return (if
+    /// the call is cancelled mid-proof, once the in-flight proof on the
+    /// blocking pool finishes, which holds it by `Arc`).
     /// Privilege separation: the ASK never crosses to the
     /// coordinator — the spend free function takes the keyset by
     /// reference at call time.
     ///
-    /// The prover is consumed by value rather than borrowed
-    /// because `OrchardProver` is impl'd on
-    /// `&CachedOrchardProver` (the reference type), not on the
-    /// bare struct. Callers pass `&CachedOrchardProver::new()`
-    /// and we forward it down to the spend free function's
-    /// `&P` parameter.
+    /// `prover` is any [`ShieldedProver`](crate::wallet::shielded::ShieldedProver)
+    /// — in practice `CachedOrchardProver` or `&CachedOrchardProver`.
+    /// The spend awaits the prover's shared, off-runtime key
+    /// preparation and then generates the proof on tokio's blocking
+    /// pool, so no async worker is held for the multi-second build.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
-    pub async fn shielded_transfer_to<P: dpp::shielded::builder::OrchardProver>(
+    pub async fn shielded_transfer_to<P: crate::wallet::shielded::ShieldedProver>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         seed: &[u8],
@@ -1412,7 +1415,7 @@ impl PlatformWallet {
     /// the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     #[cfg(feature = "shielded")]
-    pub async fn shielded_unshield_to<P: dpp::shielded::builder::OrchardProver>(
+    pub async fn shielded_unshield_to<P: crate::wallet::shielded::ShieldedProver>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         seed: &[u8],
@@ -1450,7 +1453,7 @@ impl PlatformWallet {
     /// spent notes on top. `seed` supplies the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     #[cfg(feature = "shielded")]
-    pub async fn shielded_identity_top_up_from_pool<P: dpp::shielded::builder::OrchardProver>(
+    pub async fn shielded_identity_top_up_from_pool<P: crate::wallet::shielded::ShieldedProver>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         seed: &[u8],
@@ -1510,7 +1513,7 @@ impl PlatformWallet {
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
-    pub async fn shielded_withdraw_to<P: dpp::shielded::builder::OrchardProver>(
+    pub async fn shielded_withdraw_to<P: crate::wallet::shielded::ShieldedProver>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         seed: &[u8],
@@ -1584,7 +1587,7 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<dpp::prelude::Identifier, PlatformWalletError>
     where
-        P: dpp::shielded::builder::OrchardProver,
+        P: crate::wallet::shielded::ShieldedProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
         let (identity_id, identity) = {
@@ -1760,7 +1763,7 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
-        P: dpp::shielded::builder::OrchardProver,
+        P: crate::wallet::shielded::ShieldedProver,
     {
         self.shielded_shield_from_account_impl(
             coordinator,
@@ -1811,7 +1814,7 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
-        P: dpp::shielded::builder::OrchardProver,
+        P: crate::wallet::shielded::ShieldedProver,
     {
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
@@ -1851,7 +1854,7 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
-        P: dpp::shielded::builder::OrchardProver,
+        P: crate::wallet::shielded::ShieldedProver,
     {
         // Preserve the boundary behavior for non-Swift hosts and avoid taking
         // the single-flight/account locks for a request that can never build.
@@ -1966,7 +1969,7 @@ impl PlatformWallet {
     ) -> Result<Credits, PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
-        P: dpp::shielded::builder::OrchardProver,
+        P: crate::wallet::shielded::ShieldedProver,
     {
         self.shielded_shield_from_identity_impl(
             coordinator,
@@ -2001,7 +2004,7 @@ impl PlatformWallet {
     ) -> Result<Credits, PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
-        P: dpp::shielded::builder::OrchardProver,
+        P: crate::wallet::shielded::ShieldedProver,
     {
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
@@ -2039,7 +2042,7 @@ impl PlatformWallet {
     ) -> Result<Credits, PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
-        P: dpp::shielded::builder::OrchardProver,
+        P: crate::wallet::shielded::ShieldedProver,
     {
         if amount == 0 {
             return Err(PlatformWalletError::ShieldedBuildError(
