@@ -969,7 +969,11 @@ enum JobDone {
     },
     /// [`NO_ANSWER_RETRY`] passed since a probe at `height` that no node
     /// answered.
-    Retry { wallet_id: WalletId, height: u32 },
+    Retry {
+        wallet_id: WalletId,
+        series: u64,
+        height: u32,
+    },
 }
 
 #[derive(Default)]
@@ -1048,6 +1052,9 @@ struct WalletEntry {
 
 #[derive(Debug, Clone, Copy)]
 struct NoAnswerRetries {
+    /// Names the series: a timer from before a reset (a rewind, a switch)
+    /// matches no later series at the same height.
+    series: u64,
     height: u32,
     armed: u32,
     waiting: bool,
@@ -1084,6 +1091,7 @@ struct Actor {
     followed_tip: Option<u32>,
     /// The header tip of dash-spv's last completed sync cycle.
     sync_tip: Option<u32>,
+    next_retry_series: u64,
     /// Echoes whose holder lookup is out, by the token their result carries.
     /// A send that settles, or a wallet that leaves or re-registers, withdraws
     /// them: an acceptance landing after that must not reach the host.
@@ -1110,6 +1118,7 @@ impl Actor {
             uncertain: HashMap::new(),
             followed_tip: None,
             sync_tip: None,
+            next_retry_series: 0,
             echo_lookups: HashMap::new(),
             next_echo_token: 0,
         }
@@ -1247,6 +1256,15 @@ impl Actor {
                     // confined to what an `Uncertain` result forced — the scan
                     // settles most roots, and its events clear their verdicts
                     // (see `Command::Settled`) — and start no windows.
+                    // A completion's pass stripped so has not run: its tip
+                    // is not done.
+                    let anchors = [
+                        entry.pending.as_ref().and_then(|pending| pending.anchor_at),
+                        entry.run.as_ref().and_then(|run| run.anchor_at),
+                    ];
+                    if entry.completed_at.is_some() && anchors.contains(&entry.completed_at) {
+                        entry.completed_at = None;
+                    }
                     if let Some(pending) = entry.pending.as_mut() {
                         pending.anchor_at = None;
                         // A rewind replays lower heights: never run above them.
@@ -1399,7 +1417,15 @@ impl Actor {
                 let at_tip: Vec<(WalletId, u32)> = self
                     .wallets
                     .iter()
-                    .filter(|(_, entry)| entry.behind || entry.height.is_none())
+                    .filter(|(_, entry)| {
+                        // Behind, with no step yet, or holding roots no node
+                        // answered at its height: the network is back.
+                        entry.behind
+                            || entry.height.is_none()
+                            || entry
+                                .no_answer
+                                .is_some_and(|retries| Some(retries.height) == entry.height)
+                    })
                     .map(|(wallet_id, entry)| (*wallet_id, entry.height.unwrap_or(tip)))
                     .filter(|(_, height)| near_tip(*height, tip))
                     .collect();
@@ -1633,12 +1659,16 @@ impl Actor {
                     }
                 }
             }
-            JobDone::Retry { wallet_id, height } => {
+            JobDone::Retry {
+                wallet_id,
+                series,
+                height,
+            } => {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
                 match entry.no_answer.as_mut() {
-                    Some(retries) if retries.height == height => retries.waiting = false,
+                    Some(retries) if retries.series == series => retries.waiting = false,
                     // Reset since (a rewind, a switch-off, a new height).
                     _ => return,
                 }
@@ -1792,16 +1822,23 @@ impl Actor {
         let Some(entry) = self.wallets.get_mut(&wallet_id) else {
             return;
         };
-        if !anchored {
+        // A forced pass at the height the wallet follows (an `Uncertain`
+        // report while the network is flaky) is as good as an anchored one.
+        let follows = !entry.behind && entry.height == Some(height);
+        if !anchored && !follows {
             return;
         }
         let retries = match entry.no_answer {
             Some(retries) if retries.height == height => retries,
-            _ => NoAnswerRetries {
-                height,
-                armed: 0,
-                waiting: false,
-            },
+            _ => {
+                self.next_retry_series += 1;
+                NoAnswerRetries {
+                    series: self.next_retry_series,
+                    height,
+                    armed: 0,
+                    waiting: false,
+                }
+            }
         };
         if retries.waiting {
             return; // the waiting retry covers this root too
@@ -1819,10 +1856,11 @@ impl Actor {
         }
         let delay = NO_ANSWER_RETRY * 2u32.pow(retries.armed);
         entry.no_answer = Some(NoAnswerRetries {
-            height,
             armed: retries.armed + 1,
             waiting: true,
+            ..retries
         });
+        let series = retries.series;
         tracing::info!(
             wallet_id = %hex::encode(wallet_id),
             txid = %root,
@@ -1832,7 +1870,11 @@ impl Actor {
         );
         self.jobs.spawn(async move {
             tokio::time::sleep(delay).await;
-            JobDone::Retry { wallet_id, height }
+            JobDone::Retry {
+                wallet_id,
+                series,
+                height,
+            }
         });
     }
 
@@ -3734,6 +3776,91 @@ mod tests {
             probed.iter().filter(|probed| **probed == txid(1)).count(),
             1 + MAX_NO_ANSWER_RETRIES as usize
         );
+    }
+
+    /// An `Uncertain` report's forced pass at the height the wallet follows
+    /// is retried like an anchored one: the network is flaky right then.
+    #[tokio::test(start_paused = true)]
+    async fn should_retry_a_forced_pass_at_the_followed_height() {
+        let probe = Arc::new(SequenceProbe::new(&[no_answer(), ProbeVerdict::Accepted]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), Vec::new());
+        rig.follow(wallet(), 100).await; // follows at 101, nothing to probe
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.send(Command::Uncertain(txid(1))).await;
+
+        assert_eq!(probe.calls(), 2, "the forced probe and its retry");
+    }
+
+    /// A wallet that kept following, whose roots no node answered through
+    /// all its retries, gets them probed when the network is back — at the
+    /// sync's completion, without waiting for a block.
+    #[tokio::test(start_paused = true)]
+    async fn should_probe_unanswered_roots_when_a_sync_completes() {
+        let probe = Arc::new(SequenceProbe::new(&[
+            no_answer(),
+            no_answer(),
+            no_answer(),
+            no_answer(),
+            ProbeVerdict::Accepted,
+        ]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        assert_eq!(probe.calls(), 1 + MAX_NO_ANSWER_RETRIES as usize);
+
+        rig.send(Command::SyncStarted).await;
+        rig.send(sync_complete(101)).await;
+
+        assert_eq!(probe.calls(), 2 + MAX_NO_ANSWER_RETRIES as usize);
+        assert!(rig
+            .sent()
+            .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)));
+    }
+
+    /// The wallet's first step arrives while the completion's pass at that
+    /// tip still reads: the step strips the pass, so the tip is not done —
+    /// the step runs it.
+    #[tokio::test]
+    async fn should_run_the_completion_pass_a_first_step_stripped() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 1_566_577);
+
+        rig.handle(sync_complete(1_566_577)); // its read is out
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 1_566_577,
+        });
+        rig.settle().await;
+
+        assert_eq!(probe.probed(), vec![txid(1)]);
+    }
+
+    /// A completion pass whose read finds the wallet below the tip has not
+    /// run: the wallet's later step to the tip runs it.
+    #[tokio::test]
+    async fn should_run_the_completion_pass_after_a_stale_read() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 1_000);
+
+        rig.send(sync_complete(1_566_577)).await;
+        assert!(probe.probed().is_empty(), "the read is far below the tip");
+        rig.height(wallet(), 1_566_577).await;
+
+        assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
     /// A refusal is an answer: no early retry.

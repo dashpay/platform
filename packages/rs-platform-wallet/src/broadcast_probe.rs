@@ -124,7 +124,7 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
     if broken_stream
         || matches!(
             code,
-            Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled
+            Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled | Code::ResourceExhausted
         )
     {
         return NodeVerdict::Unreachable {
@@ -1020,6 +1020,7 @@ mod tests {
                 "h2 protocol error: error reading a body from connection",
             ),
             (Code::Unknown, "connection closed before message completed"),
+            (Code::ResourceExhausted, "rate limited"),
         ] {
             assert!(
                 matches!(
