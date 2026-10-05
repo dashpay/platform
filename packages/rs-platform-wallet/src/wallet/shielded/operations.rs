@@ -27,7 +27,9 @@ use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
 };
-use super::prover::{fetch_while_proving, prove_on_blocking_thread, ShieldedProver};
+use super::prover::{
+    fetch_while_proving, prove_on_blocking_thread, reprove_if_unbound, ShieldedProver,
+};
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
@@ -672,20 +674,23 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Shield
         Ok(inputs_with_nonce)
     };
 
-    let (inputs_with_nonce, mut proved) =
-        fetch_while_proving(fetch, prove_at(sdk.version())).await?;
+    let (inputs_with_nonce, proved) = fetch_while_proving(fetch, prove_at(sdk.version())).await?;
 
     // The fetch is a proved query and can advance the SDK's protocol
     // version. Assemble at the version current now (as the sequential code
     // did) and, in the rare case the binding rules changed under the proof
     // (e.g. across `credit_pool_bundle_binding` activation), prove again.
     let platform_version: &'static PlatformVersion = sdk.version();
-    if !proved
-        .is_bound_for(&inputs_with_nonce, platform_version)
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?
-    {
-        proved = prove_at(platform_version).await?;
-    }
+    let proved = reprove_if_unbound(
+        proved,
+        |proved| {
+            proved
+                .is_bound_for(&inputs_with_nonce, platform_version)
+                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))
+        },
+        || prove_at(platform_version),
+    )
+    .await?;
 
     let claimed_inputs = inputs_with_nonce.clone();
 
@@ -1053,18 +1058,23 @@ pub(in crate::wallet) async fn shield_from_identity_to<
                 PlatformWalletError::ShieldedBuildError(format!("fetch identity nonce: {e}"))
             })
     };
-    let (nonce, mut proved) = fetch_while_proving(fetch, prove_at(sdk.version())).await?;
+    let (nonce, proved) = fetch_while_proving(fetch, prove_at(sdk.version())).await?;
 
     // The nonce fetch can advance the SDK's protocol version; assemble at
     // the current version and re-prove if the binding rules changed under
-    // the proof (see `shield_to`).
+    // the proof (see `shield_to`). The fetched nonce is reused, never
+    // fetched again.
     let platform_version: &'static PlatformVersion = sdk.version();
-    if !proved
-        .is_bound_for(identity_id, platform_version)
-        .map_err(map_shield_from_identity_build_error)?
-    {
-        proved = prove_at(platform_version).await?;
-    }
+    let proved = reprove_if_unbound(
+        proved,
+        |proved| {
+            proved
+                .is_bound_for(identity_id, platform_version)
+                .map_err(map_shield_from_identity_build_error)
+        },
+        || prove_at(platform_version),
+    )
+    .await?;
 
     let state_transition = build_shield_from_identity_transition_from_proved_bundle(
         proved,

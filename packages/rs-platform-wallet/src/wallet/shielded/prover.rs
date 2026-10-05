@@ -420,6 +420,29 @@ where
     }
 }
 
+/// Keep `proved` if `is_bound` says it still matches the transition about
+/// to be assembled; otherwise replace it with exactly one fresh `reprove`.
+///
+/// Used after [`fetch_while_proving`]: the fetch can advance the SDK's
+/// protocol version and with it the bundle-binding rules. Only the proof is
+/// redone — the fetched values are the caller's and are never fetched again
+/// (an identity-nonce fetch bumps the SDK's nonce cache). An `is_bound` or
+/// `reprove` error is returned as is, before anything is signed.
+pub(crate) async fn reprove_if_unbound<B, E, PF>(
+    proved: B,
+    is_bound: impl FnOnce(&B) -> Result<bool, E>,
+    reprove: impl FnOnce() -> PF,
+) -> Result<B, E>
+where
+    PF: Future<Output = Result<B, E>>,
+{
+    if is_bound(&proved)? {
+        Ok(proved)
+    } else {
+        reprove().await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -818,6 +841,60 @@ mod tests {
         .await
         .expect("fetch and proof did not overlap");
         assert_eq!(overlapped.unwrap(), ("nonces", "proof"));
+    }
+
+    #[tokio::test]
+    async fn reprove_if_unbound_keeps_a_still_bound_proof() {
+        let kept = reprove_if_unbound(
+            "first proof",
+            |p| {
+                assert_eq!(*p, "first proof");
+                Ok::<_, &str>(true)
+            },
+            || async { panic!("must not re-prove a still-bound proof") },
+        )
+        .await;
+        assert_eq!(kept.unwrap(), "first proof");
+    }
+
+    #[tokio::test]
+    async fn reprove_if_unbound_reproves_once_when_binding_changed() {
+        let reproved = AtomicUsize::new(0);
+        let out = reprove_if_unbound(
+            "stale proof",
+            |_| Ok::<_, &str>(false),
+            || {
+                reproved.fetch_add(1, Ordering::SeqCst);
+                async { Ok("fresh proof") }
+            },
+        )
+        .await;
+        assert_eq!(out.unwrap(), "fresh proof");
+        assert_eq!(reproved.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn reprove_if_unbound_returns_reprove_error() {
+        let err = reprove_if_unbound(
+            "stale proof",
+            |_| Ok(false),
+            || async { Err::<&str, _>("re-prove failed") },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err, "re-prove failed");
+    }
+
+    #[tokio::test]
+    async fn reprove_if_unbound_returns_binding_check_error_without_reproving() {
+        let err = reprove_if_unbound(
+            "proof",
+            |_| Err("unknown binding version"),
+            || async { panic!("must not re-prove when the binding check fails") },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err, "unknown binding version");
     }
 
     /// Run `fut` while a 10 ms heartbeat ticks on the same runtime, and
