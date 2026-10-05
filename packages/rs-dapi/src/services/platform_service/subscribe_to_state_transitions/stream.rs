@@ -230,6 +230,14 @@ impl SubscriptionService {
     }
 }
 
+/// Why a client that stopped reading is dropped.
+fn slow_client() -> Status {
+    Status::resource_exhausted(format!(
+        "the client did not read for {}s; resume from the last checkpoint",
+        SEND_DEADLINE.as_secs()
+    ))
+}
+
 /// IPv4 addresses count individually; IPv6 addresses by /64, the smallest block a client
 /// usually controls.
 fn per_ip_key(ip: IpAddr) -> IpAddr {
@@ -380,6 +388,9 @@ impl Scan {
     ) -> Result<OwnedSemaphorePermit, Stop> {
         let acquire = self.replaying.clone().acquire_owned();
         tokio::pin!(acquire);
+        // Since when the client's buffer has stayed full: a client that stops reading is
+        // dropped after `SEND_DEADLINE`, here as when a send waits on it.
+        let mut full_since: Option<Instant> = None;
         loop {
             tokio::select! {
                 permit = &mut acquire => {
@@ -387,7 +398,11 @@ impl Scan {
                 }
                 _ = self.sender.closed() => return Err(Stop::Closed),
                 _ = sleep(CHECKPOINT_INTERVAL.saturating_sub(last_checkpoint.elapsed())) => {
-                    self.try_checkpoint()?;
+                    if self.try_checkpoint()? {
+                        full_since = None;
+                    } else if full_since.get_or_insert_with(Instant::now).elapsed() >= SEND_DEADLINE {
+                        return Err(Stop::Fail(slow_client()));
+                    }
                     *last_checkpoint = Instant::now();
                 }
             }
@@ -395,8 +410,9 @@ impl Scan {
     }
 
     /// A checkpoint at the highest fully scanned height if the client has room for it; with
-    /// a full buffer the client has messages to read and needs no heartbeat.
-    fn try_checkpoint(&mut self) -> Result<(), Stop> {
+    /// a full buffer the client has messages to read and needs no heartbeat. Returns whether
+    /// it was sent.
+    fn try_checkpoint(&mut self) -> Result<bool, Stop> {
         let response = SubscribeToStateTransitionsResponse {
             version: Some(Version::V0(SubscribeToStateTransitionsResponseV0 {
                 responses: Some(Responses::Checkpoint(Checkpoint {
@@ -405,7 +421,8 @@ impl Scan {
             })),
         };
         match self.sender.try_send(Ok(response)) {
-            Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => Ok(()),
+            Ok(()) => Ok(true),
+            Err(mpsc::error::TrySendError::Full(_)) => Ok(false),
             Err(mpsc::error::TrySendError::Closed(_)) => Err(Stop::Closed),
         }
     }
@@ -495,10 +512,7 @@ impl Scan {
         match timeout(SEND_DEADLINE, self.sender.send(Ok(response))).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(_)) => Err(Stop::Closed),
-            Err(_) => Err(Stop::Fail(Status::resource_exhausted(format!(
-                "the client did not read for {}s; resume from the last checkpoint",
-                SEND_DEADLINE.as_secs()
-            )))),
+            Err(_) => Err(Stop::Fail(slow_client())),
         }
     }
 }

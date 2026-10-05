@@ -541,3 +541,32 @@ async fn should_keep_the_oldest_waiter_first_for_replay_capacity_across_heartbea
     drop(permit);
     assert!(newer_wait.await.unwrap().is_some(), "then the newer waiter");
 }
+
+#[tokio::test(start_paused = true)]
+async fn should_drop_a_client_that_stops_reading_while_waiting_for_replay_capacity() {
+    let harness = harness(SubscriptionLimits::default());
+    harness.commit(vec![]);
+    // A full buffer the client never drains, and no replay capacity.
+    let (sender, _receiver) = mpsc::channel(1);
+    sender.try_send(Err(Status::ok("filler"))).unwrap();
+    let mut scan = Scan {
+        blocks: harness.blocks.clone(),
+        tip: harness.tip.subscribe(),
+        replaying: Arc::new(Semaphore::new(0)),
+        filters: recipient_filter(7),
+        sender,
+        next_height: 1,
+    };
+    let mut last_checkpoint = Instant::now();
+    let outcome = timeout(
+        SEND_DEADLINE + CHECKPOINT_INTERVAL * 3,
+        scan.replay_permit(&mut last_checkpoint),
+    )
+    .await
+    .expect("the wait ends without a permit");
+    match outcome {
+        Err(Stop::Fail(status)) => assert_eq!(status.code(), tonic::Code::ResourceExhausted),
+        Err(Stop::Closed) => panic!("expected the slow client to be dropped, not closed"),
+        Ok(_) => panic!("expected no permit"),
+    }
+}

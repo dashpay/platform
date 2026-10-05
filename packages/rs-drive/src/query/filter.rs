@@ -878,6 +878,14 @@ fn canonical_property_value(property_type: &DocumentPropertyType, value: &Value)
     match property_type {
         // Text is already canonical, and the index-key form would conflate `""` with `"\0"`.
         DocumentPropertyType::String(_) => matches!(value, Value::Text(_)).then(|| value.clone()),
+        // Floats compare as floats: the index-key form turns -0.0 into NaN.
+        DocumentPropertyType::F64 => {
+            if value.is_null() {
+                Some(Value::Null)
+            } else {
+                value.to_float().ok().map(Value::Float)
+            }
+        }
         DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
             if exceeds_identifier_text(value) =>
         {
@@ -3790,6 +3798,78 @@ mod tests {
                 filter.matches_document_transition(&rated(Value::U64(5)), None, platform_version),
                 TransitionCheckResult::Pass
             );
+        }
+
+        #[test]
+        fn should_compare_negative_zero_as_zero() {
+            use dpp::data_contract::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            let documents = platform_value!({
+                "reading": {
+                    "type": "object",
+                    "properties": { "value": { "type": "number", "position": 0 } },
+                    "additionalProperties": false
+                }
+            });
+            let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
+            let platform_version = PlatformVersion::latest();
+            let reading = |value: f64| {
+                create(
+                    &contract,
+                    "reading",
+                    BTreeMap::from([("value".to_string(), Value::Float(value))]),
+                )
+            };
+            for (operator, operand, event, expected) in [
+                // Equality across signs of zero, either side negative.
+                (WhereOperator::Equal, 0.0, -0.0, TransitionCheckResult::Pass),
+                (WhereOperator::Equal, -0.0, 0.0, TransitionCheckResult::Pass),
+                // Ordering with a negative-zero event value.
+                (
+                    WhereOperator::GreaterThan,
+                    -1.0,
+                    -0.0,
+                    TransitionCheckResult::Pass,
+                ),
+                (
+                    WhereOperator::LessThan,
+                    -1.0,
+                    -0.0,
+                    TransitionCheckResult::Fail,
+                ),
+            ] {
+                let clause = WhereClause {
+                    field: "value".to_string(),
+                    operator,
+                    value: Value::Float(operand),
+                };
+                let mut filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "reading".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Create {
+                        new_document_clauses: if operator == WhereOperator::Equal {
+                            equal("value", Value::Float(operand))
+                        } else {
+                            InternalClauses {
+                                range_clause: Some(clause),
+                                ..Default::default()
+                            }
+                        },
+                    },
+                };
+                filter
+                    .canonicalize_clause_values(platform_version)
+                    .expect("canonical");
+                assert_eq!(
+                    filter.matches_document_transition(&reading(event), None, platform_version),
+                    expected,
+                    "{operator:?} {operand} against {event}"
+                );
+            }
         }
     }
 }
