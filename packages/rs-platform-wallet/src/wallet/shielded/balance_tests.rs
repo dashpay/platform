@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -597,7 +598,7 @@ where
     let weak = Arc::downgrade(coordinator);
     let counter = Arc::clone(&calls);
     coordinator.install_tree_progress_handler(Some(Arc::new(move |_, _| {
-        let call = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let call = counter.fetch_add(1, Ordering::SeqCst);
         if let Some(coordinator) = weak.upgrade() {
             let lifecycle_change = tokio::task::unconstrained(tokio::time::timeout(
                 std::time::Duration::from_secs(10),
@@ -611,6 +612,20 @@ where
         }
     })));
     calls
+}
+
+/// A host snapshot carrying sync state for `wallet`'s account 0.
+fn synced_start_state(wallet: [u8; 32]) -> ShieldedSyncStartState {
+    ShieldedSyncStartState {
+        per_subwallet: BTreeMap::from([(
+            SubwalletId::new(wallet, 0),
+            ShieldedSubwalletStartState {
+                has_sync_state: true,
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    }
 }
 
 /// Coordinator over the empty mock pool, plus how many batches (hook calls)
@@ -627,7 +642,7 @@ async fn empty_pool_coordinator() -> (Arc<NetworkShieldedCoordinator>, usize) {
     register(&coordinator, [0x30; 32], &[0]).await;
     let calls = hook_tree_progress(&coordinator, |_, _| async {});
     assert_eq!(coordinator.sync(true).await.success_count(), 1);
-    let batches_per_pass = calls.load(std::sync::atomic::Ordering::SeqCst);
+    let batches_per_pass = calls.load(Ordering::SeqCst);
     assert!(batches_per_pass > 0);
     coordinator.unregister_wallet([0x30; 32]).await;
     (coordinator, batches_per_pass)
@@ -651,7 +666,7 @@ async fn should_retry_sync_superseded_by_wallet_removal_without_resurrecting_it(
     assert!(outcome.wallet_results.contains_key(&kept));
     assert!(!outcome.wallet_results.contains_key(&removed));
     assert_eq!(
-        calls.load(std::sync::atomic::Ordering::SeqCst),
+        calls.load(Ordering::SeqCst),
         2 * batches_per_pass,
         "the superseded scan was retried once"
     );
@@ -680,16 +695,7 @@ async fn should_fail_sync_after_repeated_supersession() {
     register(&coordinator, wallet, &[0]).await;
     // Every attempt is superseded by a restore of the wallet it scans.
     let calls = hook_tree_progress(&coordinator, move |coordinator, _| async move {
-        let snapshot = ShieldedSyncStartState {
-            per_subwallet: BTreeMap::from([(
-                SubwalletId::new(wallet, 0),
-                ShieldedSubwalletStartState {
-                    has_sync_state: true,
-                    ..Default::default()
-                },
-            )]),
-            ..Default::default()
-        };
+        let snapshot = synced_start_state(wallet);
         coordinator
             .restore_for_wallet(wallet, &snapshot)
             .await
@@ -705,7 +711,7 @@ async fn should_fail_sync_after_repeated_supersession() {
         "{outcome:?}"
     );
     assert_eq!(
-        calls.load(std::sync::atomic::Ordering::SeqCst),
+        calls.load(Ordering::SeqCst),
         3 * batches_per_pass,
         "one attempt plus two retries"
     );
@@ -721,16 +727,7 @@ async fn should_not_supersede_sync_for_a_wallet_bound_mid_pass() {
     let calls = hook_tree_progress(&coordinator, move |coordinator, call| async move {
         if call == 0 {
             register(&coordinator, late, &[0]).await;
-            let snapshot = ShieldedSyncStartState {
-                per_subwallet: BTreeMap::from([(
-                    SubwalletId::new(late, 0),
-                    ShieldedSubwalletStartState {
-                        has_sync_state: true,
-                        ..Default::default()
-                    },
-                )]),
-                ..Default::default()
-            };
+            let snapshot = synced_start_state(late);
             coordinator
                 .restore_for_wallet(late, &snapshot)
                 .await
@@ -742,7 +739,7 @@ async fn should_not_supersede_sync_for_a_wallet_bound_mid_pass() {
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     assert!(outcome.wallet_results.contains_key(&scanning));
     assert_eq!(
-        calls.load(std::sync::atomic::Ordering::SeqCst),
+        calls.load(Ordering::SeqCst),
         batches_per_pass,
         "binding another wallet must not discard the in-flight scan"
     );

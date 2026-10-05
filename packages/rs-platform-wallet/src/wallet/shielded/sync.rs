@@ -208,7 +208,7 @@ impl MultiSyncNotesResult {
 #[derive(Debug, Default)]
 pub(crate) struct StoreEpoch(std::sync::Mutex<Generations>);
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone)]
 struct Generations {
     tree: u64,
     wallets: BTreeMap<WalletId, u64>,
@@ -331,12 +331,10 @@ const APPEND_SLICE: usize = 256;
 /// holds, and everything else the pass produces — the checkpoint, notes,
 /// outgoing notes, scan-detected spends and watermarks — is committed in a
 /// single write-lock hold after the stream ends, so readers still observe
-/// those atomically per pass. Every acquisition first re-validates the
-/// pass's snapshot (no relevant [`StoreEpoch`] generation bumped since
-/// `epoch` was taken — which the caller must do before it snapshotted the
-/// registry into `subwallets` — and the tree leaf count exactly what this
-/// pass has appended so far) and returns
-/// [`NoteSyncOutcome::Superseded`] if anything moved under it.
+/// those atomically per pass. Every acquisition first checks
+/// [`snapshot_still_current`] and returns [`NoteSyncOutcome::Superseded`]
+/// if anything moved. `epoch` must have been watched before the registry
+/// was snapshotted into `subwallets`.
 ///
 /// Appends that land between acquisitions are invisible to spends: the
 /// spend path only witnesses against checkpoints, and shardtree computes a
@@ -355,10 +353,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         return Ok(NoteSyncOutcome::Completed(MultiSyncNotesResult::default()));
     }
 
-    // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
-    // come back per batch as `batch.decrypted`; every other subwallet's
-    // are produced by local trial-decryption against `batch.notes`.
-    let driver_ivk = subwallets[0].1.prepared_ivk.clone();
     sync_notes_from_source(
         store,
         epoch,
@@ -404,7 +398,12 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
                         cb(downloaded.max(tree_size), height);
                     }));
             }
-            sync_shielded_notes_stream(sdk, &driver_ivk, aligned_start, Some(sync_config))
+            // Drive the FIRST subwallet's IVK as the streaming driver. Its
+            // hits come back per batch as `batch.decrypted`; every other
+            // subwallet's are produced by local trial-decryption against
+            // `batch.notes`.
+            let driver_ivk = &subwallets[0].1.prepared_ivk;
+            sync_shielded_notes_stream(sdk, driver_ivk, aligned_start, Some(sync_config))
         },
     )
     .await
@@ -495,10 +494,9 @@ where
     let driver_id = &subwallets[0].0;
 
     // No store lock is held while the stream is polled (see "Locking" on
-    // `sync_notes_across`): every write below takes the lock briefly and
-    // first re-validates this pass's snapshot. Backpressure is still
-    // pull-based — a slow consumer polls the stream less often, capping
-    // in-flight network fetches at `max_concurrent`.
+    // `sync_notes_across`). Backpressure is still pull-based — a slow
+    // consumer polls the stream less often, capping in-flight network
+    // fetches at `max_concurrent`.
     let stream = open_stream(aligned_start, tree_size);
     futures::pin_mut!(stream);
 
@@ -780,17 +778,14 @@ where
         // checkpoint while later appends extend the tree past it,
         // so the depth-0 witness then reflects a state Platform
         // never recorded.
-        // `snapshot_still_current` just verified the tree holds exactly
-        // `leaves_committed` leaves.
-        let new_tree_size = leaves_committed;
         // Hard-fail rather than saturate at u32::MAX: a saturated id
         // would reintroduce shardtree's silent-dedup (every checkpoint
         // past the ceiling pins to the same id) — the exact corruption
         // this monotonic-id scheme exists to avoid. Unreachable today
         // (>4.29B notes scanned) but fail loudly before proving.
-        let checkpoint_id: u32 = new_tree_size.try_into().map_err(|_| {
+        let checkpoint_id: u32 = leaves_committed.try_into().map_err(|_| {
             PlatformWalletError::ShieldedTreeUpdateFailed(format!(
-                "commitment tree size {new_tree_size} exceeds u32 checkpoint-id range"
+                "commitment tree size {leaves_committed} exceeds u32 checkpoint-id range"
             ))
         })?;
         store
