@@ -1091,20 +1091,29 @@ mod tests {
         .expect("fixture withdrawal serializes")
     }
 
-    /// The user fee increase is part of the signed bytes and scales the
-    /// processing fee, so two otherwise identical transfers must not parse
-    /// to the same approval fields.
-    /// A token config update naming one action taker must not parse to the
-    /// same row as one naming another; the change item is rendered in
-    /// `details` and the row is marked incomplete.
-    /// Emergency action, price schedule and claim distribution type were
-    /// exposed by the old single-purchase parser's predecessor and must not
-    /// be lost: each renders in `details` with the row marked incomplete.
-    /// The tagged 2,340-byte contract create also decodes as a 47-byte
-    /// identity update when the IdentityUpdate tag is prepended; only the
-    /// framing that consumes every byte counts, so the contract parses.
-    /// Trailing bytes after a complete transition are refused, since the
-    /// summary would not show whatever they carry.
+    /// Bytes left over after a complete transition are refused through the
+    /// public parser, since the summary would not show whatever they carry.
+    /// (Framing ambiguity and prefix decodes are covered where the decoding
+    /// lives, in `platform_wallet`'s `state_transition_summary` tests.)
+    #[test]
+    fn trailing_bytes_after_a_complete_transition_are_refused() {
+        let (bytes, _, _) = data_contract_create_bytes();
+        let (result, mut out) = parse(&bytes);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.kind, PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_CREATE);
+        unsafe { platform_wallet_parse_state_transition_free(&mut out) };
+
+        let mut padded = bytes;
+        padded.push(0);
+        let (result, out) = parse(&padded);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorDeserialization
+        );
+        assert_eq!(out.kind, PARSED_STATE_TRANSITION_KIND_NONE);
+        assert!(out.serialized.is_null());
+    }
+
     /// The serialized fixtures the Swift (`ParseStateTransitionTests`) and
     /// Kotlin (`StateTransitionParserTest`) suites decode through the same
     /// FFI. Pinned as hex so a change to the fixtures or to DPP's wire
