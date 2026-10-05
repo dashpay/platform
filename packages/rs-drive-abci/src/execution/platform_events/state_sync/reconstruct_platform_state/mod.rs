@@ -1,6 +1,7 @@
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::entry_changes::EntryChanges;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::platform_types::signature_verification_quorum_set::{
     Quorums, SignatureVerificationQuorumSet, SignatureVerificationQuorumSetV0Methods,
@@ -102,6 +103,11 @@ where
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             previous_fee_versions,
+            // Nothing in aux storage describes this state yet (the restore wiped it), so
+            // the first store must write the full record and every per-entry collection.
+            heavy_fields_dirty: true,
+            masternode_changes: EntryChanges::all(),
+            validator_set_changes: EntryChanges::all(),
         };
 
         let saved_block_info =
