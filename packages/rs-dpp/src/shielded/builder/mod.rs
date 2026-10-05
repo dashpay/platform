@@ -47,7 +47,10 @@ mod token_shielded_transfer;
 mod token_unshield;
 mod unshield;
 
-pub use self::shield::build_shield_transition;
+pub use self::shield::{
+    build_shield_transition, build_shield_transition_from_proved_bundle, prove_shield_bundle,
+    ProvedShieldBundle,
+};
 pub use document_token_payment::build_document_shielded_token_payment;
 pub use identity_create_from_shielded_pool::{
     build_identity_create_from_shielded_pool_transition, IdentityCreateFromShieldedPoolBuildResult,
@@ -56,7 +59,11 @@ pub use identity_top_up_from_shielded_pool::build_identity_top_up_from_shielded_
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
 #[cfg(feature = "core_key_wallet")]
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_signer;
-pub use shield_from_identity::build_shield_from_identity_transition;
+pub use shield_from_identity::{
+    build_shield_from_identity_transition,
+    build_shield_from_identity_transition_from_proved_bundle, prove_shield_from_identity_bundle,
+    ProvedShieldFromIdentityBundle,
+};
 pub use shielded_transfer::build_shielded_transfer_transition;
 pub use shielded_withdrawal::build_shielded_withdrawal_transition;
 pub use token_burn_from_pool::build_token_burn_from_pool_transition;
