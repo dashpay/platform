@@ -2332,6 +2332,7 @@ dependencies = [
  "libm",
  "log",
  "nohash-hasher",
+ "nonempty",
  "num-cmp",
  "num_enum",
  "once_cell",
