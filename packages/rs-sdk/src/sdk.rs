@@ -81,6 +81,7 @@ pub const fn min_protocol_version(network: Network) -> u32 {
 pub type ProtocolVersionObserver = Arc<dyn Fn(u32) + Send + Sync>;
 
 mod quorum_refresh;
+pub(crate) use quorum_refresh::is_unresolved_quorum;
 pub use quorum_refresh::QuorumRefreshFn;
 use quorum_refresh::QuorumRefresher;
 
@@ -1100,12 +1101,13 @@ impl SdkBuilder {
     ///
     /// For a context provider that caches quorum keys and cannot fetch a
     /// missing one from inside the synchronous
-    /// [`ContextProvider::get_quorum_public_key`]. When a read's proof is
-    /// signed by a quorum that formed after the cache was filled, the SDK awaits
-    /// `refresh` and sends the request again, instead of retrying it on other
+    /// [`ContextProvider::get_quorum_public_key`]. When a fetched proof or a
+    /// state-transition outcome proof names a quorum newer than the cache,
+    /// the SDK awaits `refresh` and sends the request again, instead of retrying it on other
     /// nodes and banning each of them for the client's stale keys. A key still
-    /// missing after the refresh fails that request without banning the node.
-    /// Concurrent misses share one refresh.
+    /// missing after the refresh moves the request on to other nodes, within
+    /// the retry budget, without banning any of them. Concurrent misses share
+    /// one refresh.
     pub fn with_quorum_refresher(mut self, refresh: QuorumRefreshFn) -> Self {
         self.quorum_refresher = Some(refresh);
         self

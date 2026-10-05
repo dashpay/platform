@@ -5,6 +5,7 @@ use rs_dapi_client::{
     transport::sleep, update_address_ban_status, AddressList, CanRetry, ExecutionResult,
     RequestSettings,
 };
+use std::collections::HashSet;
 use std::future::Future;
 use std::time::Duration;
 
@@ -106,6 +107,10 @@ where
     // so we can return it if we exhaust all addresses
     let mut last_meaningful_error: Option<rs_dapi_client::ExecutionError<Error>> = None;
 
+    // Endpoints that answered this request with a quorum still unknown after a
+    // refresh; see `crate::sdk::is_unresolved_quorum`.
+    let mut unresolved_quorum_endpoints = HashSet::new();
+
     loop {
         let result = future_factory_fn(current_settings).await;
 
@@ -140,7 +145,8 @@ where
                 total_retries += requests_sent;
 
                 let retry_additional_error = additional_error(&error.inner);
-                if !error.can_retry() && !retry_additional_error {
+                let unresolved_quorum = crate::sdk::is_unresolved_quorum(&error.inner);
+                if !error.can_retry() && !retry_additional_error && !unresolved_quorum {
                     // Non-retryable error, return immediately
                     let mut final_error = error;
                     final_error.retries = total_retries;
@@ -182,6 +188,30 @@ where
                         });
                     if !excluded || address_list.get_live_addresses().is_empty() {
                         tracing::debug!(node = ?error.address, "DPNS failover stopped: no safely excluded alternative");
+                        let mut final_error = error;
+                        final_error.retries = total_retries;
+                        return Err(final_error);
+                    }
+                }
+
+                if unresolved_quorum {
+                    // The quorum may be newer than the client's refreshed keys,
+                    // or this endpoint may have named a quorum that does not
+                    // exist (the hash is looked up before the signature is
+                    // checked). Neither shows the node is unhealthy, so it is
+                    // not banned. Every endpoint that answered this request
+                    // that way gives up its rotation slot, and the next
+                    // selection prefers one that has not.
+                    if let Some(address) = error.address.as_ref() {
+                        unresolved_quorum_endpoints.insert(address.clone());
+                    }
+                    address_list.evict_all_from_rotation(&unresolved_quorum_endpoints);
+                    let untried = address_list
+                        .get_live_addresses()
+                        .iter()
+                        .any(|address| !unresolved_quorum_endpoints.contains(address));
+                    if !untried {
+                        tracing::debug!(node = ?error.address, "unknown quorum: no other endpoint left to ask");
                         let mut final_error = error;
                         final_error.retries = total_retries;
                         return Err(final_error);

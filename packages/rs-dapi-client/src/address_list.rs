@@ -519,6 +519,27 @@ impl AddressList {
         }
     }
 
+    /// Drop every one of `addresses` from the sticky active set and make the
+    /// next selection prefer any other live address, leaving ban state
+    /// untouched.
+    ///
+    /// Unlike [AddressList::evict_from_rotation], standby members are recorded
+    /// too, so none of `addresses` is promoted while another live address is
+    /// available. This lets one request move on to endpoints it has not asked
+    /// yet without banning the ones it has. Addresses not in the list are
+    /// ignored, so the recorded set stays bounded by the list.
+    pub fn evict_all_from_rotation<'a>(&self, addresses: impl IntoIterator<Item = &'a Address>) {
+        // Lock ordering: `addresses` before `rotation`, as in `get_live_address`.
+        let guard = self.addresses.read().unwrap();
+        let mut rotation = self.rotation.write().unwrap();
+        for address in addresses {
+            if guard.contains_key(address) {
+                rotation.active.retain(|member| member.address != *address);
+                rotation.evicted.insert(address.clone());
+            }
+        }
+    }
+
     /// Get all not banned addresses.
     ///
     /// Returns a vector of addresses that are not currently banned or whose ban period has expired.
@@ -1086,6 +1107,50 @@ mod tests {
                 .all(|member| member.address != served),
             "the available standby must replace the evicted address"
         );
+    }
+
+    #[test]
+    fn evict_all_from_rotation_prefers_addresses_not_evicted() {
+        let addresses: Vec<Address> = (0..3)
+            .map(|port| format!("http://127.0.0.1:{}", 3000 + port).parse().unwrap())
+            .collect();
+        let mut list = AddressList::new().with_active_set_size(1);
+        for address in &addresses {
+            list.add(address.clone());
+        }
+        let first = list.get_live_address().expect("live address");
+        let standby = addresses
+            .iter()
+            .find(|address| **address != first)
+            .expect("a standby")
+            .clone();
+
+        // The active member and a standby are both passed over.
+        list.evict_all_from_rotation([&first, &standby]);
+
+        let remaining = addresses
+            .iter()
+            .find(|address| **address != first && **address != standby)
+            .expect("one address left");
+        assert_eq!(list.get_live_address().as_ref(), Some(remaining));
+        assert!(
+            list.ban_info()
+                .iter()
+                .all(|info| !info.banned && info.ban_count == 0),
+            "eviction must not touch ban state"
+        );
+    }
+
+    #[test]
+    fn evict_all_from_rotation_keeps_the_list_usable() {
+        let address: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let mut list = AddressList::new();
+        list.add(address.clone());
+        let unknown: Address = "http://127.0.0.1:3999".parse().unwrap();
+
+        list.evict_all_from_rotation([&address, &unknown]);
+
+        assert_eq!(list.get_live_address(), Some(address));
     }
 
     #[test]
