@@ -180,7 +180,9 @@ and `data_commit`. The worker verifies that this commit belongs to the metadata
 branch, verifies the proof, build identity and artifact digests, and generates
 the snapshot from the manifest's Platform commit. It uses a temporary clone;
 the source checkout is unchanged.
-The generator executable is copied from the reviewed `v4.2-dev` base into a
+The base is the repository's default branch, read from repository metadata at
+run time, so renaming the development branch needs no code change. The
+generator executable is copied from that reviewed base into a
 separate temporary directory before the draft is checked out. It runs with an
 explicit target repository, isolated Python imports and a credential-free
 environment. Draft files are input/output data, including any edits to the
@@ -189,7 +191,7 @@ fetch/push processes receive the PAT, with ambient Git configuration and hooks
 disabled. Human changes on the draft remain available for review.
 
 The worker opens a draft PR on `codex/freeze-swift-schema-v<schema version>`,
-targeting `v4.2-dev`. The PR contains the generated snapshot, synthetic fixture
+targeting the default branch. The PR contains the generated snapshot, synthetic fixture
 and release association in `schema-releases.json`. Standard Swift SDK checks
 run on these same-repository draft branches. A maintainer must review and merge
 the PR; the worker never enables auto-merge or updates runtime model types.
@@ -199,9 +201,9 @@ all required releases, not merely a commit from before the snapshot merge.
 
 ## Setup and manual operation
 
-1. Deploy the generator, registry and worker to `v4.2-dev`, and register the
-   dispatch workflow on the repository's default branch. GitHub requires the
-   workflow to exist on the default branch for `workflow_dispatch`.
+1. Deploy the generator, registry, worker and dispatch workflow to the
+   repository's default branch. GitHub requires the workflow to exist on the
+   default branch for `workflow_dispatch`, and the worker uses it as its base.
 2. Configure `SCHEMA_RELEASE_TOKEN` in both repositories: a fine-grained PAT
    limited to `dashpay/platform` and `dashpay/dashwallet-ios`, with repository
    Contents, Actions and Pull requests permissions needed by the workflow.
