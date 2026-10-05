@@ -3,7 +3,8 @@ use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::clients::{CONNECT_TIMEOUT, REQUEST_TIMEOUT};
 use crate::error::{DAPIResult, DapiError};
 use crate::utils::{
-    deserialize_string_number_or_null, deserialize_string_or_number, generate_jsonrpc_id,
+    deserialize_null_as_default, deserialize_string_number_or_null, deserialize_string_or_number,
+    generate_jsonrpc_id,
 };
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
@@ -315,6 +316,90 @@ impl ExecTxResult {
 
 pub type TxResult = ExecTxResult;
 
+/// Consensus versions carried by a block header; `app` is the Platform protocol version.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ConsensusVersion {
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub block: u64,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub app: u64,
+}
+
+/// The block header fields rs-dapi reads.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BlockHeader {
+    #[serde(default)]
+    pub version: ConsensusVersion,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub height: u64,
+    /// RFC 3339 block time.
+    #[serde(default)]
+    pub time: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BlockData {
+    /// Base64-encoded transactions, in block order. Tenderdash omits or nulls an empty list.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub txs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Block {
+    #[serde(default)]
+    pub header: BlockHeader,
+    #[serde(default)]
+    pub data: BlockData,
+}
+
+/// Result of the `block` RPC.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultBlock {
+    #[serde(default)]
+    pub block: Option<Block>,
+}
+
+/// Result of the `block_results` RPC: one execution result per transaction, in block order.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultBlockResults {
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub height: u64,
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub txs_results: Vec<ExecTxResult>,
+}
+
+/// Header and transaction count of one block, as listed by the `blockchain` RPC.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BlockMeta {
+    #[serde(default)]
+    pub header: BlockHeader,
+    /// `-1` for a header-only meta (state sync), whose transactions the store does not keep.
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub num_txs: i64,
+}
+
+/// Result of the `blockchain` RPC: block metas in descending height order.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultBlockchainInfo {
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub last_height: u64,
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub block_metas: Vec<BlockMeta>,
+}
+
+#[derive(Debug, Serialize)]
+struct HeightParams {
+    height: String,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockchainParams {
+    #[serde(rename = "minHeight")]
+    min_height: String,
+    #[serde(rename = "maxHeight")]
+    max_height: String,
+}
+
 impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
     /// Serializes the request, performs the call, and maps protocol errors to `DapiError`.
@@ -507,6 +592,44 @@ impl TenderdashClient {
 
         self.post(&request).await
     }
+
+    /// Get the committed block at `height`.
+    pub async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
+        let params = HeightParams {
+            height: height.to_string(),
+        };
+        let request = JsonRpcRequest::new("block", params);
+
+        self.post(&request).await
+    }
+
+    /// Get the execution results of the committed block at `height`.
+    pub async fn block_results(&self, height: u64) -> DAPIResult<ResultBlockResults> {
+        let params = HeightParams {
+            height: height.to_string(),
+        };
+        let request = JsonRpcRequest::new("block_results", params);
+
+        self.post(&request).await
+    }
+
+    /// List the block metas of heights `min_height..=max_height`, highest first.
+    ///
+    /// Tenderdash returns at most 20 metas per call, keeping the highest heights of the range.
+    pub async fn blockchain(
+        &self,
+        min_height: u64,
+        max_height: u64,
+    ) -> DAPIResult<ResultBlockchainInfo> {
+        let params = BlockchainParams {
+            min_height: min_height.to_string(),
+            max_height: max_height.to_string(),
+        };
+        let request = JsonRpcRequest::new("blockchain", params);
+
+        self.post(&request).await
+    }
+
     /// Subscribe to streaming Tenderdash transaction events if WebSocket is available.
     pub fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
         self.websocket_client.subscribe()
