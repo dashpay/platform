@@ -159,6 +159,12 @@ service Platform {
       returns (GetShieldedNotesCountResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
       returns (GetShieldedNullifiersResponse);
+  // Streams every committed, successfully executed state transition that matches
+  // one of the request's filters, block by block, from a chosen height onward.
+  // Served by DAPI from the Tenderdash block store; see
+  // `SubscribeToStateTransitionsResponse` for the stream contract.
+  rpc subscribeToStateTransitions(SubscribeToStateTransitionsRequest)
+      returns (stream SubscribeToStateTransitionsResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -4217,4 +4223,172 @@ message GetShieldedNullifiersResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedNullifiersResponseV0 v0 = 1; }
+}
+
+// Subscription to committed state transitions.
+//
+// A transition is delivered when it executed successfully and ANY of the
+// filters matches it; within one filter every given constraint must hold.
+// Matching reads only the transition itself: what it names, not state it
+// changed. Amounts are the amounts the transition asks for (fees can reduce
+// what is credited), and nothing is known about a document before the
+// transition changed it beyond its `$id`.
+message SubscribeToStateTransitionsRequest {
+  // Which side of a transition a watched identity or address must be on.
+  enum Role {
+    // Either side.
+    ANY = 0;
+    // The identity that owns (signs) the transition, or an address input it
+    // spends from.
+    SENDER = 1;
+    // An identity or address the transition names as beneficiary or target: a
+    // credit, document or token transfer recipient, a created or topped-up
+    // identity, a mint's `issued_to` identity, a token freeze target, a
+    // moderation target, an address output or change output.
+    RECIPIENT = 2;
+  }
+
+  // Document transitions, in batch transitions, on one data contract.
+  message DocumentFilter {
+    enum Action {
+      CREATE = 0;
+      REPLACE = 1;
+      // Also matches the delete of an indexOnly document.
+      DELETE = 2;
+      TRANSFER = 3;
+      UPDATE_PRICE = 4;
+      PURCHASE = 5;
+    }
+
+    // Constraint on the new price of an UPDATE_PRICE.
+    message PriceClause {
+      GetDocumentsRequest.WhereOperator operator = 1;
+      GetDocumentsRequest.DocumentFieldValue value = 2;
+    }
+
+    // One action, optionally narrowed by clauses (ANDed together). The clause
+    // values follow the getDocuments typing rules; the document type's schema
+    // decides each field's type.
+    message ActionMatch {
+      Action action = 1;
+      // CREATE and REPLACE: clauses on the document data the transition
+      // carries.
+      repeated GetDocumentsRequest.WhereClause new_document_where = 2;
+      // Clauses on the document as it was before the transition. Only `$id`
+      // clauses (EQUAL or IN) can be decided from a transition, so others are
+      // rejected, except for DELETE on an indexOnly document type, whose
+      // delete carries the document's values.
+      repeated GetDocumentsRequest.WhereClause original_document_where = 3;
+      // TRANSFER: the recipient, PURCHASE: the buyer, must be one of these
+      // identities.
+      repeated bytes owner_ids = 4;
+      // UPDATE_PRICE only.
+      PriceClause price = 5;
+    }
+
+    bytes data_contract_id = 1;
+    // Unset: every document type of the contract; `actions` must then carry
+    // no clauses.
+    optional string document_type_name = 2;
+    // Empty: every action.
+    repeated ActionMatch actions = 3;
+    // The identity that owns (signs) the batch: the document owner for every
+    // action but PURCHASE, where it is the buyer.
+    optional bytes batch_owner_id = 4;
+  }
+
+  // Transitions that name one of these platform addresses.
+  message AddressFilter {
+    // Platform addresses in their 21-byte form: a type byte (0 for P2PKH, 1 for
+    // P2SH) followed by the 20-byte hash.
+    repeated bytes addresses = 1;
+    Role role = 2;
+  }
+
+  // Transitions that name one of these identities.
+  message IdentityFilter {
+    repeated bytes identity_ids = 1;
+    Role role = 2;
+  }
+
+  // Token transitions, in batch transitions. At least one list must be set.
+  message TokenFilter {
+    // Empty: every token.
+    repeated bytes token_ids = 1;
+    // Empty: any party. Otherwise one of these identities must be on the
+    // transition's `role` side.
+    repeated bytes identity_ids = 2;
+    Role role = 3;
+  }
+
+  // Creation and updates of these data contracts, and moderation and fee
+  // claims on them.
+  message DataContractFilter {
+    repeated bytes data_contract_ids = 1;
+  }
+
+  message StateTransitionFilter {
+    oneof filter {
+      DocumentFilter documents = 1;
+      AddressFilter addresses = 2;
+      IdentityFilter identities = 3;
+      TokenFilter tokens = 4;
+      DataContractFilter data_contracts = 5;
+    }
+  }
+
+  message SubscribeToStateTransitionsRequestV0 {
+    repeated StateTransitionFilter filters = 1;
+    // First block height to scan. Unset: start after the current tip.
+    optional uint64 from_block_height = 2 [jstype = JS_STRING];
+  }
+
+  oneof version { SubscribeToStateTransitionsRequestV0 v0 = 1; }
+}
+
+// One message of a state transition subscription stream.
+//
+// The first message is a checkpoint at the height before the first scanned
+// block. Blocks are then scanned in height order: each matching transition is
+// sent in block order, and every block with a match ends with a checkpoint at
+// its height. While no block matches, a checkpoint at the last scanned height
+// is repeated every few seconds. A checkpoint at height `h` asserts that every
+// match from the first scanned block through `h` has been sent: resume from
+// `h + 1`.
+//
+// The server asserts these; it does not prove them. A client can check a
+// delivered transition (its hash, and that it matches the filters) but not
+// that nothing was left out.
+message SubscribeToStateTransitionsResponse {
+  message SubscribeToStateTransitionsResponseV0 {
+    message StateTransitionMatch {
+      uint64 block_height = 1 [jstype = JS_STRING];
+      // Block time, in milliseconds since the Unix epoch.
+      uint64 block_time_ms = 2 [jstype = JS_STRING];
+      // The protocol version the block executed under.
+      uint32 protocol_version = 3;
+      // Position of the transition among the block's transactions.
+      uint32 index_in_block = 4;
+      // SHA-256 of `state_transition`, which is also its Tenderdash hash.
+      bytes state_transition_hash = 5;
+      // The serialized state transition, as included in the block.
+      bytes state_transition = 6;
+      // Indexes, in the request's `filters`, of the filters that matched.
+      repeated uint32 matched_filters = 7;
+      // For a batch transition: positions, in its transitions, of the
+      // document and token transitions that matched.
+      repeated uint32 matched_batch_positions = 8;
+    }
+
+    message Checkpoint {
+      uint64 block_height = 1 [jstype = JS_STRING];
+    }
+
+    oneof responses {
+      StateTransitionMatch state_transition = 1;
+      Checkpoint checkpoint = 2;
+    }
+  }
+
+  oneof version { SubscribeToStateTransitionsResponseV0 v0 = 1; }
 }
