@@ -37,7 +37,9 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -49,7 +51,7 @@ use dpp::state_transition::batch_transition::document_replace_transition::v0::v0
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereOperator};
+use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereClause, WhereOperator};
 use crate::error::query::QuerySyntaxError;
 use dpp::platform_value::ValueMapHelper;
 use dpp::version::PlatformVersion;
@@ -136,6 +138,37 @@ pub enum DocumentActionMatchClauses {
     },
 }
 
+#[cfg(any(feature = "server", feature = "verify"))]
+impl DocumentActionMatchClauses {
+    /// Every clause set the action carries, original-document clauses first.
+    pub fn clause_sets(&self) -> Vec<&InternalClauses> {
+        match self {
+            DocumentActionMatchClauses::Create {
+                new_document_clauses,
+            } => vec![new_document_clauses],
+            DocumentActionMatchClauses::Replace {
+                original_document_clauses,
+                new_document_clauses,
+            } => vec![original_document_clauses, new_document_clauses],
+            DocumentActionMatchClauses::Delete {
+                original_document_clauses,
+            }
+            | DocumentActionMatchClauses::Transfer {
+                original_document_clauses,
+                ..
+            }
+            | DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses,
+                ..
+            }
+            | DocumentActionMatchClauses::Purchase {
+                original_document_clauses,
+                ..
+            } => vec![original_document_clauses],
+        }
+    }
+}
+
 impl DriveDocumentQueryFilter<'_> {
     /// Check a transition using only transition-level constraints.
     ///
@@ -179,7 +212,12 @@ impl DriveDocumentQueryFilter<'_> {
                     let Some(data) = self.data_as_stored(create.data(), platform_version) else {
                         return TransitionCheckResult::Fail;
                     };
-                    if self.evaluate_clauses(new_document_clauses, &id_value, &data) {
+                    if self.evaluate_clauses(
+                        new_document_clauses,
+                        &id_value,
+                        &data,
+                        Some(platform_version),
+                    ) {
                         TransitionCheckResult::Pass
                     } else {
                         TransitionCheckResult::Fail
@@ -201,7 +239,12 @@ impl DriveDocumentQueryFilter<'_> {
                         else {
                             return TransitionCheckResult::Fail;
                         };
-                        self.evaluate_clauses(new_document_clauses, &id_value, &data)
+                        self.evaluate_clauses(
+                            new_document_clauses,
+                            &id_value,
+                            &data,
+                            Some(platform_version),
+                        )
                     };
                     if !final_ok {
                         return TransitionCheckResult::Fail;
@@ -214,6 +257,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -237,6 +281,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -269,6 +314,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -301,6 +347,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -333,6 +380,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -358,7 +406,12 @@ impl DriveDocumentQueryFilter<'_> {
                     else {
                         return TransitionCheckResult::Fail;
                     };
-                    if self.evaluate_clauses(original_document_clauses, &id_value, &values) {
+                    if self.evaluate_clauses(
+                        original_document_clauses,
+                        &id_value,
+                        &values,
+                        Some(platform_version),
+                    ) {
                         TransitionCheckResult::Pass
                     } else {
                         TransitionCheckResult::Fail
@@ -401,10 +454,12 @@ impl DriveDocumentQueryFilter<'_> {
                 ..
             } => {
                 let id_value: Value = original_document.id().into();
+                // A stored document's properties already carry the types its schema gives them.
                 self.evaluate_clauses(
                     original_document_clauses,
                     &id_value,
                     original_document.properties(),
+                    None,
                 )
             }
             _ => false,
@@ -429,12 +484,21 @@ impl DriveDocumentQueryFilter<'_> {
     }
 
     /// Single clause evaluator used by both transition and original-document paths.
+    ///
+    /// With `platform_version`, each value a clause reads is first brought to the form the
+    /// document type stores ([`canonical_value_for_key`]): a transition keeps whichever
+    /// encoding its submitter chose (an identifier as bytes, a `u8` property as `U64`), while
+    /// clause values were canonicalized once by
+    /// [`Self::canonicalize_clause_values`]. A value that does not encode as its property
+    /// fails the clause. `None` is for data that is already canonical, such as a stored
+    /// document's properties.
     #[cfg(any(feature = "server", feature = "verify"))]
     fn evaluate_clauses(
         &self,
         clauses: &InternalClauses,
         document_id_value: &Value,
         document_data: &BTreeMap<String, Value>,
+        platform_version: Option<&PlatformVersion>,
     ) -> bool {
         // Primary key IN clause
         if let Some(primary_key_in_clause) = &clauses.primary_key_in_clause {
@@ -450,43 +514,128 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
 
-        // In clauses
-        for in_clause in &clauses.in_clauses {
-            let field_value = get_value_by_path(document_data, &in_clause.field);
-            if let Some(value) = field_value {
-                if !in_clause.matches_value(value) {
-                    return false;
-                }
-            } else {
+        let document_type = match platform_version {
+            Some(_) => match self
+                .contract
+                .document_type_optional_for_name(&self.document_type_name)
+            {
+                Some(document_type) => Some(document_type),
+                None => return false,
+            },
+            None => None,
+        };
+        let field_matches = |clause: &WhereClause| {
+            let Some(value) = get_value_by_path(document_data, &clause.field) else {
                 return false;
+            };
+            match (document_type, platform_version) {
+                (Some(document_type), Some(platform_version)) => {
+                    match canonical_value_for_key(
+                        document_type,
+                        &clause.field,
+                        value,
+                        platform_version,
+                    ) {
+                        Some(canonical) => clause.matches_value(&canonical),
+                        None => false,
+                    }
+                }
+                _ => clause.matches_value(value),
+            }
+        };
+
+        clauses
+            .in_clauses
+            .iter()
+            .all(|clause| field_matches(clause))
+            && clauses
+                .range_clause
+                .iter()
+                .all(|clause| field_matches(clause))
+            && clauses
+                .equal_clauses
+                .values()
+                .all(|clause| field_matches(clause))
+    }
+
+    /// Bring every clause value to the form the document type stores its field in, so
+    /// [`Self::matches_document_transition`] compares like with like: an identifier given as
+    /// bytes or base58 text becomes `Value::Identifier`, an integer takes its property's
+    /// width, `IN` and `BETWEEN*` operands are converted element-wise. Clauses on the
+    /// recipient or buyer (`owner_clause`) are read as identifiers and `price_clause` as
+    /// `U64`. Call it before [`Self::validate`], which checks the canonical types.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn canonicalize_clause_values(
+        &mut self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), QuerySyntaxError> {
+        let contract = self.contract;
+        let document_type = contract
+            .document_type_optional_for_name(&self.document_type_name)
+            .ok_or(QuerySyntaxError::DocumentTypeNotFound(
+                "unknown document type",
+            ))?;
+        let (clause_sets, scalar_clause): (Vec<&mut InternalClauses>, _) =
+            match &mut self.action_clauses {
+                DocumentActionMatchClauses::Create {
+                    new_document_clauses,
+                } => (vec![new_document_clauses], None),
+                DocumentActionMatchClauses::Replace {
+                    original_document_clauses,
+                    new_document_clauses,
+                } => (vec![original_document_clauses, new_document_clauses], None),
+                DocumentActionMatchClauses::Delete {
+                    original_document_clauses,
+                } => (vec![original_document_clauses], None),
+                DocumentActionMatchClauses::Transfer {
+                    original_document_clauses,
+                    owner_clause,
+                }
+                | DocumentActionMatchClauses::Purchase {
+                    original_document_clauses,
+                    owner_clause,
+                } => (
+                    vec![original_document_clauses],
+                    owner_clause.as_mut().map(|clause| ("$ownerId", clause)),
+                ),
+                DocumentActionMatchClauses::UpdatePrice {
+                    original_document_clauses,
+                    price_clause,
+                } => (
+                    vec![original_document_clauses],
+                    price_clause.as_mut().map(|clause| ("$price", clause)),
+                ),
+            };
+        for clauses in clause_sets {
+            let InternalClauses {
+                primary_key_in_clause,
+                primary_key_equal_clause,
+                in_clauses,
+                range_clause,
+                equal_clauses,
+            } = clauses;
+            for clause in primary_key_in_clause
+                .iter_mut()
+                .chain(primary_key_equal_clause.iter_mut())
+                .chain(in_clauses.iter_mut())
+                .chain(range_clause.iter_mut())
+                .chain(equal_clauses.values_mut())
+            {
+                clause.value = canonical_operand(clause.operator, &clause.value, |value| {
+                    canonical_value_for_key(document_type, &clause.field, value, platform_version)
+                })?;
             }
         }
-
-        // Range clause
-        if let Some(range_clause) = &clauses.range_clause {
-            let field_value = get_value_by_path(document_data, &range_clause.field);
-            if let Some(value) = field_value {
-                if !range_clause.matches_value(value) {
-                    return false;
+        if let Some((key, clause)) = scalar_clause {
+            clause.value = canonical_operand(clause.operator, &clause.value, |value| {
+                if key == "$price" {
+                    value.to_integer::<u64>().ok().map(Value::U64)
+                } else {
+                    canonical_value_for_key(document_type, key, value, platform_version)
                 }
-            } else {
-                return false;
-            }
+            })?;
         }
-
-        // Equal clauses
-        for (field, equal_clause) in &clauses.equal_clauses {
-            let field_value = get_value_by_path(document_data, field);
-            if let Some(value) = field_value {
-                if !equal_clause.matches_value(value) {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-
-        true
+        Ok(())
     }
 
     /// Validate the filter structure and clauses.
@@ -503,6 +652,21 @@ impl DriveDocumentQueryFilter<'_> {
                 QuerySyntaxError::DocumentTypeNotFound("unknown document type"),
             );
         };
+
+        // Document data carries no `$`-prefixed system fields, so a clause on one (other than
+        // the primary-key `$id` clauses) could never match.
+        if self
+            .action_clauses
+            .clause_sets()
+            .into_iter()
+            .any(InternalClauses::names_system_field)
+        {
+            return QuerySyntaxSimpleValidationResult::new_with_error(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "filter clauses may not name a `$` system field other than `$id`",
+                ),
+            );
+        }
 
         match &self.action_clauses {
             DocumentActionMatchClauses::Create {
@@ -644,6 +808,69 @@ impl DriveDocumentQueryFilter<'_> {
     }
 }
 
+/// `value` as the document type stores `key`: encoded the way its index keys are, then
+/// decoded back, so every accepted encoding of one value yields the same `Value`. `None` when
+/// the value does not encode as the property (wrong type, wrong length) or the type has no
+/// such property.
+///
+/// Schema properties go through their property type's codec directly rather than
+/// `serialize_value_for_key`, which refuses values longer than an index key may be: a filter
+/// may read a field no index covers, and a long value must still compare.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_value_for_key(
+    document_type: DocumentTypeRef,
+    key: &str,
+    value: &Value,
+    platform_version: &PlatformVersion,
+) -> Option<Value> {
+    if let Some(property) = document_type.flattened_properties().get(key) {
+        let encoded = property
+            .property_type
+            .encode_value_for_tree_keys(value)
+            .ok()?;
+        return property
+            .property_type
+            .decode_value_for_tree_keys(&encoded)
+            .ok();
+    }
+    let serialized = document_type
+        .serialize_value_for_key(key, value, platform_version)
+        .ok()?;
+    document_type
+        .deserialize_value_for_key(key, &serialized, platform_version)
+        .ok()
+}
+
+/// Canonicalize a clause operand with `canonical`: element-wise for the list operands of
+/// `IN` and `BETWEEN*`, directly otherwise.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_operand(
+    operator: WhereOperator,
+    operand: &Value,
+    canonical: impl Fn(&Value) -> Option<Value>,
+) -> Result<Value, QuerySyntaxError> {
+    let convert = |value: &Value| {
+        canonical(value).ok_or_else(|| {
+            QuerySyntaxError::InvalidFormatWhereClause(format!(
+                "where clause value {value} does not match the type of its field"
+            ))
+        })
+    };
+    match (operator, operand) {
+        (
+            WhereOperator::In
+            | WhereOperator::Between
+            | WhereOperator::BetweenExcludeBounds
+            | WhereOperator::BetweenExcludeLeft
+            | WhereOperator::BetweenExcludeRight,
+            Value::Array(values),
+        ) => Ok(Value::Array(
+            values.iter().map(convert).collect::<Result<_, _>>()?,
+        )),
+        _ => convert(operand),
+    }
+}
+
 /// Resolve a dot-notated path into a nested `BTreeMap<String, Value>` payload.
 ///
 /// Supports dot notation like `meta.status` by walking `Value::Map` entries
@@ -711,7 +938,7 @@ mod tests {
 
         // With no clauses, evaluation should be true regardless of data
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data, None));
     }
 
     #[test]
@@ -750,7 +977,7 @@ mod tests {
         let document_data = BTreeMap::new();
 
         let id_value: Value = matching_doc.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data, None));
 
         // Test with different ID
         let non_matching_doc = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -762,7 +989,7 @@ mod tests {
         });
 
         let non_id_value: Value = non_matching_doc.id().into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &non_id_value, &document_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &non_id_value, &document_data, None));
     }
 
     #[test]
@@ -807,17 +1034,17 @@ mod tests {
         matching_data.insert("name".to_string(), Value::Text("example".to_string()));
 
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data, None));
 
         // Test with non-matching data
         let mut non_matching_data = BTreeMap::new();
         non_matching_data.insert("name".to_string(), Value::Text("different".to_string()));
 
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data, None));
 
         // Test with missing field
         let empty_data = BTreeMap::new();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &empty_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &empty_data, None));
     }
 
     #[test]
@@ -859,12 +1086,12 @@ mod tests {
         let mut matching_data = BTreeMap::new();
         matching_data.insert("status".to_string(), Value::Text("active".to_string()));
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data, None));
 
         // Test with value not in list
         let mut non_matching_data = BTreeMap::new();
         non_matching_data.insert("status".to_string(), Value::Text("completed".to_string()));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data, None));
     }
 
     #[test]
@@ -902,17 +1129,17 @@ mod tests {
         let mut greater_data = BTreeMap::new();
         greater_data.insert("score".to_string(), Value::U64(75));
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &greater_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &greater_data, None));
 
         // Test with value equal to threshold (should fail for GreaterThan)
         let mut equal_data = BTreeMap::new();
         equal_data.insert("score".to_string(), Value::U64(50));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &equal_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &equal_data, None));
 
         // Test with value less than threshold
         let mut less_data = BTreeMap::new();
         less_data.insert("score".to_string(), Value::U64(25));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &less_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &less_data, None));
     }
 
     #[test]
@@ -961,7 +1188,7 @@ mod tests {
         data.insert("meta".to_string(), Value::Map(nested));
 
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data, None));
     }
 
     #[test]
@@ -1405,7 +1632,7 @@ mod tests {
             token_payment_info: None,
         });
 
-        // Original must have status=active; New must have score=10
+        // Original must have status=active; new must have name=example
         let mut orig_eq = BTreeMap::new();
         orig_eq.insert(
             "status".to_string(),
@@ -1422,11 +1649,11 @@ mod tests {
 
         let mut final_eq = BTreeMap::new();
         final_eq.insert(
-            "score".to_string(),
+            "name".to_string(),
             WhereClause {
-                field: "score".to_string(),
+                field: "name".to_string(),
                 operator: WhereOperator::Equal,
-                value: Value::U64(10),
+                value: Value::Text("example".to_string()),
             },
         );
         let new_document_clauses = InternalClauses {
@@ -1445,7 +1672,7 @@ mod tests {
 
         // Build Replace transition with new data
         let mut data = BTreeMap::new();
-        data.insert("score".to_string(), Value::U64(10));
+        data.insert("name".to_string(), Value::Text("example".to_string()));
         let replace_v0 = DocumentReplaceTransitionV0 {
             base,
             revision: 1,
@@ -1485,7 +1712,8 @@ mod tests {
         // New-data mismatching should fail in first check (do not call final)
         if let DocumentTransition::Replace(mut rep) = replace.clone() {
             let DocumentReplaceTransition::V0(ref mut v0) = rep;
-            v0.data.insert("score".to_string(), Value::U64(9));
+            v0.data
+                .insert("name".to_string(), Value::Text("other".to_string()));
             let bad_final = DocumentTransition::Replace(rep);
             assert_eq!(
                 filter.matches_document_transition(&bad_final, None, PlatformVersion::latest()),
@@ -1696,27 +1924,27 @@ mod tests {
         let mut in_range = BTreeMap::new();
         in_range.insert("value".to_string(), Value::U64(15));
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &in_range));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &in_range, None));
 
         // Test lower bound (inclusive)
         let mut lower_bound = BTreeMap::new();
         lower_bound.insert("value".to_string(), Value::U64(10));
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &lower_bound));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &lower_bound, None));
 
         // Test upper bound (inclusive)
         let mut upper_bound = BTreeMap::new();
         upper_bound.insert("value".to_string(), Value::U64(20));
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &upper_bound));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &upper_bound, None));
 
         // Test below range
         let mut below = BTreeMap::new();
         below.insert("value".to_string(), Value::U64(5));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &below));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &below, None));
 
         // Test above range
         let mut above = BTreeMap::new();
         above.insert("value".to_string(), Value::U64(25));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &above));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &above, None));
     }
 
     #[test]
@@ -2410,11 +2638,11 @@ mod tests {
 
         // Matching ID
         let id_value: Value = target_id_1.into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new(), None));
 
         // Non-matching ID
         let other_id: Value = Identifier::from([99u8; 32]).into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &other_id, &BTreeMap::new()));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &other_id, &BTreeMap::new(), None));
     }
 
     // ---- evaluate_clauses: combined primary_key and field clauses ----
@@ -2458,16 +2686,16 @@ mod tests {
         let id_value: Value = target_id.into();
         let mut data = BTreeMap::new();
         data.insert("name".to_string(), Value::Text("test".to_string()));
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data, None));
 
         // ID matches but field doesn't
         let mut bad_data = BTreeMap::new();
         bad_data.insert("name".to_string(), Value::Text("other".to_string()));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &bad_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &bad_data, None));
 
         // Field matches but ID doesn't
         let wrong_id: Value = Identifier::from([99u8; 32]).into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &wrong_id, &data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &wrong_id, &data, None));
     }
 
     // ---- get_value_by_path ----
@@ -2564,7 +2792,7 @@ mod tests {
         };
 
         let id_value: Value = Identifier::from([1u8; 32]).into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new(), None));
     }
 
     // ---- evaluate_clauses: in clause with missing field ----
@@ -2592,7 +2820,7 @@ mod tests {
         };
 
         let id_value: Value = Identifier::from([1u8; 32]).into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new(), None));
     }
 
     // ---- matches_original_document: UpdatePrice with original clauses ----
@@ -2840,11 +3068,11 @@ mod tests {
 
         let mut matching = BTreeMap::new();
         matching.insert("name".to_string(), Value::Text("Alice".to_string()));
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching, None));
 
         let mut non_matching = BTreeMap::new();
         non_matching.insert("name".to_string(), Value::Text("Bob".to_string()));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching, None));
     }
 
     // ---- validate: price clause between_exclude variants ----
@@ -2925,5 +3153,202 @@ mod tests {
             },
         };
         assert!(filter.validate().is_err());
+    }
+
+    mod canonical_values {
+        use super::*;
+        use dpp::platform_value::string_encoding::Encoding;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::DocumentTransferTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransition;
+
+        fn contract() -> DataContract {
+            get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version)
+                .data_contract_owned()
+        }
+
+        fn create(
+            contract: &DataContract,
+            document_type_name: &str,
+            data: BTreeMap<String, Value>,
+        ) -> DocumentTransition {
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                    id: Identifier::from([3u8; 32]),
+                    document_type_name: document_type_name.to_string(),
+                    data_contract_id: contract.id(),
+                    identity_contract_nonce: 0,
+                    token_payment_info: None,
+                }),
+                entropy: [0u8; 32],
+                data,
+                prefunded_voting_balance: None,
+            }))
+        }
+
+        fn equal(field: &str, value: Value) -> InternalClauses {
+            InternalClauses {
+                equal_clauses: BTreeMap::from([(
+                    field.to_string(),
+                    WhereClause {
+                        field: field.to_string(),
+                        operator: WhereOperator::Equal,
+                        value,
+                    },
+                )]),
+                ..Default::default()
+            }
+        }
+
+        #[test]
+        fn should_match_an_identifier_encoded_differently_in_clause_and_transition() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let identifier = Identifier::from([7u8; 32]);
+            // The clause names the identifier in base58, the transition carries raw bytes.
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "withByteArrays".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal(
+                        "identifierField",
+                        Value::Text(identifier.to_string(Encoding::Base58)),
+                    ),
+                },
+            };
+            let transition = create(
+                &contract,
+                "withByteArrays",
+                BTreeMap::from([
+                    ("byteArrayField".to_string(), Value::Bytes(vec![1u8; 10])),
+                    (
+                        "identifierField".to_string(),
+                        Value::Bytes(identifier.to_vec()),
+                    ),
+                ]),
+            );
+
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("expected the clause value to canonicalize");
+            assert!(filter.validate().is_valid());
+            assert_eq!(
+                filter.matches_document_transition(&transition, None, platform_version),
+                TransitionCheckResult::Pass
+            );
+
+            let other = create(
+                &contract,
+                "withByteArrays",
+                BTreeMap::from([("identifierField".to_string(), Value::Bytes(vec![8u8; 32]))]),
+            );
+            assert_eq!(
+                filter.matches_document_transition(&other, None, platform_version),
+                TransitionCheckResult::Fail
+            );
+        }
+
+        #[test]
+        fn should_match_a_value_longer_than_an_index_key() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let long_name = "x".repeat(300);
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("name", Value::Text(long_name.clone())),
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("expected the clause value to canonicalize");
+
+            let transition = create(
+                &contract,
+                "niceDocument",
+                BTreeMap::from([("name".to_string(), Value::Text(long_name))]),
+            );
+            assert_eq!(
+                filter.matches_document_transition(&transition, None, platform_version),
+                TransitionCheckResult::Pass
+            );
+        }
+
+        #[test]
+        fn should_reject_a_value_that_does_not_fit_its_field() {
+            let contract = contract();
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "withByteArrays".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("identifierField", Value::Bytes(vec![1u8; 5])),
+                },
+            };
+            assert!(matches!(
+                filter.canonicalize_clause_values(PlatformVersion::latest()),
+                Err(QuerySyntaxError::InvalidFormatWhereClause(_))
+            ));
+        }
+
+        #[test]
+        fn should_reject_clauses_on_system_fields_other_than_id() {
+            let contract = contract();
+            let owner: Value = Identifier::from([1u8; 32]).into();
+            for field in ["$ownerId", "$createdAt"] {
+                let filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "niceDocument".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Create {
+                        new_document_clauses: equal(field, owner.clone()),
+                    },
+                };
+                assert!(
+                    !filter.validate().is_valid(),
+                    "a clause on {field} can never match a transition"
+                );
+            }
+        }
+
+        #[test]
+        fn should_match_a_transfer_recipient_given_as_bytes() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let recipient = Identifier::from([9u8; 32]);
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::Transfer {
+                    original_document_clauses: InternalClauses::default(),
+                    owner_clause: Some(ValueClause {
+                        operator: WhereOperator::In,
+                        value: Value::Array(vec![Value::Bytes(recipient.to_vec())]),
+                    }),
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("expected the recipient to canonicalize");
+            assert!(filter.validate().is_valid());
+
+            let transfer = DocumentTransition::Transfer(DocumentTransferTransition::V0(
+                DocumentTransferTransitionV0 {
+                    base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                        id: Identifier::from([3u8; 32]),
+                        document_type_name: "niceDocument".to_string(),
+                        data_contract_id: contract.id(),
+                        identity_contract_nonce: 0,
+                        token_payment_info: None,
+                    }),
+                    revision: 2,
+                    recipient_owner_id: recipient,
+                },
+            ));
+            assert_eq!(
+                filter.matches_document_transition(&transfer, None, platform_version),
+                TransitionCheckResult::Pass
+            );
+        }
     }
 }
