@@ -360,6 +360,13 @@ struct SendTransactionView: View {
                 // network-tracked platform version), which the view model
                 // deliberately doesn't hold.
                 resolveShieldedFees()
+                // With shielded funds to spend, fetch Platform's recorded
+                // shielded-anchor set while the form is filled in, so a
+                // shielded send confirmed soon after skips that round trip.
+                // Best-effort: throws only when shielded isn't configured.
+                if shieldedBalance > 0 {
+                    try? walletManager.prefetchShieldedSpendAnchors()
+                }
             }
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
