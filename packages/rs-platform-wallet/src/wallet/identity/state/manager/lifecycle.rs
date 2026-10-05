@@ -92,6 +92,79 @@ impl IdentityManager {
         Ok(())
     }
 
+    /// Place an already-known identity in `wallet_id`'s bucket at the
+    /// `identity_index` a key derivation just proved for it.
+    ///
+    /// Identity load and discovery find identities by deriving this wallet's
+    /// MASTER key at an index, so the index they report is verified. An
+    /// identity first seen another way (observed out-of-wallet, or restored
+    /// with a host placeholder index) must take that verified slot rather than
+    /// just gaining a `wallet_id`: an index-less wallet identity is persisted
+    /// without its index, and hosts that cannot store "unknown" restore it as
+    /// index 0, which per-identity derivations (the dedicated tip account)
+    /// would then attribute to identity 0.
+    ///
+    /// Does not persist; the caller's following snapshot write carries the
+    /// updated `wallet_id` / `identity_index`. Returns `false` and leaves the
+    /// identity where it is when the target slot already holds a different
+    /// identity, or the id is unknown.
+    pub fn adopt_into_wallet(
+        &mut self,
+        identity_id: &Identifier,
+        wallet_id: WalletId,
+        identity_index: u32,
+    ) -> bool {
+        let target = IdentityLocation::InWallet {
+            wallet_id,
+            registration_index: identity_index,
+        };
+        let Some(current) = self.location_index().get(identity_id).copied() else {
+            return false;
+        };
+        if current != target {
+            let occupied = self
+                .wallet_identities
+                .get(&wallet_id)
+                .and_then(|bucket| bucket.get(&identity_index))
+                .is_some_and(|other| other.identity.id() != *identity_id);
+            if occupied {
+                tracing::warn!(
+                    identity = %identity_id,
+                    identity_index,
+                    "identity index slot already holds another identity; not re-slotting"
+                );
+                return false;
+            }
+            let managed = match current {
+                IdentityLocation::OutOfWallet => self.out_of_wallet_identities.remove(identity_id),
+                IdentityLocation::InWallet {
+                    wallet_id,
+                    registration_index,
+                } => self
+                    .wallet_identities
+                    .get_mut(&wallet_id)
+                    .and_then(|bucket| bucket.remove(&registration_index)),
+            };
+            let Some(managed) = managed else {
+                return false;
+            };
+            self.wallet_identities
+                .entry(wallet_id)
+                .or_default()
+                .insert(identity_index, managed);
+            self.location_index_insert(*identity_id, target);
+        }
+        if let Some(managed) = self
+            .wallet_identities
+            .get_mut(&wallet_id)
+            .and_then(|bucket| bucket.get_mut(&identity_index))
+        {
+            managed.wallet_id = Some(wallet_id);
+            managed.identity_index = Some(identity_index);
+        }
+        true
+    }
+
     /// Add an identity to the out-of-wallet (observed read-only) bucket.
     ///
     /// There is no separate `WatchedIdentity` type; observed identities

@@ -928,6 +928,142 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
 
 /// A profile is not a recovery record. Identity discovery alone must restore
 /// the reserved account, even when the owner removed the tip address entirely.
+/// The MASTER authentication key this seed derives for `identity_index` on
+/// testnet, as an identity public-key map: what discovery and registration
+/// leave on a wallet-owned identity, and what tip preparation verifies.
+fn seed_master_key(
+    seed: &[u8],
+    identity_index: u32,
+) -> BTreeMap<dpp::identity::KeyID, dpp::identity::IdentityPublicKey> {
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    let master = key_wallet::bip32::ExtendedPrivKey::new_master(Network::Testnet, seed).unwrap();
+    let derived = crate::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master(
+        &master,
+        Network::Testnet,
+        identity_index,
+        crate::wallet::identity::network::MASTER_KEY_INDEX,
+    )
+    .unwrap();
+    BTreeMap::from([(
+        0,
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(derived.public_key.to_vec()),
+            disabled_at: None,
+        }),
+    )])
+}
+
+/// Cold reload of a host that cannot store "index unknown": a wallet-attached
+/// identity whose index was lost comes back at placeholder slot 0 while
+/// identity 0's tip account (and its funds) is retained and bound. Tip
+/// preparation must refuse it instead of handing out identity 0's address,
+/// and must accept it once rediscovery proves its real index.
+#[tokio::test]
+async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified() {
+    use crate::shielded_tip_account_index;
+    use dpp::identity::{Identity, IdentityV0};
+    use dpp::prelude::Identifier;
+    let phrase = crate::test_support::MESSAGE_SIGNING_TEST_MNEMONIC;
+    let seed = key_wallet::Mnemonic::from_phrase(phrase)
+        .unwrap()
+        .to_seed("");
+    let (wallet_manager, wallet_id, _, _) =
+        crate::test_support::mnemonic_wallet_manager(phrase).await;
+    let generation = wallet_manager
+        .read()
+        .await
+        .get_wallet_info(&wallet_id)
+        .unwrap()
+        .generation
+        .clone();
+    let spv = Arc::new(crate::spv::SpvRuntime::new(
+        Arc::clone(&wallet_manager),
+        Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
+    ));
+    let sdk = dash_sdk::SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .build()
+        .unwrap();
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = PlatformWallet::new(
+        Arc::new(sdk),
+        wallet_id,
+        wallet_manager,
+        generation,
+        Arc::new(tokio::sync::Notify::new()),
+        persister.clone(),
+        Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+    );
+    // Restored at the host's placeholder 0, but its keys are identity 5's.
+    let id = Identifier::from([0x55; 32]);
+    {
+        let mut wm = wallet.wallet_manager().write().await;
+        wm.get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager
+            .add_identity(
+                Identity::V0(IdentityV0 {
+                    id,
+                    public_keys: seed_master_key(&seed, 5),
+                    balance: 0,
+                    revision: 0,
+                }),
+                0,
+                wallet.wallet_id(),
+                wallet.persister(),
+            )
+            .unwrap();
+    }
+    let coordinator = coordinator_at(&temp_dir("tips_placeholder_index"));
+    let identity_zero_tips = shielded_tip_account_index(0).unwrap();
+    wallet
+        .bind_shielded(&seed, &[0, identity_zero_tips], &coordinator)
+        .await
+        .unwrap();
+    let identity_zero_address = wallet
+        .shielded_default_address(identity_zero_tips)
+        .await
+        .unwrap();
+
+    let refused = wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
+        "{refused:?}"
+    );
+
+    // Rediscovery proves index 5 and re-slots the identity.
+    {
+        let mut wm = wallet.wallet_manager().write().await;
+        assert!(wm
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager
+            .adopt_into_wallet(&id, wallet.wallet_id(), 5));
+    }
+    let address = wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert_ne!(address, identity_zero_address);
+    assert_eq!(
+        wallet
+            .shielded_default_address(shielded_tip_account_index(5).unwrap())
+            .await
+            .unwrap(),
+        address
+    );
+}
+
 #[tokio::test]
 async fn should_restore_tip_account_from_identity_discovery_and_register_for_sync() {
     use crate::shielded_tip_account_index;
@@ -976,7 +1112,7 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
                 .add_identity(
                     Identity::V0(IdentityV0 {
                         id,
-                        public_keys: BTreeMap::new(),
+                        public_keys: seed_master_key(&seed, 3),
                         balance: 0,
                         revision: 0,
                     }),

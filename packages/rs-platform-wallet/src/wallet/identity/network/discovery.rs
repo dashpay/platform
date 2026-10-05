@@ -457,6 +457,15 @@ impl IdentityWallet {
                                 wallet_id,
                                 &self.persister,
                             )?;
+                        } else {
+                            // The key hash at `identity_index` proved the index;
+                            // an identity known from elsewhere takes that slot
+                            // (see `adopt_into_wallet`).
+                            info_guard.identity_manager.adopt_into_wallet(
+                                &identity_id,
+                                wallet_id,
+                                identity_index,
+                            );
                         }
 
                         if let Some(managed) = info_guard

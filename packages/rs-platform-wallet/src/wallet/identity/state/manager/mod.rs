@@ -269,6 +269,51 @@ mod tests {
         assert_eq!(manager.highest_registration_index(&wallet_id), Some(0));
     }
 
+    /// Load and discovery prove an index by derivation. An identity already
+    /// known as observed, or restored at a placeholder slot, must move into the
+    /// verified slot with its index set, never keep a `wallet_id` without one.
+    #[test]
+    fn adopt_into_wallet_moves_identities_into_their_verified_slot() {
+        let mut manager = IdentityManager::new();
+        let wallet_id: WalletId = [9u8; 32];
+        let p = noop_persister();
+
+        let observed = Identifier::from([1u8; 32]);
+        manager
+            .add_out_of_wallet_identity(create_test_identity(observed), &p)
+            .unwrap();
+        assert!(manager.adopt_into_wallet(&observed, wallet_id, 4));
+        assert!(manager.out_of_wallet_identities.is_empty());
+        let managed = manager.identity(&observed).expect("present");
+        assert_eq!(managed.identity_index, Some(4));
+        assert_eq!(managed.wallet_id, Some(wallet_id));
+        assert_eq!(manager.identity_index(&observed), Some(4));
+
+        // A host-placeholder slot 0 is corrected to the verified index.
+        let placeholder = Identifier::from([2u8; 32]);
+        manager
+            .add_identity(create_test_identity(placeholder), 0, wallet_id, &p)
+            .unwrap();
+        assert!(manager.adopt_into_wallet(&placeholder, wallet_id, 7));
+        let bucket = &manager.wallet_identities[&wallet_id];
+        assert!(!bucket.contains_key(&0));
+        assert_eq!(bucket[&7].identity.id(), placeholder);
+        assert_eq!(manager.identity_index(&placeholder), Some(7));
+
+        // Already in place: a no-op success.
+        assert!(manager.adopt_into_wallet(&placeholder, wallet_id, 7));
+
+        // Never evict a different identity from the target slot.
+        let other = Identifier::from([3u8; 32]);
+        manager
+            .add_out_of_wallet_identity(create_test_identity(other), &p)
+            .unwrap();
+        assert!(!manager.adopt_into_wallet(&other, wallet_id, 7));
+        assert_eq!(manager.identity_index(&other), None);
+        assert_eq!(manager.identity_index(&placeholder), Some(7));
+        assert!(!manager.adopt_into_wallet(&Identifier::from([4u8; 32]), wallet_id, 9));
+    }
+
     #[test]
     fn test_add_out_of_wallet_identity() {
         let mut manager = IdentityManager::new();

@@ -29,6 +29,44 @@ pub fn is_shielded_tip_account(account: u32) -> bool {
     (SHIELDED_TIP_ACCOUNT_BASE..0x8000_0000).contains(&account)
 }
 
+/// Prove `identity_index` with the seed: the identity must carry the MASTER
+/// authentication key this wallet derives at that index (the key discovery and
+/// registration both use). Fails closed when no key matches, including when
+/// no public keys were restored.
+fn verify_identity_index(
+    seed: &[u8],
+    network: key_wallet::Network,
+    identity_index: u32,
+    identity: &dpp::identity::Identity,
+) -> Result<(), PlatformWalletError> {
+    use crate::wallet::identity::network::{
+        derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
+    };
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+
+    let master = key_wallet::bip32::ExtendedPrivKey::new_master(network, seed)
+        .map_err(|e| PlatformWalletError::ShieldedKeyDerivation(e.to_string()))?;
+    let expected = derive_identity_auth_key_hash_from_master(
+        &master,
+        network,
+        identity_index,
+        MASTER_KEY_INDEX,
+    )?;
+    let verified = identity
+        .public_keys()
+        .values()
+        .any(|key| key.public_key_hash().ok() == Some(expected));
+    if verified {
+        Ok(())
+    } else {
+        Err(PlatformWalletError::InvalidIdentityData(format!(
+            "Identity index {identity_index} is not verified for this wallet; \
+             rediscover the identity before using its tip account"
+        )))
+    }
+}
+
 impl PlatformWallet {
     pub(crate) async fn discovered_tip_accounts(&self) -> Result<Vec<u32>, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
@@ -88,11 +126,18 @@ impl PlatformWallet {
                     "Tip account requires a wallet-owned identity".to_string(),
                 ));
             }
-            shielded_tip_account_index(identity.identity_index.ok_or_else(|| {
+            let index = identity.identity_index.ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
                     "Tip account requires a recoverable identity index".to_string(),
                 )
-            })?)?
+            })?;
+            // A restored index is metadata, and hosts that cannot represent
+            // "unknown" have restored a placeholder 0 for wallet-attached
+            // identities. Publishing then would hand out identity 0's tip
+            // address, so require the seed to reproduce this identity's
+            // MASTER key at the claimed index before allocating its account.
+            verify_identity_index(seed, self.sdk.network, index, &identity.identity)?;
+            shielded_tip_account_index(index)?
         };
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
