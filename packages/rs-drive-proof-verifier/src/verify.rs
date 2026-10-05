@@ -9,48 +9,26 @@ use tenderdash_abci::{
 };
 
 use crate::ContextProvider;
-use dpp::version::PlatformVersion;
+use drive::error::proof::ProofError;
+use drive::error::Error as DriveError;
+use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 
-/// Reject GroveDB proof envelopes older than the floor the protocol version
-/// sets in `SystemLimits::minimum_grovedb_proof_envelope_version`. GroveDB's
-/// envelope enum is encoded by bincode as a `u32` discriminant followed by
-/// the version-specific payload; newer discriminants pass here and fail in
-/// GroveDB's own decoder if the client does not know them.
-pub(crate) fn require_supported_grovedb_proof_bytes(
-    grovedb_proof: &[u8],
-    platform_version: &PlatformVersion,
-) -> Result<(), Error> {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<16>();
-    let (version, _): (u32, usize) =
-        bincode::decode_from_slice(grovedb_proof, config).map_err(|error| {
+/// Reject GroveDB proof envelopes older than Drive's
+/// `MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION` before the bytes reach Drive.
+pub(crate) fn require_supported_grovedb_proof_bytes(grovedb_proof: &[u8]) -> Result<(), Error> {
+    require_supported_grovedb_proof_envelope(grovedb_proof, "proof").map_err(|error| match error {
+        DriveError::Proof(ProofError::InvalidGroveDBProofEnvelope { reason, .. }) => {
             Error::ResponseDecodeError {
-                error: format!("invalid GroveDB proof envelope: {error}"),
+                error: format!("invalid GroveDB proof envelope: {reason}"),
             }
-        })?;
-
-    let minimum = platform_version
-        .system_limits
-        .minimum_grovedb_proof_envelope_version;
-    if version < minimum {
-        return Err(Error::UnsupportedGroveDBProofVersion {
-            proof: "proof",
-            version,
-            minimum,
-            protocol_version: platform_version.protocol_version,
-        });
-    }
-
-    Ok(())
+        }
+        error => error.into(),
+    })
 }
 
 /// Validate a direct GroveDB proof envelope before handing its bytes to Drive.
-pub(crate) fn supported_grovedb_proof_bytes<'a>(
-    proof: &'a Proof,
-    platform_version: &PlatformVersion,
-) -> Result<&'a [u8], Error> {
-    require_supported_grovedb_proof_bytes(&proof.grovedb_proof, platform_version)?;
+pub(crate) fn supported_grovedb_proof_bytes(proof: &Proof) -> Result<&[u8], Error> {
+    require_supported_grovedb_proof_bytes(&proof.grovedb_proof)?;
     Ok(&proof.grovedb_proof)
 }
 
@@ -77,9 +55,8 @@ pub(crate) fn verify_tenderdash_proof(
     mtd: &ResponseMetadata,
     root_hash: &[u8],
     provider: &dyn ContextProvider,
-    platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
-    require_supported_grovedb_proof_bytes(&proof.grovedb_proof, platform_version)?;
+    require_supported_grovedb_proof_bytes(&proof.grovedb_proof)?;
 
     verify_tenderdash_signature(proof, mtd, root_hash, provider)
 }
@@ -212,7 +189,7 @@ mod tests {
     use dash_context_provider::ContextProviderError;
     use dpp::data_contract::TokenConfiguration;
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-    use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
+    use dpp::version::PlatformVersion;
     use drive::grovedb::operations::proof::{
         GroveDBProof, GroveDBProofV0, GroveDBProofV1, LayerProof, MerkOnlyLayerProof, ProofBytes,
         ProveOptions,
@@ -308,13 +285,7 @@ mod tests {
 
         let provider = StubContextProvider;
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected error for out-of-range quorum_type");
         let err_msg = err.to_string();
         assert!(
@@ -342,13 +313,7 @@ mod tests {
             chain_id: "test-chain".to_string(),
         };
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &StubContextProvider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &StubContextProvider);
 
         assert!(matches!(
             result,
@@ -360,30 +325,6 @@ mod tests {
         ));
     }
 
-    /// A client verifying with an older protocol version's tables gets no
-    /// V0 exemption: every live network serves V1.
-    #[test]
-    fn test_legacy_grovedb_v0_proof_is_rejected_at_every_protocol_version() {
-        for platform_version in PLATFORM_VERSIONS {
-            let protocol_version = platform_version.protocol_version;
-            let result =
-                require_supported_grovedb_proof_bytes(&grovedb_proof_bytes(0), platform_version);
-
-            assert!(
-                matches!(
-                    result,
-                    Err(Error::UnsupportedGroveDBProofVersion {
-                        version: 0,
-                        minimum: 1,
-                        protocol_version: rejected_at,
-                        ..
-                    }) if rejected_at == protocol_version
-                ),
-                "protocol version {protocol_version} must reject a V0 envelope, got {result:?}"
-            );
-        }
-    }
-
     #[test]
     fn test_envelopes_at_or_above_the_minimum_pass_the_gate() {
         let config = bincode::config::standard().with_big_endian();
@@ -392,7 +333,7 @@ mod tests {
             let grovedb_proof =
                 bincode::encode_to_vec(version, config).expect("test proof version should encode");
 
-            require_supported_grovedb_proof_bytes(&grovedb_proof, PlatformVersion::latest())
+            require_supported_grovedb_proof_bytes(&grovedb_proof)
                 .unwrap_or_else(|error| panic!("envelope {version} must pass the gate: {error}"));
         }
     }
@@ -524,13 +465,7 @@ mod tests {
         let metadata = test_metadata();
         let provider = StubContextProvider;
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected error for invalid quorum hash size");
         let err_msg = err.to_string();
         assert!(
@@ -557,13 +492,7 @@ mod tests {
         let metadata = test_metadata();
         let provider = ValidKeyContextProvider::new();
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected error for invalid signature size");
         let err_msg = err.to_string();
         assert!(
@@ -620,13 +549,7 @@ mod tests {
         let metadata = test_metadata();
         let provider = ErroringProvider;
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected provider error to propagate");
         let err_msg = err.to_string();
         assert!(
@@ -682,13 +605,7 @@ mod tests {
         let metadata = test_metadata();
         let provider = BadKeyProvider;
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected InvalidPublicKey");
         // `PublicKey::try_from([0u8; 48])` deterministically fails in the
         // BLS12-381 library (the infinity/identity encoding is a `0xC0` prefix,
@@ -719,13 +636,7 @@ mod tests {
         let metadata = test_metadata();
         let provider = ValidKeyContextProvider::new();
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected error for empty signature");
         let err_msg = err.to_string();
         assert!(

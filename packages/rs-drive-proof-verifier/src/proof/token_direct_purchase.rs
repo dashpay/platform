@@ -58,14 +58,14 @@ impl FromProof<GetTokenDirectPurchasePricesRequest> for TokenDirectPurchasePrice
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, tokens): (_, Self) = Drive::verify_token_direct_selling_prices(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             &token_ids,
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         if tokens.is_empty() {
             return Ok((None, mtd.clone(), proof.clone()));

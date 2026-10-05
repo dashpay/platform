@@ -41,6 +41,8 @@ pub mod contract_groups;
 pub mod contract_moderation;
 /// Group proof verification module
 pub mod group;
+/// The GroveDB proof envelope floor clients apply before a proof reaches Drive.
+pub mod grovedb_proof_envelope;
 /// Shielded pool proof verification module
 pub mod shielded;
 /// Verifies that a state transition contents exist in the proof

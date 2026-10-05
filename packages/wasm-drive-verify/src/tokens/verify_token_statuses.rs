@@ -64,7 +64,7 @@ pub fn verify_token_statuses_vec(
 
     let (root_hash, statuses_vec): (RootHash, Vec<([u8; 32], Option<TokenStatus>)>) =
         drive::drive::Drive::verify_token_statuses(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             &token_ids_vec,
             verify_subset_of_proof,
             platform_version,
@@ -141,7 +141,7 @@ pub fn verify_token_statuses_map(
 
     let (root_hash, statuses_map): (RootHash, BTreeMap<[u8; 32], Option<TokenStatus>>) =
         drive::drive::Drive::verify_token_statuses(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             &token_ids_vec,
             verify_subset_of_proof,
             platform_version,

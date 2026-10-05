@@ -65,6 +65,5 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_document_ttl_seconds: None,
     max_document_expirations_per_block: 0,
     max_document_expiration_weight_per_block: 0,
-    minimum_grovedb_proof_envelope_version: 1, // changed in place (client-only, never read by consensus): V0 envelopes are refused at every protocol version
     max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
 };
