@@ -1847,6 +1847,9 @@ impl Actor {
             anchored: retries.anchored || anchored,
             ..retries
         };
+        // Kept before any return: an anchored probe joining a waiting series
+        // makes its retry anchored.
+        entry.retry_series = Some(retries);
         if retries.waiting {
             tracing::info!(
                 wallet_id = %hex::encode(wallet_id),
@@ -1857,7 +1860,6 @@ impl Actor {
             return;
         }
         if retries.armed >= MAX_NO_ANSWER_RETRIES {
-            entry.retry_series = Some(retries);
             tracing::info!(
                 wallet_id = %hex::encode(wallet_id),
                 txid = %root,
@@ -3978,6 +3980,22 @@ mod tests {
         rig.send(sync_complete(101)).await;
 
         assert_eq!(rig.walks(), walks);
+    }
+
+    /// An anchored probe that joins a waiting series opened by a forced one
+    /// makes the retry anchored.
+    #[tokio::test(start_paused = true)]
+    async fn should_make_a_waiting_retry_anchored_when_an_anchored_probe_joins() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+
+        rig.actor.arm_no_answer_retry(wallet(), txid(1), 101, false);
+        rig.actor.arm_no_answer_retry(wallet(), txid(2), 101, true);
+
+        let series = rig.actor.wallets[&wallet()].retry_series.expect("series");
+        assert!(series.waiting && series.anchored);
+        assert_eq!(series.armed, 1, "one timer for both");
     }
 
     /// A refusal is an answer: no early retry.
