@@ -1990,6 +1990,26 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     admission estimate. Actual fees remain metered. Nullifiers revealed by
 ///     shields before this version are not added.
 ///
+/// 77. **Owner identities for shared and extended-address masternodes**: from
+///     v24 on, Dash Core lists shared masternodes, which have no owner, payout
+///     or collateral address, and extended-address masternodes, which have a
+///     `payouts` list instead of a `payoutAddress`. `create_owner_identity` 1
+///     needs both addresses and fails on such a masternode with
+///     `DashCoreBadResponseError`, which fails the block. With
+///     `create_owner_identity` 2 and `update_masternode_identities` 1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`), a masternode without an owner
+///     address gets no owner identity, only its voter and operator identities;
+///     one with an owner address and either a legacy payout address or a sole
+///     payout with a matching P2PKH script gets the version 1 identity,
+///     TRANSFER key id 0 and OWNER key id 1, byte for byte; other payout shapes
+///     get only OWNER key id 1. Legacy payout-address rotation is unchanged.
+///     Payout-list changes retain, re-enable or add the sole supported P2PKH
+///     TRANSFER key and disable obsolete TRANSFER keys. Split, empty or
+///     unsupported lists disable all TRANSFER authority while preserving OWNER
+///     and balance. Historical updaters keep their payout-list policy. This
+///     version must be active on a network before its Dash Core activates V24,
+///     since earlier versions keep failing on these masternodes.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
