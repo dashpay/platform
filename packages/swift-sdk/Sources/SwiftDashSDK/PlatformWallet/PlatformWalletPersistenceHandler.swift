@@ -5141,10 +5141,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return true
         }
 
+        // One emit carries a whole pool slice — thousands of entries on a
+        // restore — so both per-entry lookups below are batched into
+        // chunked `IN` fetches up front. Nothing the loop writes changes
+        // which rows those fetches match (it inserts address rows only
+        // for its own entries and never touches `PersistentTxo.address`),
+        // so resolving them before the loop is equivalent.
+        let addresses = Self.uniqueInOrder(entries.map(\.address))
+        let absentAddresses = primeCoreAddressRows(addresses)
+        let backfill = txosForAddressBackfill(addresses)
+
         for entry in entries {
             let address = entry.address
             let row: PersistentCoreAddress
-            if let existing = coreAddressRow(address: address) {
+            // A primed miss stays a miss until this loop inserts the row
+            // (which registers it), so skip the per-row fetch for it.
+            let isKnownAbsent = absentAddresses.contains(address)
+                && roundIndex?.coreAddressesByAddress[address] == nil
+            if !isKnownAbsent, let existing = coreAddressRow(address: address) {
                 row = existing
             } else {
                 row = PersistentCoreAddress(
@@ -5182,33 +5196,129 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // optional-relationship-in-predicate gotcha by
             // filtering nil-coreAddress in Swift after the fetch.
             //
-            // Deliberately NOT a round-indexed store-only lookup: this
-            // joins TXOs by `address`, and the rows it returns are the
-            // same objects the outpoint-keyed hot path mutates — a
-            // store-only fetch here would refresh those objects and
-            // discard the round's unsaved writes (see `roundIndex`).
-            // The pending-changes scan this keeps is bounded by the
-            // round's TXO inserts per emitted address entry; the
-            // outpoint-keyed quadratic hot path stays indexed.
-            let txoBackfillDescriptor = FetchDescriptor<PersistentTxo>(
-                predicate: #Predicate { $0.address == address }
-            )
-            if let txosAtAddress = try? backgroundContext.fetch(txoBackfillDescriptor) {
-                for txo in txosAtAddress where txo.coreAddress == nil {
-                    txo.coreAddress = row
-                    // This write happened outside any keyed lookup, so
-                    // register the row: a later first-touch
-                    // `fetchTxoRow` for this outpoint would otherwise
-                    // run a store-only fetch and refresh the link away
-                    // (see `roundIndex`).
-                    roundIndex?.txosByOutpoint[txo.outpoint] = txo
-                }
+            // Candidates come from `txosForAddressBackfill` above.
+            for txo in backfillTxos(at: address, from: backfill) where txo.coreAddress == nil {
+                txo.coreAddress = row
+                // This write happened outside any keyed lookup, so
+                // register the row: a later first-touch
+                // `fetchTxoRow` for this outpoint would otherwise
+                // run a store-only fetch and refresh the link away
+                // (see `roundIndex`).
+                roundIndex?.txosByOutpoint[txo.outpoint] = txo
             }
         }
 
         saveBackgroundContextIfNeeded(operation: "account_addresses", walletId: walletId)
         return true
         }  // onQueue
+    }
+
+    /// Largest key slice per bulk `IN` fetch: below SQLite's historical
+    /// 999 bind-variable limit, so every chunk's predicate translates.
+    static let bulkFetchChunkSize = 900
+
+    /// Split `keys` into `bulkFetchChunkSize` slices for chunked `IN`
+    /// fetches. Each slice is an `Array` because `#Predicate` translates
+    /// `[T].contains` into SQL `IN` (a `Set` capture does not translate).
+    static func chunked<T>(_ keys: [T], size: Int = bulkFetchChunkSize) -> [[T]] {
+        stride(from: 0, to: keys.count, by: size).map {
+            Array(keys[$0..<min($0 + size, keys.count)])
+        }
+    }
+
+    /// `keys` without repeats, first occurrence kept, so `IN` lists stay
+    /// minimal when one emit names an address more than once.
+    static func uniqueInOrder<T: Hashable>(_ keys: [T]) -> [T] {
+        var seen = Set<T>()
+        return keys.filter { seen.insert($0).inserted }
+    }
+
+    /// Resolve the round's not-yet-touched `PersistentCoreAddress` keys in
+    /// chunked store-only fetches and register every hit in `roundIndex`,
+    /// exactly as `coreAddressRow` would on each key's first touch. Returns
+    /// the keys a successful chunk proved absent from the store; a key in a
+    /// chunk whose fetch threw is left out, so it falls back to
+    /// `coreAddressRow`'s own per-row fetch.
+    ///
+    /// Only keys the index does not hold yet are fetched: a store-only fetch
+    /// that matches an object the round already registered would refresh
+    /// that object and discard its unsaved writes (see `roundIndex`). Without
+    /// an index (outside a round, or a round that began dirty) this primes
+    /// nothing and every lookup takes `coreAddressRow`'s pending-changes path.
+    private func primeCoreAddressRows(_ addresses: [String]) -> Set<String> {
+        guard roundIndex != nil else { return [] }
+        let untouched = addresses.filter { roundIndex!.coreAddressesByAddress[$0] == nil }
+        var absent = Set<String>()
+        for chunk in Self.chunked(untouched) {
+            var descriptor = FetchDescriptor<PersistentCoreAddress>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            descriptor.includePendingChanges = false
+            guard let rows = try? modelFetcher.fetch(descriptor, in: backgroundContext) else {
+                continue
+            }
+            var found = Set<String>()
+            for row in rows {
+                found.insert(row.address)
+                // A staged-deleted row stays unregistered, as in
+                // `coreAddressRow`: the per-row fallback then reports it
+                // missing and the loop re-inserts over the unique key.
+                if !row.isDeleted {
+                    roundIndex!.coreAddressesByAddress[row.address] = row
+                }
+            }
+            absent.formUnion(chunk.lazy.filter { !found.contains($0) })
+        }
+        return absent
+    }
+
+    /// TXOs at each of `addresses`, for the `coreAddress` backfill in
+    /// `persistAccountAddresses`, gathered by chunked `IN` fetches.
+    ///
+    /// Deliberately NOT a round-indexed store-only lookup: this joins TXOs
+    /// by `address`, and the rows it returns are the same objects the
+    /// outpoint-keyed hot path mutates — a store-only fetch here would
+    /// refresh those objects and discard the round's unsaved writes (see
+    /// `roundIndex`). So each fetch keeps the default pending-changes scan
+    /// over the round's staged TXOs, once per chunk instead of once per
+    /// address entry. `PersistentTxo.address` has no store index either,
+    /// so the per-entry form also cost a full table scan per entry.
+    private func txosForAddressBackfill(_ addresses: [String]) -> AddressBackfillTxos {
+        var result = AddressBackfillTxos()
+        for chunk in Self.chunked(addresses) {
+            let descriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            if let txos = try? modelFetcher.fetch(descriptor, in: backgroundContext) {
+                for txo in txos {
+                    result.byAddress[txo.address, default: []].append(txo)
+                }
+            } else {
+                result.unresolved.formUnion(chunk)
+            }
+        }
+        return result
+    }
+
+    /// Prefetched backfill candidates, keyed by address. An address whose
+    /// chunk fetch threw is `unresolved`.
+    private struct AddressBackfillTxos {
+        var byAddress: [String: [PersistentTxo]] = [:]
+        var unresolved: Set<String> = []
+    }
+
+    /// Backfill candidates at `address`: the prefetched rows, or — when its
+    /// chunk fetch threw — its own per-address fetch, so a failed chunk
+    /// skips the backfill only for addresses whose own fetch fails too (the
+    /// per-entry `try?` this replaced skipped one address per failure).
+    private func backfillTxos(at address: String, from prefetched: AddressBackfillTxos) -> [PersistentTxo] {
+        guard prefetched.unresolved.contains(address) else {
+            return prefetched.byAddress[address] ?? []
+        }
+        let descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.address == address }
+        )
+        return (try? modelFetcher.fetch(descriptor, in: backgroundContext)) ?? []
     }
 
     /// The `AccountTypeTagFFI::IdentityInvitation` discriminant. The invitation
@@ -5228,6 +5338,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         entries: [CoreAddressEntrySnapshot]
     ) {
+        // One chunked `IN` fetch per 900 entries instead of one fetch per
+        // entry: there is no round index for this model, so each per-entry
+        // fetch scanned every platform-address row the round had staged —
+        // quadratic over a DIP-17 pool restore. Pending changes stay
+        // included: with no index holding the round's staged rows, the
+        // fetch itself must see them. A chunk whose fetch threw leaves its
+        // addresses unresolved, and those fall back to a per-row fetch.
+        var rowsByAddress: [String: PersistentPlatformAddress] = [:]
+        var unresolved = Set<String>()
+        for chunk in Self.chunked(Self.uniqueInOrder(entries.map(\.address))) {
+            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            if let rows = try? modelFetcher.fetch(descriptor, in: backgroundContext) {
+                for row in rows { rowsByAddress[row.address] = row }
+            } else {
+                unresolved.formUnion(chunk)
+            }
+        }
+
         for entry in entries {
             guard let (addressType, addressHash) =
                 platformAddressComponents(fromBech32m: entry.address)
@@ -5235,11 +5365,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 continue
             }
             let address = entry.address
-            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
-                predicate: #Predicate { $0.address == address }
-            )
+            if rowsByAddress[address] == nil, unresolved.remove(address) != nil {
+                let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                    predicate: #Predicate { $0.address == address }
+                )
+                rowsByAddress[address] = try? modelFetcher.fetch(descriptor, in: backgroundContext).first
+            }
             let row: PersistentPlatformAddress
-            if let existing = try? backgroundContext.fetch(descriptor).first {
+            if let existing = rowsByAddress[address] {
                 row = existing
                 row.addressType = addressType
                 row.addressHash = addressHash
@@ -5258,6 +5391,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     walletId: walletId
                 )
                 backgroundContext.insert(row)
+                // A repeat of this address later in `entries` must update
+                // this staged row, as the per-entry pending-changes fetch did.
+                rowsByAddress[address] = row
             }
             // Address-emit is authoritative for derivation metadata
             // and the used flag on first creation; we preserve any
