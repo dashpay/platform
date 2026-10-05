@@ -977,8 +977,11 @@ enum JobDone {
     /// The wallets holding a transaction reported `Uncertain` (`wallets`,
     /// where it is probed), and those where it is an unsettled own send
     /// (`own`, the ones a later echo could still be news to).
+    /// `report` names the `Uncertain` report this lookup answers: a newer
+    /// report of the same txid, or a switch-off, makes it obsolete.
     Listed {
         txid: Txid,
+        report: u64,
         wallets: Vec<WalletId>,
         own: Vec<WalletId>,
     },
@@ -1131,6 +1134,10 @@ struct Actor {
     /// switch-off. One no wallet resolves (its wallet removed, say) lingers
     /// until it expires.
     uncertain: HashMap<Txid, Option<u32>>,
+    /// The latest `Uncertain` report per txid whose holder lookup is out:
+    /// only that lookup's completion counts (see `JobDone::Listed`).
+    reports: HashMap<Txid, u64>,
+    next_report: u64,
     /// The highest height any wallet has followed the tip at: the one clock
     /// the echo windows run on, so a wallet behind the others (rescanning,
     /// rewound) neither stamps nor expires them.
@@ -1162,6 +1169,8 @@ impl Actor {
             jobs: JoinSet::new(),
             job_runs: HashMap::new(),
             uncertain: HashMap::new(),
+            reports: HashMap::new(),
+            next_report: 0,
             followed_tip: None,
             next_retry_series: 0,
             echo_lookups: HashMap::new(),
@@ -1390,12 +1399,20 @@ impl Actor {
                 // A new report restarts the window, from the next followed
                 // block.
                 self.uncertain.insert(txid, None);
+                self.next_report += 1;
+                let report = self.next_report;
+                self.reports.insert(txid, report);
                 // Routed to the registered wallets holding it, including ones
                 // no height step has reached yet.
                 let source = Arc::clone(&self.source);
                 self.jobs.spawn(async move {
                     let Holders { wallets, own } = source.holders(txid).await;
-                    JobDone::Listed { txid, wallets, own }
+                    JobDone::Listed {
+                        txid,
+                        report,
+                        wallets,
+                        own,
+                    }
                 });
             }
             Command::Echoed(txid) => {
@@ -1436,6 +1453,7 @@ impl Actor {
                 }
                 if !enabled {
                     self.uncertain.clear();
+                    self.reports.clear();
                     self.echo_lookups.clear();
                     let events = self.state.forget_all();
                     deliver(&self.sink, events);
@@ -1554,10 +1572,19 @@ impl Actor {
 
     fn job_done(&mut self, done: JobDone) {
         match done {
-            JobDone::Listed { txid, wallets, own } => {
-                if !self.enabled {
+            JobDone::Listed {
+                txid,
+                report,
+                wallets,
+                own,
+            } => {
+                // Only the latest report's lookup: an older one read the
+                // wallets before a newer report (whose own lookup decides),
+                // and one from before a switch-off belongs to nothing.
+                if !self.enabled || self.reports.get(&txid) != Some(&report) {
                     return;
                 }
+                self.reports.remove(&txid);
                 // No wallet holds it as an unsettled own send: its echo
                 // would be news to no one.
                 if own.is_empty() {
@@ -4105,6 +4132,64 @@ mod tests {
         assert!(rig
             .sent()
             .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)));
+    }
+
+    /// An older report's holder lookup that completes after a newer report
+    /// of the same txid is obsolete: it found no holder (the record was not
+    /// there yet), but must not delete the newer report's echo window.
+    #[tokio::test]
+    async fn should_not_let_an_obsolete_lookup_delete_a_newer_reports_window() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
+        rig.views(wallet(), Vec::new());
+        rig.handle(Command::Uncertain(txid(1)));
+        // Its lookup finds no holder: held back.
+        let old = rig
+            .actor
+            .jobs
+            .join_next_with_id()
+            .await
+            .expect("old lookup");
+        assert!(matches!(
+            &old,
+            Ok((_, JobDone::Listed { own, .. })) if own.is_empty()
+        ));
+
+        // The owning record arrives, and dash-spv reports the send again.
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.handle(Command::Uncertain(txid(1)));
+        rig.actor.joined(old); // the old, empty completion lands now
+        assert!(
+            rig.actor.uncertain.contains_key(&txid(1)),
+            "the window stays"
+        );
+        rig.settle().await;
+        rig.sent();
+
+        rig.send(Command::Echoed(txid(1))).await;
+
+        assert!(rig
+            .sent()
+            .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)));
+    }
+
+    /// A lookup from before a switch-off is obsolete after it.
+    #[tokio::test]
+    async fn should_drop_a_lookup_from_before_a_switch_off() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.handle(Command::Uncertain(txid(1)));
+        let old = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+
+        rig.handle(Command::SetEnabled(false));
+        rig.handle(Command::SetEnabled(true));
+        rig.actor.joined(old);
+        rig.settle().await;
+
+        assert!(
+            probe.probed().is_empty(),
+            "no forced pass from the old report"
+        );
     }
 
     /// A refusal is an answer: no early retry.
