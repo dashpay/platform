@@ -670,3 +670,52 @@ fn should_resolve_wide_integer_operands_the_same_after_the_wire() {
     let wire = StateTransitionFilter::from_proto(0, filter.to_proto().unwrap()).unwrap();
     resolve(vec![wire], &contract).expect("resolves after the wire round trip");
 }
+
+#[test]
+fn should_match_a_shielded_token_unshield_by_token_and_recipient() {
+    use dpp::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
+    use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
+    let contract = contract();
+    let unshield = StateTransition::TokenUnshieldWithShieldedFee(
+        TokenUnshieldWithShieldedFeeTransition::V0(TokenUnshieldWithShieldedFeeTransitionV0 {
+            data_contract_id: id(200),
+            token_contract_position: 0,
+            token_id: id(100),
+            recipient_id: id(5),
+            amount: 10,
+            token_actions: vec![],
+            token_anchor: [0u8; 32],
+            token_proof: vec![],
+            token_binding_signature: [0u8; 64],
+            fee_actions: vec![],
+            fee_anchor: [0u8; 32],
+            fee_proof: vec![],
+            fee_binding_signature: [0u8; 64],
+            credit_amount: 0,
+        }),
+    );
+    let token = |token_ids: Vec<Identifier>, identity_ids: Vec<Identifier>, role| {
+        resolve(
+            vec![StateTransitionFilter::Tokens {
+                token_ids,
+                identity_ids,
+                role,
+            }],
+            &contract,
+        )
+        .unwrap()
+    };
+    assert!(matches(&token(vec![id(100)], vec![], Role::Any), &unshield).is_some());
+    assert!(matches(&token(vec![id(101)], vec![], Role::Any), &unshield).is_none());
+    assert!(matches(&token(vec![], vec![id(5)], Role::Recipient), &unshield).is_some());
+    assert!(matches(&token(vec![], vec![id(5)], Role::Sender), &unshield).is_none());
+    let recipient = resolve(
+        vec![StateTransitionFilter::Identities {
+            identity_ids: vec![id(5)],
+            role: Role::Recipient,
+        }],
+        &contract,
+    )
+    .unwrap();
+    assert!(matches(&recipient, &unshield).is_some());
+}

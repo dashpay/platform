@@ -158,7 +158,19 @@ impl ResolvedFilters {
                 ResolvedFilter::DataContracts { data_contract_ids } => participants
                     .data_contract_id
                     .is_some_and(|id| data_contract_ids.contains(&id)),
-                ResolvedFilter::Documents(_) | ResolvedFilter::Tokens { .. } => false,
+                // A shielded token transition outside a batch.
+                ResolvedFilter::Tokens {
+                    token_ids,
+                    identity_ids,
+                    role,
+                } => participants.token_id.is_some_and(|token_id| {
+                    (token_ids.is_empty() || token_ids.contains(&token_id))
+                        && (identity_ids.is_empty()
+                            || participants.identities.iter().any(|(identity_id, side)| {
+                                role.admits(*side) && identity_ids.contains(identity_id)
+                            }))
+                }),
+                ResolvedFilter::Documents(_) => false,
             };
             if let Some(batch) = batch {
                 for (position, transition) in batch.transitions_iter().enumerate() {

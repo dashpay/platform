@@ -15,6 +15,7 @@ use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transiti
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
@@ -30,6 +31,9 @@ use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTr
 use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
 use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentityIdFromInputs, StateTransitionWitnessSigned,
@@ -45,6 +49,8 @@ pub(super) struct Participants {
     /// The data contract a contract-level transition creates, updates, moderates or claims
     /// fees on.
     pub data_contract_id: Option<Identifier>,
+    /// The token a transition outside a batch acts on (the shielded token transitions).
+    pub token_id: Option<Identifier>,
 }
 
 impl Participants {
@@ -174,6 +180,18 @@ pub(super) fn participants(state_transition: &StateTransition) -> Participants {
         StateTransition::IdentityTopUpFromShieldedPool(transition) => {
             participants.identity(transition.identity_id(), Role::Recipient);
         }
+        // Shielded token transitions paying their fee from the shielded pool: the token is
+        // public, its senders and holders are not.
+        StateTransition::TokenShieldedTransferWithShieldedFee(transition) => {
+            participants.token_id = Some(transition.token_id());
+        }
+        StateTransition::TokenPurchaseFromShieldedPool(transition) => {
+            participants.token_id = Some(transition.token_id());
+        }
+        StateTransition::TokenUnshieldWithShieldedFee(transition) => {
+            participants.token_id = Some(transition.token_id());
+            participants.identity(transition.recipient_id(), Role::Recipient);
+        }
     }
     participants
 }
@@ -208,7 +226,15 @@ pub(super) fn token_recipient(
         TokenTransition::Unfreeze(unfreeze) => Some(unfreeze.frozen_identity_id()),
         TokenTransition::DestroyFrozenFunds(destroy) => Some(destroy.frozen_identity_id()),
         TokenTransition::Claim(_) | TokenTransition::DirectPurchase(_) => Some(batch_owner_id),
-        TokenTransition::Burn(_)
+        TokenTransition::Unshield(unshield) => Some(unshield.recipient_id()),
+        // Tokens moved into or within the shielded pool go to holders that are not public.
+        TokenTransition::Shield(_)
+        | TokenTransition::ShieldedTransfer(_)
+        | TokenTransition::MintToPool(_)
+        | TokenTransition::BurnFromPool(_)
+        | TokenTransition::ClaimToPool(_)
+        | TokenTransition::DirectPurchaseToPool(_)
+        | TokenTransition::Burn(_)
         | TokenTransition::EmergencyAction(_)
         | TokenTransition::ConfigUpdate(_)
         | TokenTransition::SetPriceForDirectPurchase(_) => None,

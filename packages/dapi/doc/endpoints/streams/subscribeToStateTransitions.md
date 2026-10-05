@@ -23,7 +23,9 @@ filters, block by block, from a chosen height onward.
     - `batchOwnerId`: the identity that signs the batch
   - `addresses`: up to 256 platform addresses (21 bytes: type byte then 20-byte hash) and a `role`
   - `identities`: up to 64 identity ids and a `role`
-  - `tokens`: up to 64 `tokenIds` and/or up to 64 `identityIds` (with a `role`)
+  - `tokens`: up to 64 `tokenIds` and/or up to 64 `identityIds` (with a `role`); token transitions
+    in batches, and the shielded token transitions that pay their fee from the pool (by token, and
+    an unshield's recipient)
   - `dataContracts`: up to 64 contracts; matches their creation, updates, moderation and fee claims
 - `role`: `ANY` (default), `SENDER` (the transition's owner, or an address input it spends),
   `RECIPIENT` (named as beneficiary or target: credit/document/token transfer recipients,
