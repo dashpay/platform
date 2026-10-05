@@ -165,21 +165,21 @@ mod tests {
         assert_rejected_envelope(result);
     }
 
-    /// The floor is a protocol-version table entry: the last generation
-    /// before it still lets a V0 envelope reach Drive.
+    /// A caller verifying with the last shipped protocol version's tables
+    /// gets no V0 exemption either.
     #[test]
-    fn entry_points_accept_legacy_envelope_before_protocol_version_14() {
+    fn entry_points_reject_legacy_envelope_at_protocol_version_13() {
         let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
             .expect("DPNS contract");
         let query = dpns_domain_query(&contract, platform_version);
         let truncated_v0 = envelope_only_proof(0);
 
-        assert_not_an_envelope_rejection(
+        assert_rejected_envelope(
             verify_full_identity_by_identity_id(&truncated_v0, false, [0u8; 32], platform_version)
                 .map(|_| ()),
         );
-        assert_not_an_envelope_rejection(
+        assert_rejected_envelope(
             verify_contract(
                 &truncated_v0,
                 None,
@@ -190,7 +190,7 @@ mod tests {
             )
             .map(|_| ()),
         );
-        assert_not_an_envelope_rejection(
+        assert_rejected_envelope(
             verify_documents_with_query(&truncated_v0, &query, platform_version).map(|_| ()),
         );
     }

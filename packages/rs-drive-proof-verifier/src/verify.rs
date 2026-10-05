@@ -212,7 +212,7 @@ mod tests {
     use dash_context_provider::ContextProviderError;
     use dpp::data_contract::TokenConfiguration;
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-    use dpp::version::PlatformVersion;
+    use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
     use drive::grovedb::operations::proof::{
         GroveDBProof, GroveDBProofV0, GroveDBProofV1, LayerProof, MerkOnlyLayerProof, ProofBytes,
         ProveOptions,
@@ -360,14 +360,28 @@ mod tests {
         ));
     }
 
-    /// The floor is a protocol-version table entry: a client verifying with
-    /// the last generation before it still replays V0 envelopes.
+    /// A client verifying with an older protocol version's tables gets no
+    /// V0 exemption: every live network serves V1.
     #[test]
-    fn test_legacy_grovedb_v0_proof_passes_the_gate_before_protocol_version_14() {
-        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+    fn test_legacy_grovedb_v0_proof_is_rejected_at_every_protocol_version() {
+        for platform_version in PLATFORM_VERSIONS {
+            let protocol_version = platform_version.protocol_version;
+            let result =
+                require_supported_grovedb_proof_bytes(&grovedb_proof_bytes(0), platform_version);
 
-        require_supported_grovedb_proof_bytes(&grovedb_proof_bytes(0), platform_version)
-            .expect("protocol version 13 accepts V0 envelopes");
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::UnsupportedGroveDBProofVersion {
+                        version: 0,
+                        minimum: 1,
+                        protocol_version: rejected_at,
+                        ..
+                    }) if rejected_at == protocol_version
+                ),
+                "protocol version {protocol_version} must reject a V0 envelope, got {result:?}"
+            );
+        }
     }
 
     #[test]

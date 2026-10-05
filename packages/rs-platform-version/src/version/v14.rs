@@ -226,14 +226,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   lookups are ever needed. Reads dispatch on the byte prefix, so
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
-/// 7. **Client-side GroveDB proof envelope floor**:
-///    `SYSTEM_LIMITS_V4.minimum_grovedb_proof_envelope_version` becomes 1, so
-///    a client verifying with v14 tables rejects the legacy V0 proof
-///    envelope before its bytes reach Drive (`drive-proof-verifier`,
-///    `wasm-drive-verify`, and the nested compacted address proofs). V0's
-///    item binding lets a prover return different item bytes under the same
-///    authenticated root; every live network has emitted V1 envelopes since
-///    v13 (grove version 3), so no honest response is affected.
+/// 7. **Client-side GroveDB proof envelope floor (no longer gated here)**:
+///    `minimum_grovedb_proof_envelope_version` is 1 in every system-limits
+///    table, not only `SYSTEM_LIMITS_V4`, so a client rejects the legacy V0
+///    proof envelope before its bytes reach Drive (`drive-proof-verifier`,
+///    `wasm-drive-verify`, and the nested compacted address proofs) whatever
+///    protocol version it verifies with. V0's item binding lets a prover
+///    return different item bytes under the same authenticated root; every
+///    live network has emitted V1 envelopes since v12 (grove version 3), so
+///    no honest response is affected. No node reads the floor, so raising
+///    it in the shipped tables cannot change consensus.
 /// 8. **Epoch-based perpetual distribution claims stop wrapping**:
 ///    `RewardDistributionType::max_cycle_moment` (the cap on how far one claim
 ///    may redeem, selected by

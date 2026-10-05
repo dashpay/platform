@@ -54,7 +54,7 @@ pub(crate) fn supported_grovedb_proof<'a>(
 #[cfg(test)]
 mod tests {
     use super::validate_supported_grovedb_proof;
-    use dpp::version::PlatformVersion;
+    use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
     use drive::error::proof::ProofError;
     use drive::error::Error;
 
@@ -106,12 +106,27 @@ mod tests {
         );
     }
 
+    /// A caller verifying with an older protocol version's tables gets no
+    /// V0 exemption: every live network serves V1.
     #[test]
-    fn accepts_legacy_v0_envelope_before_protocol_version_14() {
-        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+    fn rejects_legacy_v0_envelope_at_every_protocol_version() {
+        for platform_version in PLATFORM_VERSIONS {
+            let protocol_version = platform_version.protocol_version;
+            let result = validate_supported_grovedb_proof(&envelope(0), platform_version);
 
-        validate_supported_grovedb_proof(&envelope(0), platform_version)
-            .expect("protocol version 13 accepts V0 envelopes");
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                        proof: "proof",
+                        version: 0,
+                        minimum: 1,
+                        protocol_version: rejected_at,
+                    })) if rejected_at == protocol_version
+                ),
+                "protocol version {protocol_version} must reject a V0 envelope, got {result:?}"
+            );
+        }
     }
 
     #[test]
