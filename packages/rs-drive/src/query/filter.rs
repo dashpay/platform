@@ -612,6 +612,19 @@ impl DriveDocumentQueryFilter<'_> {
                 .chain(range_clause.iter_mut())
                 .chain(equal_clauses.values_mut())
             {
+                // A `u8` field's IN candidates may come packed as bytes, already canonical.
+                if clause.operator == WhereOperator::In
+                    && matches!(clause.value, Value::Bytes(_))
+                    && matches!(
+                        document_type
+                            .flattened_properties()
+                            .get(&clause.field)
+                            .map(|property| &property.property_type),
+                        Some(DocumentPropertyType::U8)
+                    )
+                {
+                    continue;
+                }
                 clause.value = canonical_operand(clause.operator, &clause.value, |value| {
                     canonical_value_for_key(document_type, &clause.field, value, platform_version)
                 })?;
@@ -814,40 +827,66 @@ fn canonical_value_for_key(
     value: &Value,
     platform_version: &PlatformVersion,
 ) -> Option<Value> {
-    let property_type = document_type
+    match document_type
         .flattened_properties()
         .get(key)
-        .map(|property| &property.property_type);
-    // Base58 decoding takes time quadratic in its input, and a filter's operands come from
-    // unauthenticated requests: refuse identifier text longer than any 32-byte identifier.
-    let identifier = matches!(key, "$id" | "$ownerId" | "$creatorId" | "$moderatedBy")
-        || matches!(
-            property_type,
-            Some(
-                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
-            )
-        );
-    if identifier && matches!(value, Value::Text(text) if text.len() > MAX_BASE58_IDENTIFIER_LEN) {
-        return None;
-    }
-    if let Some(property_type) = property_type {
-        let encoded = property_type.encode_value_for_tree_keys(value).ok()?;
-        // The index-key form of an empty byte array is empty, which decodes as null.
-        if encoded.is_empty() && !value.is_null() {
-            return match property_type {
-                DocumentPropertyType::ByteArray(_) => Some(Value::Bytes(vec![])),
-                _ => None,
-            };
+        .map(|property| &property.property_type)
+    {
+        Some(property_type) => canonical_property_value(property_type, value),
+        // `$id` and the recipient or buyer (read as `$ownerId`) are the only other fields a
+        // filter reads. Anything else, such as a derived index property, is not in a
+        // transition's data and is refused before its codec runs.
+        None if SYSTEM_IDENTIFIER_FIELDS.contains(&key) => {
+            if exceeds_identifier_text(value) {
+                return None;
+            }
+            let serialized = document_type
+                .serialize_value_for_key(key, value, platform_version)
+                .ok()?;
+            document_type
+                .deserialize_value_for_key(key, &serialized, platform_version)
+                .ok()
         }
-        return property_type.decode_value_for_tree_keys(&encoded).ok();
+        None => None,
     }
-    let serialized = document_type
-        .serialize_value_for_key(key, value, platform_version)
-        .ok()?;
-    document_type
-        .deserialize_value_for_key(key, &serialized, platform_version)
-        .ok()
 }
+
+/// `value` as a property of `property_type` is stored.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_property_value(property_type: &DocumentPropertyType, value: &Value) -> Option<Value> {
+    match property_type {
+        // Text is already canonical, and the index-key form would conflate `""` with `"\0"`.
+        DocumentPropertyType::String(_) => matches!(value, Value::Text(_)).then(|| value.clone()),
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+            if exceeds_identifier_text(value) =>
+        {
+            None
+        }
+        _ => {
+            let encoded = property_type.encode_value_for_tree_keys(value).ok()?;
+            // The index-key form of an empty byte array is empty, which decodes as null.
+            if encoded.is_empty() && !value.is_null() {
+                return match property_type {
+                    DocumentPropertyType::ByteArray(_) => Some(Value::Bytes(vec![])),
+                    _ => None,
+                };
+            }
+            property_type.decode_value_for_tree_keys(&encoded).ok()
+        }
+    }
+}
+
+/// Base58 decoding takes time quadratic in its input, and a filter's operands come from
+/// unauthenticated requests: identifier text longer than any 32-byte identifier is refused
+/// before it is decoded.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn exceeds_identifier_text(value: &Value) -> bool {
+    matches!(value, Value::Text(text) if text.len() > MAX_BASE58_IDENTIFIER_LEN)
+}
+
+/// The system fields a filter may read, all identifiers.
+#[cfg(any(feature = "server", feature = "verify"))]
+const SYSTEM_IDENTIFIER_FIELDS: [&str; 2] = ["$id", "$ownerId"];
 
 /// The longest base58 text of a 32-byte identifier.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -3449,6 +3488,176 @@ mod tests {
                     filter.matches_document_transition(&transition, None, platform_version),
                     TransitionCheckResult::Pass,
                     "{operator:?}"
+                );
+            }
+        }
+
+        /// A derived index property such as `postId.$ownerId` resolves to an identifier but
+        /// is not a schema property; like any field outside the schema, it is refused before
+        /// a codec could decode a hostile operand.
+        #[test]
+        fn should_refuse_fields_outside_the_schema_before_decoding_them() {
+            let contract = contract();
+            for operator in [WhereOperator::Equal, WhereOperator::In] {
+                let long = Value::Text("z".repeat(120_000));
+                let clause = WhereClause {
+                    field: "postId.$ownerId".to_string(),
+                    operator,
+                    value: if operator == WhereOperator::In {
+                        Value::Array(vec![long])
+                    } else {
+                        long
+                    },
+                };
+                let mut filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "niceDocument".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Create {
+                        new_document_clauses: InternalClauses {
+                            equal_clauses: if operator == WhereOperator::Equal {
+                                BTreeMap::from([(clause.field.clone(), clause.clone())])
+                            } else {
+                                BTreeMap::new()
+                            },
+                            in_clauses: if operator == WhereOperator::In {
+                                vec![clause]
+                            } else {
+                                vec![]
+                            },
+                            ..Default::default()
+                        },
+                    },
+                };
+                assert!(
+                    filter
+                        .canonicalize_clause_values(PlatformVersion::latest())
+                        .is_err(),
+                    "{operator:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_tell_empty_text_from_a_nul_character() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let filter_for = |clauses: InternalClauses| DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: clauses,
+                },
+            };
+            let name = |text: &str| {
+                create(
+                    &contract,
+                    "niceDocument",
+                    BTreeMap::from([("name".to_string(), Value::Text(text.to_string()))]),
+                )
+            };
+
+            let mut empty = filter_for(equal("name", Value::Text(String::new())));
+            empty
+                .canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            assert_eq!(
+                empty.matches_document_transition(&name(""), None, platform_version),
+                TransitionCheckResult::Pass
+            );
+            assert_eq!(
+                empty.matches_document_transition(&name("\0"), None, platform_version),
+                TransitionCheckResult::Fail
+            );
+
+            let mut both = filter_for(InternalClauses {
+                in_clauses: vec![WhereClause {
+                    field: "name".to_string(),
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![
+                        Value::Text(String::new()),
+                        Value::Text("\0".to_string()),
+                    ]),
+                }],
+                ..Default::default()
+            });
+            both.canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            assert!(both.validate().is_valid(), "two distinct candidates");
+
+            let mut prefix = filter_for(InternalClauses {
+                range_clause: Some(WhereClause {
+                    field: "name".to_string(),
+                    operator: WhereOperator::StartsWith,
+                    value: Value::Text("\0".to_string()),
+                }),
+                ..Default::default()
+            });
+            prefix
+                .canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            assert!(prefix.validate().is_valid(), "a non-empty prefix");
+        }
+
+        #[test]
+        fn should_accept_packed_byte_candidates_for_a_u8_field() {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+            use dpp::data_contract::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            let documents = platform_value!({
+                "rating": {
+                    "type": "object",
+                    "properties": {
+                        "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+                    },
+                    "additionalProperties": false
+                }
+            });
+            let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
+            let stars_type = contract
+                .document_type_for_name("rating")
+                .expect("type")
+                .flattened_properties()
+                .get("stars")
+                .expect("stars")
+                .property_type
+                .clone();
+            assert_eq!(stars_type, DocumentPropertyType::U8, "fixture field is u8");
+
+            let platform_version = PlatformVersion::latest();
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "rating".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: InternalClauses {
+                        in_clauses: vec![WhereClause {
+                            field: "stars".to_string(),
+                            operator: WhereOperator::In,
+                            value: Value::Bytes(vec![4, 5]),
+                        }],
+                        ..Default::default()
+                    },
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("packed u8 candidates");
+            assert!(filter.validate().is_valid());
+            for (stars, expected) in [
+                (Value::U64(5), TransitionCheckResult::Pass),
+                (Value::U64(3), TransitionCheckResult::Fail),
+            ] {
+                let transition = create(
+                    &contract,
+                    "rating",
+                    BTreeMap::from([("stars".to_string(), stars)]),
+                );
+                assert_eq!(
+                    filter.matches_document_transition(&transition, None, platform_version),
+                    expected
                 );
             }
         }
