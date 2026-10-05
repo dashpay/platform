@@ -124,7 +124,7 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
     if broken_stream
         || matches!(
             code,
-            Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled | Code::ResourceExhausted
+            Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled
         )
     {
         return NodeVerdict::Unreachable {
@@ -160,11 +160,7 @@ pub enum ProbeVerdict {
     Mined,
     /// Not enough evidence that it landed; the transaction stays ambiguous.
     /// The reason says what the nodes answered, refusals included.
-    /// `answered`: some node answered a submission (with a refusal or any
-    /// other rejection); `false` when none did — no node reachable, timeouts,
-    /// no address left to try — so the probe learned nothing and is worth
-    /// repeating soon.
-    Unresolved { reason: String, answered: bool },
+    Unresolved { reason: String },
 }
 
 /// Whether one node knows a txid (DAPI `getTransaction`).
@@ -216,7 +212,29 @@ pub(crate) const MINED_QUORUM: usize = 2;
 #[async_trait]
 pub trait AcceptanceProbe: Send + Sync + 'static {
     /// What the nodes answered, judged within this one probe.
-    async fn probe(&self, transaction: &Transaction) -> ProbeVerdict;
+    async fn probe(&self, transaction: &Transaction) -> ProbeOutcome;
+}
+
+/// A probe's verdict, and whether any node answered at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbeOutcome {
+    pub verdict: ProbeVerdict,
+    /// Some node answered a submission — with a refusal, or any rejection a
+    /// node gives (a rate limit included). `false` when none did: no node
+    /// reachable, timeouts, no address left to try — the probe learned
+    /// nothing and is worth repeating soon. Not part of the verdict the host
+    /// is told: it says how the probe went, not where the send stands.
+    pub answered: bool,
+}
+
+impl From<ProbeVerdict> for ProbeOutcome {
+    /// A verdict some node gave.
+    fn from(verdict: ProbeVerdict) -> Self {
+        Self {
+            verdict,
+            answered: true,
+        }
+    }
 }
 
 /// Evidence rules shared by every probe: a node holding the transaction in its
@@ -230,7 +248,7 @@ pub trait AcceptanceProbe: Send + Sync + 'static {
 pub(crate) async fn probe_with(
     submitter: &dyn NodeSubmitter,
     transaction: &Transaction,
-) -> ProbeVerdict {
+) -> ProbeOutcome {
     let mut refusing_nodes: HashSet<String> = HashSet::new();
     let mut first_refusal: Option<String> = None;
     let mut last_other = String::from("no submission was answered");
@@ -246,7 +264,7 @@ pub(crate) async fn probe_with(
             "broadcast probe: node answered"
         );
         match verdict {
-            NodeVerdict::Accepted => return ProbeVerdict::Accepted,
+            NodeVerdict::Accepted => return ProbeVerdict::Accepted.into(),
             NodeVerdict::Mined => {
                 // In a block by this node's word. A second opinion comes from
                 // a lookup, not from sending it again.
@@ -255,7 +273,8 @@ pub(crate) async fn probe_with(
                     transaction,
                     LookupFor::SecondOpinion { seen_by: node },
                 )
-                .await;
+                .await
+                .into();
             }
             NodeVerdict::Refused { reason } => {
                 // An unidentified node cannot count towards the quorum — it
@@ -271,7 +290,8 @@ pub(crate) async fn probe_with(
                         transaction,
                         LookupFor::Refused { reason },
                     )
-                    .await;
+                    .await
+                    .into();
                 }
             }
             NodeVerdict::Unknown { reason } | NodeVerdict::Unreachable { reason } => {
@@ -280,8 +300,7 @@ pub(crate) async fn probe_with(
         }
     }
 
-    ProbeVerdict::Unresolved {
-        answered,
+    let verdict = ProbeVerdict::Unresolved {
         reason: match first_refusal {
             None => last_other,
             Some(reason) => format!(
@@ -289,7 +308,8 @@ pub(crate) async fn probe_with(
                 refusing_nodes.len()
             ),
         },
-    }
+    };
+    ProbeOutcome { verdict, answered }
 }
 
 /// Why a probe turns to lookups.
@@ -379,7 +399,6 @@ async fn confirm_by_lookup(
             "refused as {reason}; {} node(s) do not know the txid; last other lookup answer: {last_unknown}",
             not_found.len()
         ),
-        answered: true,
     }
 }
 
@@ -503,7 +522,7 @@ impl DapiAcceptanceProbe {
 
 #[async_trait]
 impl AcceptanceProbe for DapiAcceptanceProbe {
-    async fn probe(&self, transaction: &Transaction) -> ProbeVerdict {
+    async fn probe(&self, transaction: &Transaction) -> ProbeOutcome {
         probe_with(&self.submitter, transaction).await
     }
 }
@@ -708,6 +727,9 @@ mod tests {
                 "invalid transaction: TX decode failed",
             ),
             (Code::Internal, "bad-txns-in-belowout"),
+            // A gateway's rate limit is a node's answer: back off, not an
+            // outage.
+            (Code::ResourceExhausted, "rate limited"),
         ] {
             assert!(
                 matches!(
@@ -727,7 +749,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            probe_with(&nodes, &transaction()).await,
+            probe_with(&nodes, &transaction()).await.verdict,
             ProbeVerdict::Accepted
         );
         assert_eq!(nodes.submissions(), 2);
@@ -743,7 +765,7 @@ mod tests {
             vec![(Some("a"), conflict()), (Some("b"), refused())],
         ] {
             let nodes = ScriptedNodes::new(answers);
-            let verdict = probe_with(&nodes, &transaction()).await;
+            let verdict = probe_with(&nodes, &transaction()).await.verdict;
 
             assert!(is_unresolved(&verdict), "{verdict:?}");
             assert_eq!(nodes.lookups_made(), REFUSAL_QUORUM);
@@ -754,7 +776,7 @@ mod tests {
     async fn should_keep_the_refusal_in_the_unresolved_reason() {
         let nodes = ScriptedNodes::new(vec![(Some("a"), conflict()), (Some("b"), conflict())]);
 
-        let ProbeVerdict::Unresolved { reason, .. } = probe_with(&nodes, &transaction()).await
+        let ProbeVerdict::Unresolved { reason } = probe_with(&nodes, &transaction()).await.verdict
         else {
             panic!("expected unresolved");
         };
@@ -772,7 +794,9 @@ mod tests {
             (Some("a"), refused()),
         ]);
 
-        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
+        ));
         assert_eq!(nodes.submissions(), MAX_SUBMISSIONS_PER_PROBE);
         assert_eq!(nodes.lookups_made(), 0);
     }
@@ -781,7 +805,9 @@ mod tests {
     async fn should_not_count_an_unidentified_node_towards_the_refusal_quorum() {
         let nodes = ScriptedNodes::new(vec![(Some("a"), refused()), (None, refused())]);
 
-        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
+        ));
         assert_eq!(nodes.lookups_made(), 0);
     }
 
@@ -799,7 +825,9 @@ mod tests {
             (Some("d"), unknown()),
         ]);
 
-        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
+        ));
         assert_eq!(nodes.submissions(), MAX_SUBMISSIONS_PER_PROBE);
     }
 
@@ -811,7 +839,9 @@ mod tests {
             (Some("c"), refused()),
         ]);
 
-        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
+        ));
         assert_eq!(nodes.submissions(), 3);
         assert_eq!(nodes.lookups_made(), REFUSAL_QUORUM);
     }
@@ -827,7 +857,7 @@ mod tests {
         );
 
         assert_eq!(
-            probe_with(&nodes, &transaction()).await,
+            probe_with(&nodes, &transaction()).await.verdict,
             ProbeVerdict::Mined
         );
         assert_eq!(nodes.lookups_made(), 2);
@@ -846,10 +876,13 @@ mod tests {
             vec![(Some("a"), in_block())],
         );
 
-        assert_eq!(probe_with(&two, &transaction()).await, ProbeVerdict::Mined);
+        assert_eq!(
+            probe_with(&two, &transaction()).await.verdict,
+            ProbeVerdict::Mined
+        );
         assert_eq!(two.submissions(), 1, "the second opinion is a lookup");
         assert_eq!(
-            probe_with(&same_twice, &transaction()).await,
+            probe_with(&same_twice, &transaction()).await.verdict,
             ProbeVerdict::Accepted,
             "one node's word: it exists, not that it is final"
         );
@@ -869,7 +902,9 @@ mod tests {
         );
 
         assert_eq!(
-            probe_with(&refused_then_seen_mined, &transaction()).await,
+            probe_with(&refused_then_seen_mined, &transaction())
+                .await
+                .verdict,
             ProbeVerdict::Accepted
         );
     }
@@ -969,7 +1004,9 @@ mod tests {
             ],
         );
 
-        assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
+        assert!(is_unresolved(
+            &probe_with(&nodes, &transaction()).await.verdict
+        ));
         assert_eq!(nodes.lookups_made(), MAX_LOOKUPS_PER_PROBE);
     }
 
@@ -988,13 +1025,7 @@ mod tests {
             (None, unreachable()),
             (None, unreachable()),
         ]);
-        assert!(matches!(
-            probe_with(&nodes, &transaction()).await,
-            ProbeVerdict::Unresolved {
-                answered: false,
-                ..
-            }
-        ));
+        assert!(!probe_with(&nodes, &transaction()).await.answered);
 
         for answer in [
             refused(),
@@ -1008,10 +1039,7 @@ mod tests {
                 (None, unreachable()),
                 (None, unreachable()),
             ]);
-            assert!(matches!(
-                probe_with(&nodes, &transaction()).await,
-                ProbeVerdict::Unresolved { answered: true, .. }
-            ));
+            assert!(probe_with(&nodes, &transaction()).await.answered);
         }
         for (code, message) in [
             (Code::DeadlineExceeded, "no complete response"),
@@ -1020,7 +1048,6 @@ mod tests {
                 "h2 protocol error: error reading a body from connection",
             ),
             (Code::Unknown, "connection closed before message completed"),
-            (Code::ResourceExhausted, "rate limited"),
         ] {
             assert!(
                 matches!(
@@ -1051,7 +1078,7 @@ mod tests {
         );
 
         assert_eq!(
-            probe_with(&nodes, &transaction()).await,
+            probe_with(&nodes, &transaction()).await.verdict,
             ProbeVerdict::Accepted
         );
     }
