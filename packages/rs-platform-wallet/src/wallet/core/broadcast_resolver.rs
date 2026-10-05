@@ -42,10 +42,15 @@
 //! height that follows the tip — steps of more than [`CATCH_UP_STEP`] blocks,
 //! steps back (a rescan) and the first step after launch are catch-up and
 //! skipped (passes queued before them probe only what an `Uncertain` result
-//! forced) — a root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks,
+//! forced), and dash-spv's next sync completion runs the pass the catch-up
+//! skipped, at the tip (a launch or a reconnect after an outage would
+//! otherwise wait for the next block) — a root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks,
 //! counted from the first height-driven pass that sees it while the wallet
 //! follows the tip (a forced pass does not start it), and every
-//! [`SLOW_INTERVAL`] blocks after. Each Uncertain report forces a probe of
+//! [`SLOW_INTERVAL`] blocks after. A probe no node answered (DAPI
+//! unreachable — its addresses still banned just after an outage) is
+//! repeated after [`NO_ANSWER_RETRY`], once per height. Each Uncertain
+//! report forces a probe of
 //! its chain's current root in the next pass (reports queued together share
 //! it).
 //! Between passes a wallet waits for the height at which its next root is due;
@@ -98,6 +103,12 @@ pub(crate) const EVERY_BLOCK_WINDOW: u32 = 24;
 
 /// Blocks between probes once [`EVERY_BLOCK_WINDOW`] has passed.
 pub(crate) const SLOW_INTERVAL: u32 = 10;
+
+/// How long after a probe that no node answered (all of DAPI unreachable —
+/// the network just coming back, its addresses still banned) the root is
+/// probed again, once per block height, instead of waiting for the next
+/// block.
+pub(crate) const NO_ANSWER_RETRY: Duration = Duration::from_secs(30);
 
 /// Followed blocks an `Uncertain` send waits for its peer echo: as long as
 /// the every-block probe window. Past that the probes decide alone.
@@ -900,6 +911,9 @@ enum Command {
     /// bring one back.
     WalletAdded(WalletId),
     WalletRemoved(WalletId),
+    /// dash-spv finished a sync cycle: every wallet is at the tip. A wallet
+    /// whose last height step was catch-up follows it from here.
+    SyncComplete,
 }
 
 /// What a finished job reports back to the actor.
@@ -933,6 +947,13 @@ enum JobDone {
         /// probe was stopped, but had already finished) is not this one's.
         root: Txid,
         verdict: ProbeVerdict,
+    },
+    /// [`NO_ANSWER_RETRY`] passed since a probe of `root` that no node
+    /// answered, at `height`.
+    Retry {
+        wallet_id: WalletId,
+        root: Txid,
+        height: u32,
     },
 }
 
@@ -996,6 +1017,13 @@ struct WalletEntry {
     wait_until: Option<u32>,
     pending: Option<PendingPass>,
     run: Option<Run>,
+    /// The last height step was catch-up (or the first since launch): no
+    /// pass ran for it. The sync's completion (`Command::SyncComplete`)
+    /// runs the one it skipped.
+    behind: bool,
+    /// The height at which a probe no node answered last armed its retry
+    /// (see [`NO_ANSWER_RETRY`]): one retry per height.
+    retried_at: Option<u32>,
 }
 
 /// Owns all of the resolver's state. One task; commands and job results are
@@ -1158,6 +1186,7 @@ impl Actor {
                     // under way rests on that state too: it is stopped, and what
                     // `Uncertain` results forced it to probe goes to the next pass.
                     entry.wait_until = None;
+                    entry.retried_at = None;
                     if let Some(run) = entry.run.take() {
                         run.abort.abort();
                         if !run.forced.is_empty() {
@@ -1181,7 +1210,8 @@ impl Actor {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                if is_catch_up_step(previous, height) {
+                entry.behind = is_catch_up_step(previous, height);
+                if entry.behind {
                     // Behind the tip: passes queued or running from before are
                     // confined to what an `Uncertain` result forced — the scan
                     // settles most roots, and its events clear their verdicts
@@ -1332,6 +1362,34 @@ impl Actor {
                     self.echo_lookups.clear();
                     let events = self.state.forget_all();
                     deliver(&self.sink, events);
+                }
+            }
+            Command::SyncComplete => {
+                // The catch-up that skipped a pass has ended at the tip: run
+                // it now, anchored there, rather than waiting for the next
+                // block — after a launch or a reconnect, that can be minutes.
+                let behind: Vec<WalletId> = self
+                    .wallets
+                    .iter()
+                    .filter(|(_, entry)| entry.behind && entry.height.is_some())
+                    .map(|(wallet_id, _)| *wallet_id)
+                    .collect();
+                for wallet_id in behind {
+                    let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                        continue;
+                    };
+                    entry.behind = false;
+                    let height = entry.height.unwrap_or(0);
+                    if !self.enabled
+                        || (entry.run.is_none()
+                            && entry.wait_until.is_some_and(|until| height < until))
+                    {
+                        continue;
+                    }
+                    let pending = entry.pending.get_or_insert_with(PendingPass::default);
+                    pending.height = pending.height.max(height);
+                    pending.anchor_at = Some(height);
+                    self.start(wallet_id);
                 }
             }
             Command::WalletAdded(wallet_id) => {
@@ -1549,6 +1607,23 @@ impl Actor {
                     }
                 }
             }
+            JobDone::Retry {
+                wallet_id,
+                root,
+                height,
+            } => {
+                // A new block since is the schedule's to handle.
+                let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                    return;
+                };
+                if !self.enabled || entry.height.is_some_and(|now| now != height) {
+                    return;
+                }
+                let pending = entry.pending.get_or_insert_with(PendingPass::default);
+                pending.height = pending.height.max(height);
+                pending.forced.insert(root);
+                self.start(wallet_id);
+            }
             JobDone::Probed {
                 wallet_id,
                 run,
@@ -1600,12 +1675,42 @@ impl Actor {
                     self.probe_next(wallet_id);
                     return;
                 }
-                let events =
-                    record_probe(&mut self.state, wallet_id, probing.height, &root, &verdict);
+                let height = probing.height;
+                let events = record_probe(&mut self.state, wallet_id, height, &root, &verdict);
                 deliver(&self.sink, events);
+                if matches!(
+                    verdict,
+                    ProbeVerdict::Unresolved {
+                        answered: false,
+                        ..
+                    }
+                ) {
+                    self.arm_retry(wallet_id, root.txid, height);
+                }
                 self.probe_next(wallet_id);
             }
         }
+    }
+
+    /// A probe of `root` at `height` reached no node: probe it again after
+    /// [`NO_ANSWER_RETRY`] — once per height, so a network that stays down
+    /// costs one extra probe per block, not a loop.
+    fn arm_retry(&mut self, wallet_id: WalletId, root: Txid, height: u32) {
+        let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+            return;
+        };
+        if entry.retried_at.is_some_and(|at| at >= height) {
+            return;
+        }
+        entry.retried_at = Some(height);
+        self.jobs.spawn(async move {
+            tokio::time::sleep(NO_ANSWER_RETRY).await;
+            JobDone::Retry {
+                wallet_id,
+                root,
+                height,
+            }
+        });
     }
 
     /// Probe the run's next due root, or end the run.
@@ -1944,6 +2049,7 @@ impl EventHandler for BroadcastResolver {
                 txid,
                 result: BroadcastResult::Accepted { .. },
             } => self.send(Command::Echoed(*txid)),
+            SyncEvent::SyncComplete { .. } => self.send(Command::SyncComplete),
             _ => {}
         }
     }
@@ -2447,6 +2553,7 @@ mod tests {
                 .cloned()
                 .unwrap_or(ProbeVerdict::Unresolved {
                     reason: "scripted".to_string(),
+                    answered: true,
                 })
         }
     }
@@ -2464,6 +2571,15 @@ mod tests {
     fn unresolved() -> ProbeVerdict {
         ProbeVerdict::Unresolved {
             reason: "no quorum".to_string(),
+            answered: true,
+        }
+    }
+
+    /// No node answered at all (all of DAPI unreachable).
+    fn no_answer() -> ProbeVerdict {
+        ProbeVerdict::Unresolved {
+            reason: "no available addresses".to_string(),
+            answered: false,
         }
     }
 
@@ -3171,6 +3287,92 @@ mod tests {
 
         assert!(rig.actor.uncertain.is_empty());
         assert_eq!(probe.probed(), vec![txid(1)]);
+    }
+
+    /// The log's first shape: the app launches on a stored tip, the network
+    /// comes back with one short step (the first after launch, so catch-up)
+    /// and then stays quiet for minutes. The sync's completion runs the pass
+    /// the catch-up skipped — once: a later completion at the same height,
+    /// or after a followed step, probes nothing more.
+    #[tokio::test]
+    async fn should_probe_at_the_end_of_a_catch_up_then_wait_for_the_next_block() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.height(wallet(), 1_566_577).await; // first step after launch
+        assert!(probe.probed().is_empty(), "catch-up: no pass");
+        rig.send(Command::SyncComplete).await;
+        assert_eq!(
+            probe.probed(),
+            vec![txid(1)],
+            "the skipped pass, at the tip"
+        );
+
+        rig.send(Command::SyncComplete).await;
+        rig.height(wallet(), 1_566_578).await; // followed
+        rig.send(Command::SyncComplete).await;
+        assert_eq!(probe.probed(), vec![txid(1), txid(1)], "one per block");
+    }
+
+    /// A long catch-up (a reconnect after an outage) ends the same way.
+    #[tokio::test]
+    async fn should_probe_at_the_end_of_a_long_catch_up() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        let before = probe.probed().len();
+
+        rig.height(wallet(), 150).await; // catch-up
+        assert_eq!(probe.probed().len(), before);
+        rig.send(Command::SyncComplete).await;
+
+        assert_eq!(probe.probed().len(), before + 1);
+    }
+
+    /// The log's second shape: one new block arrives as the network comes
+    /// back, but DAPI's addresses are still banned, so its probe reaches no
+    /// node. It is repeated after [`NO_ANSWER_RETRY`] rather than at the next
+    /// block, minutes away.
+    #[tokio::test(start_paused = true)]
+    async fn should_retry_a_probe_no_node_answered_without_waiting_for_a_block() {
+        let probe = Arc::new(SequenceProbe::new(&[no_answer(), ProbeVerdict::Accepted]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.follow(wallet(), 100).await; // probes at 101; the retry follows
+
+        assert_eq!(probe.calls(), 2);
+        assert!(rig
+            .sent()
+            .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)));
+    }
+
+    /// The retry is bounded: one per height, however long no node answers.
+    #[tokio::test(start_paused = true)]
+    async fn should_retry_a_probe_no_node_answered_once_per_height() {
+        let probe = Arc::new(SequenceProbe::new(&[no_answer(), no_answer(), no_answer()]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.follow(wallet(), 100).await;
+        assert_eq!(probe.calls(), 2, "the probe and one retry at 101");
+
+        rig.height(wallet(), 102).await;
+        assert_eq!(probe.calls(), 4, "the next block: one probe, one retry");
+    }
+
+    /// A refusal is an answer: no early retry.
+    #[tokio::test(start_paused = true)]
+    async fn should_not_retry_a_probe_a_node_answered() {
+        let probe = Arc::new(SequenceProbe::new(&[unresolved(), unresolved()]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.follow(wallet(), 100).await;
+
+        assert_eq!(probe.calls(), 1);
     }
 
     /// Turning probing off forgets every `Uncertain` send.

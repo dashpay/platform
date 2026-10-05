@@ -108,7 +108,9 @@ extension PlatformWalletManager {
     /// after SPV reports a broadcast uncertain (each report), then, while the
     /// wallet follows the chain tip, every block for 24 blocks from when it
     /// first did so for that root, and every 10 blocks after — a return from
-    /// the background does not restart the 24. It publishes each *change* of
+    /// the background does not restart the 24 — plus once when a sync that
+    /// was catching up (a launch, a reconnect) completes, and 30 s after a
+    /// probe no evonode answered (once per block). It publishes each *change* of
     /// verdict for the wallet's own sends in `outgoingTransactionVerdicts` /
     /// `lastOutgoingTransactionProbe` (an accepted send whose nodes' block
     /// evidence comes or goes may be published accepted again). Every verdict

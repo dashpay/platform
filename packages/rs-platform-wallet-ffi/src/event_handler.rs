@@ -325,7 +325,7 @@ impl PlatformEventHandler for FFIEventHandler {
             // The host does not need to tell a mempool from a block: both mean
             // the payment is going through.
             ProbeVerdict::Accepted | ProbeVerdict::Mined => (OUTGOING_PROBE_VERDICT_ACCEPTED, None),
-            ProbeVerdict::Unresolved { reason } => {
+            ProbeVerdict::Unresolved { reason, .. } => {
                 (OUTGOING_PROBE_VERDICT_UNRESOLVED, Some(reason))
             }
         };
@@ -738,6 +738,7 @@ mod outgoing_probe_callback_tests {
             &txid,
             &ProbeVerdict::Unresolved {
                 reason: "no quorum".to_string(),
+                answered: true,
             },
         );
         with_callback.on_outgoing_transaction_probed(
@@ -745,6 +746,7 @@ mod outgoing_probe_callback_tests {
             &txid,
             &ProbeVerdict::Unresolved {
                 reason: "odd\0node".to_string(),
+                answered: true,
             },
         );
         with_callback.on_outgoing_transaction_cleared(&wallet, &txid);

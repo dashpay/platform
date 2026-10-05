@@ -132,7 +132,11 @@ pub enum ProbeVerdict {
     Mined,
     /// Not enough evidence that it landed; the transaction stays ambiguous.
     /// The reason says what the nodes answered, refusals included.
-    Unresolved { reason: String },
+    /// `answered`: some node gave a definite answer (refused it); `false`
+    /// when every submission failed without one — no node reachable,
+    /// timeouts, transport errors — so the probe learned nothing and is
+    /// worth repeating soon.
+    Unresolved { reason: String, answered: bool },
 }
 
 /// Whether one node knows a txid (DAPI `getTransaction`).
@@ -247,6 +251,7 @@ pub(crate) async fn probe_with(
     }
 
     ProbeVerdict::Unresolved {
+        answered: first_refusal.is_some(),
         reason: match first_refusal {
             None => last_other,
             Some(reason) => format!(
@@ -344,6 +349,7 @@ async fn confirm_by_lookup(
             "refused as {reason}; {} node(s) do not know the txid; last other lookup answer: {last_unknown}",
             not_found.len()
         ),
+        answered: true,
     }
 }
 
@@ -702,7 +708,8 @@ mod tests {
     async fn should_keep_the_refusal_in_the_unresolved_reason() {
         let nodes = ScriptedNodes::new(vec![(Some("a"), conflict()), (Some("b"), conflict())]);
 
-        let ProbeVerdict::Unresolved { reason } = probe_with(&nodes, &transaction()).await else {
+        let ProbeVerdict::Unresolved { reason, .. } = probe_with(&nodes, &transaction()).await
+        else {
             panic!("expected unresolved");
         };
         assert!(reason.contains("tx-txlock-conflict"), "{reason}");
@@ -918,6 +925,40 @@ mod tests {
 
         assert!(is_unresolved(&probe_with(&nodes, &transaction()).await));
         assert_eq!(nodes.lookups_made(), MAX_LOOKUPS_PER_PROBE);
+    }
+
+    /// A probe tells whether any node answered: every submission failing
+    /// without an answer (no reachable node) is `answered: false` — worth
+    /// repeating soon — while a refusal short of the quorum is an answer.
+    #[tokio::test]
+    async fn should_tell_a_probe_no_node_answered_from_one_a_node_refused() {
+        let unreachable = || NodeVerdict::Unknown {
+            reason: "no available addresses".to_string(),
+        };
+        let nodes = ScriptedNodes::new(vec![
+            (None, unreachable()),
+            (None, unreachable()),
+            (None, unreachable()),
+            (None, unreachable()),
+        ]);
+        assert!(matches!(
+            probe_with(&nodes, &transaction()).await,
+            ProbeVerdict::Unresolved {
+                answered: false,
+                ..
+            }
+        ));
+
+        let nodes = ScriptedNodes::new(vec![
+            (Some("a"), refused()),
+            (None, unreachable()),
+            (None, unreachable()),
+            (None, unreachable()),
+        ]);
+        assert!(matches!(
+            probe_with(&nodes, &transaction()).await,
+            ProbeVerdict::Unresolved { answered: true, .. }
+        ));
     }
 
     #[tokio::test]
