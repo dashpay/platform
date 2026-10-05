@@ -201,8 +201,8 @@ struct PlatformWalletCreateParams: Sendable {
 
 /// `body` receives a C string for `passphrase` (or `nil` when absent), the
 /// shape every passphrase-taking FFI export takes: NULL means "no
-/// passphrase". Shared with `Mnemonic.toSeed` so the "empty is the same as
-/// absent" rule is decided in exactly one place.
+/// passphrase". Shared by the sync and off-main create paths so the "empty
+/// is the same as absent" rule is decided in exactly one place.
 func withOptionalPassphraseCString<R>(
     _ passphrase: String?,
     _ body: (UnsafePointer<CChar>?) throws -> R

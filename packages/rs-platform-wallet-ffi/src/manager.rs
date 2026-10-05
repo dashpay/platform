@@ -710,43 +710,6 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
     )
 }
 
-/// Derive the 64-byte BIP-39 seed for `(mnemonic, passphrase)` without
-/// creating a wallet. Language is auto-detected across every supported
-/// wordlist (unlike key-wallet-ffi's English-only `mnemonic_to_seed`), and
-/// `passphrase` may be `NULL` (no passphrase). Lets a host pre-derive the
-/// wallet id a passphrase create would produce (`Wallet::from_seed(...)
-/// .id`) before it commits any secret to storage.
-///
-/// # Safety
-/// `mnemonic` must be a valid NUL-terminated UTF-8 C string; `passphrase`
-/// must be `NULL` or a valid NUL-terminated UTF-8 C string; `out_seed` must
-/// be writable for `out_seed_len == 64` bytes. The caller owns the output
-/// and should scrub it once it has been consumed.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_mnemonic_to_seed(
-    mnemonic: *const std::os::raw::c_char,
-    passphrase: *const std::os::raw::c_char,
-    out_seed: *mut u8,
-    out_seed_len: usize,
-) -> PlatformWalletFFIResult {
-    check_ptr!(mnemonic);
-    check_ptr!(out_seed);
-    if out_seed_len != 64 {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("out_seed must be 64 bytes, got {out_seed_len}"),
-        );
-    }
-    let mnemonic_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(mnemonic).to_str());
-    let passphrase_str = unwrap_result_or_return!(passphrase_str(passphrase));
-    let seed = match platform_wallet::seed_from_mnemonic(mnemonic_str, passphrase_str) {
-        Ok(seed) => seed,
-        Err(e) => return e.into(),
-    };
-    std::ptr::copy_nonoverlapping(seed.as_ptr(), out_seed, 64);
-    PlatformWalletFFIResult::ok()
-}
-
 /// Hydrate the manager from its persister.
 ///
 /// Triggers `on_load_wallet_list_fn` on the persistence callbacks to
@@ -1204,53 +1167,6 @@ mod tests {
         let result = unsafe { platform_wallet_manager_persistence_capabilities(handle, &mut out) };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         out
-    }
-
-    /// BIP-39 reference vectors (all-`abandon` phrase): the passphrase-less
-    /// seed and the `TREZOR` seed. Pins the FFI's NULL-means-empty contract
-    /// and that the passphrase actually reaches PBKDF2.
-    #[test]
-    fn mnemonic_to_seed_matches_bip39_vectors_with_and_without_passphrase() {
-        let phrase = std::ffi::CString::new(
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-        )
-        .unwrap();
-        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-        let to_seed = |passphrase: *const std::os::raw::c_char, out: &mut [u8]| unsafe {
-            platform_wallet_mnemonic_to_seed(
-                phrase.as_ptr(),
-                passphrase,
-                out.as_mut_ptr(),
-                out.len(),
-            )
-        };
-
-        let mut seed = [0u8; 64];
-        let rc = to_seed(std::ptr::null(), &mut seed);
-        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(
-            hex(&seed),
-            "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"
-        );
-
-        let empty = std::ffi::CString::new("").unwrap();
-        let mut seed_empty = [0u8; 64];
-        let rc = to_seed(empty.as_ptr(), &mut seed_empty);
-        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(seed_empty, seed, "an empty passphrase must equal NULL");
-
-        let trezor = std::ffi::CString::new("TREZOR").unwrap();
-        let mut seed_pp = [0u8; 64];
-        let rc = to_seed(trezor.as_ptr(), &mut seed_pp);
-        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(
-            hex(&seed_pp),
-            "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
-        );
-
-        let mut short = [0u8; 32];
-        let rc = to_seed(std::ptr::null(), &mut short);
-        assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
     }
 
     #[test]
