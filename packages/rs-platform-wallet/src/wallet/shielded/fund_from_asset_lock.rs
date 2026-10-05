@@ -572,7 +572,11 @@ impl PlatformWallet {
             )
             .await?;
         // Release the proved bundle (and, if no attempt ever needed it, the
-        // speculative proof) before the reconciliation awaits below.
+        // speculative proof) before the reconciliation awaits below. The
+        // bundle holds its signing secrets (`ProvedShieldFromAssetLockBundle`)
+        // from the moment it is proved — possibly through the 300 s
+        // InstantSend window and an unbounded ChainLock wait — and this is
+        // where they go; every early return above drops them the same way.
         drop(bundles);
 
         // Platform's verdict settles the lock. For a wallet drain, an
@@ -1135,6 +1139,10 @@ impl<B> Drop for ProofTask<B> {
 }
 
 /// The proved bundle the submission attempts of one funding call share.
+///
+/// Holds the bundle's signing secrets (see `ProvedShieldFromAssetLockBundle`)
+/// in memory only, for the rest of the funding call; they are dropped with
+/// the cache.
 ///
 /// Holds the speculative proof started while the lock proof was awaited
 /// and, once joined or freshly proved, the bundle itself. Every attempt asks

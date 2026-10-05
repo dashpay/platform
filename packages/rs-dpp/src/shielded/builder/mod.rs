@@ -241,6 +241,14 @@ type AuthorizedBundle = Bundle<Authorized, i64, DashMemo>;
 /// spend-authorization signatures over the sighash fixed when the bundle was proved. Those are
 /// randomized RedPallas signatures, so every call returns a bundle with the same actions,
 /// commitment and proof but different signature bytes.
+///
+/// It therefore retains signing secrets for as long as it lives: the binding signing key `bsk`
+/// (the sum of the actions' value-commitment trapdoors) and each padding spend's spend
+/// authorizing key and randomizer (`dummy_ask`, `alpha`). They are fresh per bundle — no wallet
+/// key is among them — but whoever holds them can sign this proof over a *different* sighash,
+/// i.e. re-bind it to another owner, and the trapdoors open the per-action value commitments.
+/// They live only inside the signing closure: never serialized, persisted or logged (the type
+/// has no `Debug`), and dropped with the value.
 #[cfg(feature = "core_key_wallet")]
 pub(crate) struct ProvedOutputOnlyBundle {
     /// Signs a clone of the proved bundle. The proved-but-unsigned bundle type
