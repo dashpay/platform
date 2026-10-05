@@ -4380,7 +4380,7 @@
         "since": 1,
         "presence": "always",
         "source": "packages/rs-drive/src/drive/mod.rs",
-        "description": "Chain wide values: total credits, total token supplies, the genesis core height, and the documents waiting to expire.",
+        "description": "Chain wide values: total credits, total token supplies, the genesis core height, the documents waiting to expire, and the reduced platform state.",
         "children": [
           {
             "id": "misc.genesis_core_height",
@@ -4525,6 +4525,25 @@
                 "children": []
               }
             ]
+          },
+          {
+            "id": "misc.reduced_saved_state",
+            "key": {
+              "type": "fixed",
+              "hex": "726564756365645f73617665645f7374617465",
+              "label": "ReducedSavedState",
+              "constant": "REDUCED_PLATFORM_STATE_KEY",
+              "ascii": true
+            },
+            "kinds": [
+              "Item"
+            ],
+            "value": "ReducedPlatformState, platform serialization (big endian)",
+            "since": 15,
+            "presence": "lazy",
+            "source": "packages/rs-drive/src/drive/platform_state/mod.rs",
+            "description": "The part of the platform state a node restored by state sync cannot derive from Dash Core: block info, protocol versions, validator set quorum hashes and positions, previous fee versions and superseded lock quorums. Rewritten every block just before the app hash is taken, so snapshots carry it; the full platform state lives in aux storage, which state sync does not transfer.",
+            "children": []
           }
         ]
       },
