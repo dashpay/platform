@@ -56,7 +56,7 @@ pub fn start(
         }
     });
 
-    let check_tx_service = CheckTxAbciApplication::new(
+    let check_tx_service = CheckTxAbciApplication::with_snapshot_manager(
         Arc::clone(&platform),
         Arc::new(check_tx_core_rpc),
         snapshot_manager,

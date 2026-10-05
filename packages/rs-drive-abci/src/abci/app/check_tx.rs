@@ -45,8 +45,18 @@ impl<C> CheckTxAbciApplication<C>
 where
     C: CoreRPCLike + Send + Sync + 'static,
 {
-    /// Create new ABCI app
-    pub fn new(
+    /// Create new ABCI app, with a snapshot manager of its own.
+    ///
+    /// Serving pins expire only when something calls
+    /// [`SnapshotManager::release_expired_pins`]; a node that serves snapshots shares its
+    /// manager with a sweep task through [`Self::with_snapshot_manager`], as `server::start`
+    /// does.
+    pub fn new(platform: Arc<Platform<C>>, core_rpc: Arc<C>) -> Self {
+        Self::with_snapshot_manager(platform, core_rpc, Arc::new(SnapshotManager::new()))
+    }
+
+    /// Create new ABCI app that pins served snapshots in `snapshot_manager`.
+    pub fn with_snapshot_manager(
         platform: Arc<Platform<C>>,
         core_rpc: Arc<C>,
         snapshot_manager: Arc<SnapshotManager>,
@@ -203,11 +213,7 @@ mod tests {
 
         let core_rpc = MockCoreRPCLike::new();
 
-        let app = CheckTxAbciApplication::new(
-            Arc::new(platform.platform),
-            Arc::new(core_rpc),
-            Arc::new(SnapshotManager::new()),
-        );
+        let app = CheckTxAbciApplication::new(Arc::new(platform.platform), Arc::new(core_rpc));
 
         let debug_str = format!("{:?}", app);
         assert_eq!(debug_str, "<CheckTxAbciApplication>");
@@ -220,11 +226,7 @@ mod tests {
 
         let core_rpc = MockCoreRPCLike::new();
 
-        let app = CheckTxAbciApplication::new(
-            Arc::new(platform.platform),
-            Arc::new(core_rpc),
-            Arc::new(SnapshotManager::new()),
-        );
+        let app = CheckTxAbciApplication::new(Arc::new(platform.platform), Arc::new(core_rpc));
 
         // Just verify we can call platform() without panicking
         let _platform_ref = app.platform();
