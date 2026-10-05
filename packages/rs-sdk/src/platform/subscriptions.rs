@@ -265,7 +265,8 @@ impl StateTransitionSubscription {
     /// Rebind the filters on contracts a delivered update changed to their current version,
     /// read with a proof. A contract that can no longer be read ends the subscription.
     async fn refresh_contracts(&mut self) -> Result<(), Error> {
-        while let Some(data_contract_id) = self.contracts_to_refresh.pop_first() {
+        // An id leaves the queue only once rebound, so a cancelled or failed refresh is retried.
+        while let Some(data_contract_id) = self.contracts_to_refresh.first().copied() {
             let contract = DataContract::fetch(&self.sdk, data_contract_id)
                 .await?
                 .ok_or_else(|| {
@@ -276,6 +277,7 @@ impl StateTransitionSubscription {
                 })?;
             self.resolved
                 .rebind_data_contract(Arc::new(contract), self.sdk.version());
+            self.contracts_to_refresh.remove(&data_contract_id);
         }
         Ok(())
     }
@@ -303,7 +305,13 @@ impl StateTransitionSubscription {
         };
         Ok(match responses {
             Responses::Checkpoint(checkpoint) => {
-                self.resume_from = Some(checkpoint.block_height + 1);
+                let resume_from = checkpoint.block_height.checked_add(1).ok_or_else(|| {
+                    Error::Generic(format!(
+                        "the node sent a checkpoint at height {}, after which no stream can resume",
+                        checkpoint.block_height
+                    ))
+                })?;
+                self.resume_from = Some(resume_from);
                 Some(SubscriptionEvent::Checkpoint {
                     block_height: checkpoint.block_height,
                 })
@@ -622,5 +630,34 @@ mod tests {
         );
         // ...and the contract is queued to be read again with a proof.
         assert!(subscription.contracts_to_refresh.contains(&proved.id()));
+    }
+
+    #[test]
+    fn should_reject_a_checkpoint_no_stream_can_resume_after() {
+        let mut subscription = subscription();
+        subscription
+            .accept(response(Responses::Checkpoint(Checkpoint {
+                block_height: 41,
+            })))
+            .expect("accepted");
+        assert!(subscription
+            .accept(response(Responses::Checkpoint(Checkpoint {
+                block_height: u64::MAX,
+            })))
+            .is_err());
+        assert_eq!(subscription.resume_height(), Some(42));
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_contract_queued_until_its_refresh_completes() {
+        let mut subscription = subscription();
+        let data_contract_id = Identifier::from([5u8; 32]);
+        subscription.contracts_to_refresh.insert(data_contract_id);
+        // The mock SDK has no expectation for this fetch, so the refresh fails part-way, as it
+        // would if the future were dropped while fetching.
+        assert!(subscription.refresh_contracts().await.is_err());
+        assert!(subscription
+            .contracts_to_refresh
+            .contains(&data_contract_id));
     }
 }

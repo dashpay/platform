@@ -39,7 +39,7 @@ use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -814,15 +814,32 @@ fn canonical_value_for_key(
     value: &Value,
     platform_version: &PlatformVersion,
 ) -> Option<Value> {
-    if let Some(property) = document_type.flattened_properties().get(key) {
-        let encoded = property
-            .property_type
-            .encode_value_for_tree_keys(value)
-            .ok()?;
-        return property
-            .property_type
-            .decode_value_for_tree_keys(&encoded)
-            .ok();
+    let property_type = document_type
+        .flattened_properties()
+        .get(key)
+        .map(|property| &property.property_type);
+    // Base58 decoding takes time quadratic in its input, and a filter's operands come from
+    // unauthenticated requests: refuse identifier text longer than any 32-byte identifier.
+    let identifier = matches!(key, "$id" | "$ownerId" | "$creatorId" | "$moderatedBy")
+        || matches!(
+            property_type,
+            Some(
+                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+            )
+        );
+    if identifier && matches!(value, Value::Text(text) if text.len() > MAX_BASE58_IDENTIFIER_LEN) {
+        return None;
+    }
+    if let Some(property_type) = property_type {
+        let encoded = property_type.encode_value_for_tree_keys(value).ok()?;
+        // The index-key form of an empty byte array is empty, which decodes as null.
+        if encoded.is_empty() && !value.is_null() {
+            return match property_type {
+                DocumentPropertyType::ByteArray(_) => Some(Value::Bytes(vec![])),
+                _ => None,
+            };
+        }
+        return property_type.decode_value_for_tree_keys(&encoded).ok();
     }
     let serialized = document_type
         .serialize_value_for_key(key, value, platform_version)
@@ -831,6 +848,10 @@ fn canonical_value_for_key(
         .deserialize_value_for_key(key, &serialized, platform_version)
         .ok()
 }
+
+/// The longest base58 text of a 32-byte identifier.
+#[cfg(any(feature = "server", feature = "verify"))]
+const MAX_BASE58_IDENTIFIER_LEN: usize = 44;
 
 /// Canonicalize a clause operand with `canonical`: element-wise for the list operands of
 /// `IN` and `BETWEEN*`, directly otherwise.
@@ -3340,6 +3361,96 @@ mod tests {
                 filter.matches_document_transition(&transfer, None, platform_version),
                 TransitionCheckResult::Pass
             );
+        }
+
+        #[test]
+        fn should_refuse_identifier_text_longer_than_any_identifier() {
+            let contract = contract();
+            for field in ["identifierField", "$id"] {
+                let clauses = if field == "$id" {
+                    InternalClauses {
+                        primary_key_equal_clause: Some(WhereClause {
+                            field: field.to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::Text("z".repeat(120_000)),
+                        }),
+                        ..Default::default()
+                    }
+                } else {
+                    equal(field, Value::Text("z".repeat(120_000)))
+                };
+                let mut filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "withByteArrays".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Delete {
+                        original_document_clauses: clauses,
+                    },
+                };
+                assert!(
+                    filter
+                        .canonicalize_clause_values(PlatformVersion::latest())
+                        .is_err(),
+                    "{field}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_keep_empty_byte_array_operands() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            for (operator, value) in [
+                (WhereOperator::Equal, Value::Bytes(vec![])),
+                (
+                    WhereOperator::In,
+                    Value::Array(vec![Value::Bytes(vec![]), Value::Bytes(vec![1])]),
+                ),
+            ] {
+                let mut filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "withByteArrays".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Create {
+                        new_document_clauses: InternalClauses {
+                            equal_clauses: if operator == WhereOperator::Equal {
+                                BTreeMap::from([(
+                                    "byteArrayField".to_string(),
+                                    WhereClause {
+                                        field: "byteArrayField".to_string(),
+                                        operator,
+                                        value: value.clone(),
+                                    },
+                                )])
+                            } else {
+                                BTreeMap::new()
+                            },
+                            in_clauses: if operator == WhereOperator::In {
+                                vec![WhereClause {
+                                    field: "byteArrayField".to_string(),
+                                    operator,
+                                    value: value.clone(),
+                                }]
+                            } else {
+                                vec![]
+                            },
+                            ..Default::default()
+                        },
+                    },
+                };
+                filter
+                    .canonicalize_clause_values(platform_version)
+                    .expect("an empty byte array is a byte array");
+                assert!(filter.validate().is_valid(), "{operator:?}");
+                let transition = create(
+                    &contract,
+                    "withByteArrays",
+                    BTreeMap::from([("byteArrayField".to_string(), Value::Bytes(vec![]))]),
+                );
+                assert_eq!(
+                    filter.matches_document_transition(&transition, None, platform_version),
+                    TransitionCheckResult::Pass,
+                    "{operator:?}"
+                );
+            }
         }
     }
 }
