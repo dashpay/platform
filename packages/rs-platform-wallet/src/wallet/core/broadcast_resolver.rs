@@ -377,6 +377,9 @@ pub(crate) struct ProbeSchedule {
     /// phase — but not at the same height, where only a retry
     /// ([`NO_ANSWER_RETRY`]) probes it again.
     unanswered: bool,
+    /// Its last probe job panicked: it waits its turn behind the other roots,
+    /// even a reported send's, until a probe of it completes.
+    panicked: bool,
 }
 
 impl ProbeSchedule {
@@ -752,7 +755,7 @@ pub(crate) fn begin_pass(
                 schedule.last_probe.is_some(),
                 view.txid,
             );
-            if priority.contains(&view.txid) {
+            if priority.contains(&view.txid) && !schedule.panicked {
                 first.push((turn, view));
             } else {
                 rest.push((turn, view));
@@ -805,6 +808,7 @@ pub(crate) fn mark_sent(
 fn mark_answered(state: &mut ResolverState, wallet_id: WalletId, root: Txid, answered: bool) {
     if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root)) {
         schedule.unanswered = !answered;
+        schedule.panicked = false;
     }
 }
 
@@ -1415,11 +1419,16 @@ impl Actor {
                                 self.state.schedules.get_mut(&(wallet_id, root.txid))
                             {
                                 schedule.seen_at = Some(height.saturating_add(1));
+                                schedule.panicked = true;
                             }
                         }
                         self.end_run(wallet_id);
                     }
                     None => {
+                        // A panicked report lookup gives its report up: no
+                        // later wallet change brings it back.
+                        self.report_lookups
+                            .retain(|_, (_, lookup)| lookup.id() != error.id());
                         for entry in self.wallets.values_mut() {
                             entry.wait_until = None;
                         }
@@ -1658,6 +1667,13 @@ impl Actor {
         }
     }
 
+    /// Forget everything kept for a wallet that is gone, `reported` included
+    /// (a rewind keeps it: the wallet still holds its reported sends).
+    fn forget_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) -> Vec<Outgoing> {
+        forget_reported(&mut self.reported, wallet_id, |_| true);
+        self.state.forget_wallet(wallet_id, trigger)
+    }
+
     /// Route a report to the registered wallets holding it, including ones
     /// no height step has reached yet; only the latest lookup per txid counts.
     fn look_up_report(&mut self, txid: Txid) {
@@ -1690,16 +1706,11 @@ impl Actor {
         self.echo_lookups.clear();
         // A report's lookup may name the wallet gone: look again, so the
         // other holders still get their forced probe and priority.
-        // One whose job ended without completing (it panicked) stays dropped:
-        // an old report must not come back with an unrelated wallet change.
-        self.report_lookups
-            .retain(|_, (_, lookup)| !lookup.is_finished());
         let reports: Vec<Txid> = self.report_lookups.keys().copied().collect();
         for txid in reports {
             self.look_up_report(txid);
         }
-        forget_reported(&mut self.reported, wallet_id, |_| true);
-        let events = self.state.forget_wallet(wallet_id, trigger);
+        let events = self.forget_wallet(wallet_id, trigger);
         deliver(&self.sink, events);
     }
 
@@ -1790,8 +1801,13 @@ impl Actor {
                     self.uncertain.remove(&txid);
                     self.reported.remove(&txid);
                 } else {
-                    let known = own.into_iter().filter(|id| self.wallets.contains_key(id));
-                    self.reported.entry(txid).or_default().extend(known);
+                    let known: HashSet<WalletId> = own
+                        .into_iter()
+                        .filter(|id| self.wallets.contains_key(id))
+                        .collect();
+                    if !known.is_empty() {
+                        self.reported.entry(txid).or_default().extend(known);
+                    }
                 }
                 for wallet_id in wallets {
                     // Only a wallet the actor was told about (see
@@ -1873,8 +1889,7 @@ impl Actor {
                         // Idle, not re-read every block: a same-id wallet's
                         // events or an Uncertain wake it.
                         entry.wait_until = Some(u32::MAX);
-                        forget_reported(&mut self.reported, &wallet_id, |_| true);
-                        let events = self.state.forget_wallet(&wallet_id, "gone");
+                        let events = self.forget_wallet(&wallet_id, "gone");
                         deliver(&self.sink, events);
                         self.end_run(wallet_id);
                     }
@@ -4924,6 +4939,10 @@ mod tests {
         let before = probe.probed().len();
 
         rig.handle(Command::Uncertain(txid(200)));
+        // The lookup may even have finished, its result not joined yet.
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
         rig.handle(Command::WalletAdded([9u8; 32]));
         rig.settle().await;
 
@@ -6502,6 +6521,31 @@ mod tests {
         rig.views(wallet(), views);
         rig.follow(wallet(), 100).await;
         rig.height(wallet(), 102).await;
+
+        assert!(
+            probe.probed.lock().expect("probed").contains(&other),
+            "the other root came round"
+        );
+    }
+
+    /// The same for a reported send's root: its priority does not keep a
+    /// panicking probe at the head of every pass.
+    #[tokio::test]
+    async fn should_not_let_a_panicking_reported_root_head_every_pass() {
+        let views = peer_injected(10..12);
+        let probe = Arc::new(PanicOn {
+            txid: views[0].transaction.txid(),
+            probed: StdMutex::new(Vec::new()),
+        });
+        let other = views[2].transaction.txid();
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), views);
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(70))).await; // the child of root 10
+        assert!(rig.actor.reported.contains_key(&txid(70)));
+        probe.probed.lock().expect("probed").clear();
+        rig.height(wallet(), 102).await;
+        rig.height(wallet(), 103).await;
 
         assert!(
             probe.probed.lock().expect("probed").contains(&other),
