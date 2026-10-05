@@ -273,6 +273,17 @@ impl Client {
             .ok_or_else(|| "no evonode endpoints".to_string())
     }
 
+    /// An SDK for work that sends nothing (the contact-request builder
+    /// mints through one): the network SDK when there is one, otherwise one
+    /// over no endpoints under the same policy, which cannot dispatch. A
+    /// builder so does not depend on whether endpoints are set.
+    pub fn local_sdk(&self) -> Result<Sdk, String> {
+        match self.sdk() {
+            Ok(sdk) => Ok(sdk),
+            Err(_) => self.build_sdk(AddressList::new()),
+        }
+    }
+
     /// Whether a request can be dispatched at all: the client is not shut
     /// down and endpoints have been pushed. `Unavailable` otherwise.
     pub fn check_ready(&self) -> Result<(), Status> {
@@ -832,6 +843,25 @@ mod tests {
             Some(MAX_RESPONSE_BYTES)
         );
         assert_eq!(settings.request_settings.timeout, Some(REQUEST_TIMEOUT));
+        client.shutdown();
+    }
+
+    #[test]
+    fn a_local_sdk_needs_no_endpoints_and_opens_nothing() {
+        let client = testnet_client();
+        assert!(client.sdk().is_err(), "no network SDK without endpoints");
+        let local = client.local_sdk().expect("a local SDK");
+        assert!(local.address_list().is_empty(), "it cannot dispatch");
+        assert!(client.sdk().is_err(), "and it is not installed");
+
+        client
+            .set_endpoints(&["https://1.1.1.1:1443".to_string()])
+            .expect("endpoint");
+        assert!(!client
+            .local_sdk()
+            .expect("the network SDK")
+            .address_list()
+            .is_empty());
         client.shutdown();
     }
 

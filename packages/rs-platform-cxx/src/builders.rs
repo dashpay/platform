@@ -26,6 +26,7 @@ use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getter
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION};
+use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -42,6 +43,7 @@ use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatch
 use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dash_sdk::dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -50,6 +52,7 @@ use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemData
 use dash_sdk::dpp::util::hash::{hash_double, hash_single};
 use dash_sdk::dpp::util::strings::convert_to_homograph_safe_chars;
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::required_vote_resolution_fund_to_join;
 use dash_sdk::platform::dashpay::{ContactRequestInput, EcdhProvider, RecipientIdentity};
 use dash_sdk::Sdk;
 use futures::executor::block_on;
@@ -167,7 +170,12 @@ fn document_id(state_transition: &StateTransition) -> Result<Identifier, String>
 }
 
 enum Kind {
-    Create { entropy: [u8; 32] },
+    /// `contest_fund`: the most a contested create states it pays into the
+    /// contest it joins; `None` states the contest's own fund.
+    Create {
+        entropy: [u8; 32],
+        contest_fund: Option<Credits>,
+    },
     Replace,
 }
 
@@ -210,10 +218,17 @@ fn build_system_document(
     let identity_key = identity_key(key)?;
     let signer = BytesSigner(signer);
     let state_transition = match kind {
-        Kind::Create { entropy } => {
+        Kind::Create {
+            entropy,
+            contest_fund,
+        } => {
             document
                 .set_id_for_creation(document_type, &entropy, nonce, version)
                 .map_err(|e| format!("unable to derive the document id: {e}"))?;
+            let options = contest_fund.map(|contest_fund| StateTransitionCreationOptions {
+                contest_fund: Some(contest_fund),
+                ..Default::default()
+            });
             block_on(
                 BatchTransition::new_document_creation_transition_from_document(
                     document,
@@ -225,7 +240,7 @@ fn build_system_document(
                     None,
                     &signer,
                     version,
-                    None,
+                    options,
                 ),
             )
         }
@@ -330,7 +345,10 @@ pub fn build_dpns_preorder(
         "preorder",
         dpns_preorder_document(Identifier::from(owner), label, salt),
         nonce,
-        Kind::Create { entropy },
+        Kind::Create {
+            entropy,
+            contest_fund: None,
+        },
         key,
         signer,
     )
@@ -338,6 +356,13 @@ pub fn build_dpns_preorder(
 
 /// The contested-name prefund is attached by dpp from the domain type's
 /// contested unique index; nothing here decides whether a name is contested.
+/// A contested create states the fund to join a contest of `contenders`
+/// (the count the embedder read with `get_contested_vote_state`), as
+/// `dash-sdk`'s put-document path does with the count it reads: from
+/// protocol version 14 that fund doubles once a contest holds 250
+/// contenders and again for every 50 more, and Drive refuses a create that
+/// states less (charging its fees); before 14 it is the contest's fund
+/// whatever the count. An uncontested name ignores it.
 #[allow(clippy::too_many_arguments)]
 pub fn build_dpns_domain(
     version: &PlatformVersion,
@@ -345,6 +370,7 @@ pub fn build_dpns_domain(
     nonce: u64,
     label: &str,
     salt: &[u8; 32],
+    contenders: u32,
     entropy: [u8; 32],
     key: &ffi::IdentityKey,
     signer: &dyn SignerCallbacks,
@@ -355,9 +381,24 @@ pub fn build_dpns_domain(
         "domain",
         dpns_domain_document(Identifier::from(owner), label, salt),
         nonce,
-        Kind::Create { entropy },
+        Kind::Create {
+            entropy,
+            contest_fund: Some(contest_fund_to_join(version, contenders)),
+        },
         key,
         signer,
+    )
+}
+
+/// The fund a contested DPNS name create pays to join a contest of
+/// `contenders` under `version` (the contest's fund before protocol
+/// version 14 and below 250 contenders).
+pub fn contest_fund_to_join(version: &PlatformVersion, contenders: u32) -> Credits {
+    required_vote_resolution_fund_to_join(
+        &SystemDataContract::DPNS.id(),
+        "domain",
+        u16::try_from(contenders).unwrap_or(u16::MAX),
+        version,
     )
 }
 
@@ -404,7 +445,10 @@ pub fn build_profile(
             "profile",
             new_document(owner, properties),
             nonce,
-            Kind::Create { entropy },
+            Kind::Create {
+                entropy,
+                contest_fund: None,
+            },
             key,
             signer,
         );
@@ -415,11 +459,15 @@ pub fn build_profile(
     if existing.revision < INITIAL_REVISION {
         return Err("the profile to replace carries no revision".to_string());
     }
+    let revision = existing
+        .revision
+        .checked_add(1)
+        .ok_or("the profile to replace is at the last revision there is")?;
     let document = Document::V0(DocumentV0 {
         id: Identifier::from(existing.document_id),
         owner_id: owner,
         properties,
-        revision: Some(existing.revision + 1),
+        revision: Some(revision),
         ..Default::default()
     });
     build_system_document(
@@ -452,6 +500,11 @@ pub fn build_contact_request(
     key: &ffi::IdentityKey,
     signer: &dyn SignerCallbacks,
 ) -> Result<ffi::Built, String> {
+    // The SDK addresses the request to `recipient`; an input naming another
+    // identity is contradictory embedder state, refused before signing.
+    if input.to_user_id != recipient.id {
+        return Err("the contact request's to_user_id is not the recipient identity".to_string());
+    }
     let expected_recipient_pubkey = PublicKey::from_slice(&input.recipient_pubkey)
         .map_err(|e| format!("bad recipient public key: {e}"))?;
     let shared_secret = Zeroizing::new(input.shared_secret);
@@ -516,6 +569,7 @@ pub fn build_contact_request(
         nonce,
         Kind::Create {
             entropy: result.entropy.0,
+            contest_fund: None,
         },
         key,
         signer,

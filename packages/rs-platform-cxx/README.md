@@ -74,7 +74,9 @@ generated header `dash/platform/ffi.h`.
   `search_names` (prefix of 1 to 63 normalized characters, limit clamped to
   1..=100), `names_of_identity`, `get_profile`, `get_contact_requests` (to
   or from an identity, after a time, oldest first),
-  `get_contested_vote_state`. Paged reads return one page of up to their
+  `get_contested_vote_state` (up to 100 contenders a page, by identity id;
+  the first page also carries the tallies and the winner, a continuation
+  only the contenders after its cursor). Paged reads return one page of up to their
   limit; `page.has_more` is set on a page that fills it (which may still be
   the last one) and `page.next_start_after` is the cursor for the next call
   (all zero = from the start). Queries use this build's latest compiled-in
@@ -82,25 +84,33 @@ generated header `dash/platform/ffi.h`.
   only matters for building. At protocol version 13 Drive answers a
   continuation of `names_of_identity` with an empty page, so only its first
   100 names are reachable there and a continuation is `Unavailable` rather
-  than a last page.
+  than a last page. The same goes for a `get_contact_requests` continuation,
+  where Drive skips the requests created at the same time as the cursor;
+  re-reading with `since_ms` one below the last `created_at` and dropping
+  the requests already seen continues there.
 - **Broadcast**: `broadcast(&[u8]) -> BroadcastResult{status}`, advisory and
   typed: `Ok`, `AlreadyExists`, `Consensus` with `consensus_code`, `Rejected`
   (a definitive non-consensus refusal), `Unavailable` (no answer). Every
   write is confirmed by a proved re-query.
 - **Builders**, no network, returning `Built{bytes, hash, object_id}`:
   `build_identity_create`, `build_dpns_preorder`, `build_dpns_domain` (the
-  caller supplies and persists the salt), `build_profile` (create, or
+  caller supplies and persists the salt, and passes the number of
+  contenders `get_contested_vote_state` read, 0 for none: a contested name
+  states the fund to join that contest, `contest_fund_to_join`, which from
+  protocol version 14 doubles past 250 contenders), `build_profile` (create, or
   replace the `Profile` a `get_profile` returned at its revision + 1: a
   replace carries the whole document, so the avatar and payment-address
   fields another wallet set are carried over unedited),
   `build_contact_request` (minted by `Sdk::create_contact_request` with the
-  embedder's ECDH secret). A create carries the document id
+  embedder's ECDH secret; it needs no endpoints, and `to_user_id` must be
+  the recipient's id). A create carries the document id
   `dash-sdk`'s `put_to_platform` would derive at the network's version
   (from the entropy alone up to protocol version 13, also from the identity
   contract nonce from 14), and a property the network's contract does not
   have yet (DashPay's payment addresses before 14) is refused before
   anything is signed. Transition rules change across protocol
-  versions, so every builder (and `contested_vote_fund_credits`) needs the
+  versions, so every builder (and `contested_vote_fund_credits`,
+  `contest_fund_to_join`) needs the
   version a verified read has shown the network to run: before the first
   read the shell accepted they fail with a `rust::Error`, except on a
   devnet, whose floor is the latest version (regtest's is not: one read
@@ -112,7 +122,9 @@ generated header `dash/platform/ffi.h`.
   DIP-15 pieces that need only 32-byte inputs: `dip15_decrypt_xpub`,
   `dip15_account_reference_from_mac`,
   `dip15_unmask_account_reference_from_mac`, `dip15_select_recipient_key`,
-  `dip15_receive_keys_acceptable`. The infallible ones answer `false`, `0`
+  `dip15_receive_keys_acceptable`. `dip15_account_reference_from_mac`
+  refuses a version above 15 or an account index above 28 bits rather than
+  truncate it. The infallible ones answer `false`, `0`
   or empty on a (contained) panic, which reads as a refusal.
 
 `Status.kind` is one of `Ok, ProvenAbsent, AlreadyExists, Consensus,

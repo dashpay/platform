@@ -90,6 +90,21 @@ pub const CORE_PAYMENT_ADDRESS: [u8; 21] = [0x1a; 21];
 /// Names the third identity owns: one more than a page.
 pub const PAGED_NAME_COUNT: usize = dash_platform_cxx::ops::PAGE_SIZE as usize + 1;
 
+/// The sender and the recipient of the paged contact requests, which
+/// nothing else in the fixture involves.
+pub const PAGED_CONTACT_OWNER: [u8; 32] = [0x66; 32];
+pub const PAGED_CONTACT_RECIPIENT: [u8; 32] = [0x77; 32];
+/// `$createdAt` of the paged contact requests: a page boundary falls inside
+/// a group of requests created in the same block, with a later block after.
+pub const PAGED_CONTACT_CREATED_AT: [(u64, usize); 3] = [
+    (
+        1_700_000_100_000,
+        dash_platform_cxx::ops::PAGE_SIZE as usize - 1,
+    ),
+    (1_700_000_200_000, 3),
+    (1_700_000_300_000, 2),
+];
+
 /// The labels of the third identity's names, none of them contested (the
 /// `2` keeps them out of the contested pattern).
 pub fn paged_label(i: usize) -> String {
@@ -464,6 +479,31 @@ impl Fixture {
             )
             .expect("contact request");
         insert_document(&drive, &dashpay, "contactRequest", &contact, version);
+        let mut account_reference = 0u32;
+        for (created_at, count) in PAGED_CONTACT_CREATED_AT {
+            for _ in 0..count {
+                account_reference += 1;
+                let paged = contact_type
+                    .create_document_from_data(
+                        platform_value!({
+                            "toUserId": Identifier::from(PAGED_CONTACT_RECIPIENT),
+                            "encryptedPublicKey": Value::Bytes(vec![0x42u8; 96]),
+                            "senderKeyIndex": 2u32,
+                            "recipientKeyIndex": 3u32,
+                            "accountReference": account_reference,
+                            "$createdAt": created_at,
+                            "$createdAtCoreBlockHeight": CORE_CHAIN_LOCKED_HEIGHT,
+                        }),
+                        Identifier::from(PAGED_CONTACT_OWNER),
+                        HEIGHT,
+                        CORE_CHAIN_LOCKED_HEIGHT,
+                        rng.gen(),
+                        version,
+                    )
+                    .expect("paged contact request");
+                insert_document(&drive, &dashpay, "contactRequest", &paged, version);
+            }
+        }
 
         let alice_key0_hash = alice.public_keys()[&0].public_key_hash().expect("key hash");
         Fixture {

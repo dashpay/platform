@@ -291,11 +291,15 @@ pub mod ffi {
         page: Page,
     }
 
+    /// One page of a contest: the first (`start_after` all zero) carries
+    /// the tallies, winner and `ends_at` with up to 100 contenders; a
+    /// continuation carries only the contenders after its cursor.
     #[derive(Debug, Clone, Default)]
     struct VerifiedContested {
         status: Status,
         meta: Meta,
         value: ContestedState,
+        page: Page,
     }
 
     /// The node's answer to a broadcast: advisory, never proof-backed.
@@ -470,6 +474,9 @@ pub mod ffi {
         fn get_profile(self: &PlatformClient, owner: &[u8; 32]) -> VerifiedProfile;
         /// One page of up to 100 requests sent to (`to_me`) or by
         /// `identity`, created after `since_ms` (0 = all), oldest first.
+        /// Below protocol version 14 a continuation is `Unavailable`: Drive
+        /// skips the requests sharing the cursor's creation time. Continue
+        /// there with `since_ms` one below the last `created_at` instead.
         fn get_contact_requests(
             self: &PlatformClient,
             identity: &[u8; 32],
@@ -477,9 +484,12 @@ pub mod ffi {
             since_ms: u64,
             start_after: &[u8; 32],
         ) -> VerifiedContactRequests;
+        /// One page of up to 100 contenders, by identity id, plus the
+        /// tallies on the first page; `start_after` all zero starts over.
         fn get_contested_vote_state(
             self: &PlatformClient,
             normalized_label: &str,
+            start_after: &[u8; 32],
         ) -> VerifiedContested;
 
         // --- Broadcast --------------------------------------------------------
@@ -504,12 +514,17 @@ pub mod ffi {
             key: &IdentityKey,
             signer: &WalletSigner,
         ) -> Result<Built>;
+        /// `contenders`: how many contenders the name's contest holds (0 for
+        /// none), as `get_contested_vote_state` read them. A contested name
+        /// states the fund to join that contest (`contest_fund_to_join`).
+        #[allow(clippy::too_many_arguments)]
         fn build_dpns_domain(
             self: &PlatformClient,
             owner: &[u8; 32],
             nonce: u64,
             label: &str,
             salt: &[u8; 32],
+            contenders: u32,
             key: &IdentityKey,
             signer: &WalletSigner,
         ) -> Result<Built>;
@@ -543,14 +558,19 @@ pub mod ffi {
         /// version a verified read has shown the network to run; an error
         /// before that (the amount changed across versions).
         fn contested_vote_fund_credits(self: &PlatformClient) -> Result<u64>;
+        /// Credits a contested DPNS name create pays to join a contest of
+        /// `contenders` at the verified protocol version: from protocol
+        /// version 14 the fund doubles past 250 contenders.
+        fn contest_fund_to_join(self: &PlatformClient, contenders: u32) -> Result<u64>;
         fn credits_per_duff() -> u64;
         fn system_contract_id(which: SystemContract) -> Result<[u8; 32]>;
         fn dip15_decrypt_xpub(shared_secret: &[u8; 32], ciphertext: &[u8]) -> Result<CompactXpub>;
+        /// An error when `version` exceeds 15 or `account_index` 28 bits.
         fn dip15_account_reference_from_mac(
             mac: &[u8; 32],
             account_index: u32,
             version: u32,
-        ) -> u32;
+        ) -> Result<u32>;
         fn dip15_unmask_account_reference_from_mac(mac: &[u8; 32], reference: u32) -> AccountRef;
         fn dip15_select_recipient_key(identity: &Identity) -> Result<u32>;
         fn dip15_receive_keys_acceptable(
@@ -761,10 +781,14 @@ impl PlatformClient {
         )
     }
 
-    fn get_contested_vote_state(&self, normalized_label: &str) -> ffi::VerifiedContested {
+    fn get_contested_vote_state(
+        &self,
+        normalized_label: &str,
+        start_after: &[u8; 32],
+    ) -> ffi::VerifiedContested {
         guarded(
             "get_contested_vote_state",
-            || ops::get_contested_vote_state(&self.0, normalized_label),
+            || ops::get_contested_vote_state(&self.0, normalized_label, cursor(start_after)),
             ops::failed,
         )
     }
@@ -818,12 +842,14 @@ impl PlatformClient {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_dpns_domain(
         &self,
         owner: &[u8; 32],
         nonce: u64,
         label: &str,
         salt: &[u8; 32],
+        contenders: u32,
         key: &ffi::IdentityKey,
         signer: &ffi::WalletSigner,
     ) -> Result<ffi::Built, String> {
@@ -834,6 +860,7 @@ impl PlatformClient {
                 nonce,
                 label,
                 salt,
+                contenders,
                 builders::fresh_entropy(),
                 key,
                 signer,
@@ -875,7 +902,7 @@ impl PlatformClient {
     ) -> Result<ffi::Built, String> {
         fallible("build_contact_request", || {
             let version = self.0.verified_platform_version()?;
-            let sdk = self.0.sdk()?;
+            let sdk = self.0.local_sdk()?;
             builders::build_contact_request(
                 &sdk, version, sender, recipient, nonce, input, key, signer,
             )
@@ -886,6 +913,15 @@ impl PlatformClient {
         fallible("contested_vote_fund_credits", || {
             Ok(helpers::contested_vote_fund_credits(
                 self.0.verified_platform_version()?,
+            ))
+        })
+    }
+
+    fn contest_fund_to_join(&self, contenders: u32) -> Result<u64, String> {
+        fallible("contest_fund_to_join", || {
+            Ok(builders::contest_fund_to_join(
+                self.0.verified_platform_version()?,
+                contenders,
             ))
         })
     }
@@ -928,8 +964,12 @@ fn dip15_decrypt_xpub(
     })
 }
 
-fn dip15_account_reference_from_mac(mac: &[u8; 32], account_index: u32, version: u32) -> u32 {
-    guarded_default("dip15_account_reference_from_mac", || {
+fn dip15_account_reference_from_mac(
+    mac: &[u8; 32],
+    account_index: u32,
+    version: u32,
+) -> Result<u32, String> {
+    fallible("dip15_account_reference_from_mac", || {
         helpers::dip15_account_reference_from_mac(mac, account_index, version)
     })
 }

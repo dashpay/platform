@@ -75,12 +75,35 @@ fn ask28(mac: &[u8; 32]) -> u32 {
     u32::from_be_bytes([mac[28], mac[29], mac[30], mac[31]]) >> 4
 }
 
+/// Largest DIP-15 rotation version: it has the top four bits.
+pub const MAX_ACCOUNT_REFERENCE_VERSION: u32 = 0x0F;
+/// Largest account index an `accountReference` carries: the low 28 bits.
+pub const MAX_ACCOUNT_REFERENCE_INDEX: u32 = 0x0FFF_FFFF;
+
 /// Masks `account_index` into a DIP-15 `accountReference` carrying the
 /// rotation `version` in its top four bits (`platform-encryption`'s
 /// `calculate_account_reference` over a MAC Core computed with the
-/// ENCRYPTION key it never exports).
-pub fn dip15_account_reference_from_mac(mac: &[u8; 32], account_index: u32, version: u32) -> u32 {
-    (version << 28) | (ask28(mac) ^ (account_index & 0x0FFF_FFFF))
+/// ENCRYPTION key it never exports). A version or index that does not fit
+/// its bits is refused: truncating it would produce a reference that does
+/// not unmask to what the caller asked for.
+pub fn dip15_account_reference_from_mac(
+    mac: &[u8; 32],
+    account_index: u32,
+    version: u32,
+) -> Result<u32, String> {
+    if version > MAX_ACCOUNT_REFERENCE_VERSION {
+        return Err(format!(
+            "accountReference version {version} does not fit in four bits (at most \
+             {MAX_ACCOUNT_REFERENCE_VERSION})"
+        ));
+    }
+    if account_index > MAX_ACCOUNT_REFERENCE_INDEX {
+        return Err(format!(
+            "account index {account_index} does not fit in 28 bits (at most \
+             {MAX_ACCOUNT_REFERENCE_INDEX})"
+        ));
+    }
+    Ok((version << 28) | (ask28(mac) ^ account_index))
 }
 
 /// Inverse of [`dip15_account_reference_from_mac`] for the same MAC.
@@ -219,7 +242,8 @@ mod tests {
         assert_eq!(ask28(&mac), 0x01c1_d1e1);
         for version in [0u32, 1, 7, 15] {
             for account in [0u32, 1, 5, 0x0FFF_FFFF] {
-                let reference = dip15_account_reference_from_mac(&mac, account, version);
+                let reference =
+                    dip15_account_reference_from_mac(&mac, account, version).expect("in range");
                 let unmasked = dip15_unmask_account_reference_from_mac(&mac, reference);
                 assert_eq!(
                     (unmasked.version, unmasked.account_index),
@@ -227,7 +251,20 @@ mod tests {
                 );
             }
         }
-        assert_eq!(dip15_account_reference_from_mac(&mac, 0, 0), 0x01c1_d1e1);
+        assert_eq!(
+            dip15_account_reference_from_mac(&mac, 0, 0),
+            Ok(0x01c1_d1e1)
+        );
+    }
+
+    #[test]
+    fn account_reference_refuses_what_its_bits_cannot_carry() {
+        let mac = [7u8; 32];
+        // Version 16 would have come back as 0, a high index as another one.
+        assert!(dip15_account_reference_from_mac(&mac, 0, 16).is_err());
+        assert!(dip15_account_reference_from_mac(&mac, 0, u32::MAX).is_err());
+        assert!(dip15_account_reference_from_mac(&mac, 0x1000_0000, 0).is_err());
+        assert!(dip15_account_reference_from_mac(&mac, 0x0FFF_FFFF, 15).is_ok());
     }
 
     #[test]

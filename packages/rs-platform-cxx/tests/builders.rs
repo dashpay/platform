@@ -71,6 +71,7 @@ use dash_sdk::dpp::system_data_contracts::SystemDataContract;
 use dash_sdk::dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dash_sdk::dpp::util::hash::{hash_double, hash_single};
 use dash_sdk::dpp::util::strings::convert_to_homograph_safe_chars;
+use dash_sdk::dpp::version::v14::PROTOCOL_VERSION_14;
 use dash_sdk::dpp::version::{PlatformVersion, ProtocolVersion, LATEST_VERSION};
 use dash_sdk::platform::dashpay::{
     ContactRequestInput as SdkContactRequestInput, EcdhProvider, RecipientIdentity,
@@ -410,6 +411,7 @@ fn dpns_domain_matches_register_dpns_name_for_the_same_salt(protocol_version: Pr
         8,
         "Alice",
         &salt,
+        0,
         entropy,
         &high_key(),
         &wallet,
@@ -481,6 +483,65 @@ fn dpns_domain_matches_register_dpns_name_for_the_same_salt(protocol_version: Pr
     );
 }
 
+/// The fund a built domain create states into its contest.
+fn stated_contest_fund(built: &ffi::Built) -> Option<u64> {
+    let (state_transition, _, _) = document_transition(&built.bytes);
+    let StateTransition::Batch(batch) = &state_transition else {
+        unreachable!()
+    };
+    let Some(BatchedTransitionRef::Document(transition)) = batch.first_transition() else {
+        unreachable!()
+    };
+    let DocumentTransition::Create(create) = transition else {
+        panic!("not a create")
+    };
+    create
+        .prefunded_voting_balance()
+        .as_ref()
+        .map(|(_, credits)| *credits)
+}
+
+#[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
+fn contested_domain_states_the_fund_to_join_its_contest(protocol_version: ProtocolVersion) {
+    let version = version(protocol_version);
+    let base = dash_platform_cxx::helpers::contested_vote_fund_credits(version);
+    let build = |contenders: u32| {
+        builders::build_dpns_domain(
+            version,
+            owner().to_buffer(),
+            8,
+            "Alice",
+            &[0x55u8; 32],
+            contenders,
+            [0x66u8; 32],
+            &high_key(),
+            &Wallet::new(),
+        )
+        .expect("domain")
+    };
+    // A contest below 250 contenders takes its fund at every version.
+    assert_eq!(stated_contest_fund(&build(0)), Some(base));
+    assert_eq!(stated_contest_fund(&build(249)), Some(base));
+    // From protocol version 14 the fund doubles at 250 contenders and
+    // again for every 50 more; Drive refuses a create that states less.
+    // Before 14 it never doubles, and Drive wants the fund exactly.
+    let doubled = |times: u32| {
+        if protocol_version >= PROTOCOL_VERSION_14 {
+            base << times
+        } else {
+            base
+        }
+    };
+    assert_eq!(stated_contest_fund(&build(250)), Some(doubled(1)));
+    assert_eq!(stated_contest_fund(&build(300)), Some(doubled(2)));
+    for contenders in [0, 250, 300] {
+        assert_eq!(
+            stated_contest_fund(&build(contenders)),
+            Some(builders::contest_fund_to_join(version, contenders))
+        );
+    }
+}
+
 #[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
 fn uncontested_domain_carries_no_prefund(protocol_version: ProtocolVersion) {
     let version = version(protocol_version);
@@ -491,6 +552,7 @@ fn uncontested_domain_carries_no_prefund(protocol_version: ProtocolVersion) {
         1,
         "alice-2024",
         &[1u8; 32],
+        300,
         [2u8; 32],
         &high_key(),
         &wallet,
@@ -693,6 +755,24 @@ fn profile_create_and_replace(protocol_version: ProtocolVersion) {
         &wallet,
     )
     .is_err());
+    // Nor one at the last revision, which has no next one to replace it at.
+    let last = ffi::Profile {
+        revision: u64::MAX,
+        ..existing.clone()
+    };
+    let refused = Wallet::new();
+    assert!(builders::build_profile(
+        version,
+        owner().to_buffer(),
+        5,
+        &last,
+        &replace,
+        entropy,
+        &high_key(),
+        &refused,
+    )
+    .is_err());
+    assert!(refused.requests().is_empty());
 
     // A field the network's contract does not have is refused before
     // anything is signed, not after Drive charged for it.
@@ -1017,6 +1097,26 @@ fn contact_request_matches_send_contact_request_for_the_same_secret(
     )
     .unwrap_err();
     assert!(error.contains("recipient key"), "{error}");
+    assert!(refused.requests().is_empty());
+
+    // So does an input addressed to another identity than the recipient.
+    let elsewhere = ContactRequestInput {
+        to_user_id: [0x5au8; 32],
+        ..input.clone()
+    };
+    let refused = Wallet::new();
+    let error = builders::build_contact_request(
+        &sdk,
+        version,
+        &ffi_identity(&sender),
+        &ffi_identity(&recipient),
+        9,
+        &elsewhere,
+        &high_key(),
+        &refused,
+    )
+    .unwrap_err();
+    assert!(error.contains("to_user_id"), "{error}");
     assert!(refused.requests().is_empty());
 }
 
@@ -1381,6 +1481,7 @@ fn builders_never_enter_a_tokio_runtime(protocol_version: ProtocolVersion) {
         2,
         "alice",
         &[1u8; 32],
+        0,
         [2u8; 32],
         &high_key(),
         &wallet,

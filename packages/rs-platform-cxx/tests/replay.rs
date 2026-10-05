@@ -20,7 +20,8 @@ use common::{
     install_identity, install_ok, install_refusal, mock_client, mock_client_at, nonce_request,
     nonce_response, now_ms, offline_sdk, paged_label, quorum, Fixture, ABSENT_LABEL,
     CONTESTED_LABEL, CORE_CHAIN_LOCKED_HEIGHT, DEPLOYED_VERSION, DPNS_NONCE, HEIGHT, OWNED_LABEL,
-    PAGED_NAME_COUNT, PLATFORM_LLMQ_TYPE,
+    PAGED_CONTACT_CREATED_AT, PAGED_CONTACT_OWNER, PAGED_CONTACT_RECIPIENT, PAGED_NAME_COUNT,
+    PLATFORM_LLMQ_TYPE,
 };
 use dash_platform_cxx::client::{Client, HEIGHT_TOLERANCE};
 use dash_platform_cxx::ffi::{StatusKind, WinnerKind};
@@ -983,6 +984,89 @@ fn contact_requests_to_me_and_from_me(protocol_version: ProtocolVersion) {
     );
 }
 
+#[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
+fn contact_requests_page_across_a_shared_creation_time(protocol_version: ProtocolVersion) {
+    let fixture = Fixture::get(protocol_version);
+    let total: usize = PAGED_CONTACT_CREATED_AT
+        .iter()
+        .map(|(_, count)| count)
+        .sum();
+    for (field, identity, to_me) in [
+        ("toUserId", PAGED_CONTACT_RECIPIENT, true),
+        ("$ownerId", PAGED_CONTACT_OWNER, false),
+    ] {
+        let client = mock_client();
+        let query = DocumentQuery::new(fixture.dashpay().clone(), "contactRequest")
+            .expect("query")
+            .with_where(WhereClause {
+                field: field.to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(identity),
+            })
+            .with_order_by(OrderClause {
+                field: "$createdAt".to_string(),
+                ascending: true,
+            })
+            .with_limit(ops::PAGE_SIZE);
+        install_documents(fixture, &client, &query);
+        let first = ops::get_contact_requests(&client, identity, to_me, 0, None);
+        assert_kind(&first.status, StatusKind::Ok);
+        assert_eq!(first.items.len(), ops::PAGE_SIZE as usize, "{field}");
+        assert!(first.page.has_more);
+        // The page ends inside the group created in the same block.
+        let (boundary, _) = PAGED_CONTACT_CREATED_AT[1];
+        assert_eq!(first.items.last().expect("an item").created_at, boundary);
+
+        let cursor = first.page.next_start_after;
+        install_documents(fixture, &client, &continuation(query.clone(), cursor));
+        let mut rest = ops::get_contact_requests(&client, identity, to_me, 0, Some(cursor));
+        if protocol_version < PROTOCOL_VERSION_14 {
+            // Drive skips the rest of the boundary's creation time here (102
+            // of 104), so the shell refuses the continuation rather than
+            // report a short list as complete...
+            assert_kind(&rest.status, StatusKind::Unavailable);
+            // ...and re-reading from just below that time, without a
+            // cursor, recovers every request.
+            let since = boundary - 1;
+            let overlap = query.with_where(WhereClause {
+                field: "$createdAt".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(since),
+            });
+            install_documents(fixture, &client, &overlap);
+            rest = ops::get_contact_requests(&client, identity, to_me, since, None);
+            let seen: Vec<[u8; 32]> = first.items.iter().map(|r| r.document_id).collect();
+            rest.items
+                .retain(|request| !seen.contains(&request.document_id));
+        }
+        assert_kind(&rest.status, StatusKind::Ok);
+        assert!(!rest.page.has_more);
+        // The two pages partition the requests: no overlap, nothing skipped.
+        let mut ids: Vec<[u8; 32]> = first
+            .items
+            .iter()
+            .chain(rest.items.iter())
+            .map(|request| request.document_id)
+            .collect();
+        assert_eq!(
+            ids.len(),
+            total,
+            "{field}: {} after the cursor",
+            rest.items.len()
+        );
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), total, "{field}");
+        let created: Vec<u64> = first
+            .items
+            .iter()
+            .chain(rest.items.iter())
+            .map(|request| request.created_at)
+            .collect();
+        assert!(created.is_sorted(), "{field}: oldest first");
+    }
+}
+
 // --- contested names ---------------------------------------------------------
 
 #[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
@@ -1001,7 +1085,7 @@ fn contested_vote_state_tallies_and_absence(protocol_version: ProtocolVersion) {
         );
     };
     install_contest(&client, CONTESTED_LABEL);
-    let result = ops::get_contested_vote_state(&client, CONTESTED_LABEL);
+    let result = ops::get_contested_vote_state(&client, CONTESTED_LABEL, None);
     assert_kind(&result.status, StatusKind::Ok);
     let state = result.value;
     assert_eq!(state.winner_kind, WinnerKind::NoWinner);
@@ -1019,8 +1103,56 @@ fn contested_vote_state_tallies_and_absence(protocol_version: ProtocolVersion) {
     assert_eq!(votes(fixture.bob.id().to_buffer()), Some((1, true)));
 
     install_contest(&client, ABSENT_LABEL);
-    let absent = ops::get_contested_vote_state(&client, ABSENT_LABEL);
+    let absent = ops::get_contested_vote_state(&client, ABSENT_LABEL, None);
     assert_kind(&absent.status, StatusKind::ProvenAbsent);
+}
+
+#[test_matrix([DEPLOYED_VERSION, LATEST_VERSION])]
+fn contested_vote_state_pages_by_contender(protocol_version: ProtocolVersion) {
+    let fixture = Fixture::get(protocol_version);
+    let client = mock_client();
+    let label = dash_platform_cxx::helpers::normalize_label(CONTESTED_LABEL);
+    let install_page = |cursor: Option<[u8; 32]>| {
+        let mut query = fixture.contested_query(&label);
+        query.start_at = cursor.map(|id| (id, false));
+        let metadata = fixture.metadata();
+        let proof = fixture.proof(fixture.prove_contested_vote_state(query.clone()), &metadata);
+        install_ok(
+            fixture,
+            &client,
+            &contested_request(fixture, &query),
+            contested_response(proof, metadata),
+        );
+    };
+    install_page(None);
+    let first = ops::get_contested_vote_state(&client, CONTESTED_LABEL, None);
+    assert_kind(&first.status, StatusKind::Ok);
+    assert_eq!(first.value.contenders.len(), 2);
+    assert!(!first.page.has_more, "a short page is the last one");
+    let ids: Vec<[u8; 32]> = first
+        .value
+        .contenders
+        .iter()
+        .map(|contender| contender.identity)
+        .collect();
+    assert!(ids.is_sorted(), "contenders come in identity id order");
+    assert_eq!(first.page.next_start_after, ids[1]);
+
+    // A continuation after the first contender: only the second, and no
+    // tallies, which come with the first page.
+    install_page(Some(ids[0]));
+    let rest = ops::get_contested_vote_state(&client, CONTESTED_LABEL, Some(ids[0]));
+    assert_kind(&rest.status, StatusKind::Ok);
+    assert_eq!(rest.value.contenders.len(), 1);
+    assert_eq!(rest.value.contenders[0].identity, ids[1]);
+    assert_eq!((rest.value.abstain, rest.value.lock), (0, 0));
+
+    // After the last one the contest is over, not absent.
+    install_page(Some(ids[1]));
+    let end = ops::get_contested_vote_state(&client, CONTESTED_LABEL, Some(ids[1]));
+    assert_kind(&end.status, StatusKind::Ok);
+    assert!(end.value.contenders.is_empty());
+    assert!(!end.page.has_more);
 }
 
 // --- broadcast ---------------------------------------------------------------

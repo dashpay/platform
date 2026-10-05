@@ -33,7 +33,7 @@ bool is_kind(const platform_ffi::Status& status, platform_ffi::StatusKind kind)
 
 int main()
 {
-    platform_ffi::Config cfg;
+    platform_ffi::Config cfg{};
     cfg.network = 1;
     cfg.platform_llmq_type = 106;
     cfg.proxy.kind = 0;
@@ -89,7 +89,7 @@ int main()
     // Trust inputs round-trip. The slices view plain C++ containers: the
     // bridge takes `&[T]`, so no rust::Vec instantiation is needed.
     try {
-        platform_ffi::QuorumKey key;
+        platform_ffi::QuorumKey key{};
         for (std::size_t i = 0; i < key.hash.size(); ++i) key.hash[i] = static_cast<std::uint8_t>(i);
         for (std::size_t i = 0; i < key.pubkey.size(); ++i) key.pubkey[i] = static_cast<std::uint8_t>(i);
         const std::vector<platform_ffi::QuorumKey> keys{key};
@@ -136,7 +136,7 @@ int main()
     if (expect_error("contested_vote_fund_credits before a verified read",
                      [&] { client->contested_vote_fund_credits(); }))
         return 1;
-    platform_ffi::Config devnet_cfg;
+    platform_ffi::Config devnet_cfg{};
     devnet_cfg.network = 2;
     devnet_cfg.platform_llmq_type = 106;
     rust::Box<platform_ffi::PlatformClient> devnet = platform_ffi::new_platform_client(devnet_cfg);
@@ -154,7 +154,7 @@ int main()
             signer_called = true;
             return false;
         });
-    platform_ffi::IdentityKey key;
+    platform_ffi::IdentityKey key{};
     key.id = 1;
     key.purpose = 0;
     key.security_level = 2;
@@ -170,9 +170,9 @@ int main()
         }))
         return 1;
     if (expect_error("build_contact_request before a verified read", [&] {
-            platform_ffi::Identity sender;
+            platform_ffi::Identity sender{};
             sender.id = id;
-            platform_ffi::ContactRequestInput input;
+            platform_ffi::ContactRequestInput input{};
             input.to_user_id = id;
             client->build_contact_request(sender, sender, std::uint64_t{1}, input, key, signer);
         }))
@@ -184,24 +184,24 @@ int main()
         return 1;
     if (!signer_called) return fail("the devnet builder never reached the signer");
     if (expect_error("build_dpns_domain", [&] {
-            devnet->build_dpns_domain(id, std::uint64_t{1}, "alice", id, key, signer);
+            devnet->build_dpns_domain(id, std::uint64_t{1}, "alice", id, std::uint32_t{0}, key, signer);
         }))
         return 1;
     if (expect_error("build_profile", [&] {
-            platform_ffi::Profile existing;
+            platform_ffi::Profile existing{};
             existing.document_id = id;
             existing.owner = id;
             existing.revision = 1;
-            platform_ffi::ProfileInput profile;
+            platform_ffi::ProfileInput profile{};
             profile.display_name = "name";
             devnet->build_profile(id, std::uint64_t{1}, existing, profile, key, signer);
         }))
         return 1;
     if (expect_error("build_contact_request", [&] {
-            platform_ffi::Identity sender;
+            platform_ffi::Identity sender{};
             sender.id = id;
             platform_ffi::Identity recipient = sender;
-            platform_ffi::ContactRequestInput input;
+            platform_ffi::ContactRequestInput input{};
             input.to_user_id = id;
             input.sender_key_index = 2;
             input.recipient_key_index = 2;
@@ -210,7 +210,7 @@ int main()
         }))
         return 1;
     if (expect_error("build_identity_create", [&] {
-            platform_ffi::AssetLockProofInput proof;
+            platform_ffi::AssetLockProofInput proof{};
             proof.is_instant = false;
             proof.core_chain_locked_height = 1;
             const std::vector<platform_ffi::NewIdentityKey> keys;
@@ -232,6 +232,9 @@ int main()
     const std::uint32_t reference = platform_ffi::dip15_account_reference_from_mac(mac, 5, 3);
     const auto unmasked = platform_ffi::dip15_unmask_account_reference_from_mac(mac, reference);
     if (unmasked.version != 3 || unmasked.account_index != 5) return fail("account reference");
+    if (expect_error("an accountReference version above 15",
+                     [&] { platform_ffi::dip15_account_reference_from_mac(mac, 5, 16); }))
+        return 1;
     if (platform_ffi::dip15_receive_keys_acceptable(1, 2, 0)) return fail("key 0 accepted");
     if (!platform_ffi::dip15_receive_keys_acceptable(1, 2, 3)) return fail("keys refused");
 

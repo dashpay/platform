@@ -632,6 +632,13 @@ pub fn get_profile(client: &Client, owner: [u8; 32]) -> ffi::VerifiedProfile {
 /// One page of the contact requests sent to (`to_me`) or by `identity`,
 /// created after `since_ms`, oldest first. The `$createdAt` order pins the
 /// contract's `(field, $createdAt)` index, which a bare equality would not.
+/// Up to protocol version 13 Drive continues this index after the cursor's
+/// `$createdAt`, skipping the requests created at the same time as the
+/// cursor that sort after it (requests from one block share it): a
+/// continuation answered there is `Unavailable` instead, so no request is
+/// silently left out. Re-reading from `since_ms` = the last request's
+/// `created_at` - 1, without a cursor, and dropping the requests already
+/// seen continues safely.
 pub fn get_contact_requests(
     client: &Client,
     identity: [u8; 32],
@@ -655,22 +662,36 @@ pub fn get_contact_requests(
             .with_order_by(ascending("$createdAt"))
             .with_limit(PAGE_SIZE)
     });
-    page(client, query, contact_request, |items, page| {
+    let mut result = page(client, query, contact_request, |items, page| {
         ffi::VerifiedContactRequests {
             items,
             page,
             ..Default::default()
         }
-    })
+    });
+    if cursor.is_some()
+        && result.status.kind == StatusKind::Ok
+        && result.meta.protocol_version < PROTOCOL_VERSION_14
+    {
+        result.status = Status::unavailable(format!(
+            "protocol version {} cannot continue a contact request page after a cursor \
+             (fixed in {}): read again with since_ms one below the last request's created_at",
+            result.meta.protocol_version, PROTOCOL_VERSION_14
+        ));
+    }
+    result
 }
 
 // --- contested names -------------------------------------------------------
 
 /// A finished or empty contest is a `Contenders` with no contenders; the
 /// SDK folds a proven-absent contest into the same shape, so absence is
-/// read off the tallies: a real contest always carries them.
-fn contested_state(contenders: Contenders) -> Option<ffi::ContestedState> {
-    if contenders.contenders.is_empty()
+/// read off the tallies: a real contest always carries them. Only the first
+/// page does, though: a `continuation` (contenders after a cursor, which
+/// the first page proved to be in a contest) is never an absence.
+fn contested_state(contenders: Contenders, continuation: bool) -> Option<ffi::ContestedState> {
+    if !continuation
+        && contenders.contenders.is_empty()
         && contenders.winner.is_none()
         && contenders.abstain_vote_tally.is_none()
         && contenders.lock_vote_tally.is_none()
@@ -707,9 +728,17 @@ fn contested_state(contenders: Contenders) -> Option<ffi::ContestedState> {
     Some(state)
 }
 
-/// The vote state of the contested name `normalized_label` (tallies,
-/// including abstain and lock); `ProvenAbsent` = no contest.
-pub fn get_contested_vote_state(client: &Client, normalized_label: &str) -> ffi::VerifiedContested {
+/// One page of the vote state of the contested name `normalized_label`,
+/// contenders ordered by identity id; `ProvenAbsent` = no contest. The
+/// first page (no `cursor`) carries the tallies, including abstain and
+/// lock, and the winner; Drive answers a continuation with the contenders
+/// after the cursor only. A page that fills [`CONTESTED_VOTE_COUNT`]
+/// reports more, as a document page does.
+pub fn get_contested_vote_state(
+    client: &Client,
+    normalized_label: &str,
+    cursor: Option<[u8; 32]>,
+) -> ffi::VerifiedContested {
     let query = ContestedDocumentVotePollDriveQuery {
         vote_poll: ContestedDocumentResourceVotePoll {
             contract_id: SystemDataContract::DPNS.id(),
@@ -722,20 +751,30 @@ pub fn get_contested_vote_state(client: &Client, normalized_label: &str) -> ffi:
         },
         result_type: ContestedDocumentVotePollDriveQueryResultType::VoteTally,
         allow_include_locked_and_abstaining_vote_tally: true,
-        start_at: None,
+        start_at: cursor.map(|id| (id, false)),
         limit: Some(CONTESTED_VOTE_COUNT),
         offset: None,
     };
+    let continuation = cursor.is_some();
     fetch(
         client,
         move |sdk| async move {
             ContenderWithSerializedDocument::fetch_many_with_metadata(&sdk, query, None)
                 .await
-                .map(|(contenders, metadata)| (contested_state(contenders), metadata))
+                .map(|(contenders, metadata)| (contested_state(contenders, continuation), metadata))
         },
         |value| {
+            let page = ffi::Page {
+                next_start_after: value
+                    .contenders
+                    .last()
+                    .map(|contender| contender.identity)
+                    .unwrap_or_default(),
+                has_more: value.contenders.len() >= usize::from(CONTESTED_VOTE_COUNT),
+            };
             Ok(ffi::VerifiedContested {
                 value,
+                page,
                 ..Default::default()
             })
         },
@@ -847,23 +886,32 @@ mod tests {
 
     #[test]
     fn empty_contenders_read_as_no_contest() {
-        assert!(contested_state(Contenders::default()).is_none());
+        assert!(contested_state(Contenders::default(), false).is_none());
+    }
+
+    #[test]
+    fn an_empty_continuation_is_the_end_of_a_contest_not_absence() {
+        let state = contested_state(Contenders::default(), true).expect("a page");
+        assert!(state.contenders.is_empty());
     }
 
     #[test]
     fn a_finished_poll_without_contenders_is_still_a_contest() {
-        let state = contested_state(Contenders {
-            winner: Some((
-                ContestedDocumentVotePollWinnerInfo::Locked,
-                BlockInfo {
-                    time_ms: 77,
-                    ..Default::default()
-                },
-            )),
-            contenders: Default::default(),
-            abstain_vote_tally: Some(0),
-            lock_vote_tally: Some(3),
-        })
+        let state = contested_state(
+            Contenders {
+                winner: Some((
+                    ContestedDocumentVotePollWinnerInfo::Locked,
+                    BlockInfo {
+                        time_ms: 77,
+                        ..Default::default()
+                    },
+                )),
+                contenders: Default::default(),
+                abstain_vote_tally: Some(0),
+                lock_vote_tally: Some(3),
+            },
+            false,
+        )
         .expect("a contest");
         assert_eq!(state.winner_kind, ffi::WinnerKind::Locked);
         assert_eq!((state.lock, state.ends_at), (3, 77));
@@ -871,12 +919,15 @@ mod tests {
 
     #[test]
     fn zero_tallies_are_a_contest_not_absence() {
-        assert!(contested_state(Contenders {
-            winner: None,
-            contenders: Default::default(),
-            abstain_vote_tally: Some(0),
-            lock_vote_tally: Some(0),
-        })
+        assert!(contested_state(
+            Contenders {
+                winner: None,
+                contenders: Default::default(),
+                abstain_vote_tally: Some(0),
+                lock_vote_tally: Some(0),
+            },
+            false
+        )
         .is_some());
     }
 
