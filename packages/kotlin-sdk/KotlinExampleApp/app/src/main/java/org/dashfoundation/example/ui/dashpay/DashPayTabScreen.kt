@@ -332,10 +332,11 @@ fun DashPayTabScreen(navController: NavHostController) {
                         // with no recoverable index and would alias identity 0's tip pool.
                         // produceState keeps its last value when its keys change, so each result
                         // is tagged with the inputs it was resolved for and a result for another
-                        // identity or wallet is never offered while the new lookup runs.
-                        val tipAccountKey = listOf(managed, tipManager, identityHex)
+                        // identity or wallet is never offered while the new lookup runs. Room's
+                        // index is only a key: discovery re-slotting a placeholder rewrites it.
+                        val tipAccountKey = listOf(managed, tipManager, identityHex, identity.identityIndex)
                         val taggedTipAccount by produceState<Pair<List<Any?>, Result<Int>>?>(
-                            initialValue = null, managed, tipManager, identityHex,
+                            initialValue = null, managed, tipManager, identityHex, identity.identityIndex,
                         ) {
                             value = tipAccountKey to runCatching {
                                 val index = requireNotNull(managed) { "Wallet is not loaded" }

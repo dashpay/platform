@@ -79,8 +79,9 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) { walletId?.let { manager?.wallet(forWalletId = it) } }
 
-    // Derived from the live identity's index, not Room's placeholder 0 (see DashPayTabScreen).
-    val tipAccount by produceState<Int?>(initialValue = null, wallet, manager, identityIdHex) {
+    // Derived from the live identity's index, not Room's placeholder 0 (see DashPayTabScreen);
+    // Room's index is only a key so a discovery re-slot reruns the lookup.
+    val tipAccount by produceState<Int?>(initialValue = null, wallet, manager, identityIdHex, identity?.identityIndex) {
         value = wallet?.let { w ->
             runCatching { w.identityIndex(idBytes)?.let { index -> manager?.shieldedTipAccountIndex(index) } }
                 .getOrNull()
