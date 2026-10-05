@@ -453,7 +453,8 @@ impl IdentityWallet {
                         // The key hash at `identity_index` proved the index: add
                         // the identity there, or move an identity known from
                         // elsewhere into that slot. A slot held by a different
-                        // identity means one of the two local records is stale.
+                        // identity (whether the incoming one is new or known)
+                        // means one of the two local records is stale.
                         // Skip this index without touching either identity, mark
                         // it unanswered so the next launch rescans, and keep
                         // walking: aborting here would also stop the stale

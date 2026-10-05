@@ -382,6 +382,62 @@ mod tests {
         ));
     }
 
+    /// An unknown identity verified at a slot that already holds a different
+    /// identity (a restored placeholder, say) must not overwrite it: the
+    /// occupant's state would be discarded while its reverse-index entry kept
+    /// resolving to the newcomer. Refused with the typed error, changing and
+    /// persisting nothing, through `add_identity` and the shared placement.
+    #[test]
+    fn an_unknown_identity_cannot_take_an_occupied_slot() {
+        use std::sync::atomic::Ordering;
+        let mut manager = IdentityManager::new();
+        let wallet_id: WalletId = [9u8; 32];
+        let counter = Arc::new(CountingPersistence::default());
+        let p = WalletPersister::new(wallet_id, Arc::clone(&counter) as _);
+
+        let occupant = Identifier::from([0xB0; 32]);
+        manager
+            .add_identity(create_test_identity(occupant), 0, wallet_id, &p)
+            .unwrap();
+        let newcomer = Identifier::from([0xA0; 32]);
+        let stores_before = counter.stores.load(Ordering::SeqCst);
+
+        for attempt in [
+            manager.add_identity(create_test_identity(newcomer), 0, wallet_id, &p),
+            manager
+                .place_verified_identity(create_test_identity(newcomer), 0, wallet_id, &p)
+                .map(|_| ()),
+        ] {
+            assert!(
+                matches!(
+                    attempt,
+                    Err(PlatformWalletError::IdentityIndexOccupied {
+                        identity_id,
+                        identity_index: 0,
+                        occupant: held,
+                    }) if identity_id == newcomer && held == occupant
+                ),
+                "{attempt:?}"
+            );
+        }
+
+        assert_eq!(counter.stores.load(Ordering::SeqCst), stores_before);
+        assert_eq!(
+            manager.identity(&occupant).map(|m| m.identity.id()),
+            Some(occupant)
+        );
+        assert!(manager.identity(&newcomer).is_none());
+        assert_eq!(manager.identity_index(&occupant), Some(0));
+        let bucket = &manager.wallet_identities[&wallet_id];
+        assert_eq!(bucket.len(), 1);
+        assert_eq!(bucket[&0].identity.id(), occupant);
+        // A free slot is still fine.
+        manager
+            .add_identity(create_test_identity(newcomer), 1, wallet_id, &p)
+            .unwrap();
+        assert_eq!(manager.identity_index(&newcomer), Some(1));
+    }
+
     #[test]
     fn test_add_out_of_wallet_identity() {
         let mut manager = IdentityManager::new();

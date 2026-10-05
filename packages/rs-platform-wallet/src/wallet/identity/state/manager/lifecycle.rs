@@ -39,7 +39,10 @@ impl IdentityManager {
     /// onto the value at insert time.
     ///
     /// Errors if an identity with the same id already exists in either
-    /// bucket.
+    /// bucket, or with [`PlatformWalletError::IdentityIndexOccupied`] if the
+    /// slot already holds a different identity (inserting would silently
+    /// discard the occupant while its reverse-index entry kept pointing at
+    /// the slot). Nothing is changed or persisted on either error.
     ///
     /// Persists the resulting changeset via `persister` and returns `()`.
     pub fn add_identity(
@@ -53,6 +56,17 @@ impl IdentityManager {
 
         if self.identity(&identity_id).is_some() {
             return Err(PlatformWalletError::IdentityAlreadyExists(identity_id));
+        }
+        if let Some(occupant) = self
+            .wallet_identities
+            .get(&wallet_id)
+            .and_then(|bucket| bucket.get(&identity_index))
+        {
+            return Err(PlatformWalletError::IdentityIndexOccupied {
+                identity_id,
+                identity_index,
+                occupant: occupant.identity.id(),
+            });
         }
 
         let mut managed_identity = ManagedIdentity::new(identity, identity_index);
