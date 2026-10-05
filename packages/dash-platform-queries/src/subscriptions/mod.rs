@@ -27,7 +27,7 @@ use dpp::prelude::Identifier;
 use drive::query::{ValueClause, WhereClause};
 
 pub use proto::subscribe_request;
-pub use resolved::{FilterMatch, ResolvedFilters};
+pub use resolved::{canonical_operands, FilterMatch, ResolvedFilters};
 
 /// Most filters one subscription may carry.
 pub const MAX_FILTERS: usize = 16;

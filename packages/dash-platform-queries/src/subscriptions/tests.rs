@@ -734,3 +734,118 @@ fn should_match_a_shielded_token_unshield_by_token_and_recipient() {
     .unwrap();
     assert!(matches(&recipient, &unshield).is_some());
 }
+
+#[test]
+fn should_match_a_document_buyer_as_recipient() {
+    use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::DocumentPurchaseTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransition;
+    let contract = contract();
+    let buyer = id(6);
+    let purchase = BatchedTransition::Document(DocumentTransition::Purchase(
+        DocumentPurchaseTransition::V0(DocumentPurchaseTransitionV0 {
+            base: document_base(&contract, "niceDocument", 10),
+            revision: 2,
+            price: 100,
+        }),
+    ));
+    let filters = resolve(
+        vec![StateTransitionFilter::Identities {
+            identity_ids: vec![buyer],
+            role: Role::Recipient,
+        }],
+        &contract,
+    )
+    .unwrap();
+    assert_eq!(
+        matches(
+            &filters,
+            &batch(buyer, vec![create_document(&contract, 11, "x"), purchase])
+        ),
+        Some(FilterMatch {
+            matched_filters: vec![0],
+            matched_batch_positions: vec![1],
+        })
+    );
+}
+
+#[test]
+fn should_bound_price_in_candidates() {
+    use drive::query::ValueClause;
+    let contract = contract();
+    let price_in = |values: Vec<Value>| {
+        StateTransitionFilter::Documents(
+            DocumentFilter::new(contract.id())
+                .with_document_type("niceDocument")
+                .with_action(
+                    DocumentActionMatch::new(DocumentAction::UpdatePrice).with_price(ValueClause {
+                        operator: WhereOperator::In,
+                        value: Value::Array(values),
+                    }),
+                ),
+        )
+    };
+    let too_many = price_in((0..20_000u64).map(|n| Value::U64(n % 3)).collect());
+    let duplicates = price_in(vec![Value::U64(1), Value::U64(1)]);
+    for filter in [too_many, duplicates] {
+        assert!(resolve(vec![filter.clone()], &contract).is_err());
+        let wire = StateTransitionFilter::from_proto(0, filter.to_proto().unwrap()).unwrap();
+        assert!(resolve(vec![wire], &contract).is_err());
+    }
+    assert!(resolve(
+        vec![price_in(vec![Value::U64(1), Value::U64(2)])],
+        &contract
+    )
+    .is_ok());
+}
+
+#[test]
+fn should_send_operands_as_the_schema_stores_them() {
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+    let documents = platform_value!({
+        "reading": {
+            "type": "object",
+            "properties": {
+                "value": { "type": "number", "position": 0 },
+                "blob": { "type": "array", "byteArray": true, "maxItems": 8, "position": 1 }
+            },
+            "additionalProperties": false
+        }
+    });
+    let contract = Arc::new(
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(id(1), 1, documents, None, None)
+            .expect("the contract parses")
+            .data_contract_owned(),
+    );
+    let clause = |field: &str, value| drive::query::WhereClause {
+        field: field.to_string(),
+        operator: WhereOperator::Equal,
+        value,
+    };
+    let filter = StateTransitionFilter::Documents(
+        DocumentFilter::new(contract.id())
+            .with_document_type("reading")
+            .with_action(
+                DocumentActionMatch::new(DocumentAction::Create)
+                    .with_new_document_where(clause("value", Value::U128(1 << 64)))
+                    .with_new_document_where(clause(
+                        "blob",
+                        Value::Array(vec![Value::U8(1), Value::U8(2)]),
+                    )),
+            ),
+    );
+    resolve(vec![filter.clone()], &contract).expect("resolves natively");
+    // Sent as given, the operands arrive as text and u64s, which the node refuses.
+    let raw = StateTransitionFilter::from_proto(0, filter.to_proto().unwrap()).unwrap();
+    assert!(resolve(vec![raw], &contract).is_err());
+    let canonical = canonical_operands(
+        &filter,
+        |_| Some(contract.clone()),
+        PlatformVersion::latest(),
+    )
+    .expect("canonical operands");
+    let wire = StateTransitionFilter::from_proto(0, canonical.to_proto().unwrap()).unwrap();
+    resolve(vec![wire], &contract).expect("resolves after the wire round trip");
+}

@@ -28,7 +28,7 @@ use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::Version;
 use dapi_grpc::platform::v0::{SubscribeToStateTransitionsRequest, SubscribeToStateTransitionsResponse};
 use dapi_grpc::tonic::{Code, Status, Streaming};
 use dash_platform_queries::subscriptions::{
-    subscribe_request, ResolvedFilters, StateTransitionFilter, MAX_FILTERS,
+    canonical_operands, subscribe_request, ResolvedFilters, StateTransitionFilter, MAX_FILTERS,
 };
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::data_contract::DataContract;
@@ -37,7 +37,7 @@ use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::{sleep, TransportError};
-use rs_dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
+use rs_dapi_client::{Address, DapiClientError, DapiRequestExecutor, RequestSettings};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -93,6 +93,8 @@ pub struct StateTransitionSubscription {
     stream: Option<Streaming<SubscribeToStateTransitionsResponse>>,
     /// Messages received on the current stream.
     stream_messages: u32,
+    /// The node serving the current stream.
+    stream_address: Option<Address>,
     /// Where the next stream starts; `None` until the first checkpoint of a live-only start.
     resume_from: Option<u64>,
     consecutive_failures: u32,
@@ -142,6 +144,14 @@ impl Sdk {
                 data_contract_ids: data_contract_ids.into_iter().collect(),
             });
         }
+        // Send operands in the form the schema stores them, so the node reads what was meant.
+        let filters = filters
+            .iter()
+            .map(|filter| {
+                canonical_operands(filter, |id| contracts.get(id).cloned(), self.version())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Error::Config)?;
         let resolved = ResolvedFilters::resolve(
             filters.clone(),
             |id| contracts.get(id).cloned(),
@@ -156,6 +166,7 @@ impl Sdk {
             resolved,
             stream: None,
             stream_messages: 0,
+            stream_address: None,
             resume_from: from_block_height,
             consecutive_failures: 0,
             contracts_to_refresh: BTreeSet::new(),
@@ -201,6 +212,19 @@ impl StateTransitionSubscription {
             };
             if let Some(status) = &failure {
                 tracing::debug!(code = ?status.code(), message = status.message(), "state transition stream broke; resuming");
+                // Resume elsewhere when the node itself is at fault, rather than reconnecting
+                // to it; a stream ended by its lifetime or the client says nothing of the node.
+                if node_at_fault(status) {
+                    if let Some(address) = &self.stream_address {
+                        self.sdk.address_list().ban_with_reason(
+                            address,
+                            Some(format!(
+                                "state transition stream failed: {}",
+                                status.message()
+                            )),
+                        );
+                    }
+                }
             }
             self.stream = None;
             self.consecutive_failures += 1;
@@ -231,14 +255,16 @@ impl StateTransitionSubscription {
         })
     }
 
-    async fn open(&self) -> Result<Streaming<SubscribeToStateTransitionsResponse>, Error> {
+    async fn open(&mut self) -> Result<Streaming<SubscribeToStateTransitionsResponse>, Error> {
         let request: SubscribeToStateTransitionsRequest =
             subscribe_request(&self.filters, self.resume_from)?;
-        self.sdk
-            .execute(request, RequestSettings::default())
-            .await
-            .into_inner()
-            .map_err(Error::from)
+        match self.sdk.execute(request, RequestSettings::default()).await {
+            Ok(response) => {
+                self.stream_address = Some(response.address);
+                Ok(response.inner)
+            }
+            Err(error) => Err(Error::from(error.inner)),
+        }
     }
 
     /// Open a new stream after a break, backing off after consecutive failures.
@@ -368,6 +394,20 @@ impl StateTransitionSubscription {
     }
 }
 
+/// Whether a stream failure says the serving node cannot serve this subscription (it lacks
+/// history, cannot read or decode a block, or Tenderdash is unreachable), so another node
+/// should be tried; not an ended stream lifetime, a cancellation or a slow client.
+fn node_at_fault(status: &Status) -> bool {
+    matches!(
+        status.code(),
+        Code::OutOfRange
+            | Code::FailedPrecondition
+            | Code::Unavailable
+            | Code::Internal
+            | Code::Unknown
+    )
+}
+
 /// Whether a stream that failed with `status` can continue on a new stream.
 fn resumable(status: &Status) -> bool {
     matches!(
@@ -429,6 +469,7 @@ mod tests {
             resolved,
             stream: None,
             stream_messages: 0,
+            stream_address: None,
             resume_from: None,
             consecutive_failures: 0,
             contracts_to_refresh: BTreeSet::new(),
@@ -750,5 +791,26 @@ mod tests {
             .accept(response(Responses::StateTransition(matched(fabricated))))
             .expect("skipped, not failed")
             .is_none());
+    }
+
+    #[test]
+    fn should_move_off_a_node_only_when_it_is_at_fault() {
+        for code in [
+            Code::OutOfRange,
+            Code::FailedPrecondition,
+            Code::Unavailable,
+            Code::Internal,
+        ] {
+            assert!(node_at_fault(&Status::new(code, "")), "{code:?}");
+        }
+        // An ended lifetime, a cancellation or a slow client is not the node's fault.
+        for code in [
+            Code::DeadlineExceeded,
+            Code::Cancelled,
+            Code::ResourceExhausted,
+            Code::Aborted,
+        ] {
+            assert!(!node_at_fault(&Status::new(code, "")), "{code:?}");
+        }
     }
 }

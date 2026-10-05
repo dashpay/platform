@@ -201,11 +201,15 @@ fn state_transition_owner(state_transition: &StateTransition) -> Identifier {
     state_transition.owner_id().unwrap_or_default()
 }
 
-/// The identity a batch's inner document transition names as recipient: a transfer's new
-/// owner.
-pub(super) fn document_recipient(transition: &DocumentTransition) -> Option<Identifier> {
+/// The identity a batch's inner document transition makes the document's new owner: a
+/// transfer's recipient, or for a purchase the batch owner, who buys it.
+pub(super) fn document_recipient(
+    transition: &DocumentTransition,
+    batch_owner_id: Identifier,
+) -> Option<Identifier> {
     match transition {
         DocumentTransition::Transfer(transfer) => Some(transfer.recipient_owner_id()),
+        DocumentTransition::Purchase(_) => Some(batch_owner_id),
         _ => None,
     }
 }

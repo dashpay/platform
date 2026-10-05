@@ -278,6 +278,56 @@ impl ResolvedFilters {
     }
 }
 
+/// `filter` with every clause operand in the form the document type stores its field in, as
+/// it should be sent: the wire carries a few primitive types, so an operand the matcher accepts
+/// in another representation (a `u128` for a float field, `u8`s for a byte array) would arrive
+/// as something else. Filters other than typed document filters are returned unchanged.
+pub fn canonical_operands(
+    filter: &StateTransitionFilter,
+    data_contract: impl Fn(&Identifier) -> Option<Arc<DataContract>>,
+    platform_version: &PlatformVersion,
+) -> Result<StateTransitionFilter, String> {
+    let StateTransitionFilter::Documents(document_filter) = filter else {
+        return Ok(filter.clone());
+    };
+    let Some(document_type_name) = &document_filter.document_type_name else {
+        return Ok(filter.clone());
+    };
+    let contract = data_contract(&document_filter.data_contract_id).ok_or_else(|| {
+        format!(
+            "data contract {} not found",
+            document_filter.data_contract_id
+        )
+    })?;
+    let document_type = contract
+        .document_type_for_name(document_type_name)
+        .map_err(|e| e.to_string())?;
+    let mut canonical = document_filter.clone();
+    for action in &mut canonical.actions {
+        for clause in action
+            .new_document_where
+            .iter_mut()
+            .chain(action.original_document_where.iter_mut())
+        {
+            canonicalize_where_clause(document_type, clause, platform_version)
+                .map_err(|e| e.to_string())?;
+        }
+        if let Some(price) = &mut action.price {
+            price.value = match &price.value {
+                Value::Array(values) => Value::Array(
+                    values
+                        .iter()
+                        .map(|value| value.to_integer::<u64>().map(Value::U64))
+                        .collect::<Result<_, _>>()
+                        .map_err(|e| e.to_string())?,
+                ),
+                value => Value::U64(value.to_integer::<u64>().map_err(|e| e.to_string())?),
+            };
+        }
+    }
+    Ok(StateTransitionFilter::Documents(canonical))
+}
+
 impl ResolvedFilter {
     /// Whether one inner transition of a batch owned by `batch_owner_id` matches.
     fn matches_batched(
@@ -295,7 +345,8 @@ impl ResolvedFilter {
                 BatchedTransitionRef::Document(transition),
             ) => {
                 role.admits(Role::Recipient)
-                    && document_recipient(transition).is_some_and(|id| identity_ids.contains(&id))
+                    && document_recipient(transition, batch_owner_id)
+                        .is_some_and(|id| identity_ids.contains(&id))
             }
             (
                 ResolvedFilter::Identities { identity_ids, role },
@@ -564,6 +615,21 @@ fn action_clauses(
     }
     if kind != DocumentAction::UpdatePrice && action.price.is_some() {
         return Err("a price clause applies only to update price".to_string());
+    }
+    // Price IN candidates are bounded and distinct, like any IN clause's.
+    if let Some(price) = action
+        .price
+        .as_ref()
+        .filter(|price| price.operator == WhereOperator::In)
+    {
+        let candidates = WhereClause {
+            field: "$price".to_string(),
+            operator: WhereOperator::In,
+            value: price.value.clone(),
+        };
+        if let Some(error) = candidates.in_values().errors.first() {
+            return Err(error.to_string());
+        }
     }
 
     let document_type = contract
