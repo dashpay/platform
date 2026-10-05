@@ -131,6 +131,28 @@ pub fn reset_drive_caches_after_wipe(drive: &Drive) {
     drive.checkpoints.store(Arc::new(BTreeMap::new()));
 }
 
+/// Wipes the database at `db_path` before anything reads state from it, when an
+/// unfinished restore left it marked.
+///
+/// `Drive::open` reads the stored protocol version from aux storage and, when there is
+/// one, loads the protocol version vote counters with a GroveDB path query. grovedb's
+/// wipe clears its column families one after another (data, roots, aux, meta), so a
+/// process killed during the wipe `offer_snapshot` runs can leave aux holding a protocol
+/// version over data that is gone. `Drive::open` would then fail on the counters query at
+/// every start and never reach the recovery that follows it. Wiping through a bare
+/// `GroveDb` first gives `Drive::open` an empty database. The sentinel is left in place:
+/// the recovery after `Drive::open` still runs, drops the checkpoint registry the open
+/// loaded, and clears it.
+pub fn wipe_marked_database_before_open(db_path: &Path) -> Result<bool, drive::error::Error> {
+    if !restore_sentinel_exists(db_path) {
+        return Ok(false);
+    }
+    let grove = drive::grovedb::GroveDb::open(db_path)?;
+    grove.wipe()?;
+    grove.flush()?;
+    Ok(true)
+}
+
 /// Wipes grovedb and drops the caches derived from it, leaving the node an empty but
 /// entirely self-consistent slate.
 ///

@@ -13,6 +13,7 @@ use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::platform_types::snapshot::{
     clear_restore_sentinel, restore_sentinel_exists, wipe_drive_for_restore,
+    wipe_marked_database_before_open,
 };
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
@@ -180,6 +181,11 @@ impl<C> Platform<C> {
             .abci
             .state_sync
             .resolved_checkpoints_path(&config.db_path);
+
+        // An unfinished state sync restore is recovered before Drive reads any state from
+        // the database: a restore interrupted during its wipe can leave a stored protocol
+        // version over trees that are gone, and `Drive::open` would fail on it every time.
+        wipe_marked_database_before_open(&config.db_path).map_err(Error::Drive)?;
 
         // The epoch length is the execution config's; Drive counts the epochs a document with a
         // time to live lives by it, so it gets the same value rather than a setting of its own.

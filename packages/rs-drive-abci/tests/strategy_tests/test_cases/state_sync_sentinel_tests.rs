@@ -367,6 +367,62 @@ mod tests {
         );
     }
 
+    /// A restore killed DURING its wipe. grovedb clears its column families one after
+    /// another (data, roots, aux, meta), so a kill after the first leaves the roots and
+    /// aux (with the stored protocol version) pointing at data that is gone. Recovery
+    /// runs before `Drive::open` reads that version and queries the protocol vote
+    /// counters, so it does not depend on those reads tolerating such a database.
+    #[tokio::test]
+    async fn a_node_killed_during_the_restore_wipe_recovers_on_restart() {
+        let config = sentinel_platform_config();
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let outcome = run_chain_for_strategy(
+            &mut platform.platform,
+            SOURCE_CHAIN_BLOCKS,
+            sentinel_strategy(),
+            config.clone(),
+            SOURCE_CHAIN_SEED,
+            &mut None,
+            &mut None,
+        )
+        .await;
+        let db_path = outcome.abci_app.platform.config.db_path.clone();
+        drop(outcome);
+
+        let TempPlatform {
+            platform, tempdir, ..
+        } = platform;
+        drop(platform);
+
+        // The state the interrupted wipe left: the data column family cleared, the roots
+        // and aux still in place.
+        write_restore_sentinel(&db_path, &[9u8; 32], 1000).expect("write sentinel");
+        {
+            let column_families =
+                rocksdb::DB::list_cf(&rocksdb::Options::default(), &db_path).expect("list cfs");
+            let db = rocksdb::DB::open_cf(&rocksdb::Options::default(), &db_path, &column_families)
+                .expect("open the database's rocksdb");
+            let data = db.cf_handle("default").expect("data column family");
+            let keys: Vec<Box<[u8]>> = db
+                .iterator_cf(&data, rocksdb::IteratorMode::Start)
+                .map(|entry| entry.expect("iterate").0)
+                .collect();
+            assert!(!keys.is_empty(), "the chain must have written data");
+            for key in keys {
+                db.delete_cf(&data, key).expect("delete");
+            }
+            db.flush_cf(&data).expect("flush");
+        }
+        let restarted = TempPlatform::open_with_tempdir(tempdir, config.clone());
+
+        assert_eq!(restarted.state.load().last_committed_block_height(), 0);
+        assert_eq!(root_hash(&restarted.platform), [0u8; 32]);
+        assert!(!restore_sentinel_exists(&db_path));
+        assert!(info_does_not_panic(&restarted));
+    }
+
     /// The complement, and the regression that matters most: a node WITHOUT a sentinel
     /// must never be wiped. If startup recovery ever fires unconditionally it would
     /// silently destroy every node's chain on restart.
