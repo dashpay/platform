@@ -172,7 +172,7 @@ impl Sdk {
             contracts_to_refresh: BTreeSet::new(),
         };
         // Open the first stream now, so a refused request fails here rather than on `next`.
-        subscription.stream = Some(subscription.open().await?);
+        subscription.stream = Some(subscription.open(false).await?);
         Ok(subscription)
     }
 }
@@ -255,7 +255,12 @@ impl StateTransitionSubscription {
         })
     }
 
-    async fn open(&mut self) -> Result<Streaming<SubscribeToStateTransitionsResponse>, Error> {
+    /// Open a stream from the resume height. `reopening` is false only for the subscription's
+    /// first stream.
+    async fn open(
+        &mut self,
+        reopening: bool,
+    ) -> Result<Streaming<SubscribeToStateTransitionsResponse>, Error> {
         let request: SubscribeToStateTransitionsRequest =
             subscribe_request(&self.filters, self.resume_from)?;
         match self.sdk.execute(request, RequestSettings::default()).await {
@@ -263,7 +268,29 @@ impl StateTransitionSubscription {
                 self.stream_address = Some(response.address);
                 Ok(response.inner)
             }
-            Err(error) => Err(Error::from(error.inner)),
+            Err(error) => {
+                // A node refusing to reopen this subscription for its own reasons (lagging
+                // too far behind the resume height, missing history) is moved off of, like one
+                // failing an open stream; the first open's refusal is the caller's to handle.
+                if reopening {
+                    if let (
+                        DapiClientError::Transport(TransportError::Grpc(status)),
+                        Some(address),
+                    ) = (&error.inner, &error.address)
+                    {
+                        if node_at_fault(status) {
+                            self.sdk.address_list().ban_with_reason(
+                                address,
+                                Some(format!(
+                                    "refused to resume a state transition subscription: {}",
+                                    status.message()
+                                )),
+                            );
+                        }
+                    }
+                }
+                Err(Error::from(error.inner))
+            }
         }
     }
 
@@ -273,7 +300,7 @@ impl StateTransitionSubscription {
             if self.consecutive_failures > 0 {
                 sleep(FIRST_RETRY_DELAY * 2u32.pow(self.consecutive_failures - 1)).await;
             }
-            match self.open().await {
+            match self.open(true).await {
                 Ok(stream) => return Ok(stream),
                 Err(error) => {
                     self.consecutive_failures += 1;

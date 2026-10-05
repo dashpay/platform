@@ -485,3 +485,59 @@ async fn should_not_pin_decoded_blocks_while_waiting_on_a_stalled_reader() {
         }
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn should_keep_the_oldest_waiter_first_for_replay_capacity_across_heartbeats() {
+    let harness = harness(SubscriptionLimits::default());
+    harness.commit(vec![]);
+    let replaying = Arc::new(Semaphore::new(0));
+    let scan = |sender| Scan {
+        blocks: harness.blocks.clone(),
+        tip: harness.tip.subscribe(),
+        replaying: replaying.clone(),
+        filters: recipient_filter(7),
+        sender,
+        next_height: 1,
+    };
+    let (oldest_sender, mut oldest_receiver) = mpsc::channel(STREAM_BUFFER);
+    let (newer_sender, mut newer_receiver) = mpsc::channel(STREAM_BUFFER);
+    let mut oldest = scan(oldest_sender);
+    let mut newer = scan(newer_sender);
+
+    // Each waiter hands back its permit, so the test holds the capacity it was granted.
+    let oldest_wait = tokio::spawn(async move {
+        let mut last_checkpoint = Instant::now();
+        oldest.replay_permit(&mut last_checkpoint).await.ok()
+    });
+    sleep(Duration::from_secs(5)).await;
+    let newer_wait = tokio::spawn(async move {
+        let mut last_checkpoint = Instant::now();
+        newer.replay_permit(&mut last_checkpoint).await.ok()
+    });
+    // Both cross several heartbeats while waiting; their checkpoints keep arriving. Capacity
+    // frees at 32s: the oldest last ticked at 30s, after the newer one's 25s tick, so a waiter
+    // that re-queued on every heartbeat would now be behind the newer one.
+    sleep(CHECKPOINT_INTERVAL * 3 - Duration::from_secs(3)).await;
+    assert!(
+        oldest_receiver.try_recv().is_ok(),
+        "the oldest waiter sent heartbeats"
+    );
+    assert!(
+        newer_receiver.try_recv().is_ok(),
+        "the newer waiter sent heartbeats"
+    );
+
+    replaying.add_permits(1);
+    let permit = timeout(Duration::from_secs(1), oldest_wait)
+        .await
+        .expect("the oldest waiter gets the first permit")
+        .unwrap();
+    assert!(permit.is_some(), "the oldest waiter gets the first permit");
+    tokio::task::yield_now().await;
+    assert!(
+        !newer_wait.is_finished(),
+        "the newer waiter is still queued"
+    );
+    drop(permit);
+    assert!(newer_wait.await.unwrap().is_some(), "then the newer waiter");
+}

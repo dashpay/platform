@@ -370,21 +370,43 @@ impl Scan {
     }
 
     /// Wait for replay capacity, keeping the client informed while waiting.
+    ///
+    /// One acquisition is kept for the whole wait, so the subscription keeps its place in the
+    /// semaphore's FIFO queue across heartbeats, and heartbeats never wait on the client: a
+    /// permit granted while the client is not reading is not held behind a blocked send.
     async fn replay_permit(
         &mut self,
         last_checkpoint: &mut Instant,
     ) -> Result<OwnedSemaphorePermit, Stop> {
+        let acquire = self.replaying.clone().acquire_owned();
+        tokio::pin!(acquire);
         loop {
             tokio::select! {
-                permit = self.replaying.clone().acquire_owned() => {
+                permit = &mut acquire => {
                     return permit.map_err(|_| Stop::Fail(Status::unavailable("the node is shutting down")));
                 }
                 _ = self.sender.closed() => return Err(Stop::Closed),
                 _ = sleep(CHECKPOINT_INTERVAL.saturating_sub(last_checkpoint.elapsed())) => {
-                    self.checkpoint().await?;
+                    self.try_checkpoint()?;
                     *last_checkpoint = Instant::now();
                 }
             }
+        }
+    }
+
+    /// A checkpoint at the highest fully scanned height if the client has room for it; with
+    /// a full buffer the client has messages to read and needs no heartbeat.
+    fn try_checkpoint(&mut self) -> Result<(), Stop> {
+        let response = SubscribeToStateTransitionsResponse {
+            version: Some(Version::V0(SubscribeToStateTransitionsResponseV0 {
+                responses: Some(Responses::Checkpoint(Checkpoint {
+                    block_height: self.next_height - 1,
+                })),
+            })),
+        };
+        match self.sender.try_send(Ok(response)) {
+            Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => Ok(()),
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(Stop::Closed),
         }
     }
 
