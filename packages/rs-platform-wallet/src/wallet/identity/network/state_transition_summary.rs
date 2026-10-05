@@ -16,6 +16,7 @@ use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
+use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
@@ -71,8 +72,10 @@ pub struct StateTransitionSummary {
     /// The identity the transition acts for; `None` for the asset-lock-funded
     /// and shielded kinds.
     pub owner_id: Option<Identifier>,
-    /// Whether the transition already carries a non-empty signature. A `sign`
-    /// request must arrive unsigned.
+    /// Whether the transition already carries a non-empty signature: its own
+    /// signature, or for the kinds spending platform addresses any input
+    /// witness. Kinds authorized only by a shielded proof report `false`. A
+    /// `sign` request must arrive unsigned.
     pub is_signed: bool,
     /// Percentage added to the processing fee Platform charges (`65535` is
     /// about 656 times the base). Part of the signed bytes, so an approval
@@ -302,11 +305,26 @@ fn summarize(
     Ok(StateTransitionSummary {
         kind_name: transition.name(),
         owner_id: transition.owner_id(),
-        is_signed: transition.signature().is_some_and(|sig| !sig.is_empty()),
+        is_signed: carries_signature(transition),
         user_fee_increase: transition.user_fee_increase(),
         serialized,
         kind,
     })
+}
+
+/// Whether `transition` carries a non-empty signature or, for the kinds spending platform
+/// addresses, any input witness; [`StateTransition::signature`] alone is `None` for those.
+fn carries_signature(transition: &StateTransition) -> bool {
+    let has_witness = match transition {
+        StateTransition::IdentityCreateFromAddresses(st) => !st.witnesses().is_empty(),
+        StateTransition::IdentityTopUpFromAddresses(st) => !st.witnesses().is_empty(),
+        StateTransition::AddressFundsTransfer(st) => !st.witnesses().is_empty(),
+        StateTransition::AddressFundingFromAssetLock(st) => !st.witnesses().is_empty(),
+        StateTransition::AddressCreditWithdrawal(st) => !st.witnesses().is_empty(),
+        StateTransition::Shield(st) => !st.witnesses().is_empty(),
+        _ => false,
+    };
+    has_witness || transition.signature().is_some_and(|sig| !sig.is_empty())
 }
 
 /// Total bytes of `details` one summary may render: 64 times the largest transition the decoder
@@ -315,8 +333,9 @@ fn summarize(
 pub const MAX_DETAILS_BYTES: usize = 64 * STATE_TRANSITION_MAX_ENCODED_BYTES;
 
 /// Renders `details` with compact `Debug`, which quotes and escapes every string a dApp controls,
-/// under one byte budget for the whole summary. Formatting stops as soon as the budget is spent,
-/// and the summary is refused rather than shown truncated.
+/// under one byte budget for the whole summary: values, labels, fixed text and the newlines
+/// joining lines are all charged. Formatting stops as soon as the budget is spent, and the
+/// summary is refused rather than shown truncated.
 struct DetailsBudget {
     limit: usize,
     used: usize,
@@ -332,7 +351,8 @@ impl Default for DetailsBudget {
 }
 
 impl DetailsBudget {
-    fn render(&mut self, value: &dyn fmt::Debug) -> Result<String, PlatformWalletError> {
+    /// Formats `args` against the remaining budget.
+    fn write(&mut self, args: fmt::Arguments<'_>) -> Result<String, PlatformWalletError> {
         struct Bounded<'a> {
             out: String,
             remaining: &'a mut usize,
@@ -350,20 +370,38 @@ impl DetailsBudget {
             out: String::new(),
             remaining: &mut remaining,
         };
-        fmt::write(&mut sink, format_args!("{value:?}")).map_err(|_| {
-            PlatformWalletError::InvalidParameter(format!(
-                "State transition details exceed {} bytes; refusing to summarize it",
-                self.limit
-            ))
-        })?;
+        fmt::write(&mut sink, args).map_err(|_| self.exceeded())?;
         let out = sink.out;
         self.used = self.limit - remaining;
         Ok(out)
     }
 
+    fn exceeded(&self) -> PlatformWalletError {
+        PlatformWalletError::InvalidParameter(format!(
+            "State transition details exceed {} bytes; refusing to summarize it",
+            self.limit
+        ))
+    }
+
+    /// `<Debug of value>`.
+    fn render(&mut self, value: &dyn fmt::Debug) -> Result<String, PlatformWalletError> {
+        self.write(format_args!("{value:?}"))
+    }
+
     /// `label: <Debug of value>`.
     fn line(&mut self, label: &str, value: &dyn fmt::Debug) -> Result<String, PlatformWalletError> {
-        Ok(format!("{label}: {}", self.render(value)?))
+        self.write(format_args!("{label}: {value:?}"))
+    }
+
+    /// `lines` joined by newlines, which are charged too; `None` when there are none.
+    fn join(&mut self, lines: Vec<String>) -> Result<Option<String>, PlatformWalletError> {
+        let separators = lines.len().saturating_sub(1);
+        self.used = self
+            .used
+            .checked_add(separators)
+            .filter(|used| *used <= self.limit)
+            .ok_or_else(|| self.exceeded())?;
+        Ok((!lines.is_empty()).then(|| lines.join("\n")))
     }
 }
 
@@ -400,10 +438,6 @@ fn summarize_batch(
         .collect()
 }
 
-fn join_details(lines: Vec<String>) -> Option<String> {
-    (!lines.is_empty()).then(|| lines.join("\n"))
-}
-
 fn summarize_document_transition(
     transition: &DocumentTransition,
     budget: &mut DetailsBudget,
@@ -425,10 +459,9 @@ fn summarize_document_transition(
     }
     if let DocumentTransition::Create(create) = transition {
         if let Some((index_name, credits)) = create.prefunded_voting_balance() {
-            lines.push(format!(
-                "prefunded voting balance: {credits} credits for index {}",
-                budget.render(index_name)?
-            ));
+            lines.push(budget.write(format_args!(
+                "prefunded voting balance: {credits} credits for index {index_name:?}"
+            ))?);
         }
     }
     let base = transition.base();
@@ -449,7 +482,7 @@ fn summarize_document_transition(
         amount,
         recipient_id,
         token_count: None,
-        details: join_details(lines),
+        details: budget.join(lines)?,
     })
 }
 
@@ -461,10 +494,10 @@ fn summarize_token_transition(
     let (amount, recipient_id, token_count, public_note) = match transition {
         TokenTransition::Transfer(t) => {
             if t.shared_encrypted_note().is_some() {
-                lines.push("shared encrypted note: present".to_string());
+                lines.push(budget.write(format_args!("shared encrypted note: present"))?);
             }
             if t.private_encrypted_note().is_some() {
-                lines.push("private encrypted note: present".to_string());
+                lines.push(budget.write(format_args!("private encrypted note: present"))?);
             }
             (
                 Some(t.amount()),
@@ -475,7 +508,9 @@ fn summarize_token_transition(
         }
         TokenTransition::Mint(t) => {
             if t.issued_to_identity_id().is_none() {
-                lines.push("issued to: the token's default destination".to_string());
+                lines.push(
+                    budget.write(format_args!("issued to: the token's default destination"))?,
+                );
             }
             (
                 Some(t.amount()),
@@ -511,7 +546,8 @@ fn summarize_token_transition(
         TokenTransition::SetPriceForDirectPurchase(t) => {
             match t.price() {
                 Some(schedule) => lines.push(budget.line("price schedule", schedule)?),
-                None => lines.push("price schedule: removed (not for sale)".to_string()),
+                None => lines
+                    .push(budget.write(format_args!("price schedule: removed (not for sale)"))?),
             }
             (None, None, None, t.public_note())
         }
@@ -521,7 +557,7 @@ fn summarize_token_transition(
     }
     let base = transition.base();
     if let Some(group) = base.using_group_info() {
-        lines.push(format!(
+        lines.push(budget.write(format_args!(
             "group action: position {}, action id {}, {}",
             group.group_contract_position,
             group.action_id,
@@ -530,7 +566,7 @@ fn summarize_token_transition(
             } else {
                 "signing an existing proposal"
             }
-        ));
+        ))?);
     }
 
     Ok(BatchedTransitionSummary {
@@ -543,7 +579,7 @@ fn summarize_token_transition(
         amount,
         recipient_id,
         token_count,
-        details: join_details(lines),
+        details: budget.join(lines)?,
     })
 }
 
@@ -841,6 +877,35 @@ mod tests {
         assert_eq!(plain.kind, maxed.kind);
         assert_eq!(plain.user_fee_increase, 0);
         assert_eq!(maxed.user_fee_increase, u16::MAX);
+    }
+
+    /// An address funds transfer has no signature of its own; it is signed by
+    /// its input witnesses, so it reports signed once it carries one.
+    #[test]
+    fn a_witness_signed_transfer_reports_whether_it_is_signed() {
+        use dpp::address_funds::{AddressWitness, PlatformAddress};
+        use dpp::platform_value::BinaryData;
+        use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+        use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+
+        let transfer = |input_witnesses: Vec<AddressWitness>| -> StateTransition {
+            AddressFundsTransferTransition::V0(AddressFundsTransferTransitionV0 {
+                inputs: BTreeMap::from([(PlatformAddress::P2pkh([0xab; 20]), (1, 5_000))]),
+                outputs: BTreeMap::from([(PlatformAddress::P2pkh([0xcd; 20]), 4_000)]),
+                fee_strategy: vec![],
+                user_fee_increase: 0,
+                input_witnesses,
+            })
+            .into()
+        };
+
+        assert!(!summarize_bytes(&transfer(vec![])).is_signed);
+        assert!(
+            summarize_bytes(&transfer(vec![AddressWitness::P2pkh {
+                signature: BinaryData::new(vec![0x1f; 65]),
+            }]))
+            .is_signed
+        );
     }
 
     /// Two config updates granting manual minting to different takers must not
@@ -1246,6 +1311,37 @@ mod tests {
         let data = Value::Array((0..1_000).map(Value::U64).collect());
         let rendered = budget.render(&data).expect("fits the default budget");
         assert_eq!(budget.used, rendered.len());
+    }
+
+    /// Labels, fixed text and the newlines joining lines are charged with the
+    /// values, so what is returned never exceeds the budget.
+    #[test]
+    fn labels_fixed_text_and_separators_are_charged() {
+        let render = |budget: &mut DetailsBudget| -> Result<Option<String>, PlatformWalletError> {
+            let lines = vec![
+                budget.line("public note", &"hi")?,
+                budget.write(format_args!("issued to: the token's default destination"))?,
+            ];
+            budget.join(lines)
+        };
+
+        let mut budget = DetailsBudget::default();
+        let details = render(&mut budget).unwrap().expect("two lines");
+        assert_eq!(
+            details,
+            "public note: \"hi\"\nissued to: the token's default destination"
+        );
+        assert_eq!(budget.used, details.len());
+
+        // Exactly the two lines fit, but not the newline joining them.
+        let mut budget = DetailsBudget {
+            limit: details.len() - 1,
+            used: 0,
+        };
+        assert!(matches!(
+            render(&mut budget),
+            Err(PlatformWalletError::InvalidParameter(message)) if message.contains("exceed")
+        ));
     }
 
     /// Details are the escaped `Debug` output untouched: a document string
