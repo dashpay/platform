@@ -222,6 +222,52 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(liveAddress.isSelfSignedCertificateAllowed()).to.be.true();
     });
 
+    // The masternode list stream selects from the underlying list provider on
+    // every (re)connect, without going through this provider.
+    it('should publish only rewritten addresses to the underlying list provider', async () => {
+      const listDAPIAddressProvider = new ListDAPIAddressProvider([], options);
+      smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
+        smlProviderMock,
+        listDAPIAddressProvider,
+        [],
+        options,
+      );
+
+      const expectGatewayPool = () => {
+        const pool = listDAPIAddressProvider.getAllAddresses();
+
+        expect(pool.map((address) => address.toJSON())).to.deep.equal(
+          validMasternodeList.map((smlEntry, index) => ({
+            host: '127.0.0.1',
+            port: 2443 + index * 100,
+            protocol: 'https',
+            allowSelfSignedCertificate: true,
+            proRegTxHash: smlEntry.proRegTxHash,
+          })),
+        );
+
+        return pool;
+      };
+
+      await smlDAPIAddressProvider.getLiveAddress();
+
+      const pool = expectGatewayPool();
+      for (let i = 0; i < 20; i++) {
+        const selected = await listDAPIAddressProvider.getLiveAddress();
+        expect(selected.getHost()).to.equal('127.0.0.1');
+        expect(selected.isSelfSignedCertificateAllowed()).to.be.true();
+      }
+
+      // A refresh resets each entry to its registered endpoint before
+      // rewriting it again; it must keep the same objects, so their ban state
+      // survives, and leave none of them on the docker-internal endpoint.
+      await smlDAPIAddressProvider.getLiveAddress();
+      await smlDAPIAddressProvider.getLiveAddress();
+
+      const refreshedPool = expectGatewayPool();
+      refreshedPool.forEach((address, index) => expect(address).to.equal(pool[index]));
+    });
+
     it('should rewrite a loopback masternode-list address to the self-signed local gateway', async () => {
       // A loopback host still needs the gateway's port and self-signed TLS.
       smlMock.getValidMasternodesList.returns([
