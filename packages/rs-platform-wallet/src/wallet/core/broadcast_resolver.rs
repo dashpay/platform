@@ -603,8 +603,15 @@ fn yield_to_forced(entry: &mut WalletEntry) {
     if !new {
         return;
     }
+    let anchor = run.anchor_at;
     if let Some(probing) = run.probing.as_mut() {
         probing.due.retain(|root| root.forced);
+    }
+    // The forced pass that follows takes the dropped roots after its own:
+    // it follows the tip at the same height.
+    if let (Some(anchor), Some(pending)) = (anchor, entry.pending.as_mut()) {
+        pending.anchor_at = pending.anchor_at.max(Some(anchor));
+        pending.height = pending.height.max(anchor);
     }
 }
 
@@ -1175,10 +1182,10 @@ struct WalletEntry {
     pending: Option<PendingPass>,
     run: Option<Run>,
     /// The retries at one height after probes no node answered (see
-    /// [`NO_ANSWER_RETRY`]): how many were armed, whether one waits, and
-    /// whether any of those probes ran anchored. The roots carry the
-    /// unanswered mark in their schedules; the retry withdraws them when it
-    /// fires.
+    /// [`NO_ANSWER_RETRY`]): how many were armed, and whether one waits. The
+    /// roots carry the unanswered mark in their schedules; the retry
+    /// withdraws them when it fires. A retry that merges into a followed
+    /// pass already queued at that height rides along with it.
     retry_series: Option<NoAnswerRetries>,
     /// The height of the last anchored pass that read the wallet: a sync
     /// completion at that height (after every block) adds no second walk
@@ -1229,6 +1236,11 @@ struct Actor {
     /// token until one of those.
     report_lookups: HashMap<Txid, u64>,
     next_report_token: u64,
+    /// Every send dash-spv reported `Uncertain` this session that has not
+    /// settled: this process's own broadcasts. Their roots go first in a
+    /// pass's queue for as long as they stay unsettled — past their echo
+    /// window too — so a backlog fed by a peer never holds them back.
+    reported: HashSet<Txid>,
     /// The highest height any wallet has followed the tip at: the one clock
     /// the echo windows run on, so a wallet behind the others (rescanning,
     /// rewound) neither stamps nor expires them.
@@ -1262,6 +1274,7 @@ impl Actor {
             uncertain: HashMap::new(),
             report_lookups: HashMap::new(),
             next_report_token: 0,
+            reported: HashSet::new(),
             followed_tip: None,
             next_retry_series: 0,
             echo_lookups: HashMap::new(),
@@ -1462,6 +1475,7 @@ impl Actor {
                 for txid in &txids {
                     self.uncertain.remove(txid);
                     self.echo_lookups.remove(txid);
+                    self.reported.remove(txid);
                 }
                 let events = self.state.settle(wallet_id, &txids);
                 deliver(&self.sink, events);
@@ -1490,6 +1504,7 @@ impl Actor {
                 // A new report restarts the window, from the next followed
                 // block.
                 self.uncertain.insert(txid, None);
+                self.reported.insert(txid);
                 let report = self.next_report_token;
                 self.next_report_token += 1;
                 self.report_lookups.insert(txid, report);
@@ -1545,6 +1560,7 @@ impl Actor {
                 if !enabled {
                     self.uncertain.clear();
                     self.report_lookups.clear();
+                    self.reported.clear();
                     self.echo_lookups.clear();
                     let events = self.state.forget_all();
                     deliver(&self.sink, events);
@@ -1807,13 +1823,23 @@ impl Actor {
                             .copied()
                             .collect();
                         let anchor = current.anchor_at;
-                        self.state.priority = self.uncertain.keys().copied().collect();
+                        // Only the sends this wallet still holds unsettled.
+                        self.state.priority = self
+                            .reported
+                            .iter()
+                            .filter(|txid| views.iter().any(|view| view.txid == **txid))
+                            .copied()
+                            .collect();
                         let start =
                             begin_pass(&mut self.state, wallet_id, height, &views, &forced, anchor);
                         let mut start = start;
+                        // A root a report forced (directly or through a child)
+                        // is labelled by the report, not by the retry.
+                        let reported_roots =
+                            ChainGraph::new(&views).roots_of(current.forced.iter().copied());
                         for root in start.due.iter_mut() {
                             root.retry = current.retried.contains(&root.txid)
-                                && !current.forced.contains(&root.txid);
+                                && !reported_roots.contains(&root.txid);
                         }
                         if anchor.is_some() {
                             entry.followed_pass_at = Some(height);
@@ -4373,8 +4399,10 @@ mod tests {
              was routed) goes first: {since:?}"
         );
         rig.settle().await;
+        // Two passes at that height — the one that gave way, and the forced
+        // one that takes the roots it dropped — each bounded by the cap.
         assert!(
-            probe.probed().len() - before <= MAX_ROOTS_PER_PASS + 1,
+            probe.probed().len() - before <= 2 * MAX_ROOTS_PER_PASS + 1,
             "bounded work at that height"
         );
     }
@@ -4520,10 +4548,11 @@ mod tests {
         );
     }
 
-    /// Roots a run planned but dropped when it gave way keep their place in
-    /// the queue and their window is not started: the next height takes them.
+    /// Roots a run planned but dropped when it gave way are not lost: the
+    /// forced pass, following the tip at the same height, takes them right
+    /// after the forced root.
     #[tokio::test]
-    async fn should_keep_the_place_of_roots_a_run_dropped_for_a_forced_request() {
+    async fn should_take_the_roots_a_run_dropped_for_a_forced_request_after_it() {
         let probe = Arc::new(ScriptedProbe::new(&[]));
         let mut rig = enabled(probe.clone()).await;
         let mut views = peer_injected(10..40);
@@ -4545,22 +4574,95 @@ mod tests {
             .and_then(|run| run.probing.as_ref())
             .map(|probing| probing.due.iter().map(|root| root.txid).collect())
             .expect("probing");
+        let before = probe.probed().len();
 
         rig.send(Command::Uncertain(txid(200))).await;
-        // The probe in flight finishes first and the next planned root goes
-        // out before the report is routed; the rest are dropped unsent.
-        for txid in planned.iter().skip(1) {
-            assert_eq!(
-                rig.actor.state.schedules[&(wallet(), *txid)].window_start,
-                None
-            );
-        }
-        rig.height(wallet(), 102).await;
 
-        let probed = probe.probed();
+        let since = probe.probed()[before..].to_vec();
+        let genuine = since
+            .iter()
+            .position(|probed| *probed == txid(200))
+            .expect("probed");
+        // The probe in flight finishes and the next planned root goes out
+        // before the report is routed; the rest follow the forced root.
+        assert!(genuine <= 2, "{since:?}");
+        assert!(planned.iter().all(|txid| since.contains(txid)), "{since:?}");
+    }
+
+    /// A genuine send keeps its place ahead of a backlog for as long as it
+    /// stays unsettled — past its echo window, which ends after
+    /// `UNCERTAIN_EXPIRY` blocks.
+    #[tokio::test]
+    async fn should_keep_an_uncertain_send_first_past_its_echo_window() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..40);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(200))).await;
+        let last = 102 + UNCERTAIN_EXPIRY + SLOW_INTERVAL;
+        for height in 102..=last {
+            rig.height(wallet(), height).await;
+        }
+        assert!(rig.actor.uncertain.is_empty(), "the echo window is over");
+        let before = probe.probed().iter().filter(|p| **p == txid(200)).count();
+
+        for height in last + 1..=last + SLOW_INTERVAL {
+            rig.height(wallet(), height).await;
+        }
+
+        let after = probe.probed().iter().filter(|p| **p == txid(200)).count();
+        assert_eq!(after, before + 1, "probed when due, ahead of the backlog");
+    }
+
+    /// A repeated report of a send the run already forces changes nothing:
+    /// the run keeps its scheduled roots.
+    #[tokio::test]
+    async fn should_not_give_way_to_a_report_the_run_already_carries() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..40);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 100,
+        });
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read);
+        let run = rig
+            .actor
+            .wallets
+            .get_mut(&wallet())
+            .and_then(|e| e.run.as_mut())
+            .expect("run");
+        run.forced.insert(txid(200)); // the run carries this report already
+        let planned = run.probing.as_ref().map(|p| p.due.len()).expect("probing");
+
+        rig.handle(Command::Uncertain(txid(200)));
+        loop {
+            let job = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+            let listed = matches!(&job, Ok((_, JobDone::Listed { .. })));
+            rig.actor.joined(job);
+            if listed {
+                break;
+            }
+        }
+
+        let due = rig.actor.wallets[&wallet()]
+            .run
+            .as_ref()
+            .and_then(|run| run.probing.as_ref())
+            .map(|p| p.due.len())
+            .expect("probing");
         assert!(
-            planned.iter().all(|txid| probed.contains(txid)),
-            "taken at 102"
+            due + 1 >= planned,
+            "kept its scheduled roots: {due} of {planned}"
         );
     }
 
