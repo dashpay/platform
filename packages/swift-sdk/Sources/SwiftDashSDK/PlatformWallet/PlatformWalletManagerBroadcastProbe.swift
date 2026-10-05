@@ -112,7 +112,9 @@ extension PlatformWalletManager {
     /// that was catching up (a launch, a reconnect). A root no evonode
     /// answered (DAPI unreachable) is probed at every block, and retried a
     /// minute later if no block has come (then after 2 and 4 more minutes;
-    /// at most three retries per block). It publishes each *change* of
+    /// at most three retries per block). Each pass probes at most 8 scheduled
+    /// roots, oldest first; a send reported uncertain goes ahead of them.
+    /// It publishes each *change* of
     /// verdict for the wallet's own sends in `outgoingTransactionVerdicts` /
     /// `lastOutgoingTransactionProbe` (an accepted send whose nodes' block
     /// evidence comes or goes may be published accepted again). Every verdict

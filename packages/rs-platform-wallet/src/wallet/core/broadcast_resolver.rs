@@ -58,7 +58,11 @@
 //! first, then after twice and four times that again (at most
 //! [`MAX_NO_ANSWER_RETRIES`] per height). Probes never ban a DAPI address
 //! themselves. Each Uncertain report forces a probe of its chain's current
-//! root in the next pass (reports queued together share it).
+//! root in the next pass (reports queued together share it); a pass under
+//! way gives way to it after its probe in flight. A pass probes at most
+//! [`MAX_ROOTS_PER_PASS`] scheduled roots, those probed longest ago first —
+//! a wallet's records can be fed by a peer, so one pass's network work is
+//! bounded and the rest come round at the next heights.
 //! Between passes a wallet waits for the height at which its next root is due;
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
@@ -109,6 +113,13 @@ pub(crate) const EVERY_BLOCK_WINDOW: u32 = 24;
 
 /// Blocks between probes once [`EVERY_BLOCK_WINDOW`] has passed.
 pub(crate) const SLOW_INTERVAL: u32 = 10;
+
+/// Scheduled roots a pass probes at most; forced ones (an `Uncertain`
+/// report's) come on top. A wallet's records are not all its own doing — a
+/// peer can feed it transactions that make many roots — so the work of one
+/// pass is bounded, and the roots probed longest ago (or never) go first:
+/// the rest stay due and come round at the next heights.
+pub(crate) const MAX_ROOTS_PER_PASS: usize = 8;
 
 /// How long after a probe that no node answered (all of DAPI unreachable —
 /// the network just coming back, its addresses still banned for at least a
@@ -567,6 +578,23 @@ fn near_tip(height: u32, tip: u32) -> bool {
     height.abs_diff(tip) <= CATCH_UP_STEP
 }
 
+/// A forced request waits for the wallet's run: the run gives way, keeping
+/// only its own forced roots — the scheduled ones it has not sent stay due
+/// and come round at the next pass — so the forced pass starts after the
+/// probe in flight, not after a queue of scheduled roots.
+fn yield_to_forced(entry: &mut WalletEntry) {
+    if !entry
+        .pending
+        .as_ref()
+        .is_some_and(|pending| !pending.forced.is_empty())
+    {
+        return;
+    }
+    if let Some(probing) = entry.run.as_mut().and_then(|run| run.probing.as_mut()) {
+        probing.due.retain(|root| root.forced);
+    }
+}
+
 /// A root chosen for a probe.
 #[derive(Debug, Clone)]
 pub(crate) struct DueRoot {
@@ -630,24 +658,41 @@ pub(crate) fn begin_pass(
     let roots = graph.roots();
     let forced_roots = graph.roots_of(forced.iter().copied());
 
+    // Forced roots first, then at most `MAX_ROOTS_PER_PASS` scheduled ones,
+    // those probed longest ago (or never) first.
     let mut due = VecDeque::new();
+    let mut scheduled: Vec<(Option<u32>, &OutgoingView)> = Vec::new();
     for view in &roots {
         let key = (wallet_id, view.txid);
         let schedule = state.schedules.entry(key).or_default();
         if let Some(anchor) = anchor {
             schedule.anchor(anchor);
         }
-        let forced = forced_roots.contains(&view.txid);
-        // Without an anchor the pass is confined to forced roots.
-        if forced || (anchor.is_some() && schedule.is_due(height)) {
-            due.push_back(DueRoot {
+        let root = |forced| DueRoot {
+            txid: view.txid,
+            transaction: Arc::clone(&view.transaction),
+            own: graph.is_own(&view.txid),
+            forced,
+        };
+        if forced_roots.contains(&view.txid) {
+            due.push_back(root(true));
+        } else if anchor.is_some() && schedule.is_due(height) {
+            // Without an anchor the pass is confined to forced roots.
+            scheduled.push((schedule.last_probe, view));
+        }
+    }
+    scheduled.sort_by_key(|(last_probe, view)| (*last_probe, view.txid));
+    due.extend(
+        scheduled
+            .into_iter()
+            .take(MAX_ROOTS_PER_PASS)
+            .map(|(_, view)| DueRoot {
                 txid: view.txid,
                 transaction: Arc::clone(&view.transaction),
                 own: graph.is_own(&view.txid),
-                forced,
-            });
-        }
-    }
+                forced: false,
+            }),
+    );
     PassStart { events, due }
 }
 
@@ -1605,6 +1650,7 @@ impl Actor {
                     let pending = entry.pending.get_or_insert_with(PendingPass::default);
                     pending.height = pending.height.max(entry.height.unwrap_or(0));
                     pending.forced.insert(txid);
+                    yield_to_forced(entry);
                     self.start(wallet_id);
                 }
             }
@@ -1733,6 +1779,8 @@ impl Actor {
                             due: start.due,
                             in_flight: None,
                         });
+                        // A forced request that came while this pass read.
+                        yield_to_forced(entry);
                         // Clears reach the host before the pass goes out to
                         // the network.
                         deliver(&self.sink, start.events);
@@ -4226,6 +4274,88 @@ mod tests {
         assert!(
             probe.probed().is_empty(),
             "no forced pass from the old report"
+        );
+    }
+
+    /// Records a peer can feed the wallet: unsettled "incoming" parents,
+    /// each with a child that spends the wallet's coins as matched — every
+    /// parent a root to probe.
+    fn peer_injected(parents: std::ops::Range<u8>) -> Vec<OutgoingView> {
+        parents
+            .flat_map(|parent| {
+                [
+                    incoming(parent, &[outpoint(parent.wrapping_add(100), 0)]),
+                    send(parent.wrapping_add(60), &[outpoint(parent, 0)]),
+                ]
+            })
+            .collect()
+    }
+
+    /// Peer-injected records make many roots: a pass probes at most
+    /// `MAX_ROOTS_PER_PASS` of them, the ones probed longest ago first, so
+    /// each comes round in turn at the following heights.
+    #[tokio::test]
+    async fn should_bound_the_roots_a_pass_probes() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), peer_injected(10..40)); // 30 roots
+
+        rig.follow(wallet(), 100).await;
+        assert_eq!(probe.probed().len(), MAX_ROOTS_PER_PASS);
+
+        rig.height(wallet(), 102).await;
+        let probed = probe.probed();
+        assert_eq!(probed.len(), 2 * MAX_ROOTS_PER_PASS);
+        let distinct: HashSet<Txid> = probed.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            2 * MAX_ROOTS_PER_PASS,
+            "the next ones in turn"
+        );
+    }
+
+    /// A genuine send reported `Uncertain` while a pass works through
+    /// peer-injected roots does not wait behind them: the run gives way
+    /// after its probe in flight, and the send is probed next.
+    #[tokio::test]
+    async fn should_probe_a_genuine_uncertain_send_before_a_backlog() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), peer_injected(10..40));
+        rig.follow(wallet(), 100).await;
+        let before = probe.probed().len();
+        // The genuine send, broadcast now — sorting after the backlog, so
+        // only the yield can bring it forward.
+        let mut views = peer_injected(10..40);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read); // a scheduled probe is out
+
+        rig.handle(Command::Uncertain(txid(200)));
+        while !probe.probed().contains(&txid(200)) {
+            let job = rig.actor.jobs.join_next_with_id().await.expect("job");
+            rig.actor.joined(job);
+        }
+
+        let since = &probe.probed()[before..];
+        let genuine_at = since
+            .iter()
+            .position(|probed| *probed == txid(200))
+            .expect("probed");
+        assert!(
+            genuine_at <= 2,
+            "only the probe in flight (and at most one sent before the report \
+             was routed) goes first: {since:?}"
+        );
+        rig.settle().await;
+        assert!(
+            probe.probed().len() - before <= MAX_ROOTS_PER_PASS + 1,
+            "bounded work at that height"
         );
     }
 
