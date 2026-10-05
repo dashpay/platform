@@ -609,10 +609,16 @@ fn yield_to_forced(entry: &mut WalletEntry) {
     if !(report || retry) || (entry.yielded_at.is_some() && entry.yielded_at == entry.height) {
         return;
     }
-    entry.yielded_at = entry.height;
     let anchor = run.anchor_at.filter(|_| report);
     if let Some(probing) = run.probing.as_mut() {
+        let planned = probing.due.len();
         probing.due.retain(|root| root.forced);
+        // The allowance is used only by a yield that dropped something: one
+        // during the read, or of a pass with only forced roots, costs the
+        // backlog nothing.
+        if probing.due.len() < planned {
+            entry.yielded_at = entry.height;
+        }
     }
     // The forced pass that follows takes the dropped roots after its own:
     // it follows the tip at the same height.
@@ -620,6 +626,21 @@ fn yield_to_forced(entry: &mut WalletEntry) {
         pending.anchor_at = pending.anchor_at.max(Some(anchor));
         pending.height = pending.height.max(anchor);
     }
+}
+
+/// `wallet_id` no longer holds the reported sends `leaves` picks: take it out
+/// of their holders, and drop a send no wallet holds any more.
+fn forget_reported(
+    reported: &mut HashMap<Txid, HashSet<WalletId>>,
+    wallet_id: &WalletId,
+    leaves: impl Fn(&Txid) -> bool,
+) {
+    reported.retain(|txid, holders| {
+        if leaves(txid) {
+            holders.remove(wallet_id);
+        }
+        !holders.is_empty()
+    });
 }
 
 /// A root chosen for a probe.
@@ -1264,9 +1285,9 @@ struct Actor {
     uncertain: HashMap<Txid, Option<u32>>,
     /// The token of the latest `Uncertain` report per txid, until its holder
     /// lookup completes: only that completion counts (see `JobDone::Listed`).
-    /// A newer report, a switch-off, or a wallet leaving or re-registering
-    /// withdraws it — like `echo_lookups`. A lookup that panicked leaves its
-    /// token until one of those.
+    /// A newer report or a switch-off withdraws it; a wallet leaving or
+    /// re-registering makes the lookup again (see `drop_wallet`). A lookup
+    /// that panicked leaves its token until one of those.
     report_lookups: HashMap<Txid, u64>,
     next_report_token: u64,
     /// Every send dash-spv reported `Uncertain` this session, with the
@@ -1419,6 +1440,7 @@ impl Actor {
                     entry.wait_until = None;
                     entry.retry_series = None;
                     entry.followed_pass_at = None;
+                    entry.yielded_at = None;
                     if let Some(run) = entry.run.take() {
                         run.abort.abort();
                         if !run.forced.is_empty() {
@@ -1510,13 +1532,8 @@ impl Actor {
                 for txid in &txids {
                     self.uncertain.remove(txid);
                     self.echo_lookups.remove(txid);
-                    if let Some(holders) = self.reported.get_mut(txid) {
-                        holders.remove(&wallet_id);
-                        if holders.is_empty() {
-                            self.reported.remove(txid);
-                        }
-                    }
                 }
+                forget_reported(&mut self.reported, &wallet_id, |txid| txids.contains(txid));
                 let events = self.state.settle(wallet_id, &txids);
                 deliver(&self.sink, events);
                 if next_probe {
@@ -1575,6 +1592,7 @@ impl Actor {
                     entry.wait_until = None;
                     entry.retry_series = None;
                     entry.followed_pass_at = None;
+                    entry.yielded_at = None;
                     if !enabled {
                         entry.pending = None;
                         if let Some(run) = entry.run.take() {
@@ -1630,8 +1648,6 @@ impl Actor {
         }
     }
 
-    /// Drop the wallet's entry, stop its pass and forget its state, the host
-    /// told to clear what it showed (logged with `trigger`).
     /// Route a report to the registered wallets holding it, including ones
     /// no height step has reached yet; only the latest lookup per txid counts.
     fn look_up_report(&mut self, txid: Txid) {
@@ -1650,6 +1666,9 @@ impl Actor {
         });
     }
 
+    /// Drop the wallet's entry, stop its pass and forget its state, the host
+    /// told to clear what it showed (logged with `trigger`). Report lookups
+    /// still out are made again, and the wallet leaves `reported`.
     fn drop_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) {
         if let Some(run) = self.wallets.remove(wallet_id).and_then(|entry| entry.run) {
             run.abort.abort();
@@ -1663,10 +1682,7 @@ impl Actor {
         for txid in reports {
             self.look_up_report(txid);
         }
-        self.reported.retain(|_, holders| {
-            holders.remove(wallet_id);
-            !holders.is_empty()
-        });
+        forget_reported(&mut self.reported, wallet_id, |_| true);
         let events = self.state.forget_wallet(wallet_id, trigger);
         deliver(&self.sink, events);
     }
@@ -1831,10 +1847,7 @@ impl Actor {
                         // Idle, not re-read every block: a same-id wallet's
                         // events or an Uncertain wake it.
                         entry.wait_until = Some(u32::MAX);
-                        self.reported.retain(|_, holders| {
-                            holders.remove(&wallet_id);
-                            !holders.is_empty()
-                        });
+                        forget_reported(&mut self.reported, &wallet_id, |_| true);
                         let events = self.state.forget_wallet(&wallet_id, "gone");
                         deliver(&self.sink, events);
                         self.end_run(wallet_id);
@@ -1887,17 +1900,15 @@ impl Actor {
                         // Only the sends this wallet still holds unsettled: one
                         // that settled or left it is no longer its priority.
                         let present: HashSet<Txid> = views.iter().map(|view| view.txid).collect();
-                        let mut priority = HashSet::new();
-                        self.reported.retain(|txid, holders| {
-                            if holders.contains(&wallet_id) {
-                                if present.contains(txid) {
-                                    priority.insert(*txid);
-                                } else {
-                                    holders.remove(&wallet_id);
-                                }
-                            }
-                            !holders.is_empty()
+                        forget_reported(&mut self.reported, &wallet_id, |txid| {
+                            !present.contains(txid)
                         });
+                        let priority: HashSet<Txid> = self
+                            .reported
+                            .iter()
+                            .filter(|(_, holders)| holders.contains(&wallet_id))
+                            .map(|(txid, _)| *txid)
+                            .collect();
                         let mut start = begin_pass(
                             &mut self.state,
                             wallet_id,
@@ -4887,6 +4898,63 @@ mod tests {
             probe.probed()[before..].contains(&txid(200)),
             "forced probe went out"
         );
+    }
+
+    /// A yield that drops nothing — the run still reading — does not use up
+    /// the height's allowance: once the read has planned scheduled roots, the
+    /// run still gives way to the request.
+    #[tokio::test]
+    async fn should_keep_the_allowance_when_a_yield_drops_nothing() {
+        let views = peer_injected(10..20);
+        let mut state = ResolverState::default();
+        let start = begin_pass(
+            &mut state,
+            wallet(),
+            101,
+            &views,
+            &HashSet::new(),
+            &HashSet::new(),
+            Some(101),
+        );
+        assert_eq!(start.due.len(), MAX_ROOTS_PER_PASS);
+        let mut entry = WalletEntry {
+            height: Some(101),
+            run: Some(Run {
+                id: 1,
+                settled: HashSet::new(),
+                woken: false,
+                anchor_at: Some(101),
+                forced: HashSet::new(),
+                retried: HashSet::new(),
+                walk: Arc::new(AtomicBool::new(false)),
+                abort: tokio::spawn(async {}).abort_handle(),
+                probing: None, // reading
+            }),
+            pending: Some(PendingPass {
+                height: 101,
+                forced: HashSet::from([txid(200)]),
+                ..PendingPass::default()
+            }),
+            ..WalletEntry::default()
+        };
+
+        yield_to_forced(&mut entry);
+        assert_eq!(entry.yielded_at, None, "nothing dropped yet");
+
+        entry.run.as_mut().expect("run").probing = Some(Probing {
+            views,
+            height: 101,
+            due: start.due,
+            in_flight: None,
+        });
+        yield_to_forced(&mut entry);
+
+        let run = entry.run.as_ref().expect("run");
+        assert!(
+            run.probing.as_ref().is_some_and(|p| p.due.is_empty()),
+            "gave way once the read planned its roots"
+        );
+        assert_eq!(entry.yielded_at, Some(101));
     }
 
     /// A refusal is an answer: no early retry.
