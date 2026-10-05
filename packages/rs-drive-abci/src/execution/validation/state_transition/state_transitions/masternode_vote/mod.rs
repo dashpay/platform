@@ -98,6 +98,12 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
 mod no_locking_contest_tests;
 
 #[cfg(test)]
+mod charter_election_tests;
+
+#[cfg(test)]
+mod end_date_cleanup_tests;
+
+#[cfg(test)]
 mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;

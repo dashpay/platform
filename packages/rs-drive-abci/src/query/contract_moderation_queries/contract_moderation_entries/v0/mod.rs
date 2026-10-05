@@ -274,6 +274,7 @@ mod tests {
                 code: None,
                 text: WARNING_REASON.to_string(),
                 documents: vec![],
+                reason_document_id: None,
             })
         };
         assert_eq!(page.entries.len(), 2);
@@ -370,6 +371,7 @@ mod tests {
                 code: None,
                 text: BAN_REASON.to_string(),
                 documents: vec![],
+                reason_document_id: None,
             })
         };
 
@@ -402,6 +404,7 @@ mod tests {
                     code: Some(SUSPENSION_REASON_CODE as u32),
                     text: SUSPENSION_REASON.to_string(),
                     documents: vec![],
+                    reason_document_id: None,
                 })
             )]
         );

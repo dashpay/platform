@@ -107,10 +107,14 @@ impl DocumentTypeV1 {
                 ranked_index_structure_check: common::no_ranked_index_structure_check,
                 // TIME RANGE: also a generation-3 keyword; not in this grammar.
                 admit_time_range: false,
+                // INTEGER RANGE: also a generation-3 keyword; not in this grammar.
+                admit_integer_range: false,
                 // INDEX ONLY: also a generation-3 keyword; not in this grammar.
                 admit_index_terminal: false,
                 // PREALLOCATED: also a generation-3 keyword; not in this grammar.
                 admit_index_preallocated: false,
+                // OUTLIVES DELETE: also a generation-3 keyword; not in this grammar.
+                admit_index_outlives_delete: false,
                 // SKIP IF ABSENT: also a generation-3 keyword; not in this grammar.
                 admit_index_skip_if_absent: false,
                 // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 rule; below it
@@ -119,6 +123,9 @@ impl DocumentTypeV1 {
                 admit_range_countable_implies_countable: false,
                 // NO LOCKING RESOLUTION: a generation-3 value; not in this grammar.
                 admit_index_no_locking_resolution: false,
+                // MODERATION STAMPS: generation-3 system properties; not in this grammar.
+                admit_moderation_stamp_indexes: false,
+                admit_derived_index_properties: false,
             },
             platform_version,
         )

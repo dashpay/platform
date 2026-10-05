@@ -1,4 +1,5 @@
 use crate::error::Error;
+use dpp::block::block_info::BlockInfo;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionSignerAwareActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
@@ -116,7 +117,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
             if state_transition.has_is_allowed_validation()? {
-                let result = state_transition.validate_is_allowed(platform, platform_version)?;
+                let result = state_transition.validate_is_allowed(platform_version)?;
 
                 if !result.is_valid() {
                     return Ok(
@@ -366,12 +367,25 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             let action = if state_transition.validates_full_state_on_check_tx()
                 || relies_on_gas_sponsor_to_pay
             {
+                // A sponsored batch joins the next block, so its state is judged at that
+                // block's height: an age counted in blocks (a `refersTo`'s
+                // `minimumAgeBlocks`) is then the one the block sees
+                let last_block_info = platform.state.last_block_info();
+                let next_block_info = BlockInfo {
+                    height: last_block_info.height.saturating_add(1),
+                    ..*last_block_info
+                };
+                let block_info = if relies_on_gas_sponsor_to_pay {
+                    &next_block_info
+                } else {
+                    last_block_info
+                };
                 // Validating structure
                 let result = state_transition.validate_state(
                     action,
                     platform,
                     ValidationMode::CheckTx,
-                    platform.state.last_block_info(),
+                    block_info,
                     &mut state_transition_execution_context,
                     None,
                 )?;

@@ -319,6 +319,7 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    dash_sdk_error_free(result.error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
                 }
             }
@@ -371,7 +372,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    let failure = SDKError.stateTransitionFailure(
+                        errorString, ffiError: result.error?.pointee)
+                    dash_sdk_error_free(result.error)
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -428,7 +432,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    let failure = SDKError.stateTransitionFailure(
+                        errorString, ffiError: result.error?.pointee)
+                    dash_sdk_error_free(result.error)
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -437,12 +444,18 @@ extension SDK {
     // MARK: - Document State Transitions
 
     /// Create a new document
+    ///
+    /// `maxContestFund` is the most, in credits, the owner pays into the
+    /// contest a contested document joins, and the owner must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// document that joins no contest ignores it.
     public func documentCreate(
         contractId: String,
         documentType: String,
         ownerIdentity: DPPIdentity,
         properties: [String: Any],
-        signer: OpaquePointer
+        signer: OpaquePointer,
+        maxContestFund: UInt64? = nil
     ) async throws -> [String: Any] {
         let signerBox = SendableOpaque(signer)
         let startTime = Date()
@@ -530,7 +543,7 @@ extension SDK {
 
                 defer {
                     // Clean up document handle when done
-                    dash_sdk_document_handle_destroy(documentHandle)
+                    dash_sdk_document_free(documentHandle)
                 }
 
                 // 2. Create identity public key handle directly from our local data (no network fetch)
@@ -554,7 +567,10 @@ extension SDK {
                 // 4. Create put settings (null for defaults)
                 let putSettings: UnsafePointer<DashSDKPutSettings>? = nil
                 let tokenPaymentInfo: UnsafePointer<DashSDKTokenPaymentInfo>? = nil
-                let stateTransitionOptions: UnsafePointer<DashSDKStateTransitionCreationOptions>? = nil
+                // Creation options only carry a stated `maxContestFund`; without
+                // one they stay null and rs-sdk states the current fund to join.
+                var stateTransitionOptions = DashSDKStateTransitionCreationOptions()
+                stateTransitionOptions.contest_fund = maxContestFund ?? 0
 
                 // Use the entropy from document creation (already generated)
 
@@ -563,21 +579,23 @@ extension SDK {
                 print("🚀 [DOCUMENT CREATE] This is the NETWORK CALL - using contract from trusted context...")
                 let putStart = Date()
                 var mutableEntropy = entropy  // Create mutable copy for withUnsafePointer
-                let putResult = withUnsafePointer(to: &mutableEntropy) { entropyPtr in
-                    contractId.withCString { contractIdCStr in
-                        documentType.withCString { docTypeCStr in
-                            dash_sdk_document_put_to_platform_and_wait(
-                                handle,
-                                documentHandle,
-                                contractIdCStr,
-                                docTypeCStr,
-                                entropyPtr,
-                                keyHandle,
-                                signerBox.p,
-                                tokenPaymentInfo,
-                                putSettings,
-                                stateTransitionOptions
-                            )
+                let putResult = withUnsafePointer(to: &stateTransitionOptions) { optionsPtr in
+                    withUnsafePointer(to: &mutableEntropy) { entropyPtr in
+                        contractId.withCString { contractIdCStr in
+                            documentType.withCString { docTypeCStr in
+                                dash_sdk_document_put_to_platform_and_wait(
+                                    handle,
+                                    documentHandle,
+                                    contractIdCStr,
+                                    docTypeCStr,
+                                    entropyPtr,
+                                    keyHandle,
+                                    signerBox.p,
+                                    tokenPaymentInfo,
+                                    putSettings,
+                                    maxContestFund == nil ? nil : optionsPtr
+                                )
+                            }
                         }
                     }
                 }
@@ -590,8 +608,9 @@ extension SDK {
                         String(cString: error.pointee.message) : "Failed to put document to platform"
                     print("❌ [DOCUMENT CREATE] Platform submission failed: \(errorString)")
                     print("⏱️ [DOCUMENT CREATE] Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
+                    let failure = SDKError.stateTransitionFailure(errorString, ffiError: error.pointee)
                     dash_sdk_error_free(error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: failure)
                 } else if putResult.data_type == DashSDKFFI.String,
                           let jsonData = putResult.data {
                     // Parse the returned JSON
@@ -609,6 +628,10 @@ extension SDK {
                         continuation.resume(returning: ["status": "success", "raw": jsonString])
                     }
                 } else {
+                    if putResult.data_type == DashSDKFFI.ResultDocumentHandle,
+                       let createdHandle = putResult.data {
+                        dash_sdk_document_free(OpaquePointer(createdHandle))
+                    }
                     print("✅ [DOCUMENT CREATE] Success! Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
                     continuation.resume(returning: ["status": "success", "message": "Document created successfully"])
                 }
@@ -665,6 +688,7 @@ extension SDK {
                       let contractHandle = contractResult.data else {
                     if let error = contractResult.error {
                         let errorMsg = String(cString: error.pointee.message)
+                        dash_sdk_error_free(error)
                         print("❌ [DOCUMENT REPLACE] Failed to fetch contract: \(errorMsg)")
                         continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     } else {
@@ -782,8 +806,9 @@ extension SDK {
                 if let error = replaceResult.error {
                     print("❌ [DOCUMENT REPLACE] Replace failed after \(replaceTime) seconds")
                     let errorString = String(cString: error.pointee.message)
+                    let failure = SDKError.stateTransitionFailure(errorString, ffiError: error.pointee)
                     dash_sdk_error_free(error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: failure)
                 } else if replaceResult.data_type == DashSDKFFI.ResultDocumentHandle,
                           let resultHandle = replaceResult.data {
                     // Document was successfully replaced
@@ -874,8 +899,10 @@ extension SDK {
 
                     if let error = result.error {
                         let errorMessage = String(cString: error.pointee.message)
+                        let failure = SDKError.stateTransitionFailure(
+                            errorMessage, ffiError: error.pointee, otherwise: SDKError.protocolError)
                         dash_sdk_error_free(error)
-                        throw SDKError.protocolError(errorMessage)
+                        throw failure
                     }
 
                     let totalTime = Date().timeIntervalSince(startTime)
@@ -951,6 +978,7 @@ extension SDK {
                       let contractHandle = contractResult.data else {
                     if let error = contractResult.error {
                         let errorMsg = String(cString: error.pointee.message)
+                        dash_sdk_error_free(error)
                         print("❌ [DOCUMENT TRANSFER] Failed to fetch contract: \(errorMsg)")
                         continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     } else {
@@ -981,50 +1009,31 @@ extension SDK {
                 let docFetchTime = Date().timeIntervalSince(docFetchStartTime)
                 print("📝 [DOCUMENT TRANSFER] Document fetch took \(docFetchTime) seconds")
 
-                guard fetchResult.error == nil,
-                      let documentHandle = fetchResult.data else {
+                guard fetchResult.error == nil else {
                     let error = fetchResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(fetchResult.error)
                     print("❌ [DOCUMENT TRANSFER] Failed to fetch document: \(errorMsg)")
                     continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     return
                 }
 
-                defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
-                }
-
-                print("✅ [DOCUMENT TRANSFER] Document fetched successfully")
-                print("🔄 [DOCUMENT TRANSFER] Step 3: Creating transfer transition...")
-
-                let transferStartTime = Date()
-
-                // First, try to create the state transition without waiting
-                print("🔄 [DOCUMENT TRANSFER] Creating state transition...")
-                let transitionResult = dash_sdk_document_transfer_to_identity(
-                    handle,
-                    OpaquePointer(documentHandle),
-                    toIdentityCString,
-                    contractIdCString,
-                    documentTypeCString,
-                    keyHandle,
-                    signerBox.p,
-                    nil,  // token_payment_info
-                    nil,  // put_settings
-                    nil   // state_transition_creation_options
-                )
-
-                guard transitionResult.error == nil else {
-                    let error = transitionResult.error.pointee
-                    let errorMsg = String(cString: error.message)
-                    print("❌ [DOCUMENT TRANSFER] Failed to create transition: \(errorMsg)")
-                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                guard let documentHandle = fetchResult.data else {
+                    print("❌ [DOCUMENT TRANSFER] Document not found")
+                    continuation.resume(throwing: SDKError.notFound("Document not found"))
                     return
                 }
 
+                defer {
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
+                }
 
-                // Now try the _and_wait version which handles broadcasting internally
-                print("🔄 [DOCUMENT TRANSFER] Broadcasting and waiting for confirmation...")
+                print("✅ [DOCUMENT TRANSFER] Document fetched successfully")
+                print("🔄 [DOCUMENT TRANSFER] Step 3: Signing, broadcasting and waiting for confirmation...")
+
+                let transferStartTime = Date()
+
+                // Signs the transfer once, broadcasts it and waits for the result.
                 let result = dash_sdk_document_transfer_to_identity_and_wait(
                     handle,
                     OpaquePointer(documentHandle),
@@ -1044,6 +1053,7 @@ extension SDK {
                 if result.error != nil {
                     let error = result.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(result.error)
 
                     // Check if it's the "already in chain" error
                     if errorMsg.contains("already in chain") || errorMsg.contains("AlreadyExists") {
@@ -1061,8 +1071,14 @@ extension SDK {
                     }
 
                     print("❌ [DOCUMENT TRANSFER] Broadcast failed: \(errorMsg)")
-                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    continuation.resume(throwing: SDKError.stateTransitionFailure(
+                        errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
+                }
+
+                if result.data_type == DashSDKFFI.ResultDocumentHandle,
+                   let transferredHandle = result.data {
+                    dash_sdk_document_free(OpaquePointer(transferredHandle))
                 }
 
                 // Document transfer was successful
@@ -1117,6 +1133,7 @@ extension SDK {
                 guard contractResult.error == nil else {
                     let error = contractResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(contractResult.error)
                     print("❌ [DOCUMENT UPDATE PRICE] Failed to fetch contract: \(errorMsg)")
                     continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     return
@@ -1149,6 +1166,7 @@ extension SDK {
                 guard fetchResult.error == nil else {
                     let error = fetchResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(fetchResult.error)
                     print("❌ [DOCUMENT UPDATE PRICE] Failed to fetch document: \(errorMsg)")
                     continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     return
@@ -1161,7 +1179,7 @@ extension SDK {
                 }
 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
 
                 print("✅ [DOCUMENT UPDATE PRICE] Document fetched successfully")
@@ -1200,9 +1218,16 @@ extension SDK {
                 if updateResult.error != nil {
                     let error = updateResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(updateResult.error)
                     print("❌ [DOCUMENT UPDATE PRICE] Failed: \(errorMsg)")
-                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    continuation.resume(throwing: SDKError.stateTransitionFailure(
+                        errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
+                }
+
+                if updateResult.data_type == DashSDKFFI.ResultDocumentHandle,
+                   let updatedHandle = updateResult.data {
+                    dash_sdk_document_free(OpaquePointer(updatedHandle))
                 }
 
                 let totalTime = Date().timeIntervalSince(startTime)
@@ -1309,7 +1334,7 @@ extension SDK {
                 }
 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
 
                 print("📝 [DOCUMENT PURCHASE] Document fetched in \(Date().timeIntervalSince(documentFetchStart)) seconds")
@@ -1338,13 +1363,15 @@ extension SDK {
 
                 if let error = result.error {
                     let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Document purchase failed: \(errorMessage)", ffiError: error.pointee)
                     dash_sdk_error_free(error)
 
                     print("❌ [DOCUMENT PURCHASE] Failed: \(errorMessage)")
                     let totalTime = Date().timeIntervalSince(startTime)
                     print("❌ [DOCUMENT PURCHASE] Total time: \(totalTime) seconds")
 
-                    continuation.resume(throwing: SDKError.internalError("Document purchase failed: \(errorMessage)"))
+                    continuation.resume(throwing: failure)
                     return
                 }
 
@@ -1366,7 +1393,7 @@ extension SDK {
                     }
 
                     // Clean up the purchased document handle
-                    dash_sdk_document_destroy(handle, purchasedDocHandle)
+                    dash_sdk_document_free(purchasedDocHandle)
 
                     let totalTime = Date().timeIntervalSince(startTime)
                     print("✅ [DOCUMENT PURCHASE] Purchase completed and confirmed in \(totalTime) seconds")
@@ -1586,8 +1613,10 @@ extension SDK {
                         String(cString: result.error!.pointee.message) : "Unknown error"
                     let errorCode = result.error?.pointee.code.rawValue ?? 0
                     print("❌ TOKEN MINT: Failed with error code \(errorCode): \(errorString)")
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token mint failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token mint failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -1718,8 +1747,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token freeze failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token freeze failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -1850,8 +1881,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token unfreeze failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token unfreeze failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -1970,8 +2003,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token burn failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token burn failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -2102,8 +2137,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token destroy frozen funds failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token destroy frozen funds failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -2229,8 +2266,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token claim failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token claim failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -2358,8 +2397,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token transfer failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token transfer failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -2498,8 +2539,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token set price failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token set price failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }

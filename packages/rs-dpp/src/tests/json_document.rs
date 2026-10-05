@@ -170,6 +170,8 @@ pub fn json_document_to_document(
         transferred_at_core_block_height: data
             .remove_optional_integer("$transferredAtCoreBlockHeight")?,
         creator_id: data.remove_optional_identifier("$creatorId")?,
+        moderated_at: None,
+        moderated_by: None,
     };
 
     data.replace_at_paths(

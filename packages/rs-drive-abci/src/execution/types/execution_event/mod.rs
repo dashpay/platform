@@ -530,6 +530,8 @@ impl ExecutionEvent<'_> {
                 // BumpAddressInputNoncesAction doesn't have outputs - it only bumps nonces and pays fees
                 let added_to_balance_outputs = BTreeMap::new();
                 let fee_strategy = bump_address_input_nonces_action.fee_strategy().clone();
+                // The penalty is taken and booked with the fee, unscaled by the user fee increase
+                let penalty_credits = bump_address_input_nonces_action.penalty_credits();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromAddressInputs {
@@ -538,7 +540,7 @@ impl ExecutionEvent<'_> {
                     fee_strategy,
                     operations,
                     execution_operations: execution_context.operations_consume(),
-                    additional_fixed_fee_cost: None,
+                    additional_fixed_fee_cost: Some(penalty_credits),
                     user_fee_increase,
                 })
             }
@@ -603,6 +605,42 @@ impl ExecutionEvent<'_> {
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: Some(shielded_verification_fee),
                     user_fee_increase,
+                })
+            }
+            // Pool-paid like the credit pool's own transfers: the flat fee carved from the
+            // credit bundle goes to the fee pools, the token side and the price (for a
+            // purchase) are ordinary operations, no transparent address is credited.
+            StateTransitionAction::TokenShieldedTransferWithShieldedFeeAction(ref pool_action) => {
+                let fee_amount = pool_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                    added_to_balance_outputs: None,
+                    chargeable_failure: false,
+                })
+            }
+            StateTransitionAction::TokenUnshieldWithShieldedFeeAction(ref pool_action) => {
+                let fee_amount = pool_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                    added_to_balance_outputs: None,
+                    chargeable_failure: false,
+                })
+            }
+            StateTransitionAction::TokenPurchaseFromShieldedPoolAction(ref pool_action) => {
+                let fee_amount = pool_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                    added_to_balance_outputs: None,
+                    chargeable_failure: false,
                 })
             }
             StateTransitionAction::IdentityTopUpFromShieldedPoolAction(ref top_up_action) => {

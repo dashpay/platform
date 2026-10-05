@@ -14,6 +14,8 @@ import { GroupFacade } from './group/facade.js';
 import { ContractGroupsFacade } from './contract-groups/facade.js';
 import { VotingFacade } from './voting/facade.js';
 import { ShieldedFacade } from './shielded/facade.js';
+import { EncryptedForFacade } from './encrypted-for/facade.js';
+import { ModerationChartersFacade } from './moderation-charters/facade.js';
 
 export interface ConnectionOptions {
   version?: number;
@@ -73,6 +75,8 @@ export class EvoSDK {
   public contractGroups!: ContractGroupsFacade;
   public voting!: VotingFacade;
   public shielded!: ShieldedFacade;
+  public encryptedFor!: EncryptedForFacade;
+  public moderationCharters!: ModerationChartersFacade;
   constructor(options: EvoSDKOptions = {}) {
     // Apply defaults while preserving any future connection options
     const { network = 'testnet', trusted = false, addresses, devnetName, quorumUrl, ...connection } = options;
@@ -111,6 +115,8 @@ export class EvoSDK {
     this.contractGroups = new ContractGroupsFacade(this);
     this.voting = new VotingFacade(this);
     this.shielded = new ShieldedFacade(this);
+    this.encryptedFor = new EncryptedForFacade(this);
+    this.moderationCharters = new ModerationChartersFacade(this);
   }
 
   get wasm(): wasm.WasmSdk {
@@ -335,5 +341,7 @@ export { GroupFacade } from './group/facade.js';
 export { ContractGroupsFacade } from './contract-groups/facade.js';
 export { VotingFacade } from './voting/facade.js';
 export { ShieldedFacade } from './shielded/facade.js';
+export { EncryptedForFacade } from './encrypted-for/facade.js';
+export { ModerationChartersFacade } from './moderation-charters/facade.js';
 export { wallet } from './wallet/functions.js';
 export * from './wasm.js';

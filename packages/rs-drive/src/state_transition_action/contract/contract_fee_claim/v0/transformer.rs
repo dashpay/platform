@@ -7,13 +7,14 @@ use dpp::state_transition::contract_fee_claim_transition::v0::ContractFeeClaimTr
 use std::collections::BTreeMap;
 
 impl ContractFeeClaimTransitionActionV0 {
-    /// The action of a borrowed transition, carrying the epoch and the block time of the claim
-    /// and what each recipient is paid
+    /// The action of a borrowed transition, carrying the epoch and the block time of the claim,
+    /// what each recipient is paid and whose moderation action counts the claim resets
     pub fn from_borrowed_transition_with_payouts(
         value: &ContractFeeClaimTransitionV0,
         epoch_index: EpochIndex,
         time_ms: TimestampMillis,
         payouts: BTreeMap<Identifier, Credits>,
+        settled_action_counts: Vec<Identifier>,
     ) -> Self {
         let ContractFeeClaimTransitionV0 {
             owner_id,
@@ -31,6 +32,7 @@ impl ContractFeeClaimTransitionActionV0 {
             epoch_index,
             time_ms,
             payouts,
+            settled_action_counts,
             user_fee_increase: *user_fee_increase,
         }
     }

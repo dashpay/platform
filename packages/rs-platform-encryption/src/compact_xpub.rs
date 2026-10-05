@@ -140,19 +140,21 @@ mod tests {
     use super::*;
     use crate::ecdh::derive_shared_key_ecdh;
     use secp256k1::generate_keypair;
-    use secp256k1::rand::{rng, RngCore};
+    use secp256k1::rand::rngs::StdRng;
+    use secp256k1::rand::{RngCore, SeedableRng};
 
     #[test]
     fn test_extended_public_key_encryption() {
-        let (secret1, _public1) = generate_keypair(&mut rng());
-        let (_secret2, public2) = generate_keypair(&mut rng());
+        let mut rng = StdRng::seed_from_u64(3);
+        let (secret1, _public1) = generate_keypair(&mut rng);
+        let (_secret2, public2) = generate_keypair(&mut rng);
 
         // Derive shared key
         let shared_key = derive_shared_key_ecdh(&secret1, &public2);
 
         // Generate random IV
         let mut iv = [0u8; 16];
-        rng().fill_bytes(&mut iv);
+        rng.fill_bytes(&mut iv);
 
         // DIP-15 compact xpub plaintext (69 bytes). 69 → PKCS7 → 80, + 16-byte
         // IV = exactly 96 bytes, matching the contract's minItems/maxItems: 96.

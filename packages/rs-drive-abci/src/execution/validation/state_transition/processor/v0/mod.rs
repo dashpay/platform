@@ -44,7 +44,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
     if state_transition.has_is_allowed_validation()? {
-        let result = state_transition.validate_is_allowed(platform, platform_version)?;
+        let result = state_transition.validate_is_allowed(platform_version)?;
 
         if !result.is_valid() {
             return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));

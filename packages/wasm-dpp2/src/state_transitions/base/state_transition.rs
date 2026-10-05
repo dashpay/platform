@@ -366,6 +366,9 @@ impl StateTransitionWasm {
             IdentityKeyLimitsUpdate(_) => 23,
             ContractUserModeration(_) => 24,
             ContractFeeClaim(_) => 25,
+            TokenShieldedTransferWithShieldedFee(_) => 26,
+            TokenUnshieldWithShieldedFee(_) => 27,
+            TokenPurchaseFromShieldedPool(_) => 28,
         }
     }
 
@@ -460,6 +463,9 @@ impl StateTransitionWasm {
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
             | IdentityCreateFromShieldedPool(_)
+            | TokenShieldedTransferWithShieldedFee(_)
+            | TokenUnshieldWithShieldedFee(_)
+            | TokenPurchaseFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
@@ -493,6 +499,9 @@ impl StateTransitionWasm {
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
             | IdentityCreateFromShieldedPool(_)
+            | TokenShieldedTransferWithShieldedFee(_)
+            | TokenUnshieldWithShieldedFee(_)
+            | TokenPurchaseFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
@@ -656,6 +665,9 @@ impl StateTransitionWasm {
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
             | IdentityCreateFromShieldedPool(_)
+            | TokenShieldedTransferWithShieldedFee(_)
+            | TokenUnshieldWithShieldedFee(_)
+            | TokenPurchaseFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set owner for shielded transition",
@@ -751,6 +763,9 @@ impl StateTransitionWasm {
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
             | IdentityCreateFromShieldedPool(_)
+            | TokenShieldedTransferWithShieldedFee(_)
+            | TokenUnshieldWithShieldedFee(_)
+            | TokenPurchaseFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for shielded transition",
@@ -873,6 +888,9 @@ impl StateTransitionWasm {
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
             | IdentityCreateFromShieldedPool(_)
+            | TokenShieldedTransferWithShieldedFee(_)
+            | TokenUnshieldWithShieldedFee(_)
+            | TokenPurchaseFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity nonce for shielded transition",

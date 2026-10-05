@@ -20,14 +20,57 @@ pub struct SystemLimits {
     pub max_typed_array_items: u16,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
-    /// property that declares one (an identifier, or a key id carrying a key reference), and
-    /// `maxItems` for each typed array whose identifier elements declare one. Every reference is checked against state when the
+    /// property that declares one (an identifier, or a key id carrying a key reference), one
+    /// for the type's `ownerRefersTo`, and `maxItems` for each typed array whose identifier
+    /// elements declare one. Every reference is checked against state when the
     /// document is created or replaced, each check a billed read, so this bounds the reads one
     /// document write can cause; without it a type could declare many typed arrays of
     /// `max_typed_array_items` references each. Refused under full validation only, like
     /// `max_typed_array_items`. Read by document type parser generation 3 (protocol version
     /// 14), the only generation that parses `refersTo`, and never reached before.
     pub max_references_per_document: u16,
+    /// Maximum number of operands one `anyOf` or `allOf` list of a `refersTo` reference
+    /// expression may hold (it holds at least two). Every leaf may be read for each value the
+    /// declaration covers when the document is written, and each counts against
+    /// `max_references_per_document`; this keeps one list from spending the whole budget on
+    /// alternatives. Refused under full validation only, like `max_typed_array_items`. Read by
+    /// document type parser generation 3 (protocol version 14), the only generation that parses
+    /// `refersTo`, and never reached before.
+    pub max_reference_operands: u16,
+    /// Maximum number of `anyOf` / `allOf` combinators on any path from a `refersTo` reference
+    /// expression to one of its leaves (a flat `anyOf` is 1). Refused under full validation
+    /// only, like `max_reference_operands`. Must stay at most
+    /// `dpp`'s `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH` (16), the nesting a decoder of a
+    /// consensus error carrying the declaration accepts; a test there holds every version to
+    /// it. Read by document type parser generation 3 (protocol version 14) and never reached
+    /// before.
+    pub max_reference_expression_depth: u16,
+    /// Maximum number of named rules one document type's `propertyConstraints` may
+    /// declare. Every rule is evaluated on each create and replace of a document of the
+    /// type, so this and `max_property_constraint_nodes` are what bound the arithmetic one
+    /// document write causes, and `max_property_constraint_aggregates` the state it reads. Refused under full validation only,
+    /// like `max_typed_array_items`. Read by document type parser generation 3 (protocol
+    /// version 14), the only generation that parses `propertyConstraints`, and never
+    /// reached before.
+    pub max_property_constraints: u16,
+    /// Maximum number of nodes in one `propertyConstraints` rule: every comparison, every
+    /// `in` and each value it lists (a `notIn` costing what its `in` costs), every
+    /// `contains`, `startsWith`, `endsWith`, `present` or `absent`, every `anyOf`, `allOf`,
+    /// `not`, `ifThen` or `ifThenElse`, every arithmetic operator (`min`, `max` and `abs`
+    /// included) and every operand: an integer value, a `const`, a property, a size
+    /// (`length`, `byteLength`, `count`) or a system time or height. An `ifAbsent` operand
+    /// is one node, the default it gives included.
+    /// Refused under full validation only, like `max_property_constraints`. Read by document
+    /// type parser generation 3 (protocol version 14) and never reached before.
+    pub max_property_constraint_nodes: u16,
+    /// Maximum number of distinct `countOf` and `sumOf` totals the `propertyConstraints`
+    /// rules of one document type read. Each is a billed read of a count or sum tree on
+    /// every create or replace of a document of the type, and on a transfer, a purchase or
+    /// a price update judged against a rule reading it, so this bounds the state one
+    /// document write reads for its rules. A total two rules read alike counts once. Refused under full validation
+    /// only, like `max_property_constraints`. Read by document type parser generation 3
+    /// (protocol version 14) and never reached before.
+    pub max_property_constraint_aggregates: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
@@ -67,6 +110,33 @@ pub struct SystemLimits {
     ///   the accumulated operations through, so document operations in *that* variant do see
     ///   their siblings — which is why the withdrawal paths batch many documents safely. It is
     ///   not a drop-in for batch transitions: it carries no delete variant.
+    ///
+    /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
+    ///   own code. Its balance write is absolute rather than a delta, so two pool operations in
+    ///   one batch would silently discard the first — value lost on every node, no disagreement
+    ///   to notice. And an outputs-only bundle's sighash binds the owner, but nothing that
+    ///   tells one of that owner's transitions from another, while its anchor is never checked
+    ///   against a pool at all — so the same authorized bytes can sit in two shields of one
+    ///   batch: state validation runs per transition against the transaction before any
+    ///   operation applies, so the second cannot see the first's pending insert, and the
+    ///   within-bundle check is scoped to one action set. The two inserts are then byte-identical
+    ///   in path, key and value, which a node running the shipped batching default folds in
+    ///   silence while a node verifying batch
+    ///   consistency refuses — the two disagree on one block and neither shows why. Raising the
+    ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
+    ///   not just making the ignored cases above pass.
+    ///
+    /// * The batch minimum balance pre-check reserves the compute fee of every shielded pool
+    ///   bundle a batch carries, on top of `document_batch_sub_transition` per sub-transition.
+    ///   It refuses nobody who could have paid only because a bundle-carrying sub-transition's
+    ///   metered fee is itself far above that flat minimum: the band the floor newly refuses is
+    ///   `metered_fee < flat_minimum` wide, and one pool action's ~550 metered storage bytes
+    ///   price it two orders of magnitude above the 100,000 flat minimum, so the band is empty.
+    ///   A cap above one does not by itself change that — the floor and the charge are both
+    ///   per sub-transition — but a later change that lets a batch carry a bundle alongside
+    ///   sub-transitions cheaper than the flat minimum would reopen it, and the floor would
+    ///   then start refusing batches that fee validation would have executed. Recheck the
+    ///   inequality rather than assuming it.
     ///
     /// Five cases in `rs-drive`'s `batched_group_drain` suite are `#[ignore]`d for exactly this
     /// reason; the rest of that suite runs. Anyone raising this cap should un-ignore those five
@@ -146,9 +216,11 @@ pub struct SystemLimits {
     /// version 14) and never reached before.
     pub max_contract_moderation_reason_documents: u16,
     /// Shortest join window and vote window, in seconds, an elected moderation team
-    /// declaration (`ContractModerators::Elected`) may set: one day. Read by the contract's
-    /// `validate_moderation_config` v0 (protocol version 14) and never reached before.
-    pub min_contract_moderation_election_window_seconds: u32,
+    /// declaration (`ContractModerators::Elected`) may set on mainnet: one day. Every other
+    /// network has no floor, a window of 0 included, so test elections resolve at once. Read
+    /// by the contract's `validate_moderation_config` v0 (protocol version 14) and never
+    /// reached before.
+    pub min_mainnet_contract_moderation_election_window_seconds: u32,
     /// Longest join window and vote window, in seconds, such a declaration may set: four
     /// weeks.
     pub max_contract_moderation_election_window_seconds: u32,
@@ -162,12 +234,46 @@ pub struct SystemLimits {
     /// action): a week. Read by the `ContractUserModeration` state validation v0 (protocol
     /// version 14) and never reached before.
     pub contract_document_restore_window_ms: u64,
+    /// Most members an elected moderation declaration may let a seated team's leader add
+    /// after the election (`maxAddedModerators`). Read by the declaration's validation
+    /// (protocol version 14) and never reached before.
+    pub max_contract_moderation_added_moderators: u16,
+    /// Most members a moderation charter elects beside its leader: the `maxItems` of the
+    /// moderation charters contract's `electedCharter.members`, which must stay equal to it.
+    /// With the leader and the members an elected declaration lets the leader add
+    /// (`maxAddedModerators`), it bounds how many members of a seated team a document type's
+    /// `moderatorAbilities.deleteSettled` may require to approve the deletion of a settled
+    /// document. Refused under full validation only, so a stored contract stays readable if it
+    /// ever shrinks. Read by the document type parser (protocol version 14) and never reached
+    /// before.
+    pub max_moderation_charter_elected_members: u16,
+    /// Most contenders one contested document resource vote poll accepts: a document that
+    /// would add one more is refused. The end of a poll tallies, and cleans up, every
+    /// contender in one block, so this bounds that work; `maximum_contenders_to_consider`
+    /// must stay at least this where it is read. Read by the contested document create
+    /// state validation v2 (protocol version 14) and never reached before.
+    pub max_contenders_per_contest: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
     // do this that much
     pub max_token_redemption_cycles: u32,
+    /// Most finalized epochs one `EvonodesByParticipation` perpetual distribution claim reads
+    /// to weigh the claimant's participation, unless one cycle of the distribution spans more
+    /// epochs, in which case the claim reads that one whole cycle. The claim pays only through
+    /// the last whole cycle it read, so an evonode further behind is paid over several claims.
+    /// Read by `evonode_participation_rewards` v1 (protocol version 14); 100 in every table,
+    /// the bound the read was held to before (`drive_abci.query.max_returned_elements`), which
+    /// v0 keeps reading.
+    pub max_evonode_reward_claim_epochs: u16,
     pub max_shielded_transition_actions: u16,
+    /// Highest `minimumPoolNotesForOutgoing` a token's configuration may set. The threshold
+    /// refuses outflows from the token's shielded pool while the pool holds fewer notes, so
+    /// without an upper bound an issuer could set one no pool ever reaches and strand every
+    /// holder's shielded balance, irreversibly on a readonly contract. Read by the token
+    /// configuration validation of contract create and update and by `TokenConfigUpdate`
+    /// (protocol version 14), which never reach it before.
+    pub max_token_pool_notes_for_outgoing: u64,
     /// Maximum overlap factor (`range / step`) a `timeRange` index transform
     /// may declare, enforced at contract registration.
     ///
@@ -201,6 +307,42 @@ pub struct SystemLimits {
     /// including shared grids and deep suffixes. Each drop is O(1).
     /// `None` disables cleanup on versions predating the `ttl` key.
     pub min_time_range_ttl_drop_operations_per_write: Option<u16>,
+    /// Minimum time to live, in seconds, a document type may declare with its `ttl`
+    /// keyword, enforced when a contract is registered or updated (full validation only,
+    /// like `max_document_ttl_seconds`). A document the cleanup deletes before its writer
+    /// has fetched the proof of its create would fail that proof's verification (it proves
+    /// the document present); the floor keeps every document well past that point. Read by
+    /// document type parser generation 3 (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the keyword.
+    pub min_document_ttl_seconds: Option<u32>,
+    /// Maximum time to live, in seconds, a document type may declare with its `ttl`
+    /// keyword, enforced when a contract is registered or updated (full validation only,
+    /// like `max_typed_array_items`). Documents of a type with a `ttl` are deleted by the
+    /// platform once `$createdAt + ttl` has passed; the cap bounds how long the flagless,
+    /// prepaid storage of such a document can live, which is what the per-period price of
+    /// the fee schedule's `document_ttl` group is calibrated for. Read by document type
+    /// parser generation 3 (protocol version 14), the only generation that parses `ttl`.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the keyword
+    /// (nothing to bound: it does not parse there).
+    pub max_document_ttl_seconds: Option<u32>,
+    /// Maximum number of expired documents the platform deletes in one block, after the
+    /// block's state transitions (`expire_documents` v0). Expirations beyond it wait for
+    /// the next block, oldest first. Bounds the unbilled work the cleanup adds to a block.
+    ///
+    /// 0 on protocol versions that predate document expiry, where the event does not run
+    /// (`expire_documents` is `None` in their method tables).
+    pub max_document_expirations_per_block: u16,
+    /// The most work the document expiry cleanup does in one block, beside
+    /// `max_document_expirations_per_block`: each deleted document weighs 1 plus the weighted
+    /// index levels of its type (every index counts its properties, times the overlapping
+    /// windows of a `timeRange` index), the measure its prepaid deletion fee is sized by.
+    /// The cleanup stops before a document that would pass it, except the block's first, so
+    /// the backlog always drains.
+    ///
+    /// 0 on protocol versions that predate document expiry, where the event does not run.
+    pub max_document_expiration_weight_per_block: u32,
     /// Lowest GroveDB proof envelope version a client accepts from a
     /// current-state response.
     ///
@@ -216,6 +358,17 @@ pub struct SystemLimits {
     /// version 3 (protocol version 13), so every live network already serves
     /// V1 by the time the floor applies.
     pub minimum_grovedb_proof_envelope_version: u32,
+    /// The largest magnitude a summed property may admit on a document type with a
+    /// contested index, enforced when a contract is registered or updated (full validation
+    /// only, like `max_document_ttl_seconds`): the property's schema must declare a
+    /// `maximum` of at most this and a `minimum` of at least its negation. The end of a
+    /// contest writes the winner's document into the type's sums with no transition to
+    /// refuse, so the values must be small enough that the sums stay in `i64`: with every
+    /// value this small, a sum of fewer than 2^36 documents does. Read by document type
+    /// parser generation 3 (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers do not read it.
+    pub max_contested_summed_value_magnitude: Option<u64>,
 }
 
 #[cfg(test)]
@@ -250,7 +403,8 @@ mod tests {
                     .max_transitions_in_documents_batch,
                 1,
                 "protocol version {} allows more than one transition per documents batch; \
-                 see the documentation on SystemLimits::max_transitions_in_documents_batch \
+                 token shielded pools rely on this cap for two separate properties, so read \
+                 the documentation on SystemLimits::max_transitions_in_documents_batch \
                  for what that exposes",
                 platform_version.protocol_version
             );
@@ -287,7 +441,8 @@ mod tests {
                     .max_transitions_in_documents_batch,
                 1,
                 "mock platform version {} allows more than one transition per documents \
-                 batch; see SystemLimits::max_transitions_in_documents_batch",
+                 batch; token shielded pools rely on this cap for two separate properties, so \
+                 read SystemLimits::max_transitions_in_documents_batch",
                 platform_version.protocol_version
             );
         }

@@ -48,16 +48,59 @@ use crate::version::system_limits::SystemLimits;
 ///   2^53 - 1 milliseconds of block time, the largest value JSON clients read exactly. The
 ///   text of the reason a ban or a suspension carries is at most 1024 bytes.
 /// * Elected moderation teams (protocol version 14): a contract that declares an elected
-///   moderation team sets its join window and vote window between one day and four weeks,
-///   and its challenge cool-down between two weeks and three years, all in seconds.
+///   moderation team sets its join window and vote window at most four weeks, and at least
+///   one day on mainnet (0 is allowed on every other network), and its challenge cool-down
+///   between two weeks and three years, all in seconds.
 /// * Typed array document properties (protocol version 14): a typed array property declares
 ///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
 ///   earlier tables, whose parsers never read it).
 /// * References (protocol version 14): one document of a document type carries at most 256
-///   references, counted at registration as one per property with `refersTo` and
-///   `maxItems` per typed array whose elements declare one (`max_references_per_document`,
+///   references, counted at registration as one per property with `refersTo`, one for the
+///   type's `ownerRefersTo` and `maxItems` per typed array whose elements declare one
+///   (`max_references_per_document`,
 ///   backfilled into the earlier tables, whose parsers never read it). Each reference is a
 ///   billed state read when the document is written.
+/// * Reference expressions (protocol version 14): a `refersTo` `anyOf` or `allOf` list holds at
+///   most 4 operands (`max_reference_operands`) and they nest at most 4 combinators deep
+///   (`max_reference_expression_depth`), both backfilled into the earlier tables, whose parsers
+///   never read them; every leaf counts against `max_references_per_document`.
+/// * Property constraints (protocol version 14): a document type declares at most 16
+///   `propertyConstraints` rules (`max_property_constraints`) of at most 32 nodes each
+///   (`max_property_constraint_nodes`), reading at most 4 distinct `countOf` and `sumOf`
+///   totals (`max_property_constraint_aggregates`), all backfilled into the earlier tables,
+///   whose parsers never read them. The first two bound the arithmetic one document write
+///   causes, the third the count and sum trees it reads.
+/// * Document expiry (protocol version 14): a document type may declare a `ttl` of at least
+///   one hour (`min_document_ttl_seconds`) and at most one year (`max_document_ttl_seconds`),
+///   and the platform deletes at most 128 expired documents per block
+///   (`max_document_expirations_per_block`), weighing at most 1,024 in documents plus their
+///   index levels (`max_document_expiration_weight_per_block`), all joined this table in
+///   place while protocol version 14 was unreleased. `None` or 0 in the earlier tables,
+///   whose parsers never read the keyword and whose blocks never run the cleanup.
+/// * Moderation charters (protocol version 14): an elected moderation declaration lets a
+///   seated team's leader add at most 15 members (`max_contract_moderation_added_moderators`),
+///   which joined this table in place while protocol version 14 was unreleased. A charter's
+///   description cap is the charter schema's own `maxBytes`, not a limit here.
+/// * Settled-document deletions (protocol version 14): a document type's
+///   `moderatorAbilities.deleteSettled` requires at most as many approvals as the declared team
+///   holds, its leader, the 15 members a charter elects (`max_moderation_charter_elected_members`,
+///   the charters contract's `electedCharter.members` `maxItems`) and the declaration's
+///   `maxAddedModerators`. It joined this table in place while protocol version 14 was
+///   unreleased, and was backfilled into the earlier tables, whose parsers never read it.
+/// * Contested documents (protocol version 14): a contest accepts at most 1,000 contenders
+///   (`max_contenders_per_contest`, backfilled into the earlier tables, whose validation never
+///   reads it). The end of a poll within the cap tallies and cleans up every contender in one
+///   block; the end of one that grew past 10,000 before version 14, its first 10,000
+///   (`maximum_contenders_to_consider`).
+/// * Contested summed types (protocol version 14): a document type with a contested index
+///   and a summed property may only be registered when that property's values lie within
+///   ±2^27 (`max_contested_summed_value_magnitude`), so awarding a contest cannot take a sum
+///   out of `i64`. It joined this table in place while protocol version 14 was unreleased.
+///   `None` in the earlier tables, whose parsers never read it.
+/// * Token pool notes threshold (protocol version 14): a token configuration's
+///   `minimumPoolNotesForOutgoing` is at most 250 (`max_token_pool_notes_for_outgoing`), the
+///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
+///   configuration able to carry it.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -66,7 +109,12 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
-    max_state_transition_size: 20480, //20 KiB
+    max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
+    max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
+    max_property_constraints: 16, // propertyConstraints (new in v14): contract registration caps the rules one document type declares
+    max_property_constraint_nodes: 32, // propertyConstraints (new in v14): contract registration caps the nodes (comparison, operators, properties, values) of one rule
+    max_property_constraint_aggregates: 4, // propertyConstraints countOf / sumOf (new in v14): contract registration caps the distinct totals one document type's rules read
+    max_state_transition_size: 20480,      //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,
@@ -88,12 +136,16 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderation_reason_length: 1024,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
-    min_contract_moderation_election_window_seconds: 86_400, // one day
-    max_contract_moderation_election_window_seconds: 2_419_200, // four weeks
-    min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
+    min_mainnet_contract_moderation_election_window_seconds: 86_400, // one day
+    max_contract_moderation_election_window_seconds: 2_419_200,      // four weeks
+    min_contract_moderation_challenge_cool_down_seconds: 1_209_600,  // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
-    contract_document_restore_window_ms: 604_800_000,        // 7 days
+    contract_document_restore_window_ms: 604_800_000,                // 7 days
+    max_contract_moderation_added_moderators: 15,
+    max_moderation_charter_elected_members: 15,
+    max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,
+    max_evonode_reward_claim_epochs: 100,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is
     // ~2,681 B per action + ~2,930 B fixed (measured: 2 actions → 8,294 B,
@@ -102,8 +154,14 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: Some(24),
     max_time_range_ttl_seconds: Some(604_800), // one week
     min_time_range_ttl_drop_operations_per_write: Some(32),
+    min_document_ttl_seconds: Some(3_600), // document ttl (new in v14): one hour
+    max_document_ttl_seconds: Some(31_536_000), // document ttl (new in v14): one year of 365 days
+    max_document_expirations_per_block: 128, // document ttl (new in v14): expired documents deleted per block
+    max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
+    max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
 };

@@ -61,6 +61,7 @@ pub unsafe fn convert_put_settings(put_settings: *const DashSDKPutSettings) -> O
             method_feature_version: None,
             base_feature_version: None,
             action_fee_agreement: None,
+            contest_fund: None,
         });
 
         let wait_timeout = if ios_settings.wait_timeout_ms > 0 {

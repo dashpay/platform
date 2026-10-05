@@ -13,6 +13,9 @@
 '@dashevo/app-connect-contract':
   - packages/app-connect-contract/**
 
+'@dashevo/moderation-charters-contract':
+  - packages/moderation-charters-contract/**
+
 '@dashevo/dashpay-contract':
   - packages/dashpay-contract/**
 

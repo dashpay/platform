@@ -21,11 +21,13 @@
 //! - [`platform_value_to_json`] - Human-readable format
 
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::utils::define_own_property;
 use dpp::platform_value;
 use js_sys::Object;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 
@@ -151,14 +153,13 @@ pub(crate) fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsVa
         let keys = Object::keys(&obj);
         for i in 0..keys.length() {
             let key = keys.get(i);
-            if key.as_string().is_some() {
+            if let Some(key_str) = key.as_string() {
                 let prop_value = js_sys::Reflect::get(value, &key).map_err(|e| {
                     WasmDppError::serialization(format!("Failed to get property: {:?}", e))
                 })?;
                 let normalized = normalize_js_value_for_json(&prop_value)?;
-                js_sys::Reflect::set(&new_obj, &key, &normalized).map_err(|e| {
-                    WasmDppError::serialization(format!("Failed to set property: {:?}", e))
-                })?;
+                // Defined, not set: a key named `__proto__` stays an own property
+                define_own_property(&new_obj, &key_str, normalized)?;
             }
         }
         return Ok(new_obj.into());
@@ -227,13 +228,8 @@ fn normalize_map_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
         // Normalize the value - handle WASM objects, BigInt, nested Maps, etc.
         match normalize_js_value_for_json(&val) {
             Ok(normalized_val) => {
-                if let Err(e) =
-                    js_sys::Reflect::set(&new_obj, &JsValue::from_str(&key_str), &normalized_val)
-                {
-                    *error.borrow_mut() = Some(WasmDppError::serialization(format!(
-                        "Failed to set Map entry '{}': {:?}",
-                        key_str, e
-                    )));
+                if let Err(e) = define_own_property(&new_obj, &key_str, normalized_val) {
+                    *error.borrow_mut() = Some(e);
                 }
             }
             Err(e) => {
@@ -386,6 +382,65 @@ pub fn platform_value_to_object_with_base58_identifiers(
     value: &platform_value::Value,
 ) -> WasmDppResult<JsValue> {
     platform_value_to_object(&identifier_values_to_base58(value))
+}
+
+/// A JS object holding each `(name, value)` as an own, enumerable data property, so a name like
+/// an inherited accessor (`__proto__`) is a property, not a call to the accessor: what the
+/// fields a document carries by name need, whatever the names are.
+pub fn object_with_own_properties<K: AsRef<str>>(
+    entries: impl IntoIterator<Item = (K, JsValue)>,
+) -> WasmDppResult<Object> {
+    let object = Object::new();
+    for (name, value) in entries {
+        define_own_property(&object, name.as_ref(), value)?;
+    }
+    Ok(object)
+}
+
+/// The values a moderator's removal record keeps of a document, by property path, as a JS
+/// object: each value as the document's `properties` show it (identifiers as base58 strings,
+/// other bytes as Uint8Arrays, large integers as bigints), every key of it, at any depth, an
+/// own property. [`normalize_js_value_for_json`] turns it into its JSON form.
+pub fn kept_fields_to_js(
+    kept_fields: &BTreeMap<String, platform_value::Value>,
+) -> WasmDppResult<JsValue> {
+    let entries = kept_fields
+        .iter()
+        .map(|(path, value)| Ok((path.as_str(), kept_value_to_js(value)?)))
+        .collect::<WasmDppResult<Vec<_>>>()?;
+    Ok(object_with_own_properties(entries)?.into())
+}
+
+/// One kept value as [`kept_fields_to_js`] shows it: an object's members and an array's
+/// elements converted the same way, so a member named `__proto__` is the object's own.
+fn kept_value_to_js(value: &platform_value::Value) -> WasmDppResult<JsValue> {
+    match value {
+        platform_value::Value::Map(entries) => {
+            let entries = entries
+                .iter()
+                .map(|(key, value)| {
+                    let key = match stringify_key(key) {
+                        platform_value::Value::Text(key) => key,
+                        key => {
+                            return Err(WasmDppError::serialization(format!(
+                                "a kept object has a key that is no text: {key:?}"
+                            )));
+                        }
+                    };
+                    Ok((key, kept_value_to_js(value)?))
+                })
+                .collect::<WasmDppResult<Vec<_>>>()?;
+            Ok(object_with_own_properties(entries)?.into())
+        }
+        platform_value::Value::Array(items) => {
+            let array = js_sys::Array::new();
+            for item in items {
+                array.push(&kept_value_to_js(item)?);
+            }
+            Ok(array.into())
+        }
+        scalar => platform_value_to_object_with_base58_identifiers(scalar),
+    }
 }
 
 /// Recursively convert `Value::Identifier` values to base58 `Value::Text`.

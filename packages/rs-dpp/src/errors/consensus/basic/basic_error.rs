@@ -14,7 +14,7 @@ use crate::consensus::basic::contract_group::{
 use crate::consensus::basic::contract_moderation::{
     ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError, InvalidContractModerationConfigError,
-    InvalidContractModerationReasonDocumentsError,
+    InvalidContractModerationDocumentFieldsError, InvalidContractModerationReasonDocumentsError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -39,10 +39,10 @@ use crate::consensus::basic::data_contract::{
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
     RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
-    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
-    UnknownTransferableTypeError,
+    TokenShieldedPoolIncompatibleRulesError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -54,7 +54,9 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
-    DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
+    DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
+    DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError,
+    DocumentReferencePreimageInvalidError, DocumentTransitionsAreAbsentError,
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
     InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
     InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
@@ -90,6 +92,9 @@ use crate::consensus::basic::identity::{
     WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use crate::consensus::basic::moderation_charter::{
+    ModerationCharterMalformedFieldError, ModerationCharterRewardSplitNotOneHundredError,
+};
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputOutputBalanceMismatchError,
@@ -625,10 +630,6 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
-    InvalidTokenDistributionEpochIntervalTooShortError(
-        InvalidTokenDistributionEpochIntervalTooShortError,
-    ),
-    #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),
 
     #[error(transparent)]
@@ -812,6 +813,47 @@ pub enum BasicError {
     // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
     #[error(transparent)]
     InvalidEncryptedPropertyShapeError(InvalidEncryptedPropertyShapeError),
+
+    // Moderation charters (protocol version 14).
+    #[error(transparent)]
+    ModerationCharterMalformedFieldError(ModerationCharterMalformedFieldError),
+
+    #[error(transparent)]
+    ModerationCharterRewardSplitNotOneHundredError(ModerationCharterRewardSplitNotOneHundredError),
+
+    // A string over the `maxBytes` its property declares (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyMaxBytesExceededError(DocumentPropertyMaxBytesExceededError),
+
+    // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyConstraintViolatedError(DocumentPropertyConstraintViolatedError),
+
+    // A perpetual distribution with a zero epoch interval (protocol version 14). Appended here:
+    // it was first inserted mid-enum, which shifted the discriminant of every variant shipped
+    // after it in 4.1.
+    #[error(transparent)]
+    InvalidTokenDistributionEpochIntervalTooShortError(
+        InvalidTokenDistributionEpochIntervalTooShortError,
+    ),
+
+    // A `generatedFrom` string property that is not what its function generates from its params
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError),
+
+    // The fields a moderator's document change sets (protocol version 14).
+    #[error(transparent)]
+    InvalidContractModerationDocumentFieldsError(InvalidContractModerationDocumentFieldsError),
+
+    // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentReferencePreimageInvalidError(DocumentReferencePreimageInvalidError),
+
+    // A token opting into a shielded pool keeps no freeze rules (protocol version 14).
+    #[error(transparent)]
+    TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -823,6 +865,7 @@ impl From<BasicError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
     use platform_value::Identifier;
 
     /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
@@ -845,7 +888,7 @@ mod tests {
             discriminant_of(BasicError::IdentityKeyLimitsUpdateEmptyError(
                 IdentityKeyLimitsUpdateEmptyError::new(1)
             )),
-            186
+            185
         );
         // Once-per-identity token distribution (protocol version 14).
         assert_eq!(
@@ -854,47 +897,47 @@ mod tests {
                     InvalidTokenOncePerIdentityDistributionAmountError::new(0, 1)
                 )
             ),
-            187
+            186
         );
         // Pre-programmed distribution amounts (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::PreProgrammedDistributionAmountOverLimitError(
                 PreProgrammedDistributionAmountOverLimitError::new(0, 100)
             )),
-            188
+            187
         );
         // Contract moderation (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::InvalidContractModerationConfigError(
                 InvalidContractModerationConfigError::new("reason".to_string())
             )),
-            189
+            188
         );
         assert_eq!(
             discriminant_of(BasicError::ContractModerationSelfTargetError(
                 ContractModerationSelfTargetError::new(Identifier::from([1; 32]))
             )),
-            190
+            189
         );
         assert_eq!(
             discriminant_of(BasicError::ContractModerationReasonTooLongError(
                 ContractModerationReasonTooLongError::new(1025, 1024)
             )),
-            191
+            190
         );
         // Document action fees (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::DocumentActionFeesWithoutModerationError(
                 DocumentActionFeesWithoutModerationError::new("post".to_string())
             )),
-            192
+            191
         );
         // Documents cited by a contract moderation reason (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::InvalidContractModerationReasonDocumentsError(
                 InvalidContractModerationReasonDocumentsError::new("x".to_string())
             )),
-            193
+            192
         );
         // A `distinctFrom` identifier property equal to what it must differ from (protocol
         // version 14).
@@ -906,10 +949,9 @@ mod tests {
                     "$ownerId".to_string(),
                 )
             )),
-            194
+            193
         );
-        // The shape of an `encryptedFor` property's ciphertext (protocol version 14): the
-        // tail of the enum.
+        // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::InvalidEncryptedPropertyShapeError(
                 InvalidEncryptedPropertyShapeError::new(
@@ -920,7 +962,111 @@ mod tests {
                     16
                 )
             )),
+            194
+        );
+        // Moderation charters (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterMalformedFieldError(
+                ModerationCharterMalformedFieldError::new(
+                    "rewardSplit".to_string(),
+                    "reason".to_string()
+                )
+            )),
             195
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterRewardSplitNotOneHundredError(
+                ModerationCharterRewardSplitNotOneHundredError::new(10, 40, 40)
+            )),
+            196
+        );
+        // A string over its property's `maxBytes` (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyMaxBytesExceededError(
+                DocumentPropertyMaxBytesExceededError::new("description".to_string(), 4097, 4096)
+            )),
+            197
+        );
+        // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyConstraintViolatedError(
+                DocumentPropertyConstraintViolatedError::new(
+                    "order".to_string(),
+                    "depositCoversOrder".to_string(),
+                    PropertyConstraintViolation::NotMet,
+                )
+            )),
+            198
+        );
+        // A perpetual distribution with a zero epoch interval (protocol version 14).
+        assert_eq!(
+            discriminant_of(
+                BasicError::InvalidTokenDistributionEpochIntervalTooShortError(
+                    InvalidTokenDistributionEpochIntervalTooShortError::new(0)
+                )
+            ),
+            199
+        );
+        // A `generatedFrom` property that is not what its function generates (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyNotGeneratedError(
+                DocumentPropertyNotGeneratedError::new(
+                    "domain".to_string(),
+                    "normalizedLabel".to_string(),
+                    "sys.stringTransformations.homographSafeASCII".to_string(),
+                    vec!["label".to_string()],
+                )
+            )),
+            200
+        );
+        // The fields a moderator's document change sets (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidContractModerationDocumentFieldsError(
+                InvalidContractModerationDocumentFieldsError::new("no field".to_string())
+            )),
+            201
+        );
+        // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
+        // (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentReferencePreimageInvalidError(
+                DocumentReferencePreimageInvalidError::new(
+                    "domain".to_string(),
+                    "$creatorId".to_string(),
+                    "normalizedLabel".to_string(),
+                    "reason".to_string(),
+                )
+            )),
+            202
+        );
+        // A token opting into a shielded pool keeps no freeze rules (protocol version 14): the
+        // tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::TokenShieldedPoolIncompatibleRulesError(
+                TokenShieldedPoolIncompatibleRulesError::new(0, "freezeRules".to_string())
+            )),
+            203
+        );
+    }
+
+    /// The variants that shipped in 4.1 keep the discriminants they were released with, so an
+    /// SDK built against 4.1 decodes the errors of a newer node as the same variants. A variant
+    /// inserted anywhere before the tail moves these and fails this test.
+    #[test]
+    fn should_keep_the_discriminants_shipped_in_4_1() {
+        assert_eq!(
+            discriminant_of(BasicError::RedundantDocumentPaidForByTokenWithContractId(
+                RedundantDocumentPaidForByTokenWithContractId::new(Identifier::from([1; 32]))
+            )),
+            140
+        );
+        // The last variant released in 4.1.
+        assert_eq!(
+            discriminant_of(BasicError::TokenPricingScheduleEmptyError(
+                TokenPricingScheduleEmptyError::new(Identifier::from([1; 32]))
+            )),
+            172
         );
     }
 }

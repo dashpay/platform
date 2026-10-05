@@ -23,9 +23,13 @@ pub struct ContractFeeClaimTransitionActionV0 {
     /// the time of the block the claim executes in, recorded with the pot's last claim
     pub time_ms: TimestampMillis,
     /// what each recipient is paid, as settled when the transition was validated: the whole
-    /// owner pot to the contract owner, or an equal share of the moderators pot to every
-    /// member of the moderation team. Never empty, and every amount is above zero.
+    /// owner pot to the contract owner, an equal share of the moderators pot to every member
+    /// of a declared moderation team, or a seated team's pot split by its proposal's reward
+    /// split. Never empty, and every amount is above zero.
     pub payouts: BTreeMap<Identifier, Credits>,
+    /// the members of an elected contract's seated team whose moderation action counts the
+    /// claim of its moderators pot split the pot by and resets; empty for every other claim
+    pub settled_action_counts: Vec<Identifier>,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }

@@ -47,7 +47,8 @@ export type DocumentTypedArrayItem =
        * schema declares one: consensus checks each element as a single
        * reference when a document is created or replaced, and a write error
        * names the failing element by its list path (`"reasons[2]"`). Never
-       * `identityPublicKey`. The same declaration is listed by
+       * `identityPublicKey`; a reference expression, which each element must
+       * meet on its own. The same declaration is listed by
        * `documentTypeReferences` at the path `"<path>[]"`.
        */
       refersTo?: DocumentPropertyReferenceTarget;

@@ -19,6 +19,9 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// expired entries of the credit inflows sum tree the net daily withdrawal limit reads, and
 /// bumps `rebroadcast_expired_withdrawal_documents` to 2 so an expired withdrawal whose
 /// payout is below Core's dust threshold is marked FAILED instead of re-signed forever.
+/// `decode_raw_state_transitions` 1 refuses bytes left over after a raw state transition.
+/// `add_distribute_storage_fee_to_epochs_operations` 1 claws each pending storage refund back
+/// from the epochs it was priced for.
 /// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
@@ -56,7 +59,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
         check_for_desired_protocol_upgrade: 1,
         upgrade_protocol_version_on_epoch_change: 0,
-        perform_events_on_first_block_of_protocol_change: Some(1),
+        perform_events_on_first_block_of_protocol_change: Some(2), // changed: empties the contract cache first, so no read is billed at a fee cached under the old fee schedule
         protocol_version_upgrade_percentage_needed: 67,
     },
     block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
@@ -78,12 +81,12 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         verify_recent_signature_locally: 0,
     },
     fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions {
-        add_distribute_block_fees_into_pools_operations: 0,
-        add_distribute_storage_fee_to_epochs_operations: 0,
+        add_distribute_block_fees_into_pools_operations: 1, // changed in v14: document ttl storage fees go to the lifetime storage fee pools
+        add_distribute_storage_fee_to_epochs_operations: 1, // changed in v14: claws each pending refund back from the epochs it was priced for
     },
     fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions {
         add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 1,
-        add_epoch_pool_to_proposers_payout_operations: 0,
+        add_epoch_pool_to_proposers_payout_operations: 1, // changed: payouts are credited by the block's apply_drive_operations, which routes a repaid identity debt
         find_oldest_epoch_needing_payment: 0,
         fetch_reward_shares_list_for_masternode: 0,
     },
@@ -104,7 +107,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         keep_record_of_finished_contested_resource_vote_poll: 0,
         clean_up_after_vote_poll_end: 0,
         clean_up_after_contested_resources_vote_poll_end: 1,
-        check_for_ended_vote_polls: 1, // changed in v14: a tie goes to the earliest contender
+        check_for_ended_vote_polls: 1, // changed in v14: a tie goes to the earliest contender; a contest without locking ignores its lock tally
         tally_votes_for_contested_document_resource_vote_poll: 0,
         award_document_to_winner: 0,
         delay_vote_poll: 0,
@@ -117,7 +120,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         // unchanged from V9: v1 since v13 (records the balance effects of paid-INVALID /
         // unsuccessful-paid transitions)
         process_validation_result: 1,
-        decode_raw_state_transitions: 0,
+        decode_raw_state_transitions: 1, // changed: refuses bytes left over after a raw state transition
         validate_fees_of_event: 1, // changed: refuses an expired signing key and a spend the signing key's remaining budget does not cover, and judges a sponsored document batch's fee against its gas sponsor's balance
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),
@@ -139,6 +142,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         update_checkpoints: Some(0),
         record_shielded_pool_anchor: Some(0),
         prune_shielded_pool_anchors: Some(0),
+        record_token_shielded_pool_anchors: Some(0),
+        expire_documents: Some(0), // new in v14: document ttl cleanup
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 1, // changed: reads structure 1 records together with their masternode and validator set entries

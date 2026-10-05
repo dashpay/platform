@@ -9,6 +9,9 @@ use thiserror::Error;
 use crate::block::epoch::EpochIndex;
 use bincode::{Decode, DecodeUntrusted, Encode};
 
+/// No longer produced: Platform refused contested document creates before epoch 4 until that
+/// gate was removed. The error stays so `BasicError` keeps its variant order and clients still
+/// decode code 10418 from nodes that predate the removal.
 #[derive(
     Error,
     Debug,

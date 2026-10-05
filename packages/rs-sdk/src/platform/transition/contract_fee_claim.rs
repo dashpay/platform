@@ -4,8 +4,9 @@
 //! `actionFees` keyword). The `owner` parts collect in the contract's owner pot and the
 //! `moderators` parts in its moderators pot. A [`ContractFeeClaimTransition`], signed by a
 //! CRITICAL authentication key, pays a pot out: the owner pot to the contract owner, who alone
-//! may claim it, and the moderators pot in equal shares to the contract's moderation team, any
-//! member of which may claim it. A pot is paid out at most once per epoch.
+//! may claim it, and the moderators pot in equal shares to the contract's moderation team (by
+//! the proposal's reward split for an elected contract's seated team), any member of which may
+//! claim it. A pot is paid out at most once per epoch.
 //!
 //! ```ignore
 //! let claim = moderator_identity
@@ -45,10 +46,12 @@ pub struct ClaimedContractFees {
     /// The last claim of the pot, which is this claim unless the pot was claimed again since:
     /// its epoch, the time of its block and the identity that signed it
     pub last_claim: ContractFeePotLastClaim,
-    /// The credits left in the pot: what an equal split left over, and any fee collected
-    /// since the claim
+    /// The credits left in the pot: what the split left over, and any fee collected since the
+    /// claim
     pub remaining_credits: Credits,
-    /// The balance, after the claim, of every identity a payout of the pot goes to
+    /// The balance, after the claim, of every identity the contract names as a recipient of the
+    /// pot; for a claim by a member of an elected contract's seated team, which the contract
+    /// does not name, the claimant's balance alone
     pub balances: BTreeMap<Identifier, Credits>,
 }
 

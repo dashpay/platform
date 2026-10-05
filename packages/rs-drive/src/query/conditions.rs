@@ -3,6 +3,7 @@
 
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::where_clause_grouping::group_where_clauses;
 use crate::query::{QuerySyntaxSimpleValidationResult, QuerySyntaxValidationResult};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -573,7 +574,7 @@ impl<'a> WhereClause {
         where_clauses: &'a [WhereClause],
         platform_version: &PlatformVersion,
     ) -> Result<(BTreeMap<String, Self>, Option<Self>, Vec<Self>), Error> {
-        crate::query::where_clause_grouping::group_where_clauses(where_clauses, platform_version)
+        group_where_clauses(where_clauses, platform_version)
     }
 
     fn split_value_for_between(
@@ -1500,11 +1501,13 @@ fn is_numeric_value(value: &Value) -> bool {
 fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
     match field {
         // Identifiers
-        "$id" | "$ownerId" | "$dataContractId" | "$creatorId" => {
+        "$id" | "$ownerId" | "$dataContractId" | "$creatorId" | "$moderatedBy" => {
             Some(DocumentPropertyType::Identifier)
         }
         // Dates (millis since epoch)
-        "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
+        "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
+            Some(DocumentPropertyType::Date)
+        }
         // Block heights and core block heights
         "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
             Some(DocumentPropertyType::U64)
@@ -1519,6 +1522,7 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
             dpp::data_contract::document_type::StringPropertySizes {
                 min_length: None,
                 max_length: None,
+                max_bytes: None,
             },
         )),
         _ => None,
@@ -1564,6 +1568,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into()
     }
@@ -3527,6 +3533,7 @@ mod tests {
         let ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         let ops = allowed_ops_for_type(&ty);
         assert!(ops.contains(&super::StartsWith));
@@ -3596,6 +3603,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         assert!(WhereOperator::StartsWith.value_shape_ok(&Value::Text("abc".into()), &str_ty));
         assert!(!WhereOperator::StartsWith.value_shape_ok(&Value::I64(1), &str_ty));
@@ -3623,6 +3631,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         assert!(WhereOperator::LessThan.value_shape_ok(&Value::Text("a".into()), &str_ty));
         assert!(!WhereOperator::LessThan.value_shape_ok(&Value::I64(1), &str_ty));
@@ -4204,6 +4213,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
 
         let good = Value::Array(vec![Value::Text("aaa".into()), Value::Text("zzz".into())]);

@@ -1,3 +1,7 @@
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use anyhow::bail;
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Eq)]
@@ -12,10 +16,10 @@ pub enum GroupActionStatus {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for GroupActionStatus {}
+impl JsonConvertible for GroupActionStatus {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for GroupActionStatus {}
+impl ValueConvertible for GroupActionStatus {}
 
 #[cfg(all(
     test,

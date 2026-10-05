@@ -44,11 +44,18 @@ pub struct DpnsSearchResultFFI {
 /// `on_persist_identities_fn`. `signer_handle` must be a valid,
 /// non-destroyed handle produced by `dash_sdk_signer_create_with_ctx`
 /// (typically `KeychainSigner.handle`); the caller retains ownership.
+///
+/// `contest_fund` is the most, in credits, the registration pays into
+/// the contest a contested name joins (the fund to join doubles once a
+/// contest holds 250 contenders and again for every 50 more). `0` states
+/// the fund to join read just before the domain is submitted. A name
+/// that joins no contest ignores it.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_register_dpns_name_with_signer(
     wallet_handle: Handle,
     identity_id: *const u8,
     name: *const c_char,
+    contest_fund: u64,
     signer_handle: *mut SignerHandle,
     out_full_domain_name: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
@@ -63,6 +70,11 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name_with_signer(
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
     let name_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(name) }.to_str()).to_string();
+    let contest_fund = if contest_fund == 0 {
+        None
+    } else {
+        Some(contest_fund)
+    };
 
     let signer_addr = signer_handle as usize;
 
@@ -71,7 +83,7 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name_with_signer(
         block_on_worker(async move {
             let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
             identity_wallet
-                .register_name_with_external_signer(&id, &name_str, signer)
+                .register_name_with_external_signer(&id, &name_str, contest_fund, signer)
                 .await
         })
     });

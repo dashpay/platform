@@ -291,6 +291,7 @@ mod tests {
                             code: Some(SUSPENSION_REASON_CODE),
                             text: SUSPENSION_REASON.to_string(),
                             documents: vec![],
+                            reason_document_id: None,
                         },
                     }),
                     warnings: vec![],

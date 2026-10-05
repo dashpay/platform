@@ -2201,9 +2201,11 @@ mod tests {
                     Some(platform_value!({
                         "type": "permanentDocument",
                         "documentType": "reason",
-                        "propertyAgreement": { "topic": "topic" }
+                        "where": {
+                            "topic": "topic"
+                        }
                     })),
-                    "/properties/reasons/items/refersTo/propertyAgreement",
+                    "/properties/reasons/items/refersTo/where",
                 ),
             ] {
                 let old_document_type =
@@ -2228,6 +2230,332 @@ mod tests {
 
             // An unchanged declaration is no change
             let document_type = element_reference_document_type(Some(permanent), platform_version);
+            let result = document_type
+                .as_ref()
+                .validate_update(document_type.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_a_document_reference_find_by_changes() {
+            let platform_version = PlatformVersion::latest();
+            let found_by = |property: &str| {
+                platform_value!({
+                    "type": "permanentDocument",
+                    "documentType": "note",
+                    "findBy": { property: "." }
+                })
+            };
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (
+                    platform_value!({ "type": "permanentDocument", "documentType": "note" }),
+                    found_by("$ownerId"),
+                    "/properties/toUserId/refersTo/findBy",
+                ),
+                (
+                    found_by("$ownerId"),
+                    platform_value!({ "type": "permanentDocument", "documentType": "note" }),
+                    "/properties/toUserId/refersTo/findBy",
+                ),
+                // Another property of the referenced type, so another index
+                (
+                    found_by("$ownerId"),
+                    found_by("$creatorId"),
+                    "/properties/toUserId/refersTo/findBy/$ownerId",
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_refers_to), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_refers_to), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                // A property swapped for another in findBy is a removal and an
+                // addition, each its own incompatible change
+                assert!(
+                    !result.errors.is_empty()
+                        && result.errors.iter().all(|error| matches!(
+                            error,
+                            ConsensusError::BasicError(
+                                BasicError::IncompatibleDocumentTypeSchemaError(_)
+                            )
+                        ))
+                        && result.errors.iter().any(|error| matches!(
+                            error,
+                            ConsensusError::BasicError(
+                                BasicError::IncompatibleDocumentTypeSchemaError(e)
+                            ) if e.property_path() == changed_path
+                        )),
+                    "{changed_path}: {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        /// A reference expression is frozen like a single target: documents were checked
+        /// against the expression they were written under, so turning a target into an
+        /// expression or back, adding, removing or reordering an operand (the order decides
+        /// which error a writer sees), swapping `anyOf` for `allOf`, nesting deeper, or
+        /// changing a leaf is an incompatible schema change. `anyOf` and `allOf` inside
+        /// `refersTo` are the declaration's data, never read as the JSON Schema keywords.
+        #[test]
+        fn should_return_invalid_result_when_a_reference_expression_changes() {
+            let platform_version = PlatformVersion::latest();
+            let identity = platform_value!({ "type": "identity" });
+            let note = platform_value!({ "type": "permanentDocument", "documentType": "note" });
+            let memo = platform_value!({ "type": "permanentDocument", "documentType": "memo" });
+            let any_of = |targets: Vec<platform_value::Value>| platform_value!({ "anyOf": platform_value::Value::Array(targets) });
+            let all_of = |targets: Vec<platform_value::Value>| platform_value!({ "allOf": platform_value::Value::Array(targets) });
+
+            for (old_refers_to, new_refers_to) in [
+                (
+                    identity.clone(),
+                    any_of(vec![identity.clone(), note.clone()]),
+                ),
+                (any_of(vec![identity.clone(), note.clone()]), note.clone()),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![identity.clone(), note.clone(), memo.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone(), memo.clone()]),
+                    any_of(vec![identity.clone(), note.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![note.clone(), identity.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![identity.clone(), memo.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    all_of(vec![identity.clone(), note.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![
+                        identity.clone(),
+                        all_of(vec![note.clone(), memo.clone()]),
+                    ]),
+                ),
+                (
+                    all_of(vec![
+                        identity.clone(),
+                        any_of(vec![note.clone(), memo.clone()]),
+                    ]),
+                    all_of(vec![
+                        identity.clone(),
+                        any_of(vec![memo.clone(), note.clone()]),
+                    ]),
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_refers_to.clone()), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_refers_to.clone()), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert!(
+                    !result.errors.is_empty(),
+                    "{old_refers_to:?} -> {new_refers_to:?} should be incompatible"
+                );
+                for error in &result.errors {
+                    assert_matches!(
+                        error,
+                        ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(e)
+                        ) if e.property_path().starts_with("/properties/toUserId/refersTo"),
+                        "{old_refers_to:?} -> {new_refers_to:?}"
+                    );
+                }
+            }
+
+            // An unchanged expression is no change
+            let document_type = identifier_document_type(
+                Some(any_of(vec![identity, all_of(vec![note, memo])])),
+                platform_version,
+            );
+            let result = document_type
+                .as_ref()
+                .validate_schema(document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// The same holds on the elements of a typed array.
+        #[test]
+        fn should_refuse_a_contract_update_that_changes_an_element_reference_expression() {
+            let platform_version = PlatformVersion::latest();
+            let reason = platform_value!({ "type": "permanentDocument", "documentType": "reason" });
+            let any_of = platform_value!({
+                "anyOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
+            });
+
+            let all_of = platform_value!({
+                "allOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
+            });
+            for (old_refers_to, new_refers_to) in [
+                (reason.clone(), any_of.clone()),
+                (any_of.clone(), reason.clone()),
+                (any_of.clone(), all_of.clone()),
+            ] {
+                let old_document_type =
+                    element_reference_document_type(Some(old_refers_to), platform_version);
+                let new_document_type =
+                    element_reference_document_type(Some(new_refers_to), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_update(new_document_type.as_ref(), 2, platform_version)
+                    .expect("validate_update should not error");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    ), ..] if e.property_path().starts_with("/properties/reasons/items/refersTo"),
+                    "{:?}",
+                    result.errors
+                );
+            }
+        }
+
+        /// `reasons`, a typed array of identifiers, with `refersTo` on its items as given,
+        /// parsed as a contract read back from state is, so an `inList` declaration
+        /// needs no `$id` property to exist beside it.
+        fn element_list_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut items = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+            });
+            if let Some(refers_to) = refers_to {
+                items
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "reasons": { "type": "array", "maxItems": 8, "items": items, "position": 0 }
+                },
+                "additionalProperties": false,
+            });
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "resignation",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// A list element reference is frozen like every other declaration: stored
+        /// documents were checked against the list it names, on the document its `findBy`
+        /// `$id` names, so adding, removing or changing it (on an identifier property or on
+        /// the elements of a typed array) is an incompatible schema change.
+        #[test]
+        fn should_return_invalid_result_when_a_list_element_reference_changes() {
+            let platform_version = PlatformVersion::latest();
+            let list_element = |id_property: &str, in_list: &str| {
+                platform_value!({
+                    "type": "permanentDocument",
+                    "documentType": "electedCharter",
+                    "findBy": { "$id": id_property },
+                    "inList": in_list
+                })
+            };
+            let members = list_element("electedCharterId", "members");
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (None, Some(members.clone()), "/refersTo"),
+                (Some(members.clone()), None, "/refersTo"),
+                (
+                    Some(platform_value!({
+                        "type": "permanentDocument",
+                        "documentType": "electedCharter"
+                    })),
+                    Some(members.clone()),
+                    "/refersTo/",
+                ),
+                (
+                    Some(members.clone()),
+                    Some(list_element("electedCharterId", "seats")),
+                    "/refersTo/inList",
+                ),
+                (
+                    Some(members.clone()),
+                    Some(list_element("otherCharterId", "members")),
+                    "/refersTo/findBy",
+                ),
+            ] {
+                for (old_document_type, new_document_type, property_path) in [
+                    (
+                        identifier_document_type(old_refers_to.clone(), platform_version),
+                        identifier_document_type(new_refers_to.clone(), platform_version),
+                        "/properties/toUserId",
+                    ),
+                    (
+                        element_list_document_type(old_refers_to.clone(), platform_version),
+                        element_list_document_type(new_refers_to.clone(), platform_version),
+                        "/properties/reasons/items",
+                    ),
+                ] {
+                    let result = old_document_type
+                        .as_ref()
+                        .validate_update(new_document_type.as_ref(), 2, platform_version)
+                        .expect("validate_update should not error");
+
+                    // Naming a list adds findBy and inList, each its own
+                    // incompatible change
+                    let expected_path = format!("{property_path}{changed_path}");
+                    let changed_paths: Vec<&str> = result
+                        .errors
+                        .iter()
+                        .map(|error| match error {
+                            ConsensusError::BasicError(
+                                BasicError::IncompatibleDocumentTypeSchemaError(e),
+                            ) => e.property_path(),
+                            other => panic!("expected an incompatible schema change, got {other}"),
+                        })
+                        .collect();
+                    assert!(
+                        changed_paths
+                            .iter()
+                            .any(|changed| changed.starts_with(expected_path.as_str())),
+                        "{old_refers_to:?} -> {new_refers_to:?}: {changed_paths:?}"
+                    );
+                }
+            }
+
+            // An unchanged declaration is no change
+            let document_type = identifier_document_type(Some(members), platform_version);
             let result = document_type
                 .as_ref()
                 .validate_update(document_type.as_ref(), 2, platform_version)
@@ -2326,6 +2654,115 @@ mod tests {
 
             let old_document_type = distinct_from_document_type(Some("$ownerId"), platform_version);
             let new_document_type = distinct_from_document_type(Some("$ownerId"), platform_version);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// A `handle` type whose `normalizedName` is generated from `generated_from` when given.
+        fn generated_from_document_type(
+            generated_from: Option<&str>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut normalized_name = platform_value!({
+                "type": "string",
+                "maxLength": 32,
+                "position": 2
+            });
+            if let Some(source) = generated_from {
+                normalized_name
+                    .insert(
+                        "generatedFrom".to_string(),
+                        platform_value!({
+                            "function": "sys.stringTransformations.homographSafeASCII",
+                            "params": [source]
+                        }),
+                    )
+                    .expect("should insert generatedFrom");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "maxLength": 32, "position": 0 },
+                    "displayName": { "type": "string", "maxLength": 32, "position": 1 },
+                    "normalizedName": normalized_name
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "handle",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_generated_from_is_added_changed_or_removed() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_generated_from, new_generated_from, path) in [
+                (
+                    None,
+                    Some("name"),
+                    "/properties/normalizedName/generatedFrom",
+                ),
+                (
+                    Some("name"),
+                    Some("displayName"),
+                    "/properties/normalizedName/generatedFrom/params/0",
+                ),
+                (
+                    Some("name"),
+                    None,
+                    "/properties/normalizedName/generatedFrom",
+                ),
+            ] {
+                let old_document_type =
+                    generated_from_document_type(old_generated_from, platform_version);
+                let new_document_type =
+                    generated_from_document_type(new_generated_from, platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == path,
+                    "{old_generated_from:?} -> {new_generated_from:?}: {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_valid_result_when_generated_from_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = generated_from_document_type(Some("name"), platform_version);
+            let new_document_type = generated_from_document_type(Some("name"), platform_version);
 
             let result = old_document_type
                 .as_ref()
@@ -2592,6 +3029,118 @@ mod tests {
                 .expect("failed to validate schema compatibility");
 
             assert!(result.is_valid(), "{:?}", result.errors);
+        }
+    }
+
+    mod max_bytes {
+        use super::*;
+        use crate::consensus::basic::BasicError;
+        use crate::data_contract::config::DataContractConfig;
+        use std::collections::BTreeMap;
+
+        /// A string `note` with `maxBytes` as `note_bound`, and a typed string array
+        /// `tags` whose `items` carry `maxBytes` as `tags_bound`.
+        fn document_type(
+            note_bound: Option<u64>,
+            tags_bound: Option<u64>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut note = platform_value!({ "type": "string", "maxLength": 64, "position": 0 });
+            if let Some(max_bytes) = note_bound {
+                note.insert("maxBytes".to_string(), max_bytes.into())
+                    .expect("should insert maxBytes");
+            }
+            let mut items = platform_value!({ "type": "string", "maxLength": 16 });
+            if let Some(max_bytes) = tags_bound {
+                items
+                    .insert("maxBytes".to_string(), max_bytes.into())
+                    .expect("should insert maxBytes");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "note": note,
+                    "tags": { "type": "array", "maxItems": 4, "items": items, "position": 1 }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        fn compatibility(
+            old: (Option<u64>, Option<u64>),
+            new: (Option<u64>, Option<u64>),
+        ) -> SimpleConsensusValidationResult {
+            let platform_version = PlatformVersion::latest();
+            let old_document_type = document_type(old.0, old.1, platform_version);
+            let new_document_type = document_type(new.0, new.1, platform_version);
+            old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility")
+        }
+
+        /// `maxBytes` moves like `maxLength`: every stored string still fits a
+        /// raised or dropped bound, on a property and on typed array elements.
+        #[test]
+        fn should_return_valid_result_when_max_bytes_is_raised_or_removed() {
+            for (old_bound, new_bound) in [(Some(8), Some(16)), (Some(8), None), (Some(8), Some(8))]
+            {
+                for (old, new) in [
+                    ((old_bound, None), (new_bound, None)),
+                    ((None, old_bound), (None, new_bound)),
+                ] {
+                    let result = compatibility(old, new);
+                    assert!(result.is_valid(), "{old:?} -> {new:?}: {:?}", result.errors);
+                }
+            }
+        }
+
+        /// A stored string may be longer than a new or lowered bound.
+        #[test]
+        fn should_return_invalid_result_when_max_bytes_is_added_or_lowered() {
+            for (old_bound, new_bound) in [(None, Some(8)), (Some(16), Some(8))] {
+                for (old, new, changed_path) in [
+                    (
+                        (old_bound, None),
+                        (new_bound, None),
+                        "/properties/note/maxBytes",
+                    ),
+                    (
+                        (None, old_bound),
+                        (None, new_bound),
+                        "/properties/tags/items/maxBytes",
+                    ),
+                ] {
+                    let result = compatibility(old, new);
+                    assert_matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(e)
+                        )] if e.property_path() == changed_path,
+                        "{old:?} -> {new:?}"
+                    );
+                }
+            }
         }
     }
 

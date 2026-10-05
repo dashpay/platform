@@ -26,6 +26,23 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // gained the same judgement in place (replace on the transition's data,
 // transfer and purchase on the stored document and its new owner), which is
 // inert before this version, where no property carries the keyword.
+// Document create and replace structure validation also refuse a document that
+// breaks a rule of its type's `propertyConstraints`
+// (DocumentPropertyConstraintViolatedError, 10422): the check runs inside dpp's
+// `DataContract::validate_document_properties` 0, which both call, and is inert
+// before this version through its own dpp gate.
+// Document create state validation 2 also refuses a document that would add a
+// contender to a contest holding `max_contenders_per_contest` already
+// (DocumentContestMaximumContendersReachedError, 40141), and
+// `maximum_contenders_to_consider` rises from 100 to 10,000 so the end of a poll
+// tallies and cleans up every contender of a poll within the 1,000 a contest
+// accepts, and up to 10,000 of one that grew past it before this version.
+// Document create state validation 2 also treats a contender's prefunded voting balance as
+// the most it pays: it refuses one stating less than the fund to join, the contest's fund
+// doubled once the contest holds `contested_document_contenders_before_fund_doubling` (250)
+// contenders and again for every `contested_document_contenders_per_fund_doubling` (50) more
+// (DocumentContestNotPaidForError), and charges one stating more only that fund. Structure
+// validation 1 leaves the amount to it where 0 wanted exactly the contest's fund.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -112,7 +129,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: None,
                 nonce: Some(1),
-                state: 1, // changed in v14: refuses a Lock vote on a contested index resolved without locking
+                state: 1, // changed in v14: refuses a Lock vote on a contested index resolved without locking, and a vote towards an identity that is not a contender
                 transform_into_action: 0,
             },
             masternode_vote_state_transition_balance_pre_check: 0,
@@ -224,11 +241,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         reject_data_trigger: 0,
                     },
                 },
-                is_allowed: 0,
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
+                // Otherwise, a batch carrying shielded pool bundles has to hold the compute
+                // fee they will be charged on top of the flat per-sub-transition minimum,
+                // which is orders of magnitude smaller than one bundle verification.
                 identity_minimum_balance_pre_check: 1,
-                document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index and refuses a `distinctFrom` identifier property equal to the value it must differ from
+                document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index, leaves its amount to state validation, and refuses a `distinctFrom` identifier property equal to the value it must differ from
                 // Reject deletes on legacy keep-history types as paid consensus errors.
                 // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
@@ -237,7 +256,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_transfer_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_purchase_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_update_price_transition_structure_validation: 0,
-                document_base_transition_state_validation: 0,
+                document_base_transition_state_validation: 1, // changed: a document token cost may be paid from the token shielded pool
                 document_create_transition_state_validation: 2,
                 document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
@@ -249,7 +268,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,
-                token_mint_transition_state_validation: 0,
+                token_mint_transition_state_validation: 1, // changed: `i64::MAX` bounds the total supply when no max supply is set
                 token_burn_transition_state_validation: 0,
                 token_transfer_transition_state_validation: 0,
                 token_base_transition_structure_validation: 0,
@@ -268,14 +287,28 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_claim_transition_structure_validation: 0,
                 token_claim_transition_state_validation: 0,
                 token_direct_purchase_transition_structure_validation: 0,
-                token_direct_purchase_transition_state_validation: 0,
+                token_direct_purchase_transition_state_validation: 1, // changed: `i64::MAX` bounds the total supply when no max supply is set
                 token_set_price_for_direct_purchase_transition_structure_validation: 0,
                 token_set_price_for_direct_purchase_transition_state_validation: 0,
+                token_shield_transition_structure_validation: 0,
+                token_shield_transition_state_validation: 0,
+                token_mint_to_pool_transition_structure_validation: 0,
+                token_mint_to_pool_transition_state_validation: 0,
+                token_burn_from_pool_transition_structure_validation: 0,
+                token_burn_from_pool_transition_state_validation: 0,
+                token_claim_to_pool_transition_structure_validation: 0,
+                token_claim_to_pool_transition_state_validation: 0,
+                token_direct_purchase_to_pool_transition_structure_validation: 0,
+                token_direct_purchase_to_pool_transition_state_validation: 0,
+                token_unshield_transition_structure_validation: 0,
+                token_unshield_transition_state_validation: 0,
+                token_shielded_transfer_transition_structure_validation: 0,
+                token_shielded_transfer_transition_state_validation: 0,
             },
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: Some(0),
+                    advanced_structure: Some(1), // a key proof of possession failure is refused unpaid
                     identity_signatures: Some(0),
                     nonce: Some(0),
                     state: 1,
@@ -344,7 +377,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed: the bundle's sighash binds its kind tag and the asset lock it is funded from
             },
             shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -380,6 +413,33 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     state: 0,
                     transform_into_action: 0,
                 },
+            token_shielded_transfer_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_unshield_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_purchase_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
         },
         has_nonce_validation: 1,
         has_address_witness_validation: 0,
@@ -398,7 +458,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
         },
         event_constants: DriveAbciValidationConstants {
             maximum_vote_polls_to_process: 2,
-            maximum_contenders_to_consider: 100,
+            // Raised for protocol 14 above the most contenders a contest accepts
+            // (`max_contenders_per_contest`, 1,000), so the tally and the cleanup at the end of a
+            // poll reach every contender of a poll within it, and up to 10,000 of one that grew
+            // past it before 14. The tally reads only the contenders there are; 10,000 x 2 + 3
+            // results still fit the u16 query limit
+            maximum_contenders_to_consider: 10_000,
             minimum_pool_notes_for_outgoing: 250,
             shielded_anchor_retention_blocks: 1000,
             shielded_anchor_pruning_interval: 100,

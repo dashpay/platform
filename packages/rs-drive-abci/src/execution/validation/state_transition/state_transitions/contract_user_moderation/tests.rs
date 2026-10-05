@@ -14,6 +14,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
+use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
@@ -73,6 +74,14 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod deletion_options;
+mod derived_index_properties;
+mod moderated_document_reference;
+mod moderator_fields;
+mod preallocated_through_moderated_reference;
+mod retraction;
+mod seated_team;
+
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
 const CONTRACT_MODERATION_REASON_TOO_LONG: u32 = 10903;
@@ -99,6 +108,7 @@ const CONTRACT_DOCUMENT_REMOVAL_NOT_FOUND: u32 = 41119;
 const DOCUMENT_RESTORE_WINDOW_ELAPSED: u32 = 41120;
 const DOCUMENT_RESTORE_HASH_MISMATCH: u32 = 41121;
 const CONTRACT_DOCUMENT_ALREADY_RESTORED: u32 = 41122;
+const DOCUMENT_EXPIRED: u32 = 40140;
 const DECODING_DOCUMENT: u32 = 10223;
 const DUPLICATE_UNIQUE_INDEX: u32 = 40105;
 const INVALID_DOCUMENT_TYPE: u32 = 10406;
@@ -106,6 +116,7 @@ const INVALID_CONTRACT_STRUCTURE: u32 = 10231;
 const INVALID_CONTRACT_MODERATION_CONFIG: u32 = 10900;
 const DOCUMENT_TYPE_UPDATE: u32 = 40212;
 const REFERENCED_DOCUMENT_TYPE_DELETABLE: u32 = 40122;
+const REFERENCED_DOCUMENT_TYPE_MODERATED: u32 = 40144;
 
 pub(crate) const CRITICAL_KEY_ID: KeyID = 1;
 const DOCUMENT_TYPE: &str = "niceDocument";
@@ -479,7 +490,7 @@ impl Setup {
     /// Proves the committed state for a document deletion or restore and checks the proof
     /// shows its record. A restore's verifier reads the document's id out of the bytes under
     /// the contract's document type, so it is given the contract, as a client holding it is;
-    /// a deletion's needs none.
+    /// a deletion's needs it only for a type that keeps no records.
     fn assert_removal_proved(&self, transition: &StateTransition) -> ContractDocumentRemoval {
         let platform_version = PlatformVersion::latest();
         let proof = self
@@ -735,6 +746,7 @@ fn suspension_reason() -> ContractModerationReason {
         code: Some(7),
         text: "flooding".to_string(),
         documents: vec![],
+        reason_document_id: None,
     }
 }
 
@@ -1485,25 +1497,54 @@ async fn should_fix_the_lists_a_contract_keeps_when_it_is_created() {
     );
 }
 
+/// A contract none of whose document types lets a seated team delete its settled documents keeps
+/// no team actions: an approval names none (41207), refused before the moderators are read.
+#[tokio::test]
+async fn should_refuse_an_approval_on_a_contract_without_team_actions() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let approval = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::ApproveTeamAction {
+                action_id: Identifier::new([0x44; 32]),
+            },
+        )
+        .await;
+    assert_paid_with_code(&setup.process(&approval, &transaction), 41207);
+}
+
 #[tokio::test]
 async fn should_not_be_active_before_protocol_version_14() {
     let platform_version = PlatformVersion::get(13).expect("protocol version 13");
     let setup = Setup::new_at(None, platform_version).await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    let ban = setup
-        .moderate(&setup.owner, ban_action(setup.user.id()))
-        .await;
-    let execution = setup.process(&ban, &transaction);
-    // The transition type does not exist before protocol version 14, so the node cannot even
-    // decode it as active: the same refusal every transition added since the fork gets.
-    assert!(
-        matches!(
-            &execution,
-            StateTransitionExecutionResult::InternalError(message)
-                if message.contains("ContractUserModeration") && message.contains("not active")
-        ),
-        "expected the transition to be inactive before protocol version 14, got {execution:?}"
-    );
+    // A team action's proposal and approval among them: the shipped prover and verifier v0
+    // have their arms, which no transition of an earlier protocol version reaches.
+    for action in [
+        ban_action(setup.user.id()),
+        ContractUserModerationAction::DeleteSettledDocument {
+            document_type_name: POST.to_string(),
+            document_id: Identifier::new([0x66; 32]),
+            reason: ContractModerationReason::from_text("doxxing"),
+        },
+        ContractUserModerationAction::ApproveTeamAction {
+            action_id: Identifier::new([0x67; 32]),
+        },
+    ] {
+        let moderation = setup.moderate(&setup.owner, action).await;
+        let execution = setup.process(&moderation, &transaction);
+        // The transition type does not exist before protocol version 14, so the node cannot
+        // even decode it as active: the same refusal every transition added since the fork gets.
+        assert!(
+            matches!(
+                &execution,
+                StateTransitionExecutionResult::InternalError(message)
+                    if message.contains("ContractUserModeration") && message.contains("not active")
+            ),
+            "expected the transition to be inactive before protocol version 14, got {execution:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1790,6 +1831,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
         code: Some(u16::MAX),
         text: "flooding the feed".to_string(),
         documents: vec![],
+        reason_document_id: None,
     };
     let transaction = setup.platform.drive.grove.start_transaction();
     let suspend = setup
@@ -2201,7 +2243,7 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
         },
         "required": ["text"],
         "additionalProperties": false,
-        "canBeDeletedByModerators": deletable_by_moderators,
+        "moderatorAbilities": { "delete": deletable_by_moderators },
     })
 }
 
@@ -2234,6 +2276,7 @@ fn deletion_reason() -> ContractModerationReason {
         code: Some(3),
         text: "spam".to_string(),
         documents: vec![],
+        reason_document_id: None,
     }
 }
 
@@ -2303,6 +2346,7 @@ async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody
         removed_at: BLOCK_TIME_MS,
         document_hash,
         restoration: None,
+        kept_fields: Default::default(),
     };
     assert_eq!(setup.post_removal(post.id(), None), Some(expected.clone()));
     assert_eq!(setup.assert_removal_proved(&delete), expected);
@@ -2550,7 +2594,10 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
         .schema()
         .clone();
     nice_document_schema
-        .insert("canBeDeletedByModerators".to_string(), Value::Bool(true))
+        .insert(
+            "moderatorAbilities".to_string(),
+            platform_value!({ "delete": true }),
+        )
         .expect("expected to set the keyword");
     add_document_type(&mut flipped, DOCUMENT_TYPE, nice_document_schema);
     let update = setup.contract_update(flipped).await;
@@ -2580,7 +2627,7 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
     assert_success(&setup.process(&delete, &transaction));
     assert!(setup.post_removal(post.id(), Some(&transaction)).is_some());
 
-    // And it can not be the target of a permanent reference: its documents can vanish.
+    // And it can not be the target of a permanent reference: its documents can leave state.
     let mut referring = setup.contract.clone();
     referring.increment_version();
     add_document_type(
@@ -2609,29 +2656,48 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
         REFERENCED_DOCUMENT_TYPE_DELETABLE,
     );
 
-    // A deletable reference is what points at it: deletable means by anyone, the moderators
-    // included, whatever `canBeDeleted` says about a post's own author.
+    // Its documents leave state only when a moderator deletes one, and every such deletion
+    // leaves a record (`deleteKeepsRecord` is true unless declared false), so a moderated
+    // reference is what points at it: resolving to the post, or to the record of its removal.
+    // The three kinds are disjoint, so a deletable reference, which promises no record, is
+    // refused as well.
     let bookmark_schema = referring
         .document_type_for_name("bookmark")
         .expect("expected the bookmark type")
         .schema()
         .clone();
-    let mut deletable_reference = bookmark_schema;
-    deletable_reference
-        .get_mut("properties")
-        .ok()
-        .flatten()
-        .and_then(|properties| properties.get_mut("postId").ok().flatten())
-        .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
-        .expect("expected the refersTo declaration")
-        .insert(
-            "type".to_string(),
-            Value::Text("deletableDocument".to_string()),
-        )
-        .expect("expected to set the reference kind");
+    let with_reference_kind = |kind: &str| {
+        let mut schema = bookmark_schema.clone();
+        schema
+            .get_mut("properties")
+            .ok()
+            .flatten()
+            .and_then(|properties| properties.get_mut("postId").ok().flatten())
+            .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
+            .expect("expected the refersTo declaration")
+            .insert("type".to_string(), Value::Text(kind.to_string()))
+            .expect("expected to set the reference kind");
+        schema
+    };
     let mut referring = setup.contract.clone();
     referring.increment_version();
-    add_document_type(&mut referring, "bookmark", deletable_reference);
+    add_document_type(
+        &mut referring,
+        "bookmark",
+        with_reference_kind("deletableDocument"),
+    );
+    let update = setup.contract_update(referring).await;
+    assert_paid_with_code(
+        &setup.process(&update, &transaction),
+        REFERENCED_DOCUMENT_TYPE_MODERATED,
+    );
+    let mut referring = setup.contract.clone();
+    referring.increment_version();
+    add_document_type(
+        &mut referring,
+        "bookmark",
+        with_reference_kind("moderatedDocument"),
+    );
     let update = setup.contract_update(referring.clone()).await;
     assert_success(&setup.process(&update, &transaction));
     setup.contract = referring;
@@ -2879,7 +2945,10 @@ async fn setup_with_a_moderation_window() -> Setup {
                 contract,
                 POST,
                 post_schema_with(platform_value!({
-                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": MODERATION_WINDOW_SECONDS,
+                    },
                     "documentsMutable": true,
                     "required": ["text", "$updatedAt"],
                 })),
@@ -2979,7 +3048,10 @@ async fn should_measure_the_window_from_the_creation_of_a_post_that_never_change
                 contract,
                 POST,
                 post_schema_with(platform_value!({
-                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": MODERATION_WINDOW_SECONDS,
+                    },
                     "documentsMutable": false,
                     "required": ["text", "$createdAt"],
                 })),
@@ -3032,20 +3104,13 @@ async fn should_fix_the_window_of_a_document_type() {
             .expect("expected the post type")
             .schema()
             .clone();
-        match window {
-            Some(seconds) => {
-                schema
-                    .insert("canBeDeletedByModeratorsFor".to_string(), seconds.into())
-                    .expect("expected to set the window");
-            }
-            None => {
-                if let Value::Map(map) = &mut schema {
-                    map.retain(|(key, _)| {
-                        key != &Value::Text("canBeDeletedByModeratorsFor".to_string())
-                    });
-                }
-            }
-        }
+        let abilities = match window {
+            Some(seconds) => platform_value!({ "delete": true, "deleteWithin": seconds }),
+            None => platform_value!({ "delete": true }),
+        };
+        schema
+            .insert("moderatorAbilities".to_string(), abilities)
+            .expect("expected to set the window");
         add_document_type(&mut changed, POST, schema);
         let update = setup.contract_update(changed).await;
         assert_paid_with_code(&setup.process(&update, &transaction), DOCUMENT_TYPE_UPDATE);
@@ -3062,7 +3127,7 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
         moderators: ContractModerators::Elected(Box::new(ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-            challenge_cool_down: 1_209_600,
+            challenge_cool_down: Some(1_209_600),
             moderated_document_types: moderated
                 .iter()
                 .map(|name| {
@@ -3074,6 +3139,7 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
                 .collect(),
             interim,
             election_delay: None,
+            max_added_moderators: 0,
             owner_protected: false,
         })),
     }
@@ -3137,7 +3203,11 @@ async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
     };
     let mut longer_cool_down = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
     if let ContractModerators::Elected(declaration) = &mut longer_cool_down.moderators {
-        declaration.challenge_cool_down += 1;
+        declaration.challenge_cool_down = declaration.challenge_cool_down.map(|c| c + 1);
+    }
+    let mut permanent_seat = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+    if let ContractModerators::Elected(declaration) = &mut permanent_seat.moderators {
+        declaration.challenge_cool_down = None;
     }
     let mut protected_owner = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
     if let ContractModerators::Elected(declaration) = &mut protected_owner.moderators {
@@ -3145,6 +3215,7 @@ async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
     }
     for (moderation, what) in [
         (longer_cool_down, "a longer cool-down"),
+        (permanent_seat, "the seat made uncontestable"),
         (protected_owner, "the owner flag turned on"),
         (
             elected(
@@ -3318,15 +3389,15 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
     };
     for (moderation, what) in [
         (
-            with(|d| d.join_window = 86_399),
-            "a join window under a day",
+            with(|d| d.join_window = 2_419_201),
+            "a join window over four weeks",
         ),
         (
-            with(|d| d.vote_window = 86_399),
-            "a vote window under a day",
+            with(|d| d.vote_window = 2_419_201),
+            "a vote window over four weeks",
         ),
         (
-            with(|d| d.challenge_cool_down = 94_608_001),
+            with(|d| d.challenge_cool_down = Some(94_608_001)),
             "a cool-down over three years",
         ),
         (
@@ -3368,12 +3439,38 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
             "expected {what} to name the declaration, got {execution:?}"
         );
     }
-    // The bounds hold: the same declaration at its minimums is accepted.
+    // The bounds hold: the same declaration at its maximums is accepted, and off mainnet
+    // (the test platform runs on testnet) so are windows of 0.
+    for windows in [2_419_200, 0] {
+        let mut declaration = with(|_| {});
+        if let ContractModerators::Elected(elected) = &mut declaration.moderators {
+            elected.join_window = windows;
+            elected.vote_window = windows;
+        }
+        setup
+            .contract
+            .set_config(contract.config().clone().with_moderation(Some(declaration)));
+        let create = setup
+            .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+            .await;
+        assert_success(&setup.process(&create, &transaction));
+    }
+    // The same declaration at the mainnet minimum is accepted.
     setup
         .contract
         .set_config(contract.config().clone().with_moderation(Some(with(|d| {
             d.join_window = 86_400;
             d.vote_window = 86_400;
+        }))));
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    // A seat that can not be contested again has no cool-down to bound.
+    setup
+        .contract
+        .set_config(contract.config().clone().with_moderation(Some(with(|d| {
+            d.challenge_cool_down = None;
         }))));
     let create = setup
         .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
@@ -3395,6 +3492,53 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
         &setup.process(&update, &transaction),
         "entering elected moderation",
     );
+}
+
+/// On mainnet an elected declaration's windows are at least a day: a window of 86,399
+/// seconds is refused, unpaid, at the create, and 86,400 is accepted. The floor is read from
+/// the network the node runs, so every other network takes 0.
+#[tokio::test]
+async fn should_floor_the_election_windows_at_a_day_on_mainnet() {
+    let mut setup = Setup::new(None).await;
+    setup.platform.platform.config.network = Network::Mainnet;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract = setup.contract.clone();
+    let with_windows = |join_window: u32, vote_window: u32| {
+        let mut moderation = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+        if let ContractModerators::Elected(declaration) = &mut moderation.moderators {
+            declaration.join_window = join_window;
+            declaration.vote_window = vote_window;
+        }
+        moderation
+    };
+    for (moderation, what) in [
+        (with_windows(86_399, 86_400), "join window of 86399 seconds"),
+        (with_windows(86_400, 86_399), "vote window of 86399 seconds"),
+        (with_windows(0, 0), "join window of 0 seconds"),
+    ] {
+        setup
+            .contract
+            .set_config(contract.config().clone().with_moderation(Some(moderation)));
+        let create = setup
+            .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+            .await;
+        let execution = setup.process(&create, &transaction);
+        assert_unpaid_with_code(&execution, INVALID_CONTRACT_MODERATION_CONFIG);
+        assert!(
+            matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.to_string().contains(what)),
+            "expected the {what} to be refused, got {execution:?}"
+        );
+    }
+    setup.contract.set_config(
+        contract
+            .config()
+            .clone()
+            .with_moderation(Some(with_windows(86_400, 86_400))),
+    );
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_success(&setup.process(&create, &transaction));
 }
 /// How long after a moderator's deletion a document can be restored: the protocol's week.
 fn restore_window_ms() -> TimestampMillis {
@@ -3465,7 +3609,17 @@ async fn should_let_any_moderator_restore_a_deleted_post_within_a_week_and_delet
         .moderate(&setup.moderator, delete_action(POST, post.id()))
         .await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    assert_success(&setup.process_at(&delete_again, removed_again_at, &transaction));
+    let execution = setup.process_at(&delete_again, removed_again_at, &transaction);
+    // The fresh record is shorter than the restored one it replaces: the owner, who restored
+    // the post and paid for the record's restoration, is refunded the bytes that frees, while
+    // the post's own storage refunds nobody.
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = &execution else {
+        panic!("expected the deletion to pass, got {execution:?}");
+    };
+    assert_eq!(
+        fee_result.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
+        vec![setup.owner.id().to_buffer()]
+    );
     setup.commit(transaction);
     assert_eq!(
         setup.post_removal(post.id(), None),
@@ -3648,6 +3802,94 @@ async fn should_refuse_a_document_restore_that_breaks_a_rule() {
         &setup.process(&twice, &transaction),
         CONTRACT_DOCUMENT_ALREADY_RESTORED,
     );
+}
+
+#[tokio::test]
+async fn should_refuse_to_restore_a_post_whose_time_to_live_has_passed() {
+    // Posts that live an hour: a moderator's deletion can be undone within the week, but not
+    // once the post's hour is up, since the cleanup after the block would delete it again.
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "ttl": 3600,
+                    "required": ["text", "$createdAt"],
+                })),
+            )
+        },
+    )
+    .await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+
+    // The deletion took the post's expirations tree entry with it.
+    let expires_at = BLOCK_TIME_MS + 3_600_000;
+    let expiring = |transaction: &Transaction| {
+        setup
+            .platform
+            .drive
+            .fetch_expired_documents(
+                expires_at,
+                128,
+                Some(transaction),
+                &mut vec![],
+                PlatformVersion::latest(),
+            )
+            .expect("expected to read the expirations")
+            .into_iter()
+            .map(|expired| expired.document_id)
+            .collect::<Vec<_>>()
+    };
+
+    // At the post's expiry, well inside the restore window: refused, paid, nothing restored.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert!(expiring(&transaction).is_empty());
+    let too_late = setup
+        .moderate(&setup.owner, restore_action(POST, bytes.clone()))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&too_late, expires_at, &transaction),
+        DOCUMENT_EXPIRED,
+    );
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        None
+    );
+    assert_eq!(
+        setup
+            .post_removal(post.id(), Some(&transaction))
+            .map(|removal| removal.restoration),
+        Some(None)
+    );
+
+    // A millisecond before, the post still had time to live: it comes back.
+    let in_time = setup
+        .moderate(&setup.owner, restore_action(POST, bytes))
+        .await;
+    assert_success(&setup.process_at(&in_time, expires_at - 1, &transaction));
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        Some(stored)
+    );
+    // Back with its entry, keyed by its original expiry: the cleanup still deletes it then.
+    assert_eq!(expiring(&transaction), vec![post.id()]);
 }
 
 #[tokio::test]

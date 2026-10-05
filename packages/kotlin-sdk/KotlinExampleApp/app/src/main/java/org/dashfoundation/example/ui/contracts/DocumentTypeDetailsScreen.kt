@@ -1,6 +1,7 @@
 package org.dashfoundation.example.ui.contracts
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,12 +31,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import org.dashfoundation.dashsdk.queries.DocumentPropertyConstraint
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CountDocuments
 import org.dashfoundation.example.navigation.Documents
 import org.dashfoundation.example.navigation.NewDocument
@@ -52,6 +57,12 @@ import org.dashfoundation.example.util.hexToBytes
  * The "New Document" affordance broadcasts a real create state transition
  * via `CreateDocumentScreen` (port of iOS `CreateDocumentView`); the query
  * actions (browse / count / sum-average) live alongside it.
+ *
+ * The "Property Constraints" section (protocol version 14) lists the rules
+ * Rust reads from the contract's stored platform serialization
+ * (`sdk.contracts.propertyConstraints`), re-read when the SDK learns the
+ * network's protocol version: the rules are read at that version, and none
+ * exist below 14.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +72,9 @@ fun DocumentTypeDetailsScreen(
     navController: NavHostController,
 ) {
     val container = LocalAppContainer.current
+    val appState = LocalAppState.current
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
+    val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
     val contractId = remember(contractIdHex) { contractIdHex.hexToBytes() }
 
     val contractFlow = remember(contractIdHex) {
@@ -69,6 +83,9 @@ fun DocumentTypeDetailsScreen(
     val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
 
     var expandedIndices by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var constraintsSection by remember(contractIdHex, typeName) {
+        mutableStateOf<PropertyConstraintsSection>(PropertyConstraintsSection.Hidden)
+    }
 
     Scaffold(
         topBar = {
@@ -91,6 +108,18 @@ fun DocumentTypeDetailsScreen(
             ParsedContract.from(current)?.root?.objectField("config")
         }
         val capabilities = documentTypeCapabilities(schema, contractConfig)
+
+        LaunchedEffect(sdk, protocolVersion, current.lastUpdated, typeName) {
+            val activeSdk = sdk
+            val read: (suspend (ByteArray) -> List<DocumentPropertyConstraint>)? =
+                if (activeSdk == null) {
+                    null
+                } else {
+                    { bytes -> activeSdk.contracts.propertyConstraints(bytes, typeName) }
+                }
+            constraintsSection =
+                loadPropertyConstraintsSection(schema, current.binarySerialization, read)
+        }
 
         val properties = schema.objectField("properties") ?: JsonObject(emptyMap())
         val indices = schema.arrayField("indices")?.mapNotNull { it as? JsonObject }.orEmpty()
@@ -194,6 +223,8 @@ fun DocumentTypeDetailsScreen(
                     LabeledContent("Requires Decryption Key", "Yes")
                 }
             }
+
+            PropertyConstraintsFormSection(constraintsSection)
 
             if (indices.isNotEmpty()) {
                 FormSection(title = "Indices (${indices.size})") {
@@ -317,6 +348,140 @@ fun DocumentTypeDetailsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The protocol-version-14 `propertyConstraints` rules: named conditions every
+ * created or replaced document must meet, checked in name order. Rust reads
+ * them from the stored contract; this section only shows what it reports
+ * (← `propertyConstraintsSection` in DocumentTypeDetailsView.swift).
+ */
+@Composable
+private fun PropertyConstraintsFormSection(section: PropertyConstraintsSection) {
+    when (section) {
+        PropertyConstraintsSection.Hidden -> Unit
+
+        is PropertyConstraintsSection.Rules -> FormSection(
+            title = "Property Constraints (${section.rules.size})",
+            modifier = Modifier.testTag("documentType.propertyConstraints"),
+        ) {
+            section.rules.forEach { rule -> PropertyConstraintRow(rule) }
+            Text(
+                "Every created or replaced document must meet each rule, checked in name " +
+                    "order. A document breaking one is refused (error 10422) and the fee " +
+                    "is still charged.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        PropertyConstraintsSection.NotEnforced -> FormSection(
+            title = "Property Constraints",
+            modifier = Modifier.testTag("documentType.propertyConstraints"),
+        ) {
+            Text(
+                "The schema declares propertyConstraints, but the network's protocol " +
+                    "version does not enforce them (they take effect at protocol version 14).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        is PropertyConstraintsSection.Unavailable -> FormSection(
+            title = "Property Constraints",
+            modifier = Modifier.testTag("documentType.propertyConstraints"),
+        ) {
+            Text(
+                section.reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+/**
+ * One `propertyConstraints` rule: its name, the rule as declared, what it
+ * reads, the system times and heights and the totals it reads, and whether an owner change
+ * is judged against it too
+ * (← `PropertyConstraintRowView` in DocumentTypeDetailsView.swift).
+ */
+@Composable
+private fun PropertyConstraintRow(rule: DocumentPropertyConstraint) {
+    val prettyRule = remember(rule) { rule.prettyRuleJson }
+    val reads = remember(rule) { propertyConstraintReadsText(rule) }
+    val systemReads = remember(rule) { propertyConstraintSystemReadsText(rule) }
+    val totals = remember(rule) { propertyConstraintTotalsText(rule) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .testTag("documentType.propertyConstraint.${rule.name}"),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(rule.name, style = MaterialTheme.typography.titleSmall)
+            if (rule.readsOwner) {
+                Text(
+                    "\$ownerId",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+        }
+        Text(
+            prettyRule,
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            softWrap = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(vertical = 4.dp),
+        )
+        if (reads.isNotEmpty()) {
+            Text(
+                "Reads: $reads",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (systemReads != null) {
+            Text(
+                systemReads,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.testTag("documentType.propertyConstraint.${rule.name}.readsSystem"),
+            )
+            Text(
+                PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+        if (totals != null) {
+            Text(
+                totals,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.testTag("documentType.propertyConstraint.${rule.name}.readsTotals"),
+            )
+            Text(
+                PROPERTY_CONSTRAINT_TOTALS_NOTE,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+        if (rule.readsOwner) {
+            Text(
+                "Reads \$ownerId, the document's owner: transfers and purchases are judged " +
+                    "against this rule too.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
         }
     }
 }

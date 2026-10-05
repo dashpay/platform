@@ -4,8 +4,13 @@ use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::contract::contract_fee_claim::v0::ContractFeeClaimTransitionActionV0;
 use crate::state_transition_action::contract::contract_fee_claim::ContractFeeClaimTransitionAction;
-use crate::util::batch::DriveOperation::{ContractFeePotOperation, IdentityOperation};
-use crate::util::batch::{ContractFeePotOperationType, DriveOperation, IdentityOperationType};
+use crate::util::batch::DriveOperation::{
+    ContractFeePotOperation, ContractModerationOperation, IdentityOperation,
+};
+use crate::util::batch::{
+    ContractFeePotOperationType, ContractModerationOperationType, DriveOperation,
+    IdentityOperationType,
+};
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
@@ -31,6 +36,7 @@ impl DriveHighLevelOperationConverter for ContractFeeClaimTransitionAction {
                     identity_contract_nonce,
                     pot,
                     payouts,
+                    settled_action_counts,
                     ..
                 }) = self;
 
@@ -61,6 +67,16 @@ impl DriveHighLevelOperationConverter for ContractFeeClaimTransitionAction {
                         added_balance,
                     })
                 }));
+                // A seated moderation team's pot was split by the action counts, which start
+                // over.
+                if !settled_action_counts.is_empty() {
+                    operations.push(ContractModerationOperation(
+                        ContractModerationOperationType::RemoveActionCounts {
+                            contract_id,
+                            identity_ids: settled_action_counts,
+                        },
+                    ));
+                }
                 operations.push(ContractFeePotOperation(
                     ContractFeePotOperationType::SetLastClaim {
                         contract_id,

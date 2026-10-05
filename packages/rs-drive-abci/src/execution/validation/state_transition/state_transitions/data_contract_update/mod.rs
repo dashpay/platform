@@ -1,4 +1,6 @@
 mod basic_structure;
+#[cfg(test)]
+mod contract_structure_error_tests;
 mod identity_contract_nonce;
 mod state;
 
@@ -263,15 +265,20 @@ mod tests {
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+        use crate::error::Error;
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use crate::execution::validation::state_transition::ValidationMode;
+        use dpp::platform_value::Value;
+        use dpp::validation::ConsensusValidationResult;
         use dpp::version::TryFromPlatformVersioned;
+        use drive::state_transition_action::StateTransitionAction;
         use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
         #[test]
@@ -353,6 +360,147 @@ mod tests {
 
             assert!(!result.is_valid());
             assert_state_consensus_errors!(result, DataContractIsReadonlyError, 1);
+        }
+
+        /// Stored documents are encoded by the `transient` list, so an update
+        /// may not change it. The schema compatibility check had no rule for
+        /// the keyword and failed with an internal error, dropping the
+        /// transition unpaid; it now reports an incompatible schema change.
+        #[test]
+        pub fn should_refuse_an_update_changing_the_transient_list_as_an_incompatible_schema() {
+            let result = validate_state_of_nice_document_update(platform_value!({
+                "transient": ["name"],
+            }))
+            .expect("a transient change is a consensus error, not an internal one");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.document_type_name() == "niceDocument"
+                    && e.operation() == "add"
+                    && e.property_path() == "/transient"
+            );
+        }
+
+        /// Validates the state of an update giving the fixture's `niceDocument`
+        /// every `(key, value)` of `keywords` on top of its stored schema.
+        fn validate_state_of_nice_document_update(
+            keywords: Value,
+        ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+            let platform_version = PlatformVersion::latest();
+            let TestData {
+                mut data_contract,
+                platform,
+            } = setup_test();
+            apply_contract(&platform, &data_contract, Default::default());
+
+            let mut updated_document = data_contract
+                .document_type_for_name("niceDocument")
+                .expect("the fixture's niceDocument")
+                .schema()
+                .clone();
+            for (key, value) in keywords
+                .into_btree_string_map()
+                .expect("the keywords are a map")
+            {
+                updated_document
+                    .set_value(&key, value)
+                    .expect("the keyword sets");
+            }
+
+            data_contract.increment_version();
+            data_contract
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("to be able to set document schema");
+
+            let state_transition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract,
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
+                user_fee_increase: 0,
+                signature: BinaryData::new(vec![0; 65]),
+                signature_public_key_id: 0,
+            };
+
+            let state = platform.state.load();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
+            DataContractUpdateTransition::V0(state_transition).validate_state(
+                None,
+                &platform_ref,
+                ValidationMode::Validator,
+                &BlockInfo::default(),
+                &mut execution_context,
+                None,
+            )
+        }
+
+        /// Token costs are fixed when a document type is published. The schema
+        /// compatibility check had no rule for `tokenCost` and failed with an
+        /// internal error, dropping the transition unpaid; the parsed costs are
+        /// now compared first and the update is refused with a consensus error.
+        #[test]
+        pub fn should_refuse_an_update_adding_a_token_cost_as_a_document_type_update_error() {
+            let result = validate_state_of_nice_document_update(platform_value!({
+                "tokenCost": {
+                    "create": {
+                        "contractId": Identifier::new([7; 32]).to_buffer(),
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                    }
+                }
+            }))
+            .expect("a token cost change is a consensus error, not an internal one");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.document_type_name() == "niceDocument"
+                        && e.additional_message().contains(
+                            "can not add the token cost of its create action"
+                        )
+            );
+        }
+
+        /// Writing out a default leaves the parsed document type as it was but
+        /// changes its schema. The schema compatibility check had no rule for
+        /// the keyword and failed with an internal error; the keyword is frozen
+        /// now, and the update is refused as an incompatible schema change.
+        #[test]
+        pub fn should_refuse_an_update_writing_out_a_default_as_an_incompatible_schema() {
+            let result = validate_state_of_nice_document_update(platform_value!({
+                "keepsTransferHistory": false,
+            }))
+            .expect("writing out a default is a consensus error, not an internal one");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.document_type_name() == "niceDocument"
+                    && e.operation() == "add"
+                    && e.property_path() == "/keepsTransferHistory"
+            );
         }
 
         #[test]
@@ -1027,6 +1175,177 @@ mod tests {
                 contract_version_in(&scenario.platform, scenario.contract_id, Some(&transaction)),
                 2
             );
+        }
+    }
+
+    /// A contract update refused by the document type comparison or the schema
+    /// comparison is a paid consensus error: the transition stays in the block,
+    /// its identity contract nonce is bumped and its fee is charged. Protocol
+    /// version 14 used to fail these updates with an internal error, which
+    /// left the transition out of the block.
+    mod refused_keyword_updates {
+        use super::*;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+        use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
+        use dpp::platform_value::{platform_value, Value};
+
+        /// Processes an update, signed with identity contract nonce 1, giving
+        /// the fixture's `niceDocument` every `(key, value)` of `keywords` on
+        /// top of its stored schema. Returns the execution result, then the
+        /// identity's contract nonce and the credits it was charged once the
+        /// block is committed.
+        async fn process_nice_document_update(
+            keywords: Value,
+        ) -> (StateTransitionExecutionResult, Option<u64>, Credits) {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let initial_balance = dash_to_credits!(1.0);
+            let (identity, signer, key) = setup_identity(&mut platform, 958, initial_balance);
+            let identity_id = identity.id();
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity_id);
+            apply_contract(&platform, &data_contract, BlockInfo::default());
+
+            let mut updated_document = data_contract
+                .document_type_for_name("niceDocument")
+                .expect("the fixture's niceDocument")
+                .schema()
+                .clone();
+            for (key, value) in keywords
+                .into_btree_string_map()
+                .expect("the keywords are a map")
+            {
+                updated_document
+                    .set_value(&key, value)
+                    .expect("the keyword sets");
+            }
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+            updated_data_contract
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("to be able to set document schema");
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_data_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create data contract update transition");
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let mut execution_results = processing_result.into_execution_results();
+            assert_eq!(execution_results.len(), 1, "{execution_results:?}");
+
+            let nonce = platform
+                .drive
+                .fetch_identity_contract_nonce(
+                    identity_id.to_buffer(),
+                    data_contract.id().to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the identity contract nonce")
+                .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER);
+            let balance = platform
+                .drive
+                .fetch_identity_balance(identity_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch the balance")
+                .expect("the identity has a balance");
+
+            (
+                execution_results.remove(0),
+                nonce,
+                initial_balance - balance,
+            )
+        }
+
+        #[tokio::test]
+        async fn should_charge_a_refused_token_cost_change_as_a_paid_consensus_error() {
+            let (result, nonce, charged) = process_nice_document_update(platform_value!({
+                "tokenCost": {
+                    "create": {
+                        "contractId": Identifier::new([7; 32]).to_buffer(),
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                    }
+                }
+            }))
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::DocumentTypeUpdateError(e)),
+                    ..
+                } if e.additional_message().contains("can not add the token cost of its create action")
+            );
+            assert_eq!(nonce, Some(1));
+            assert!(charged > 0, "the fee is charged");
+        }
+
+        #[tokio::test]
+        async fn should_charge_a_refused_schema_edit_as_a_paid_consensus_error() {
+            let (result, nonce, charged) = process_nice_document_update(platform_value!({
+                "keepsTransferHistory": false,
+            }))
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    ),
+                    ..
+                } if e.operation() == "add" && e.property_path() == "/keepsTransferHistory"
+            );
+            assert_eq!(nonce, Some(1));
+            assert!(charged > 0, "the fee is charged");
         }
     }
 
@@ -4077,6 +4396,7 @@ mod tests {
     mod permanent_document_reference_declarations {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::errors::DataContractError;
         use drive::util::test_helpers::setup_contract;
 
         const V1_PATH: &str =
@@ -4089,6 +4409,18 @@ mod tests {
         /// from the given fixture at version 2 and returns the execution
         /// result.
         async fn run_contract_update(updated_fixture_path: &str) -> StateTransitionExecutionResult {
+            run_contract_update_from(V1_PATH, updated_fixture_path, true).await
+        }
+
+        /// [`run_contract_update`] from the contract at `v1_path`. The updated
+        /// fixture is only checked by the test itself when
+        /// `validate_updated_fixture` is set: one the contract parse refuses
+        /// has to reach the node to be refused there.
+        async fn run_contract_update_from(
+            v1_path: &str,
+            updated_fixture_path: &str,
+            validate_updated_fixture: bool,
+        ) -> StateTransitionExecutionResult {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_genesis_state();
@@ -4110,7 +4442,7 @@ mod tests {
                 None,
             );
 
-            let mut contract = json_document_to_contract(V1_PATH, true, platform_version)
+            let mut contract = json_document_to_contract(v1_path, true, platform_version)
                 .expect("expected to get data contract");
 
             contract.set_owner_id(identity.id());
@@ -4128,9 +4460,12 @@ mod tests {
                 )
                 .expect("expected to apply contract successfully");
 
-            let mut updated_contract =
-                json_document_to_contract(updated_fixture_path, true, platform_version)
-                    .expect("expected to get updated data contract");
+            let mut updated_contract = json_document_to_contract(
+                updated_fixture_path,
+                validate_updated_fixture,
+                platform_version,
+            )
+            .expect("expected to get updated data contract");
 
             updated_contract.set_owner_id(identity.id());
             updated_contract
@@ -4214,6 +4549,76 @@ mod tests {
                     ),
                     ..
                 }
+            );
+        }
+
+        /// An update adding a `like` type whose preallocated index is keyed by
+        /// the existing `post.hashtag`, up to 280 characters, through an
+        /// agreement is refused as a registration is: accepted, it would stop
+        /// every post carrying a long hashtag from being created.
+        #[tokio::test]
+        async fn should_reject_contract_update_keying_a_preallocated_index_by_a_property_wider_than_a_tree_key(
+        ) {
+            let result = run_contract_update_from(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-preallocated-too-wide-update-v1.json",
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-preallocated-too-wide.json",
+                true,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.reason().contains("preallocated index byHashtagPost")
+            );
+        }
+
+        /// The contract whose immutable `electedCharter` holds the `members`
+        /// list, updated below with an `appeal` type reading it.
+        const LIST_ELEMENT_V1_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element.json";
+
+        #[tokio::test]
+        async fn should_update_contract_adding_a_list_element_into_a_fixed_list() {
+            let result = run_contract_update_from(
+                LIST_ELEMENT_V1_PATH,
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-update-good.json",
+                true,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_update_adding_a_list_element_into_a_property_that_is_no_list(
+        ) {
+            // The updated contract's parse runs the list checks as a
+            // registration's does
+            let result = run_contract_update_from(
+                LIST_ELEMENT_V1_PATH,
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-update-bad.json",
+                false,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains(
+                    "document type \"appeal\" property \"appellantId\" refersTo inList: \"title\" of \"electedCharter\" is not a typed array of identifiers"
+                )
             );
         }
     }

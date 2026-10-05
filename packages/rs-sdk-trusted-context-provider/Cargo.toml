@@ -43,6 +43,7 @@ all-system-contracts = [
     "keywords-contract",
     "document-history-contract",
     "app-connect-contract",
+    "moderation-charters-contract",
 ]
 
 # Individual contract features - these enable specific contracts in DPP
@@ -54,6 +55,7 @@ token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
 document-history-contract = ["dpp/document-history-contract"]
 app-connect-contract = ["dpp/app-connect-contract"]
+moderation-charters-contract = ["dpp/moderation-charters-contract"]
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.12", features = ["json"] }

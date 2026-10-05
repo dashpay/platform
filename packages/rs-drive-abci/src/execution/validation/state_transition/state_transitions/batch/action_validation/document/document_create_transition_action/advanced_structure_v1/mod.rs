@@ -1,5 +1,9 @@
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDocumentTypeError};
+use dpp::consensus::basic::document::{
+    DocumentCreationNotAllowedError, DocumentReferencePreimageInvalidError, InvalidDocumentTypeError,
+};
+use dpp::data_contract::document_type::first_unrevealable_lookup_key;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
@@ -59,22 +63,13 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
             match (expected_vote_poll, self.prefunded_voting_balance()) {
                 (
                     Some(VotePoll::ContestedDocumentResourceVotePoll(expected)),
-                    Some((provided, paid_amount)),
+                    Some((provided, _)),
                 ) => {
-                    let expected_amount = platform_version
-                        .fee_version
-                        .vote_resolution_fund_fees
-                        .contested_document_vote_resolution_fund_required_amount;
-                    if expected_amount != *paid_amount {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            DocumentContestNotPaidForError::new(
-                                self.base().id(),
-                                expected_amount,
-                                *paid_amount,
-                            )
-                            .into(),
-                        ));
-                    }
+                    // -->> Changed in V1 <<-- The amount is the most the contender pays, and
+                    // what it has to pay depends on how many contenders the contest holds, so
+                    // state validation, which counts them, judges it and refuses a contender
+                    // stating less with the fund it has to pay. V0 wanted exactly the contested
+                    // document fund here.
 
                     // -->> Introduced in V1 <<--
                     // The index name in the prefunded voting balance is chosen by the submitter,
@@ -96,11 +91,10 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                     }
                     // -->> End Introduced in V1 <<--
                 }
-                (Some(_), None) => {
-                    let expected_amount = platform_version
-                        .fee_version
-                        .vote_resolution_fund_fees
-                        .contested_document_vote_resolution_fund_required_amount;
+                (Some(VotePoll::ContestedDocumentResourceVotePoll(expected)), None) => {
+                    // A contested document stating no fund at all is refused with the contest's
+                    // fund, the least a contest takes: this step does not count contenders
+                    let expected_amount = expected.required_vote_resolution_fund(platform_version);
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         DocumentContestNotPaidForError::new(self.base().id(), expected_amount, 0)
                             .into(),
@@ -147,10 +141,19 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                 ));
             }
         }
-        // Validate user defined properties
-
+        // Validate user defined properties. The rules read the writer, the block the
+        // create is recorded in, and the `countOf` and `sumOf` totals the action read from
+        // state as they will be once the document is stored.
         let result = data_contract
-            .validate_document_properties(document_type_name, self.data().into(), platform_version)
+            .validate_document_properties(
+                document_type_name,
+                self.data().into(),
+                &DocumentSystemValues {
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    ..DocumentSystemValues::created_in_block(owner_id, &self.block_info())
+                },
+                platform_version,
+            )
             .map_err(Error::Protocol)?;
         if !result.is_valid() {
             return Ok(result);
@@ -171,9 +174,34 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
         // The schema validation above established every supplied value is a byte array
         // where the type says so; what is left is whether an `encryptedFor` property has
         // the shape its scheme produces, which is all consensus can tell about a ciphertext.
-        document_type
+        let result = document_type
             .validate_encrypted_property_shapes(self.data(), platform_version)
-            .map_err(Error::Protocol)
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // A `refersTo` lookup with a computed key reveals a commitment: the create must carry
+        // every value its preimage reads, and a variable-length value may not hold the
+        // separator that follows it, or the preimage could split into its params more than one
+        // way. The values are on the transition, so this is a structure check, refused before
+        // the lookup reads state; it runs after the schema validation above so every value is
+        // of its property's kind. Only the protocol version 14 parser produces a computed key,
+        // and this generation runs from that version alone
+        if let Some((path, error)) =
+            first_unrevealable_lookup_key(document_type, self.data(), owner_id)
+        {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DocumentReferencePreimageInvalidError::new(
+                    document_type_name.clone(),
+                    path,
+                    error.param,
+                    error.reason,
+                )
+                .into(),
+            ));
+        }
+        Ok(result)
         // -->> End Introduced in V1 <<--
     }
 }
@@ -191,6 +219,7 @@ mod tests {
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
+    use dpp::moderation_charter::ELECTED_CHARTER_DOCUMENT_TYPE_NAME;
     use drive::util::object_size_info::DataContractOwnedResolvedInfo;
     use std::collections::BTreeMap;
     use std::sync::Arc;
@@ -277,12 +306,17 @@ mod tests {
                 gas_fees_paid_by: GasFeesPaidBy::default(),
                 contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                 declared_action_fee: None,
+                shielded_token_payment: None,
             }),
             block_info: BlockInfo::default(),
             data,
             prefunded_voting_balance,
             current_store_contest_info: None,
             should_store_contest_info: None,
+            property_constraint_aggregates: Default::default(),
+            moderated: false,
+            consumed_documents: Vec::new(),
+            derived_index_values: None,
         })
     }
 
@@ -315,45 +349,68 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn should_require_the_exact_contested_dpns_fee_for_each_protocol_version() {
-        for (protocol_version, expected_amount) in [(13, 20_000_000_000), (14, 10_000_000_000)] {
-            let platform_version = PlatformVersion::get(protocol_version).expect("known version");
-            for paid_amount in [
-                9_999_999_999,
-                10_000_000_000,
-                10_000_000_001,
-                20_000_000_000,
-                20_000_000_001,
-            ] {
-                let mut action = create_action(
-                    CONTESTED_LABEL,
-                    Some(CONTESTED_INDEX_NAME),
-                    platform_version,
-                );
-                let DocumentCreateTransitionAction::V0(action_data) = &mut action;
-                action_data
-                    .prefunded_voting_balance
-                    .as_mut()
-                    .expect("prefunded contest")
-                    .1 = paid_amount;
+    /// The action of a DPNS contender stating `paid_amount` as its fund
+    fn dpns_contender_action(
+        paid_amount: Credits,
+        platform_version: &PlatformVersion,
+    ) -> DocumentCreateTransitionAction {
+        let mut action = create_action(
+            CONTESTED_LABEL,
+            Some(CONTESTED_INDEX_NAME),
+            platform_version,
+        );
+        let DocumentCreateTransitionAction::V0(action_data) = &mut action;
+        action_data
+            .prefunded_voting_balance
+            .as_mut()
+            .expect("prefunded contest")
+            .1 = paid_amount;
+        action
+    }
 
-                let errors = validate(&action, platform_version);
-                let contest_errors = contest_errors(&errors);
-                if paid_amount == expected_amount {
-                    assert!(
-                        contest_errors.is_empty(),
-                        "protocol {protocol_version}: {errors:?}"
-                    );
-                } else {
-                    let [StateError::DocumentContestNotPaidForError(error)] =
-                        contest_errors.as_slice()
-                    else {
-                        panic!("protocol {protocol_version}: expected a fee error, got {errors:?}");
-                    };
-                    assert_eq!(error.expected_amount(), expected_amount);
-                    assert_eq!(error.paid_amount(), paid_amount);
-                }
+    /// What a contender states is the most it pays, and what it has to pay depends on how many
+    /// contenders the contest holds, so structure validation leaves the amount to state
+    /// validation, which counts them
+    #[test]
+    fn should_leave_the_contested_dpns_fund_to_state_validation() {
+        let platform_version = PlatformVersion::latest();
+        let fund = required_amount(platform_version);
+        for paid_amount in [0, 1, fund - 1, fund, fund + 1, 2 * fund] {
+            let errors = validate(
+                &dpns_contender_action(paid_amount, platform_version),
+                platform_version,
+            );
+            assert!(
+                contest_errors(&errors).is_empty(),
+                "stating {paid_amount}: {errors:?}"
+            );
+        }
+    }
+
+    /// PROTOCOL_VERSION_13: a contender states exactly the contested document fund
+    #[test]
+    fn should_leave_the_contested_dpns_fund_to_state_validation_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("known version");
+        let fund = required_amount(platform_version);
+        assert_eq!(fund, 20_000_000_000);
+        for paid_amount in [0, fund - 1, fund, fund + 1, 2 * fund] {
+            let errors = validate(
+                &dpns_contender_action(paid_amount, platform_version),
+                platform_version,
+            );
+            let contest_errors = contest_errors(&errors);
+            if paid_amount == fund {
+                assert!(
+                    contest_errors.is_empty(),
+                    "stating {paid_amount}: {errors:?}"
+                );
+            } else {
+                let [StateError::DocumentContestNotPaidForError(error)] = contest_errors.as_slice()
+                else {
+                    panic!("stating {paid_amount}: expected a fee error, got {errors:?}");
+                };
+                assert_eq!(error.expected_amount(), fund);
+                assert_eq!(error.paid_amount(), paid_amount);
             }
         }
     }
@@ -468,6 +525,150 @@ mod tests {
         assert!(
             contest_errors(&validate(&action, platform_version)).is_empty(),
             "a prefunded voting balance naming the contested index must not be rejected as a contest error"
+        );
+    }
+
+    /// The `electedCharter` properties of an application for the contract `[0x7A; 32]`.
+    fn charter_application_properties() -> BTreeMap<String, Value> {
+        BTreeMap::from([
+            (
+                "targetContractId".to_string(),
+                Value::Identifier([0x7A; 32]),
+            ),
+            (
+                "submittedCharterId".to_string(),
+                Value::Identifier([0x5C; 32]),
+            ),
+            ("members".to_string(), Value::Array(vec![])),
+        ])
+    }
+
+    /// The action the transformer builds for an application in a moderation election whose
+    /// prefunded voting balance pays `paid_amount`, if any.
+    fn charter_application_action(
+        paid_amount: Option<Credits>,
+        platform_version: &PlatformVersion,
+    ) -> DocumentCreateTransitionAction {
+        let contract_fetch_info =
+            Arc::new(DataContractFetchInfo::moderation_charters_contract_fixture(
+                platform_version.protocol_version,
+            ));
+        let data = charter_application_properties();
+        let prefunded_voting_balance = paid_amount.map(|paid_amount| {
+            let index_values = contract_fetch_info
+                .contract
+                .document_type_for_name(ELECTED_CHARTER_DOCUMENT_TYPE_NAME)
+                .expect("expected the electedCharter document type")
+                .indexes()
+                .get("byTargetContract")
+                .expect("expected the contested index")
+                .extract_values(&data);
+            (
+                ContestedDocumentResourceVotePollWithContractInfo {
+                    contract: DataContractOwnedResolvedInfo::DataContractFetchInfo(
+                        contract_fetch_info.clone(),
+                    ),
+                    document_type_name: ELECTED_CHARTER_DOCUMENT_TYPE_NAME.to_string(),
+                    index_name: "byTargetContract".to_string(),
+                    index_values,
+                },
+                paid_amount,
+            )
+        });
+
+        DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
+            base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+                id: Identifier::from([0xAA; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: ELECTED_CHARTER_DOCUMENT_TYPE_NAME.to_string(),
+                data_contract: contract_fetch_info,
+                token_cost: None,
+                gas_fees_paid_by: GasFeesPaidBy::default(),
+                contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                declared_action_fee: None,
+                shielded_token_payment: None,
+            }),
+            block_info: BlockInfo::default(),
+            data,
+            prefunded_voting_balance,
+            current_store_contest_info: None,
+            should_store_contest_info: None,
+            property_constraint_aggregates: Default::default(),
+            moderated: false,
+            consumed_documents: Vec::new(),
+            derived_index_values: None,
+        })
+    }
+
+    /// An application in a moderation election stating no fund is refused with the moderation
+    /// fund, 0.5 Dash; what one states is judged by state validation, which counts the
+    /// applicants
+    #[test]
+    fn should_refuse_a_charter_application_stating_no_fund_with_the_moderation_fund() {
+        let platform_version = PlatformVersion::latest();
+        let moderation_fund = platform_version
+            .fee_version
+            .vote_resolution_fund_fees
+            .moderation_vote_resolution_fund_required_amount;
+        assert_eq!(moderation_fund, 50_000_000_000);
+
+        for paid_amount in [
+            None,
+            Some(required_amount(platform_version)),
+            Some(moderation_fund - 1),
+            Some(moderation_fund + 1),
+            Some(moderation_fund),
+        ] {
+            let action = charter_application_action(paid_amount, platform_version);
+            let errors = validate(&action, platform_version);
+            let contest_errors = contest_errors(&errors);
+            if paid_amount.is_some() {
+                assert!(contest_errors.is_empty(), "{errors:?}");
+            } else {
+                let [StateError::DocumentContestNotPaidForError(error)] = contest_errors.as_slice()
+                else {
+                    panic!("paid {paid_amount:?}: expected a fee error, got {errors:?}");
+                };
+                assert_eq!(error.expected_amount(), moderation_fund);
+                assert_eq!(error.paid_amount(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn should_construct_charter_applications_with_the_moderation_fund() {
+        use dpp::document::{Document, DocumentV0};
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+
+        let platform_version = PlatformVersion::latest();
+        let contract = DataContractFetchInfo::moderation_charters_contract_fixture(
+            platform_version.protocol_version,
+        );
+        let document_type = contract
+            .contract
+            .document_type_for_name(ELECTED_CHARTER_DOCUMENT_TYPE_NAME)
+            .expect("electedCharter type");
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([0xAA; 32]),
+            owner_id: Identifier::from([0xBB; 32]),
+            properties: charter_application_properties(),
+            ..Default::default()
+        });
+        let DocumentCreateTransition::V0(transition) = DocumentCreateTransition::from_document(
+            document,
+            document_type,
+            [0xCC; 32],
+            None,
+            1,
+            platform_version,
+            None,
+            None,
+        )
+        .expect("create transition");
+
+        assert_eq!(
+            transition.prefunded_voting_balance,
+            Some(("byTargetContract".to_string(), 50_000_000_000))
         );
     }
 

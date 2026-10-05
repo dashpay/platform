@@ -29,13 +29,16 @@ pub fn derive_shared_key_ecdh(private_key: &SecretKey, public_key: &PublicKey) -
 mod tests {
     use super::*;
     use secp256k1::generate_keypair;
-    use secp256k1::rand::rng;
+    use secp256k1::rand::rngs::StdRng;
+    use secp256k1::rand::SeedableRng;
 
     #[test]
     fn test_ecdh_key_derivation() {
+        let mut rng = StdRng::seed_from_u64(1);
+
         // Generate two key pairs
-        let (secret1, public1) = generate_keypair(&mut rng());
-        let (secret2, public2) = generate_keypair(&mut rng());
+        let (secret1, public1) = generate_keypair(&mut rng);
+        let (secret2, public2) = generate_keypair(&mut rng);
 
         // Derive shared keys from both sides
         let shared1 = derive_shared_key_ecdh(&secret1, &public2);

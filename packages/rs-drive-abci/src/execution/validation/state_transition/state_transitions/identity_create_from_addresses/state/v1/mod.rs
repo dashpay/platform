@@ -7,18 +7,15 @@ use crate::platform_types::platform::PlatformRef;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
-use dpp::ProtocolError;
 
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use crate::execution::types::state_transition_execution_context::{
-    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
-};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
+use crate::execution::validation::state_transition::identity_create_from_addresses::bump_input_nonces_with_penalty;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses) trait IdentityCreateFromAddressesStateTransitionStateValidationV1
@@ -95,25 +92,15 @@ impl IdentityCreateFromAddressesStateTransitionStateValidationV1
                 StateTransitionAction::IdentityCreateFromAddressesAction(action),
             ))
         } else {
-            // It's not valid, we need to give back the action that partially uses the asset lock
-
+            // It's not valid: the inputs only bump their nonces and pay the penalty
             let penalty = platform_version
                 .drive_abci
                 .validation_and_processing
                 .penalties
                 .unique_key_already_present;
 
-            let used_credits = penalty
-                .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
-                .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
-
-            let bump_action =
-                BumpAddressInputNoncesAction::from_identity_create_from_addresses_transition_action(
-                    action,
-                    used_credits,
-                );
             Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action.into(),
+                bump_input_nonces_with_penalty(self, &action, penalty)?,
                 key_state_validation_result.errors,
             ))
         }

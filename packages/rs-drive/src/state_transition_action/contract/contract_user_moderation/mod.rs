@@ -4,8 +4,8 @@ pub mod transformer;
 pub mod v0;
 
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
-    ContractDocumentDeletionContext, ContractUserModerationTransitionActionV0,
-    ContractWarningContext,
+    ContractDocumentDeletionContext, ContractTeamActionContext,
+    ContractUserModerationTransitionActionV0, ContractWarningContext,
 };
 use derive_more::From;
 use dpp::platform_value::Identifier;
@@ -69,6 +69,34 @@ impl ContractUserModerationTransitionAction {
     pub fn document_deletion(&self) -> Option<&ContractDocumentDeletionContext> {
         match self {
             ContractUserModerationTransitionAction::V0(action) => action.document_deletion.as_ref(),
+        }
+    }
+
+    /// What the proposal of a settled document's deletion or the approval of a team action
+    /// read and decided when the transition was validated, `None` for every other action
+    pub fn team_action(&self) -> Option<&ContractTeamActionContext> {
+        match self {
+            ContractUserModerationTransitionAction::V0(action) => action.team_action.as_ref(),
+        }
+    }
+
+    /// The signer's moderation action count on the elected contract after this action, when
+    /// the action counts for a member of the seated team
+    pub fn moderation_action_count(&self) -> Option<u32> {
+        match self {
+            ContractUserModerationTransitionAction::V0(action) => action.moderation_action_count,
+        }
+    }
+
+    /// The same action, counted for its signer, a member of the elected contract's seated team:
+    /// `count` is the signer's moderation action count since the moderators pot was last
+    /// settled, this action included
+    pub fn with_moderation_action_count(self, count: u32) -> Self {
+        match self {
+            ContractUserModerationTransitionAction::V0(mut action) => {
+                action.moderation_action_count = Some(count);
+                ContractUserModerationTransitionAction::V0(action)
+            }
         }
     }
 

@@ -39,11 +39,16 @@ impl Drive {
                     "there should always be a balance if apply is set to true",
                 )))?;
 
+            // `repaid_debt` only reports what the arithmetic below already does (the debt
+            // part of the added credits never reaches the balance); the balance and debt
+            // writes are those of every earlier release. Whether the repaid part reaches a
+            // fee pool is the caller's: from protocol version 14 it does
             if apply {
                 if negative_balance > added_balance {
                     Ok(AddToPreviousBalanceOutcomeV0 {
                         balance_modified: None,
                         negative_credit_balance_modified: Some(negative_balance - added_balance),
+                        repaid_debt: added_balance,
                     }
                     .into())
                 } else {
@@ -53,6 +58,7 @@ impl Drive {
                     Ok(AddToPreviousBalanceOutcomeV0 {
                         balance_modified: Some(added_balance - negative_balance),
                         negative_credit_balance_modified,
+                        repaid_debt: negative_balance,
                     }
                     .into())
                 }
@@ -61,6 +67,7 @@ impl Drive {
                 Ok(AddToPreviousBalanceOutcomeV0 {
                     balance_modified: Some(MAX_CREDITS - 1000),
                     negative_credit_balance_modified: Some(0),
+                    repaid_debt: 0,
                 }
                 .into())
             }
@@ -76,6 +83,7 @@ impl Drive {
             Ok(AddToPreviousBalanceOutcomeV0 {
                 balance_modified: Some(new_balance),
                 negative_credit_balance_modified: None,
+                repaid_debt: 0,
             }
             .into())
         }

@@ -28,7 +28,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentReferenceErrorCodeWasm {
     /// The referenced identity, contract, token or document (permanent or
-    /// deletable) does not exist.
+    /// deletable) does not exist, or a value with `inList` is not an element
+    /// of the list it must be in (or was set while the property finding the
+    /// list's document was not).
     ReferencedEntityNotFound = 40120,
     /// A `permanentDocument` or `deletableDocument` reference names a
     /// document type the referenced contract does not define, or the
@@ -62,11 +64,52 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// meet what the reference's `keyRequirements` require of it: its
     /// purpose, or a binding to a document type of the declaring contract.
     ReferencedIdentityKeyRequirementNotMet = 40136,
+    /// A `refersTo` `findBy` into a document type of another contract cannot
+    /// resolve there, reported at contract registration: no unique index is
+    /// over exactly the properties it names, or a source holds a different
+    /// kind of value than the property it fills. (A `findBy` into the
+    /// declaring contract is refused by the contract parse instead.)
+    ReferencedDocumentLookupInvalid = 40137,
+    /// A `refersTo` with `inList` whose list lives in a document type of
+    /// another contract cannot be served by it, reported at contract
+    /// registration: that type's documents can be deleted, the list is not a
+    /// stored typed array of identifiers of it, or a replace could change the
+    /// list. (A list in the declaring contract is refused by the contract parse
+    /// instead.)
+    ReferencedDocumentListInvalid = 40138,
+    /// The document a `refersTo` `findBy` function found, the commitment the
+    /// create reveals, exists but does not meet the reference's
+    /// `minimumAgeBlocks`: it was created too recently, in the same block
+    /// with a minimum of 1. Retry in a later block.
+    ReferencedDocumentRequirementNotMet = 40142,
+    /// The referenced document type's documents can leave state otherwise
+    /// than through a moderator's recorded removal. Only types declaring
+    /// `canBeDeleted: false`, no `ttl`, and `moderatorAbilities.delete`
+    /// keeping removal records may be the target of a `moderatedDocument`
+    /// reference.
+    ReferencedDocumentTypeNotModerated = 40143,
+    /// The referenced document type's documents leave state only through a
+    /// moderator's recorded removal: a `moderatedDocument` reference is the
+    /// one for it, not a `deletableDocument` one.
+    ReferencedDocumentTypeModerated = 40144,
+    /// A replace kept a `moderatedDocument` reference whose document the
+    /// contract's moderators removed, and had to check a `where` entry
+    /// against a property its removal record does not keep (a record keeps
+    /// the document's id, its owner and the fields its type lists under
+    /// `moderatorAbilities.deleteKeepsFields`). Point the reference at a
+    /// document in state, or leave the properties `where` reads unchanged
+    /// until the document is restored.
+    ReferencedDocumentRemoved = 40145,
+    /// A create cannot reveal the preimage of a `refersTo` `findBy`
+    /// function: a value a param reads is absent, or a variable-length
+    /// value holds the one-byte separator that follows it in the preimage.
+    DocumentReferencePreimageInvalid = 10423,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131, 40135 or 40136.
+    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40145 or
+    /// 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -78,13 +121,20 @@ impl DocumentReferenceErrorCodeWasm {
             40131 => Some(Self::ReferencedDocumentTypeNotDeletable),
             40135 => Some(Self::ReferencedContractRequirementNotMet),
             40136 => Some(Self::ReferencedIdentityKeyRequirementNotMet),
+            40137 => Some(Self::ReferencedDocumentLookupInvalid),
+            40138 => Some(Self::ReferencedDocumentListInvalid),
+            40142 => Some(Self::ReferencedDocumentRequirementNotMet),
+            40143 => Some(Self::ReferencedDocumentTypeNotModerated),
+            40144 => Some(Self::ReferencedDocumentTypeModerated),
+            40145 => Some(Self::ReferencedDocumentRemoved),
+            10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
     }
 }
 
 /// Consensus error codes emitted by the immutable-property check on document
-/// replaces (`immutable` / `immutableAllowSetting`, protocol version 14+).
+/// replaces (`immutable`, protocol version 14+).
 ///
 /// Branch on an error's `code` against this instead of matching its message:
 ///
@@ -101,8 +151,8 @@ impl DocumentReferenceErrorCodeWasm {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentImmutabilityErrorCodeWasm {
     /// The replace changed, added or removed a property the document type
-    /// lists under `immutable`, and the change was not the one first-time
-    /// set `immutableAllowSetting` permits.
+    /// lists under `immutable`: by name, or with a condition that held for
+    /// the replace.
     DocumentImmutablePropertyChanged = 40128,
 }
 
@@ -184,6 +234,112 @@ impl DocumentEncryptionErrorCodeWasm {
     }
 }
 
+/// Consensus error codes emitted by the `maxBytes` check, which runs from
+/// protocol version 14 onward wherever a document is validated, on every
+/// create and replace included.
+///
+/// Branch on an error's `code` against these instead of matching its
+/// message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentMaxBytesErrorCode.MaxBytesExceeded) {
+///     // a string is longer in UTF-8 bytes than its property's maxBytes
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentMaxBytesErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentMaxBytesErrorCodeWasm {
+    /// A string, or an element of a typed array of strings, is longer in
+    /// UTF-8 bytes than the `maxBytes` its property declares. `maxLength`
+    /// counts characters, which are up to four bytes each.
+    MaxBytesExceeded = 10421,
+}
+
+impl DocumentMaxBytesErrorCodeWasm {
+    /// The maxBytes error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10421 => Some(Self::MaxBytesExceeded),
+            _ => None,
+        }
+    }
+}
+
+/// Consensus error codes emitted by the `propertyConstraints` check, which
+/// runs from protocol version 14 onward wherever a document is validated, on
+/// every create and replace included.
+///
+/// Branch on an error's `code` against this instead of matching its message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentPropertyConstraintErrorCode.DocumentPropertyConstraintViolated) {
+///     // the document breaks one of its type's rules; the message names it
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentPropertyConstraintErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentPropertyConstraintErrorCodeWasm {
+    /// The written document breaks a rule of its document type's
+    /// `propertyConstraints`: the rule does not hold, or evaluating it
+    /// overflowed, divided by zero, raised to a negative power or read a value
+    /// that is not an integer.
+    DocumentPropertyConstraintViolated = 10422,
+}
+
+impl DocumentPropertyConstraintErrorCodeWasm {
+    /// The propertyConstraints error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10422 => Some(Self::DocumentPropertyConstraintViolated),
+            _ => None,
+        }
+    }
+}
+
+/// Consensus error codes emitted by the `generatedFrom` check, which runs
+/// from protocol version 14 onward wherever a document is validated, on every
+/// create and replace included.
+///
+/// Branch on an error's `code` against this instead of matching its message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentGeneratedFromErrorCode.DocumentPropertyNotGenerated) {
+///     // a generated property was sent with a value other than what its
+///     // function generates, or without its params; leaving it out lets
+///     // the platform generate it
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentGeneratedFromErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentGeneratedFromErrorCodeWasm {
+    /// A `generatedFrom` string property holds a value other than what its
+    /// function generates from its params, or is present while a param is
+    /// absent.
+    DocumentPropertyNotGenerated = 10424,
+}
+
+impl DocumentGeneratedFromErrorCodeWasm {
+    /// The generatedFrom error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10424 => Some(Self::DocumentPropertyNotGenerated),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = "ConsensusError")]
 pub struct ConsensusErrorWasm(ConsensusError);
 
@@ -212,7 +368,8 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135 and 40136.
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40145 and
+    /// 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
@@ -237,6 +394,33 @@ impl ConsensusErrorWasm {
     pub fn document_encryption_error_code(&self) -> Option<DocumentEncryptionErrorCodeWasm> {
         DocumentEncryptionErrorCodeWasm::from_code(self.0.code())
     }
+    /// The maxBytes error this is, or `undefined` when it is not code 10421.
+    #[wasm_bindgen(getter = "documentMaxBytesErrorCode")]
+    pub fn document_max_bytes_error_code(&self) -> Option<DocumentMaxBytesErrorCodeWasm> {
+        DocumentMaxBytesErrorCodeWasm::from_code(self.0.code())
+    }
+
+    /// The propertyConstraints error this is, or `undefined` when it is not
+    /// code 10422.
+    #[wasm_bindgen(getter = "documentPropertyConstraintErrorCode")]
+    pub fn document_property_constraint_error_code(
+        &self,
+    ) -> Option<DocumentPropertyConstraintErrorCodeWasm> {
+        DocumentPropertyConstraintErrorCodeWasm::from_code(self.0.code())
+    }
+
+    /// The generatedFrom error this is, or `undefined` when it is not code
+    /// 10424.
+    #[wasm_bindgen(getter = "documentGeneratedFromErrorCode")]
+    pub fn document_generated_from_error_code(&self) -> Option<DocumentGeneratedFromErrorCodeWasm> {
+        DocumentGeneratedFromErrorCodeWasm::from_code(self.0.code())
+    }
+}
+
+impl From<ConsensusError> for ConsensusErrorWasm {
+    fn from(error: ConsensusError) -> Self {
+        ConsensusErrorWasm(error)
+    }
 }
 
 impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
@@ -244,9 +428,17 @@ impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::basic::document::DocumentReferencePreimageInvalidError;
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+    use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
+    use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+    use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
+    use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+    use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+    use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
     use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
     use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -356,6 +548,98 @@ mod tests {
         assert_eq!(DocumentEncryptionErrorCodeWasm::from_code(10419), None);
     }
 
+    /// Built from the real DPP error rather than a code literal, like the
+    /// encryption test above.
+    #[test]
+    fn should_mirror_the_dpp_error_in_the_max_bytes_error_code() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::DocumentPropertyMaxBytesExceededError;
+
+        let error = ConsensusError::from(BasicError::DocumentPropertyMaxBytesExceededError(
+            DocumentPropertyMaxBytesExceededError::new("description".to_string(), 4098, 4096),
+        ));
+
+        assert_eq!(
+            DocumentMaxBytesErrorCodeWasm::MaxBytesExceeded as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_max_bytes_error_code(),
+            Some(DocumentMaxBytesErrorCodeWasm::MaxBytesExceeded)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentMaxBytesErrorCodeWasm::from_code(10420), None);
+    }
+
+    /// Built from the real DPP error rather than a code literal, like the
+    /// encryption test above.
+    #[test]
+    fn should_mirror_the_dpp_property_constraint_error_code() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::{
+            DocumentPropertyConstraintViolatedError, PropertyConstraintViolation,
+        };
+
+        let error: ConsensusError = BasicError::DocumentPropertyConstraintViolatedError(
+            DocumentPropertyConstraintViolatedError::new(
+                "order".to_string(),
+                "depositCoversOrder".to_string(),
+                PropertyConstraintViolation::NotMet,
+            ),
+        )
+        .into();
+
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::from_code(error.code()),
+            Some(DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated)
+        );
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_property_constraint_error_code(),
+            Some(DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::from_code(10420),
+            None
+        );
+    }
+
+    /// Built from the real DPP error rather than a code literal, like the
+    /// encryption test above.
+    #[test]
+    fn should_mirror_the_dpp_generated_from_error_code() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::DocumentPropertyNotGeneratedError;
+
+        let error: ConsensusError =
+            BasicError::DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError::new(
+                "domain".to_string(),
+                "normalizedLabel".to_string(),
+                "sys.stringTransformations.homographSafeASCII".to_string(),
+                vec!["label".to_string()],
+            ))
+            .into();
+
+        assert_eq!(
+            DocumentGeneratedFromErrorCodeWasm::from_code(error.code()),
+            Some(DocumentGeneratedFromErrorCodeWasm::DocumentPropertyNotGenerated)
+        );
+        assert_eq!(
+            DocumentGeneratedFromErrorCodeWasm::DocumentPropertyNotGenerated as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_generated_from_error_code(),
+            Some(DocumentGeneratedFromErrorCodeWasm::DocumentPropertyNotGenerated)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentGeneratedFromErrorCodeWasm::from_code(10423), None);
+    }
+
     /// The six reference-validation errors, paired with the JS enum variant
     /// each is advertised to be.
     ///
@@ -403,6 +687,28 @@ mod tests {
                 DocumentReferenceErrorCodeWasm::ReferencedIdentityKeyRequirementNotMet,
             ),
             (
+                StateError::ReferencedDocumentLookupInvalidError(
+                    ReferencedDocumentLookupInvalidError::new(
+                        "electedCharter.members".to_string(),
+                        "bySubmittedCharter".to_string(),
+                        "is not unique".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentLookupInvalid,
+            ),
+            (
+                StateError::ReferencedDocumentListInvalidError(
+                    ReferencedDocumentListInvalidError::new(
+                        "resignation.memberId".to_string(),
+                        "members".to_string(),
+                        "is not a typed array of identifiers".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentListInvalid,
+            ),
+            (
                 StateError::ReferencedDocumentTypeNotFoundError(
                     ReferencedDocumentTypeNotFoundError::new(
                         id(),
@@ -448,6 +754,61 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedKeyIdPropertyInvalid,
+            ),
+            (
+                StateError::ReferencedDocumentRequirementNotMetError(
+                    ReferencedDocumentRequirementNotMetError::new(
+                        id(),
+                        "minimumAgeBlocks".to_string(),
+                        "1".to_string(),
+                        "preorderSalt".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRequirementNotMet,
+            ),
+            (
+                StateError::ReferencedDocumentTypeNotModeratedError(
+                    ReferencedDocumentTypeNotModeratedError::new(
+                        id(),
+                        "post".to_string(),
+                        "replyTo".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeNotModerated,
+            ),
+            (
+                StateError::ReferencedDocumentTypeModeratedError(
+                    ReferencedDocumentTypeModeratedError::new(
+                        id(),
+                        "post".to_string(),
+                        "replyTo".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeModerated,
+            ),
+            (
+                StateError::ReferencedDocumentRemovedError(ReferencedDocumentRemovedError::new(
+                    id(),
+                    "replyTo".to_string(),
+                    "threadId".to_string(),
+                ))
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRemoved,
+            ),
+            (
+                BasicError::DocumentReferencePreimageInvalidError(
+                    DocumentReferencePreimageInvalidError::new(
+                        "domain".to_string(),
+                        "preorderSalt".to_string(),
+                        "parentDomainName".to_string(),
+                        "the value is absent".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::DocumentReferencePreimageInvalid,
             ),
         ]
     }
@@ -499,7 +860,7 @@ mod tests {
 
     #[test]
     fn codes_outside_the_reference_range_are_not_claimed() {
-        for code in [40119, 40126, 40137, 0, 40200] {
+        for code in [40119, 40126, 40139, 0, 40200] {
             assert_eq!(DocumentReferenceErrorCodeWasm::from_code(code), None);
         }
     }

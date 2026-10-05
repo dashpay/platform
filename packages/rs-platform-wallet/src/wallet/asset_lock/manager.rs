@@ -36,7 +36,7 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this manager operates on.
     pub(super) wallet_id: WalletId,
-    /// Notified on InstantLock / ChainLock events by SpvEventForwarder.
+    /// Notified on InstantLock / ChainLock events by `LockNotifyHandler`.
     /// Used by `wait_for_proof()` and `wait_for_chain_lock()`.
     pub(super) lock_notify: Arc<Notify>,
     /// Transaction broadcaster — pluggable so the same `AssetLockManager`
