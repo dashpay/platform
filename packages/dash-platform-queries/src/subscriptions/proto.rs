@@ -14,6 +14,7 @@ use dapi_grpc::platform::v0::get_documents_request::{
 };
 use dapi_grpc::platform::v0::subscribe_to_state_transitions_request::{
     self as proto, document_filter, state_transition_filter, SubscribeToStateTransitionsRequestV0,
+    Version,
 };
 use dapi_grpc::platform::v0::SubscribeToStateTransitionsRequest;
 use dpp::address_funds::PlatformAddress;
@@ -28,17 +29,13 @@ pub fn subscribe_request(
     from_block_height: Option<u64>,
 ) -> Result<SubscribeToStateTransitionsRequest, Error> {
     Ok(SubscribeToStateTransitionsRequest {
-        version: Some(
-            dapi_grpc::platform::v0::subscribe_to_state_transitions_request::Version::V0(
-                SubscribeToStateTransitionsRequestV0 {
-                    filters: filters
-                        .iter()
-                        .map(StateTransitionFilter::to_proto)
-                        .collect::<Result<_, _>>()?,
-                    from_block_height,
-                },
-            ),
-        ),
+        version: Some(Version::V0(SubscribeToStateTransitionsRequestV0 {
+            filters: filters
+                .iter()
+                .map(StateTransitionFilter::to_proto)
+                .collect::<Result<_, _>>()?,
+            from_block_height,
+        })),
     })
 }
 
