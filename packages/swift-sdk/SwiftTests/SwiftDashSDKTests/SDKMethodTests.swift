@@ -98,13 +98,15 @@ final class SDKMethodTests: XCTestCase {
     }
   }
 
-  /// Fetches an identity through `identityGet` from rs-sdk's recorded
-  /// `test_identity_read` vectors: the mock replays the recorded DAPI
-  /// response, the SDK verifies its proof against the recorded quorum key,
-  /// and the identity is decoded into the Swift result.
+  /// Fetches an identity's public keys through `identityGetKeys` from
+  /// rs-sdk's recorded `test_identity_public_keys_all_read` vectors: the mock
+  /// replays the recorded DAPI response, the SDK verifies its proof against
+  /// the recorded quorum key, and the keys are decoded into the Swift result.
+  /// It does not read `test_identity_read`: those vectors carry GroveDB V0
+  /// proof envelopes, which every client refuses since dashpay/platform#5294.
   @MainActor
-  func testSimpleIdentityFetch() async throws {
-    let vectors = Self.rsSdkVectors("test_identity_read")
+  func testIdentityKeysFetch() async throws {
+    let vectors = Self.rsSdkVectors("test_identity_public_keys_all_read")
     guard FileManager.default.fileExists(atPath: vectors) else {
       XCTFail("missing rs-sdk offline vectors at \(vectors)")
       return
@@ -115,10 +117,21 @@ final class SDKMethodTests: XCTestCase {
 
     // The vectors record identity [1; 32], rs-sdk's IDENTITY_ID_1.
     let identityId = Data(repeating: 1, count: 32).toBase58()
-    let identity = try await sdk.identityGet(identityId: identityId)
+    let keys = try await sdk.identityGetKeys(identityId: identityId)
 
-    XCTAssertEqual(identity["id"] as? String, identityId)
-    let publicKeys = try XCTUnwrap(identity["publicKeys"] as? [[String: Any]])
-    XCTAssertFalse(publicKeys.isEmpty, "the recorded identity has public keys")
+    // The keys come back keyed by key id; every recorded key is present and
+    // carries its own id.
+    XCTAssertFalse(keys.isEmpty, "the recorded identity has public keys")
+    for (keyId, value) in keys {
+      let key = try XCTUnwrap(value as? [String: Any], "key \(keyId) is absent")
+      let id = try XCTUnwrap(key["id"] as? Int, "key \(keyId) has no numeric id")
+      XCTAssertEqual(String(id), keyId)
+    }
+
+    // Key 0 is the identity's master authentication key: purpose 0
+    // (AUTHENTICATION) at security level 0 (MASTER).
+    let master = try XCTUnwrap(keys["0"] as? [String: Any], "key 0 is absent")
+    XCTAssertEqual(master["purpose"] as? Int, 0)
+    XCTAssertEqual(master["securityLevel"] as? Int, 0)
   }
 }
