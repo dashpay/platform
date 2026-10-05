@@ -1501,6 +1501,7 @@ mod tip_resolution_tests {
                 ],
                 select: dash_sdk::drive::query::SelectProjection::documents(),
                 time_range_clauses: vec![],
+                integer_range_clauses: vec![],
                 group_by: vec![],
                 having: vec![],
                 order_by_clauses: vec![],
