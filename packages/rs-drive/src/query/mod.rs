@@ -1425,62 +1425,167 @@ pub fn pins_reach_chain(index: &Index, pin_depth: usize, chain_position: Option<
         && chain_position.is_some_and(|min_at| min_at < pin_depth)
 }
 
-/// Refuses a range total (one aggregate over a range, or one per carrier
-/// branch) read through `index` when its path passes through a ranked level:
-/// a level whose property-name tree Drive lays out as an indexed tree,
-/// whichever of the type's indexes ranks it (an index may continue below
-/// another's ranked last property). It walks the type's index structure along
-/// the index's levels and asks each the resolver the write path uses
-/// ([`property_name_tree_type_and_ranked_axes_for_level`]), so it reads the
-/// layout Drive builds. grovedb's range aggregates neither read an indexed
-/// tree (`AggregateCountOnRange`, `AggregateSumOnRange` and
-/// `AggregateCountAndSumOnRange` take provable trees only) nor descend
-/// through one when proving. Grouped by the last property, the same range
-/// reads each value. The count, sum and count-and-sum range-total path
-/// builders all call it, so the unproven read, the proof and its verification
-/// refuse alike.
-///
-/// Unversioned, so every protocol version reaches it: rankings exist only
-/// from protocol version 14 (meta-schema v3), so no level is an indexed tree
-/// before and it refuses nothing.
+/// Whether a range walk over `index` keeps a group whose aggregates are
+/// zero: whether `index` can hold an empty group. A preallocated index
+/// creates every group on its path with its referenced document, before any
+/// entry, so its own groups can be empty, and so can those of any index of
+/// the type ending at a level a preallocated index passes through, whose
+/// value trees that preallocation creates too. An `outlivesDelete` index
+/// passing through that level empties a group as well: its entries stay when
+/// a delete takes the index's own, so the group's value tree stands at zero.
+/// The walk's limit counted such a group, so dropping it would shorten a page
+/// while more groups follow; the count, sum and average walks and the count
+/// verifier all ask this, so the proof keeps what the unproven read keeps.
+/// Only meta-schema v3 (protocol version 14) admits `preallocated` and
+/// `outlivesDelete`, so every earlier index drops its empty groups as before.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub fn refuse_a_range_total_through_a_ranked_index(
-    document_type: DocumentTypeRef,
-    index: &Index,
-) -> Result<(), Error> {
-    let mut level = document_type.index_structure();
-    let mut crosses_a_ranked_level = false;
-    for (position, property) in index.properties.iter().enumerate() {
-        let Some(sub_level) = level
-            .sub_levels()
-            .get(&index.level_key(position, &property.name))
-        else {
-            break;
-        };
-        if !property_name_tree_type_and_ranked_axes_for_level(sub_level)?
-            .1
-            .is_empty()
-        {
-            crosses_a_ranked_level = true;
-            break;
-        }
-        level = sub_level;
-    }
-    if !crosses_a_ranked_level {
-        return Ok(());
-    }
-    let last = index
-        .properties
-        .last()
-        .map(|property| property.name.as_str())
-        .unwrap_or_default();
-    Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-        "a range total over the index `{}` is not available: its path passes through a ranked \
-         level, and a range total is read only through unranked trees; group by `{last}` to \
-         read each value in the range",
-        index.name
-    ))))
+pub(crate) fn index_keeps_empty_groups(document_type: DocumentTypeRef, index: &Index) -> bool {
+    document_type.indexes().values().any(|other| {
+        (other.preallocated || other.outlives_delete)
+            && other.shares_leading_levels(index, index.properties.len())
+    })
 }
+
+/// A range total's aggregate read without a proof, or zero when the tree it
+/// reads does not exist. An equality or `IN` value on the prefix that no
+/// document holds has no subtree, and grovedb's `query_aggregate_count`,
+/// `query_aggregate_sum` and `query_aggregate_count_and_sum` open the leaf
+/// tree directly, failing on the missing parent key
+/// (`InvalidParentLayerPath`), where the proof's carrier verifier drops a
+/// proved-absent `IN` value and the distinct walk returns nothing. Any other
+/// error stays an error.
+#[cfg(feature = "server")]
+pub(crate) fn aggregate_or_zero_when_absent<T: Default>(
+    value: Result<T, grovedb::Error>,
+) -> Result<T, Error> {
+    match value {
+        Err(
+            grovedb::Error::InvalidParentLayerPath(_)
+            | grovedb::Error::PathParentLayerNotFound(_)
+            | grovedb::Error::PathNotFound(_)
+            | grovedb::Error::PathKeyNotFound(_),
+        ) => Ok(T::default()),
+        other => other.map_err(|e| Error::GroveDB(Box::new(e))),
+    }
+}
+
+/// The prefix-to-last point read's path query, shared by the count and sum
+/// surfaces so a `count(*)` and a `sum`/`avg` over one tree build one shape:
+/// the tree of the index's last property read as one element by its level key
+/// `terminal_level_key` from the last pin's value tree at `base_path`.
+/// Structurally the `Key([0])` shape with the terminal level key in place of
+/// the bucket key: nothing is hoisted, so the `In` branches (`in_outer_keys`,
+/// the pinned `In` values under `base_path`) keep their full trailing pairs
+/// (`subquery_path_extension`) in `set_subquery_path`.
+///
+/// Unversioned, so every protocol version reaches it: the count point read
+/// over a regular index (protocol version 12 on) builds exactly this, moved
+/// here unchanged, so an edit for the sum surface changes those proofs too.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) fn prefix_to_last_path_query(
+    base_path: Vec<Vec<u8>>,
+    in_outer_keys: Option<Vec<Vec<u8>>>,
+    subquery_path_extension: Vec<Vec<u8>>,
+    terminal_level_key: Vec<u8>,
+) -> PathQuery {
+    match in_outer_keys {
+        None => {
+            let mut query = Query::new();
+            query.insert_key(terminal_level_key);
+            PathQuery::new(base_path, SizedQuery::new(query, None, None))
+        }
+        Some(keys) => {
+            let mut outer_query = Query::new();
+            for key in keys {
+                outer_query.insert_key(key);
+            }
+            let mut subquery = Query::new();
+            subquery.insert_key(terminal_level_key);
+            if !subquery_path_extension.is_empty() {
+                outer_query.set_subquery_path(subquery_path_extension);
+            }
+            outer_query.set_subquery(subquery);
+            PathQuery::new(base_path, SizedQuery::new(outer_query, None, None))
+        }
+    }
+}
+
+/// Range-total admission, in its own module so only the refusal can build a
+/// [`RangeTotalAdmitted`].
+#[cfg(any(feature = "server", feature = "verify"))]
+mod range_total_admission {
+    use super::*;
+
+    /// An index's admission to a range total by
+    /// [`refuse_a_range_total_through_a_ranked_index`], the only code able to
+    /// build one (its field is private to this module). The range-total builders
+    /// that skip that refusal, which a per-`In` fan-out calls once per value
+    /// after refusing once, take one, so none can build without it. It names no
+    /// index: a caller passes the one it got refusing the index it builds over.
+    #[derive(Debug, Clone, Copy)]
+    pub struct RangeTotalAdmitted(());
+
+    /// Refuses a range total (one aggregate over a range, or one per carrier
+    /// branch) read through `index` when its path passes through a ranked level:
+    /// a level whose property-name tree Drive lays out as an indexed tree,
+    /// whichever of the type's indexes ranks it (an index may continue below
+    /// another's ranked last property). It walks the type's index structure along
+    /// the index's levels and asks each the resolver the write path uses
+    /// ([`property_name_tree_type_and_ranked_axes_for_level`]), so it reads the
+    /// layout Drive builds. grovedb's range aggregates neither read an indexed
+    /// tree (`AggregateCountOnRange`, `AggregateSumOnRange` and
+    /// `AggregateCountAndSumOnRange` take provable trees only) nor descend
+    /// through one when proving. An unproven read through a ranked ancestor
+    /// would succeed (it opens only the leaf tree), but it is refused as well:
+    /// every count, sum and count-and-sum range-total path builder calls this, or
+    /// takes the [`RangeTotalAdmitted`] it returns, so the unproven read, the
+    /// proof and its verification refuse alike rather than answering only without
+    /// a proof. Grouped by the last property, the same range reads each value.
+    ///
+    /// Unversioned, so every protocol version reaches it: rankings exist only
+    /// from protocol version 14 (meta-schema v3), so no level is an indexed tree
+    /// before and it refuses nothing.
+    pub fn refuse_a_range_total_through_a_ranked_index(
+        document_type: DocumentTypeRef,
+        index: &Index,
+    ) -> Result<RangeTotalAdmitted, Error> {
+        let mut level = document_type.index_structure();
+        let mut crosses_a_ranked_level = false;
+        for (position, property) in index.properties.iter().enumerate() {
+            let Some(sub_level) = level
+                .sub_levels()
+                .get(&index.level_key(position, &property.name))
+            else {
+                break;
+            };
+            if !property_name_tree_type_and_ranked_axes_for_level(sub_level)?
+                .1
+                .is_empty()
+            {
+                crosses_a_ranked_level = true;
+                break;
+            }
+            level = sub_level;
+        }
+        if !crosses_a_ranked_level {
+            return Ok(RangeTotalAdmitted(()));
+        }
+        let last = index
+            .properties
+            .last()
+            .map(|property| property.name.as_str())
+            .unwrap_or_default();
+        Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "a range total over the index `{}` is not available: its path passes through a ranked \
+             level, and a range total is read only through unranked trees; group by `{last}` to \
+             read each value in the range",
+            index.name
+        ))))
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use range_total_admission::{refuse_a_range_total_through_a_ranked_index, RangeTotalAdmitted};
 
 /// Rejects a query whose resolution provenance and clause shapes disagree:
 /// every field in `resolved_time_ranges` must appear in the where

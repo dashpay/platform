@@ -1095,12 +1095,13 @@ impl DriveDocumentQuery<'_> {
 
 /// The index an executed-transition proof (waitForStateTransitionResult)
 /// runs against: the first `$ownerId`-bearing index that involves no
-/// `$createdAt` AND is neither `skipIfAbsent` nor `outlivesDelete` — the
-/// verifier cannot know the block timestamp a time-keyed entry was written
-/// with, a skipIfAbsent index has no entry at all for a trigger-absent
-/// document, and an outlivesDelete index keeps the entry a delete leaves, so
-/// none can anchor a proof that must exist for every create and be gone for
-/// every delete. The parser
+/// `$createdAt`, is neither `skipIfAbsent` nor `outlivesDelete`, and keeps
+/// entries (is no `summableOffCountIndex` index) — the verifier cannot know
+/// the block timestamp a time-keyed entry was written with, a skipIfAbsent
+/// index has no entry at all for a trigger-absent document, an outlivesDelete
+/// index keeps the entry a delete leaves, and a counter index keeps no entry,
+/// so none can anchor a proof that must exist for every create and be gone
+/// for every delete. The parser
 /// guarantees such an index exists (`apply_index_only`'s proof-index rule
 /// mirrors exactly this predicate); prover and verifier share this one
 /// selector, so they can never disagree on the anchor.
@@ -1111,8 +1112,8 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
         .find(|index| index.involves(OWNER_ID) && index.keys_each_live_document_by_its_values())
         .ok_or(Error::Query(QuerySyntaxError::Unsupported(
             "executed-transition proofs for an indexOnly type need an \
-                 $ownerId-bearing index that does not involve $createdAt and sets neither \
-                 skipIfAbsent nor outlivesDelete"
+                 $ownerId-bearing index that does not involve $createdAt, sets neither \
+                 skipIfAbsent nor outlivesDelete and keeps entries (no summableOffCountIndex)"
                 .to_string(),
         )))
 }

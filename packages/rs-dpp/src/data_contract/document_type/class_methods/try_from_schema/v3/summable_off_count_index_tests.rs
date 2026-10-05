@@ -797,14 +797,62 @@ fn should_refuse_a_value_a_removal_drops() {
     let mut post = post();
     post.set_value("moderatorAbilities", platform_value!({ "delete": true }))
         .expect("moderator abilities set");
-    assert_refused(
-        parse(
-            post,
-            like(vec![by_post(), author_post(), hashtag_post()]),
-            true,
-        ),
-        "is not kept by a moderator's removal",
+    // Without preallocation, so the preallocation rule, which refuses the same
+    // shape first, stays out of the way and the counter's own rule refuses it
+    let indexes = [by_post(), author_post(), hashtag_post()]
+        .into_iter()
+        .map(|mut index| {
+            index.remove("preallocated").expect("preallocated removed");
+            index
+        })
+        .collect();
+    let error = parse(post, like(indexes), true).expect_err("the contract should be refused");
+    let message = error.to_string();
+    assert!(
+        message.contains("summableOffCountIndex index \"byHashtagPost\"")
+            && message.contains("could no longer be read back"),
+        "expected the counter's removal refusal in: {message}"
     );
+}
+
+#[test]
+fn should_bound_each_ranked_level_by_the_axes_ranked_at_it() {
+    // A hashtag of 60 characters takes up to 240 bytes: over the 239 an
+    // average ranking's tree admits, within the 247 of a sum ranking's
+    let like_with = |hashtag_index: Value| {
+        let mut like = like(vec![by_post(), author_post(), hashtag_index]);
+        like.set_value_at_full_path("properties.hashtag.maxLength", Value::U32(60))
+            .expect("maxLength set");
+        like
+    };
+    // The average ranking at `hashtag` caps the hashtag (a full-validation rule)
+    assert_refused(parse(post(), like_with(hashtag_post()), true), "239");
+    // Ranked by sum only at `hashtag`, with the average at `postId`, the
+    // hashtag's tree carries the sum axis alone
+    let sum_only_at_hashtag = with(
+        hashtag_post(),
+        "rankedAverageable",
+        platform_value!({ "at": ["postId"] }),
+    );
+    for full_validation in [false, true] {
+        let document_types = parse(
+            post(),
+            like_with(sum_only_at_hashtag.clone()),
+            full_validation,
+        )
+        .expect("the sum-only hashtag level admits 60 characters");
+        let index = document_types
+            .get("like")
+            .expect("the like type")
+            .indexes()
+            .get("byHashtagPost")
+            .expect("the index");
+        assert!(
+            index.ranked_averageable,
+            "the average ranks the last property"
+        );
+        assert!(index.ranked_averageable_at.is_empty());
+    }
 }
 
 #[test]

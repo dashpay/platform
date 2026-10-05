@@ -30,14 +30,20 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
 use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
-use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
-use crate::util::object_size_info::{DriveKeyInfo, PathInfo};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{
+    BatchDeleteUpTreeApplyType, BatchInsertApplyType, DirectQueryType,
+};
+use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
+use crate::util::object_size_info::{DriveKeyInfo, KeyElementInfo, PathInfo, PathKeyElementInfo};
 use crate::util::storage_flags::StorageFlags;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::AllItems;
-use grovedb::{Element, EstimatedLayerInformation, GroveDb, MaybeTree, TransactionArg, TreeType};
+use grovedb::{
+    Element, ElementFlags, EstimatedLayerInformation, GroveDb, MaybeTree, TransactionArg, TreeType,
+};
 use grovedb_merk::tree_type::SUM_ITEM_COST_SIZE;
 use grovedb_storage::worst_case_costs::WorstKeyLength;
 use std::collections::HashMap;
@@ -94,6 +100,19 @@ pub(crate) fn insert_summable_off_count_counter_layer(
     Ok(())
 }
 
+/// The counter at zero, keyed by `counter_key`, as a preallocation inserts it.
+fn zero_counter_key_element<'a>(
+    counter_key: &'a DriveKeyInfo<'a>,
+    element_flags: Option<ElementFlags>,
+) -> KeyElementInfo<'a> {
+    let counter = Element::new_sum_item_with_flags(0, element_flags);
+    match counter_key {
+        DriveKeyInfo::Key(key) => KeyElement((key.as_slice(), counter)),
+        DriveKeyInfo::KeyRef(key) => KeyElement((key, counter)),
+        DriveKeyInfo::KeySize(key_info) => KeyElementSize((key_info.clone(), counter)),
+    }
+}
+
 impl Drive {
     /// Adds the operations that move one group's counter of a
     /// `summableOffCountIndex` index: `counter_path_info` is the path of the tree of the index's last
@@ -108,15 +127,18 @@ impl Drive {
     /// written at most once per batch because a documents batch carries one
     /// transition (`max_transitions_in_documents_batch`), not because of the
     /// source: a source keyed by more than its owner holds several entries of
-    /// one owner in one group. Each document is converted on its own
-    /// (`previous_batch_operations` is empty across documents), so the check
-    /// below catches only a second write within one conversion, refused
-    /// rather than folded, and the batch methods refuse a batch moving one
-    /// type's counters for more than one document, an insert of a referenced
-    /// document that preallocates them included
-    /// (`Drive::refuse_repeated_counter_moves`), estimation included; raising
-    /// the cap needs the counter moves folded across documents first (see
-    /// that limit).
+    /// one owner in one group. Each document's conversion reads the counter
+    /// from committed state, so two documents moving one counter in one batch
+    /// would both write the same next value. The guard against that is the
+    /// batch methods' `Drive::refuse_repeated_counter_moves`, which refuses a
+    /// batch moving one type's counters for more than one document (an
+    /// insert of a referenced document that preallocates them included),
+    /// estimation included; raising the cap needs the counter moves folded
+    /// across documents first (see that limit). The check below is defence
+    /// for a direct Drive caller: it refuses, rather than folds, a second
+    /// write of the counter that this conversion's operations, or the
+    /// `previous_batch_operations` a caller hands in (a multi-document
+    /// operation passes the earlier documents' operations), already hold.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_summable_off_count_counter_operations(
         &self,
@@ -148,16 +170,22 @@ impl Drive {
             )?;
             let key_info_path = counter_path_info.convert_to_key_info_path();
             let key_info = counter_key.to_key_info();
-            // The read of the counter, priced at its fixed size.
-            batch_operations.push(CalculatedCostOperation(GroveDb::average_case_for_get_raw(
-                &key_info_path,
-                &key_info,
-                SUM_ITEM_COST_SIZE + flags_len,
-                counter_tree_type,
-                &drive_version.grove_version,
-            )?));
+            // The read of the counter, priced at its fixed size. The removal
+            // below prices its own read of the counter, so only a write that
+            // keeps the counter pushes this one.
+            let counter_read = || {
+                GroveDb::average_case_for_get_raw(
+                    &key_info_path,
+                    &key_info,
+                    SUM_ITEM_COST_SIZE + flags_len,
+                    counter_tree_type,
+                    &drive_version.grove_version,
+                )
+                .map(CalculatedCostOperation)
+            };
             match change {
                 CounterChange::Increment { .. } => {
+                    batch_operations.push(counter_read()?);
                     batch_operations.push(
                         LowLevelDriveOperation::insert_for_estimated_path_key_element(
                             key_info_path,
@@ -169,6 +197,7 @@ impl Drive {
                 CounterChange::Decrement {
                     keep_at_zero: true, ..
                 } => {
+                    batch_operations.push(counter_read()?);
                     batch_operations.push(
                         LowLevelDriveOperation::replace_for_estimated_path_key_element(
                             key_info_path,
@@ -315,6 +344,75 @@ impl Drive {
                     );
                 }
             }
+        }
+        Ok(())
+    }
+    /// Adds the operations that preallocate one group's counter of a
+    /// `summableOffCountIndex` index at zero, as the referenced document's
+    /// insert creates it: `counter_path_info`, `counter_key` and
+    /// `counter_tree_type` as for
+    /// [`Self::add_summable_off_count_counter_operations`]. It inserts the
+    /// counter when absent and keeps it as it stands when a
+    /// `moderatedDocument` restore finds it kept, never moving it.
+    /// `cannot_exist` skips the stateful existence read: under a tree this
+    /// walk just created, or through a `permanentDocument` reference, whose
+    /// key is the inserted document's `$id`, inserted once and never
+    /// restored. An estimation call registers the counter's layer and prices
+    /// the existence read either way, so it bounds every stateful write.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_summable_off_count_zero_counter_operations(
+        &self,
+        counter_path_info: PathInfo<0>,
+        counter_key: DriveKeyInfo,
+        counter_tree_type: TreeType,
+        cannot_exist: bool,
+        storage_flags: Option<&StorageFlags>,
+        estimated_key_size: impl FnOnce() -> Result<u16, Error>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let drive_version = &platform_version.drive;
+        let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
+        let estimating = estimated_costs_only_with_layer_info.is_some();
+        if let Some(layers) = estimated_costs_only_with_layer_info.as_mut() {
+            insert_summable_off_count_counter_layer(
+                layers,
+                counter_path_info.clone().convert_to_key_info_path(),
+                counter_tree_type,
+                estimated_key_size()?,
+                storage_flags,
+            )?;
+        }
+        let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
+            counter_path_info,
+            zero_counter_key_element(&counter_key, element_flags),
+        )?;
+        if estimating {
+            let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
+            self.batch_insert_if_not_exists(
+                path_key_element_info,
+                BatchInsertApplyType::StatelessBatchInsert {
+                    in_tree_type: counter_tree_type,
+                    target: QueryTargetValue(SUM_ITEM_COST_SIZE + flags_len),
+                },
+                transaction,
+                batch_operations,
+                drive_version,
+            )?;
+        } else if cannot_exist {
+            self.batch_insert(path_key_element_info, batch_operations, drive_version)?;
+        } else {
+            self.batch_insert_if_not_exists(
+                path_key_element_info,
+                BatchInsertApplyType::StatefulBatchInsert,
+                transaction,
+                batch_operations,
+                drive_version,
+            )?;
         }
         Ok(())
     }

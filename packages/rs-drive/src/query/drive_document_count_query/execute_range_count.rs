@@ -32,6 +32,7 @@ use super::{counter_sum_entry_as_count_entry, DriveDocumentCountQuery, SplitCoun
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::{aggregate_or_zero_when_absent, index_keeps_empty_groups};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
@@ -52,7 +53,10 @@ pub struct RangeCountOptions {
     /// (empty `key`) summing all per-value counts.
     pub distinct: bool,
     /// Maximum number of entries to return. Only meaningful when
-    /// `distinct = true`. `None` means no limit.
+    /// `distinct = true`. `None` means no limit, except over a
+    /// `summableOffCountIndex` index, read through the sum surface, whose
+    /// walk is always bounded: it stops at `u16::MAX` entries. A limit over
+    /// `u16::MAX` reads `u16::MAX` entries.
     ///
     /// To paginate, callers narrow the range itself (`color >
     /// <last-key-from-previous-page>`). There's no cursor field
@@ -128,17 +132,14 @@ impl DriveDocumentCountQuery<'_> {
         // A `summableOffCountIndex` index's documents are its range sums.
         if let Some(sums) = self.counter_sums_query() {
             let walk_mode = if options.distinct {
-                RangeSumWalkMode::Distinct(
-                    options
-                        .limit
-                        .map_or(u16::MAX, |limit| u16::try_from(limit).unwrap_or(u16::MAX)),
-                )
+                RangeSumWalkMode::Distinct(distinct_walk_limit(options.limit).unwrap_or(u16::MAX))
             } else {
                 RangeSumWalkMode::Aggregate
             };
             // The walk keeps a preallocated counter at zero, a group its
-            // limit counted, as the proof does, so a page ends only at the
-            // limit.
+            // limit counted, as the proof does, so a flat page ends only at
+            // the limit (across an `IN`, grovedb also charges a value whose
+            // range holds nothing, so there a short page may not be the end).
             let entries = sums.execute_range_sum_no_proof(
                 drive,
                 &RangeSumOptions {
@@ -178,6 +179,9 @@ impl DriveDocumentCountQuery<'_> {
         // classic request-amplification surface on a public DAPI
         // endpoint. The per-In fan-out closes that surface.
         if !options.distinct {
+            // Once for every aggregate read below: it depends on the index
+            // alone.
+            let admitted = self.refuse_a_range_count_total()?;
             if has_in_on_prefix {
                 let in_clause = self
                     .where_clauses
@@ -242,8 +246,8 @@ impl DriveDocumentCountQuery<'_> {
                         index: self.index,
                         where_clauses: clauses_for_value,
                     };
-                    let path_query =
-                        per_value_query.aggregate_count_path_query(platform_version)?;
+                    let path_query = per_value_query
+                        .admitted_aggregate_count_path_query(admitted, platform_version)?;
                     // Destructure the `CostContext` explicitly rather than
                     // calling `.unwrap()` on it: `CostContext::unwrap` is
                     // infallible (it just drops the cost field), but the
@@ -257,7 +261,7 @@ impl DriveDocumentCountQuery<'_> {
                         transaction,
                         &drive_version.grove_version,
                     );
-                    let count = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+                    let count = aggregate_or_zero_when_absent(value)?;
                     total = total.saturating_add(count);
                 }
                 return Ok(vec![SplitCountEntry {
@@ -269,14 +273,15 @@ impl DriveDocumentCountQuery<'_> {
                 }]);
             }
             // Flat summed (no In on prefix): single aggregate read.
-            let path_query = self.aggregate_count_path_query(platform_version)?;
+            let path_query =
+                self.admitted_aggregate_count_path_query(admitted, platform_version)?;
             // See In-fan-out branch above for the destructure rationale.
             let CostContext { value, cost: _ } = drive.grove.query_aggregate_count(
                 &path_query,
                 transaction,
                 &drive_version.grove_version,
             );
-            let count = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let count = aggregate_or_zero_when_absent(value)?;
             return Ok(vec![SplitCountEntry {
                 in_key: None,
                 key: Vec::new(),
@@ -303,8 +308,10 @@ impl DriveDocumentCountQuery<'_> {
         // `order_by_ascending` directly into grovedb so the walk
         // stops at `limit` elements in the requested direction —
         // no Rust-side sort/reverse/truncate needed.
-        let (path_query_limit, left_to_right) =
-            (options.limit.map(|l| l as u16), options.order_by_ascending);
+        let (path_query_limit, left_to_right) = (
+            distinct_walk_limit(options.limit),
+            options.order_by_ascending,
+        );
         let path_query =
             self.distinct_count_path_query(path_query_limit, left_to_right, platform_version)?;
         let base_path_len = path_query.path.len();
@@ -347,11 +354,15 @@ impl DriveDocumentCountQuery<'_> {
         // `None`. We DO NOT collapse multiple emitted entries with
         // the same `key` into one — that's the whole point of the
         // no-merge contract.
+        let keeps_empty_groups = index_keeps_empty_groups(self.document_type, self.index);
         let mut entries: Vec<SplitCountEntry> = Vec::new();
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
             let count = element.count_value_or_default();
-            if count == 0 {
+            // An empty group a preallocation or an outliving index left
+            // stays, as a count of zero: the walk's limit counted it (see
+            // the helper).
+            if count == 0 && !keeps_empty_groups {
                 continue;
             }
             let in_key = if has_in_on_prefix && path.len() > base_path_len {
@@ -552,4 +563,12 @@ impl DriveDocumentCountQuery<'_> {
         let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
+}
+
+/// The distinct walk's storage limit for a request's `limit`: a limit over
+/// `u16::MAX` saturates there. Shared by the regular walk and a
+/// `summableOffCountIndex` index's walk through the sum surface, so both
+/// read the same number of entries for one limit.
+fn distinct_walk_limit(limit: Option<u32>) -> Option<u16> {
+    limit.map(|limit| u16::try_from(limit).unwrap_or(u16::MAX))
 }

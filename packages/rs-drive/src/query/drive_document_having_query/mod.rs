@@ -423,6 +423,7 @@ pub fn resolve_having_query_for_mode<'a>(
                 &mode.group_by_property,
                 &mode.prefix_pins,
                 &mode.aggregate_field,
+                document_type,
             ),
         ))
     })?;

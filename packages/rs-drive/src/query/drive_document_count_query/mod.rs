@@ -235,10 +235,17 @@ pub fn point_lookup_count_entries(
             } else {
                 Vec::new()
             };
+            // A proof returns a tree element as stored, wrapper included,
+            // while the unproven read unwraps it: a prefix-to-last read's
+            // tree sits wrapped to contribute nothing under an aggregating
+            // value tree, so the decode looks through the wrapper. No
+            // element a count read reaches before protocol version 14 is
+            // wrapped, so those decode as before.
             SplitCountEntry {
                 in_key: None,
                 key,
-                count: element.map(|element| document_count_of_element(index, &element)),
+                count: element
+                    .map(|element| document_count_of_element(index, element.underlying())),
             }
         })
         .collect()
@@ -397,9 +404,16 @@ pub struct SplitCountEntry {
     /// - `Some(0)` — caller queried this branch and the executor
     ///   confirmed zero matching documents. Emitted by the no-proof
     ///   point-lookup path's aggregated total wrapper (a single
-    ///   summed entry whose value can be 0) and by the no-proof range
-    ///   executors when their walk returns nothing. Not emitted
-    ///   per-In-branch under the current shape — see `None` below.
+    ///   summed entry whose value can be 0), by the no-proof range
+    ///   executors when their walk returns nothing, by the per-`In`
+    ///   no-proof fan-out for a branch matching nothing, and, on an
+    ///   index that can hold an empty group (preallocated, or ending
+    ///   at a level a preallocated index passes through,
+    ///   `index_keeps_empty_groups`), for each empty
+    ///   group a range walk or a point lookup reads (a group created
+    ///   with a referenced document before any entry, or a
+    ///   `summableOffCountIndex` counter at zero), proved or not, per
+    ///   `In` branch included.
     /// - `None` — reserved for a future absence-proof variant. The
     ///   current `point_lookup_count_path_query` doesn't set
     ///   `absence_proofs_for_non_existing_searched_keys: true`, so
@@ -410,9 +424,9 @@ pub struct SplitCountEntry {
     ///   against the returned entries by key. The variant exists in
     ///   the type signature so a future path-query change that flips
     ///   the flag surfaces absences via `count: None` without a
-    ///   breaking struct change — distinguishable from `Some(0)`
-    ///   (which a zero-count CountTree could never produce on its own
-    ///   since zero-count CountTrees aren't materialized in merk).
+    ///   breaking struct change — distinguishable from `Some(0)`,
+    ///   which only a materialized empty group (a preallocation's) or a
+    ///   zero total produces.
     pub count: Option<u64>,
 }
 

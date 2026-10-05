@@ -1117,6 +1117,98 @@ fn range_count_with_in_on_prefix_returns_per_brand_color_entries() {
     assert_eq!(summed[0].count, Some(6));
 }
 
+/// A brand no widget carries has no subtree under the index, and a range
+/// total without a proof counts it as zero, as the proof's carrier drops it:
+/// across an `IN` its branch adds nothing, and a range of that brand alone
+/// totals zero.
+#[test]
+fn should_count_a_brand_without_widgets_as_zero_in_a_range_total() {
+    use crate::query::RangeCountOptions;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = PlatformVersion::latest();
+    let contract = build_brand_color_contract(PROTOCOL_VERSION_V12);
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("apply contract");
+    let document_type = contract
+        .document_type_for_name("widget")
+        .expect("widget exists");
+    insert_brand_color_widgets(
+        &drive,
+        &contract,
+        &[("acme", "red"), ("acme", "red"), ("acme", "blue")],
+        pv,
+    );
+
+    let brand = |operator: WhereOperator, value: Value| WhereClause {
+        field: "brand".to_string(),
+        operator,
+        value,
+    };
+    let after_blue = WhereClause {
+        field: "color".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::Text("blue".to_string()),
+    };
+    for (where_clauses, expected) in [
+        (
+            vec![
+                brand(
+                    WhereOperator::In,
+                    Value::Array(vec![
+                        Value::Text("acme".to_string()),
+                        Value::Text("nobrand".to_string()),
+                    ]),
+                ),
+                after_blue.clone(),
+            ],
+            2,
+        ),
+        (
+            vec![
+                brand(WhereOperator::Equal, Value::Text("nobrand".to_string())),
+                after_blue.clone(),
+            ],
+            0,
+        ),
+    ] {
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+            &[],
+        )
+        .expect("byBrandColor answers the range");
+        let total = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: where_clauses.clone(),
+        }
+        .execute_range_count_no_proof(
+            &drive,
+            &RangeCountOptions {
+                distinct: false,
+                limit: None,
+                order_by_ascending: true,
+            },
+            None,
+            pv,
+        )
+        .expect("the range total executes");
+        assert_eq!(total.len(), 1, "{where_clauses:?}");
+        assert_eq!(total[0].count, Some(expected), "{where_clauses:?}");
+    }
+}
+
 /// `StartsWith "r"` is encoded as `Range(serialize("r")..
 /// serialize("r") with last byte +1)` — the same half-open
 /// byte-incremented encoding `conditions.rs:1129`'s `StartsWith`

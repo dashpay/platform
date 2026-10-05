@@ -42,24 +42,20 @@ use crate::drive::document::bound_value_fits_referring_property;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    level_counts_continuations, terminal_member_tree_type, terminal_value_tree_type,
+    terminal_member_tree_type, terminal_value_tree_type,
 };
 use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::document::preallocation_bindings_targeting;
-use crate::drive::document::summable_off_count_counter::insert_summable_off_count_counter_layer;
 use crate::drive::document::unique_event_id;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::QueryTarget::QueryTargetValue;
-use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
-use crate::util::object_size_info::PathKeyElementInfo;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
@@ -71,12 +67,10 @@ use dpp::data_contract::document_type::{
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::Element;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
-use grovedb_merk::tree_type::SUM_ITEM_COST_SIZE;
 use std::collections::HashMap;
 
 #[cfg(test)]
@@ -280,10 +274,10 @@ impl Drive {
         // property-name tree needs the zero-contribution wrapper — exactly
         // the `parent_value_tree_type` the recursive walker threads through.
         let mut parent_value_tree_type = TreeType::NormalTree;
-        // Whether the level above is a prefix-ranking chain level
-        // (`rankedCountable: { at }` grouping or count-propagating): its
-        // value trees count exactly their single continuation, so the
-        // continuation is inserted unwrapped and contributes — the same
+        // Whether the level above is a prefix-ranking chain level (a
+        // grouping or propagating level of a count, sum or average chain):
+        // its value trees aggregate exactly their single continuation, so
+        // the continuation is inserted unwrapped and contributes — the same
         // inversion the entry-insert walkers apply.
         let mut parent_counts_continuations = false;
 
@@ -373,76 +367,24 @@ impl Drive {
             // counter at zero, in place of the value tree and its `0` bucket.
             // Nothing continues below it, so this is the last level.
             if sub_level.summable_off_count_index_info().is_some() {
-                let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
-                let counter = Element::new_sum_item_with_flags(
-                    0,
-                    StorageFlags::map_to_some_element_flags(storage_flags),
+                return self.add_summable_off_count_zero_counter_operations(
+                    path_info,
+                    value_key,
+                    property_name_tree_type,
+                    property_name_tree_created || binding.kind == DocumentReferenceKind::Permanent,
+                    storage_flags,
+                    || {
+                        document_info.get_estimated_size_for_document_type(
+                            property_name,
+                            referring_type,
+                            platform_version,
+                        )
+                    },
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
                 );
-                let key_element_info = match &value_key {
-                    Key(key) => KeyElement((key.as_slice(), counter)),
-                    KeyRef(key) => KeyElement((key, counter)),
-                    KeySize(key_info) => KeyElementSize((key_info.clone(), counter)),
-                };
-                // The counter cannot exist yet under a tree this walk just
-                // created, nor through a `permanentDocument` reference: its key
-                // is the inserted document's `$id`, inserted once and never
-                // restored. Only a `moderatedDocument` restore finds its
-                // counter kept, so only it needs the existence read.
-                let counter_cannot_exist =
-                    property_name_tree_created || binding.kind == DocumentReferenceKind::Permanent;
-                match estimated_costs_only_with_layer_info {
-                    Some(estimated_costs_only_with_layer_info) => {
-                        insert_summable_off_count_counter_layer(
-                            estimated_costs_only_with_layer_info,
-                            path_info.clone().convert_to_key_info_path(),
-                            property_name_tree_type,
-                            document_info.get_estimated_size_for_document_type(
-                                property_name,
-                                referring_type,
-                                platform_version,
-                            )?,
-                            storage_flags,
-                        )?;
-                        // The estimate prices the existence read either way,
-                        // so it bounds every stateful write below.
-                        self.batch_insert_if_not_exists(
-                            PathKeyElementInfo::from_path_info_and_key_element(
-                                path_info,
-                                key_element_info,
-                            )?,
-                            BatchInsertApplyType::StatelessBatchInsert {
-                                in_tree_type: property_name_tree_type,
-                                target: QueryTargetValue(SUM_ITEM_COST_SIZE + flags_len),
-                            },
-                            transaction,
-                            batch_operations,
-                            drive_version,
-                        )?;
-                    }
-                    None => {
-                        let path_key_element_info =
-                            PathKeyElementInfo::from_path_info_and_key_element(
-                                path_info,
-                                key_element_info,
-                            )?;
-                        if counter_cannot_exist {
-                            self.batch_insert(
-                                path_key_element_info,
-                                batch_operations,
-                                drive_version,
-                            )?;
-                        } else {
-                            self.batch_insert_if_not_exists(
-                                path_key_element_info,
-                                BatchInsertApplyType::StatefulBatchInsert,
-                                transaction,
-                                batch_operations,
-                                drive_version,
-                            )?;
-                        }
-                    }
-                }
-                return Ok(());
             }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
@@ -524,7 +466,7 @@ impl Drive {
 
             index_path_info = Some(path_info);
             parent_value_tree_type = value_tree_type;
-            parent_counts_continuations = level_counts_continuations(sub_level);
+            parent_counts_continuations = sub_level.is_ranked_chain_level();
         }
 
         let mut path_info = index_path_info.ok_or(Error::Drive(

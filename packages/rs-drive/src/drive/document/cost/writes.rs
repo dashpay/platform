@@ -11,8 +11,8 @@ use crate::drive::document::expiration::pricing::document_expires_at;
 use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    index_only_level_skips_when_absent, level_counts_continuations, level_reaches_entry_by,
-    takes_part_in_index_by, terminal_member_tree_type, zero_contribution_wrapper,
+    index_only_level_skips_when_absent, level_reaches_entry_by, takes_part_in_index_by,
+    terminal_member_tree_type, zero_contribution_wrapper,
 };
 use crate::drive::document::layout::{index_ending_at, index_paths, indexes_through, LayoutRole};
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
@@ -548,21 +548,18 @@ impl Context<'_> {
         } else {
             self.index_flags.clone()
         };
+        // A summableOffCountIndex index never ends at its first property: it
+        // holds every property of its source and at least one the source
+        // fixes, so one property would repeat its source's levels
+        // (`DuplicateIndexError`). Drive's top-level walk keeps no counter
+        // either (`add_reference_for_index_level_for_contract_operations`
+        // refuses one).
+        if level.summable_off_count_index_info().is_some() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a summableOffCountIndex index ends at its first property",
+            )));
+        }
         for key in keys {
-            if level.summable_off_count_index_info().is_some() {
-                let indexes = self.writing_indexes(&names);
-                self.counter_write(
-                    &path,
-                    key,
-                    tree_types.property_name_tree_type,
-                    &tree_types.ranked_axes,
-                    indexes,
-                    1,
-                    flags.as_ref(),
-                    ephemeral,
-                )?;
-                continue;
-            }
             self.push(Write {
                 path: path.clone(),
                 key: key.clone(),
@@ -637,7 +634,7 @@ impl Context<'_> {
                 )?;
             }
         }
-        let parent_counts_continuations = level_counts_continuations(level);
+        let parent_counts_continuations = level.is_ranked_chain_level();
         for (sub_key, sub_level) in level.sub_levels() {
             // A sub-level under which the document writes no entry is not
             // built.
@@ -976,7 +973,7 @@ impl Context<'_> {
             )?;
             path.push(raw);
             parent_value_tree_type = tree_types.value_tree_type;
-            parent_counts_continuations = level_counts_continuations(sub_level);
+            parent_counts_continuations = sub_level.is_ranked_chain_level();
         }
         self.push(Write {
             path,

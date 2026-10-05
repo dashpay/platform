@@ -41,7 +41,10 @@ use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::ResolvedTimeRange;
+use crate::query::{
+    aggregate_or_zero_when_absent, index_keeps_empty_groups,
+    refuse_a_range_total_through_a_ranked_index, RangeTotalAdmitted, ResolvedTimeRange,
+};
 use crate::query::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -159,6 +162,7 @@ impl Drive {
             Err(e) => return Err(e),
         };
 
+        let keeps_empty_groups = index_keeps_empty_groups(document_type, index);
         let mut entries: Vec<AverageEntry> = Vec::new();
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
@@ -171,8 +175,11 @@ impl Drive {
             // zero (e.g. all zero, or signed values that cancel). The
             // joint executor preserves such rows and only drops
             // grovedb-absent rows that decode as `(0, 0)`. Diverges
-            // intentionally from sum's drop predicate.
-            if count == 0 && sum == 0 {
+            // intentionally from sum's drop predicate. Where an index can
+            // hold empty groups, even a `(0, 0)` group stays: the walk's
+            // limit counted it, and the proof keeps it, so leaving it out
+            // would shorten the page (`index_keeps_empty_groups`).
+            if count == 0 && sum == 0 && !keeps_empty_groups {
                 continue;
             }
             let in_key = if has_in_on_prefix && path.len() > base_path_len {
@@ -212,6 +219,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
         let drive_version = &platform_version.drive;
+        // Once for every aggregate read below (the flat one, or one per `In`
+        // branch): it depends on the index alone.
+        let admitted = refuse_a_range_total_through_a_ranked_index(document_type, index)?;
 
         // Open a shared read transaction across per-In branches in
         // the compound shape so each branch's accumulator call sees
@@ -235,6 +245,7 @@ impl Drive {
                 index,
                 where_clauses,
                 sum_property,
+                admitted,
                 effective_transaction,
                 drive_version,
                 platform_version,
@@ -294,6 +305,7 @@ impl Drive {
                 index,
                 clauses_for_value,
                 sum_property.clone(),
+                admitted,
                 effective_transaction,
                 drive_version,
                 platform_version,
@@ -329,7 +341,8 @@ impl Drive {
     /// Flat (no In on prefix) aggregate count + sum: one
     /// `query_aggregate_count_and_sum` call against the PCPS path
     /// query — a single O(log n) merk-internal accumulator yielding
-    /// both metrics from one traversal.
+    /// both metrics from one traversal, over an index the caller's
+    /// range-total refusal `admitted`.
     #[allow(clippy::too_many_arguments)]
     fn flat_aggregate_count_and_sum(
         &self,
@@ -339,6 +352,7 @@ impl Drive {
         index: &dpp::data_contract::document_type::Index,
         where_clauses: Vec<WhereClause>,
         sum_property: String,
+        admitted: RangeTotalAdmitted,
         transaction: TransactionArg,
         drive_version: &dpp::version::drive_versions::DriveVersion,
         platform_version: &PlatformVersion,
@@ -351,12 +365,13 @@ impl Drive {
             where_clauses,
             sum_property,
         };
-        let path_query = sum_query.aggregate_count_and_sum_path_query(platform_version)?;
+        let path_query =
+            sum_query.admitted_aggregate_count_and_sum_path_query(admitted, platform_version)?;
         let CostContext { value, cost: _ } = self.grove.query_aggregate_count_and_sum(
             &path_query,
             transaction,
             &drive_version.grove_version,
         );
-        value.map_err(|e| Error::GroveDB(Box::new(e)))
+        aggregate_or_zero_when_absent(value)
     }
 }

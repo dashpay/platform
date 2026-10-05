@@ -340,7 +340,7 @@ The one place the two changes genuinely collide is the case the prefix-overlap r
 
 All three ranking flags are **immutable** across a contract update, for the same reason and with the same error as the count and sum flags. The set of declared axes picks the indexed tree variant and its ordered secondaries at contract creation; toggling any one of them would require rebuilding the secondaries for every existing group.
 
-`IndexLevel::find_first_ranked_change` walks the two index-level trees and returns the first path where `ranked_countable`, `ranked_summable` or `ranked_averageable` differs — e.g. `restaurantId -> (ranked_averageable: false -> true)`. `IndexLevel::validate_update` turns that into a `DataContractInvalidIndexDefinitionUpdateError`:
+Rankings parse from protocol version 14, whose document type `validate_update` (v1) refuses any changed index by comparing whole `Index` definitions, so every ranking flag, `at` level and chain stamp (and a `summableOffCountIndex` index's source) is frozen with the rest of the index. `IndexLevel::find_first_ranked_change`, which walks the two index-level trees and returns the first path where `ranked_countable`, `ranked_summable` or `ranked_averageable` differs (e.g. `restaurantId -> (ranked_averageable: false -> true)`), serves the earlier `validate_update` (v0), which no contract with a ranking reaches. Either way the update fails with `DataContractInvalidIndexDefinitionUpdateError`:
 
 ```text
 Document with type {document_type} could not add or remove '{index_path}' during

@@ -962,9 +962,11 @@ pub struct Index {
     /// clean key range. An index with no `properties` at all is a *flat*
     /// index: its entries live directly under a level keyed by the terminal's
     /// names ([`flat_level_key_for`]). The doc-type-level validation
-    /// (`apply_index_only`) normalizes an omitted value to `["$ownerId"]` and
-    /// rejects the keyword entirely on non-indexOnly document types, so on a
-    /// parsed non-indexOnly type this is always `None`.
+    /// (`apply_index_only`) normalizes an omitted value to `["$ownerId"]`,
+    /// except on a `summableOffCountIndex` index, which keeps a counter
+    /// instead of member entries and takes no terminal, and rejects the
+    /// keyword entirely on non-indexOnly document types, so on a parsed
+    /// non-indexOnly type this is always `None`.
     //
     // `serde(default)`: added after the struct's serde shape was in the wild
     // (see the note on `countable` above), so pre-existing JSON must still

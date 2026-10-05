@@ -1956,8 +1956,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`validate_summable_off_count_indexes_lossless`), and one summed value
 ///     per type is kept. Such an index keeps one `Element::SumItem` per group
 ///     in place of a value tree and entries: the index walkers (insert and
-///     delete index level 2) and preallocation move it by one per document,
-///     and document create state validation 1, document index-only delete
+///     delete index level 2) move it by one per document, preallocation
+///     creates it at zero, and document create state validation 1, document index-only delete
 ///     state validation 0, the within-batch collision tracker and the proof
 ///     index never use it. `rankedSummable` and `rankedAverageable` gain the
 ///     `{ "at": ... }` form on such an index only, stamped on the index

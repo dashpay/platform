@@ -21,9 +21,13 @@
 use crate::drive::RootTree;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::drive_document_sum_query::index_picker::prefix_to_last_sum_reads;
 use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
 use crate::query::ResolvedTimeRange;
-use crate::query::{pins_reach_chain, refuse_a_range_total_through_a_ranked_index};
+use crate::query::{
+    pins_reach_chain, prefix_to_last_path_query, refuse_a_range_total_through_a_ranked_index,
+    RangeTotalAdmitted,
+};
 use crate::query::{WhereClause, WhereOperator};
 // `serialize_value_for_key` is a `DocumentTypeV0Methods` method, NOT
 // `DocumentTypeBasicMethods` (which is the trait of versionless basic
@@ -93,6 +97,20 @@ impl<'a> DriveDocumentSumQuery<'a> {
 
         for (position, prop) in self.index.properties.iter().enumerate() {
             let Some(clause) = self.where_clauses.iter().find(|wc| wc.field == prop.name) else {
+                // Only the LAST property carries no clause on a
+                // `summableOffCountIndex` index that reads its last
+                // property's tree ([`prefix_to_last_sum_reads`], checked
+                // before the sum-chain form): the sum is that tree's own
+                // element, read by its level key from the last pin's value
+                // tree, the shape count's builds over the same tree.
+                if prefix_to_last_sum_reads(self.index, position) {
+                    return Ok(prefix_to_last_path_query(
+                        base_path,
+                        in_outer_keys,
+                        subquery_path_extension,
+                        self.index.level_key_for_property(&prop.name).into_bytes(),
+                    ));
+                }
                 // Sum-chain value-tree read: when the deepest pinned
                 // property's level sits at or below the index's shallowest
                 // sum or average `at` level (a `summableOffCountIndex`
@@ -253,8 +271,25 @@ impl<'a> DriveDocumentSumQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)?;
+        let admitted = self.refuse_a_range_sum_total()?;
+        self.admitted_aggregate_sum_path_query(admitted, platform_version)
+    }
+
+    /// Refuses an index whose path passes through a ranked level, which no
+    /// range total can be read through (see
+    /// [`refuse_a_range_total_through_a_ranked_index`]). It depends on the
+    /// index alone, so a per-`In` fan-out runs it once, not per value.
+    pub(crate) fn refuse_a_range_sum_total(&self) -> Result<RangeTotalAdmitted, Error> {
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
+    }
+
+    /// [`Self::aggregate_sum_path_query`] over an index
+    /// [`Self::refuse_a_range_sum_total`] already admitted.
+    pub(crate) fn admitted_aggregate_sum_path_query(
+        &self,
+        _admitted: RangeTotalAdmitted,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
         // Bind the range clause to the index's *terminator* property so a
         // request with multiple range-like clauses (e.g. `prefix > x AND
         // terminator > y`) picks the right one. The previous predicate
@@ -342,8 +377,17 @@ impl<'a> DriveDocumentSumQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)?;
+        let admitted = self.refuse_a_range_sum_total()?;
+        self.admitted_aggregate_count_and_sum_path_query(admitted, platform_version)
+    }
+
+    /// [`Self::aggregate_count_and_sum_path_query`] over an index
+    /// [`Self::refuse_a_range_sum_total`] already admitted.
+    pub(crate) fn admitted_aggregate_count_and_sum_path_query(
+        &self,
+        _admitted: RangeTotalAdmitted,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
         if !self.index.range_countable {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "aggregate_count_and_sum_path_query: index must declare BOTH \
@@ -778,7 +822,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)?;
+        self.refuse_a_range_sum_total()?;
         // The terminator property (last in the index) carries the
         // ASOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:
@@ -979,7 +1023,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)?;
+        self.refuse_a_range_sum_total()?;
         if !self.index.range_countable {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "carrier_aggregate_count_and_sum_path_query: index must declare BOTH \

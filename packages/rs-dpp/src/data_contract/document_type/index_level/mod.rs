@@ -109,8 +109,10 @@ pub struct IndexLevelTypeInfo {
     /// marker, where a normal index stores the document id — stored as an
     /// `Item` instead of a `Reference` because there is no primary-storage
     /// row. Always `Some` here when the declaring type is indexOnly (the
-    /// parser normalizes an omitted terminal to `["$ownerId"]`), always
-    /// `None` otherwise. Carried on the level info because index levels merge
+    /// parser normalizes an omitted terminal to `["$ownerId"]`), except on a
+    /// `summableOffCountIndex` index, which keeps a counter instead of member
+    /// entries and takes no terminal; always `None` otherwise. Carried on the
+    /// level info because index levels merge
     /// across indexes sharing prefixes, and the write path only sees the
     /// level at the terminal — but two indexes can never share a full
     /// property list (duplicates are rejected), so each terminating level
@@ -235,14 +237,17 @@ pub struct IndexLevel {
     sum_propagating: bool,
     /// When `true`, this level is the branch point of a PLAIN sibling index
     /// inside another index's prefix-ranking chain: its parent level is a
-    /// [`Self::ranked_count_grouping`] or [`Self::count_propagating`] level,
-    /// but this level continues no ranked chain (it is neither stamped nor a
-    /// range-countable terminal). The rs-drive write paths lay its
-    /// property-name tree out wrapped in `Element::NonCounted` inside the
-    /// chain's count-bearing value trees — readable and provable as usual,
-    /// contributing zero to every subtree total the ranking keys on — the
-    /// same demotion range-countable value trees apply to their sibling
-    /// continuations. Structural validation admits only flag-free
+    /// chain level (a grouping or propagating level of a count, sum or
+    /// average chain, [`Self::is_ranked_chain_level`]), but this level
+    /// continues no ranked chain (it is neither stamped nor a range-countable
+    /// or range-summable terminal). The rs-drive write paths lay its
+    /// property-name tree out contributing zero to the chain's value trees —
+    /// readable and provable as usual, adding nothing to any subtree total the
+    /// ranking keys on — wrapped as each parent needs
+    /// (`zero_contribution_wrapper`: `Element::NonCounted` under a count
+    /// tree, not counted or summed under a count-and-sum tree, unwrapped
+    /// under a sum tree when the branch carries no sum), the same demotion
+    /// range-countable value trees apply to their sibling continuations. Structural validation admits only flag-free
     /// (countable/summable/range/ranked-free) siblings here, so nothing
     /// under an exempt branch ever needs the counts the wrapper suppresses.
     /// Stamped by a post-pass over the fully merged tree (the sibling and
@@ -280,6 +285,27 @@ pub struct IndexLevel {
 }
 
 impl IndexLevel {
+    /// A level with no sub-levels, no terminating index and no stamp, the
+    /// node every level starts as before its indexes stamp it.
+    fn empty(level_identifier: u64) -> Self {
+        IndexLevel {
+            sub_index_levels: Default::default(),
+            has_index_with_type: None,
+            bucketing: None,
+            ranked_count_grouping: false,
+            count_propagating: false,
+            ranked_sum_grouping: false,
+            ranked_average_grouping: false,
+            sum_propagating: false,
+            count_exempt_branch: false,
+            skip_at_or_below: false,
+            outlives_delete_at_or_below: false,
+            cleared_on_delete_at_or_below: false,
+            created_at_indexed_only_by_outliving: false,
+            level_identifier,
+        }
+    }
+
     pub fn identifier(&self) -> u64 {
         self.level_identifier
     }
@@ -351,8 +377,8 @@ impl IndexLevel {
     }
 
     /// Whether this level is a plain sibling's branch point inside a
-    /// prefix-ranking chain, laid out count-exempt (`Element::NonCounted`)
-    /// — see the field docs on [`IndexLevel`].
+    /// prefix-ranking chain, laid out contributing nothing to the chain's
+    /// totals — see the field docs on [`IndexLevel`].
     pub fn count_exempt_branch(&self) -> bool {
         self.count_exempt_branch
     }
@@ -487,22 +513,7 @@ impl IndexLevel {
         I: IntoIterator<Item = T>, // T is the type of elements in the collection
         T: Borrow<Index>,          // Assuming Index is the type stored in the collection
     {
-        let mut index_level = IndexLevel {
-            sub_index_levels: Default::default(),
-            has_index_with_type: None,
-            bucketing: None,
-            ranked_count_grouping: false,
-            count_propagating: false,
-            ranked_sum_grouping: false,
-            ranked_average_grouping: false,
-            sum_propagating: false,
-            count_exempt_branch: false,
-            skip_at_or_below: false,
-            outlives_delete_at_or_below: false,
-            cleared_on_delete_at_or_below: false,
-            created_at_indexed_only_by_outliving: false,
-            level_identifier: 0,
-        };
+        let mut index_level = IndexLevel::empty(0);
 
         let mut counter: u64 = 0;
         let mut created_at_in_outliving = false;
@@ -554,22 +565,7 @@ impl IndexLevel {
                         .entry(flat_key)
                         .or_insert_with(|| {
                             counter += 1;
-                            IndexLevel {
-                                level_identifier: counter,
-                                sub_index_levels: Default::default(),
-                                has_index_with_type: None,
-                                bucketing: None,
-                                ranked_count_grouping: false,
-                                count_propagating: false,
-                                ranked_sum_grouping: false,
-                                ranked_average_grouping: false,
-                                sum_propagating: false,
-                                count_exempt_branch: false,
-                                skip_at_or_below: false,
-                                outlives_delete_at_or_below: false,
-                                cleared_on_delete_at_or_below: false,
-                                created_at_indexed_only_by_outliving: false,
-                            }
+                            IndexLevel::empty(counter)
                         });
                 if flat_level.has_index_with_type.is_some() {
                     return Err(ConsensusError::BasicError(BasicError::DuplicateIndexError(
@@ -601,22 +597,7 @@ impl IndexLevel {
                     .entry(level_key)
                     .or_insert_with(|| {
                         counter += 1;
-                        IndexLevel {
-                            level_identifier: counter,
-                            sub_index_levels: Default::default(),
-                            has_index_with_type: None,
-                            bucketing: None,
-                            ranked_count_grouping: false,
-                            count_propagating: false,
-                            ranked_sum_grouping: false,
-                            ranked_average_grouping: false,
-                            sum_propagating: false,
-                            count_exempt_branch: false,
-                            skip_at_or_below: false,
-                            outlives_delete_at_or_below: false,
-                            cleared_on_delete_at_or_below: false,
-                            created_at_indexed_only_by_outliving: false,
-                        }
+                        IndexLevel::empty(counter)
                     });
 
                 if !index.skip_if_absent_properties.is_empty() {
@@ -751,15 +732,18 @@ impl IndexLevel {
         }
     }
 
-    /// Recursively marks, under every prefix-ranking chain level (grouping
-    /// or count-propagating), the child levels that do NOT continue the
-    /// chain as [`Self::count_exempt_branch`]. The chain child is the one
-    /// that is itself stamped (a deeper `at` level, or a propagating level
-    /// between two chain levels) or that terminates the ranked index — the
-    /// `at` grammar requires `rangeCountable`, so the chain's terminal
-    /// level always carries a range-countable terminator stamp, while
-    /// structural validation guarantees every admitted sibling is flag-free
-    /// at and below the shared levels. For an unvalidated index set that
+    /// Recursively marks, under every prefix-ranking chain level (a grouping
+    /// or propagating level of a count, sum or average chain), the child
+    /// levels that do NOT continue the chain as
+    /// [`Self::count_exempt_branch`]. The chain child is the one that is
+    /// itself stamped (a deeper `at` level, or a propagating level between
+    /// two chain levels) or that terminates the ranked index — a count
+    /// chain's `at` grammar requires `rangeCountable` and a
+    /// `summableOffCountIndex` index requires `rangeSummable`, so the
+    /// chain's terminal level always carries a range-countable or
+    /// range-summable terminator stamp, while structural validation
+    /// guarantees every admitted sibling is flag-free at and below the
+    /// shared levels. For an unvalidated index set that
     /// violates those invariants this derivation stays total (fixtures and
     /// check_tx reach it); the rs-drive tree-type resolver keeps its own
     /// fail-closed guards for the genuinely contradictory shapes.
@@ -2456,6 +2440,10 @@ mod tests {
     }
 
     #[test]
+    /// Pins `IndexLevel::validate_update`'s helper. No protocol version
+    /// reaches it with a counter: the keyword parses from protocol version
+    /// 14, whose document type `validate_update` v1 refuses a changed index
+    /// by comparing whole `Index` definitions instead.
     fn should_return_invalid_result_if_the_counted_source_changed() {
         let platform_version = PlatformVersion::latest();
         let document_type_name = "test";

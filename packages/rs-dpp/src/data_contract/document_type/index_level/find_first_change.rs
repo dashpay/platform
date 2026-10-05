@@ -99,7 +99,12 @@ impl IndexLevel {
             }
             // The source a `summableOffCountIndex` index counts names its
             // summed value and fixes the properties its groups derive from.
-            // `None` on every index before protocol version 14.
+            // `None` on every index before protocol version 14, and only
+            // `validate_update` v0 (protocol versions up to 13) reaches this
+            // helper: protocol version 14's v1 refuses any changed index by
+            // comparing whole `Index` definitions, which is what freezes a
+            // counter's source there. Kept so `IndexLevel::validate_update`
+            // names every difference it can see.
             if old_info.summable_off_count_index != new_info.summable_off_count_index {
                 return Some(format!(
                     "(summable_off_count_index: {:?} -> {:?})",
@@ -155,7 +160,10 @@ impl IndexLevel {
             ));
         }
         // The Sum and Avg chain stamps of a `summableOffCountIndex` index
-        // decide the same layout on the other axes.
+        // decide the same layout on the other axes. Like every ranking
+        // stamp, they are unset before protocol version 14, whose
+        // `validate_update` v1 freezes them by comparing whole `Index`
+        // definitions; only v0 (protocol versions up to 13) reaches here.
         if self.ranked_sum_grouping != new.ranked_sum_grouping {
             return Some(format!(
                 "(ranked_sum_grouping: {} -> {})",

@@ -3342,33 +3342,23 @@ fn summable_off_count_index_error(
         ));
     }
     // One summed value per document type, as for property sums: sum queries
-    // name it, and they name this one by the source index.
-    if let Some((other_name, other_property)) = document_type
-        .indices
-        .iter()
-        .find_map(|(other_name, other)| Some((other_name, other.summable.as_deref()?)))
-    {
-        return Some(format!(
-            "{prefix} sums the count of \"{source_name}\", which must be the only sum of the \
-             document type, but index \"{other_name}\" sums \"{other_property}\""
-        ));
-    }
-    if let Some((other_name, other_source)) =
+    // name it, and they name this one by the source index. (A property sum
+    // named like the source is refused below, the source sharing a
+    // property's name.)
+    if let Some((other_name, other_value)) =
         document_type
             .indices
             .iter()
             .find_map(|(other_name, other)| {
                 other
-                    .summable_off_count_index
-                    .as_deref()
-                    .filter(|other_source| *other_source != source_name)
-                    .map(|other_source| (other_name, other_source))
+                    .summed_value_name()
+                    .filter(|other_value| *other_value != source_name)
+                    .map(|other_value| (other_name, other_value))
             })
     {
         return Some(format!(
-            "{prefix} sums the count of \"{source_name}\", but index \"{other_name}\" sums the \
-             count of \"{other_source}\": a document type keeps one summed value, which sum \
-             queries name"
+            "{prefix} sums the count of \"{source_name}\", but index \"{other_name}\" sums \
+             \"{other_value}\": a document type keeps one summed value, which sum queries name"
         ));
     }
     if document_type.flattened_properties.contains_key(source_name) {
@@ -4424,10 +4414,10 @@ pub(super) fn apply_index_only(
                 .chain(index.terminal_components().iter().map(String::as_str))
                 .filter(|name| *name != CREATED_AT)
                 .collect();
+            // (An index involving `$createdAt` never fits that key, so the
+            // shared predicate's `$createdAt` term changes nothing here.)
             let keyed_by_a_cleared_index = document_type.indices.values().any(|other| {
-                !other.outlives_delete
-                    && !other.skip_if_absent
-                    && !other.is_summable_off_count_index()
+                other.keys_each_live_document_by_its_values()
                     && other
                         .properties
                         .iter()

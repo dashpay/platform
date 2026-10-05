@@ -342,9 +342,12 @@ struct ExpandableIndexRowView: View {
 
                     // An omitted terminal on an indexOnly type means
                     // $ownerId per DPP; the SDK persists verbatim, so the
-                    // display default is applied here.
-                    let displayTerminal = index.terminal
-                        ?? (index.documentType?.indexOnly == true ? "$ownerId" : nil)
+                    // display default is applied here. A
+                    // summableOffCountIndex index keeps one counter per
+                    // group instead of entries, so it has no terminal.
+                    let displayTerminal: String? = index.summableOffCountIndex != nil
+                        ? nil
+                        : index.terminal ?? (index.documentType?.indexOnly == true ? "$ownerId" : nil)
                     if let terminal = displayTerminal {
                         HStack {
                             Text("Terminal:")
@@ -389,10 +392,25 @@ struct ExpandableIndexRowView: View {
                         if let summable = index.summable ?? index.averageable {
                             labels.append("Summable (\(summable))")
                         }
+                        if let source = index.summableOffCountIndex {
+                            labels.append("Counter of \(source)")
+                        }
                         if index.rangeSummable || index.rangeAverageable { labels.append("Range Sum") }
-                        if index.rankedCountable { labels.append("Ranked by Count") }
-                        if index.rankedSummable { labels.append("Ranked by Sum") }
-                        if index.rankedAverageable { labels.append("Ranked by Average") }
+                        if let ranked = Self.rankingLabel(
+                            "Ranked by Count", declared: index.rankedCountable, at: index.rankedCountableAt
+                        ) {
+                            labels.append(ranked)
+                        }
+                        if let ranked = Self.rankingLabel(
+                            "Ranked by Sum", declared: index.rankedSummable, at: index.rankedSummableAt
+                        ) {
+                            labels.append(ranked)
+                        }
+                        if let ranked = Self.rankingLabel(
+                            "Ranked by Average", declared: index.rankedAverageable, at: index.rankedAverageableAt
+                        ) {
+                            labels.append(ranked)
+                        }
                         return labels
                     }()
                     if !axisLabels.isEmpty {
@@ -447,6 +465,17 @@ struct ExpandableIndexRowView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// `label` for a declared ranking, naming the levels of its
+    /// `{ "at": ... }` form when it has one, like the Kotlin example app's
+    /// rankingDescriptor. Named levels count as declared on their own: a row
+    /// persisted before the parser kept the object form has its column false.
+    private static func rankingLabel(_ label: String, declared: Bool, at levels: [String]) -> String? {
+        if !levels.isEmpty {
+            return "\(label) at \(levels.joined(separator: ", "))"
+        }
+        return declared ? label : nil
     }
 }
 

@@ -136,9 +136,11 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
     // contributing rather than zero-wrapped (see the walkers). A plain
     // sibling's branch sharing such a level (`count_exempt_branch` on the
     // CHILD level) is the one other child the validation admits — the
-    // walkers insert it `Element::NonCounted`-wrapped, contributing zero,
-    // which a `CountTree` parent accepts (only the provable count-bearing
-    // variants reject suppressed children). No index terminates at a chain
+    // walkers insert it contributing zero, wrapped as the chain's value tree
+    // needs (`zero_contribution_wrapper`: `Element::NonCounted` under a
+    // `CountTree`, not counted or summed under a `CountSumTree`, and under a
+    // `SumTree` not summed when it carries a sum, else unwrapped); only the
+    // provable count-bearing variants reject suppressed children. No index terminates at a chain
     // level itself (the resolver above fails closed on one), so the
     // terminator-flag derivation below never applies to it.
     let value_tree_type =
@@ -355,10 +357,11 @@ pub(crate) enum ZeroContributionRefusal {
 
 /// Whether the continuation property-name tree of `sub_level`, under a value
 /// tree of `parent_level` whose type is `parent_value_tree_type`, is inserted
-/// so it contributes zero to that value tree: the parent aggregates, and it
-/// does not count its continuations (a prefix-ranking chain level or a
-/// count-propagating level does), unless `sub_level` is a count-exempt
-/// branch. The entry-insert walker and the preallocation path both decide
+/// so it contributes zero to that value tree: the parent aggregates, and its
+/// level is no prefix-ranking chain level (a grouping or propagating level of
+/// a count, sum or average chain, [`IndexLevel::is_ranked_chain_level`], whose
+/// value trees aggregate their chain continuation), unless `sub_level` is a
+/// count-exempt branch. The entry-insert walker and the preallocation path both decide
 /// with this.
 pub(crate) fn continuation_contributes_zero(
     parent_value_tree_type: TreeType,
@@ -367,13 +370,6 @@ pub(crate) fn continuation_contributes_zero(
 ) -> bool {
     !matches!(parent_value_tree_type, TreeType::NormalTree)
         && (!parent_counts_continuations || sub_level.count_exempt_branch())
-}
-
-/// Whether the value trees of `level` count their continuation subtrees
-/// (a prefix-ranking chain level: a grouping or propagating level of a
-/// count, sum or average chain).
-pub(crate) fn level_counts_continuations(level: &IndexLevel) -> bool {
-    level.is_ranked_chain_level()
 }
 
 /// Whether a document without a value for `property` writes nothing under a

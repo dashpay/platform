@@ -154,7 +154,13 @@ amount is one of the committed properties.
 **Governing principle: only what is in the indexes exists and is
 recoverable.** Prefix property values live in the path, the terminal id in
 the member key, `$ownerId` and `$createdAt` wherever an index carries them.
-There is no document beyond that.
+There is no document beyond that. One kind of property may sit in no
+entry-keeping index: one a `summableOffCountIndex` index's source fixes
+through a reference's `where` (a like's `postAuthor`, kept only by
+`byAuthorPost`'s counters). Such a property, when no entry-keeping index
+holds it, is lacking from a document read back, and its value is the
+referenced document's, so a client rebuilding the row for a delete reads it
+from there.
 
 ## The row commitment
 
@@ -503,11 +509,13 @@ plus `rangeCountable` for the group count an average divides by), so each
 counter counts one group and adds its value to the sum. Every level above reads groups as the count
 and the source's entries as the sum. A level a `{ "at": ... }` ranking
 names, and every level between it and the counters, carries those totals
-up: its value trees are `CountSumTree`s (or `CountTree`s or `SumTree`s when
-only one aggregate is ranked there), and its property-name tree is the
-indexed tree for the axes ranked at it, `ProvableCountProvableSumIndexedTree`
-for `[Sum, Avg]`. Grovedb admits a bare `SumItem` under that tree from
-grove version 4.
+up: its value trees are `CountSumTree`s from the shallowest average
+ranking down and `SumTree`s above it (a `rankedCountable` on such an index
+is its sum ranking, so no count-only chain arises). The property-name tree
+of a level a ranking names is the indexed tree for the axes ranked at it,
+`ProvableCountProvableSumIndexedTree` for `[Sum, Avg]`; a level between two
+ranked levels keeps a plain count-and-sum or sum tree. Grovedb admits a bare
+`SumItem` under that indexed tree from grove version 4.
 
 The write path (`add_summable_off_count_counter_operations`):
 
@@ -547,8 +555,9 @@ counts, since grovedb's range count over the counters would count them, one
 per group. A range total over an index whose path passes through a ranked
 level (its own, or one another index ranks at a shared level) is refused with
 a hint to group by the last property, as everywhere: a ranked level's tree is
-indexed, and grovedb's range totals neither read nor prove
-through an indexed tree.
+indexed, and grovedb neither totals a range over an indexed tree nor proves a
+range total through one, so the unproven read refuses it too and the two
+agree.
 
 ## What it costs and what it saves
 

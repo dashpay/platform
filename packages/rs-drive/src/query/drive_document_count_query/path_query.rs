@@ -23,7 +23,10 @@ use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{pins_reach_chain, refuse_a_range_total_through_a_ranked_index};
+use crate::query::{
+    pins_reach_chain, prefix_to_last_path_query, refuse_a_range_total_through_a_ranked_index,
+    RangeTotalAdmitted,
+};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
@@ -207,9 +210,27 @@ impl DriveDocumentCountQuery<'_> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        let admitted = self.refuse_a_range_count_total()?;
+        self.admitted_aggregate_count_path_query(admitted, platform_version)
+    }
+
+    /// Refuses an index a range count total cannot be read through: a
+    /// `summableOffCountIndex` index ([`Self::refuse_a_counter_index`]) and
+    /// one whose path passes through a ranked level (see
+    /// [`refuse_a_range_total_through_a_ranked_index`]). It depends on the
+    /// index alone, so a per-`In` fan-out runs it once, not per value.
+    pub(crate) fn refuse_a_range_count_total(&self) -> Result<RangeTotalAdmitted, Error> {
         self.refuse_a_counter_index()?;
-        // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
+    }
+
+    /// [`Self::aggregate_count_path_query`] over an index
+    /// [`Self::refuse_a_range_count_total`] already admitted.
+    pub(crate) fn admitted_aggregate_count_path_query(
+        &self,
+        _admitted: RangeTotalAdmitted,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
         let range_clause = self
             .where_clauses
             .iter()
@@ -325,9 +346,7 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        self.refuse_a_counter_index()?;
-        // No range total through a ranked level (see the helper).
-        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)?;
+        self.refuse_a_range_count_total()?;
         // The terminator property (last in the index) carries the
         // ACOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:
@@ -1072,31 +1091,16 @@ impl DriveDocumentCountQuery<'_> {
         // count-bearing under `rangeCountable`, its aggregate the sum of
         // every last-property value tree's count, i.e. the whole-prefix
         // total — read as one element by its level key from the last
-        // pin's value tree. Structurally the `Key([0])` shape with the
-        // terminal level key in place of the bucket key: nothing is
-        // hoisted, so the `In` branches keep their full trailing pairs
-        // in `set_subquery_path`.
+        // pin's value tree (the shape the sum surface builds too). Moved
+        // unchanged into the shared builder, so every protocol version
+        // builds the proof it built before.
         if let Some(terminal_level_key) = prefix_to_last_key {
-            return Ok(match in_outer_keys {
-                None => {
-                    let mut query = Query::new();
-                    query.insert_key(terminal_level_key);
-                    PathQuery::new(base_path, SizedQuery::new(query, None, None))
-                }
-                Some(keys) => {
-                    let mut outer_query = Query::new();
-                    for key in keys {
-                        outer_query.insert_key(key);
-                    }
-                    let mut subquery = Query::new();
-                    subquery.insert_key(terminal_level_key);
-                    if !subquery_path_extension.is_empty() {
-                        outer_query.set_subquery_path(subquery_path_extension);
-                    }
-                    outer_query.set_subquery(subquery);
-                    PathQuery::new(base_path, SizedQuery::new(outer_query, None, None))
-                }
-            });
+            return Ok(prefix_to_last_path_query(
+                base_path,
+                in_outer_keys,
+                subquery_path_extension,
+                terminal_level_key,
+            ));
         }
 
         match in_outer_keys {

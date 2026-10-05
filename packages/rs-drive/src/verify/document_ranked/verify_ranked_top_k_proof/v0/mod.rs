@@ -121,10 +121,7 @@ impl DriveDocumentRankedQuery<'_> {
                     // element.
                     let entries = match entries {
                         None => Vec::new(),
-                        Some(entries) => present_entries_on_axis(
-                            self.axis,
-                            axis_entries_to_ranked(self.read_axis(), entries)?,
-                        ),
+                        Some(entries) => axis_entries_to_ranked(self.read_axis(), entries)?,
                     };
                     if entries.len() > self.k as usize {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
@@ -137,12 +134,18 @@ impl DriveDocumentRankedQuery<'_> {
                     Ok(entries)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
-            let entries = merge_branch_pages(
-                per_branch,
-                &self.prefix_branches,
-                self.descending,
-                self.k as usize,
-            )?;
+            // Merged on the axis read, then presented on the requested one,
+            // as the unproved read does (`present_entries_on_axis` differs
+            // from the identity only on a `summableOffCountIndex` index).
+            let entries = present_entries_on_axis(
+                self.axis,
+                merge_branch_pages(
+                    per_branch,
+                    &self.prefix_branches,
+                    self.descending,
+                    self.k as usize,
+                )?,
+            );
             return Ok((
                 root_hash,
                 RankedPage {

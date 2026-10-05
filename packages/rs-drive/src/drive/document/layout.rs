@@ -22,7 +22,7 @@
 pub use crate::drive::document::index_level_tree_types::ZeroContributionWrapper;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    level_counts_continuations, terminal_member_tree_type, zero_contribution_wrapper,
+    terminal_member_tree_type, zero_contribution_wrapper,
 };
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::sdk_value::{map, number, text, texts};
@@ -758,7 +758,7 @@ fn value_node(
         children.push(terminal_node(info, index_ending_at(index_paths, path)));
     }
 
-    let parent_counts_continuations = level_counts_continuations(level);
+    let parent_counts_continuations = level.is_ranked_chain_level();
     for (sub_key, sub_level) in level.sub_levels() {
         let sub_tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
         let wrapper = if continuation_contributes_zero(

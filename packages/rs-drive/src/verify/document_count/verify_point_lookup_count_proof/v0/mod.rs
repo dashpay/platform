@@ -104,7 +104,10 @@ impl DriveDocumentCountQuery<'_> {
         // `point_lookup_count_entries` for the In-value placement. Edited
         // in place in this shipped generation (protocol versions 1 to 14):
         // `self.index` changes the decode only on a `summableOffCountIndex`
-        // index, which only meta-schema v3 (protocol version 14) admits.
+        // index, which only meta-schema v3 (protocol version 14) admits, and
+        // the decode looks through a wrapped element on every index, where
+        // no element a count read reaches before protocol version 14 is
+        // wrapped (see `point_lookup_count_entries`).
         let out = point_lookup_count_entries(self.index, base_path_len, has_in_clause, elements);
         Ok((root_hash, out))
     }

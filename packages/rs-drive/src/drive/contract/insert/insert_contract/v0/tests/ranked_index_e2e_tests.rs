@@ -2091,8 +2091,10 @@ fn build_order_contract_continuing_below_a_ranked_level() -> DataContract {
 
 /// A range total through an unranked index is refused, with and without a
 /// proof, when its path passes through a level another index ranks: grovedb
-/// neither totals nor proves a range through that indexed tree. Grouped by
-/// the range's property, the same range still reads each value.
+/// cannot prove a range total through that indexed tree, and the unproven
+/// read refuses it too so the read, the proof and its verification agree
+/// (unproven, grovedb would total the unranked leaf). Grouped by the range's
+/// property, the same range still reads each value.
 #[test]
 fn should_refuse_a_range_total_through_another_index_s_ranked_level() {
     let drive = setup_drive_with_initial_state_structure(None);

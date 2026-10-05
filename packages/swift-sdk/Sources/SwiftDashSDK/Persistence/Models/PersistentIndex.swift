@@ -29,14 +29,18 @@ public final class PersistentIndex {
     public var averageable: String?
     public var rangeAverageable: Bool = false
 
-    // Ranking axes (each adds one ordered secondary tree)
+    // Ranking axes (each adds one ordered secondary tree). True when the
+    // keyword is declared in either spelling, `true` or `{ "at": ... }`;
+    // the levels of the object form are read by `rankedCountableAt` and
+    // its siblings.
     public var rankedCountable: Bool = false
     public var rankedSummable: Bool = false
     public var rankedAverageable: Bool = false
 
     // indexOnly member key (the property whose value keys each entry).
     // Persisted only when declared; an omitted terminal on an indexOnly
-    // type means $ownerId per DPP, a default display layers apply.
+    // type means $ownerId per DPP, a default display layers apply, except
+    // on a `summableOffCountIndex` index, which has no terminal.
     public var terminal: String?
 
     // Preallocation: creating the refersTo-referenced document also
@@ -99,5 +103,54 @@ extension PersistentIndex {
     public var timeRange: [String: Any]? {
         guard let data = timeRangeJSON else { return nil }
         return try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+    }
+
+    /// This index's dictionary as authored, read off the owning document
+    /// type's persisted schema, or `nil` when the row has no document type
+    /// or the schema has no index of this name.
+    ///
+    /// The protocol-version-14 keywords below are read through here rather
+    /// than stored: `PersistentDocumentType.schemaJSON` already holds the
+    /// whole type dictionary, `indices` included, and a new stored property
+    /// would move this model's entity hash, which costs a schema version and
+    /// a fixture store (see `DashModelContainer.modelTypes` and
+    /// `DashModelMigrationTests`).
+    public var authoredDefinition: [String: Any]? {
+        guard let indices = documentType?.schema?["indices"] as? [[String: Any]] else {
+            return nil
+        }
+        return indices.first { $0["name"] as? String == name }
+    }
+
+    /// The source index named by `summableOffCountIndex` (protocol version
+    /// 14), or `nil` on any other index. Such an index keeps one counter per
+    /// group of the source index instead of entries, so it has no terminal.
+    public var summableOffCountIndex: String? {
+        authoredDefinition?["summableOffCountIndex"] as? String
+    }
+
+    /// The levels `rankedCountable` ranks at through its `{ "at": ... }`
+    /// form (protocol version 14), in order. Empty for `true` or when absent.
+    public var rankedCountableAt: [String] {
+        rankedAtLevels("rankedCountable")
+    }
+
+    /// The levels `rankedSummable` ranks at; see `rankedCountableAt`.
+    public var rankedSummableAt: [String] {
+        rankedAtLevels("rankedSummable")
+    }
+
+    /// The levels `rankedAverageable` ranks at; see `rankedCountableAt`.
+    public var rankedAverageableAt: [String] {
+        rankedAtLevels("rankedAverageable")
+    }
+
+    /// `at` is one property name or an ordered array of them.
+    private func rankedAtLevels(_ keyword: String) -> [String] {
+        guard let ranking = authoredDefinition?[keyword] as? [String: Any] else { return [] }
+        if let level = ranking["at"] as? String {
+            return [level]
+        }
+        return ranking["at"] as? [String] ?? []
     }
 }

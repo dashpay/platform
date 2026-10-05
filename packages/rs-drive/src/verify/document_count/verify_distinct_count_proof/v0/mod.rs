@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::query::drive_document_count_query::counter_sum_entry_as_count_entry;
-use crate::query::{DriveDocumentCountQuery, SplitCountEntry, WhereOperator};
+use crate::query::{
+    index_keeps_empty_groups, DriveDocumentCountQuery, SplitCountEntry, WhereOperator,
+};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -78,11 +80,18 @@ impl DriveDocumentCountQuery<'_> {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)
                 .map_err(|e| Error::GroveDB(Box::new(e)))?;
 
+        let keeps_empty_groups = index_keeps_empty_groups(self.document_type, self.index);
         let mut out: Vec<SplitCountEntry> = Vec::with_capacity(elements.len());
         for (path, key, elem) in elements {
             if let Some(e) = elem {
                 let count = e.count_value_or_default();
-                if count == 0 {
+                // An empty group a preallocation or an outliving index left
+                // stays, as a count of zero: the proof's limit counted it (the
+                // unproven read keeps it too). Edited in place in this shipped
+                // generation: only meta-schema v3 (protocol version 14) admits
+                // `preallocated` and `outlivesDelete`, so every earlier
+                // version verifies as before.
+                if count == 0 && !keeps_empty_groups {
                     continue;
                 }
                 let in_key = if has_in_on_prefix && path.len() > base_path_len {

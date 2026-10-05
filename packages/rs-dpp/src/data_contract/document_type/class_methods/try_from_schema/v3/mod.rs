@@ -107,18 +107,28 @@ const MAX_RANKED_AVG_INDEX_KEY_LENGTH: u16 = 239;
 #[cfg(feature = "validation")]
 const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
 
-/// The strictest item-key ceiling the index's declared ranking axes impose,
-/// or `None` when the index declares no ranking axis at all (in which case
-/// only the generic index-key limits apply).
+/// The item-key ceiling of the indexed tree at `index_property_name`: the
+/// strictest of the axes the index ranks at that level, or `None` when it
+/// ranks none there (the property is then an ordinary path segment, bound
+/// only by the generic index-key limits).
 ///
-/// Avg wins when present because its wider sort key leaves the least room;
-/// the three flags are independent, so an index may carry Avg alongside
-/// Count and/or Sum and still has to satisfy the tightest of them.
+/// Each ranked level is its own indexed tree carrying only the axes ranked
+/// at it: the last property those of the boolean forms, any property those
+/// of the `at` lists naming it. Grovedb checks each tree's item keys against
+/// its own axes, so Avg, whose wider sort key leaves the least room, wins at
+/// a level that carries it, and an Avg ranking at another level of the index
+/// does not tighten this one.
 #[cfg(feature = "validation")]
-fn ranked_index_key_length_limit(index: &Index) -> Option<u16> {
-    if index.ranked_averageable || !index.ranked_averageable_at.is_empty() {
+fn ranked_level_key_length_limit(index: &Index, index_property_name: &str) -> Option<u16> {
+    let is_last = index.properties.last().map(|p| p.name.as_str()) == Some(index_property_name);
+    let names_it = |at_levels: &[String]| at_levels.iter().any(|at| at == index_property_name);
+    let average = (is_last && index.ranked_averageable) || names_it(&index.ranked_averageable_at);
+    let count_or_sum = (is_last && (index.ranked_countable || index.ranked_summable))
+        || names_it(&index.ranked_countable_at)
+        || names_it(&index.ranked_summable_at);
+    if average {
         Some(MAX_RANKED_AVG_INDEX_KEY_LENGTH)
-    } else if index.declares_any_ranking() {
+    } else if count_or_sum {
         Some(MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH)
     } else {
         None
@@ -158,15 +168,7 @@ fn validate_ranked_index_property_key_length(
     // that is where the tightened ceiling comes from. Every other property
     // of a ranked index is an ordinary grovedb path segment, bound by the
     // generic limits checked after this.
-    let is_at_level = index.ranked_at_levels().any(|at| at == index_property_name);
-    let is_ranked_terminal = index.properties.last().map(|p| p.name.as_str())
-        == Some(index_property_name)
-        && index.ranks_its_last_property();
-    if !is_at_level && !is_ranked_terminal {
-        return Ok(());
-    }
-
-    let Some(limit) = ranked_index_key_length_limit(index) else {
+    let Some(limit) = ranked_level_key_length_limit(index, index_property_name) else {
         return Ok(());
     };
 

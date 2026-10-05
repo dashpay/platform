@@ -17,7 +17,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{WhereClause, WhereOperator};
+use crate::query::{
+    aggregate_or_zero_when_absent, index_keeps_empty_groups, WhereClause, WhereOperator,
+};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
@@ -37,7 +39,8 @@ impl DriveDocumentSumQuery<'_> {
     /// - **Distinct mode** (`distinct=true`): walks the unified
     ///   `distinct_sum_path_query` and emits one entry per matched
     ///   `(in_key, key)` pair, leaving out the groups summing to zero
-    ///   except over a `summableOffCountIndex` index (see the walk).
+    ///   except over an index that can hold empty groups
+    ///   (`index_keeps_empty_groups`, see the walk).
     pub fn execute_range_sum_no_proof(
         &self,
         drive: &Drive,
@@ -52,6 +55,9 @@ impl DriveDocumentSumQuery<'_> {
             .any(|wc| wc.operator == WhereOperator::In);
 
         if matches!(options.walk_mode, RangeSumWalkMode::Aggregate) {
+            // Once for every aggregate read below: it depends on the index
+            // alone.
+            let admitted = self.refuse_a_range_sum_total()?;
             if has_in_on_prefix {
                 // Enforce exactly one `In` clause. Without this, a request
                 // with multiple In filters would silently use only the
@@ -104,13 +110,14 @@ impl DriveDocumentSumQuery<'_> {
                         where_clauses: clauses_for_value,
                         sum_property: self.sum_property.clone(),
                     };
-                    let path_query = per_value_query.aggregate_sum_path_query(platform_version)?;
+                    let path_query = per_value_query
+                        .admitted_aggregate_sum_path_query(admitted, platform_version)?;
                     let CostContext { value, cost: _ } = drive.grove.query_aggregate_sum(
                         &path_query,
                         transaction,
                         &drive_version.grove_version,
                     );
-                    let sum = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+                    let sum = aggregate_or_zero_when_absent(value)?;
                     // Use `checked_add` rather than `saturating_add` so an
                     // overflowed aggregate fails deterministically instead
                     // of silently clamping at i64::MAX. The proof-side
@@ -135,13 +142,13 @@ impl DriveDocumentSumQuery<'_> {
                 }]);
             }
             // Flat summed (no In on prefix): single aggregate read.
-            let path_query = self.aggregate_sum_path_query(platform_version)?;
+            let path_query = self.admitted_aggregate_sum_path_query(admitted, platform_version)?;
             let CostContext { value, cost: _ } = drive.grove.query_aggregate_sum(
                 &path_query,
                 transaction,
                 &drive_version.grove_version,
             );
-            let sum = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let sum = aggregate_or_zero_when_absent(value)?;
             return Ok(vec![SumEntry {
                 in_key: None,
                 key: Vec::new(),
@@ -184,15 +191,18 @@ impl DriveDocumentSumQuery<'_> {
             Err(e) => return Err(e),
         };
 
+        let keeps_empty_groups = index_keeps_empty_groups(self.document_type, self.index);
         let mut entries: Vec<SumEntry> = Vec::new();
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
             let sum = element.sum_value_or_default();
-            // A summableOffCountIndex index's preallocated counters at zero
-            // are kept, as the distinct proof keeps them: the walk's limit
-            // counted them, so a page ends only at its limit. Every other
-            // index leaves out its zero sums, as before.
-            if sum == 0 && !self.index.is_summable_off_count_index() {
+            // Zero groups are kept where an index can hold empty groups
+            // (see the helper), as the distinct proof keeps them: the walk's
+            // limit counted them, so leaving them out would shorten the page.
+            // That covers a summableOffCountIndex index's counters at zero,
+            // which only a preallocated index keeps. Every other index leaves
+            // out its zero sums, as before.
+            if sum == 0 && !keeps_empty_groups {
                 continue;
             }
             let in_key = if has_in_on_prefix && path.len() > base_path_len {

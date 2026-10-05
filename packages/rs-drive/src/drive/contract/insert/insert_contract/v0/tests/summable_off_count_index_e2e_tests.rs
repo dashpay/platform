@@ -94,14 +94,22 @@ fn setup(preallocated: bool) -> (Drive, DataContract) {
 fn setup_with(
     edit: impl Fn(&mut serde_json::Map<String, serde_json::Value>),
 ) -> (Drive, DataContract) {
+    setup_with_indices(|indices| {
+        for index in indices.iter_mut() {
+            edit(index.as_object_mut().expect("an index"));
+        }
+    })
+}
+
+/// The fixture with the like type's index list edited by `edit`.
+fn setup_with_indices(edit: impl Fn(&mut Vec<serde_json::Value>)) -> (Drive, DataContract) {
     let pv = platform_version();
     let mut schema = json_document_to_json_value(FIXTURE).expect("read contract fixture");
-    for index in schema["documentSchemas"]["like"]["indices"]
-        .as_array_mut()
-        .expect("like indices")
-    {
-        edit(index.as_object_mut().expect("an index"));
-    }
+    edit(
+        schema["documentSchemas"]["like"]["indices"]
+            .as_array_mut()
+            .expect("like indices"),
+    );
     let contract = DataContract::try_from_platform_versioned(
         serde_json::from_value(schema).expect("contract serialization format"),
         true,
@@ -928,6 +936,79 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
     assert!(matches!(counter, Element::SumItem(1, _)), "got {counter:?}");
 }
 
+/// Both generations of the batch conversion through its dispatcher: v1
+/// (protocol version 14) refuses a batch writing two likes, while v0, every
+/// earlier version's, converts it as it always has.
+#[test]
+fn should_refuse_two_likes_only_from_the_convert_generation_that_checks_counter_moves() {
+    let (drive, contract) = setup(true);
+    let post = insert_post(&drive, &contract, AUTHOR_A, "dash", 1);
+    let likes = [
+        build_like(&contract, post, AUTHOR_A, "dash", LIKER_1, 1),
+        build_like(&contract, post, AUTHOR_A, "dash", LIKER_2, 2),
+    ];
+    let operations = || {
+        likes
+            .iter()
+            .map(|like| add_like(&contract, like))
+            .collect::<Vec<_>>()
+    };
+    let latest = platform_version();
+    let refused = drive.convert_drive_operations_to_grove_operations(
+        operations(),
+        &BlockInfo::default(),
+        None,
+        latest,
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ),
+        "v1 refuses the batch"
+    );
+    let mut first_generation = latest.clone();
+    first_generation
+        .drive
+        .methods
+        .batch_operations
+        .convert_drive_operations_to_grove_operations = 0;
+    let converted = drive
+        .convert_drive_operations_to_grove_operations(
+            operations(),
+            &BlockInfo::default(),
+            None,
+            &first_generation,
+        )
+        .expect("v0 converts the batch unrefused");
+    // Each like's conversion writes both of its post's counters: two writes
+    // per counter, which would apply as one, so v1 refuses the batch
+    let counter_writes = |segments: &[&[u8]]| {
+        let counter_path = level(&contract, segments);
+        converted
+            .operations
+            .iter()
+            .filter(|operation| {
+                operation.path == counter_path
+                    && operation
+                        .key
+                        .as_ref()
+                        .is_some_and(|key| *key == post.to_vec())
+            })
+            .count()
+    };
+    assert_eq!(
+        counter_writes(&[b"postAuthor", &AUTHOR_A, b"postId"]),
+        2,
+        "v0 writes the author counter once per like"
+    );
+    assert_eq!(
+        counter_writes(&[b"hashtag", b"dash", b"postId"]),
+        2,
+        "v0 writes the hashtag counter once per like"
+    );
+}
+
 /// The source index's name addresses the summed likes: one post's, one
 /// author's (read off the author's value tree, which sums its posts), with
 /// a proof that verifies to the same total.
@@ -1356,9 +1437,129 @@ fn should_total_the_likes_of_a_range_of_posts_from_the_counters_sums() {
     );
 }
 
+/// An author without posts has no subtree under a counter index, and a range
+/// total without a proof counts it as zero, as the proof's carrier drops it:
+/// across an `IN` the author's branch adds no likes, posts or sums, and a
+/// range of that author alone totals zero.
+#[test]
+fn should_total_an_author_without_posts_as_zero_without_a_proof() {
+    const AUTHOR_Z: [u8; 32] = [0xCC; 32];
+    let (drive, contract) = setup_with(|index| {
+        index.remove("rankedSummable");
+        index.remove("rankedAverageable");
+    });
+    liked_posts(&drive, &contract);
+    let pv = platform_version();
+    let a_and_z = WhereClause {
+        field: "postAuthor".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![
+            Value::Identifier(AUTHOR_A),
+            Value::Identifier(AUTHOR_Z),
+        ]),
+    };
+    let drive_config = DriveConfig::default();
+    let average = |where_clauses: Vec<WhereClause>| match drive
+        .execute_document_average_request(
+            DocumentAverageRequest {
+                contract: &contract,
+                document_type: contract
+                    .document_type_for_name("like")
+                    .expect("like doctype exists"),
+                sum_property: "byPost".to_string(),
+                where_clauses,
+                resolved_time_ranges: vec![],
+                order_clauses: vec![],
+                mode: AverageMode::Aggregate,
+                limit: None,
+                prove: false,
+                drive_config: &drive_config,
+            },
+            None,
+            pv,
+        )
+        .expect("the range average executes")
+    {
+        DocumentAverageResponse::Aggregate { count, sum } => (count, sum),
+        other => panic!("expected an aggregate average, got {other:?}"),
+    };
+
+    for (clauses, posts, likes) in [
+        (vec![a_and_z.clone(), every_post()], 2u64, 4u64),
+        (
+            vec![
+                equal("postAuthor", Value::Identifier(AUTHOR_Z)),
+                every_post(),
+            ],
+            0,
+            0,
+        ),
+    ] {
+        match count_likes(
+            &drive,
+            &contract,
+            clauses.clone(),
+            CountMode::Aggregate,
+            None,
+            false,
+        )
+        .expect("the range count executes")
+        {
+            DocumentCountResponse::Aggregate(total) => assert_eq!(total, likes, "{clauses:?}"),
+            other => panic!("expected an aggregate count, got {other:?}"),
+        }
+        match sum_likes(
+            &drive,
+            &contract,
+            clauses.clone(),
+            SumMode::Aggregate,
+            None,
+            false,
+        )
+        .expect("the range sum executes")
+        {
+            DocumentSumResponse::Aggregate(total) => {
+                assert_eq!(total, likes as i64, "{clauses:?}")
+            }
+            other => panic!("expected an aggregate sum, got {other:?}"),
+        }
+        assert_eq!(
+            average(clauses.clone()),
+            (posts, likes as i64),
+            "{clauses:?}"
+        );
+    }
+
+    let a_and_z_range = vec![a_and_z, every_post()];
+    let proof = match count_likes(
+        &drive,
+        &contract,
+        a_and_z_range.clone(),
+        CountMode::GroupByIn,
+        None,
+        true,
+    )
+    .expect("the per-author range totals prove")
+    {
+        DocumentCountResponse::Proof(proof) => proof,
+        other => panic!("expected a proof, got {other:?}"),
+    };
+    let (root_hash, per_author) = like_count_query(&contract, &a_and_z_range)
+        .verify_carrier_aggregate_count_proof(&proof, None, true, pv)
+        .expect("the per-author range totals verify");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(
+        per_author,
+        vec![(AUTHOR_A.to_vec(), 4)],
+        "the proof drops the author without posts"
+    );
+}
+
 /// A range total through an index that ranks any level is refused cleanly,
-/// with and without a proof: grovedb neither totals nor proves a range
-/// through an indexed tree. That covers `byPost`, ranked at its last
+/// with and without a proof: grovedb neither totals a range over an indexed
+/// tree nor proves one through it, and the unproven read refuses a ranked
+/// ancestor too, so the read, the proof and its verification agree. That
+/// covers `byPost`, ranked at its last
 /// property, the counter indexes as the fixture ranks them, an average over
 /// them, the per-author totals of a count, a sum and an average across an
 /// `IN` (the carrier proofs), and a counter index ranked only above the
@@ -1629,4 +1830,205 @@ fn should_rank_and_bound_a_document_count_by_the_counters_sums() {
         ],
         "the posts with more than 2 likes, ascending"
     );
+}
+
+/// A ranked `sum(byPost)` no index covers names the keyword that would: an
+/// index with `summableOffCountIndex` over the source, ranked at the grouping
+/// property through the level-addressed form, not a `summable` property.
+#[test]
+fn should_name_the_counter_keyword_when_no_index_ranks_a_sum_of_the_source() {
+    let (_drive, contract) = setup(true);
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name("like")
+        .expect("like doctype exists");
+    let group_by = vec!["postId".to_string()];
+    let order_by = vec![OrderClause {
+        field: "byPost".to_string(),
+        ascending: false,
+    }];
+    let mode = detect_ranked_mode(
+        &SelectProjection::sum("byPost"),
+        &group_by,
+        &[],
+        &order_by,
+        &[],
+        PAGE,
+        pv,
+    )
+    .expect("the ranked request is well formed");
+    // Posts are ranked by likes only under an author or a hashtag pin
+    let error = resolve_ranked_query_for_mode(
+        contract.id_ref().to_buffer(),
+        document_type,
+        "like".to_string(),
+        document_type.indexes(),
+        &mode,
+        &[],
+        pv,
+    )
+    .expect_err("no index ranks every post by likes");
+    let message = error.to_string();
+    assert!(
+        message.contains("`summableOffCountIndex: \"byPost\"`")
+            && message.contains(r#"`rankedSummable: { "at": ["postId"] }`"#)
+            && !message.contains("summable: \"byPost\""),
+        "the hint must name the counter keyword: {message}"
+    );
+}
+
+/// `sum(byPost)` and `avg(byPost)` pinned on every property but the last of
+/// a counter index whose last property is unranked read the last property's
+/// tree, as a `count(*)` with the same pins does: an author's or a hashtag's
+/// likes, and with them its posts, unproved and proved alike, whether the
+/// index ranks no level or ranks by sum alone at the first one, and when the
+/// tree sits wrapped under another index's count trees.
+#[test]
+fn should_sum_and_average_likes_from_the_last_property_s_tree() {
+    use crate::query::drive_document_sum_query::index_picker::find_summable_index_with_counts_for_where_clauses;
+
+    let unranked = |index: &mut serde_json::Map<String, serde_json::Value>| {
+        index.remove("rankedSummable");
+        index.remove("rankedAverageable");
+    };
+    let setups = [
+        setup_with(unranked),
+        // Ranked by sum alone at the first property, whose value trees then
+        // count no posts: the average reads the last property's tree
+        setup_with(|index| {
+            if index.contains_key("summableOffCountIndex") {
+                let first = index["properties"][0]
+                    .as_object()
+                    .and_then(|property| property.keys().next().cloned())
+                    .expect("a first property");
+                index.remove("rankedAverageable");
+                index.insert(
+                    "rankedSummable".to_string(),
+                    serde_json::json!({ "at": [first] }),
+                );
+            }
+        }),
+        // Beside a countable index ending at `postAuthor`, under whose count
+        // trees the counter's `postId` tree sits wrapped to count nothing:
+        // the proof still reads its posts
+        setup_with_indices(|indices| {
+            for index in indices.iter_mut() {
+                unranked(index.as_object_mut().expect("an index"));
+            }
+            indices.push(serde_json::json!({
+                "name": "byAuthor",
+                "properties": [{ "postAuthor": "asc" }],
+                "terminal": ["postId", "$ownerId"],
+                "countable": "countable",
+            }));
+        }),
+    ];
+    for (drive, contract) in setups {
+        liked_posts(&drive, &contract);
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+        let drive_config = DriveConfig::default();
+
+        for (clauses, posts, likes) in [
+            (vec![equal("postAuthor", Value::Identifier(AUTHOR_A))], 2, 4),
+            (vec![equal("postAuthor", Value::Identifier(AUTHOR_B))], 1, 5),
+            (
+                vec![equal("hashtag", Value::Text("dash".to_string()))],
+                3,
+                9,
+            ),
+        ] {
+            match sum_likes(
+                &drive,
+                &contract,
+                clauses.clone(),
+                SumMode::Aggregate,
+                None,
+                false,
+            )
+            .expect("the sum executes")
+            {
+                DocumentSumResponse::Aggregate(sum) => assert_eq!(sum, likes, "{clauses:?}"),
+                other => panic!("expected an aggregate sum, got {other:?}"),
+            }
+            let proof = match sum_likes(
+                &drive,
+                &contract,
+                clauses.clone(),
+                SumMode::Aggregate,
+                None,
+                true,
+            )
+            .expect("the sum proves")
+            {
+                DocumentSumResponse::Proof(proof) => proof,
+                other => panic!("expected a proof, got {other:?}"),
+            };
+            let query = like_sum_query(&contract, &clauses);
+            assert!(query.index.is_summable_off_count_index());
+            let (root_hash, entries) = query
+                .verify_point_lookup_sum_proof(&proof, pv)
+                .expect("the sum proof verifies");
+            assert_live_root_hash(&drive, root_hash);
+            let proved: i64 = entries.iter().filter_map(|entry| entry.sum).sum();
+            assert_eq!(proved, likes, "proved {clauses:?}");
+
+            let average = |prove| {
+                drive
+                    .execute_document_average_request(
+                        DocumentAverageRequest {
+                            contract: &contract,
+                            document_type,
+                            sum_property: "byPost".to_string(),
+                            where_clauses: clauses.clone(),
+                            resolved_time_ranges: vec![],
+                            order_clauses: vec![],
+                            mode: AverageMode::Aggregate,
+                            limit: None,
+                            prove,
+                            drive_config: &drive_config,
+                        },
+                        None,
+                        pv,
+                    )
+                    .expect("the average executes")
+            };
+            match average(false) {
+                DocumentAverageResponse::Aggregate { count, sum } => {
+                    assert_eq!((count, sum), (posts, likes), "{clauses:?}")
+                }
+                other => panic!("expected an aggregate average, got {other:?}"),
+            }
+            let DocumentAverageResponse::Proof(proof) = average(true) else {
+                panic!("expected an average proof");
+            };
+            let index = find_summable_index_with_counts_for_where_clauses(
+                document_type.indexes(),
+                &clauses,
+                "byPost",
+                &[],
+            )
+            .expect("a counter index answers the average");
+            let (root_hash, entries) = DriveDocumentSumQuery {
+                document_type,
+                contract_id: contract.id().to_buffer(),
+                document_type_name: "like".to_string(),
+                index,
+                where_clauses: clauses.clone(),
+                sum_property: "byPost".to_string(),
+            }
+            .verify_point_lookup_count_and_sum_proof(&proof, pv)
+            .expect("the average proof verifies");
+            assert_live_root_hash(&drive, root_hash);
+            let proved = entries.iter().fold((0u64, 0i64), |(count, sum), entry| {
+                (
+                    count + entry.count.unwrap_or_default(),
+                    sum + entry.sum.unwrap_or_default(),
+                )
+            });
+            assert_eq!(proved, (posts, likes), "proved {clauses:?}");
+        }
+    }
 }
