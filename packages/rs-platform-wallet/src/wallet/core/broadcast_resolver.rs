@@ -62,7 +62,10 @@
 //! way gives way to it after its probe in flight. A pass probes at most
 //! [`MAX_ROOTS_PER_PASS`] scheduled roots, those probed longest ago first —
 //! a wallet's records can be fed by a peer, so one pass's network work is
-//! bounded and the rest come round at the next heights.
+//! bounded and the rest come round at the next heights. The roots of sends
+//! reported `Uncertain` and not settled yet go first, with at most half of
+//! the slots while other roots wait; a no-answer retry also makes a pass
+//! under way give way.
 //! Between passes a wallet waits for the height at which its next root is due;
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
@@ -115,11 +118,12 @@ pub(crate) const EVERY_BLOCK_WINDOW: u32 = 24;
 pub(crate) const SLOW_INTERVAL: u32 = 10;
 
 /// Scheduled roots a pass probes at most; forced ones (an `Uncertain`
-/// report's, a no-answer retry's) come on top, and the roots of sends still
-/// waiting for their echo after an `Uncertain` report go first in the queue. A wallet's records are not all its own doing — a
-/// peer can feed it transactions that make many roots — so the work of one
-/// pass is bounded, and the roots probed longest ago (or never) go first:
-/// the rest stay due and come round at the next heights.
+/// report's, a no-answer retry's) come on top. A wallet's records are not
+/// all its own doing — a peer can feed it transactions that make many roots —
+/// so the work of one pass is bounded, and within it the roots probed
+/// longest ago (or never) go first: the rest stay due and come round at the
+/// next heights. The roots of sends reported `Uncertain` and not settled yet
+/// go first, but take at most half of the slots while other roots wait.
 pub(crate) const MAX_ROOTS_PER_PASS: usize = 8;
 
 /// How long after a probe that no node answered (all of DAPI unreachable —
@@ -474,10 +478,6 @@ pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     /// What the host holds per send.
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
-    /// Sends dash-spv reported `Uncertain` and still waiting for their echo:
-    /// this process's own broadcasts. Their roots, when due, go first in a
-    /// pass's queue — a backlog fed by a peer never holds them back.
-    priority: HashSet<Txid>,
 }
 
 impl ResolverState {
@@ -586,7 +586,8 @@ fn near_tip(height: u32, tip: u32) -> bool {
     height.abs_diff(tip) <= CATCH_UP_STEP
 }
 
-/// A forced request waits for the wallet's run: the run gives way, keeping
+/// A forced request (a report's, or a no-answer retry's) waits for the
+/// wallet's run: the run gives way, keeping
 /// only its own forced roots — the scheduled ones it has not sent stay due
 /// and come round at the next pass — so the forced pass starts after the
 /// probe in flight, not after a queue of scheduled roots.
@@ -596,10 +597,13 @@ fn yield_to_forced(entry: &mut WalletEntry) {
     };
     // Only for a request the run does not already carry (a repeated report
     // of a send it forces itself changes nothing).
-    let new = entry
-        .pending
-        .as_ref()
-        .is_some_and(|pending| pending.forced.iter().any(|txid| !run.forced.contains(txid)));
+    let new = entry.pending.as_ref().is_some_and(|pending| {
+        pending
+            .forced
+            .iter()
+            .chain(&pending.retried)
+            .any(|txid| !run.forced.contains(txid) && !run.retried.contains(txid))
+    });
     if !new {
         return;
     }
@@ -660,12 +664,16 @@ pub(crate) struct PassStart {
 /// `anchor`: the tip height
 /// a height-driven pass knows the wallet follows — a root it takes starts
 /// its every-block window when its probe goes out (see [`mark_sent`]).
+/// `priority`: the wallet's sends reported `Uncertain` and not settled yet —
+/// their roots go first among the scheduled ones (see
+/// [`MAX_ROOTS_PER_PASS`]).
 pub(crate) fn begin_pass(
     state: &mut ResolverState,
     wallet_id: WalletId,
     height: u32,
     views: &[OutgoingView],
     forced: &HashSet<Txid>,
+    priority: &HashSet<Txid>,
     anchor: Option<u32>,
 ) -> PassStart {
     let mut events = Vec::new();
@@ -695,8 +703,11 @@ pub(crate) fn begin_pass(
     // Forced roots first, then at most `MAX_ROOTS_PER_PASS` scheduled ones
     // in turn: those probed longest ago first, a never-probed one by the
     // height it was first seen at — a queue, so fresh roots (a peer can feed
-    // them at will) wait behind older ones and cannot starve them.
-    let priority = graph.roots_of(state.priority.iter().copied());
+    // them at will) wait behind older ones and cannot starve them. Reported
+    // sends' roots go first, in the same order among themselves, but leave
+    // at least half of the slots to the rest: a peer whose outputs a reported
+    // send spends makes its parents such roots too.
+    let priority = graph.roots_of(priority.iter().copied());
     let due_root = |view: &OutgoingView, forced| DueRoot {
         txid: view.txid,
         transaction: Arc::clone(&view.transaction),
@@ -705,7 +716,9 @@ pub(crate) fn begin_pass(
         retry: false,
     };
     let mut due = VecDeque::new();
-    let mut scheduled: Vec<((u32, bool, Txid), &OutgoingView)> = Vec::new();
+    type Turn = (u32, bool, Txid);
+    let mut first: Vec<(Turn, &OutgoingView)> = Vec::new();
+    let mut rest: Vec<(Turn, &OutgoingView)> = Vec::new();
     for view in &roots {
         let schedule = state.schedules.entry((wallet_id, view.txid)).or_default();
         if let Some(anchor) = anchor {
@@ -717,25 +730,39 @@ pub(crate) fn begin_pass(
             // Without an anchor the pass is confined to forced roots.
             // At the same height, one still waiting for its first probe goes
             // before one probed there.
-            let turn = if priority.contains(&view.txid) {
-                (0, false, view.txid)
+            let turn = (
+                schedule.last_probe.or(schedule.seen_at).unwrap_or(0),
+                schedule.last_probe.is_some(),
+                view.txid,
+            );
+            if priority.contains(&view.txid) {
+                first.push((turn, view));
             } else {
-                (
-                    schedule.last_probe.or(schedule.seen_at).unwrap_or(0),
-                    schedule.last_probe.is_some(),
-                    view.txid,
-                )
-            };
-            scheduled.push((turn, view));
+                rest.push((turn, view));
+            }
         }
     }
-    if scheduled.len() > MAX_ROOTS_PER_PASS {
-        scheduled.select_nth_unstable_by_key(MAX_ROOTS_PER_PASS, |(turn, _)| *turn);
-        scheduled.truncate(MAX_ROOTS_PER_PASS);
-    }
-    scheduled.sort_unstable_by_key(|(turn, _)| *turn);
+    let first_slots = first
+        .len()
+        .min((MAX_ROOTS_PER_PASS / 2).max(MAX_ROOTS_PER_PASS.saturating_sub(rest.len())));
+    let rest_slots = rest.len().min(MAX_ROOTS_PER_PASS - first_slots);
+    let mut scheduled = take_in_turn(first, first_slots);
+    scheduled.extend(take_in_turn(rest, rest_slots));
     due.extend(scheduled.into_iter().map(|(_, view)| due_root(view, false)));
     PassStart { events, due }
+}
+
+/// The first `count` of `queue` by turn, in turn.
+fn take_in_turn<K: Ord + Copy, V>(mut queue: Vec<(K, V)>, count: usize) -> Vec<(K, V)> {
+    if queue.len() > count {
+        if count == 0 {
+            return Vec::new();
+        }
+        queue.select_nth_unstable_by_key(count, |(turn, _)| *turn);
+        queue.truncate(count);
+    }
+    queue.sort_unstable_by_key(|(turn, _)| *turn);
+    queue
 }
 
 /// A root is being sent to the network at `height`: its schedule counts from
@@ -1236,11 +1263,13 @@ struct Actor {
     /// token until one of those.
     report_lookups: HashMap<Txid, u64>,
     next_report_token: u64,
-    /// Every send dash-spv reported `Uncertain` this session that has not
-    /// settled: this process's own broadcasts. Their roots go first in a
-    /// pass's queue for as long as they stay unsettled — past their echo
-    /// window too — so a backlog fed by a peer never holds them back.
-    reported: HashSet<Txid>,
+    /// Every send dash-spv reported `Uncertain` this session, with the
+    /// wallets that hold it as an unsettled own send: this process's own
+    /// broadcasts. Their roots go first in a pass's queue for as long as they
+    /// stay unsettled — past their echo window too — so a backlog fed by a
+    /// peer never holds them back. A wallet leaves an entry when the send
+    /// settles or leaves it (seen by its next read), or when it is removed.
+    reported: HashMap<Txid, HashSet<WalletId>>,
     /// The highest height any wallet has followed the tip at: the one clock
     /// the echo windows run on, so a wallet behind the others (rescanning,
     /// rewound) neither stamps nor expires them.
@@ -1274,7 +1303,7 @@ impl Actor {
             uncertain: HashMap::new(),
             report_lookups: HashMap::new(),
             next_report_token: 0,
-            reported: HashSet::new(),
+            reported: HashMap::new(),
             followed_tip: None,
             next_retry_series: 0,
             echo_lookups: HashMap::new(),
@@ -1475,7 +1504,12 @@ impl Actor {
                 for txid in &txids {
                     self.uncertain.remove(txid);
                     self.echo_lookups.remove(txid);
-                    self.reported.remove(txid);
+                    if let Some(holders) = self.reported.get_mut(txid) {
+                        holders.remove(&wallet_id);
+                        if holders.is_empty() {
+                            self.reported.remove(txid);
+                        }
+                    }
                 }
                 let events = self.state.settle(wallet_id, &txids);
                 deliver(&self.sink, events);
@@ -1504,7 +1538,6 @@ impl Actor {
                 // A new report restarts the window, from the next followed
                 // block.
                 self.uncertain.insert(txid, None);
-                self.reported.insert(txid);
                 let report = self.next_report_token;
                 self.next_report_token += 1;
                 self.report_lookups.insert(txid, report);
@@ -1615,6 +1648,10 @@ impl Actor {
         // them all — at worst an acceptance waits for the next probe.
         self.echo_lookups.clear();
         self.report_lookups.clear();
+        self.reported.retain(|_, holders| {
+            holders.remove(wallet_id);
+            !holders.is_empty()
+        });
         let events = self.state.forget_wallet(wallet_id, trigger);
         deliver(&self.sink, events);
     }
@@ -1698,6 +1735,9 @@ impl Actor {
                 // would be news to no one.
                 if own.is_empty() {
                     self.uncertain.remove(&txid);
+                    self.reported.remove(&txid);
+                } else {
+                    self.reported.entry(txid).or_default().extend(own);
                 }
                 for wallet_id in wallets {
                     // Only a wallet the actor was told about (see
@@ -1807,11 +1847,12 @@ impl Actor {
                         // A retried txid that is no longer a root is not the
                         // retry's business: forcing it would resolve to a parent
                         // already probed at this height.
-                        let roots_now: HashSet<Txid> = ChainGraph::new(&views)
-                            .roots()
-                            .iter()
-                            .map(|view| view.txid)
-                            .collect();
+                        let graph = ChainGraph::new(&views);
+                        let roots_now: HashSet<Txid> =
+                            graph.roots().iter().map(|view| view.txid).collect();
+                        // A root a report forced (directly or through a child)
+                        // is labelled by the report, not by the retry.
+                        let reported_roots = graph.roots_of(current.forced.iter().copied());
                         let forced: HashSet<Txid> = read
                             .forced
                             .iter()
@@ -1823,20 +1864,29 @@ impl Actor {
                             .copied()
                             .collect();
                         let anchor = current.anchor_at;
-                        // Only the sends this wallet still holds unsettled.
-                        self.state.priority = self
-                            .reported
-                            .iter()
-                            .filter(|txid| views.iter().any(|view| view.txid == **txid))
-                            .copied()
-                            .collect();
-                        let start =
-                            begin_pass(&mut self.state, wallet_id, height, &views, &forced, anchor);
-                        let mut start = start;
-                        // A root a report forced (directly or through a child)
-                        // is labelled by the report, not by the retry.
-                        let reported_roots =
-                            ChainGraph::new(&views).roots_of(current.forced.iter().copied());
+                        // Only the sends this wallet still holds unsettled: one
+                        // that settled or left it is no longer its priority.
+                        let present: HashSet<Txid> = views.iter().map(|view| view.txid).collect();
+                        let mut priority = HashSet::new();
+                        self.reported.retain(|txid, holders| {
+                            if holders.contains(&wallet_id) {
+                                if present.contains(txid) {
+                                    priority.insert(*txid);
+                                } else {
+                                    holders.remove(&wallet_id);
+                                }
+                            }
+                            !holders.is_empty()
+                        });
+                        let mut start = begin_pass(
+                            &mut self.state,
+                            wallet_id,
+                            height,
+                            &views,
+                            &forced,
+                            &priority,
+                            anchor,
+                        );
                         for root in start.due.iter_mut() {
                             root.retry = current.retried.contains(&root.txid)
                                 && !reported_roots.contains(&root.txid);
@@ -1905,6 +1955,7 @@ impl Actor {
                 let pending = entry.pending.get_or_insert_with(PendingPass::default);
                 pending.height = pending.height.max(height);
                 pending.retried.extend(roots);
+                yield_to_forced(entry);
                 self.start(wallet_id);
             }
             JobDone::Probed {
@@ -2636,6 +2687,7 @@ mod tests {
             100,
             &views,
             &HashSet::from([record.txid]),
+            &HashSet::new(),
             Some(100),
         );
         assert!(start.due.is_empty(), "no probe for a contact's own spend");
@@ -2696,6 +2748,7 @@ mod tests {
             wallet(),
             100,
             &views,
+            &HashSet::new(),
             &HashSet::new(),
             Some(100),
         );
@@ -3011,6 +3064,7 @@ mod tests {
                 height,
                 views,
                 forced,
+                &HashSet::new(),
                 Some(height),
             );
             guard.push(start.events);
@@ -4337,6 +4391,50 @@ mod tests {
             .collect()
     }
 
+    /// Reported sends' roots go first, in turn among themselves, and leave
+    /// half of the slots to the rest: a peer whose outputs a reported send
+    /// spends makes its parents such roots, and they must not fill every pass.
+    #[test]
+    fn should_share_a_pass_between_reported_and_other_roots() {
+        let views = peer_injected(10..30);
+        // Ten reported sends, each the child of one peer parent (10..20).
+        let reported: HashSet<Txid> = (70..80).map(txid).collect();
+        let reported_roots: HashSet<Txid> = (10..20).map(txid).collect();
+        let mut state = ResolverState::default();
+        let mut passes = Vec::new();
+        for height in 100..103 {
+            let start = begin_pass(
+                &mut state,
+                wallet(),
+                height,
+                &views,
+                &HashSet::new(),
+                &reported,
+                Some(height),
+            );
+            let due: Vec<Txid> = start.due.iter().map(|root| root.txid).collect();
+            for root in &due {
+                mark_sent(&mut state, wallet(), *root, height, Some(height));
+            }
+            passes.push(due);
+        }
+
+        for due in &passes {
+            assert_eq!(due.len(), MAX_ROOTS_PER_PASS);
+            let first = due.iter().filter(|t| reported_roots.contains(*t)).count();
+            assert_eq!(first, MAX_ROOTS_PER_PASS / 2, "half of the slots each");
+            assert!(
+                due[..first].iter().all(|t| reported_roots.contains(t)),
+                "reported roots go first"
+            );
+        }
+        let probed: HashSet<Txid> = passes.iter().flatten().copied().collect();
+        assert!(
+            reported_roots.iter().all(|root| probed.contains(root)),
+            "every reported root came round in turn"
+        );
+    }
+
     /// Peer-injected records make many roots: a pass probes at most
     /// `MAX_ROOTS_PER_PASS` of them, the ones probed longest ago first, so
     /// each comes round in turn at the following heights.
@@ -4614,6 +4712,26 @@ mod tests {
 
         let after = probe.probed().iter().filter(|p| **p == txid(200)).count();
         assert_eq!(after, before + 1, "probed when due, ahead of the backlog");
+    }
+
+    /// A reported send stops being a priority once it leaves the wallet: the
+    /// set does not grow for the session.
+    #[tokio::test]
+    async fn should_forget_a_reported_send_that_left_the_wallet() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..12);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(200))).await;
+        rig.height(wallet(), 101).await;
+        assert!(rig.actor.reported.contains_key(&txid(200)));
+
+        rig.views(wallet(), peer_injected(10..12));
+        rig.height(wallet(), 102).await;
+
+        assert!(rig.actor.reported.is_empty(), "left with the send");
     }
 
     /// A repeated report of a send the run already forces changes nothing:
@@ -5027,6 +5145,7 @@ mod tests {
             100,
             &views,
             &HashSet::new(),
+            &HashSet::new(),
             Some(100),
         );
         let planned: Vec<Txid> = start.due.iter().map(|root| root.txid).collect();
@@ -5039,6 +5158,7 @@ mod tests {
             wallet(),
             100,
             &views,
+            &HashSet::new(),
             &HashSet::new(),
             Some(100),
         );
@@ -5060,6 +5180,7 @@ mod tests {
             wallet(),
             100,
             &views,
+            &HashSet::new(),
             &HashSet::new(),
             Some(100),
         );
