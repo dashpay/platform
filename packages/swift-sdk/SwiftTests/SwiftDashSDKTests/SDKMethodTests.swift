@@ -127,5 +127,11 @@ final class SDKMethodTests: XCTestCase {
       let id = try XCTUnwrap(key["id"] as? Int, "key \(keyId) has no numeric id")
       XCTAssertEqual(String(id), keyId)
     }
+
+    // Key 0 is the identity's master authentication key: purpose 0
+    // (AUTHENTICATION) at security level 0 (MASTER).
+    let master = try XCTUnwrap(keys["0"] as? [String: Any], "key 0 is absent")
+    XCTAssertEqual(master["purpose"] as? Int, 0)
+    XCTAssertEqual(master["securityLevel"] as? Int, 0)
   }
 }
