@@ -27,7 +27,7 @@ use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::Version;
 use dapi_grpc::platform::v0::{SubscribeToStateTransitionsRequest, SubscribeToStateTransitionsResponse};
 use dapi_grpc::tonic::{Code, Status, Streaming};
 use dash_platform_queries::subscriptions::{
-    subscribe_request, ResolvedFilters, StateTransitionFilter,
+    subscribe_request, ResolvedFilters, StateTransitionFilter, MAX_FILTERS,
 };
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::data_contract::DataContract;
@@ -84,9 +84,14 @@ pub enum SubscriptionEvent {
 /// A running subscription; see the [module documentation](self).
 pub struct StateTransitionSubscription {
     sdk: Sdk,
+    /// The caller's filters, followed by the internal contract-update filter, if any.
     filters: Vec<StateTransitionFilter>,
+    /// How many of `filters` are the caller's.
+    caller_filters: usize,
     resolved: ResolvedFilters,
     stream: Option<Streaming<SubscribeToStateTransitionsResponse>>,
+    /// Messages received on the current stream.
+    stream_messages: u32,
     /// Where the next stream starts; `None` until the first checkpoint of a live-only start.
     resume_from: Option<u64>,
     consecutive_failures: u32,
@@ -97,17 +102,28 @@ impl Sdk {
     /// `from_block_height` (inclusive), or from after the current tip when `None`.
     ///
     /// The data contracts the document filters name are fetched with proofs first, to check
-    /// what the node sends; a contract that does not exist fails the call.
+    /// what the node sends; a contract that does not exist fails the call. The subscription
+    /// also follows updates of those contracts, which the node applies to its matching, so both
+    /// sides match against the same contract version; those updates are not reported unless
+    /// `filters` asks for them.
     pub async fn subscribe_to_state_transitions(
         &self,
-        filters: Vec<StateTransitionFilter>,
+        mut filters: Vec<StateTransitionFilter>,
         from_block_height: Option<u64>,
     ) -> Result<StateTransitionSubscription, Error> {
+        let caller_filters = filters.len();
+        let data_contract_ids = ResolvedFilters::data_contract_ids(&filters);
         let mut contracts = BTreeMap::new();
-        for data_contract_id in ResolvedFilters::data_contract_ids(&filters) {
-            if let Some(contract) = DataContract::fetch(self, data_contract_id).await? {
-                contracts.insert(data_contract_id, Arc::new(contract));
+        for data_contract_id in &data_contract_ids {
+            if let Some(contract) = DataContract::fetch(self, *data_contract_id).await? {
+                contracts.insert(*data_contract_id, Arc::new(contract));
             }
+        }
+        // Within the request's filter limit; without room the caller's filters go alone.
+        if !data_contract_ids.is_empty() && filters.len() < MAX_FILTERS {
+            filters.push(StateTransitionFilter::DataContracts {
+                data_contract_ids: data_contract_ids.into_iter().collect(),
+            });
         }
         let resolved = ResolvedFilters::resolve(
             filters.clone(),
@@ -119,8 +135,10 @@ impl Sdk {
         let mut subscription = StateTransitionSubscription {
             sdk: self.clone(),
             filters,
+            caller_filters,
             resolved,
             stream: None,
+            stream_messages: 0,
             resume_from: from_block_height,
             consecutive_failures: 0,
         };
@@ -140,33 +158,40 @@ impl StateTransitionSubscription {
                 Some(stream) => stream,
                 None => {
                     let stream = self.reopen().await?;
+                    self.stream_messages = 0;
                     self.stream.insert(stream)
                 }
             };
-            match stream.message().await {
+            let failure = match stream.message().await {
                 Ok(Some(response)) => {
-                    let resume_from = self.resume_from;
-                    let event = self.accept(response);
-                    // Only progress clears failures: a node that fails right after every
-                    // start must not be retried forever.
-                    if self.resume_from != resume_from {
+                    self.stream_messages += 1;
+                    // A stream that got past its opening checkpoint was healthy; a node that
+                    // fails right after every start is not retried forever.
+                    if self.stream_messages > 1 {
                         self.consecutive_failures = 0;
                     }
-                    if let Some(event) = event {
+                    if let Some(event) = self.accept(response) {
                         return Ok(event);
                     }
+                    continue;
                 }
-                // The node ended the stream (its stream lifetime elapsed): continue elsewhere.
-                Ok(None) => self.stream = None,
-                Err(status) if resumable(&status) => {
-                    tracing::debug!(code = ?status.code(), message = status.message(), "state transition stream broke; resuming");
-                    self.stream = None;
-                    self.consecutive_failures += 1;
-                    if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-                        return Err(status_error(status));
-                    }
-                }
+                // The node or a proxy ended the stream (its lifetime elapsed): continue.
+                Ok(None) => None,
+                Err(status) if resumable(&status) => Some(status),
                 Err(status) => return Err(status_error(status)),
+            };
+            if let Some(status) = &failure {
+                tracing::debug!(code = ?status.code(), message = status.message(), "state transition stream broke; resuming");
+            }
+            self.stream = None;
+            self.consecutive_failures += 1;
+            if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                return Err(match failure {
+                    Some(status) => status_error(status),
+                    None => Error::Generic(
+                        "state transition streams keep ending right after they start".to_string(),
+                    ),
+                });
             }
         }
     }
@@ -256,13 +281,21 @@ impl StateTransitionSubscription {
                     .unwrap_or_else(|_| PlatformVersion::latest());
                 let local_match = self.resolved.matches(&state_transition, platform_version);
                 self.rebind_contract(&state_transition, platform_version);
-                let Some(local_match) = local_match else {
+                let Some(mut local_match) = local_match else {
                     tracing::warn!(
                         height = matched.block_height,
                         "skipping a state transition the node sent that does not match the filters"
                     );
                     return None;
                 };
+                // Contract updates the subscription follows only for itself are not reported.
+                let caller_filters = self.caller_filters as u32;
+                local_match
+                    .matched_filters
+                    .retain(|index| *index < caller_filters);
+                if local_match.matched_filters.is_empty() {
+                    return None;
+                }
                 Some(SubscriptionEvent::StateTransition(Box::new(
                     StateTransitionEvent {
                         block_height: matched.block_height,
