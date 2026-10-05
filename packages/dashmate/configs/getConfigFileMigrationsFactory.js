@@ -1786,11 +1786,17 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // defaults (consume and serve snapshots).
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
+            const drive = options.platform?.drive;
+            // Nothing to add to a config without a Drive section to add it to.
+            if (!drive?.tenderdash || !drive?.abci) {
+              return;
+            }
+
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
 
-            options.platform.drive.tenderdash.stateSync = defaultConfig
+            drive.tenderdash.stateSync = defaultConfig
               .getStored('platform.drive.tenderdash.stateSync');
-            options.platform.drive.abci.stateSync = defaultConfig
+            drive.abci.stateSync = defaultConfig
               .getStored('platform.drive.abci.stateSync');
           });
 
