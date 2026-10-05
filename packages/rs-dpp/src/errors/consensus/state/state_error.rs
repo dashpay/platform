@@ -16,6 +16,7 @@ use crate::consensus::state::contract_moderation::{
     ContractModerationTeamNotSeatedError, DocumentNotSettledError,
     ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
     ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    ContractTeamMemberAddedAfterDocumentError,
     DocumentTypeNotDeletableOnceSettledError, SettledDeletionNotRestorableError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
@@ -81,6 +82,7 @@ use crate::consensus::state::document::referenced_contract_requirement_not_met_e
 use crate::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
+use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
@@ -709,6 +711,17 @@ pub enum StateError {
 
     #[error(transparent)]
     TokenShieldedPaymentNotRequiredError(TokenShieldedPaymentNotRequiredError),
+
+    // A member the leader added after a settled document was created proposes or approves its
+    // deletion, the type's rule admitting only members from before it
+    // (`deleteSettled.approversPredateDocument`, protocol version 14).
+    #[error(transparent)]
+    ContractTeamMemberAddedAfterDocumentError(ContractTeamMemberAddedAfterDocumentError),
+
+    // A document reference resolved by a document's id names an indexOnly document type, whose
+    // documents can not be fetched by id (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentTypeIndexOnlyError(ReferencedDocumentTypeIndexOnlyError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1530,7 +1543,7 @@ mod tests {
             )),
             166
         );
-        // Token shielded pools (protocol version 14): the tail of the enum.
+        // Token shielded pools (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
                 TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
@@ -1556,6 +1569,30 @@ mod tests {
                 )
             )),
             169
+        );
+        // The deletion of settled documents again (protocol version 14): who approves it.
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamMemberAddedAfterDocumentError(
+                ContractTeamMemberAddedAfterDocumentError::new(
+                    group_id,
+                    identity_id,
+                    2_000,
+                    identity_id,
+                    1_000
+                )
+            )),
+            170
+        );
+        // A document reference by id to an indexOnly document type (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeIndexOnlyError(
+                ReferencedDocumentTypeIndexOnlyError::new(
+                    identity_id,
+                    "like".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            171
         );
     }
 }

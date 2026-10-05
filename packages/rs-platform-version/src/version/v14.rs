@@ -1823,7 +1823,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// 67. **A seated team deletes a settled document together**: past a type's
 ///     `deleteWithin` window no moderator deletes a document alone (41116); the
-///     new `moderatorAbilities.deleteSettled: { leader, approvals }` (meta-schema
+///     new `moderatorAbilities.deleteSettled: { leader, approvals,
+///     approversPredateDocument }` (meta-schema
 ///     v3, `DocumentTypeV2::moderator_settled_deletion`, fixed with the type,
 ///     40212) lets the members of an elected contract's seated team delete it
 ///     once `approvals` of them approve, the leader among them when `leader` is
@@ -1834,7 +1835,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     declaration's `maxAddedModerators`), the upper bound checked at
 ///     registration only; a seated team whose charter elects fewer members,
 ///     and so holds fewer than the rule asks for, must have all it can hold
-///     approve.
+///     approve. Its `approversPredateDocument` (default `true` when `approvals`
+///     is above 1, which then needs `$createdAt` in `required` at
+///     registration, 10231) counts a member the leader added only for
+///     documents created after its addition (the `addedModerator`'s
+///     `$createdAt` earlier than the document's): a proposal or approval by a
+///     later one is refused, checked before an approval already given, and an
+///     approval that reads the team drops the approval of a member taken off
+///     and added again too late; the leader and the elected members always
+///     count.
 ///     `ContractUserModeration` gains two actions (appended), shaped like a
 ///     token group's action: `DeleteSettledDocument` proposes the deletion, kept
 ///     under the contract as a team action (other tree key `24`, `M` active and
@@ -1867,8 +1876,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (41207), `ContractTeamActionAlreadySignedError` (41208),
 ///     `SettledDeletionNotRestorableError` (41209): a deletion the team approved
 ///     is never restored, by the leader or any member,
-///     `ContractTeamActionAlreadyCompletedError` (41210) and
-///     `ContractTeamActionDocumentChangedError` (41211).
+///     `ContractTeamActionAlreadyCompletedError` (41210),
+///     `ContractTeamActionDocumentChangedError` (41211) and
+///     `ContractTeamMemberAddedAfterDocumentError` (41212).
 ///
 /// 68. **A preallocated index may be bound through `moderatedDocument`**:
 ///     `Index::preallocation_bindings`, in place, binds through a same-contract
@@ -1945,7 +1955,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     author whose documents can not be deleted can still take one back. Inert
 ///     before this version: the gate and the keyword exist only here.
 ///
-/// 73. **Every revealed nullifier is recorded once**: each action of an
+/// 75. **No reference by id to an indexOnly document type**: the contract
+///     reference validation 0 (`validate_data_contract_references`), in place,
+///     refuses a `permanentDocument`, `deletableDocument` or
+///     `moderatedDocument` reference without `findBy` (or with `inList`) whose
+///     referenced document type, in the declaring contract or another, is
+///     indexOnly (`ReferencedDocumentTypeIndexOnlyError`, 40146, StateError
+///     discriminant 171). Such a type's documents exist only as index entries,
+///     and Drive refuses to fetch one by id, so every write resolving the
+///     reference failed with an internal error, dropped unpaid. A `findBy`
+///     into one keeps its own refusal (40137, or 10231 in the declaring
+///     contract). Inert before this version: only parser generation 3 admits
+///     an indexOnly document type.
+///
+/// 76. **Every revealed nullifier is recorded once**: each action of an
 ///     outputs-only Orchard bundle reveals a nullifier (that of a dummy spend,
 ///     which becomes the new note's `rho`). The spends already recorded and
 ///     checked theirs; now `Shield`, `ShieldFromAssetLock` and
