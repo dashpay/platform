@@ -32,7 +32,6 @@ use dash_platform_queries::subscriptions::{
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformDeserializableUntrusted;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::{sleep, TransportError};
@@ -280,7 +279,7 @@ impl StateTransitionSubscription {
                 let platform_version = PlatformVersion::get(matched.protocol_version)
                     .unwrap_or_else(|_| PlatformVersion::latest());
                 let local_match = self.resolved.matches(&state_transition, platform_version);
-                self.rebind_contract(&state_transition, platform_version);
+                self.resolved.follow(&state_transition, platform_version);
                 let Some(mut local_match) = local_match else {
                     tracing::warn!(
                         height = matched.block_height,
@@ -308,26 +307,6 @@ impl StateTransitionSubscription {
                         matched_batch_positions: local_match.matched_batch_positions,
                     },
                 )))
-            }
-        }
-    }
-
-    /// Later transitions on an updated contract match against the version the update carries,
-    /// as the node does.
-    fn rebind_contract(
-        &mut self,
-        state_transition: &StateTransition,
-        platform_version: &PlatformVersion,
-    ) {
-        if let StateTransition::DataContractUpdate(update) = state_transition {
-            if let Ok(contract) = DataContract::try_from_platform_versioned(
-                update.data_contract().clone(),
-                false,
-                &mut vec![],
-                platform_version,
-            ) {
-                self.resolved
-                    .rebind_data_contract(Arc::new(contract), platform_version);
             }
         }
     }

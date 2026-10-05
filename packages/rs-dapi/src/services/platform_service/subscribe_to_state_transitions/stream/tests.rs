@@ -12,6 +12,7 @@ use base64::prelude::BASE64_STANDARD;
 use dash_platform_queries::subscriptions::{Role, StateTransitionFilter};
 use dpp::prelude::Identifier;
 use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::StateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use std::collections::BTreeMap;
