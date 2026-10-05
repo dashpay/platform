@@ -55,7 +55,11 @@ class SimplifiedMasternodeListDAPIAddressProvider {
     const network = networks.get(this.options.network);
     const isRegtest = Boolean(network && network.regtestEnabled);
 
-    const updatedAddresses = validMasternodeList.map((smlEntry) => {
+    // Each masternode's gateway port follows its position in the full list, so
+    // white-listing some masternodes does not move the others to other ports.
+    const gatewayPorts = new Map();
+
+    const updatedAddresses = validMasternodeList.map((smlEntry, index) => {
       let address = addressesByRegProTxHashes[smlEntry.proRegTxHash];
 
       if (!address) {
@@ -74,6 +78,8 @@ class SimplifiedMasternodeListDAPIAddressProvider {
         }
       }
 
+      gatewayPorts.set(address, 2443 + index * 100);
+
       return address;
     });
 
@@ -85,12 +91,12 @@ class SimplifiedMasternodeListDAPIAddressProvider {
     }
 
     if (isRegtest) {
-      filteredAddresses.forEach((address, index) => {
+      filteredAddresses.forEach((address) => {
         /* eslint-disable no-param-reassign */
         address.protocol = 'https';
         address.host = '127.0.0.1';
         address.allowSelfSignedCertificate = true;
-        address.port = 2443 + index * 100;
+        address.port = gatewayPorts.get(address);
         /* eslint-enable no-param-reassign */
       });
     }

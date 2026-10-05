@@ -268,6 +268,43 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       refreshedPool.forEach((address, index) => expect(address).to.equal(pool[index]));
     });
 
+    it('should keep a white-listed masternode on its own gateway port', async () => {
+      // White-list only the second masternode; dropping the first must not
+      // move it onto the first one's gateway port. The fixture masternodes
+      // share one IP, so give each its own to make the white list selective.
+      const masternodes = mnListDiffFixture.map((entry, index) => (
+        new SimplifiedMNListEntry({ ...entry, service: `172.16.0.${11 + index}:20001` })
+      ));
+      smlMock.getValidMasternodesList.returns(masternodes);
+
+      const listDAPIAddressProvider = new ListDAPIAddressProvider([], options);
+      smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
+        smlProviderMock,
+        listDAPIAddressProvider,
+        [new DAPIAddress(`172.16.0.12:${masternodes[1].platformHTTPPort}`)],
+        options,
+      );
+
+      const liveAddress = await smlDAPIAddressProvider.getLiveAddress();
+
+      expect(liveAddress.getProRegTxHash()).to.equal(masternodes[1].proRegTxHash);
+      expect(liveAddress.getHost()).to.equal('127.0.0.1');
+      expect(liveAddress.getPort()).to.equal(2543);
+
+      // A refresh resets the entry to its registered endpoint, so the white
+      // list still matches it and it keeps its port.
+      await smlDAPIAddressProvider.getLiveAddress();
+
+      expect(listDAPIAddressProvider.getAllAddresses().map((address) => address.toJSON()))
+        .to.deep.equal([{
+          host: '127.0.0.1',
+          port: 2543,
+          protocol: 'https',
+          allowSelfSignedCertificate: true,
+          proRegTxHash: masternodes[1].proRegTxHash,
+        }]);
+    });
+
     it('should rewrite a loopback masternode-list address to the self-signed local gateway', async () => {
       // A loopback host still needs the gateway's port and self-signed TLS.
       smlMock.getValidMasternodesList.returns([
