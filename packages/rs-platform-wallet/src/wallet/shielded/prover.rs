@@ -22,8 +22,11 @@
 //!
 //! Proof generation itself is CPU-bound for seconds.
 //! [`prove_on_blocking_thread`] waits for the prover to be ready and
-//! then runs the proving closure on the blocking pool, so the async
-//! workers stay free for networking and shielded sync.
+//! then hands the proving closure to a tokio blocking-pool thread, so the
+//! async workers stay free for networking and shielded sync. On Apple
+//! targets that blocking thread only waits: the closure itself runs on a
+//! dedicated user-initiated-QoS rayon pool (see `on_proving_threads`);
+//! elsewhere it runs on the blocking thread.
 
 use std::sync::OnceLock;
 
@@ -73,9 +76,15 @@ impl<K: Send + Sync + 'static> ProvingKeyCell<K> {
 
     /// The value, building it if necessary. Blocks the calling thread for
     /// the whole build (or until a build already running elsewhere
-    /// finishes). Never call this from an async context, nor from a
-    /// proving-pool thread while the value is unbuilt (that thread could
-    /// steal another job that waits on this same cell).
+    /// finishes).
+    ///
+    /// Invariant: never call this from an async context, and never from a
+    /// rayon worker (of the proving pool or the global pool) while the
+    /// value is unbuilt. Such a worker waiting inside the build can steal
+    /// another job that also waits on this cell from the same thread — a
+    /// deadlock. Proving code therefore always awaits
+    /// [`ShieldedProver::ready`] before entering the proving pool, and the
+    /// ready prover never touches this cell.
     pub(crate) fn get_or_build_blocking(&self) -> &K {
         if let Some(value) = self.value.get() {
             return value;
@@ -98,7 +107,10 @@ impl<K: Send + Sync + 'static> ProvingKeyCell<K> {
     /// [`get_or_build_blocking`](Self::get_or_build_blocking)).
     ///
     /// Errors only if the build panicked or the runtime is shutting down;
-    /// the cell then stays empty and a later call retries.
+    /// the cell then stays empty and a later call retries. Note the retry
+    /// granularity (`OnceCell::get_or_try_init` semantics): a persistently
+    /// failing build is re-attempted once by each waiter queued behind the
+    /// failed attempt, one after another.
     pub(crate) async fn prepare(&'static self) -> Result<&'static K, PlatformWalletError> {
         if let Some(value) = self.value.get() {
             return Ok(value);
@@ -151,11 +163,29 @@ impl<K: Send + Sync + 'static> ProvingKeyCell<K> {
 /// `ThreadPool::install` also makes halo2's nested rayon parallelism use
 /// this pool rather than the global one.
 ///
+/// Top-level jobs enter the pool one at a time. A single proof (or key
+/// build) already saturates the pool; letting two in at once would let a
+/// worker that is blocked in a `join` inside proof A steal proof B's whole
+/// top-level job and run it on A's stack, so A would finish only after
+/// A + B and both would share one 8 MiB stack. A call made from a pool
+/// thread is already on the proving threads and runs inline (taking the
+/// gate again would deadlock).
+///
 /// Elsewhere (and if the pool cannot be created) the work runs inline.
+///
+/// Private on purpose: callers must have the proving key built first (see
+/// [`ProvingKeyCell::get_or_build_blocking`]'s invariant), which
+/// [`prove_on_blocking_thread`] guarantees by awaiting `ready()`.
 fn on_proving_threads<T: Send>(work: impl FnOnce() -> T + Send) -> T {
     #[cfg(target_vendor = "apple")]
     {
+        if apple_qos::on_proving_pool_thread() {
+            return work();
+        }
         if let Some(pool) = apple_qos::proving_pool() {
+            let _one_job_at_a_time = apple_qos::PROVING_GATE
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             return pool.install(work);
         }
     }
@@ -164,7 +194,11 @@ fn on_proving_threads<T: Send>(work: impl FnOnce() -> T + Send) -> T {
 
 #[cfg(target_vendor = "apple")]
 mod apple_qos {
-    use std::sync::OnceLock;
+    use std::sync::{Mutex, OnceLock};
+
+    /// Serializes top-level jobs entering the proving pool (see
+    /// `on_proving_threads`).
+    pub(super) static PROVING_GATE: Mutex<()> = Mutex::new(());
 
     /// Same stack as the FFI runtime's workers (`WORKER_STACK_BYTES`).
     const PROVING_THREAD_STACK_BYTES: usize = 8 * 1024 * 1024;
@@ -328,6 +362,9 @@ where
     F: FnOnce(&P::Ready) -> T + Send + 'static,
     T: Send + 'static,
 {
+    // `ready()` first: the key must be built before any work enters the
+    // proving pool (a lazy build from a pool worker could deadlock, see
+    // `ProvingKeyCell::get_or_build_blocking`).
     let ready = prover.ready().await?;
     let work = move || on_proving_threads(move || prove(&ready));
     // Outside a tokio runtime there is no blocking pool: run synchronously.
@@ -348,7 +385,6 @@ where
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -382,6 +418,43 @@ mod tests {
         };
     }
 
+    /// A cell whose build blocks until the test sets `$release`, so tests
+    /// can observe "build in flight" deterministically instead of racing
+    /// wall-clock sleeps (CI machines are noisy). The deadline only turns
+    /// a broken test into a failure instead of a hang.
+    macro_rules! gated_cell {
+        ($cell:ident, $builds:ident, $release:ident) => {
+            static $builds: AtomicUsize = AtomicUsize::new(0);
+            static $release: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            static $cell: ProvingKeyCell<u64> = ProvingKeyCell::new(
+                || {
+                    $builds.fetch_add(1, Ordering::SeqCst);
+                    let deadline = Instant::now() + HANG_GUARD;
+                    while !$release.load(Ordering::SeqCst) {
+                        assert!(Instant::now() < deadline, "build never released");
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    42
+                },
+                run_inline,
+            );
+        };
+    }
+
+    /// Upper bound for "this must eventually happen"; never a latency
+    /// threshold.
+    const HANG_GUARD: Duration = Duration::from_secs(120);
+
+    /// Yield to the runtime until `cond` holds (bounded by `HANG_GUARD`).
+    async fn wait_until(cond: impl Fn() -> bool) {
+        let deadline = Instant::now() + HANG_GUARD;
+        while !cond() {
+            assert!(Instant::now() < deadline, "condition never became true");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_prepare_callers_share_one_build() {
         test_cell!(CELL, BUILDS, 200);
@@ -397,10 +470,8 @@ mod tests {
             ptrs.windows(2).all(|w| w[0] == w[1]),
             "all callers see one value"
         );
-        // A later call is free.
-        let start = Instant::now();
+        // A later call reuses the cached value.
         assert_eq!(*CELL.prepare().await.unwrap(), 42);
-        assert!(start.elapsed() < Duration::from_millis(50));
         assert_eq!(BUILDS.load(Ordering::SeqCst), 1);
     }
 
@@ -419,36 +490,61 @@ mod tests {
     /// The FFI runtime is multi-threaded, but the wallet may be driven
     /// from a current-thread runtime (tests, other hosts). There the
     /// single runtime thread must keep polling other tasks while the key
-    /// builds — i.e. the build must not run on the runtime thread.
+    /// builds — i.e. the build must not run on the runtime thread. If it
+    /// did, the runtime could never get back to this test body to release
+    /// the build, and the build's hang guard would fail the test.
     #[tokio::test(flavor = "current_thread")]
     async fn prepare_on_current_thread_runtime_keeps_runtime_responsive() {
-        test_cell!(CELL, BUILDS, 400);
-        let max_gap = heartbeat_max_gap_during(CELL.prepare()).await;
+        gated_cell!(CELL, BUILDS, RELEASE);
+        let prepare = tokio::spawn(CELL.prepare());
+        wait_until(|| BUILDS.load(Ordering::SeqCst) == 1).await;
+        // The build is in flight and the runtime thread is still free.
+        for _ in 0..3 {
+            tokio::task::yield_now().await;
+        }
+        RELEASE.store(true, Ordering::SeqCst);
+        assert_eq!(*prepare.await.unwrap().unwrap(), 42);
         assert_eq!(BUILDS.load(Ordering::SeqCst), 1);
-        assert!(
-            max_gap < Duration::from_millis(150),
-            "runtime thread was blocked for {max_gap:?} while the key built"
-        );
     }
 
+    /// A send that arrives while a warm-up is building joins that build:
+    /// it does not start another, and it completes as soon as the build
+    /// does (it only waits for the remainder).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn send_started_mid_warm_up_waits_only_for_the_remainder() {
-        const BUILD_MS: u64 = 600;
-        test_cell!(CELL, BUILDS, 600);
-        // Warm-up (fire and forget), then a "send" that arrives halfway.
+    async fn send_started_mid_warm_up_waits_for_the_in_flight_build() {
+        gated_cell!(CELL, BUILDS, RELEASE);
         let warm = tokio::spawn(CELL.prepare());
-        tokio::time::sleep(Duration::from_millis(BUILD_MS / 2)).await;
-        let start = Instant::now();
-        CELL.prepare().await.unwrap();
-        let waited = start.elapsed();
+        wait_until(|| BUILDS.load(Ordering::SeqCst) == 1).await;
+        let send = tokio::spawn(CELL.prepare());
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(!send.is_finished(), "the send must wait for the key");
+        let released = Instant::now();
+        RELEASE.store(true, Ordering::SeqCst);
+        assert_eq!(*send.await.unwrap().unwrap(), 42);
+        eprintln!(
+            "send completed {:?} after the in-flight build finished",
+            released.elapsed()
+        );
         warm.await.unwrap().unwrap();
         assert_eq!(BUILDS.load(Ordering::SeqCst), 1);
-        assert!(
-            waited < Duration::from_millis(BUILD_MS - 150),
-            "send waited {waited:?}; expected roughly the remaining {}ms",
-            BUILD_MS / 2
-        );
-        eprintln!("send mid-warm-up waited {waited:?} of a {BUILD_MS}ms build");
+    }
+
+    /// Aborting the waiter that started the build must not start a second
+    /// build: the next waiter re-runs the async initializer, whose blocking
+    /// job just waits on the `OnceLock` behind the first one.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn aborted_prepare_waiter_does_not_cause_a_second_build() {
+        gated_cell!(CELL, BUILDS, RELEASE);
+        let first = tokio::spawn(CELL.prepare());
+        wait_until(|| BUILDS.load(Ordering::SeqCst) == 1).await;
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+        let second = tokio::spawn(CELL.prepare());
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        RELEASE.store(true, Ordering::SeqCst);
+        assert_eq!(*second.await.unwrap().unwrap(), 42);
+        assert_eq!(*CELL.prepare().await.unwrap(), 42);
+        assert_eq!(BUILDS.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -526,32 +622,28 @@ mod tests {
         assert_eq!(BUILDS.load(Ordering::SeqCst), 1);
     }
 
-    /// Measures the heartbeat starvation the old inline proving caused on
-    /// a current-thread runtime versus proving through
-    /// `prove_on_blocking_thread`. "Proving" is a 300 ms CPU-bound sleep.
+    /// On a current-thread runtime, the runtime keeps running other tasks
+    /// while a proof is in progress: the "proof" only finishes once a task
+    /// on the same runtime has ticked. Inline proving (the pre-change
+    /// behavior) would block the runtime thread, the ticker would never
+    /// run, and the proof would report the timeout. No latency thresholds;
+    /// see the ignored real-proof test for measurements.
     #[tokio::test(flavor = "current_thread")]
-    async fn proving_off_runtime_keeps_heartbeat_responsive() {
+    async fn proving_off_runtime_keeps_runtime_responsive() {
         test_cell!(CELL, BUILDS, 0);
         CELL.prepare().await.unwrap();
         let prover = CountingProver(&CELL);
-        let work = Duration::from_millis(300);
-
-        let inline_gap = heartbeat_max_gap_during(async {
-            std::thread::sleep(work); // the pre-change behavior
-        })
-        .await;
-        let offloaded_gap = heartbeat_max_gap_during(async {
-            prove_on_blocking_thread(&prover, move |_| std::thread::sleep(work))
-                .await
-                .unwrap()
-        })
-        .await;
-        eprintln!(
-            "heartbeat max gap: inline proving {inline_gap:?}, \
-             prove_on_blocking_thread {offloaded_gap:?}"
-        );
-        assert!(inline_gap >= work - Duration::from_millis(20));
-        assert!(offloaded_gap < Duration::from_millis(100));
+        let (ticked_tx, ticked_rx) = std::sync::mpsc::channel::<()>();
+        let ticker = async move {
+            for _ in 0..3 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            ticked_tx.send(()).unwrap();
+        };
+        let proof =
+            prove_on_blocking_thread(&prover, move |_| ticked_rx.recv_timeout(HANG_GUARD).is_ok());
+        let ((), runtime_ticked_during_proof) = tokio::join!(ticker, proof);
+        assert!(runtime_ticked_during_proof.unwrap());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -563,31 +655,6 @@ mod tests {
         })
         .await;
         assert!(joined.unwrap_err().is_panic());
-    }
-
-    /// Run `fut` while a 10 ms heartbeat ticks on the same runtime, and
-    /// return the largest observed gap between heartbeats.
-    async fn heartbeat_max_gap_during<F: std::future::Future>(fut: F) -> Duration {
-        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let stop_hb = stop.clone();
-        let heartbeat = tokio::spawn(async move {
-            let mut last = Instant::now();
-            let mut max_gap = Duration::ZERO;
-            while !stop_hb.load(Ordering::SeqCst) {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                let now = Instant::now();
-                max_gap = max_gap.max(now - last);
-                last = now;
-            }
-            max_gap
-        });
-        // Let the heartbeat start before the work does.
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        fut.await;
-        // Let one more tick observe the end of any blocking stretch.
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        stop.store(true, Ordering::SeqCst);
-        heartbeat.await.unwrap()
     }
 
     /// Real proving key: concurrent `prepare` callers share one build and
@@ -654,5 +721,31 @@ mod tests {
         .unwrap();
         assert_eq!(observed.0, USER_INITIATED);
         assert_eq!(observed.1, [USER_INITIATED, USER_INITIATED]);
+    }
+
+    /// Top-level jobs enter the Apple proving pool one at a time, and a
+    /// nested call from a pool thread runs inline instead of deadlocking
+    /// on the gate.
+    #[cfg(target_vendor = "apple")]
+    #[test]
+    fn proving_pool_runs_one_top_level_job_at_a_time() {
+        static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+        static MAX_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+        let job = || {
+            on_proving_threads(|| {
+                let now = IN_FLIGHT.fetch_add(1, Ordering::SeqCst) + 1;
+                MAX_IN_FLIGHT.fetch_max(now, Ordering::SeqCst);
+                // Nested parallel work, as halo2 does, plus a re-entrant call.
+                let (a, b) = rayon::join(|| 1, || on_proving_threads(|| 2));
+                std::thread::sleep(Duration::from_millis(20));
+                IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+                a + b
+            })
+        };
+        let threads: Vec<_> = (0..4).map(|_| std::thread::spawn(job)).collect();
+        for t in threads {
+            assert_eq!(t.join().unwrap(), 3);
+        }
+        assert_eq!(MAX_IN_FLIGHT.load(Ordering::SeqCst), 1);
     }
 }

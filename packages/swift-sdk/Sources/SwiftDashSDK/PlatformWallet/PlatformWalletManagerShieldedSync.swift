@@ -585,7 +585,7 @@ extension PlatformWalletManager {
     /// arrives mid-build is not left waiting on a throttled build.
     /// Idempotent and safe to call from any thread. Independent of any wallet — the cache
     /// is process-global on the Rust side.
-    public static func warmUpShieldedProver() async {
+    nonisolated public static func warmUpShieldedProver() async {
         await Task.detached(priority: .background) {
             platform_wallet_shielded_warm_up_prover()
         }.value
@@ -608,7 +608,12 @@ extension PlatformWalletManager {
     ///
     /// Throws only if the build failed (a panic on the Rust side or
     /// runtime shutdown); a later call retries.
-    public static func prepareShieldedProver() async throws {
+    ///
+    /// Ignores task cancellation: the build cannot be interrupted, so a
+    /// cancelled caller still resumes only once the key is ready (or the
+    /// build failed). `nonisolated`, so awaiting it from the main actor
+    /// does not hop back to the main actor for the wait.
+    nonisolated public static func prepareShieldedProver() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
