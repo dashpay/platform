@@ -811,6 +811,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
+        self.create_funded_asset_lock_proof_observed(
+            amount_duffs,
+            account_index,
+            funding_type,
+            identity_index,
+            signer,
+            |_| {},
+        )
+        .await
+    }
+
+    /// [`Self::create_funded_asset_lock_proof`], calling `on_broadcast` with
+    /// the lock's outpoint as soon as the transaction is broadcast — before
+    /// the proof wait — so a caller can start work that needs only the
+    /// outpoint while the InstantSend lock is awaited. Not called when the
+    /// build or the broadcast fails.
+    pub(crate) async fn create_funded_asset_lock_proof_observed<S: ExtendedPubKeySigner>(
+        &self,
+        amount_duffs: u64,
+        account_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+        on_broadcast: impl FnOnce(OutPoint) + Send,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             AssetLockBuildAmount::Exact(amount_duffs),
             &ASSET_LOCK_FUNDING_SOURCES,
@@ -818,6 +843,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             signer,
+            on_broadcast,
         )
         .await
     }
@@ -836,6 +862,30 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
+        self.create_funded_asset_lock_proof_with_funding_observed(
+            amount,
+            funding_account,
+            funding_type,
+            identity_index,
+            signer,
+            |_| {},
+        )
+        .await
+    }
+
+    /// [`Self::create_funded_asset_lock_proof_with_funding`] with the
+    /// `on_broadcast` hook of [`Self::create_funded_asset_lock_proof_observed`].
+    pub(crate) async fn create_funded_asset_lock_proof_with_funding_observed<
+        S: ExtendedPubKeySigner,
+    >(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+        on_broadcast: impl FnOnce(OutPoint) + Send,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             amount,
             &[AccountTypePreference::from(funding_account)],
@@ -843,6 +893,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             signer,
+            on_broadcast,
         )
         .await
     }
@@ -850,6 +901,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Source-list form of [`Self::create_funded_asset_lock_proof`] — same
     /// build → broadcast → proof pipeline with the pooled funding and amount
     /// semantics of [`Self::build_asset_lock_transaction_with_funding`].
+    #[allow(clippy::too_many_arguments)]
     async fn create_funded_asset_lock_proof_pooled<S: ExtendedPubKeySigner>(
         &self,
         amount: AssetLockBuildAmount,
@@ -858,6 +910,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
+        on_broadcast: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         let (path, out_point) = self
             .broadcast_funded_asset_lock_with_funding(
@@ -869,6 +922,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 signer,
             )
             .await?;
+        on_broadcast(out_point);
         let proof = self
             .wait_for_funded_asset_lock_proof(&out_point, source_index)
             .await?;
