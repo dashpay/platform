@@ -18,6 +18,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 };
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::query::filter::{
@@ -119,16 +120,6 @@ impl ResolvedFilters {
         Ok(Self { filters })
     }
 
-    /// Number of filters.
-    pub fn len(&self) -> usize {
-        self.filters.len()
-    }
-
-    /// Whether there are no filters; never true for resolved filters.
-    pub fn is_empty(&self) -> bool {
-        self.filters.is_empty()
-    }
-
     /// Which filters `state_transition` matches, or `None` when it matches none.
     /// `platform_version` is the version of the block the transition executed in.
     pub fn matches(
@@ -178,6 +169,26 @@ impl ResolvedFilters {
             matched_filters,
             matched_batch_positions: matched_batch_positions.into_iter().collect(),
         })
+    }
+
+    /// Take note of a transition the stream has passed, matched or not: after a data contract
+    /// update, the document filters on that contract match against the version it carries.
+    /// Both the node and the client call this, so they keep matching against the same version.
+    pub fn follow(
+        &mut self,
+        state_transition: &StateTransition,
+        platform_version: &PlatformVersion,
+    ) {
+        if let StateTransition::DataContractUpdate(update) = state_transition {
+            if let Ok(contract) = DataContract::try_from_platform_versioned(
+                update.data_contract().clone(),
+                false,
+                &mut vec![],
+                platform_version,
+            ) {
+                self.rebind_data_contract(Arc::new(contract), platform_version);
+            }
+        }
     }
 
     /// Rebind the document filters on `data_contract` to this version of it, as carried by a

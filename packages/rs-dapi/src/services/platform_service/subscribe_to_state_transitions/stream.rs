@@ -13,9 +13,6 @@ use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::{
 };
 use dapi_grpc::tonic::Status;
 use dash_platform_queries::subscriptions::ResolvedFilters;
-use dpp::data_contract::DataContract;
-use dpp::state_transition::StateTransition;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::version::PlatformVersion;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -390,8 +387,7 @@ impl Scan {
         }
     }
 
-    /// The block's transitions that match, in block order. A data contract update rebinds
-    /// the filters on that contract for the transitions after it.
+    /// The block's transitions that match, in block order.
     fn match_block(&mut self, block: &CommittedBlock) -> Result<Vec<StateTransitionMatch>, Stop> {
         let height = block.height;
         let platform_version = PlatformVersion::get(block.protocol_version).map_err(|_| {
@@ -424,17 +420,7 @@ impl Scan {
                     matched_batch_positions: filter_match.matched_batch_positions,
                 });
             }
-            if let StateTransition::DataContractUpdate(update) = state_transition
-                && let Ok(contract) = DataContract::try_from_platform_versioned(
-                    update.data_contract().clone(),
-                    false,
-                    &mut vec![],
-                    platform_version,
-                )
-            {
-                self.filters
-                    .rebind_data_contract(Arc::new(contract), platform_version);
-            }
+            self.filters.follow(state_transition, platform_version);
         }
         Ok(matches)
     }
