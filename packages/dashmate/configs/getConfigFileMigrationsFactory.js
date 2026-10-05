@@ -1777,7 +1777,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '4.2.0-dev.6': (configFile) => {
+      '5.1.0': (configFile) => {
+        // Keyed at the release this ships in: a config stamped by any earlier
+        // release (5.0.x included) must pass through it.
         // State sync options are required by the schema now. Pulled from the
         // default config matching each config's name or group, so the local
         // preset gets its disables while everything else gets the base
