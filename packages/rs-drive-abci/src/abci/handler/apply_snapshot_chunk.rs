@@ -3,9 +3,9 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::snapshot::{
-    clear_restore_sentinel_best_effort, pack_nested_chunk_ids, unpack_nested_chunk_ids,
-    wipe_drive_for_restore, MAX_STATE_SYNC_CHUNK_ID_SIZE, MAX_STATE_SYNC_CHUNK_SIZE,
-    STATE_SYNC_CHUNK_IDS_PER_REQUEST,
+    chunk_exceeds_op_budget, clear_restore_sentinel_best_effort, pack_nested_chunk_ids,
+    unpack_nested_chunk_ids, wipe_drive_for_restore, MAX_STATE_SYNC_CHUNK_ID_SIZE,
+    MAX_STATE_SYNC_CHUNK_OPS, MAX_STATE_SYNC_CHUNK_SIZE, STATE_SYNC_CHUNK_IDS_PER_REQUEST,
 };
 use crate::rpc::core::CoreRPCLike;
 use std::sync::atomic::Ordering;
@@ -161,6 +161,26 @@ where
             return Ok(proto::ResponseApplySnapshotChunk {
                 result: response_apply_snapshot_chunk::Result::RetrySnapshot.into(),
                 refetch_chunks: vec![],
+                reject_senders,
+                next_chunks: vec![],
+            });
+        }
+
+        // The byte cap above does not bound what grovedb allocates while decoding: it
+        // collects every proof operation of a local chunk into a `Vec<Op>` before it
+        // counts them, so a 16 MiB chunk of one-byte opcodes would cost gigabytes. Count
+        // them here first, one at a time. Nothing has been decoded into the session yet,
+        // so it stays usable: ban the sender and refetch this chunk elsewhere.
+        if chunk_exceeds_op_budget(&request.chunk) {
+            tracing::warn!(
+                chunk_id = hex::encode(&request.chunk_id),
+                sender = request.sender,
+                limit = MAX_STATE_SYNC_CHUNK_OPS,
+                "[state_sync] apply_snapshot_chunk chunk decodes to too many proof operations, rejecting the sender and requesting refetch",
+            );
+            return Ok(proto::ResponseApplySnapshotChunk {
+                result: response_apply_snapshot_chunk::Result::Retry.into(),
+                refetch_chunks: vec![request.chunk_id],
                 reject_senders,
                 next_chunks: vec![],
             });
@@ -520,6 +540,45 @@ mod tests {
         );
         assert!(response.refetch_chunks.is_empty());
         assert_eq!(response.reject_senders, vec!["fat-peer".to_string()]);
+    }
+
+    /// A chunk inside the byte cap can still decode to millions of one-byte proof
+    /// operations, which grovedb would collect into memory before refusing. It must be
+    /// refused before grovedb sees it, without killing the session.
+    #[test]
+    fn apply_snapshot_chunk_refuses_a_chunk_of_too_many_proof_operations() {
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let app = FullAbciApplication::new(&platform);
+        let target_app_hash = offer_a_snapshot(&app);
+
+        // One global chunk holding one local chunk of `Parent` opcodes (0x10), just over
+        // the bound and far inside the byte cap.
+        let ops = vec![0x10u8; MAX_STATE_SYNC_CHUNK_OPS + 1];
+        let global_chunk = pack_nested_chunk_ids(&[ops]).expect("pack local chunk");
+        let chunk = pack_nested_chunk_ids(&[global_chunk]).expect("pack global chunk");
+        assert!(chunk.len() < MAX_STATE_SYNC_CHUNK_SIZE);
+
+        let response = apply_snapshot_chunk(
+            &app,
+            proto::RequestApplySnapshotChunk {
+                chunk_id: target_app_hash.clone(),
+                chunk,
+                sender: "op-flooder".to_string(),
+            },
+        )
+        .expect("an op-flooding chunk must not abort the ABCI request");
+        assert_eq!(
+            response.result,
+            i32::from(response_apply_snapshot_chunk::Result::Retry)
+        );
+        assert_eq!(response.refetch_chunks, vec![target_app_hash]);
+        assert_eq!(response.reject_senders, vec!["op-flooder".to_string()]);
+        assert!(
+            app.snapshot_fetching_session.read().unwrap().is_some(),
+            "the session must survive a refused chunk"
+        );
     }
 
     #[test]

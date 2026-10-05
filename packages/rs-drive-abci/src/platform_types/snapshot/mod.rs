@@ -161,6 +161,86 @@ pub const MAX_STATE_SYNC_CHUNK_SIZE: usize = 16 * 1024 * 1024;
 /// prefixes plus short traversal instructions, so well-formed ids stay far below this.
 pub const MAX_STATE_SYNC_CHUNK_ID_SIZE: usize = 64 * 1024;
 
+/// The most proof operations a single Merk chunk may decode to, mirroring
+/// `grovedb_merk::proofs::tree::MAX_PROOF_OPS` at the pinned grovedb.
+///
+/// grovedb's restorer refuses a chunk with more operations than this (`execute` enforces
+/// `MAX_PROOF_OPS` while verifying it), so no honest chunk exceeds it. But grovedb only
+/// counts after `decode_vec_ops` has collected every operation into a `Vec<Op>` and
+/// `verify_chunk` has cloned it: a 16 MiB chunk of one-byte `Parent` opcodes is about 16
+/// million enum slots, gigabytes of memory, before anything is refused. See
+/// [`chunk_exceeds_op_budget`], which applies this bound without allocating.
+pub const MAX_STATE_SYNC_CHUNK_OPS: usize = 50_000;
+
+/// How many proof operations `bytes` decodes to, stopping at the first decoding error
+/// (where `decode_vec_ops` stops too) or once the count exceeds `limit`. Decodes one
+/// operation at a time and keeps none of them.
+fn count_proof_ops_up_to(bytes: &[u8], limit: usize) -> usize {
+    let mut count = 0usize;
+    for op in drive::grovedb_query::proofs::Decoder::new(bytes) {
+        if op.is_err() {
+            break;
+        }
+        count += 1;
+        if count > limit {
+            break;
+        }
+    }
+    count
+}
+
+/// Whether `section` has the layout of grovedb's indexed-tree header:
+/// `primary_root_hash(32) ‖ n(1) ‖ (tag(1) ‖ hash(32))*n` with `n` in `1..=3`.
+fn looks_like_indexed_header(section: &[u8]) -> bool {
+    section.len() >= 33
+        && (1..=3).contains(&section[32])
+        && section.len() == 33 + 33 * section[32] as usize
+}
+
+/// Whether a peer-supplied snapshot chunk would make grovedb decode more than
+/// [`MAX_STATE_SYNC_CHUNK_OPS`] proof operations from any one local chunk.
+///
+/// Mirrors how grovedb's `MultiStateSyncSession::apply_chunk` takes the payload apart
+/// (it is the same for the root chunk and every later one): the payload is a packed
+/// list of global chunks, each global chunk a packed list of local chunks. A Merk local
+/// chunk is decoded as proof operations whole; an indexed tree's header page is a
+/// packed `[header, root_chunk_ops]` pair whose second section is decoded. Both are
+/// counted. Wherever grovedb's own unpacking fails it fails before decoding anything,
+/// so a payload this cannot take apart the same way needs no bound.
+///
+/// No honest chunk is refused: grovedb rejects any chunk over the bound anyway, and the
+/// other payloads cannot reach it. A non-Merk page starts with a packed section count
+/// below 2^24, so its first byte is 0x00, which is not a proof opcode; a Merk chunk
+/// cannot start with that byte either, so it never takes apart into a header pair.
+pub fn chunk_exceeds_op_budget(chunk: &[u8]) -> bool {
+    let Ok(global_chunks) = unpack_nested_chunk_ids(chunk) else {
+        return false;
+    };
+    for global_chunk in global_chunks {
+        let Ok(local_chunks) = unpack_nested_chunk_ids(&global_chunk) else {
+            continue;
+        };
+        for local_chunk in local_chunks {
+            if count_proof_ops_up_to(&local_chunk, MAX_STATE_SYNC_CHUNK_OPS)
+                > MAX_STATE_SYNC_CHUNK_OPS
+            {
+                return true;
+            }
+            if let Ok(sections) = unpack_nested_chunk_ids(&local_chunk) {
+                if let [header, root_chunk_ops] = sections.as_slice() {
+                    if looks_like_indexed_header(header)
+                        && count_proof_ops_up_to(root_chunk_ops, MAX_STATE_SYNC_CHUNK_OPS)
+                            > MAX_STATE_SYNC_CHUNK_OPS
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Keep each load request bounded to one global and one local chunk. GroveDB generates
 /// the complete response before returning it, so a request containing several IDs can
 /// exceed the ABCI receive limit before the caller has a chance to inspect the result.
@@ -498,6 +578,45 @@ fn remove_expired_pins(pins: &mut BTreeMap<u64, ServingPin>, now: Instant) -> Ve
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn chunk_op_budget_counts_merk_chunks_and_indexed_header_pages() {
+        let pack = |items: &[Vec<u8>]| pack_nested_chunk_ids(items).expect("pack");
+        let wrap = |local: Vec<u8>| pack(&[pack(&[local])]);
+        let header = {
+            let mut header = vec![0u8; 32];
+            header.push(1);
+            header.extend([0u8; 33]);
+            header
+        };
+
+        // At the bound: what grovedb itself still accepts
+        assert!(!chunk_exceeds_op_budget(&wrap(vec![
+            0x10;
+            MAX_STATE_SYNC_CHUNK_OPS
+        ])));
+        // Over it, as a Merk chunk and as an indexed header page's root chunk
+        assert!(chunk_exceeds_op_budget(&wrap(vec![
+            0x10;
+            MAX_STATE_SYNC_CHUNK_OPS
+                + 1
+        ])));
+        assert!(chunk_exceeds_op_budget(&wrap(pack(&[
+            header.clone(),
+            vec![0x10; MAX_STATE_SYNC_CHUNK_OPS + 1]
+        ]))));
+        assert!(!chunk_exceeds_op_budget(&wrap(pack(&[
+            header,
+            vec![0x10; MAX_STATE_SYNC_CHUNK_OPS]
+        ]))));
+        // Operations after a decoding error are never decoded, by grovedb either
+        let mut stops_early = vec![0x10; 10];
+        stops_early.push(0x00);
+        stops_early.extend(vec![0x10; MAX_STATE_SYNC_CHUNK_OPS + 1]);
+        assert!(!chunk_exceeds_op_budget(&wrap(stops_early)));
+        // Payloads grovedb cannot take apart are refused by it before any decoding
+        assert!(!chunk_exceeds_op_budget(&[0x10; 64]));
+    }
+
     use super::*;
     use drive::grovedb::GroveDb;
 
