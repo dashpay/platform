@@ -2402,8 +2402,13 @@ pub unsafe extern "C" fn platform_wallet_resolve_shielded_tip(
     let mut identity_id = [0u8; 32];
     let mut address = [0u8; 43];
     let result = catch_query_panic("shielded tip resolution", || {
-        let result = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
+        // Clone under the registry guard, then release it: the resolution makes
+        // DPNS and profile network requests, and holding the global wallet
+        // registry lock across them would block handle creation and teardown
+        // for unrelated wallets.
+        let identity =
+            PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+        let result = identity.map(|identity| {
             block_on_worker(async move {
                 maybe_inject_tip_worker_panic();
                 identity.dashpay().resolve_shielded_tip(&username).await

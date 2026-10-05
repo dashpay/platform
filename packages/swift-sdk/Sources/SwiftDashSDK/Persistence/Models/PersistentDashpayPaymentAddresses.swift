@@ -52,7 +52,10 @@ public final class PersistentDashpayPaymentAddresses {
         if existing == nil { context.insert(row) }
     }
 
-    static func removeOwned(in context: ModelContext, networkRaw: UInt32, ownerIdentityId: Data) throws {
+    /// Delete every address row an identity owns (its own profile's and its
+    /// cached contacts'). Rows are keyed by id, not by relationship, so any
+    /// path that deletes an identity outside the persistence handler must call this.
+    public static func removeOwned(in context: ModelContext, networkRaw: UInt32, ownerIdentityId: Data) throws {
         try context.delete(model: PersistentDashpayPaymentAddresses.self, where: #Predicate {
             $0.networkRaw == networkRaw && $0.ownerIdentityId == ownerIdentityId
         })

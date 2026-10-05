@@ -231,3 +231,38 @@ fn unknown_stamp_is_rejected_by_the_check_constraint() {
         .unwrap_err();
     assert!(err.to_string().contains("CHECK"), "{err}");
 }
+
+/// Literal bytes of a pre-V019 `profile_blob`, written out by hand from the
+/// `bincode::serde` standard encoding of the six-field record (no struct
+/// declaration involved), so a reorder of the frozen legacy record cannot
+/// regenerate the fixture and its decoder in step. Every field holds a
+/// distinct value, so a positional shift misreads at least one of them.
+#[test]
+fn literal_pre_v019_profile_bytes_decode_positionally() {
+    let mut bytes = vec![0x01, 0x02, b'A', b'l']; // display_name: Some("Al")
+    bytes.extend([0x01, 0x01, b'b']); // bio: Some("b")
+    bytes.push(0x00); // avatar_url: None
+    bytes.push(0x01); // avatar_hash: Some([0x11; 32])
+    bytes.extend([0x11; 32]);
+    bytes.push(0x01); // avatar_fingerprint: Some([0x22; 8])
+    bytes.extend([0x22; 8]);
+    bytes.extend([0x01, 0x01, b'm']); // public_message: Some("m")
+
+    let decoded = decode_profile(&bytes, 0).unwrap();
+    assert_eq!(
+        decoded,
+        DashPayProfile {
+            display_name: Some("Al".into()),
+            bio: Some("b".into()),
+            avatar_url: None,
+            avatar_hash: Some([0x11; 32]),
+            avatar_fingerprint: Some([0x22; 8]),
+            public_message: Some("m".into()),
+            ..Default::default()
+        }
+    );
+    // The legacy writer the migration fixture uses produces the same bytes.
+    assert_eq!(encode_legacy_profile(&decoded).unwrap(), bytes);
+    // Read as the current shape, the same row is not a valid record.
+    assert_ne!(decode_profile(&bytes, 1).ok(), Some(decoded));
+}

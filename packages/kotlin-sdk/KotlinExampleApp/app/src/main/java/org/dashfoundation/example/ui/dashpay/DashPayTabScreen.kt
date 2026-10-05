@@ -329,16 +329,23 @@ fun DashPayTabScreen(navController: NavHostController) {
                         // The tip account follows the live identity's derivation index, not
                         // Room's non-null `identityIndex`: its 0 is a placeholder for an identity
                         // with no recoverable index and would alias identity 0's tip pool.
-                        val tipAccountResult by produceState<Result<Int>?>(
+                        // produceState keeps its last value when its keys change, so each result
+                        // is tagged with the inputs it was resolved for and a result for another
+                        // identity or wallet is never offered while the new lookup runs.
+                        val tipAccountKey = listOf(managed, tipManager, identityHex)
+                        val taggedTipAccount by produceState<Pair<List<Any?>, Result<Int>>?>(
                             initialValue = null, managed, tipManager, identityHex,
                         ) {
-                            value = runCatching {
+                            value = tipAccountKey to runCatching {
                                 val index = requireNotNull(managed) { "Wallet is not loaded" }
                                     .identityIndex(identity.identityId)
                                     ?: error("Tip account requires a recoverable identity index")
                                 requireNotNull(tipManager).shieldedTipAccountIndex(index)
                             }
                         }
+                        val tipAccountResult = taggedTipAccount
+                            ?.takeIf { (key, _) -> key == tipAccountKey }
+                            ?.second
                         val tipAccount = tipAccountResult?.getOrNull()
                         val tipSubmission = tipWalletId?.let {
                             container.shieldedTipSubmissions.forWallet(network.ffiValue, it.toHex())
