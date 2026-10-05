@@ -93,6 +93,9 @@ const TRANSPORT_MARKERS: &[&str] = &[
     "connection reset",
     "broken pipe",
     "transport error",
+    // A gateway answered in plain HTTP (a 500 from a load balancer whose
+    // upstream is down): no node's gRPC status.
+    "grpc-status header missing",
 ];
 
 /// What a single Core node said when handed a signed transaction.
@@ -122,7 +125,11 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
         && TRANSPORT_MARKERS
             .iter()
             .any(|marker| lowered.contains(marker));
+    // rs-dapi-client's own report that it could not open a channel to the
+    // node (TLS, URI): the request never left.
+    let never_opened = lowered.contains("channel creation failed");
     if broken_stream
+        || never_opened
         || matches!(
             code,
             Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled
@@ -1184,6 +1191,14 @@ mod tests {
             (
                 Code::Internal,
                 "h2 protocol error: error reading a body from connection",
+            ),
+            (
+                Code::Unknown,
+                "grpc-status header missing, mapped from HTTP status code 500",
+            ),
+            (
+                Code::InvalidArgument,
+                "Channel creation failed: invalid uri",
             ),
             (Code::Unknown, "connection closed before message completed"),
         ] {
