@@ -2438,7 +2438,10 @@ mod tests {
         #[test]
         fn should_refuse_a_version_0_at_protocol_version_14_without_touching_its_asset_lock() {
             let platform_version = PlatformVersion::latest();
-            assert_eq!(platform_version.protocol_version, 14);
+            assert!(
+                platform_version.protocol_version >= 14,
+                "version 0 is only refused from protocol version 14 on"
+            );
             let platform = setup_platform();
             let mut rng = StdRng::seed_from_u64(44);
             let (lock, key) = create_asset_lock_proof_with_key(&mut rng);
