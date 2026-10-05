@@ -85,6 +85,7 @@ These endpoints provide real-time streaming data from the Dash network, includin
 **Main streaming endpoints:**
 - [`subscribeToBlockHeadersWithChainLocks`](./streams/subscribeToBlockHeadersWithChainLocks.md) - Stream block headers and chain locks
 - [`subscribeToTransactionsWithProofs`](./streams/subscribeToTransactionsWithProofs.md) - Stream transactions matching a bloom filter
+- [`subscribeToStateTransitions`](./streams/subscribeToStateTransitions.md) - Stream committed Platform state transitions matching document, address, identity, token or contract filters
 
 ### 4. JSON-RPC Endpoints
 
