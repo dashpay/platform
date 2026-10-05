@@ -1700,6 +1700,11 @@ impl Actor {
                         roots.insert(*txid);
                     }
                 }
+                // Nothing left to retry (settled since): no pass, and the
+                // wait stands.
+                if roots.is_empty() {
+                    return;
+                }
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
@@ -1707,7 +1712,7 @@ impl Actor {
                 entry.wait_until = None;
                 if anchored {
                     self.queue_followed_pass(wallet_id, height);
-                } else if self.enabled && !roots.is_empty() {
+                } else if self.enabled {
                     // Forced passes only: force the roots again, starting no
                     // window at a height the wallet may not follow.
                     let pending = entry.pending.get_or_insert_with(PendingPass::default);
@@ -3887,11 +3892,12 @@ mod tests {
         });
         let read = rig.actor.jobs.join_next_with_id().await.expect("read");
         rig.actor.joined(read); // the probe is out
-        rig.handle(sync_complete(101));
+        rig.handle(sync_complete(101)); // queued behind the running pass
         let probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
-        rig.actor.joined(probed); // no answer: the completion's pass starts
-        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
-        rig.actor.joined(read);
+        // No answer: the root is not due again at 101, so the run's end
+        // drops the queued pass (its height is below the wait).
+        rig.actor.joined(probed);
+        assert!(rig.actor.wallets[&wallet()].pending.is_none());
         assert_eq!(probe.calls(), 1, "nothing due again at 101");
 
         rig.settle().await; // the retry
@@ -3951,10 +3957,7 @@ mod tests {
             assert!(rig.actor.wallets[&wallet()].retry_series.is_none());
             let calls = probe.calls();
             rig.settle().await; // the old timer fires
-            assert!(
-                probe.calls() <= calls + 1,
-                "at most the reset's own pass, not the old retry's"
-            );
+            assert_eq!(probe.calls(), calls, "the old retry does nothing");
         }
     }
 

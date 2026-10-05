@@ -294,8 +294,13 @@ pub(crate) async fn probe_with(
                     );
                 }
             }
-            NodeVerdict::Unknown { reason } | NodeVerdict::Unreachable { reason } => {
-                last_other = reason;
+            NodeVerdict::Unknown { reason } => last_other = reason,
+            // A node's answer stays the reason over a later "no node
+            // reached".
+            NodeVerdict::Unreachable { reason } => {
+                if !answered {
+                    last_other = reason;
+                }
             }
         }
     }
@@ -976,6 +981,34 @@ mod tests {
 
         let (_, known) = lookup_reply(&txid, reply(consensus::serialize(&held)));
         assert_eq!(known, in_mempool());
+    }
+
+    /// A node's answer stays the reason when later submissions reach no
+    /// node: the conflict is what the log should show, not the outage.
+    #[tokio::test]
+    async fn should_keep_a_nodes_answer_as_the_reason_over_later_unreachable_ones() {
+        let unreachable = || NodeVerdict::Unreachable {
+            reason: "no available addresses".to_string(),
+        };
+        let nodes = ScriptedNodes::new(vec![
+            (
+                Some("a"),
+                NodeVerdict::Unknown {
+                    reason: "txn-mempool-conflict".to_string(),
+                },
+            ),
+            (None, unreachable()),
+            (None, unreachable()),
+            (None, unreachable()),
+        ]);
+
+        let outcome = probe_with(&nodes, &transaction()).await;
+
+        assert!(outcome.answered);
+        let ProbeVerdict::Unresolved { reason } = outcome.verdict else {
+            panic!("unresolved");
+        };
+        assert!(reason.contains("txn-mempool-conflict"), "{reason}");
     }
 
     /// The live log's case: every address banned, so the SDK fails with
