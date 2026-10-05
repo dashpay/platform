@@ -28,6 +28,7 @@ use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use drive::query::{DriveDocumentQuery, SubQueryResult};
 use drive::verify::RootHash;
 
@@ -42,6 +43,17 @@ pub struct CompositeDocuments {
     /// count per derived value that has a count tree (a value without
     /// an entry counts zero).
     pub sub_results: Vec<SubQueryResult>,
+    /// One list per sub-query, in request order: for a by-id join off a
+    /// `deletableDocument` property, the derived ids that have NO
+    /// document, in first-appearance order, each one a PROVEN absence;
+    /// empty for every other sub-query.
+    pub sub_result_missing_ids: Vec<Vec<dpp::identifier::Identifier>>,
+    /// One list per sub-query, in request order: for a by-id join off a
+    /// `moderatedDocument` property, the derived ids whose document the
+    /// contract's moderators removed, each with its PROVEN removal record,
+    /// in first-appearance order; empty for every other sub-query. There a
+    /// derived id with neither a document nor a record is an invalid proof.
+    pub sub_result_removals: Vec<Vec<ContractDocumentRemovalEntry>>,
 }
 
 /// Verify a composite query's single merged proof and bind its root
@@ -76,6 +88,8 @@ pub fn verify_composite_documents_proof(
         CompositeDocuments {
             page_documents: result.page_documents,
             sub_results: result.sub_results,
+            sub_result_missing_ids: result.sub_result_missing_ids,
+            sub_result_removals: result.sub_result_removals,
         },
     ))
 }

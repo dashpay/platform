@@ -21,17 +21,33 @@ impl DriveDocumentQuery<'_> {
     /// the AUTHORITATIVE full pass verifies the whole composition —
     /// grovedb enforces the inner page's lifted per-instance limit and
     /// range completeness — with the proven outer documents required
-    /// to match the proven inner join values exactly. A missing
-    /// referenced document is an invalid proof (`refersTo:
-    /// permanentDocument` targets cannot dangle), and so is an extra
-    /// one; a proof covering only the inner half (an old node serving
-    /// the plain query) fails the full pass whenever the inner page is
-    /// non-empty.
+    /// to match the proven inner join values. Under a `refersTo:
+    /// permanentDocument` join property a missing referenced document
+    /// is an invalid proof (such a target cannot dangle); under a
+    /// `refersTo: deletableDocument` one it is a proven absence, left
+    /// out of the outer half, which grovedb's coverage of every derived
+    /// `$id` keeps a prover from faking. An extra outer document is
+    /// always an invalid proof; a proof covering only the inner half (an
+    /// old node serving the plain query) fails the full pass whenever
+    /// the inner page is non-empty.
     ///
     /// One proof means one root by construction; the caller combines
     /// the returned root hash with the surrounding tenderdash
     /// signature — see `rs-drive-proof-verifier` for the canonical
     /// composition.
+    ///
+    /// # Parameters
+    ///
+    /// * `proof`: The merged proof, as `query_chained_documents_with_proof` produced it.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((RootHash, ChainedDocumentsResult))` with the proof's root hash, the proven inner
+    ///   projections, the proven outer documents and the join values proven to have none.
+    /// * `Err(Error)` when the method version is unknown, the query is not a valid chained
+    ///   query, or the proof is invalid: it fails verification, lacks a referenced document
+    ///   that cannot be deleted, or carries an outer document no join value asked for.
     pub fn verify_chained_documents_proof(
         &self,
         proof: &[u8],

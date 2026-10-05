@@ -98,15 +98,15 @@ Formats 0–2 have no stamp; documents read from them deserialize with `contract
 
 ### `$id` (32 bytes)
 
-The document's unique identifier, written as raw bytes. This is a 256-bit value derived from the contract ID, owner ID, document type name, and entropy via double SHA-256.
+The document's unique identifier, written as raw bytes. This is a 256-bit value derived from the contract ID, owner ID, document type name, entropy and (protocol v14+) the identity contract nonce of the create transition via double SHA-256.
 
 ### `$ownerId` (32 bytes)
 
 The identity that currently owns the document, written as raw bytes.
 
-### `$creatorId` (v2 only, conditional)
+### `$creatorId` (v2 and v3, conditional)
 
-Present only in serialization version 2, and only if the document type supports transfers (`documents_transferable`) or trading (`trade_mode != None`).
+Present only in serialization versions 2 and 3, and only if the document type supports transfers (`documents_transferable`) or trading (`trade_mode != None`).
 
 ```text
 0x01  [32 bytes creatorId]    — creator ID present
@@ -134,12 +134,18 @@ Time-related fields use a compact encoding with a **bitfield** to indicate which
 | 6 (0x0040) | `$createdAtCoreBlockHeight` |
 | 7 (0x0080) | `$updatedAtCoreBlockHeight` |
 | 8 (0x0100) | `$transferredAtCoreBlockHeight` |
+| 9 (0x0200) | `$moderatedAt` (version 3) |
+| 10 (0x0400) | `$moderatedBy` (version 3) |
 
 **Data**: For each bit that is set (in the order above), the corresponding value is appended:
 
 - `$createdAt`, `$updatedAt`, `$transferredAt`: **8 bytes big-endian u64** — milliseconds since Unix epoch
 - `$createdAtBlockHeight`, `$updatedAtBlockHeight`, `$transferredAtBlockHeight`: **8 bytes big-endian u64** — platform block height
 - `$createdAtCoreBlockHeight`, `$updatedAtCoreBlockHeight`, `$transferredAtCoreBlockHeight`: **4 bytes big-endian u32** — core chain block height
+- `$moderatedAt`: **8 bytes big-endian u64**, milliseconds since Unix epoch
+- `$moderatedBy`: **32 bytes**, the moderator's identity id
+
+Bits 9 and 10 are read only in version 3, the format of protocol version 14. They are set only on a document a moderator has written the fields only moderators write of (see [System Properties](../contract-keywords/system-properties.md#moderatedat-and-moderatedby)), so every other document's bitfield is as it was before the bits had a meaning. An earlier format has no place for them: serializing a stamped document in format 0, 1 or 2 is refused rather than dropping the stamp.
 
 For example, if a document has `$createdAt` and `$updatedAt` set, the bitfield would be `0x0003`, followed by 16 bytes (8 for each timestamp).
 
@@ -184,8 +190,8 @@ All numeric values use **big-endian** byte order.
 | `byteArray` (variable size) | varint length prefix + raw bytes |
 | `identifier` | 32 bytes raw |
 | `date` | 8 bytes big-endian f64 (when optional: `0xff` prefix + 8 bytes) |
-| `array` | varint element count + each element encoded in sequence |
-| `object` | Nested fields serialized recursively in their schema position order |
+| `array` (typed array, protocol v14) | varint element count + each element encoded exactly as a required property of the element's type (rows above): an identifier element is 32 raw bytes, an integer element takes the width its bounds give it, a fixed-size byte array element is raw, a string or variable-size byte array element has a varint length prefix. Elements never carry a presence byte |
+| `object` | Nested fields serialized recursively, in the order the schema lists them (not sorted by `position`) |
 
 **Note on date types**: User-property `date` fields are encoded as **f64** (8 bytes). System timestamps (`$createdAt`, `$updatedAt`, `$transferredAt`) are **u64** milliseconds. Both are 8 bytes big-endian but use different numeric representations.
 
@@ -284,4 +290,6 @@ See `packages/rs-scripts/README.md` for full usage details.
 
 6. **ByteArray encoding depends on size constraints.** Fixed-size byte arrays (where `minItems == maxItems` in the schema) have no length prefix. Variable-size byte arrays have a varint length prefix. Check the schema to know which encoding is used.
 
-7. **In version 3, the same document type can produce different property layouts.** A property annotated with `requiredSince` is presence-flagged in documents stamped below the annotation and raw in documents stamped at or above it. Two version-3 documents of the same type may therefore differ in layout — always read the stamp varint and resolve each property's requiredness against it before decoding the properties section.
+7. **A typed array's element width comes from its `items` schema.** Each element is laid out as a required property of the element's type, so an integer element bounded `0`..`100` is 1 byte and an unbounded one 8, and a fixed-size byte array or identifier element has no length prefix. Parse the `items` schema exactly as a property schema to know the width, including the contract's `sizedIntegerTypes` setting.
+
+8. **In version 3, the same document type can produce different property layouts.** A property annotated with `requiredSince` is presence-flagged in documents stamped below the annotation and raw in documents stamped at or above it. Two version-3 documents of the same type may therefore differ in layout — always read the stamp varint and resolve each property's requiredness against it before decoding the properties section.

@@ -12,7 +12,10 @@
 //! reference refusal, and by-id routing when the page and a join share
 //! the primary tree.
 
+use super::chained_query_e2e_tests::{removal_of, remove_post, with_moderated_posts};
+use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use crate::error::Error;
+use crate::query::moderated_join::removals_path_query;
 use crate::query::{
     BindingSource, DriveDocumentQuery, DriveSubQuery, InternalClauses, OrderClause,
     SubQueryBinding, SubQueryKind, SubQueryResult, WhereClause, WhereOperator, MAX_SUB_QUERIES,
@@ -32,6 +35,10 @@ use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 const FEED_CONTRACT: &str = "tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json";
+/// The feed contract with `post` deletable and every reference to it a
+/// `refersTo: deletableDocument` one.
+const DELETABLE_POSTS_FEED_CONTRACT: &str =
+    "tests/supporting_files/contract/yappr-feed/yappr-feed-deletable-posts-contract.json";
 const DASHPAY_CONTRACT: &str = "tests/supporting_files/contract/dashpay/dashpay-contract.json";
 
 const POST_A: [u8; 32] = [0xA1; 32];
@@ -50,10 +57,14 @@ fn platform_version() -> &'static PlatformVersion {
 /// A drive with the feed contract and the dashpay contract (whose
 /// `profile` type, keyed by `$ownerId`, plays the cross-contract lookup).
 fn setup() -> (crate::drive::Drive, DataContract, DataContract) {
+    setup_with_feed(FEED_CONTRACT)
+}
+
+fn setup_with_feed(feed_contract: &str) -> (crate::drive::Drive, DataContract, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
     let mut contracts = Vec::new();
-    for path in [FEED_CONTRACT, DASHPAY_CONTRACT] {
+    for path in [feed_contract, DASHPAY_CONTRACT] {
         let contract =
             json_document_to_contract(path, false, pv).expect("expected to parse the contract");
         drive
@@ -812,6 +823,9 @@ fn should_answer_the_feed_composition_with_proof_parity() {
         );
     }
     assert_eq!(verified.sub_results, materialized.sub_results);
+    for result in [&materialized, &verified] {
+        assert!(result.sub_result_missing_ids.iter().all(Vec::is_empty));
+    }
 }
 
 /// The viewer's own likes ride the same proof as an indexOnly lookup
@@ -1903,4 +1917,456 @@ fn should_materialize_the_page_under_the_proofs_budget_past_an_empty_index_branc
         .expect("verifies");
     assert_eq!(verified.page_documents, materialized.page_documents);
     assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// Five quoted posts in key order (tagged "btc", so they stay off the
+/// "dash" page) and the five page posts quoting them.
+const QUOTED: [[u8; 32]; 5] = [[0x10; 32], [0x20; 32], [0x30; 32], [0x40; 32], [0x50; 32]];
+const QUOTING: [[u8; 32]; 5] = [[0x91; 32], [0x92; 32], [0x93; 32], [0x94; 32], [0x95; 32]];
+
+/// Inserts every quoted post except `missing`, and every quoting post.
+fn setup_quoting_page(missing: &[[u8; 32]]) -> (crate::drive::Drive, DataContract) {
+    let (drive, feed, _dashpay) = setup();
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        if !missing.contains(quoted) {
+            insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        }
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    (drive, feed)
+}
+
+fn quoted_posts_join(feed: &DataContract) -> DriveDocumentQuery<'_> {
+    page_by_hashtag(feed, "dash", Some(10)).with_sub_queries(vec![bound(
+        feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )])
+}
+
+/// The by-id join's counterpart of the chained soundness pair, half
+/// one: with a quoted post NOT in state, the honest merged proof still
+/// satisfies grovedb's verification of the full derived query, so the
+/// absence is proven and only the assembly refuses the result today.
+#[test]
+fn should_prove_the_absence_of_a_missing_joined_document() {
+    let pv = platform_version();
+    let mut cases: Vec<Vec<[u8; 32]>> = QUOTED.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[1], QUOTED[2]]);
+    cases.push(QUOTED.to_vec());
+
+    for missing in cases {
+        let (drive, feed) = setup_quoting_page(&missing);
+        let query = quoted_posts_join(&feed);
+        let (proof, page_documents) = drive
+            .query_composite_documents_with_proof(&query, pv)
+            .expect("the proof generates whether or not the quoted posts exist");
+        let derived = query
+            .derive_all(&page_documents, |_| None)
+            .expect("derived values");
+        assert_eq!(derived[0].len(), QUOTED.len());
+
+        let (page, sub_path_queries, removal_path_queries) = query
+            .proof_path_queries(&derived, pv)
+            .expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(
+            &page,
+            &sub_path_queries,
+            &removal_path_queries,
+            pv,
+        )
+        .expect("merged query");
+        let (_root, trios) =
+            grovedb::GroveDb::verify_query(&proof, &merged, &pv.drive.grove_version)
+                .expect("grovedb verifies the merged query with the missing ids in it");
+        let proved_quoted: Vec<([u8; 32], bool)> = trios
+            .into_iter()
+            .filter_map(|(_, key, element)| {
+                let id: [u8; 32] = key.as_slice().try_into().ok()?;
+                QUOTED.contains(&id).then_some((id, element.is_some()))
+            })
+            .collect();
+        let present: Vec<[u8; 32]> = proved_quoted
+            .iter()
+            .filter(|(_, is_present)| *is_present)
+            .map(|(id, _)| *id)
+            .collect();
+        let expected: Vec<[u8; 32]> = QUOTED
+            .iter()
+            .filter(|post| !missing.contains(post))
+            .copied()
+            .collect();
+        assert_eq!(present, expected, "missing {missing:?}");
+
+        let refused = query.verify_composite_documents_proof(&proof, pv);
+        assert!(
+            matches!(refused, Err(Error::Proof(_))),
+            "the assembly is what refuses a dangling join today, got {refused:?}"
+        );
+    }
+}
+
+/// Half two: withholding an EXISTING quoted post's id from the join
+/// component leaves the proof without coverage for a key the verifier's
+/// re-derived query demands; grovedb refuses it before any assembly
+/// rule.
+#[test]
+fn should_reject_a_proof_withholding_an_existing_joined_document() {
+    let pv = platform_version();
+    let (drive, feed) = setup_quoting_page(&[]);
+    let query = quoted_posts_join(&feed);
+    let (_honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let honest = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+
+    let mut cases: Vec<Vec<[u8; 32]>> = QUOTED.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[1], QUOTED[2]]);
+    cases.push(vec![QUOTED[0], QUOTED[4]]);
+
+    for withheld in cases {
+        let mut served = honest.clone();
+        served[0].retain(|id| !withheld.contains(&id.to_buffer()));
+        let (page, sub_path_queries, removal_path_queries) =
+            query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(
+            &page,
+            &sub_path_queries,
+            &removal_path_queries,
+            pv,
+        )
+        .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "withholding {:?} must be refused by grovedb, got {refused:?}",
+            withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
+        );
+    }
+}
+
+fn delete_post(drive: &crate::drive::Drive, contract: &DataContract, id: [u8; 32]) {
+    drive
+        .delete_document_for_contract(
+            Identifier::from(id),
+            contract,
+            "post",
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("expected to delete the post");
+}
+
+/// A by-id join off a `deletableDocument` property leaves a deleted
+/// quoted post out instead of failing the composition, and a later
+/// binding derives from the quoted posts that are still there. The same
+/// state under a `permanentDocument` join is refused
+/// (`should_refuse_a_dangling_reference`).
+#[test]
+fn should_leave_out_a_deleted_document_of_a_deletable_document_join() {
+    let (drive, feed, dashpay) = setup_with_feed(DELETABLE_POSTS_FEED_CONTRACT);
+    seed_feed(&drive, &feed, &dashpay);
+    // A fourth `dash` post quoting A, so the join derives [D, A].
+    insert_post(&drive, &feed, [0xF6; 32], OWNER_2, "dash", Some(POST_A), 5);
+    delete_post(&drive, &feed, POST_D);
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, None);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("a deleted quoted post does not fail a deletableDocument join")
+        .result;
+    let (proof, _page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the proof verifies with the deleted quoted post proven absent");
+
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_A, POST_B, POST_C, [0xF6; 32]]
+    );
+    assert_eq!(
+        ids(materialized.sub_results[QUOTED_POSTS].documents()),
+        vec![POST_A],
+        "D was deleted, A is still there"
+    );
+    assert_eq!(
+        owner_ids(materialized.sub_results[QUOTED_AUTHOR_PROFILES].documents()),
+        vec![OWNER_1],
+        "derived from the quoted posts that are still in state"
+    );
+    let mut expected_missing = vec![Vec::new(); query.sub_queries.len()];
+    expected_missing[QUOTED_POSTS] = vec![Identifier::from(POST_D)];
+    assert_eq!(
+        materialized.sub_result_missing_ids, expected_missing,
+        "only the by-id join reports, and it reports the deleted post"
+    );
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+    assert_eq!(
+        verified.sub_result_missing_ids,
+        materialized.sub_result_missing_ids
+    );
+}
+
+/// What makes leaving a deleted document out safe, on the composite
+/// surface: a prover still cannot pass an EXISTING quoted post off as
+/// deleted. No assembly rule stands behind this one, only grovedb.
+#[test]
+fn should_reject_a_proof_withholding_an_existing_document_of_a_deletable_document_join() {
+    let pv = platform_version();
+    let (drive, feed, _dashpay) = setup_with_feed(DELETABLE_POSTS_FEED_CONTRACT);
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    // One quoted post really is deleted, so honest holes and withheld
+    // posts mix.
+    delete_post(&drive, &feed, QUOTED[3]);
+    let query = quoted_posts_join(&feed);
+    let (honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let honest = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+    assert_eq!(honest[0].len(), QUOTED.len());
+
+    let existing: Vec<[u8; 32]> = QUOTED
+        .iter()
+        .filter(|post| **post != QUOTED[3])
+        .copied()
+        .collect();
+    let mut cases: Vec<Vec<[u8; 32]>> = existing.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[2], QUOTED[4]]);
+
+    for withheld in cases {
+        let mut served = honest.clone();
+        served[0].retain(|id| !withheld.contains(&id.to_buffer()));
+        let (page, sub_path_queries, removal_path_queries) =
+            query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(
+            &page,
+            &sub_path_queries,
+            &removal_path_queries,
+            pv,
+        )
+        .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "withholding {:?} must be refused by grovedb, got {refused:?}",
+            withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
+        );
+    }
+
+    // The honest proof of the same state verifies, one quoted post short.
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&honest_proof, pv)
+        .expect("the honest proof verifies");
+    assert_eq!(ids(verified.sub_results[0].documents()), existing);
+    assert_eq!(
+        verified.sub_result_missing_ids,
+        vec![vec![Identifier::from(QUOTED[3])]]
+    );
+}
+
+/// The feed contract with `post` removed by its moderators only, on the record, and every
+/// reference to it a `refersTo: moderatedDocument` one, applied beside dashpay.
+fn setup_with_moderated_posts() -> (crate::drive::Drive, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let feed = with_moderated_posts(
+        json_document_to_contract(FEED_CONTRACT, false, pv).expect("expected the feed contract"),
+    );
+    drive
+        .apply_contract(
+            &feed,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the moderated feed contract");
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    (drive, feed)
+}
+
+/// A by-id join off a `moderatedDocument` property reports a quoted post a moderator removed
+/// by its removal record, proven beside the join, and leaves nothing missing; the server and
+/// the verifier agree. A quoted post gone without a record is refused by both.
+#[test]
+fn should_report_a_removed_document_of_a_moderated_document_join_by_its_record() {
+    let pv = platform_version();
+    let (drive, feed) = setup_with_moderated_posts();
+    remove_post(&drive, &feed, QUOTED[1], Some(removal_of(QUOTED[1])));
+    remove_post(&drive, &feed, QUOTED[3], Some(removal_of(QUOTED[3])));
+    let query = quoted_posts_join(&feed);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("a removed quoted post does not fail a moderatedDocument join")
+        .result;
+    let (proof, _page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the proof verifies with the removed posts' records proven");
+
+    // The page lists the quoting posts newest first, so the join derives the quoted posts in
+    // that order, and reports the removed ones in it
+    let derived = query
+        .derive_all(&materialized.page_documents, |_| None)
+        .expect("derived values");
+    let kept: Vec<[u8; 32]> = derived[0]
+        .iter()
+        .map(|id| id.to_buffer())
+        .filter(|id| *id != QUOTED[1] && *id != QUOTED[3])
+        .collect();
+    let removed: Vec<ContractDocumentRemovalEntry> = derived[0]
+        .iter()
+        .map(|id| id.to_buffer())
+        .filter(|id| *id == QUOTED[1] || *id == QUOTED[3])
+        .map(|id| ContractDocumentRemovalEntry {
+            document_id: Identifier::from(id),
+            removal: removal_of(id),
+        })
+        .collect();
+    assert_eq!(ids(materialized.sub_results[0].documents()), kept);
+    assert_eq!(
+        materialized.sub_result_missing_ids,
+        vec![Vec::<Identifier>::new()]
+    );
+    assert_eq!(materialized.sub_result_removals, vec![removed]);
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+    assert_eq!(
+        verified.sub_result_missing_ids,
+        materialized.sub_result_missing_ids
+    );
+    assert_eq!(
+        verified.sub_result_removals,
+        materialized.sub_result_removals
+    );
+
+    // Gone without a record: refused on both sides
+    remove_post(&drive, &feed, QUOTED[4], None);
+    let refused = drive.query_composite_documents(&query, None, None, pv);
+    assert!(
+        matches!(refused, Err(Error::Proof(_))),
+        "the server refuses the unrecorded removal, got {refused:?}"
+    );
+    let (proof, _page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the proof generates: only its assembly refuses");
+    let refused = query.verify_composite_documents_proof(&proof, pv);
+    assert!(
+        matches!(refused, Err(Error::Proof(_))),
+        "the verifier refuses the unrecorded removal, got {refused:?}"
+    );
+}
+
+/// Withholding the records component, or one record from it, leaves the proof without
+/// coverage for a key the verifier's re-derived query demands: grovedb refuses it, so a prover
+/// can not pass a removed post off as silently missing.
+#[test]
+fn should_reject_a_proof_withholding_a_removal_record_of_a_moderated_document_join() {
+    let pv = platform_version();
+    let (drive, feed) = setup_with_moderated_posts();
+    remove_post(&drive, &feed, QUOTED[2], Some(removal_of(QUOTED[2])));
+    let query = quoted_posts_join(&feed);
+    let (_honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let derived = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+    let (page, sub_path_queries, removal_path_queries) = query
+        .proof_path_queries(&derived, pv)
+        .expect("path queries");
+    assert_eq!(
+        removal_path_queries.len(),
+        1,
+        "one records component per type"
+    );
+
+    let without_one = vec![removals_path_query(
+        feed.id(),
+        "post",
+        &derived[0]
+            .iter()
+            .filter(|id| id.to_buffer() != QUOTED[2])
+            .copied()
+            .collect::<Vec<_>>(),
+        removal_path_queries[0].query.query.left_to_right,
+    )];
+    for (case, removals) in [
+        ("one record withheld", without_one),
+        ("every record withheld", Vec::new()),
+    ] {
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, &removals, pv)
+            .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "{case}: must be refused by grovedb, got {refused:?}"
+        );
+    }
 }

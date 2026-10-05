@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::{document, ProtocolError};
@@ -63,6 +64,7 @@ impl<'de> Deserialize<'de> for DocumentReplaceTransitionV0 {
             "$type",
             "$dataContractId",
             "$tokenPaymentInfo",
+            "$actionFeeAgreement",
         ];
 
         let mut map: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;
@@ -196,6 +198,12 @@ impl DocumentFromReplaceTransitionV0 for Document {
             data,
         } = value;
 
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
+        let mut data = data.clone();
+        document_type.fill_generated_properties(&mut data, platform_version)?;
+
         let id = base.id();
 
         let requires_updated_at = document_type
@@ -237,7 +245,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 contract_version: None,
                 id,
                 owner_id,
-                properties: data.clone(),
+                properties: data,
                 revision: Some(*revision),
                 created_at,
                 updated_at,
@@ -249,6 +257,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -276,8 +286,13 @@ impl DocumentFromReplaceTransitionV0 for Document {
         let DocumentReplaceTransitionV0 {
             base,
             revision,
-            data,
+            mut data,
         } = value;
+
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
+        document_type.fill_generated_properties(&mut data, platform_version)?;
 
         let id = base.id();
 
@@ -331,6 +346,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

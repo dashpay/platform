@@ -15,6 +15,7 @@ default = [
   "wallet-utils-contract",
   "token-history-contract",
   "keywords-contract",
+  "moderation-charters-contract",
   "mocks",
 ]
 
@@ -51,6 +52,10 @@ keywords-contract = [
   "dash-sdk/keywords-contract",
   "rs-sdk-trusted-context-provider/keywords-contract",
 ]
+moderation-charters-contract = [
+  "dash-sdk/moderation-charters-contract",
+  "rs-sdk-trusted-context-provider/moderation-charters-contract",
+]
 
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
@@ -61,6 +66,8 @@ dash-sdk = { path = "../rs-sdk", features = [
 ], default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
+  # the storage refund of `documentCreateCost`
+  "fee-distribution",
 ] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.17" }

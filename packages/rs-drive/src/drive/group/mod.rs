@@ -9,6 +9,8 @@ pub mod paths;
 #[cfg(feature = "server")]
 mod prove;
 mod queries;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(test)]
 #[cfg(feature = "server")]

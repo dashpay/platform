@@ -22,7 +22,9 @@ use bincode::{Decode, DecodeUntrusted, Encode};
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("Core fee per byte {core_fee_per_byte:?} must be part of fibonacci sequence and not less than {min_core_fee_per_byte:?}")]
+#[error(
+    "Core fee per byte {core_fee_per_byte:?} must be a non-zero Fibonacci number, not less than {min_core_fee_per_byte:?}, and within the active protocol bounds"
+)]
 #[platform_serialize(unversioned)]
 pub struct InvalidCreditWithdrawalTransitionCoreFeeError {
     /*

@@ -225,14 +225,16 @@ method, never the versioned implementation directly.
 The layout is the versioning contract made physical, and three rules follow
 from it:
 
-- **One directory per generation, always.** A behaviour change to a versioned
-  method is a new `v1/` (or `v2/`, ...) directory with its own `mod.rs`, plus
-  a new match arm. It is never an edit inside `v0/`. That includes edits that
-  look harmless: threading a new parameter through `v0`, adding an
-  `if platform_version.protocol_version >= 14` inside it, or computing a
-  version-table gate that is always false for old versions. A shipped `vN/`
-  stays byte-identical to what shipped, so a reviewer never has to prove that
-  an in-place diff is inert for old blocks.
+- **One directory per generation.** A behaviour change to a versioned method
+  is a new `v1/` (or `v2/`, ...) directory with its own `mod.rs`, plus a new
+  match arm. An edit inside a shipped `v0/` is allowed only when it cannot
+  modify consensus at any protocol version that selects `v0/`, because the
+  code it adds is unreachable there by construction or its output is
+  identical; the edited lines say why, and the pull request description
+  carries an "In-place changes to shipped generations" section (see the
+  [coding conventions](../contributing/coding-conventions.md)). An
+  `if platform_version.protocol_version >= 14` inside `v0/` is not that: it is
+  a runtime check the reader has to trust, so it gets a generation.
 - **Inside a generation, a capability is a constant fact, not a check.** If
   `v1` admits a new keyword, `v1` admits it unconditionally
   (`Index::try_from_value_map(map, true)`). The decision of whether the
@@ -684,6 +686,27 @@ stage of the validation pipeline reading the constants in
 `SHIELDED_POOL_INITIAL_PROTOCOL_VERSION = 12`). A transition submitted before
 its initial version is rejected with a `StateTransitionNotActiveError` rather
 than an unknown-version dispatch error.
+
+Genesis content is the other place a `protocol_version` comparison is the
+intended shape. `create_genesis_state` runs once per chain, under the protocol
+version the chain is born at. Mainnet and testnet were born at protocol
+version 1 and replay generation 0, which stays frozen. Generation 1 is selected
+only for chains born at protocol version 9 or later, and every such chain is a
+devnet, a local network or a test suite that is created again for each
+release, so no live node reproduces its genesis. When a protocol version adds
+a system contract or other genesis content, it goes into
+`create_genesis_state_v1` behind `if platform_version.protocol_version >= N`
+(document history at 13, app connect and moderation charters at 14), and a
+chain that already exists gets the same content from its
+`transition_to_version_N` rung. A new genesis generation would add code for no
+replay benefit. Never edit generation 0.
+
+The Drive helpers that build the initial state structure follow the same rule
+for the same reason: they run once, at chain creation, under the chain's
+initial protocol version, and a chain that already exists gets the same trees
+from its upgrade rung. `add_initial_withdrawal_state_structure_operations`
+adds the withdrawal sum trees behind `>= 4` and the credit history trees behind
+`>= 14`; replaying mainnet's genesis at protocol version 1 takes neither branch.
 
 ## Rules
 

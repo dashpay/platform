@@ -8,7 +8,8 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadTrackedMasternodesFn, PersistDpnsNameStatesFn,
+    FFIPersister, FreeTrackedMasternodesFn, LoadIdentityBalanceBlockTimeFn,
+    LoadTrackedMasternodesFn, PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
     PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
@@ -267,6 +268,14 @@ unsafe fn persistence_extension_callbacks(
         wallet_changeset_utxo_verdicts: slot!(
             on_persist_wallet_changeset_utxo_verdicts_fn,
             PersistWalletChangesetUtxoVerdictsFn
+        ),
+        persist_identity_balance_block_time: slot!(
+            on_persist_identity_balance_block_time_fn,
+            PersistIdentityBalanceBlockTimeFn
+        ),
+        load_identity_balance_block_time: slot!(
+            on_load_identity_balance_block_time_fn,
+            LoadIdentityBalanceBlockTimeFn
         ),
     }
 }
@@ -1252,6 +1261,49 @@ mod tests {
         assert!(read_unknown.wallet_changeset_sweeps.is_none());
         assert!(read_unknown.wallet_changeset_chain_lock_height.is_none());
         assert!(read_unknown.wallet_changeset_utxo_verdicts.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_identity_balance_watermark_slots_independently() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const crate::types::BlockTime,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut crate::types::BlockTime,
+        ) -> i32 {
+            0
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_identity_balance_block_time_fn: Some(persist),
+            on_load_identity_balance_block_time_fn: Some(load),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_identity_balance_block_time.is_some());
+        assert!(parsed.load_identity_balance_block_time.is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_identity_balance_block_time_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_identity_balance_block_time.is_some());
+        assert!(parsed.load_identity_balance_block_time.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_identity_balance_block_time_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_identity_balance_block_time.is_none());
+        assert!(parsed.load_identity_balance_block_time.is_none());
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height

@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::BinaryData;
@@ -12,10 +11,14 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::transfer::TransferToIdentity;
+use dash_sdk::platform::transition::transfer::{
+    TransferToIdentity, TransferToIdentityWithMetadata,
+};
 
 use crate::error::PlatformWalletError;
+use crate::BlockTime;
 
+use super::signing_key::credit_signing_key;
 use super::*;
 
 // Local borrowed-signer adapter — mirrors the one in `dpns.rs`. Lets
@@ -96,12 +99,12 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*from_id))?
         };
 
-        let (sender_balance, _receiver_balance) = identity
-            .transfer_credits(
+        let ((sender_balance, _receiver_balance), metadata) = identity
+            .transfer_credits_with_metadata(
                 &self.sdk,
                 *to_id,
                 amount,
-                None, // signing_transfer_key_to_use
+                Some(credit_signing_key(&identity, None, signer, false)?),
                 SignerRef(signer),
                 settings,
             )
@@ -128,14 +131,11 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(from_id) {
-                managed.identity.set_balance(sender_balance);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %from_id,
-                        error = %e,
-                        "Failed to persist identity balance update after transfer (external signer)"
-                    );
-                }
+                managed.persist_confirmed_balance(
+                    sender_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
             }
         }
 
@@ -158,12 +158,14 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<(u64, u64), dash_sdk::Error> {
+        let signing_key =
+            credit_signing_key(identity, signing_transfer_key_to_use, &signer, false)?;
         identity
             .transfer_credits(
                 &self.sdk,
                 to_id,
                 amount,
-                signing_transfer_key_to_use,
+                Some(signing_key),
                 signer,
                 settings,
             )

@@ -1,5 +1,7 @@
 use super::DataContractsVersions;
-use crate::drive::contract::paths::{all_contracts_global_root_path, CONTRACT_VERSION_KEY};
+use crate::drive::contract::paths::{
+    all_contracts_global_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
+};
 use crate::drive::contract::version_item::decode_contract_version;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -15,10 +17,10 @@ impl Drive {
     ///
     /// Rebuilds the exact path query the prover used, verifies the proof against it with
     /// absence, then reads every proved row back. A row is either the version item (or its
-    /// absence) at key `2` under the contract's root subtree, or the absence of the contract
-    /// subtree itself directly under the contracts root; both absences mean there is no
-    /// contract with that id. Every distinct requested id must appear exactly once and
-    /// nothing else may.
+    /// absence) at key `64` of the contract's other tree (`[64, id, 2]`), the absence of that
+    /// tree under the contract's root subtree, or the absence of the contract subtree itself
+    /// directly under the contracts root; every absence means there is no version for that id.
+    /// Every distinct requested id must appear exactly once and nothing else may.
     #[inline(always)]
     pub(super) fn verify_contracts_versions_v0(
         proof: &[u8],
@@ -52,7 +54,10 @@ impl Drive {
 
         for (path, key, maybe_element) in proved_key_values {
             let (contract_id, version) = match path.as_slice() {
-                [root, contract_id] if root.as_slice() == contracts_root => {
+                [root, contract_id, other]
+                    if root.as_slice() == contracts_root
+                        && other.as_slice() == [CONTRACT_OTHER_KEY] =>
+                {
                     if key.as_slice() != [CONTRACT_VERSION_KEY] {
                         return Err(Error::Proof(ProofError::CorruptedProof(
                             "a contract version row is not keyed by the version key".to_string(),
@@ -62,6 +67,20 @@ impl Drive {
                         contract_id_from_bytes(contract_id)?,
                         maybe_element.map(version_from_element).transpose()?,
                     )
+                }
+                // A contract without its other tree (stored before the version item existed and
+                // not migrated yet) proves the tree's key absent.
+                [root, contract_id]
+                    if root.as_slice() == contracts_root
+                        && key.as_slice() == [CONTRACT_OTHER_KEY] =>
+                {
+                    if maybe_element.is_some() {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "a contract version proof carries a contract's other tree itself"
+                                .to_string(),
+                        )));
+                    }
+                    (contract_id_from_bytes(contract_id)?, None)
                 }
                 [root] if root.as_slice() == contracts_root => {
                     if maybe_element.is_some() {

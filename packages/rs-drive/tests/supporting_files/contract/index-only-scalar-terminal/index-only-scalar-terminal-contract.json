@@ -1,0 +1,339 @@
+{
+  "$formatVersion": "0",
+  "id": "CD6KsgzPhL8xPqHjvg4XWfDRNoGRURiPknAMiApkjgHR",
+  "ownerId": "ASaUNbfe4QBnWU3izvnZHagrxM3Rwhjz5hBmjWZg8RSX",
+  "version": 1,
+  "documentSchemas": {
+    "answer": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRequest",
+          "properties": [
+            {
+              "requestId": "asc"
+            },
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "terminal": "payload"
+        }
+      ],
+      "properties": {
+        "requestId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 20,
+          "maxItems": 20,
+          "position": 0
+        },
+        "payload": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 33,
+          "maxItems": 33,
+          "position": 1
+        }
+      },
+      "required": [
+        "requestId",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "vote": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPoll",
+          "properties": [
+            {
+              "pollId": "asc"
+            },
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "terminal": "choice"
+        },
+        {
+          "name": "byChoice",
+          "properties": [
+            {
+              "pollId": "asc"
+            },
+            {
+              "choice": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "countable": true,
+          "rangeCountable": true,
+          "rankedCountable": true
+        }
+      ],
+      "properties": {
+        "pollId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "choice": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 1
+        }
+      },
+      "required": [
+        "pollId",
+        "choice"
+      ],
+      "additionalProperties": false
+    },
+    "rating": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            },
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "terminal": "stars"
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "stars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId",
+        "stars"
+      ],
+      "additionalProperties": false
+    },
+    "loginKeyResponse": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRequest",
+          "terminal": [
+            "appEphemeralPubKeyHash",
+            "$ownerId"
+          ]
+        }
+      ],
+      "entryPayload": [
+        "walletEphemeralPubKey",
+        "encryptedPayload"
+      ],
+      "properties": {
+        "appEphemeralPubKeyHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 20,
+          "maxItems": 20,
+          "position": 0
+        },
+        "walletEphemeralPubKey": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 33,
+          "maxItems": 33,
+          "position": 1
+        },
+        "encryptedPayload": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 60,
+          "maxItems": 572,
+          "position": 2
+        }
+      },
+      "required": [
+        "appEphemeralPubKeyHash",
+        "walletEphemeralPubKey",
+        "encryptedPayload"
+      ],
+      "additionalProperties": false
+    },
+    "payloadValues": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwner",
+          "terminal": "$ownerId"
+        }
+      ],
+      "entryPayload": [
+        "bytes",
+        "text"
+      ],
+      "properties": {
+        "bytes": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 0,
+          "maxItems": 16,
+          "position": 0
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 1
+        }
+      },
+      "required": [
+        "bytes",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "tagged": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwner",
+          "terminal": "$ownerId"
+        },
+        {
+          "name": "byTag",
+          "properties": [
+            {
+              "tag": "asc"
+            }
+          ],
+          "skipIfAbsent": true
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "reaction": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPostKind",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": [
+            "kind",
+            "$ownerId"
+          ]
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "kind": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPostBody",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": [
+            "$ownerId",
+            "body"
+          ]
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "body": {
+          "type": "array",
+          "byteArray": true,
+          "maxItems": 16,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId",
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

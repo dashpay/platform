@@ -34,13 +34,25 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_transfer_transition_action::TokenTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
+use crate::execution::validation::state_transition::batch::state::v0::added_moderator_cap::AddedModeratorCap;
+use crate::execution::validation::state_transition::batch::state::v0::consumed_documents::ConsumedDocuments;
+use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
+use crate::execution::validation::state_transition::batch::state::v0::moderators_pot_settle::ModeratorsPotSettles;
+use crate::execution::validation::state_transition::batch::state::v0::seated_charter_reads::SeatedCharterReads;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
+mod added_moderator_cap;
+mod consumed_documents;
 pub mod fetch_contender;
 pub mod fetch_documents;
+mod index_only_batch_entries;
+mod moderators_pot_settle;
+mod seated_charter_reads;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
@@ -85,15 +97,49 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
             vec![]
         };
 
+        // The entries every accepted indexOnly create of THIS batch writes.
+        // The per-create state probe reads committed state, which none of
+        // the batch's own creates have reached yet, and the batch applies as
+        // one grove batch where a second insert at the same path and key
+        // silently replaces the first — see `index_only_batch_entries`.
+        let mut index_only_batch_entries = IndexOnlyBatchEntries::default();
+
+        // The additions to each seated moderation charter this batch was accepted for, which
+        // the charter's cap counts beside those in state. Only a create of the moderation
+        // charters contract's `addedModerator` is counted, and that contract is in state from
+        // protocol version 14 only, so no earlier batch takes this path.
+        let mut added_moderator_cap = AddedModeratorCap::default();
+
+        // The settles of moderators pots this batch forces: a change of a seated moderation
+        // team pays the target's pot out to the team as it was first. Only a create or a
+        // delete of the moderation charters contract's team changes takes this path, and that
+        // contract is in state from protocol version 14 only, so no earlier batch does.
+        let mut moderators_pot_settles = ModeratorsPotSettles::default();
+        // The seated charters those two read, each read once per batch.
+        let mut seated_charter_reads = SeatedCharterReads::default();
+
+        // The commitments this batch's creates consume, which no other write of the batch may
+        // touch. Only a create revealing a commitment through a `refersTo` lookup, the
+        // reference declaring `consume`, records one, and only the protocol version 14 parser
+        // produces such a lookup, so no earlier batch takes this path.
+        let mut consumed_documents =
+            ConsumedDocuments::for_batch(state_transition_action.transitions());
+
         // Next we need to validate the structure of all actions (this means with the data contract)
-        for transition in state_transition_action.transitions_take() {
-            let transition_validation_result = match &transition {
+        for mut transition in state_transition_action.transitions_take() {
+            // The commitments a create of this transition reveals and consumes
+            let mut create_consumptions = Vec::new();
+            // Borrowed mutably so a contested create's validation can settle the fund it pays
+            // (document create state validation 2, protocol version 14); earlier versions of
+            // every validation below read the action only
+            let transition_validation_result = match &mut transition {
                 BatchedTransitionAction::DocumentAction(document_action) => match document_action {
                     DocumentTransitionAction::CreateAction(create_action) => create_action
                         .validate_state(
                             platform,
                             owner_id,
                             block_info,
+                            &mut create_consumptions,
                             execution_context,
                             transaction,
                             platform_version,
@@ -276,7 +322,10 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         state_transition_action.user_fee_increase(),
                     )?,
                 ));
-            } else if platform.config.execution.use_document_triggers {
+                continue;
+            }
+
+            if platform.config.execution.use_document_triggers {
                 if let BatchedTransitionAction::DocumentAction(document_transition) = &transition {
                     // Pre-PR this site allocated a default-initialized local
                     // `StateTransitionExecutionContext` and passed `&local` to
@@ -338,18 +387,124 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                                     state_transition_action.user_fee_increase(),
                                 ),
                             ));
-                    } else {
-                        validated_transitions.push(transition);
+                        continue;
                     }
-                } else {
-                    validated_transitions.push(transition);
                 }
-            } else {
-                validated_transitions.push(transition);
             }
+
+            // An accepted indexOnly create claims the entries it writes for
+            // the rest of the batch; a later create addressing any of them
+            // is refused here exactly as the state probe refuses the same
+            // collision against committed state. Only reachable for PV14+
+            // contracts (`index_only()` cannot be true below that), so no
+            // historical batch takes this path.
+            if let BatchedTransitionAction::DocumentAction(
+                DocumentTransitionAction::CreateAction(create_action),
+            ) = &transition
+            {
+                // A create consumes the commitments it revealed with it, unless another
+                // write of the batch touches one: the whole batch applies as one grove
+                // batch. Checked before the trackers below record the create, and
+                // recorded once they all accepted it, so a refused create claims nothing
+                if !create_consumptions.is_empty() {
+                    let consumed_result = consumed_documents.validate(
+                        create_action.base().data_contract_id(),
+                        &create_consumptions,
+                    );
+                    if !consumed_result.is_valid() {
+                        validation_result.add_errors(consumed_result.errors);
+                        validated_transitions
+                            .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
+                                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                                    create_action.base(),
+                                    owner_id,
+                                    state_transition_action.user_fee_increase(),
+                                ),
+                            ));
+                        continue;
+                    }
+                }
+
+                let batch_entries_result = index_only_batch_entries.validate_and_record_create(
+                    create_action,
+                    owner_id,
+                    platform_version,
+                )?;
+                if !batch_entries_result.is_valid() {
+                    validation_result.add_errors(batch_entries_result.errors);
+                    validated_transitions
+                        .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                                create_action.base(),
+                                owner_id,
+                                state_transition_action.user_fee_increase(),
+                            ),
+                        ));
+                    continue;
+                }
+
+                // A seated moderation team's leader adds at most the target's
+                // `maxAddedModerators` members: a count the schema can not express.
+                let cap_result = added_moderator_cap.validate_and_record_create(
+                    create_action,
+                    &mut seated_charter_reads,
+                    platform,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
+                if !cap_result.is_valid() {
+                    validation_result.add_errors(cap_result.errors);
+                    validated_transitions
+                        .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                                create_action.base(),
+                                owner_id,
+                                state_transition_action.user_fee_increase(),
+                            ),
+                        ));
+                    continue;
+                }
+            }
+
+            // The accepted create's consumptions, recorded for the rest of the batch and
+            // deleted with it
+            if !create_consumptions.is_empty() {
+                if let BatchedTransitionAction::DocumentAction(
+                    DocumentTransitionAction::CreateAction(create_action),
+                ) = &mut transition
+                {
+                    consumed_documents.record(
+                        create_action.base().data_contract_id(),
+                        &create_consumptions,
+                    );
+                    create_action.set_consumed_documents(
+                        create_consumptions
+                            .into_iter()
+                            .map(|consumption| consumption.document)
+                            .collect(),
+                    );
+                }
+            }
+
+            // A change of a seated moderation team settles the team's moderators pot first.
+            moderators_pot_settles.settle_before_team_change(
+                &transition,
+                &mut seated_charter_reads,
+                platform,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            )?;
+
+            validated_transitions.push(transition);
         }
 
         state_transition_action.set_transitions(validated_transitions);
+        state_transition_action
+            .set_moderators_pot_settlements(moderators_pot_settles.into_settlements());
 
         validation_result.set_data(state_transition_action.into());
 

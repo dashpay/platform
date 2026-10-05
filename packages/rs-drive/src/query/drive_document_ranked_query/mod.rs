@@ -76,6 +76,10 @@
 //!    [`DriveDocumentRankedQuery::descending`].
 
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::query::QuerySyntaxError;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::Error;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::platform_value::Value;
@@ -392,15 +396,13 @@ impl DriveDocumentRankedQuery<'_> {
     /// directly.
     pub(crate) fn reject_offset_with_branches(&self) -> Result<(), crate::error::Error> {
         if self.prefix_branches.len() > 1 && self.offset != 0 {
-            return Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidLimit(
-                    "`OFFSET` cannot combine with an `IN` prefix pin: rank-skip is attested \
+            return Err(Error::Query(QuerySyntaxError::InvalidLimit(
+                "`OFFSET` cannot combine with an `IN` prefix pin: rank-skip is attested \
                      from one secondary's counted commitments, and an `IN` merges several \
                      secondaries with no counted structure over the union. Page one prefix \
                      at a time (`==` pin + `OFFSET`), or drop the offset."
-                        .to_string(),
-                ),
-            ));
+                    .to_string(),
+            )));
         }
         Ok(())
     }

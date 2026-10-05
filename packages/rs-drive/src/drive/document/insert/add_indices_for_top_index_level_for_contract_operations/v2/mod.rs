@@ -14,12 +14,14 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::is_flat_level_key;
 
 use dpp::version::PlatformVersion;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, time_range_index_keys,
+    bucket_index_keys, index_level_tree_types_with_continuation_demotion,
+    index_only_level_skips_when_absent, level_reaches_entry,
 };
 use crate::drive::document::paths::contract_document_type_path_vec;
 use grovedb::batch::KeyInfoPath;
@@ -94,14 +96,26 @@ impl Drive {
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // On this level we will have a 0 and all the top index paths
+            // On this level we will have a 0 and all the top index paths.
+            // Property-name keys keep the historical 32-byte estimate; a
+            // FLAT indexOnly level is keyed by its zero-joined component
+            // names, which can be wider, and every entry write rewrites
+            // that node at its real key length.
+            let sub_level_key_max_size = index_level
+                .sub_levels()
+                .keys()
+                .filter(|name| is_flat_level_key(name))
+                .map(|name| u8::try_from(name.len()).unwrap_or(u8::MAX))
+                .max()
+                .unwrap_or(DEFAULT_HASH_SIZE_U8)
+                .max(DEFAULT_HASH_SIZE_U8);
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
                     estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
                     estimated_layer_sizes: AllSubtrees(
-                        DEFAULT_HASH_SIZE_U8,
+                        sub_level_key_max_size,
                         NoSumTrees,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
@@ -111,6 +125,69 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // A FLAT indexOnly index: no property-name tree and no value
+            // level. Its level tree (created at registration, like a
+            // property-name tree) holds the `0` member bucket directly, so
+            // the entry is handled by the terminal branch straight below
+            // the level: `[…doctype, <flat level>, 0, <member key>]`.
+            if is_flat_level_key(name) {
+                let Some(index_type) = sub_level.has_index_with_type() else {
+                    continue;
+                };
+                let mut flat_path: Vec<Vec<u8>> = contract_document_type_path.clone();
+                flat_path.push(Vec::from(name.as_bytes()));
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    estimated_costs_only_with_layer_info.insert(
+                        KeyInfoPath::from_known_owned_path(flat_path.clone()),
+                        EstimatedLayerInformation {
+                            tree_type: TreeType::NormalTree,
+                            estimated_layer_count: ApproximateElements(1),
+                            estimated_layer_sizes: AllSubtrees(
+                                1,
+                                NoSumTrees,
+                                storage_flags.map(|s| s.serialized_size()),
+                            ),
+                        },
+                    );
+                }
+                let flat_path_info = if document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .is_document_size()
+                {
+                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(flat_path))
+                } else {
+                    PathInfo::PathAsVec::<0>(flat_path)
+                };
+                self.add_reference_for_index_level_for_contract_operations(
+                    document_and_contract_info,
+                    flat_path_info,
+                    index_type,
+                    false,
+                    false,
+                    previous_batch_operations,
+                    &storage_flags,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                continue;
+            }
+
+            // A branch under which this document writes no entry is not
+            // entered: an index that skips the document (`skipIfAbsent`)
+            // leaves no value tree of its own behind. A branch an index the
+            // document takes part in runs through is entered as usual.
+            if !level_reaches_entry(
+                sub_level,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                continue;
+            }
+
             // The top-level property-name tree is created once, at
             // contract registration — this walker never writes it, so it
             // has no use for `tree_types.ranked_axes`. The resolved type
@@ -147,12 +224,12 @@ impl Drive {
 
             // The level key is the path segment; the document value is read
             // from the *source property*. They coincide except on a
-            // time-range level, whose key is the property name qualified
-            // with the grid (`TimeRangeTransform::storage_key`) while the
-            // timestamp still lives under the bare property name.
+            // bucketed (time- or integer-range) level, whose key is the
+            // property name qualified with the grid (`storage_key`) while
+            // the value still lives under the bare property name.
             let property_name = sub_level
-                .time_range()
-                .map(|transform| transform.source.as_str())
+                .bucketing()
+                .map(|bucketing| bucketing.source())
                 .unwrap_or(name.as_str());
 
             // with the example of the dashpay contract's first index
@@ -168,21 +245,16 @@ impl Drive {
                     platform_version,
                 )? {
                 Some(document_top_field) => document_top_field,
-                // An unrequired top-level property on an indexOnly type is a
-                // skipIfAbsent index's trigger (the parser admits no other
-                // optional property), and every index through this branch is
-                // such an index — an absent trigger writes NOTHING: no
-                // property-name tree, no descent, no entries. Skipping
-                // before any operation is emitted is what keeps the branch
-                // free of stranded prefix trees; the probes mirror this
-                // exact condition in `index_only_entry_paths_and_key`. A
-                // create's estimation dry-run reads the real document (so it
-                // skips exactly when apply skips), and the timestamp of a
-                // bucketed level can never land here (its source is
-                // `$createdAt`, required whenever indexed).
-                None if document_type.index_only()
-                    && !document_type.required_fields().contains(property_name) =>
-                {
+                // An unrequired property on an indexOnly type is a skip
+                // property of every index that holds it (the parser admits
+                // no other optional property), so every index through this
+                // branch skips the document and `level_reaches_entry` has
+                // already passed it by. Kept as the defensive arm: an absent
+                // value here writes NOTHING, never a null key the type has
+                // no layout for. The timestamp of a bucketed level can never
+                // land here (its source is `$createdAt`, required whenever
+                // indexed).
+                None if index_only_level_skips_when_absent(document_type, property_name) => {
                     continue;
                 }
                 // A stored type's absent value keeps its null-layout empty
@@ -246,16 +318,16 @@ impl Drive {
             let any_fields_null = document_top_field.is_empty();
             let all_fields_null = document_top_field.is_empty();
 
-            // A time-range first-property node expands the document's single
-            // timestamp into one index entry per overlapping range bucket (the
-            // bucket *start*, encoded exactly like the timestamp). A normal
-            // property keeps its single key. The entry-key rule (null keeps
-            // its single null entry, pre-origin timestamps produce no entries,
-            // undecodable values keep their raw key) lives in ONE place —
-            // [`TimeRangeTransform::entry_keys_for_raw`] — shared with the
+            // A bucketed (time- or integer-range) first-property node
+            // expands the document's single value into one index entry per
+            // containing window (the window *start*, encoded exactly like
+            // the value). A normal property keeps its single key. The
+            // entry-key rule (null keeps its single null entry, undecodable
+            // values keep their raw key) lives in ONE place —
+            // [`IndexBucketing::entry_keys_for_raw`] — shared with the
             // delete and update walkers so the three can never disagree.
-            let index_keys: Vec<DriveKeyInfo> = time_range_index_keys(
-                sub_level.time_range(),
+            let index_keys: Vec<DriveKeyInfo> = bucket_index_keys(
+                sub_level.bucketing(),
                 document_top_field,
                 // A validated contract cannot exceed this; the clamp only
                 // bounds estimation work for unvalidated transforms. The

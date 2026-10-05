@@ -621,6 +621,8 @@ struct DiagnosticsView: View {
                 return "Not Implemented: \(msg)"
             case .internalError(let msg):
                 return "Internal Error: \(msg)"
+            case .consensusRejection(let consensus, let msg):
+                return "Rejected by Platform (code \(consensus.code)): \(msg)"
             case .unknown(let msg):
                 return "Unknown Error: \(msg)"
             }
@@ -633,7 +635,10 @@ struct DiagnosticsView: View {
             return formatDictionary(dict)
         } else if let array = result as? [[String: Any]] {
             return "[\(array.count) items]"
-        } else if let uint = result as? UInt64 {
+        } else if let uint = UInt64(jsonValue: result) {
+            // A protocol `u64` arrives as a number below 2^53 and as a decimal
+            // string above it. Ordered before the `Bool` branch, which still
+            // fires because the reader refuses booleans.
             return String(uint)
         } else if let bool = result as? Bool {
             return bool ? "true" : "false"

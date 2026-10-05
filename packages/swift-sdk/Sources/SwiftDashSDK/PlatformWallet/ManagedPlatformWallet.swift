@@ -27,6 +27,28 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         _ = platform_wallet_destroy(handle)
     }
 
+    /// Read a managed identity's credit balance from Platform and persist it.
+    /// This read-only operation requires no signer or wallet unlock.
+    public func refreshIdentityBalance(identityId: Identifier) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                var balance: UInt64 = 0
+                let result = identityId.withUnsafeBytes { bytes in
+                    platform_wallet_refresh_identity_balance(
+                        handle,
+                        bytes.bindMemory(to: UInt8.self).baseAddress!,
+                        &balance
+                    )
+                }
+                try result.check()
+                return balance
+            }
+        }.value
+    }
+
     // MARK: - Balance (lock-free)
 
     /// Wallet balance breakdown. These are atomic reads — no lock contention.
@@ -179,6 +201,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// `nil` is valid for every purpose, including Encryption /
         /// Decryption keys.
         public let contractBounds: ContractBounds?
+        /// Optional usage limit (protocol version 14): the credits this
+        /// key may take from the identity over its whole lifetime. Only
+        /// AUTHENTICATION keys below MASTER may carry one. `nil` leaves
+        /// the key unbudgeted.
+        public let totalBudget: UInt64?
+        /// Optional usage limit (protocol version 14): the block time in
+        /// milliseconds from which this key can no longer sign. `nil`
+        /// leaves the key without an expiry.
+        public let expiresAt: UInt64?
 
         public init(
             keyId: UInt32,
@@ -187,7 +218,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             securityLevel: SecurityLevel,
             pubkeyBytes: Data,
             readOnly: Bool = false,
-            contractBounds: ContractBounds? = nil
+            contractBounds: ContractBounds? = nil,
+            totalBudget: UInt64? = nil,
+            expiresAt: UInt64? = nil
         ) {
             self.keyId = keyId
             self.keyType = keyType
@@ -196,11 +229,13 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             self.pubkeyBytes = pubkeyBytes
             self.readOnly = readOnly
             self.contractBounds = contractBounds
+            self.totalBudget = totalBudget
+            self.expiresAt = expiresAt
         }
     }
 
     /// Swift mirror of `dpp::identity::identity_public_key::contract_bounds::ContractBounds`.
-    /// Pinned to two variants (no `MultipleContractsOfSameOwner`)
+    /// Pinned to three variants (no `MultipleContractsOfSameOwner`)
     /// to match the Rust enum's currently-supported shape.
     public enum ContractBounds: Sendable, Equatable {
         /// Key may be used within a specific contract (any
@@ -210,6 +245,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// specific document type. Maps to `kind == 2` on the
         /// FFI side.
         case singleContractDocumentType(id: Data, documentTypeName: String)
+        /// AUTHENTICATION key bound to a contract group. `id` is the
+        /// 32-byte contract GROUP id, and there is never a document
+        /// type. Maps to `kind == 3` on the FFI side.
+        case contractGroup(id: Data)
     }
 
     /// Inspectable fields of a parsed raw `IdentityUpdateTransition`.
@@ -648,12 +687,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// `body` under one combined pinning frame.
     ///
     /// Contract-bounds pinning extends the same pattern: when the
-    /// row carries `.singleContract` or `.singleContractDocumentType`
-    /// we open a nested `withUnsafeBytes` (for the 32-byte contract
-    /// id) and a `withCString` (for the document type, if any) so
-    /// the pointers we hand the FFI stay valid for the entire
-    /// `body` invocation. Rows without bounds drop straight through
-    /// to the next level of recursion.
+    /// row carries any bound we open a nested `withUnsafeBytes` (for
+    /// the 32-byte contract or group id) and a `withCString` (for the
+    /// document type, if any) so the pointers we hand the FFI stay
+    /// valid for the entire `body` invocation. Rows without bounds
+    /// drop straight through to the next level of recursion.
     private static func pinNext<R>(
         _ index: Int,
         _ rows: inout [IdentityPubkeyFFI],
@@ -681,7 +719,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                         read_only: pk.readOnly,
                         contract_bounds_kind: kind,
                         contract_bounds_id: idPtr,
-                        contract_bounds_document_type: docTypePtr
+                        contract_bounds_document_type: docTypePtr,
+                        has_total_budget: pk.totalBudget != nil,
+                        total_budget: pk.totalBudget ?? 0,
+                        has_expires_at: pk.expiresAt != nil,
+                        expires_at: pk.expiresAt ?? 0
                     )
                 )
                 return pinNext(index + 1, &rows, pubkeys, buffers, body)
@@ -726,6 +768,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                 return documentTypeName.withCString { docTypePtr in
                     body(2, idPtr, docTypePtr)
                 }
+            }
+        case .contractGroup(let id):
+            precondition(
+                id.count == 32,
+                "ContractBounds.contractGroup id must be exactly 32 bytes (got \(id.count))"
+            )
+            return id.withUnsafeBytes { raw -> R in
+                let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
+                return body(3, idPtr, nil)
             }
         }
     }
@@ -1659,12 +1710,18 @@ extension ManagedPlatformWallet {
     /// `public_keys` map; the signer's role is to sign with whatever
     /// key was picked.
     ///
+    /// `maxContestFund` is the most, in credits, the identity pays into
+    /// the contest a contested name joins, and the identity must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// name that joins no contest ignores it.
+    ///
     /// Returns the full domain name (e.g. `"alice.dash"`).
     @discardableResult
     public func registerDpnsName(
         identityId: Identifier,
         name: String,
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        maxContestFund: UInt64? = nil
     ) async throws -> String {
         let handle = self.handle
         // Take the raw signer handle outside the Task. `KeychainSigner`
@@ -1680,6 +1737,8 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
+        // `0` asks the Rust side for the current fund to join.
+        let contestFund = maxContestFund ?? 0
         return try await Task.detached(priority: .userInitiated) { () -> String in
             _ = signer
             var outPtr: UnsafeMutablePointer<CChar>? = nil
@@ -1689,6 +1748,7 @@ extension ManagedPlatformWallet {
                         handle,
                         idBp.baseAddress!,
                         namePtr,
+                        contestFund,
                         signerHandle,
                         &outPtr
                     )
@@ -2134,10 +2194,51 @@ extension ManagedPlatformWallet {
         /// contact-bootstrap precondition (may be nil even when `hasInviter`).
         public let inviterUsername: String?
         /// Always 0: the amount isn't in the link (it carries the funding txid,
-        /// not the proof) and is only known after the tx is fetched at claim time.
+        /// not the proof). Read it with ``invitationClaimStatus(uri:)``.
         public let amountDuffs: UInt64
         /// Always 0: the legacy link carries no expiry field.
         public let expiryUnix: UInt32
+        /// Inviter display name (`display-name`) when the link carried one.
+        public let inviterDisplayName: String?
+        /// Inviter avatar URL (`avatar-url`, percent-decoded) when the link
+        /// carried one. Unvalidated — treat as untrusted input.
+        public let inviterAvatarURL: String?
+    }
+
+    /// The invitee's pre-claim view of an invitation, from
+    /// ``invitationClaimStatus(uri:)``.
+    public struct InvitationClaimStatus: Sendable, Equatable {
+        /// The identity the claim would create (32 bytes).
+        public let prospectiveIdentityId: Data
+        /// Value of the credit output the voucher key controls (duffs). This is
+        /// the tier signal: the link does not say whether it funds a contested
+        /// or a non-contested username, the amount the inviter locked does.
+        public let amountDuffs: UInt64
+        /// The claim would submit an InstantSend proof.
+        public let isInstant: Bool
+        /// The funding transaction is chain-locked. `false` together with
+        /// `isInstant == false` is a ChainLock-only invitation that cannot be
+        /// claimed until its funding transaction is chain-locked.
+        public let isChainLocked: Bool
+        /// An identity already exists at `prospectiveIdentityId` — the
+        /// invitation was claimed. `false` does NOT prove the voucher is
+        /// unspent (a reclaim top-up consumes it without creating this
+        /// identity), so the claim can still fail late.
+        public let alreadyClaimed: Bool
+
+        public init(
+            prospectiveIdentityId: Data,
+            amountDuffs: UInt64,
+            isInstant: Bool,
+            isChainLocked: Bool,
+            alreadyClaimed: Bool
+        ) {
+            self.prospectiveIdentityId = prospectiveIdentityId
+            self.amountDuffs = amountDuffs
+            self.isInstant = isInstant
+            self.isChainLocked = isChainLocked
+            self.alreadyClaimed = alreadyClaimed
+        }
     }
 
     /// Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
@@ -2313,26 +2414,60 @@ extension ManagedPlatformWallet {
     /// transaction is refetched to locate the credit output the voucher
     /// controls. It claims nothing and mutates no wallet state.
     ///
-    /// Throws on anything undetermined — wrong network, a funding tx that has
-    /// not propagated, transport failure. Callers must treat a throw as
-    /// "proceed", never as an answer either way.
+    /// Two throws are definitive: a malformed link (`invalidParameter`) and a
+    /// link for the other network (`invalidNetwork`) can never be claimed by
+    /// this wallet. Every other throw is undetermined (a funding tx that has
+    /// not propagated, transport failure) and must be treated as "proceed",
+    /// never as an answer either way.
     public func invitationProspectiveIdentityId(uri: String) async throws -> Data {
-        let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
-            var idTuple: (
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-            ) = (
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-            )
-            let result = uri.withCString { uriPtr in
-                platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+        // `self` stays alive for the whole call: a deinit mid-call would
+        // destroy the handle the FFI is still using.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> Data in
+            try withExtendedLifetime(self) {
+                var idTuple: (
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+                ) = (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                )
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+                }
+                try result.check()
+                return withUnsafeBytes(of: idTuple) { Data($0) }
             }
-            try result.check()
-            return withUnsafeBytes(of: idTuple) { Data($0) }
+        }.value
+    }
+
+    /// What an invitation is worth and whether it was already claimed, without
+    /// claiming it — one funding-tx fetch and one identity fetch.
+    ///
+    /// Same error contract as ``invitationProspectiveIdentityId(uri:)``: a
+    /// malformed link (`ErrorInvalidParameter`) and a link for the other
+    /// network (`ErrorInvalidNetwork`) are definitive; every other throw is
+    /// undetermined (not propagated yet, transport failure) and must not be
+    /// read as an answer either way.
+    public func invitationClaimStatus(uri: String) async throws -> InvitationClaimStatus {
+        // `self` stays alive for the whole call (up to ~12 s of funding-tx
+        // retries): a deinit mid-call would destroy the handle in use.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> InvitationClaimStatus in
+            try withExtendedLifetime(self) {
+                var out = InvitationClaimStatusFFI()
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_claim_status(handle, uriPtr, &out)
+                }
+                try result.check()
+                return InvitationClaimStatus(
+                    prospectiveIdentityId: withUnsafeBytes(of: out.prospective_identity_id) { Data($0) },
+                    amountDuffs: out.amount_duffs,
+                    isInstant: out.is_instant,
+                    isChainLocked: out.is_chain_locked,
+                    alreadyClaimed: out.already_claimed
+                )
+            }
         }.value
     }
 
@@ -2350,11 +2485,17 @@ extension ManagedPlatformWallet {
             platform_wallet_parse_invitation(uriPtr, &out)
         }
         try result.check()
-        // The Rust side heap-allocates the username C string when the link
-        // carries an inviter; free it once we've copied it into Swift.
+        // The Rust side heap-allocates the inviter C strings when the link
+        // carries them; free them once we've copied them into Swift.
         defer {
             if out.inviter_username != nil {
                 platform_wallet_string_free(out.inviter_username)
+            }
+            if out.inviter_display_name != nil {
+                platform_wallet_string_free(out.inviter_display_name)
+            }
+            if out.inviter_avatar_url != nil {
+                platform_wallet_string_free(out.inviter_avatar_url)
             }
         }
         // Always nil, matching the documented contract: the legacy link
@@ -2370,7 +2511,9 @@ extension ManagedPlatformWallet {
             inviterId: inviterId,
             inviterUsername: inviterUsername,
             amountDuffs: out.amount_duffs,
-            expiryUnix: out.expiry_unix
+            expiryUnix: out.expiry_unix,
+            inviterDisplayName: out.inviter_display_name.map { String(cString: $0) },
+            inviterAvatarURL: out.inviter_avatar_url.map { String(cString: $0) }
         )
     }
 
@@ -3238,6 +3381,61 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Raise the usage limits of one of an identity's keys (protocol
+    /// version 14), signing the resulting `IdentityKeyLimitsUpdate` with
+    /// the identity's MASTER key (or a CRITICAL authentication key that
+    /// carries no limits and no contract bounds) via the supplied
+    /// `KeychainSigner`.
+    ///
+    /// Limits only ever go up. `addBudget` is added to the key's total
+    /// budget AND to what is left of it, in credits; `expiresAt` moves the
+    /// key's expiry to that block time in milliseconds and must be later
+    /// than the one the key carries. At least one of the two must be given.
+    /// A limit the key does not already have, a zero top-up and an expiry
+    /// that is not later are refused before anything is signed, because
+    /// Platform would refuse them and charge for it.
+    ///
+    /// No identity revision is claimed or bumped. The cached key and its
+    /// `PersistentPublicKey` row follow through the persist-identity-keys
+    /// callback, the same way an added key does.
+    public func updateIdentityKeyLimits(
+        identityId: Identifier,
+        keyId: UInt32,
+        addBudget: UInt64? = nil,
+        expiresAt: UInt64? = nil,
+        signer: KeychainSigner
+    ) async throws {
+        guard addBudget != nil || expiresAt != nil else {
+            throw PlatformWalletError.walletOperation(
+                "updateIdentityKeyLimits needs a budget to add or a new expiry"
+            )
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let budgetToAdd = addBudget
+        let newExpiresAt = expiresAt
+        try await Task.detached(priority: .userInitiated) {
+            _ = signer
+            let result = idBytes.withUnsafeBufferPointer {
+                idBp -> PlatformWalletFFIResult in
+                platform_wallet_update_identity_key_limits_with_signer(
+                    handle,
+                    idBp.baseAddress!,
+                    keyId,
+                    budgetToAdd != nil,
+                    budgetToAdd ?? 0,
+                    newExpiresAt != nil,
+                    newExpiresAt ?? 0,
+                    signerHandle
+                )
+            }
+            try result.check()
+        }.value
+    }
+
     /// Parse a raw `IdentityUpdateTransition` from DPP bytes without
     /// signing or broadcasting it. Accepts both standard tagged bytes
     /// and Yappr's tagless `dash-st:` framing.
@@ -3411,7 +3609,10 @@ extension ManagedPlatformWallet {
         )
     }
 
-    private static func parsedContractBounds(
+    // `internal` (not `private`) so the kind-tag decode can be covered
+    // directly: every production caller reaches it through a live FFI
+    // parse, which a unit test has no handle for.
+    static func parsedContractBounds(
         from entry: ParsedIdentityUpdatePublicKeyFFI,
         index: Int
     ) throws -> ContractBounds? {
@@ -3434,6 +3635,11 @@ extension ManagedPlatformWallet {
             return .singleContractDocumentType(
                 id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) },
                 documentTypeName: documentTypeName
+            )
+        case 3:
+            var idTuple = entry.contract_bounds_id
+            return .contractGroup(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) }
             )
         default:
             throw PlatformWalletError.deserialization(
@@ -3657,6 +3863,11 @@ extension ManagedPlatformWallet {
     /// converts them to native bytes / identifiers). Pass `"{}"` for a
     /// document type with no required properties.
     ///
+    /// `maxContestFund` is the most, in credits, the owner pays into the
+    /// contest a contested document joins, and the owner must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// document that joins no contest ignores it.
+    ///
     /// Lifetime contract: the `signer` instance MUST stay alive for the
     /// duration of the synchronous FFI call inside this async wrapper
     /// (Rust holds a `passUnretained` ctx pointer to the underlying
@@ -3668,10 +3879,13 @@ extension ManagedPlatformWallet {
         contractId: Identifier,
         documentType: String,
         propertiesJSON: String,
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        maxContestFund: UInt64? = nil
     ) async throws -> (Identifier, String) {
         let handle = self.handle
         let signerHandle = signer.handle
+        // `0` asks the Rust side for the current fund to join.
+        let contestFund = maxContestFund ?? 0
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -3709,6 +3923,7 @@ extension ManagedPlatformWallet {
                                         contractBp.baseAddress!,
                                         typePtr,
                                         propsPtr,
+                                        contestFund,
                                         signerHandle,
                                         outBp.baseAddress!,
                                         &documentJsonPtr

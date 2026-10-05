@@ -1,13 +1,125 @@
+use super::process_proposal::execute_proposal;
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Methods;
+use crate::metrics;
+#[cfg(debug_assertions)]
+use crate::perf::{self, PhaseTimer};
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::Network;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
+
+/// Executes the block being finalized the way `ProcessProposal` executes a proposal, when the
+/// block execution context this node holds is not that block's. Returns whether it had to.
+///
+/// Tenderdash asks for a block to be processed again before committing it only when the round
+/// state it kept is not that block's, and a proposal this node refused does not replace that
+/// round state. The refused proposal of a later round has nevertheless replaced the transaction
+/// of the block accepted in an earlier round, dropped or replaced its block execution context and
+/// cleared the drive block caches its execution filled, so none of what finalizing that block
+/// reads is left. Executing the block again rebuilds all of it on the path `ProcessProposal`
+/// takes, from the request Tenderdash would have sent, so this node then holds what a node that
+/// processed the block right before its commit holds. The app hash the execution gives is still
+/// checked against the one in the block header before anything is committed.
+fn execute_block_unless_current<'a, A, C>(
+    app: &A,
+    request: &proto::RequestFinalizeBlock,
+) -> Result<bool, Error>
+where
+    A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
+    C: CoreRPCLike,
+{
+    let height = u64::try_from(request.height).map_err(|_| {
+        AbciError::BadRequest("height is negative in finalize block request".to_string())
+    })?;
+    let round = u32::try_from(request.round).map_err(|_| {
+        AbciError::BadRequest("round is negative in finalize block request".to_string())
+    })?;
+
+    {
+        let block_execution_context_guard = app
+            .block_execution_context()
+            .read()
+            .expect("poisoned only after a panic, which stops the node");
+        if let Some(block_execution_context) = block_execution_context_guard.as_ref() {
+            if block_execution_context
+                .block_state_info()
+                .matches_current_block(height, round, request.hash.clone())?
+            {
+                return Ok(false);
+            }
+        }
+    }
+
+    tracing::warn!(
+        method = "finalize_block",
+        height,
+        round,
+        block_hash = hex::encode(&request.hash),
+        "the block execution context is not the one of the block being finalized; executing the block again before finalizing it",
+    );
+
+    let response = execute_proposal(app, process_proposal_request(request)?)?;
+
+    if response.status != proto::response_process_proposal::ProposalStatus::Accept as i32 {
+        return Err(AbciError::WrongFinalizeBlockReceived(format!(
+            "the block being finalized at height {} round {}, block hash {}, is not valid on this node",
+            height,
+            round,
+            hex::encode(&request.hash),
+        ))
+        .into());
+    }
+
+    Ok(true)
+}
+
+/// The `ProcessProposal` request for the block `request` finalizes, with the fields Tenderdash
+/// fills when it processes a block before committing it: the block's own, the commit round, and
+/// the quorum hash of the validator set that signed the commit. `proposed_last_commit` is left
+/// out, since a block proposal does not read it.
+fn process_proposal_request(
+    request: &proto::RequestFinalizeBlock,
+) -> Result<proto::RequestProcessProposal, Error> {
+    let block = request.block.as_ref().ok_or_else(|| {
+        AbciError::BadRequest("finalize block is missing actual block".to_string())
+    })?;
+    let header = block.header.as_ref().ok_or_else(|| {
+        AbciError::BadRequest("finalize block is missing the block header".to_string())
+    })?;
+    let commit = request
+        .commit
+        .as_ref()
+        .ok_or_else(|| AbciError::BadRequest("finalize block is missing commit".to_string()))?;
+
+    Ok(proto::RequestProcessProposal {
+        txs: block
+            .data
+            .as_ref()
+            .map(|data| data.txs.clone())
+            .unwrap_or_default(),
+        proposed_last_commit: None,
+        misbehavior: request.misbehavior.clone(),
+        hash: request.hash.clone(),
+        height: header.height,
+        round: request.round,
+        time: header.time,
+        next_validators_hash: header.next_validators_hash.clone(),
+        core_chain_locked_height: header.core_chain_locked_height,
+        core_chain_lock_update: block.core_chain_lock.clone(),
+        proposer_pro_tx_hash: header.proposer_pro_tx_hash.clone(),
+        proposed_app_version: header.proposed_app_version,
+        version: header.version,
+        quorum_hash: commit.quorum_hash.clone(),
+    })
+}
 
 pub fn finalize_block<'a, A, C>(
     app: &A,
@@ -18,6 +130,15 @@ where
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("finalize_block");
+    #[cfg(debug_assertions)]
+    let mut phases = PhaseTimer::new("finalize_block");
+
+    // Before the transaction is read: executing the block replaces it
+    #[cfg_attr(not(debug_assertions), allow(unused_variables))]
+    let executed_again = execute_block_unless_current(app, &request)?;
+
+    #[cfg(debug_assertions)]
+    phases.end_phase_if(executed_again, "execute_block_again");
 
     let transaction_guard = app.transaction().read().unwrap();
     let transaction =
@@ -45,12 +166,18 @@ where
 
     let block_height = request_finalize_block.height;
 
+    #[cfg(debug_assertions)]
+    phases.end_phase("setup");
+
     let block_finalization_outcome = app.platform().finalize_block_proposal(
         request_finalize_block,
         block_execution_context,
         transaction,
         platform_version,
     )?;
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("finalize_block_proposal");
 
     drop(transaction_guard);
 
@@ -96,11 +223,24 @@ where
             "historical mainnet vote-cleanup commit conflict; proceeding as the \
              network did at the time (see platform#2309, tenderdash#966)"
         );
+
+        // The block's saved platform state was in the failed transaction, so
+        // what is on disk is behind the state cache this block published as
+        // saved. Mark all of it unsaved again: the next block then writes the
+        // full record and every entry rather than only its own changes on top
+        // of stale ones, which a restart would otherwise read back.
+        let platform = app.platform();
+        let mut state = platform.state.load().as_ref().clone();
+        state.mark_all_unsaved();
+        platform.state.store(Arc::new(state));
     } else {
         // A failed commit leaves caches ahead of durable state. Restart Drive so the
         // caches are restored from disk before retrying the block.
         result.expect("commit transaction");
     }
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("commit_transaction");
 
     // The block is durable now, so the contracts it read and rewrote through its transaction
     // are committed state: promote them to the global cache. This must follow the commit.
@@ -112,6 +252,9 @@ where
         .cache
         .data_contracts
         .merge_and_clear_block_cache();
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("promote_data_contract_cache");
 
     app.platform()
         .committed_block_height_guard
@@ -147,6 +290,9 @@ where
         }
     }
 
+    #[cfg(debug_assertions)]
+    phases.end_phase("flush_pending_prefix_drops");
+
     // Create GroveDB checkpoint after the transaction is committed (so it captures
     // committed state). Checkpoints are restore points, auxiliary to the block: the
     // block is final once the commit above succeeded, and the transaction and block
@@ -169,11 +315,11 @@ where
             });
         match result {
             Ok(()) => {
-                crate::metrics::abci_last_checkpoint_height(block_height);
+                metrics::abci_last_checkpoint_height(block_height);
                 tracing::debug!(block_height, "created grovedb checkpoint");
             }
             Err(error) => {
-                crate::metrics::abci_checkpoint_failed();
+                metrics::abci_checkpoint_failed();
                 tracing::error!(
                     ?error,
                     block_height,
@@ -184,7 +330,21 @@ where
         }
     }
 
-    Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
+    #[cfg(debug_assertions)]
+    phases.end_phase_if(
+        block_finalization_outcome.checkpoint_needed,
+        "create_grovedb_checkpoint",
+    );
+    // Merge this handler's phases into the totals before the block is counted.
+    #[cfg(debug_assertions)]
+    drop(phases);
+    #[cfg(debug_assertions)]
+    perf::end_block(block_height);
+
+    Ok(proto::ResponseFinalizeBlock {
+        retain_height: 0,
+        propose_next_block_immediately: block_finalization_outcome.propose_next_block_immediately,
+    })
 }
 
 #[cfg(test)]
@@ -200,8 +360,10 @@ mod tests {
     use crate::platform_types::platform::Platform;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+    use crate::platform_types::withdrawal::unsigned_withdrawal_txs_by_round::UnsignedWithdrawalTxsByRound;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
     use drive::grovedb::Transaction;
     use std::sync::{Arc, Mutex, RwLock};
@@ -222,6 +384,7 @@ mod tests {
         commit_error: RwLock<Option<Error>>,
         transaction: RwLock<Option<Transaction<'a>>>,
         block_execution_context: RwLock<Option<BlockExecutionContext>>,
+        unsigned_withdrawal_txs_by_round: RwLock<UnsignedWithdrawalTxsByRound>,
     }
 
     impl PlatformApplication<MockCoreRPCLike> for FailingCommitApplication<'_> {
@@ -233,6 +396,10 @@ mod tests {
     impl BlockExecutionApplication for FailingCommitApplication<'_> {
         fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
             &self.block_execution_context
+        }
+
+        fn unsigned_withdrawal_txs_by_round(&self) -> &RwLock<UnsignedWithdrawalTxsByRound> {
+            &self.unsigned_withdrawal_txs_by_round
         }
     }
 
@@ -363,11 +530,22 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
+        finalize_block_with_failing_commit_on(&platform, height, commit_error)
+    }
+
+    /// Like [`finalize_block_with_failing_commit`], on a platform the caller keeps
+    /// so it can inspect the state left behind.
+    fn finalize_block_with_failing_commit_on(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        height: u64,
+        commit_error: Error,
+    ) -> Result<proto::ResponseFinalizeBlock, Error> {
         let app = FailingCommitApplication {
             platform: &platform.platform,
             commit_error: RwLock::new(Some(commit_error)),
             transaction: Default::default(),
             block_execution_context: Default::default(),
+            unsigned_withdrawal_txs_by_round: Default::default(),
         };
 
         app.start_transaction();
@@ -579,6 +757,32 @@ mod tests {
         }
     }
 
+    /// The block's saved platform state sat in the transaction that failed to
+    /// commit, so the published state cache is ahead of the full record on disk.
+    /// The handler must leave it dirty, or the next historical block writes only
+    /// the small record on top of a stale full one.
+    #[test]
+    fn finalize_block_leaves_the_state_dirty_after_a_tolerated_commit_conflict() {
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(mainnet_evo1_config())
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        finalize_block_with_failing_commit_on(&platform, 32326, busy_commit_error())
+            .expect("the incident's commit conflict is tolerated");
+
+        let state = platform.state.load();
+        assert!(
+            state.heavy_fields_dirty,
+            "a block whose commit failed must not leave the state cache clean"
+        );
+        assert!(
+            state.masternode_changes.rewrite_all && state.validator_set_changes.rewrite_all,
+            "its entries were in the failed transaction too"
+        );
+    }
+
     #[test]
     #[should_panic(expected = "commit transaction")]
     fn finalize_block_panics_on_busy_commit_before_incident() {
@@ -651,9 +855,18 @@ mod tests {
 
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
 
-        // No transaction started, no block execution context
+        // The block execution context is the finalized block's, but no transaction was started
+        app.block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context(
+                (**platform.state.load()).clone(),
+                1,
+                1_700_000_000_000,
+                None,
+            ));
         let request = proto::RequestFinalizeBlock {
-            hash: vec![0u8; 32],
+            hash: BLOCK_HASH.to_vec(),
             height: 1,
             round: 0,
             ..Default::default()
@@ -669,8 +882,10 @@ mod tests {
         );
     }
 
+    /// Without a block execution context the finalized block is executed again, which takes the
+    /// block the request carries.
     #[test]
-    fn finalize_block_fails_when_no_block_execution_context() {
+    fn finalize_block_without_a_block_execution_context_fails_when_the_request_has_no_block() {
         let platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
             .build_with_mock_rpc();
@@ -689,12 +904,63 @@ mod tests {
 
         let result = finalize_block::<_, MockCoreRPCLike>(&app, request);
         assert!(
-            matches!(
-                result,
-                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
-            ),
-            "Expected CorruptedCodeExecution error, got: {result:?}"
+            matches!(result, Err(Error::Abci(AbciError::BadRequest(_)))),
+            "Expected BadRequest error, got: {result:?}"
         );
+    }
+
+    /// The hint Drive gives Tenderdash rides on the ABCI response: off when nothing waits for
+    /// the next block, on when a withdrawal transaction is queued and waits to be signed.
+    #[test]
+    fn finalize_block_reports_pending_withdrawal_work_to_tenderdash() {
+        let mut config = PlatformConfig::default_testnet();
+        config.testing_configs.block_commit_signature_verification = false;
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(config)
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_version = PlatformVersion::latest();
+        let app = FullAbciApplication::new(&platform.platform);
+        let first_time = 1_700_000_000_000u64;
+
+        // Nothing queued: Tenderdash may wait for transactions before the next block.
+        let response =
+            finalize_real_block(&platform, &app, 1, first_time, None).expect("finalize block");
+        assert!(!response.propose_next_block_immediately);
+
+        // A pooled withdrawal transaction waits in the queue for the next block to sign it.
+        let transaction = platform.drive.grove.start_transaction();
+        let mut drive_operations = vec![];
+        platform
+            .drive
+            .add_enqueue_untied_withdrawal_transaction_operations(
+                vec![(1, vec![7u8; 32])],
+                1_000_000,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to enqueue a withdrawal transaction");
+        platform
+            .drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to apply the enqueue operations");
+        platform
+            .drive
+            .commit_transaction(transaction, &platform_version.drive)
+            .expect("expected to commit the queued transaction");
+
+        let response =
+            finalize_real_block(&platform, &app, 2, first_time + 1_000, Some(first_time))
+                .expect("finalize block");
+        assert!(response.propose_next_block_immediately);
     }
 
     fn checkpointing_config() -> PlatformConfig {

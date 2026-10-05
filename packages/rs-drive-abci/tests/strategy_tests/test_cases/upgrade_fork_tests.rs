@@ -916,6 +916,281 @@ mod tests {
             .is_some());
     }
 
+    /// The app-connect contract only comes into existence through the upgrade to protocol
+    /// version 14 (or a version-14 genesis). Driven through real blocks: absent while the
+    /// chain still runs 13, written by the activation block, served by the system contract
+    /// cache from 14 only, and still there after Drive is closed and reopened.
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
+    async fn run_chain_v13_to_v14_registers_the_app_connect_contract() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 50,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: 13,
+                proposed_protocol_versions_with_weight: vec![(14, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                epoch_time_length_s: 60,
+                ..Default::default()
+            },
+            block_spacing_ms: 1_000,
+            testing_configs: PlatformTestConfig {
+                store_platform_state: true,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc();
+
+        let platform_version_13 = PlatformVersion::get(13).expect("platform version 13");
+        let platform_version_14 = PlatformVersion::get(14).expect("platform version 14");
+        let app_connect_id = SystemDataContract::AppConnect.id();
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            ..
+        } = run_chain_for_strategy(
+            &mut platform,
+            60,
+            strategy.clone(),
+            config.clone(),
+            13,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        let block_start = state
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected committed block info")
+            .basic_info()
+            .height
+            + 1;
+        drop(state);
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            ..
+        } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 1,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            strategy.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(7),
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 14);
+        let block_start = state
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected committed block info")
+            .basic_info()
+            .height
+            + 1;
+        drop(state);
+
+        // Locked in but not yet active: nothing has written the contract.
+        assert!(abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                app_connect_id.to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("query the app-connect contract before activation")
+            .is_none());
+        assert!(abci_app
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(app_connect_id, platform_version_13)
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+
+        drop(abci_app);
+        let TempPlatform {
+            platform: mut platform_before_activation_restart,
+            tempdir,
+        } = platform;
+        let core_rpc = std::mem::take(&mut platform_before_activation_restart.core_rpc);
+        drop(platform_before_activation_restart);
+        platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
+        platform.platform.core_rpc = core_rpc;
+        let abci_app = FullAbciApplication::new(&platform.platform);
+
+        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 60,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(18),
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 2);
+        assert_eq!(state.current_protocol_version_in_consensus(), 14);
+        assert_eq!(state.next_epoch_protocol_version(), 14);
+        drop(state);
+
+        let stored = abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                app_connect_id.to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_14,
+            )
+            .value
+            .expect("fetch the app-connect contract after activation")
+            .expect("the activation block must write the app-connect contract");
+        assert_eq!(stored.contract.id(), app_connect_id);
+        assert!(stored
+            .contract
+            .document_type_for_name("loginKeyResponse")
+            .is_ok());
+        assert!(abci_app
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(app_connect_id, platform_version_14)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
+        assert!(abci_app
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(app_connect_id, platform_version_13)
+            .expect("an old-version lookup must still succeed")
+            .is_none());
+        drop(abci_app);
+
+        let TempPlatform {
+            platform: platform_before_restart,
+            tempdir,
+        } = platform;
+        drop(platform_before_restart);
+
+        let reopened_platform = TempPlatform::open_with_tempdir(tempdir, config);
+        let state = reopened_platform.state.load();
+        assert_eq!(state.current_protocol_version_in_consensus(), 14);
+        drop(state);
+        assert!(reopened_platform
+            .drive
+            .fetch_contract(
+                app_connect_id.to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_14,
+            )
+            .value
+            .expect("fetch the app-connect contract after restart")
+            .is_some());
+        assert!(reopened_platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(app_connect_id, platform_version_14)
+            .expect("expected the lookup after restart to succeed")
+            .is_some());
+    }
+
     /// What a node has committed about the protocol upgrade, captured to compare a node that
     /// never restarted with one whose Drive was closed and reopened.
     #[derive(Debug, PartialEq)]

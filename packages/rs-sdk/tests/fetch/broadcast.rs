@@ -22,6 +22,7 @@ mod online {
 
         let request: WaitForStateTransitionResultRequest = WaitForStateTransitionResultRequestV0 {
             prove: false,
+            request_user_balance: false,
             state_transition_hash: [0u8; 32].to_vec(),
         }
         .into();

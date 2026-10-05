@@ -700,4 +700,49 @@ internal object WalletManagerNative {
         accountIndex: Int,
         coreFeePerByte: Int,
     ): String?
+
+    // ── Ordered wallet bring-up ───────────────────────────────────────
+
+    /**
+     * Ordered wallet bring-up — identity → contacts → contact-account
+     * drain — run as ONE bounded call so the host can start Core SPV
+     * knowing the DIP-15 contact addresses exist and will be in the first
+     * filter set. Wraps `platform_wallet_manager_start_wallet_subsystems`;
+     * iOS binds the same call (`PlatformWalletManagerStartup.swift`), and
+     * the ordering / retry / budget policy lives Rust-side in
+     * `platform_wallet::manager::startup`.
+     *
+     * Blocks until the sequence finishes or its budget expires — call from
+     * a background dispatcher. Throws [DashSDKException] only for a
+     * malformed request (bad handle, unknown wallet, bad argument); an
+     * unreachable Platform, a failed sync pass or an unfinished drain are
+     * all reported through the returned blob's status, because the host
+     * must be able to start Core SPV regardless.
+     *
+     * @param managerHandle the raw manager handle ([nativeManagerHandle]).
+     * @param walletId the 32-byte wallet id.
+     * @param mnemonicResolverHandle Keychain mnemonic resolver, or 0 for a
+     *   wallet holding resident keys. Without it the drain is skipped and
+     *   the pending count reported.
+     * @param identitySignerHandle identity signer for the DIP-15
+     *   auto-accept pass, or 0 to skip it.
+     * @param budgetSecs ceiling for the whole sequence; 0 = SDK default
+     *   (20s). Never unbounded — this call gates Core SPV.
+     * @param gapLimit identity-discovery gap limit; 0 = SDK default.
+     * @return a fixed 57-byte big-endian outcome blob, decoded by
+     *   `WalletStartupOutcome.decode` (the layouts must match the JNI
+     *   side): offset 0 status (1B), 1 hasIdentityId (1B), 2 identityId
+     *   (32B), 34 discoveryAttempts (u32), 38 dashPaySyncRan (1B),
+     *   39 seedBindingUnverified (1B), 40 identityScanIncomplete (1B),
+     *   41 contactAccountsDrained (u32), 45 contactAccountsPending (u32),
+     *   49 elapsedMs (u64).
+     */
+    external fun startWalletSubsystems(
+        managerHandle: Long,
+        walletId: ByteArray,
+        mnemonicResolverHandle: Long,
+        identitySignerHandle: Long,
+        budgetSecs: Long,
+        gapLimit: Int,
+    ): ByteArray
 }

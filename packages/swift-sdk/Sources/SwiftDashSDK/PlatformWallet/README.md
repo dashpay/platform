@@ -637,6 +637,61 @@ Failed merely because retry was abandoned.
 damaged ciphertext can produce the same symptom. Keep the record for diagnosis
 instead of blindly submitting a replacement payment.
 
+## Identity key usage limits
+
+Protocol version 14 lets an authentication key carry usage limits: a
+`totalBudget`, the credits the key may take from its identity over its whole
+lifetime, and an `expiresAt`, the block time in milliseconds from which it can
+no longer sign. A key with either is registered as an `IdentityPublicKey::V1`;
+a key with neither stays a version 0 key with the same bytes as ever.
+
+Register a limited key by setting the two optional fields on the
+`ManagedPlatformWallet.IdentityPubkey` rows passed to identity registration,
+invitation claim or `updateIdentity(identityId:addPublicKeys:...)`:
+
+```swift
+let key = ManagedPlatformWallet.IdentityPubkey(
+    keyId: 3,
+    keyType: .ecdsaSecp256k1,
+    purpose: .authentication,
+    securityLevel: .high,
+    pubkeyBytes: pubkey,
+    totalBudget: 100_000_000,      // credits, for the key's whole lifetime
+    expiresAt: 1_800_000_000_000   // block time in milliseconds
+)
+```
+
+Read a key's limits back from `ManagedIdentity.getPublicKeys()`
+(`totalBudget` / `expiresAt` on each `IdentityPublicKeyInfo`), or from the
+persisted `PersistentPublicKey` row (`totalBudgetCredits` / `expiresAtMillis`).
+
+**Raise a key's limits:**
+```swift
+func updateIdentityKeyLimits(
+    identityId: Identifier,
+    keyId: UInt32,
+    addBudget: UInt64? = nil,      // credits ADDED to the total budget
+    expiresAt: UInt64? = nil,      // new expiry, block time in milliseconds
+    signer: KeychainSigner
+) async throws
+```
+
+Limits only ever go up, and at least one of the two must be given. The
+transition is signed by the identity's MASTER key or by a CRITICAL
+authentication key that carries no limits and no contract bounds. No identity
+revision is claimed.
+
+**Read what is left of a key's budget:**
+```swift
+func fetchKeysRemainingBudgets(
+    identityId: String,
+    keyIds: [UInt32]
+) async throws -> [UInt32: UInt64?]
+```
+
+Defined on `SDK`. Each value is the credits left to that key, or `nil` for a
+key that carries no budget or that the identity does not have.
+
 ## See Also
 
 - [SwiftExampleApp Integration](../../../SwiftExampleApp/SwiftExampleApp/Services/DashPayService.swift) - Real-world usage example

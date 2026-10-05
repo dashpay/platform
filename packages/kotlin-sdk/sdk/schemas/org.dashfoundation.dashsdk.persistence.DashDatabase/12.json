@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 12,
-    "identityHash": "099a0638297ed00c932013944578313f",
+    "identityHash": "0ef5dd81ffff7648267f76db90ccfc11",
     "entities": [
       {
         "tableName": "wallets",
@@ -1114,7 +1114,7 @@
       },
       {
         "tableName": "public_keys",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `keyId` INTEGER NOT NULL, `purpose` TEXT NOT NULL, `securityLevel` TEXT NOT NULL, `keyType` TEXT NOT NULL, `readOnly` INTEGER NOT NULL, `disabledAt` INTEGER, `publicKeyData` BLOB NOT NULL, `contractBoundsData` BLOB, `contractBoundsDocumentTypeName` TEXT, `privateKeyKeychainIdentifier` TEXT, `derivationIdentityIndex` INTEGER, `derivationKeyIndex` INTEGER, `identityId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `lastAccessed` INTEGER, `identityIdData` BLOB, FOREIGN KEY(`identityIdData`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `keyId` INTEGER NOT NULL, `purpose` TEXT NOT NULL, `securityLevel` TEXT NOT NULL, `keyType` TEXT NOT NULL, `readOnly` INTEGER NOT NULL, `disabledAt` INTEGER, `totalBudget` INTEGER, `expiresAt` INTEGER, `publicKeyData` BLOB NOT NULL, `contractBoundsData` BLOB, `contractBoundsDocumentTypeName` TEXT, `privateKeyKeychainIdentifier` TEXT, `derivationIdentityIndex` INTEGER, `derivationKeyIndex` INTEGER, `identityId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `lastAccessed` INTEGER, `identityIdData` BLOB, FOREIGN KEY(`identityIdData`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -1155,6 +1155,16 @@
           {
             "fieldPath": "disabledAt",
             "columnName": "disabledAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "totalBudget",
+            "columnName": "totalBudget",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
             "affinity": "INTEGER"
           },
           {
@@ -1415,7 +1425,7 @@
       },
       {
         "tableName": "dashpay_profiles",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`networkRaw` INTEGER NOT NULL, `identityId` BLOB NOT NULL, `displayName` TEXT, `publicMessage` TEXT, `bio` TEXT, `avatarUrl` TEXT, `avatarHash` BLOB, `avatarFingerprint` BLOB, `corePaymentAddress` BLOB, `platformPaymentAddress` BLOB, `shieldedAddress` BLOB, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`networkRaw`, `identityId`), FOREIGN KEY(`identityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`networkRaw` INTEGER NOT NULL, `identityId` BLOB NOT NULL, `displayName` TEXT, `publicMessage` TEXT, `bio` TEXT, `avatarUrl` TEXT, `avatarHash` BLOB, `avatarFingerprint` BLOB, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`networkRaw`, `identityId`), FOREIGN KEY(`identityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "networkRaw",
@@ -1457,21 +1467,6 @@
           {
             "fieldPath": "avatarFingerprint",
             "columnName": "avatarFingerprint",
-            "affinity": "BLOB"
-          },
-          {
-            "fieldPath": "corePaymentAddress",
-            "columnName": "corePaymentAddress",
-            "affinity": "BLOB"
-          },
-          {
-            "fieldPath": "platformPaymentAddress",
-            "columnName": "platformPaymentAddress",
-            "affinity": "BLOB"
-          },
-          {
-            "fieldPath": "shieldedAddress",
-            "columnName": "shieldedAddress",
             "affinity": "BLOB"
           },
           {
@@ -1738,7 +1733,7 @@
       },
       {
         "tableName": "dashpay_contact_profiles",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`networkRaw` INTEGER NOT NULL, `ownerIdentityId` BLOB NOT NULL, `contactIdentityId` BLOB NOT NULL, `displayName` TEXT, `publicMessage` TEXT, `bio` TEXT, `avatarUrl` TEXT, `avatarHash` BLOB, `avatarFingerprint` BLOB, `corePaymentAddress` BLOB, `platformPaymentAddress` BLOB, `shieldedAddress` BLOB, `checkedAtMs` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`networkRaw`, `ownerIdentityId`, `contactIdentityId`), FOREIGN KEY(`ownerIdentityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`networkRaw` INTEGER NOT NULL, `ownerIdentityId` BLOB NOT NULL, `contactIdentityId` BLOB NOT NULL, `displayName` TEXT, `publicMessage` TEXT, `bio` TEXT, `avatarUrl` TEXT, `avatarHash` BLOB, `avatarFingerprint` BLOB, `checkedAtMs` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`networkRaw`, `ownerIdentityId`, `contactIdentityId`), FOREIGN KEY(`ownerIdentityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "networkRaw",
@@ -1786,21 +1781,6 @@
           {
             "fieldPath": "avatarFingerprint",
             "columnName": "avatarFingerprint",
-            "affinity": "BLOB"
-          },
-          {
-            "fieldPath": "corePaymentAddress",
-            "columnName": "corePaymentAddress",
-            "affinity": "BLOB"
-          },
-          {
-            "fieldPath": "platformPaymentAddress",
-            "columnName": "platformPaymentAddress",
-            "affinity": "BLOB"
-          },
-          {
-            "fieldPath": "shieldedAddress",
-            "columnName": "shieldedAddress",
             "affinity": "BLOB"
           },
           {
@@ -4186,7 +4166,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '099a0638297ed00c932013944578313f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0ef5dd81ffff7648267f76db90ccfc11')"
     ]
   }
 }

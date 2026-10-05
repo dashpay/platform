@@ -2,8 +2,32 @@
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::runtime;
+use crate::runtime::{block_on_worker, runtime};
+use crate::types::read_identifier;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+
+/// Read a managed identity's balance from Platform, update it and flush persistence.
+///
+/// # Safety
+/// `identity_id` points to 32 readable bytes, and `out_balance` is writable.
+/// `handle` must refer to a live platform wallet for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_refresh_identity_balance(
+    handle: Handle,
+    identity_id: *const u8,
+    out_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_balance);
+    unsafe { *out_balance = 0 };
+    let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
+    let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.refresh_identity_balance(&id).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    unsafe { *out_balance = unwrap_result_or_return!(result) };
+    PlatformWalletFFIResult::ok()
+}
 
 /// Get the wallet ID (32 bytes).
 #[no_mangle]

@@ -30,6 +30,12 @@
 	<key>NSCameraUsageDescription</key>
 	<string>The camera is used to scan Dash address QR codes.</string>
 
+	<!-- Bluetooth permission — "Share Login Key with Browser" advertises a
+	     Bluetooth LE service so a browser in range can receive a bounded
+	     identity key. -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bluetooth is used to hand a nearby browser a time- and spend-limited login key for your identity.</string>
+
 	<!-- Custom URL scheme for DashPay invitation deep links
 	     (dashpay://invite?du=…&assetlocktx=…&pk=…&islock=…). Opening such a link
 	     routes to the DashPay tab and pre-fills the claim sheet.

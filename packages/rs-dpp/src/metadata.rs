@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::{errors::ProtocolError, prelude::TimestampMillis, util::deserializer::ProtocolVersion};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
@@ -42,10 +46,10 @@ impl std::convert::TryFrom<&str> for Metadata {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for Metadata {}
+impl JsonConvertible for Metadata {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for Metadata {}
+impl ValueConvertible for Metadata {}
 
 #[cfg(all(
     test,

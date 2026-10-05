@@ -42,7 +42,7 @@ use strategy_tests::KeyMaps;
 
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
-use dpp::document::DocumentV0Getters;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -745,7 +745,16 @@ impl NetworkStrategy {
                             let document_create_transition: DocumentCreateTransition =
                                 DocumentCreateTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
+                                        // the id commits to the nonce of this transition
+                                        id: Document::generate_document_id(
+                                            &contract.id(),
+                                            &identity.id(),
+                                            document_type.name(),
+                                            entropy.as_slice(),
+                                            *identity_contract_nonce,
+                                            platform_version,
+                                        )
+                                        .expect("expected to derive the document id"),
                                         identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
@@ -862,7 +871,16 @@ impl NetworkStrategy {
                             let document_create_transition: DocumentCreateTransition =
                                 DocumentCreateTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
+                                        // the id commits to the nonce of this transition
+                                        id: Document::generate_document_id(
+                                            &contract.id(),
+                                            &identity.id(),
+                                            document_type.name(),
+                                            entropy.as_slice(),
+                                            *identity_contract_nonce,
+                                            platform_version,
+                                        )
+                                        .expect("expected to derive the document id"),
                                         identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),

@@ -59,6 +59,11 @@ To run tests, simply run
 npm test
 ```
 
+## Design notes
+
+- Count proofs are public. Never add a countable index on `contactRequest` that groups by sender under a recipient, such as `[toUserId, $ownerId]`: it would let anyone list who contacted whom, with counts. A count keyed on `toUserId` alone reveals only a total.
+- Ignoring a sender is local to each device. If it ever syncs across devices, it must be one list the owner encrypts to themselves, not a `contactInfo` document per ignored sender. A `contactInfo` about someone who is not a contact exists publicly, and its creation time lines up with the incoming `contactRequest`, which reveals who was ignored.
+
 ## Contributing
 
 Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues/new/choose) or submit PRs.

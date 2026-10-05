@@ -9,6 +9,10 @@
 //! formats explicitly retain ordinary decoding for foreign Core types; network
 //! responses go through the proof verification and request conversion paths.
 
+/// Contract groups: a group's information, its members and the groups a contract is in
+pub mod contract_groups;
+/// Contract moderation query results
+pub mod contract_moderation;
 /// Data contracts by range (the paginated contract enumeration)
 pub mod data_contracts_by_range;
 /// The current versions of data contracts
@@ -17,6 +21,8 @@ pub mod data_contracts_latest_versions;
 pub mod evonode_status;
 /// Groups
 pub mod groups;
+/// Remaining budgets of identity keys
+pub mod identity_keys_remaining_budgets;
 /// Identity token balance
 pub mod identity_token_balance;
 /// Token contract info

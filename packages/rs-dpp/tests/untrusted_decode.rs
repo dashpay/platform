@@ -1,7 +1,10 @@
 use bincode::config;
 use dpp::address_funds::AddressWitness;
 use dpp::identity::core_script::CoreScript;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::AssetLockProof;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
@@ -131,4 +134,65 @@ fn should_preserve_foreign_txid_serde_encoding_in_consensus_errors() {
     >(&bytes, config)
     .unwrap();
     assert_eq!(ordinary, (value, bytes.len()));
+}
+
+/// The derived decoders report how many bytes the value took, so the exact
+/// entry points can refuse a suffix the plain ones ignore.
+#[test]
+fn should_report_consumed_bytes_and_refuse_a_suffix() {
+    use dpp::serialization::PlatformDeserializableTrusted;
+
+    let config = config::standard().with_big_endian();
+    let mut bytes = bincode::encode_to_vec(LocalFixture(vec![1, 2, 3]), config).unwrap();
+    let value_len = bytes.len();
+    bytes.extend([9, 9]);
+
+    let (fixture, consumed) =
+        LocalFixture::deserialize_from_bytes_trusted_with_bytes_len(&bytes).unwrap();
+    assert_eq!(fixture.0, [1, 2, 3]);
+    assert_eq!(consumed, value_len);
+
+    assert_eq!(
+        LocalFixture::deserialize_from_bytes_trusted(&bytes)
+            .unwrap()
+            .0,
+        [1, 2, 3]
+    );
+    assert!(matches!(
+        LocalFixture::deserialize_from_bytes_trusted_exact(&bytes),
+        Err(ProtocolError::PlatformDeserializationError(message))
+            if message.contains("2 bytes left over")
+    ));
+    assert_eq!(
+        LocalFixture::deserialize_from_bytes_trusted_exact(&bytes[..value_len])
+            .unwrap()
+            .0,
+        [1, 2, 3]
+    );
+}
+
+/// The exact decoder runs under the type's own byte budget: an identity
+/// public key is capped at 2000 bytes, whatever other types allow.
+#[test]
+fn should_apply_the_types_own_budget_to_the_exact_untrusted_decoder() {
+    let key: IdentityPublicKey = IdentityPublicKeyV0 {
+        id: 0,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::MASTER,
+        contract_bounds: None,
+        key_type: KeyType::ECDSA_SECP256K1,
+        read_only: false,
+        data: BinaryData::new(vec![0; 2_100]),
+        disabled_at: None,
+    }
+    .into();
+    let bytes = bincode::encode_to_vec(&key, config::standard().with_big_endian()).unwrap();
+
+    assert!(matches!(
+        IdentityPublicKey::deserialize_from_bytes_untrusted_exact(&bytes),
+        Err(ProtocolError::MaxEncodedBytesReachedError {
+            max_size_kbytes: 2000,
+            ..
+        })
+    ));
 }

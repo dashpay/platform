@@ -878,10 +878,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Broadcast half of [`Self::create_funded_asset_lock_proof`] — steps 1–4:
     /// build + fund the asset-lock transaction, persist the funding account's
     /// address pool, track the lifecycle row, and broadcast. Returns as soon as
-    /// the transaction is on the wire (status `Broadcast`), BEFORE any proof
-    /// wait, so a caller can durably record its own bookkeeping for the funded
-    /// lock (e.g. the inviter-side invitation row) between the broadcast and
-    /// the potentially long proof wait in
+    /// the broadcaster accepts the transaction, with the row at `Broadcast` or
+    /// a later status installed by a concurrent resume, BEFORE any proof wait.
+    /// This lets a caller durably record its own bookkeeping for the funded lock
+    /// (e.g. the inviter-side invitation row) between the broadcast and the
+    /// potentially long proof wait in
     /// [`Self::wait_for_funded_asset_lock_proof`].
     pub(crate) async fn broadcast_funded_asset_lock<S: ExtendedPubKeySigner>(
         &self,
@@ -1197,12 +1198,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // free, and a rebuild is safe; here the row is still
                     // tracked and resumable and its inputs are still reserved
                     // and fenced, so a caller honouring that promise would
-                    // rebuild from other UTXOs and create a SECOND asset lock
-                    // beside a transaction that has either reached the network
-                    // already or is about to. The contract that matches what is
-                    // actually true is the unknown outcome: do not retry, the
-                    // row and its reservation are intact, resume the existing
-                    // lock.
+                    // rebuild from other UTXOs and create a SECOND asset lock.
+                    // The concurrent resume may have sent the transaction or
+                    // may still be committed to dispatch. The contract that
+                    // matches what is actually true is the unknown outcome: do
+                    // not retry; the row and its reservation are intact, so
+                    // resume the existing lock.
                     //
                     // The price is that the reservation and the fence outlive
                     // this call: the fence ends on an observed spend, and no
@@ -1239,11 +1240,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // inputs are still selectable here until the spend is observed.
         in_broadcast_pin.settle_pending_spend();
 
-        // 4. Transition to Broadcast and queue the changeset.
-        let cs_broadcast = self
-            .advance_asset_lock_status(&out_point, AssetLockStatus::Broadcast, None)
-            .await?;
-        self.queue_asset_lock_changeset(cs_broadcast);
+        // 4. Transition to Broadcast only if no concurrent flow advanced the
+        //    row while this call awaited the network. Replacing a finalized
+        //    status here would retain its proof under the weaker status.
+        if let Some(cs_broadcast) = self
+            .advance_asset_lock_status_if(
+                &out_point,
+                |current| *current == AssetLockStatus::Built,
+                AssetLockStatus::Broadcast,
+                None,
+            )
+            .await?
+        {
+            self.queue_asset_lock_changeset(cs_broadcast);
+        }
 
         Ok((path, out_point))
     }
@@ -2069,9 +2079,9 @@ mod tests {
     /// Broadcaster that simulates the racing interleave the release gate
     /// exists for: "during" the broadcast a concurrent `resume_asset_lock`
     /// advances the tracked row to `Broadcast`, then the original call still
-    /// comes back `Rejected`. The advanced row is positive evidence the
-    /// transaction reached the network, so the cleanup must keep it AND keep
-    /// the funding reservation.
+    /// comes back `Rejected`. The advanced row means another attempt owns the
+    /// transaction and may still deliver it, so the cleanup must keep it AND
+    /// keep the funding reservation.
     struct RejectAfterConcurrentResumeBroadcaster {
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
@@ -2105,8 +2115,8 @@ mod tests {
     /// The error must say the same thing the cleanup did. The definite
     /// rejection promises a released reservation and a safe rebuild, and
     /// neither holds on this branch: a caller acting on that promise builds
-    /// a second asset lock beside a transaction the advance says reached the
-    /// network. Only the unknown outcome describes what actually happened.
+    /// a second asset lock beside a transaction another attempt may deliver.
+    /// Only the unknown outcome describes what actually happened.
     #[tokio::test]
     async fn rejected_broadcast_racing_concurrent_resume_keeps_row_and_reservation() {
         let (wallet_manager, wallet_id, _balance, signer) =
@@ -2184,6 +2194,107 @@ mod tests {
             ),
             "rebuild must fail at input selection while the reservation is \
              kept for the advanced row, got {rebuild:?}"
+        );
+    }
+
+    /// Simulates a resume attaching finality while the create path is waiting
+    /// for its broadcast result.
+    struct FinalizeDuringCreateBroadcast {
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        proof: Mutex<Option<dpp::prelude::AssetLockProof>>,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for FinalizeDuringCreateBroadcast {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+            let mut wm = self.wallet_manager.write().await;
+            let lock = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet present")
+                .tracked_asset_locks
+                .values_mut()
+                .next()
+                .expect("row tracked before broadcast");
+            assert_eq!(lock.status, AssetLockStatus::Built);
+            let proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                core_chain_locked_height: 1_234,
+                out_point: lock.out_point,
+            });
+            lock.status = AssetLockStatus::ChainLocked;
+            lock.proof = Some(proof.clone());
+            *self.proof.lock().expect("staged proof mutex") = Some(proof);
+            Ok(transaction.txid())
+        }
+    }
+
+    /// A successful create broadcast must not overwrite a status and proof
+    /// that a concurrent resume already advanced beyond `Built`.
+    #[tokio::test]
+    async fn create_broadcast_does_not_downgrade_a_concurrently_finalized_row() {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let broadcaster = Arc::new(FinalizeDuringCreateBroadcast {
+            wallet_manager: Arc::clone(&wallet_manager),
+            wallet_id,
+            proof: Mutex::new(None),
+        });
+        let persistence = Arc::new(CapturingPersistence::default());
+        let manager = AssetLockManager::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+
+        let (_path, out_point) = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("accepted create broadcast");
+        let staged_proof = broadcaster
+            .proof
+            .lock()
+            .expect("staged proof mutex")
+            .clone()
+            .expect("proof staged during broadcast");
+
+        {
+            let wm = wallet_manager.read().await;
+            let lock = wm
+                .get_wallet_info(&wallet_id)
+                .expect("wallet present")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("row stays tracked");
+            assert_eq!(lock.status, AssetLockStatus::ChainLocked);
+            assert_eq!(lock.proof.as_ref(), Some(&staged_proof));
+        }
+
+        let stored = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex");
+        let persisted_downgrade = stored
+            .iter()
+            .filter_map(|changeset| changeset.asset_locks.as_ref())
+            .filter_map(|changeset| changeset.asset_locks.get(&out_point))
+            .any(|entry| entry.status == AssetLockStatus::Broadcast && entry.proof.is_some());
+        assert!(
+            !persisted_downgrade,
+            "no persisted snapshot may combine Broadcast with an attached proof"
         );
     }
 
@@ -2483,12 +2594,12 @@ mod tests {
         );
     }
 
-    /// The broadcast half returns as soon as the transaction is on the wire:
-    /// the tracked row is `Broadcast` (recoverable/resumable) and the
-    /// invitation funding pool was persisted AND flushed — all BEFORE any
-    /// proof wait (the test completing at all proves no SPV wait ran), so a
-    /// caller can durably record its own bookkeeping for the funded lock
-    /// between the broadcast and the proof wait.
+    /// The broadcast half returns when the broadcaster accepts the transaction:
+    /// the tracked row is `Broadcast` (recoverable/resumable) and the invitation
+    /// funding pool was persisted AND flushed — all BEFORE any proof wait (the
+    /// test completing at all proves no SPV wait ran), so a caller can durably
+    /// record its own bookkeeping for the funded lock between the broadcast and
+    /// the proof wait.
     #[tokio::test]
     async fn broadcast_half_leaves_broadcast_row_and_flushed_pool() {
         let persistence = Arc::new(CapturingPersistence::default());

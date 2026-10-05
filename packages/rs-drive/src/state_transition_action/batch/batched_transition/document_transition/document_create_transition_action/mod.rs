@@ -4,6 +4,7 @@ mod v0;
 mod v1;
 
 use derive_more::From;
+use dpp::data_contract::document_type::property_constraints::AggregateRead;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::{Identifier, Value};
@@ -27,6 +28,9 @@ pub enum DocumentCreateTransitionAction {
     /// v0
     V0(DocumentCreateTransitionActionV0),
 }
+
+/// What `property_constraint_aggregates` returns for an action holding none.
+static NO_PROPERTY_CONSTRAINT_AGGREGATES: BTreeMap<AggregateRead, i128> = BTreeMap::new();
 
 impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionAction {
     fn base(&self) -> &DocumentBaseTransitionAction {
@@ -81,15 +85,27 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
-    fn should_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo> {
+    fn set_prefunded_voting_fund(&mut self, fund: Credits) {
         match self {
-            DocumentCreateTransitionAction::V0(v0) => &v0.should_store_contest_info,
+            DocumentCreateTransitionAction::V0(v0) => {
+                if let Some((_, credits)) = v0.prefunded_voting_balance.as_mut() {
+                    *credits = fund;
+                }
+            }
+        }
+    }
+
+    fn should_store_contest_info(&self) -> Option<&ContestedDocumentVotePollStoredInfo> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.should_store_contest_info.as_deref(),
         }
     }
 
     fn take_should_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo> {
         match self {
-            DocumentCreateTransitionAction::V0(v0) => v0.should_store_contest_info.take(),
+            DocumentCreateTransitionAction::V0(v0) => {
+                v0.should_store_contest_info.take().map(|info| *info)
+            }
         }
     }
 
@@ -102,6 +118,62 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
     fn take_current_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.current_store_contest_info.take(),
+        }
+    }
+
+    fn consumed_documents(&self) -> &[ConsumedDocument] {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => &v0.consumed_documents,
+        }
+    }
+
+    fn set_consumed_documents(&mut self, consumed_documents: Vec<ConsumedDocument>) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.consumed_documents = consumed_documents,
+        }
+    }
+
+    fn derived_index_values(&self) -> Option<&BTreeMap<String, Value>> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.derived_index_values.as_deref(),
+        }
+    }
+
+    fn set_derived_index_values(&mut self, values: BTreeMap<String, Value>) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => {
+                v0.derived_index_values = (!values.is_empty()).then(|| Box::new(values))
+            }
+        }
+    }
+
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0
+                .property_constraint_aggregates
+                .as_deref()
+                .unwrap_or(&NO_PROPERTY_CONSTRAINT_AGGREGATES),
+        }
+    }
+
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => {
+                v0.property_constraint_aggregates =
+                    (!aggregates.is_empty()).then(|| Box::new(aggregates))
+            }
+        }
+    }
+
+    fn moderated(&self) -> bool {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.moderated,
+        }
+    }
+
+    fn set_moderated(&mut self) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.moderated = true,
         }
     }
 }

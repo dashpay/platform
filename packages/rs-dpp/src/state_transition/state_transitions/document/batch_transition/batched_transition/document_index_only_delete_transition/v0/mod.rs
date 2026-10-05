@@ -65,6 +65,7 @@ impl<'de> Deserialize<'de> for DocumentIndexOnlyDeleteTransitionV0 {
             "$type",
             "$dataContractId",
             "$tokenPaymentInfo",
+            "$actionFeeAgreement",
         ];
 
         let mut map: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;

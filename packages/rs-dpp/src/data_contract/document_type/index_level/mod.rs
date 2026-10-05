@@ -7,11 +7,12 @@ use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::IndexCountability;
-use crate::data_contract::document_type::index::TimeRangeTransform;
+use crate::data_contract::document_type::index::{IndexBucketing, TimeRangeTransform};
 use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
 use crate::data_contract::document_type::Index;
+use crate::document::property_names::CREATED_AT;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
@@ -102,18 +103,19 @@ pub struct IndexLevelTypeInfo {
     /// other two. The set of axes declared here is what the rs-drive write path
     /// turns into the indexed tree's axis list.
     pub ranked_averageable: bool,
-    /// On an indexOnly document type, the property whose value is this
-    /// index's member key: the terminal key under the `0` storage marker,
-    /// where a normal index stores the document id — stored as an `Item`
-    /// instead of a `Reference` because there is no primary-storage row.
-    /// Always `Some` here when the declaring type is indexOnly (the parser
-    /// normalizes an omitted terminal to `$ownerId`), always `None`
-    /// otherwise. Carried on the level info because index levels merge
+    /// On an indexOnly document type, the property — or ordered list of
+    /// properties, for a composite terminal — whose encoded value(s) form
+    /// this index's member key: the terminal key under the `0` storage
+    /// marker, where a normal index stores the document id — stored as an
+    /// `Item` instead of a `Reference` because there is no primary-storage
+    /// row. Always `Some` here when the declaring type is indexOnly (the
+    /// parser normalizes an omitted terminal to `["$ownerId"]`), always
+    /// `None` otherwise. Carried on the level info because index levels merge
     /// across indexes sharing prefixes, and the write path only sees the
     /// level at the terminal — but two indexes can never share a full
     /// property list (duplicates are rejected), so each terminating level
     /// belongs to exactly one index and the field is unambiguous.
-    pub terminal: Option<String>,
+    pub terminal: Option<Vec<String>>,
     /// Whether the terminating index is `preallocated` (see
     /// [`crate::data_contract::document_type::index::PREALLOCATED`]): its
     /// dynamic trees are created when a refersTo-referenced document is, and
@@ -124,6 +126,33 @@ pub struct IndexLevelTypeInfo {
     /// `false` on every pre-PV14 contract (the grammar rejects the keyword
     /// below meta-schema v3).
     pub preallocated: bool,
+    /// Whether the terminating index's entries outlive a delete of their
+    /// document ([`Index::outlives_delete`], see
+    /// [`crate::data_contract::document_type::index::OUTLIVES_DELETE`]): the
+    /// delete walker leaves them to expire with their window, and the insert
+    /// walker writes over an entry already there.
+    /// Carried here for the same reason as `preallocated`. `false` on every
+    /// pre-PV14 contract (the grammar rejects the keyword below meta-schema
+    /// v3).
+    pub outlives_delete: bool,
+    /// Whether the terminating index is FLAT (an indexOnly index with no
+    /// prefix properties, see [`Index::is_flat`]): its entries sit directly
+    /// under the `0` bucket of its own level, which is registration-time
+    /// structure like a property-name tree, so the delete walker stops its
+    /// upward prune at that bucket exactly as on a preallocated index.
+    /// Carried here so the walkers read the layout off the level info that
+    /// defines it instead of inferring it from a path height. `false` on
+    /// every pre-PV14 contract and on every prefixed index.
+    pub flat: bool,
+    /// The skip set of the terminating index
+    /// ([`Index::skip_if_absent_properties`]): the walkers write this
+    /// level's entry only for a document that carries every one of these
+    /// properties, and build a level only when some entry at or below it is
+    /// written. Carried here for the same reason as `terminal`: the walkers
+    /// only see the merged levels, and indexes with different skip sets can
+    /// share them. Empty on every index that does not skip, which is every
+    /// index of every pre-PV14 contract.
+    pub skip_if_absent_properties: Vec<String>,
 }
 
 impl IndexType {
@@ -144,14 +173,15 @@ pub struct IndexLevel {
     sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
     has_index_with_type: Option<IndexLevelTypeInfo>,
-    /// When set, the property reached at this level is a timestamp that is
-    /// bucketed into time ranges (see [`TimeRangeTransform`]). Only ever set
-    /// on a *first-property* node (a direct child of the root), because a
-    /// time-range transform must be its index's leading property. At
-    /// insert/delete/update time the document's timestamp for this property
-    /// is expanded into one key per overlapping range bucket instead of a
-    /// single key. Immutable after contract creation.
-    time_range: Option<TimeRangeTransform>,
+    /// When set, the property reached at this level is bucketed into
+    /// windows: a timestamp by a `timeRange` grid (see [`TimeRangeTransform`])
+    /// or an integer by an `integerRange` grid. Only ever set on a
+    /// *first-property* node (a direct child of the root), because a grid
+    /// must bucket its index's leading property. At insert/delete/update
+    /// time the document's value for this property is expanded into one key
+    /// per containing window instead of a single key. Immutable after
+    /// contract creation.
+    bucketing: Option<IndexBucketing>,
     /// When `true`, the property-name tree materialized at this level is the
     /// prefix-level Count ranking tree of exactly one index — the one whose
     /// [`Index::ranked_countable_at`] names this level's property. The
@@ -193,6 +223,31 @@ pub struct IndexLevel {
     /// on PV14+ contracts (the `at` grammar is rejected below meta-schema
     /// v3), so every historical index level derives bit-identically.
     count_exempt_branch: bool,
+    /// Whether an index with a non-empty skip set
+    /// ([`Index::skip_if_absent_properties`]) passes through or ends at this
+    /// level. The walkers only have to ask which indexes a document takes
+    /// part in below a level that is stamped: every other level has an entry
+    /// for every document. Never set on a contract without a skipIfAbsent
+    /// index, so every historical index level derives bit-identically.
+    skip_at_or_below: bool,
+    /// Whether an index whose entries outlive a delete of their document
+    /// ([`Index::outlives_delete`]) passes through or ends at this level. The
+    /// delete walkers only have to ask which indexes a delete clears below a
+    /// level that is stamped. Never set on a contract without such an index,
+    /// so every historical index level derives bit-identically.
+    outlives_delete_at_or_below: bool,
+    /// Whether an index whose entries a delete clears (not
+    /// [`Index::outlives_delete`]) passes through or ends at this level. With
+    /// [`Self::outlives_delete_at_or_below`] it tells a delete walker in one
+    /// read whether a stamped level holds anything it removes.
+    cleared_on_delete_at_or_below: bool,
+    /// On the root level: whether every index involving `$createdAt` outlives
+    /// a delete, and at least one does. Then no index a delete clears is keyed
+    /// by the timestamp (see
+    /// [`crate::data_contract::document_type::index_only_row_commits_created_at`]).
+    /// `false` on every other level, and on every contract without such an
+    /// index.
+    created_at_indexed_only_by_outliving: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -209,7 +264,13 @@ impl IndexLevel {
     /// The time-range transform applied to the property reached at this
     /// level, if any. Only set on first-property nodes.
     pub fn time_range(&self) -> Option<&TimeRangeTransform> {
-        self.time_range.as_ref()
+        self.bucketing.as_ref().and_then(IndexBucketing::time_range)
+    }
+
+    /// The grid (time or integer) applied to the property reached at this
+    /// level, if any. Only set on first-property nodes.
+    pub fn bucketing(&self) -> Option<&IndexBucketing> {
+        self.bucketing.as_ref()
     }
 
     /// Whether this level hosts a prefix-level Count ranking — see the field
@@ -230,6 +291,30 @@ impl IndexLevel {
     /// — see the field docs on [`IndexLevel`].
     pub fn count_exempt_branch(&self) -> bool {
         self.count_exempt_branch
+    }
+
+    /// Whether a skipIfAbsent index passes through or ends at this level —
+    /// see the field docs on [`IndexLevel`].
+    pub fn skip_at_or_below(&self) -> bool {
+        self.skip_at_or_below
+    }
+
+    /// Whether an index whose entries outlive a delete passes through or ends
+    /// at this level — see the field docs on [`IndexLevel`].
+    pub fn outlives_delete_at_or_below(&self) -> bool {
+        self.outlives_delete_at_or_below
+    }
+
+    /// Whether an index whose entries a delete clears passes through or ends
+    /// at this level — see the field docs on [`IndexLevel`].
+    pub fn cleared_on_delete_at_or_below(&self) -> bool {
+        self.cleared_on_delete_at_or_below
+    }
+
+    /// On the root level: whether only indexes whose entries outlive a
+    /// delete involve `$createdAt` — see the field docs on [`IndexLevel`].
+    pub fn created_at_indexed_only_by_outliving(&self) -> bool {
+        self.created_at_indexed_only_by_outliving
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -333,17 +418,30 @@ impl IndexLevel {
         let mut index_level = IndexLevel {
             sub_index_levels: Default::default(),
             has_index_with_type: None,
-            time_range: None,
+            bucketing: None,
             ranked_count_grouping: false,
             count_propagating: false,
             count_exempt_branch: false,
+            skip_at_or_below: false,
+            outlives_delete_at_or_below: false,
+            cleared_on_delete_at_or_below: false,
+            created_at_indexed_only_by_outliving: false,
             level_identifier: 0,
         };
 
         let mut counter: u64 = 0;
+        let mut created_at_in_outliving = false;
+        let mut created_at_in_cleared = false;
 
         for index_to_borrow in indices {
             let index = index_to_borrow.borrow();
+            if index.involves(CREATED_AT) {
+                if index.outlives_delete {
+                    created_at_in_outliving = true;
+                } else {
+                    created_at_in_cleared = true;
+                }
+            }
             // The positions of the properties hosting prefix-level Count
             // rankings, when the index declares any. The parser guarantees
             // each name resolves to a non-terminal property; the lookups
@@ -356,6 +454,47 @@ impl IndexLevel {
                 .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
                 .collect();
             let min_ranked_at_position = ranked_at_positions.iter().copied().min();
+            // A FLAT indexOnly index has no prefix properties: its entries
+            // live directly under one level keyed by the terminal's
+            // component names (`flat_level_key_for`, whose zero-byte
+            // prefix keeps it disjoint from every property-name tree). A
+            // property-less index with no terminal cannot exist on a
+            // parsed type — the parser refuses it — so a hand-built one
+            // stamps nothing here rather than a level nothing could key.
+            if index.properties.is_empty() {
+                let Some(flat_key) = index.flat_level_key() else {
+                    continue;
+                };
+                let flat_level =
+                    index_level
+                        .sub_index_levels
+                        .entry(flat_key)
+                        .or_insert_with(|| {
+                            counter += 1;
+                            IndexLevel {
+                                level_identifier: counter,
+                                sub_index_levels: Default::default(),
+                                has_index_with_type: None,
+                                bucketing: None,
+                                ranked_count_grouping: false,
+                                count_propagating: false,
+                                count_exempt_branch: false,
+                                skip_at_or_below: false,
+                                outlives_delete_at_or_below: false,
+                                cleared_on_delete_at_or_below: false,
+                                created_at_indexed_only_by_outliving: false,
+                            }
+                        });
+                if flat_level.has_index_with_type.is_some() {
+                    return Err(ConsensusError::BasicError(BasicError::DuplicateIndexError(
+                        DuplicateIndexError::new(document_type_name.to_owned(), index.name.clone()),
+                    ))
+                    .into());
+                }
+                flat_level.has_index_with_type = Some(Self::terminator_info(index));
+                continue;
+            }
+
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().enumerate().peekable();
 
@@ -380,16 +519,29 @@ impl IndexLevel {
                             level_identifier: counter,
                             sub_index_levels: Default::default(),
                             has_index_with_type: None,
-                            time_range: None,
+                            bucketing: None,
                             ranked_count_grouping: false,
                             count_propagating: false,
                             count_exempt_branch: false,
+                            skip_at_or_below: false,
+                            outlives_delete_at_or_below: false,
+                            cleared_on_delete_at_or_below: false,
+                            created_at_indexed_only_by_outliving: false,
                         }
                     });
 
+                if !index.skip_if_absent_properties.is_empty() {
+                    current_level.skip_at_or_below = true;
+                }
+                if index.outlives_delete {
+                    current_level.outlives_delete_at_or_below = true;
+                } else {
+                    current_level.cleared_on_delete_at_or_below = true;
+                }
+
                 if position == 0 {
-                    if let Some(transform) = &index.time_range {
-                        current_level.time_range = Some(transform.clone());
+                    if let Some(bucketing) = index.bucketing() {
+                        current_level.bucketing = Some(bucketing);
                     }
                 }
 
@@ -432,41 +584,7 @@ impl IndexLevel {
                         .into());
                     }
 
-                    let index_type = if index.unique {
-                        UniqueIndex
-                    } else {
-                        NonUniqueIndex
-                    };
-
-                    // if things are null searchable that means we should insert with all null
-
-                    current_level.has_index_with_type = Some(IndexLevelTypeInfo {
-                        should_insert_with_all_null: index.null_searchable,
-                        index_type,
-                        countable: index.countable,
-                        range_countable: index.range_countable,
-                        summable: index.summable.clone(),
-                        range_summable: index.range_summable,
-                        // The ranking axes live on the same terminating level
-                        // as the range axes they extend: this is the level
-                        // named after the index's LAST property, whose children
-                        // are that property's value trees (one per group). The
-                        // rs-drive write path reads them off the very same
-                        // `IndexLevelTypeInfo` it already consults for
-                        // `range_countable` / `range_summable` when it picks
-                        // the property-name tree variant.
-                        ranked_countable: index.ranked_countable,
-                        ranked_summable: index.ranked_summable,
-                        ranked_averageable: index.ranked_averageable,
-                        // indexOnly member key. Only ever `Some` on PV14+
-                        // contracts (the grammar rejects the keyword below
-                        // generation 3), so stamping it here changes nothing
-                        // for any historical index level.
-                        terminal: index.terminal.clone(),
-                        // Same PV14+ gating as `terminal` — `false` on
-                        // every historical index level.
-                        preallocated: index.preallocated,
-                    });
+                    current_level.has_index_with_type = Some(Self::terminator_info(index));
                 }
             }
         }
@@ -479,8 +597,54 @@ impl IndexLevel {
         // every index set without an `at` ranking (no level is stamped
         // grouping or propagating), which is every pre-PV14 contract.
         Self::stamp_count_exempt_branches(&mut index_level);
+        index_level.created_at_indexed_only_by_outliving =
+            created_at_in_outliving && !created_at_in_cleared;
 
         Ok(index_level)
+    }
+
+    /// The terminator stamp an index leaves on the level its last property
+    /// reaches (or, for a flat index, on its flat level): the index type and
+    /// every per-index axis the write path reads off the level.
+    fn terminator_info(index: &Index) -> IndexLevelTypeInfo {
+        let index_type = if index.unique {
+            UniqueIndex
+        } else {
+            NonUniqueIndex
+        };
+        // if things are null searchable that means we should insert with all null
+        IndexLevelTypeInfo {
+            should_insert_with_all_null: index.null_searchable,
+            index_type,
+            countable: index.countable,
+            range_countable: index.range_countable,
+            summable: index.summable.clone(),
+            range_summable: index.range_summable,
+            // The ranking axes live on the same terminating level as the
+            // range axes they extend: this is the level named after the
+            // index's LAST property, whose children are that property's
+            // value trees (one per group). The rs-drive write path reads
+            // them off the very same `IndexLevelTypeInfo` it already
+            // consults for `range_countable` / `range_summable` when it
+            // picks the property-name tree variant.
+            ranked_countable: index.ranked_countable,
+            ranked_summable: index.ranked_summable,
+            ranked_averageable: index.ranked_averageable,
+            // indexOnly member key. Only ever `Some` on PV14+ contracts
+            // (the grammar rejects the keyword below generation 3), so
+            // stamping it here changes nothing for any historical index
+            // level.
+            terminal: index.terminal.clone(),
+            // Same PV14+ gating as `terminal` — `false` on every
+            // historical index level.
+            preallocated: index.preallocated,
+            outlives_delete: index.outlives_delete,
+            // A flat index terminates on its own level, directly under the
+            // document type: the one layout whose prune boundary is the
+            // level's `0` bucket rather than the document type.
+            flat: index.is_flat(),
+            skip_if_absent_properties: index.skip_if_absent_properties.clone(),
+        }
     }
 
     /// Recursively marks, under every prefix-ranking chain level (grouping
@@ -602,8 +766,8 @@ impl IndexLevel {
             );
         }
 
-        // A time-range transform determines how many index entries each
-        // document produces and under which bucket keys. Changing it after
+        // A time-range or integer-range grid determines how many index
+        // entries each document produces and under which bucket keys. Changing it after
         // creation would leave already-stored documents indexed under stale
         // buckets, so it is immutable — reject any change.
         if let Some(time_range_change_path) = self.find_first_time_range_change(new_indices) {
@@ -626,6 +790,24 @@ impl IndexLevel {
                 DataContractInvalidIndexDefinitionUpdateError::new(
                     document_type_name.to_string(),
                     preallocated_change_path,
+                )
+                .into(),
+            );
+        }
+
+        // Whether an index's entries outlive their document's delete decides
+        // what a delete carries and what a row commits to: turning it on
+        // would leave every existing row committed to values its deletes no
+        // longer carry, and turning it off would ask every delete for a value
+        // the rows written since never committed to. Immutable like the flags
+        // above.
+        if let Some(outlives_delete_change_path) =
+            self.find_first_outlives_delete_change(new_indices)
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    outlives_delete_change_path,
                 )
                 .into(),
             );
@@ -664,9 +846,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -703,9 +888,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![
@@ -727,9 +915,12 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
             Index {
                 name: "test2".to_string(),
@@ -749,9 +940,12 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
         ];
 
@@ -797,9 +991,12 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
             Index {
                 name: "test2".to_string(),
@@ -819,9 +1016,12 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
+                outlives_delete: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
         ];
 
@@ -843,9 +1043,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -889,9 +1092,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -918,9 +1124,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -970,9 +1179,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -993,9 +1205,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1039,9 +1254,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1062,9 +1280,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1108,9 +1329,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1131,9 +1355,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1177,9 +1404,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1223,9 +1453,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1246,9 +1479,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1292,9 +1528,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1315,9 +1554,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1367,9 +1609,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1396,9 +1641,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1448,9 +1696,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1477,9 +1728,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1537,9 +1791,12 @@ mod tests {
             ranked_summable,
             ranked_averageable,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -1603,9 +1860,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -1676,9 +1936,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -2075,9 +2338,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let mut new_indices = old_indices.clone();
@@ -2128,9 +2394,12 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {
@@ -2151,6 +2420,64 @@ mod tests {
                 old_index_structure.validate_update(document_type_name, &new_index_structure);
 
             let expected_path = format!("test -> (preallocated: {} -> {})", old_flag, new_flag);
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == expected_path
+            );
+        }
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_outlives_delete_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let index_with_outlives_delete = |outlives_delete: bool| Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            integer_range: None,
+            terminal: None,
+            preallocated: false,
+            outlives_delete,
+            skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
+        };
+
+        for (old_flag, new_flag) in [(false, true), (true, false)] {
+            let old_index_structure = IndexLevel::try_from_indices(
+                &[index_with_outlives_delete(old_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create old index level");
+            let new_index_structure = IndexLevel::try_from_indices(
+                &[index_with_outlives_delete(new_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create new index level");
+
+            let result =
+                old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+            let expected_path = format!("test -> (outlivesDelete: {} -> {})", old_flag, new_flag);
             assert_matches!(
                 result.errors.as_slice(),
                 [ConsensusError::BasicError(

@@ -1,4 +1,8 @@
-use dpp::data_contract::document_type::{DocumentPropertyType, TimeRangeTransform};
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::DocumentPropertyType;
+use dpp::data_contract::document_type::{
+    IndexBucketing, IntegerRangeTransform, TimeRangeTransform,
+};
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -6,7 +10,9 @@ pub use {
     // Chained-query building blocks: the result shape and the join-value
     // cap. The join itself is a by-id join sub-query in
     // [`DriveDocumentQuery::sub_queries`].
-    chained_document_query::{ChainedDocumentsResult, MAX_CHAINED_JOIN_VALUES},
+    chained_document_query::{
+        ChainedDocumentsResult, ChainedOuterDocuments, MAX_CHAINED_JOIN_VALUES,
+    },
     // Composite-query building blocks: the sub-query shapes carried by
     // [`DriveDocumentQuery::sub_queries`] and the assembled result. The
     // verifier needs them all to rebuild and route the merged proof.
@@ -129,8 +135,12 @@ use {
 #[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 #[cfg(feature = "server")]
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::document::DocumentV0Getters;
 #[cfg(feature = "server")]
 pub use grovedb::{
     query_result_type::{QueryResultElements, QueryResultType},
@@ -306,6 +316,12 @@ pub(crate) mod index_only_synthesis;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod chained_document_query;
 
+/// Joins through a `refersTo: moderatedDocument` property: the removal
+/// records a chained or composite join proves beside the documents it joins.
+/// See the module docs.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod moderated_join;
+
 /// Composite document queries — a [`DriveDocumentQuery`] page plus
 /// sub-queries derived from its proven results (joins, lookups, counts),
 /// proven as one merged proof against one state root. See the module docs.
@@ -414,6 +430,27 @@ pub(crate) enum BestIndexOutcome<'a> {
 }
 
 impl InternalClauses {
+    /// Every constraint these clauses and `order_by_keys` make, for the
+    /// `skipIfAbsent` admissibility gate
+    /// ([`index_admissible_for_skip_if_absent`]).
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn skip_if_absent_bindings<'a>(
+        &'a self,
+        order_by_keys: &[&'a str],
+    ) -> Vec<SkipIfAbsentBinding<'a>> {
+        self.equal_clauses
+            .values()
+            .chain(self.in_clauses.iter())
+            .chain(self.range_clause.iter())
+            .map(SkipIfAbsentBinding::for_where_clause)
+            .chain(
+                order_by_keys
+                    .iter()
+                    .map(|key| SkipIfAbsentBinding::ordering(key)),
+            )
+            .collect()
+    }
+
     /// Classify one field's index roles against `document_type`. The
     /// single derivation site for "is this a prefix property, a terminal,
     /// or `$id`" — consumers must branch on this instead of assuming a
@@ -433,7 +470,7 @@ impl InternalClauses {
             {
                 roles.index_property = true;
             }
-            if index.terminal.as_deref() == Some(field) {
+            if index.terminal_contains(field) {
                 roles.terminal = true;
             }
             if roles.index_property && roles.terminal {
@@ -805,29 +842,135 @@ impl TimeRangeGridSpec {
     }
 }
 
-/// Resolution provenance for one `IN_TIME_RANGE` clause: the field the
-/// selector named and the exact grid the resolution used. Recorded by the
-/// resolver's caller on the query (see
-/// [`DriveDocumentQuery::resolved_time_ranges`]) and consumed by the index
-/// pickers through [`index_admissible_for_resolved_time_range`], which pins
-/// selection to the index carrying exactly this grid — a field may be
-/// bucketed by several grids, so the field name alone no longer identifies
-/// the index the resolution was computed against.
+/// Resolution provenance for one window selection — an `IN_TIME_RANGE` or
+/// an `IN_INTEGER_RANGE` clause: the field the selection named and the
+/// exact grid the resolution used. Recorded by the resolver's caller on the
+/// query (see [`DriveDocumentQuery::resolved_time_ranges`]) and consumed by
+/// the index pickers through [`index_admissible_for_resolved_time_range`],
+/// which pins selection to the index carrying exactly this grid — a field
+/// may be bucketed by several grids, so the field name alone no longer
+/// identifies the index the resolution was computed against.
+///
+/// Named for the first kind of grid; an `integerRange` resolution rides the
+/// same provenance, since both kinds store window starts under a
+/// grid-qualified level and every admissibility rule is shared.
 #[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedTimeRange {
-    /// The grid the bucket start was computed from. The transform carries its
-    /// own source field, so the provenance cannot name a field the grid does
-    /// not bucket — [`Self::field`] reads it from here.
-    pub transform: TimeRangeTransform,
+    /// The grid the window start was computed from. The grid carries its own
+    /// source field, so the provenance cannot name a field the grid does not
+    /// bucket — [`Self::field`] reads it from here.
+    pub transform: IndexBucketing,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
 impl ResolvedTimeRange {
     /// The bucketed source field the resolved equality is on — always the
-    /// transform's own source.
+    /// grid's own source.
     pub fn field(&self) -> &str {
-        &self.transform.source
+        self.transform.source()
+    }
+
+    /// The kind of selection the equality was resolved from, as refusals
+    /// name it: `"time-range"` or `"integer-range"`.
+    pub fn kind(&self) -> &'static str {
+        match self.transform {
+            IndexBucketing::Time(_) => "time-range",
+            IndexBucketing::Integer(_) => "integer-range",
+        }
+    }
+
+    /// The where operator that selects a window of this kind.
+    pub fn operator(&self) -> &'static str {
+        match self.transform {
+            IndexBucketing::Time(_) => "IN_TIME_RANGE",
+            IndexBucketing::Integer(_) => "IN_INTEGER_RANGE",
+        }
+    }
+}
+
+/// How a window selection names its kind of grid in refusals.
+#[cfg(any(feature = "server", feature = "verify"))]
+struct SelectionGridKind {
+    /// `"time-range"` or `"integer-range"`.
+    kind: &'static str,
+    /// The where operator the selection rides.
+    operator: &'static str,
+    /// The unit note of the grid's parameters, e.g. `", in seconds,"`.
+    units: &'static str,
+}
+
+/// The grid a window selection on `field` resolves against, shared by the
+/// time and integer resolvers so they pick grids by the same rules: the
+/// distinct grids of `field` (indexes sharing a grid share its storage
+/// level too, so they dedupe), the named one when `spec` names one, else
+/// the only one — a bare selection on a field with several grids is
+/// ambiguous and refused.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn select_selection_grid<'a, T>(
+    document_type: &'a DocumentTypeRef<'_>,
+    field: &str,
+    grid_of: impl Fn(&'a Index) -> Option<&'a T>,
+    spec: Option<(impl Fn(&T) -> bool, String)>,
+    names: SelectionGridKind,
+) -> Result<&'a T, Error>
+where
+    T: BucketSource + PartialEq,
+{
+    let mut grids: Vec<&'a T> = Vec::new();
+    for index in document_type.indexes().values() {
+        if let Some(transform) = grid_of(index).filter(|transform| transform.source() == field) {
+            if !grids.contains(&transform) {
+                grids.push(transform);
+            }
+        }
+    }
+    let SelectionGridKind {
+        kind,
+        operator,
+        units,
+    } = names;
+    let Some(first) = grids.first().copied() else {
+        return Err(Error::Query(
+            QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                "no {kind} index is defined on field \"{field}\""
+            )),
+        ));
+    };
+    match spec {
+        Some((matches, described)) => grids
+            .into_iter()
+            .find(|transform| matches(transform))
+            .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "no {kind} index on \"{field}\" declares the grid {described}"
+            )))),
+        None if grids.len() > 1 => Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "field \"{field}\" is bucketed by {} different {kind} grids; the {operator} \
+             selection must name one in its `grid` (range/step/phase{units} as the contract \
+             declares them)",
+            grids.len()
+        )))),
+        None => Ok(first),
+    }
+}
+
+/// The bucketed source field of a grid, for [`select_selection_grid`].
+#[cfg(any(feature = "server", feature = "verify"))]
+trait BucketSource {
+    fn source(&self) -> &str;
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl BucketSource for TimeRangeTransform {
+    fn source(&self) -> &str {
+        &self.source
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl BucketSource for IntegerRangeTransform {
+    fn source(&self) -> &str {
+        &self.source
     }
 }
 
@@ -866,50 +1009,25 @@ pub fn resolve_time_range_bucket_clause(
     document_type: DocumentTypeRef,
     block_time_ms: u64,
 ) -> Result<(WhereClause, ResolvedTimeRange), Error> {
-    // Distinct grids bucketing `field` — several indexes may share one grid
-    // (they share the storage level too), so dedupe by transform.
-    let mut grids: Vec<&TimeRangeTransform> = Vec::new();
-    for index in document_type.indexes().values() {
-        if let Some(transform) = index
-            .time_range
-            .as_ref()
-            .filter(|transform| transform.source == field)
-        {
-            if !grids.contains(&transform) {
-                grids.push(transform);
-            }
-        }
-    }
-    if grids.is_empty() {
-        return Err(Error::Query(
-            QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                "no time-range index is defined on field \"{}\"",
-                field
-            )),
-        ));
-    }
-
-    let transform = match grid {
-        Some(spec) => *grids
-            .iter()
-            .find(|transform| spec.matches(transform))
-            .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "no time-range index on \"{}\" declares the grid range={}s step={}s phase={}s",
-                field, spec.range_seconds, spec.step_seconds, spec.phase_seconds
-            ))))?,
-        None => {
-            if grids.len() > 1 {
-                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                    "field \"{}\" is bucketed by {} different grids; the IN_TIME_RANGE \
-                     selection must name one in its `grid` (range/step/phase, in seconds, \
-                     as the contract declares them)",
-                    field,
-                    grids.len()
-                ))));
-            }
-            grids[0]
-        }
-    };
+    let transform = select_selection_grid(
+        &document_type,
+        field,
+        |index| index.time_range.as_ref(),
+        grid.map(|spec| {
+            (
+                move |transform: &TimeRangeTransform| spec.matches(transform),
+                format!(
+                    "range={}s step={}s phase={}s",
+                    spec.range_seconds, spec.step_seconds, spec.phase_seconds
+                ),
+            )
+        }),
+        SelectionGridKind {
+            kind: "time-range",
+            operator: "IN_TIME_RANGE",
+            units: ", in seconds,",
+        },
+    )?;
 
     let bucket_start = match selector {
         TimeRangeSelector::Newest => transform.newest_active_start(block_time_ms),
@@ -967,18 +1085,125 @@ pub fn resolve_time_range_bucket_clause(
             value: Value::U64(bucket_start),
         },
         ResolvedTimeRange {
-            transform: transform.clone(),
+            transform: transform.clone().into(),
+        },
+    ))
+}
+
+/// A concrete integer grid, matching a contract's `integerRange`
+/// declaration verbatim (`range` / `step` / `phase`).
+///
+/// An `IN_INTEGER_RANGE` selection carries one when the queried field is
+/// bucketed by more than one grid; with a single grid it may be omitted.
+#[cfg(any(feature = "server", feature = "verify"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IntegerRangeGridSpec {
+    /// Window length, as the contract declares it.
+    pub range: u64,
+    /// Interval between window starts, as the contract declares it.
+    pub step: u64,
+    /// Grid alignment (0 when the contract omits `phase`).
+    pub phase: u64,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl IntegerRangeGridSpec {
+    /// Whether this spec names exactly the given transform's grid.
+    pub fn matches(&self, transform: &IntegerRangeTransform) -> bool {
+        self.range == transform.range
+            && self.step == transform.step
+            && self.phase == transform.phase
+    }
+}
+
+/// Resolves an `IN_INTEGER_RANGE` selection on `field` — the window of an
+/// `integerRange` grid starting at `start` — into a concrete equality
+/// [`WhereClause`] on the bucketed source field, plus the
+/// [`ResolvedTimeRange`] provenance callers must record on the query (see
+/// [`DriveDocumentQuery::resolved_time_ranges`]).
+///
+/// The integer counterpart of [`resolve_time_range_bucket_clause`]'s
+/// `byStart`: the window is named absolutely, so the server and the proof
+/// verifier resolve it from the query alone, with no clock. `start` must be
+/// an integer that names a window of the grid (a grid start the property's
+/// type can hold, or the type's minimum for the clamped bottom window — see
+/// [`IntegerRangeTransform::is_window_start`]); anything else is rejected
+/// rather than snapped. An empty window is a provable empty answer.
+///
+/// `grid` selects among several integer-range indexes on the same field:
+/// `None` is accepted only while exactly one grid buckets the field.
+///
+/// The equality's value is the start as an integer; the query path
+/// serializes it through the schema exactly like a raw value of the field,
+/// which is how the walkers stored it.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn resolve_integer_range_bucket_clause(
+    field: &str,
+    start: &Value,
+    grid: Option<IntegerRangeGridSpec>,
+    document_type: DocumentTypeRef,
+) -> Result<(WhereClause, ResolvedTimeRange), Error> {
+    let transform = select_selection_grid(
+        &document_type,
+        field,
+        |index| index.integer_range.as_ref(),
+        grid.map(|spec| {
+            (
+                move |transform: &IntegerRangeTransform| spec.matches(transform),
+                format!(
+                    "range={} step={} phase={}",
+                    spec.range, spec.step, spec.phase
+                ),
+            )
+        }),
+        SelectionGridKind {
+            kind: "integer-range",
+            operator: "IN_INTEGER_RANGE",
+            units: "",
+        },
+    )?;
+
+    let start = start.as_integer::<i128>().ok_or(Error::Query(
+        QuerySyntaxError::InvalidWhereClauseComponents(
+            "an IN_INTEGER_RANGE selection's start must be an integer",
+        ),
+    ))?;
+    if !transform.is_window_start(start) {
+        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "{} on \"{}\" is not a window start of the grid range={} step={} phase={}: starts \
+             are phase + k*step within the property's integer type (or the type's minimum, for \
+             the clamped bottom window), and an off-grid start is rejected rather than snapped",
+            start, field, transform.range, transform.step, transform.phase
+        ))));
+    }
+    // `is_window_start` checked the key type holds the start, so it always
+    // converts; the one conversion the uniqueness probe shares.
+    let value = transform.key_type.value_of(start).ok_or(Error::Drive(
+        DriveError::CorruptedCodeExecution("a window start is held by its key type"),
+    ))?;
+
+    Ok((
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value,
+        },
+        ResolvedTimeRange {
+            transform: transform.clone().into(),
         },
     ))
 }
 
 /// Whether `index` may serve a query whose equality clauses on
 /// `resolved_time_ranges` were produced by
-/// [`resolve_time_range_bucket_clause`].
+/// [`resolve_time_range_bucket_clause`] or
+/// [`resolve_integer_range_bucket_clause`].
 ///
-/// A time-range index does not store the source field's raw values: under its
-/// grid-qualified first level it stores bucket *starts*, and one document is
-/// stored once per bucket that contains its timestamp. So a bucketed index, a
+/// A bucketed (time- or integer-range) index does not store the source
+/// field's raw values: under its grid-qualified first level it stores window
+/// *starts*, and one document is stored once per window that contains its
+/// value. So a bucketed index, a
 /// raw index and another grid's bucketed index are never interchangeable, and
 /// every mismatch is silent — a validly-proven wrong answer rather than an
 /// error:
@@ -1004,47 +1229,161 @@ pub fn index_admissible_for_resolved_time_range(
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> bool {
     match resolved_time_ranges {
-        [] => index.time_range.is_none(),
-        // The provenance's transform must equal the candidate's — grid AND
-        // source field, since the transform carries its own source. The
+        [] => !index.is_bucketed(),
+        // The provenance's grid must equal the candidate's — kind, grid AND
+        // source field, since the grid carries its own source. The
         // provenance cannot name a field its grid does not bucket
-        // ([`ResolvedTimeRange::field`] is derived from the transform), so a
-        // fabricated field/transform pair is unrepresentable rather than
-        // guarded against.
-        [resolved] => index
-            .time_range
-            .as_ref()
-            .is_some_and(|transform| *transform == resolved.transform),
+        // ([`ResolvedTimeRange::field`] is derived from the grid), so a
+        // fabricated field/grid pair is unrepresentable rather than guarded
+        // against.
+        [resolved] => index.is_bucketed_by(&resolved.transform),
         _ => false,
     }
 }
 
-/// Whether a query binding `fields` (its equal/in/range and order-by
-/// fields, as assembled for the index matcher) may be served by `index`
-/// given its `skipIfAbsent` participation.
-///
-/// A `skipIfAbsent` index holds only the documents that carry its trigger
-/// (the first property) — it is a SPARSE projection of the document type.
-/// The generic matcher does not require contiguously bound prefixes: an
-/// unused property, the leading trigger included, merely counts toward the
-/// difference score, so without this gate a query that never mentions the
-/// trigger could route here and silently omit every trigger-absent
-/// document — a result a complete index would have included (and the
-/// positional path lowering would additionally mis-assemble the prefix
-/// gap). Requiring the trigger among the query's fields makes the sparse
-/// semantics opt-in: whoever binds the trigger is asking "among documents
-/// carrying this property", which is exactly what the index holds. The
-/// count pickers and the multiple-`In` route need no such gate — their
-/// exact-cover / contiguous-prefix matching already binds position 0.
+/// How a query constrains one field, as the `skipIfAbsent` gate reads it
+/// ([`index_admissible_for_skip_if_absent`]).
 #[cfg(any(feature = "server", feature = "verify"))]
-pub fn index_admissible_for_skip_if_absent(index: &Index, fields: &[&str]) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SkipIfAbsentBinding<'a> {
+    /// The field.
+    pub field: &'a str,
+    /// Whether the constraint can never match a document missing the field.
+    /// On a stored type a missing value is indexed under the empty key,
+    /// which sorts first, so an ordering, a range with no lower bound and a
+    /// null equality all reach it on an index that does not skip.
+    pub excludes_missing: bool,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl<'a> SkipIfAbsentBinding<'a> {
+    /// An order-by on `field`: it reaches documents missing the field on an
+    /// index that does not skip them.
+    pub fn ordering(field: &'a str) -> Self {
+        Self {
+            field,
+            excludes_missing: false,
+        }
+    }
+
+    /// The binding a where clause makes: equality and `in` exclude missing
+    /// documents unless they name a value that may encode as missing, a
+    /// range excludes them when its lower bound may not (strict bounds
+    /// exclude the empty key outright), and `startsWith` when its prefix is
+    /// not empty.
+    pub fn for_where_clause(clause: &'a WhereClause) -> Self {
+        let lower_bound_excludes_missing = |value: &Value| {
+            value
+                .as_array()
+                .and_then(|bounds| bounds.first())
+                .is_some_and(|lower| !may_encode_as_missing(lower))
+        };
+        let excludes_missing = match clause.operator {
+            WhereOperator::Equal | WhereOperator::GreaterThanOrEquals => {
+                !may_encode_as_missing(&clause.value)
+            }
+            // `in_values` reads every spelling the query layer accepts,
+            // bytes on a U8 property included.
+            WhereOperator::In => clause
+                .in_values()
+                .data
+                .is_some_and(|values| values.iter().all(|value| !may_encode_as_missing(value))),
+            WhereOperator::GreaterThan
+            | WhereOperator::BetweenExcludeBounds
+            | WhereOperator::BetweenExcludeLeft => true,
+            WhereOperator::Between | WhereOperator::BetweenExcludeRight => {
+                lower_bound_excludes_missing(&clause.value)
+            }
+            WhereOperator::StartsWith => clause
+                .value
+                .as_text()
+                .is_some_and(|prefix| !prefix.is_empty()),
+            WhereOperator::LessThan | WhereOperator::LessThanOrEquals => false,
+        };
+        Self {
+            field: clause.field.as_str(),
+            excludes_missing,
+        }
+    }
+
+    /// The bindings of `where_clauses`.
+    pub fn for_where_clauses(where_clauses: &'a [WhereClause]) -> Vec<Self> {
+        where_clauses.iter().map(Self::for_where_clause).collect()
+    }
+}
+
+/// Whether `value` may encode to the empty key a missing value takes on a
+/// stored index: null, or an empty byte array in any spelling a byteArray
+/// property accepts (bytes, an array, base64 text). A string's `""` encodes
+/// apart, but a binding does not know the property's type, so it is read
+/// the cautious way.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn may_encode_as_missing(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Bytes(bytes) => bytes.is_empty(),
+        Value::Array(values) => values.is_empty(),
+        Value::Text(text) => text.is_empty(),
+        _ => false,
+    }
+}
+
+/// Whether a query constraining fields as `bindings` may be served by
+/// `index` given its `skipIfAbsent` participation.
+///
+/// A `skipIfAbsent` index holds only the documents that carry every property
+/// of its skip set — it is a SPARSE projection of the document type. An index
+/// picker must not route a query to it that never binds those properties:
+/// the generic matcher does not require contiguously bound prefixes (an
+/// unused property merely counts toward the difference score), and the
+/// aggregate pickers match a prefix that may stop above a deep skip
+/// property. Without this gate such a query would silently omit every
+/// document the index skipped — a result a complete index would have
+/// included. So every skip property must be bound:
+///
+/// - On an indexOnly type (whose indexes carry a `terminal`) any binding
+///   counts, the order-by included: a missing value has no index
+///   representation anywhere on such a type, so binding the property is
+///   asking "among documents carrying it", which is exactly what the index
+///   holds.
+/// - On a stored type a missing value is indexed under the empty key by
+///   every index that does not skip it, so a skip property counts as bound
+///   only by a constraint that no missing value can meet
+///   ([`SkipIfAbsentBinding::excludes_missing`]).
+///
+/// For every index a contract could declare before skip properties could sit
+/// below the first position, the skip set is the first property, which the
+/// contiguous and exact matchers already bind; the gate then changes no
+/// choice.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_skip_if_absent(
+    index: &Index,
+    bindings: &[SkipIfAbsentBinding<'_>],
+) -> bool {
     if !index.skip_if_absent {
         return true;
     }
-    index
-        .properties
-        .first()
-        .is_some_and(|trigger| fields.contains(&trigger.name.as_str()))
+    let index_only = index.terminal.is_some();
+    index.skip_if_absent_properties.iter().all(|skip_property| {
+        bindings.iter().any(|binding| {
+            binding.field == skip_property.as_str() && (index_only || binding.excludes_missing)
+        })
+    })
+}
+
+/// Whether `index` may serve a query at all: the one candidate filter every
+/// index picker applies, so no picker can take one rule and miss the other.
+/// It joins the time-range provenance rule
+/// ([`index_admissible_for_resolved_time_range`]) and the `skipIfAbsent`
+/// rule ([`index_admissible_for_skip_if_absent`]).
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_query(
+    index: &Index,
+    resolved_time_ranges: &[ResolvedTimeRange],
+    skip_bindings: &[SkipIfAbsentBinding<'_>],
+) -> bool {
+    index_admissible_for_resolved_time_range(index, resolved_time_ranges)
+        && index_admissible_for_skip_if_absent(index, skip_bindings)
 }
 
 /// Rejects a query whose resolution provenance and clause shapes disagree:
@@ -1074,8 +1413,9 @@ pub fn validate_resolved_time_range_clause_shapes(
             } else {
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
-                        "a time-range-resolved field may only carry the single equality its \
-                         resolution produced, not a range or In clause",
+                        "a field resolved from a window selection (IN_TIME_RANGE or \
+                         IN_INTEGER_RANGE) may only carry the single equality its resolution \
+                         produced, not a range or In clause",
                     ),
                 ));
             }
@@ -1083,8 +1423,9 @@ pub fn validate_resolved_time_range_clause_shapes(
         if equalities != 1 {
             return Err(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(
-                    "a time-range-resolved field must carry exactly one equality clause — the \
-                     one its resolution produced",
+                    "a field resolved from a window selection (IN_TIME_RANGE or \
+                     IN_INTEGER_RANGE) must carry exactly one equality clause — the one its \
+                     resolution produced",
                 ),
             ));
         }
@@ -1934,7 +2275,10 @@ impl<'a> DriveDocumentQuery<'a> {
         // addressed by document id, so a by-id query has no tree to land on.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-            if self.document_type.index_only() && self.is_for_primary_key() {
+            if self.document_type.index_only()
+                && self.is_for_primary_key()
+                && !self.index_only_flat_scan_applies()
+            {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
                     "indexOnly documents cannot be fetched by id: there is no primary-key \
                      tree; query through one of the type's indexes"
@@ -2151,7 +2495,10 @@ impl<'a> DriveDocumentQuery<'a> {
         // addressed by document id, so a by-id query has no tree to land on.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-            if self.document_type.index_only() && self.is_for_primary_key() {
+            if self.document_type.index_only()
+                && self.is_for_primary_key()
+                && !self.index_only_flat_scan_applies()
+            {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
                     "indexOnly documents cannot be fetched by id: there is no primary-key \
                      tree; query through one of the type's indexes"
@@ -2560,8 +2907,9 @@ impl<'a> DriveDocumentQuery<'a> {
         // before any routing so the multiple-`In` path cannot bypass it.
         if self.resolved_time_ranges.len() > 1 {
             return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one time-range selection (IN_TIME_RANGE) is supported per query; this \
-                 one resolves {:?}, and no single index can bucket more than one field",
+                "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
+                 supported per query; this one resolves {:?}, and no single index can bucket \
+                 more than one field",
                 self.resolved_time_ranges
             ))));
         }
@@ -2598,36 +2946,27 @@ impl<'a> DriveDocumentQuery<'a> {
             .map(|range_clause| range_clause.field.as_str());
         let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
 
-        // The union of every field the query binds, for the skip-index
+        // Every constraint the query makes, for the skip-index
         // admissibility gate — the by-role slices above are what the
-        // matcher consumes. The contiguous matcher already forces a used
-        // index's position 0 to be bound, but an all-unused match inside
-        // the difference budget could still select a sparse index for a
-        // query that never names its trigger.
-        let mut bound_fields = equal_fields.clone();
-        bound_fields.extend(range_field);
-        bound_fields.extend(in_field);
-        for order_by_key in &order_by_keys {
-            if !bound_fields.contains(order_by_key) {
-                bound_fields.push(order_by_key);
-            }
-        }
+        // matcher consumes. An all-unused match inside the difference
+        // budget could otherwise select a sparse index for a query that
+        // never names its skip properties.
+        let skip_bindings = self
+            .internal_clauses
+            .skip_if_absent_bindings(&order_by_keys);
 
         let Some((index, difference)) = self.document_type.index_for_types_matching(
             equal_fields.as_slice(),
             range_field,
             in_field,
             order_by_keys.as_slice(),
-            |index| {
-                index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges)
-                    && index_admissible_for_skip_if_absent(index, &bound_fields)
-            },
+            |index| index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings),
             platform_version,
         )?
         else {
             return Ok(BestIndexOutcome::NoIndexMatches(
                 match self.resolved_time_ranges.first() {
-                    // A time-range query is only servable by the index that
+                    // A window query is only servable by the index that
                     // buckets the field with the resolved grid, so "no index"
                     // here is a narrower fact than the generic case: some index
                     // buckets the field (the clause could not have been resolved
@@ -2635,9 +2974,10 @@ impl<'a> DriveDocumentQuery<'a> {
                     // of the query.
                     Some(resolved) => {
                         Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                            "a time-range query on \"{}\" requires an index that buckets it with \
+                            "a {} query on \"{}\" requires an index that buckets it with \
                          the resolved grid AND covers the query's other where and order-by \
                          fields; valid indexes are: {:?}",
+                            resolved.kind(),
                             resolved.field(),
                             self.document_type.indexes()
                         )))
@@ -2652,14 +2992,15 @@ impl<'a> DriveDocumentQuery<'a> {
                             .document_type
                             .indexes()
                             .values()
-                            .any(|index| index.time_range.is_some());
+                            .any(|index| index.is_bucketed());
                         if has_bucketed_index {
                             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                                 format!(
                             "query must be for valid indexes, valid indexes are: {:?}; note: \
-                             this document type's time-range (timeRange) indexes only serve \
-                             IN_TIME_RANGE selections carrying their resolution — a raw clause \
-                             on the bucketed field never binds to them",
+                             this document type's bucketed (timeRange / integerRange) indexes \
+                             only serve IN_TIME_RANGE / IN_INTEGER_RANGE selections carrying \
+                             their resolution — a raw clause on the bucketed field never binds \
+                             to them",
                             self.document_type.indexes()
                         ),
                             ))
@@ -2706,13 +3047,10 @@ impl<'a> DriveDocumentQuery<'a> {
     /// its index directly, without going through `find_best_index`.
     #[cfg(any(feature = "server", feature = "verify"))]
     pub(crate) fn validate_resolved_source_shape(&self) -> Result<(), Error> {
-        let Some(source) = self
-            .resolved_time_ranges
-            .first()
-            .map(|resolved| resolved.field())
-        else {
+        let Some(resolved) = self.resolved_time_ranges.first() else {
             return Ok(());
         };
+        let source = resolved.field();
         let has_equality_on_source = self.internal_clauses.equal_clauses.contains_key(source);
         let range_or_in_on_source = self
             .internal_clauses
@@ -2726,9 +3064,11 @@ impl<'a> DriveDocumentQuery<'a> {
                 .any(|clause| clause.field == source);
         if !has_equality_on_source || range_or_in_on_source || self.order_by.contains_key(source) {
             return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "the index on \"{source}\" buckets it into time ranges: it can only be queried \
-                 through a time-range selection (IN_TIME_RANGE, which resolves to an exact \
-                 bucket equality), not with ranges, IN, or ordering on that property"
+                "the index on \"{source}\" buckets it into {kind} windows: it can only be \
+                 queried through a {kind} selection ({operator}, which resolves to an exact \
+                 window equality), not with ranges, IN, or ordering on that property",
+                kind = resolved.kind(),
+                operator = resolved.operator(),
             ))));
         }
         Ok(())
@@ -2757,6 +3097,13 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<(Document, bool)>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        let starts_at_document = match starts_at_document {
+            Some((document, included)) => Some((
+                self.cursor_with_derived_values(document, platform_version)?,
+                included,
+            )),
+            None => None,
+        };
         match platform_version
             .drive
             .methods
@@ -2780,6 +3127,45 @@ impl<'a> DriveDocumentQuery<'a> {
                 received: version,
             })),
         }
+    }
+
+    /// A startAt or startAfter cursor places the page by the values the document it names
+    /// holds for the index's properties, read off the stored document (by the server, and by
+    /// a verifier from the proof), which holds no derived index property's value (protocol
+    /// version 14: read from the document a reference points at). So a query paging with a
+    /// cursor may only go through an index whose derived properties it fixes with `==`: the
+    /// cursor document is given those values from the query itself, as the page it places
+    /// holds them. Any other such query is refused. A cursor of a type without derived index
+    /// properties passes through unchanged, which is every cursor before protocol version 14.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn cursor_with_derived_values(
+        &self,
+        mut document: Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, Error> {
+        let derived_index_properties = self.document_type.derived_index_properties();
+        if derived_index_properties.is_empty() {
+            return Ok(document);
+        }
+        let index = self.find_best_index(platform_version)?;
+        for property in &index.properties {
+            if !derived_index_properties.contains_key(&property.name) {
+                continue;
+            }
+            let Some(clause) = self.internal_clauses.equal_clauses.get(&property.name) else {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "a startAt or startAfter cursor is placed by the values the document it \
+                     names stores, and the index {} reads \"{}\" from the document a reference \
+                     points at instead: fix \"{}\" with == to page with a cursor, or page by a \
+                     range on another property of the index",
+                    index.name, property.name, property.name
+                ))));
+            };
+            document
+                .properties_mut()
+                .insert(property.name.clone(), clause.value.clone());
+        }
+        Ok(document)
     }
 
     #[cfg(feature = "server")]
@@ -2947,7 +3333,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // cover EVERY property cannot produce a faithful serialized
         // document: partial projections only travel the proved read surface,
         // where the client synthesizes them itself from the proof. The check
-        // includes optional properties (skipIfAbsent triggers) — the wire
+        // includes optional properties (skipIfAbsent skip properties) — the wire
         // encodes absent-vs-present, and a projection that does not carry an
         // optional property cannot distinguish "absent on the row" from
         // "not in this index", so serializing it would assert an absence the
@@ -2959,7 +3345,12 @@ impl<'a> DriveDocumentQuery<'a> {
                 // the route (no primary-key tree; keyset pagination) — let
                 // them reach it instead of preempting with the coverage
                 // refusal below, which would misdescribe the problem.
-                if !self.is_for_primary_key() && self.start_at.is_none() {
+                // A clause-free flat scan is classified as a primary-key
+                // query, but still synthesizes an index projection and must
+                // pass the same coverage check as a filtered query.
+                if (!self.is_for_primary_key() || self.index_only_flat_scan_applies())
+                    && self.start_at.is_none()
+                {
                     let index = self.index_only_query_index(platform_version)?;
                     let covers_every_property = self
                         .document_type
@@ -2969,7 +3360,8 @@ impl<'a> DriveDocumentQuery<'a> {
                             !matches!(property.property_type, DocumentPropertyType::Object(_))
                         })
                         .all(|(name, _)| {
-                            index.terminal.as_deref() == Some(name.as_str())
+                            index.terminal_contains(name)
+                                || self.document_type.entry_payload().contains(name.as_str())
                                 || index
                                     .properties
                                     .iter()
@@ -3168,7 +3560,6 @@ mod tests {
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::option::Option::None;
-    use tempfile::TempDir;
 
     use crate::drive::Drive;
     use crate::query::{
@@ -3181,7 +3572,7 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::config::DriveConfig;
-    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
@@ -3195,11 +3586,9 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     fn setup_family_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive(None);
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -3227,11 +3616,9 @@ mod tests {
     }
 
     fn setup_withdrawal_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive(None);
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -3929,7 +4316,8 @@ mod tests {
                 step_seconds: 7_200,
                 phase_seconds: 0,
                 ttl_seconds: None,
-            },
+            }
+            .into(),
         }];
         let equality = WhereClause {
             field: "$createdAt".to_string(),
@@ -4154,6 +4542,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 

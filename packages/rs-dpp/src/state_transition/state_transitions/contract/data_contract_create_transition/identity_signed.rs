@@ -6,6 +6,7 @@ impl StateTransitionIdentitySigned for DataContractCreateTransition {
     fn signature_public_key_id(&self) -> KeyID {
         match self {
             DataContractCreateTransition::V0(transition) => transition.signature_public_key_id(),
+            DataContractCreateTransition::V1(transition) => transition.signature_public_key_id(),
         }
     }
 
@@ -14,12 +15,18 @@ impl StateTransitionIdentitySigned for DataContractCreateTransition {
             DataContractCreateTransition::V0(transition) => {
                 transition.set_signature_public_key_id(key_id)
             }
+            DataContractCreateTransition::V1(transition) => {
+                transition.set_signature_public_key_id(key_id)
+            }
         }
     }
 
     fn security_level_requirement(&self, purpose: Purpose) -> Vec<SecurityLevel> {
         match self {
             DataContractCreateTransition::V0(transition) => {
+                transition.security_level_requirement(purpose)
+            }
+            DataContractCreateTransition::V1(transition) => {
                 transition.security_level_requirement(purpose)
             }
         }

@@ -1158,6 +1158,7 @@ impl PathElementWasm {
     }
 }
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "StateTransitionResult")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1168,15 +1169,35 @@ pub struct StateTransitionResultWasm {
     pub status: String,
     #[wasm_bindgen(getter_with_clone)]
     pub error: Option<String>,
+    /// The credit balance of the transition's owner after it executed, as
+    /// DAPI read it without a proof. Present when the SDK did not ask for a
+    /// proof (it then asks for the balance); a proved wait of an owned,
+    /// fee-paying transition carries the balance inside the proof instead.
+    owner_balance: Option<u64>,
 }
 
 impl StateTransitionResultWasm {
-    fn new(state_transition_hash: String, status: String, error: Option<String>) -> Self {
+    fn new(
+        state_transition_hash: String,
+        status: String,
+        error: Option<String>,
+        owner_balance: Option<u64>,
+    ) -> Self {
         Self {
             state_transition_hash,
             status,
             error,
+            owner_balance,
         }
+    }
+}
+
+#[wasm_bindgen(js_class = StateTransitionResult)]
+impl StateTransitionResultWasm {
+    /// The credit balance of the transition's owner after it executed, when DAPI reported it.
+    #[wasm_bindgen(getter = "ownerBalance")]
+    pub fn owner_balance(&self) -> Option<u64> {
+        self.owner_balance
     }
 }
 
@@ -1556,6 +1577,8 @@ impl WasmSdk {
             version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
                 state_transition_hash: hash_bytes,
                 prove: self.prove(),
+                // Without a proof, ask for the owner's balance instead.
+                request_user_balance: !self.prove(),
             })),
         };
 
@@ -1574,24 +1597,32 @@ impl WasmSdk {
             Version as ResponseVersion,
         };
 
-        let (status, error) = match response.inner.version {
+        let (status, error, owner_balance) = match response.inner.version {
             Some(ResponseVersion::V0(v0)) => match v0.result {
                 Some(V0Result::Error(e)) => {
                     let error_message = format!("Code: {}, Message: {}", e.code, e.message);
-                    ("ERROR".to_string(), Some(error_message))
+                    ("ERROR".to_string(), Some(error_message), None)
                 }
                 Some(V0Result::Proof(_)) => {
                     // State transition was successful
-                    ("SUCCESS".to_string(), None)
+                    ("SUCCESS".to_string(), None, None)
                 }
+                // A wait that asked for the owner's balance without a proof
+                Some(V0Result::SuccessWithOwnerBalance(success)) => {
+                    ("SUCCESS".to_string(), None, Some(success.owner_balance))
+                }
+                // A wait without a proof answers success with no result
+                None if !self.prove() => ("SUCCESS".to_string(), None, None),
                 None => (
                     "UNKNOWN".to_string(),
                     Some("No result returned".to_string()),
+                    None,
                 ),
             },
             None => (
                 "UNKNOWN".to_string(),
                 Some("No version in response".to_string()),
+                None,
             ),
         };
 
@@ -1599,6 +1630,7 @@ impl WasmSdk {
             state_transition_hash.to_string(),
             status,
             error,
+            owner_balance,
         ))
     }
 
@@ -1755,6 +1787,30 @@ impl WasmSdk {
 
 #[cfg(test)]
 mod tests {
+    /// A balance above JavaScript's safe integer range must survive the JSON form, which
+    /// `json_safe_fields` makes a string there, and stay a number below it.
+    #[test]
+    fn should_keep_a_large_owner_balance_exact_in_json() {
+        let large = (1u64 << 53) + 1;
+        let result = StateTransitionResultWasm::new(
+            "hash".to_string(),
+            "SUCCESS".to_string(),
+            None,
+            Some(large),
+        );
+        let json = serde_json::to_value(&result).expect("expected to serialize");
+        assert_eq!(json["ownerBalance"], serde_json::json!(large.to_string()));
+
+        let small = StateTransitionResultWasm::new(
+            "hash".to_string(),
+            "SUCCESS".to_string(),
+            None,
+            Some(1_000),
+        );
+        let json = serde_json::to_value(&small).expect("expected to serialize");
+        assert_eq!(json["ownerBalance"], serde_json::json!(1_000));
+    }
+
     use super::*;
     use dash_sdk::drive::grovedb::element::reference_path::ReferencePathType;
 

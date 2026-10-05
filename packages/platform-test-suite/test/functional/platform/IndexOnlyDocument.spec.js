@@ -112,7 +112,7 @@ describe('Platform', () => {
               refersTo: {
                 type: 'permanentDocument',
                 documentType: 'post',
-                propertyAgreement: {
+                where: {
                   hashtag: 'hashtag',
                 },
               },
@@ -229,8 +229,8 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      // ReferencedDocumentPropertyMismatchError: refersTo propertyAgreement
-      // binds the like's hashtag to the referenced post's
+      // ReferencedDocumentPropertyMismatchError: refersTo where binds the
+      // like's hashtag to the referenced post's
       expect(broadcastError.code).to.equal(40127);
     });
 
@@ -576,7 +576,7 @@ describe('Platform', () => {
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
 
-        // Both sides of the propertyAgreement absent: the like may omit
+        // Both sides of the where entry absent: the like may omit
         // its hashtag exactly because the post has none — and the
         // skipIfAbsent byHashtagPost index writes nothing for it
         untaggedLike = await client.platform.documents.create(

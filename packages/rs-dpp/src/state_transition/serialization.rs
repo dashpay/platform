@@ -1,5 +1,5 @@
 use crate::serialization::PlatformDeserializableUntrusted;
-use crate::state_transition::StateTransition;
+use crate::state_transition::*;
 use crate::ProtocolError;
 
 impl StateTransition {
@@ -12,6 +12,134 @@ impl StateTransition {
                 Self::deserialize_from_bytes_untrusted(raw_state_transition)
             })
             .collect()
+    }
+
+    /// Decodes one transition of `state_transition_type` serialized on its own, without the
+    /// `StateTransition` variant tag in front (what `IdentityUpdateTransition::serialize_to_bytes`
+    /// produces, for example). Bytes left over after the transition are refused, and the
+    /// `StateTransition` byte budget is applied to the body up front.
+    pub fn deserialize_untagged_untrusted_exact(
+        state_transition_type: StateTransitionType,
+        bytes: &[u8],
+    ) -> Result<Self, ProtocolError> {
+        // The inner transition types declare no budget of their own, so the `StateTransition`
+        // one is applied here: an untagged body is the tagged transition less its one-byte tag.
+        if bytes.len() >= STATE_TRANSITION_MAX_ENCODED_BYTES {
+            return Err(ProtocolError::MaxEncodedBytesReachedError {
+                max_size_kbytes: STATE_TRANSITION_MAX_ENCODED_BYTES,
+                size_hit: bytes.len(),
+            });
+        }
+        let state_transition: Self = match state_transition_type {
+            StateTransitionType::DataContractCreate => {
+                DataContractCreateTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::DataContractUpdate => {
+                DataContractUpdateTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::Batch => {
+                BatchTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::IdentityCreate => {
+                IdentityCreateTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::IdentityTopUp => {
+                IdentityTopUpTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::IdentityCreditWithdrawal => {
+                IdentityCreditWithdrawalTransition::deserialize_from_bytes_untrusted_exact(bytes)?
+                    .into()
+            }
+            StateTransitionType::IdentityUpdate => {
+                IdentityUpdateTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::IdentityCreditTransfer => {
+                IdentityCreditTransferTransition::deserialize_from_bytes_untrusted_exact(bytes)?
+                    .into()
+            }
+            StateTransitionType::MasternodeVote => {
+                MasternodeVoteTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::IdentityCreditTransferToAddresses => {
+                IdentityCreditTransferToAddressesTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::IdentityCreateFromAddresses => {
+                IdentityCreateFromAddressesTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::IdentityTopUpFromAddresses => {
+                IdentityTopUpFromAddressesTransition::deserialize_from_bytes_untrusted_exact(bytes)?
+                    .into()
+            }
+            StateTransitionType::AddressFundsTransfer => {
+                AddressFundsTransferTransition::deserialize_from_bytes_untrusted_exact(bytes)?
+                    .into()
+            }
+            StateTransitionType::AddressFundingFromAssetLock => {
+                AddressFundingFromAssetLockTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::AddressCreditWithdrawal => {
+                AddressCreditWithdrawalTransition::deserialize_from_bytes_untrusted_exact(bytes)?
+                    .into()
+            }
+            StateTransitionType::Shield => {
+                ShieldTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::ShieldedTransfer => {
+                ShieldedTransferTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::Unshield => {
+                UnshieldTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::ShieldFromAssetLock => {
+                ShieldFromAssetLockTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::ShieldedWithdrawal => {
+                ShieldedWithdrawalTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::IdentityCreateFromShieldedPool => {
+                IdentityCreateFromShieldedPoolTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::ShieldFromIdentity => {
+                ShieldFromIdentityTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+            StateTransitionType::IdentityTopUpFromShieldedPool => {
+                IdentityTopUpFromShieldedPoolTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::IdentityKeyLimitsUpdate => {
+                IdentityKeyLimitsUpdateTransition::deserialize_from_bytes_untrusted_exact(bytes)?
+                    .into()
+            }
+            StateTransitionType::ContractUserModeration => {
+                ContractUserModerationTransition::deserialize_from_bytes_untrusted_exact(bytes)?
+                    .into()
+            }
+            StateTransitionType::ContractFeeClaim => {
+                ContractFeeClaimTransition::deserialize_from_bytes_untrusted_exact(bytes)?.into()
+            }
+        };
+        // Every arm converts into `StateTransition`, so a mismatched arm would still compile.
+        if state_transition.state_transition_type() != state_transition_type {
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "untagged {state_transition_type} bytes decoded as {}",
+                state_transition.state_transition_type()
+            )));
+        }
+        Ok(state_transition)
     }
 }
 
@@ -56,6 +184,9 @@ mod tests {
     use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
     use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
     use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use crate::state_transition::StateTransitionType;
+    use crate::state_transition::STATE_TRANSITION_MAX_ENCODED_BYTES;
     use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use crate::state_transition::StateTransition;
     use crate::tests::fixtures::{
@@ -769,5 +900,162 @@ mod tests {
         assert_eq!(recovered[0], st1);
         assert_eq!(recovered[1], st2);
         assert_eq!(recovered[2], st3);
+    }
+
+    #[test]
+    #[cfg(feature = "random-identities")]
+    fn exact_decode_refuses_trailing_bytes() {
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
+        let st: StateTransition = IdentityCreditWithdrawalTransitionV0 {
+            identity_id: identity.id(),
+            amount: 1000000,
+            core_fee_per_byte: 34,
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            nonce: 1,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: [1u8; 65].to_vec().into(),
+        }
+        .into();
+        let bytes = st.serialize_to_bytes().unwrap();
+
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_untrusted_exact(&bytes).unwrap(),
+            st
+        );
+
+        let mut padded = bytes.clone();
+        padded.push(0);
+        // The derived decoder ignores the suffix; the exact one refuses it.
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_untrusted(&padded).unwrap(),
+            st
+        );
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_exact(&padded),
+            Err(ProtocolError::PlatformDeserializationError(message))
+                if message.contains("1 bytes left over")
+        ));
+    }
+
+    /// A tagged transition followed by another decodes loosely as the first alone; only the
+    /// exact decoder reports the suffix.
+    #[test]
+    fn exact_decode_refuses_a_transition_followed_by_another() {
+        let update: StateTransition = IdentityUpdateTransitionV0 {
+            identity_id: Identifier::from([0x21; 32]),
+            revision: 1,
+            nonce: 1,
+            disable_public_keys: vec![1],
+            ..Default::default()
+        }
+        .into();
+        let withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV0 {
+            identity_id: Identifier::from([0x21; 32]),
+            amount: 1000000,
+            core_fee_per_byte: 34,
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            nonce: 2,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut both = update.serialize_to_bytes().unwrap();
+        both.extend_from_slice(&withdrawal.serialize_to_bytes().unwrap());
+
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_untrusted(&both).unwrap(),
+            update
+        );
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_exact(&both),
+            Err(ProtocolError::PlatformDeserializationError(message)) if message.contains("left over")
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "random-identities")]
+    fn untagged_decode_matches_the_tagged_transition() {
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
+        let update = IdentityUpdateTransitionV0 {
+            signature: [7u8; 65].to_vec().into(),
+            signature_public_key_id: 0,
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: identity
+                .public_keys()
+                .values()
+                .map(|public_key| public_key.into())
+                .collect(),
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+        };
+        let inner_bytes = IdentityUpdateTransition::from(update.clone())
+            .serialize_to_bytes()
+            .unwrap();
+        let st: StateTransition = update.into();
+
+        let decoded = StateTransition::deserialize_untagged_untrusted_exact(
+            StateTransitionType::IdentityUpdate,
+            &inner_bytes,
+        )
+        .expect("untagged identity update decodes");
+        assert_eq!(decoded, st);
+        assert_eq!(
+            &decoded.serialize_to_bytes().unwrap()[1..],
+            &inner_bytes[..]
+        );
+
+        assert!(StateTransition::deserialize_untagged_untrusted_exact(
+            StateTransitionType::Batch,
+            &inner_bytes,
+        )
+        .is_err());
+
+        let mut padded = inner_bytes.clone();
+        padded.push(0);
+        assert!(StateTransition::deserialize_untagged_untrusted_exact(
+            StateTransitionType::IdentityUpdate,
+            &padded,
+        )
+        .is_err());
+    }
+
+    /// The untagged decoder refuses a body at the `StateTransition` byte budget, naming it.
+    #[test]
+    fn untagged_decode_honours_the_state_transition_budget() {
+        let st: StateTransition = IdentityCreditWithdrawalTransitionV0 {
+            identity_id: Identifier::from([0x21; 32]),
+            amount: 1000000,
+            core_fee_per_byte: 34,
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes(vec![0; STATE_TRANSITION_MAX_ENCODED_BYTES]),
+            nonce: 1,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let tagged = bincode::encode_to_vec(&st, bincode::config::standard().with_big_endian())
+            .expect("encodes");
+
+        match StateTransition::deserialize_untagged_untrusted_exact(
+            StateTransitionType::IdentityCreditWithdrawal,
+            &tagged[1..],
+        ) {
+            Err(ProtocolError::MaxEncodedBytesReachedError {
+                max_size_kbytes, ..
+            }) => assert_eq!(max_size_kbytes, STATE_TRANSITION_MAX_ENCODED_BYTES),
+            other => panic!("expected the budget error, got {other:?}"),
+        }
     }
 }

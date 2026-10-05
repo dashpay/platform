@@ -71,6 +71,35 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        self.add_to_identity_balance_operations_and_repaid_debt_v0(
+            identity_id,
+            added_balance,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )
+        .map(|(drive_operations, _)| drive_operations)
+    }
+
+    /// The operations of [`Self::add_to_identity_balance_operations_v0`] and the part of the
+    /// added credits that repaid the identity's debt instead of reaching its balance, which
+    /// generation 0 leaves out and generation 1 hands to whoever applies the operations.
+    ///
+    /// Split out in place from `add_to_identity_balance_operations_v0` so generation 1 shares
+    /// it: the operations are exactly generation 0's, in the same order, and the repaid part is
+    /// what `add_to_previous_balance` already reports, so every protocol version selecting
+    /// generation 0 builds the same batch as before.
+    #[inline(always)]
+    pub(super) fn add_to_identity_balance_operations_and_repaid_debt_v0(
+        &self,
+        identity_id: [u8; 32],
+        added_balance: Credits,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<LowLevelDriveOperation>, Credits), Error> {
         let mut drive_operations = vec![];
         let drive_version = &platform_version.drive;
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
@@ -123,6 +152,6 @@ impl Drive {
             );
         }
 
-        Ok(drive_operations)
+        Ok((drive_operations, add_to_previous_balance.repaid_debt()))
     }
 }

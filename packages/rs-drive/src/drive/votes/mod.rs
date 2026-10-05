@@ -14,6 +14,8 @@ use dpp::ProtocolError;
 
 #[cfg(feature = "server")]
 mod cleanup;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(feature = "server")]
 mod insert;

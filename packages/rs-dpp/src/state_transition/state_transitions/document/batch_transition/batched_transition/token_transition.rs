@@ -11,6 +11,7 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_distribution_key::{TokenDistributionType, TokenDistributionTypeWithResolvedRecipient};
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use crate::data_contract::DataContract;
@@ -18,6 +19,10 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
@@ -92,10 +97,10 @@ pub enum TokenTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenTransition {}
+impl JsonConvertible for TokenTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenTransition {}
+impl ValueConvertible for TokenTransition {}
 
 #[cfg(all(
     test,
@@ -644,6 +649,15 @@ impl TokenTransitionV0Methods for TokenTransition {
                             }
                         };
                         TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient)
+                    }
+                    TokenDistributionType::OncePerIdentity => {
+                        if distribution_rules
+                            .once_per_identity_distribution()
+                            .is_none()
+                        {
+                            return Err(ProtocolError::NotSupported("Token claiming of once per identity distribution is not supported on this token".to_string()));
+                        }
+                        TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(owner_id)
                     }
                 };
 

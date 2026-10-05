@@ -448,7 +448,8 @@ impl WasmSdkBuilder {
     /// - If the builder was created via `withAddresses(...)`, the
     ///   user-provided addresses are preserved and discovered addresses
     ///   from the context are ignored. The context is still attached for
-    ///   proof verification.
+    ///   proof verification. Prefetch such a context with
+    ///   `discoverAddresses: false` to skip the discovery request outright.
     ///
     /// # Example
     /// ```javascript

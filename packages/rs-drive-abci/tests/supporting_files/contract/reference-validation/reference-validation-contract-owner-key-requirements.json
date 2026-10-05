@@ -1,0 +1,51 @@
+{
+  "$formatVersion": "1",
+  "id": "EzvJ8tVV8evCUDLxzPxAbGe8aCj6eXQ64S43qoD7EKzi",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "requiresIdentityEncryptionBoundedKey": 2,
+      "requiresIdentityDecryptionBoundedKey": 2,
+      "properties": {
+        "senderKeyId": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "position": 0,
+          "refersTo": {
+            "type": "identityPublicKey",
+            "identityProperty": "$ownerId",
+            "keyRequirements": {
+              "purpose": "decryption",
+              "boundTo": "inbox"
+            }
+          }
+        },
+        "note": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "inbox": {
+      "type": "object",
+      "requiresIdentityEncryptionBoundedKey": 2,
+      "requiresIdentityDecryptionBoundedKey": 2,
+      "properties": {
+        "label": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

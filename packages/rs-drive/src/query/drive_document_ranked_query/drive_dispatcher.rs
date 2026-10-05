@@ -151,9 +151,9 @@ impl Drive {
         // routing, mirroring `DriveDocumentQuery::select_best_index`.
         if request.resolved_time_ranges.len() > 1 {
             return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one time-range selection (IN_TIME_RANGE) is supported per ranked \
-                 query; this one resolves {:?}, and no single index can bucket more than \
-                 one field",
+                "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
+                 supported per ranked query; this one resolves {:?}, and no single index can \
+                 bucket more than one field",
                 request.resolved_time_ranges
             ))));
         }

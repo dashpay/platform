@@ -3,6 +3,8 @@ use crate::error::Error;
 use crate::execution::types::block_state_info;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Methods;
 use crate::metrics::HistogramTiming;
+#[cfg(debug_assertions)]
+use crate::perf::PhaseTimer;
 use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Methods};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -53,6 +55,9 @@ where
         timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+        #[cfg(debug_assertions)]
+        let mut phases = PhaseTimer::new("run_block_proposal");
+
         // Epoch information is always calculated with the last committed platform version
         // even if we are switching to a new version in this block.
         let last_committed_platform_version = platform_state.current_platform_version()?;
@@ -65,6 +70,9 @@ where
             platform_state,
             last_committed_platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        phases.end_phase("gather_epoch_info");
 
         // Cleanup block cache before we execute a new proposal.
         //
@@ -92,8 +100,15 @@ where
                 &last_committed_platform_version.drive,
             )?;
 
+        // The block cache clear above plus the votes load, a no-op once the cache is warm.
+        #[cfg(debug_assertions)]
+        phases.end_phase("prepare_drive_caches");
+
         // Create a bock state from previous committed state
         let mut block_platform_state = platform_state.clone();
+
+        #[cfg(debug_assertions)]
+        phases.end_phase("clone_platform_state");
 
         // Determine a platform version for this block
         let block_platform_version = if epoch_info.is_epoch_change_but_not_genesis()

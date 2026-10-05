@@ -12,6 +12,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::contract_moderation_queries::removal_entry_to_response;
 use crate::query::document_query::v1::conversions;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
@@ -97,10 +98,11 @@ impl<C> Platform<C> {
         }
         if proto_where_clauses
             .iter()
-            .any(conversions::is_time_range_clause)
+            .any(conversions::is_window_selection_clause)
         {
             return Ok(unsupported(
-                "a chained request supports no time-range (IN_TIME_RANGE) clauses",
+                "a chained request supports no window selection (IN_TIME_RANGE or \
+                 IN_INTEGER_RANGE) clauses",
             ));
         }
 
@@ -229,12 +231,27 @@ impl<C> Platform<C> {
             let inner_documents =
                 serialize_all(&outcome.result.inner_documents, chained_query.document_type)?;
             let outer_documents = serialize_all(&outcome.result.outer_documents, outer_type)?;
+            let missing_outer_ids = outcome
+                .result
+                .missing_outer_ids
+                .iter()
+                .map(|id| id.to_vec())
+                .collect();
+
+            let removed_outer_documents = outcome
+                .result
+                .removed_outer_documents
+                .into_iter()
+                .map(removal_entry_to_response)
+                .collect();
 
             GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Data(ResultData {
                     variant: Some(result_data::Variant::Chained(ChainedDocuments {
                         inner_documents,
                         outer_documents,
+                        missing_outer_ids,
+                        removed_outer_documents,
                     })),
                 })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
@@ -248,7 +265,10 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::{setup_platform, store_data_contract, store_document};
+    use crate::query::tests::{
+        removal_of, remove_post_by_moderator, setup_platform, store_data_contract, store_document,
+        with_moderated_posts,
+    };
     use dapi_grpc::platform::v0::get_documents_request::document_field_value;
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::select::Function as SelectFunction;
     use dapi_grpc::platform::v0::get_documents_request::DocumentFieldValue as ProtoDocumentFieldValue;
@@ -261,9 +281,14 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract;
+    use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 
     const YAPPR_CONTRACT_PATH: &str =
         "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";
+    /// The same contract with `post` deletable and `like.postId` a
+    /// `refersTo: deletableDocument` reference.
+    const YAPPR_DELETABLE_POSTS_CONTRACT_PATH: &str =
+        "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-deletable-posts-contract.json";
     const POST_A: [u8; 32] = [0xA1; 32];
     const POST_B: [u8; 32] = [0xB2; 32];
     const OWNER_1: [u8; 32] = [0x11; 32];
@@ -274,9 +299,34 @@ mod tests {
         &'static PlatformVersion,
         dpp::prelude::DataContract,
     ) {
+        setup_yappr_state_at(YAPPR_CONTRACT_PATH)
+    }
+
+    fn setup_yappr_state_at(
+        contract_path: &str,
+    ) -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        std::sync::Arc<PlatformState>,
+        &'static PlatformVersion,
+        dpp::prelude::DataContract,
+    ) {
+        setup_yappr_state_with(|version| {
+            json_document_to_contract(contract_path, false, version)
+                .expect("expected to parse the yappr-likes contract")
+        })
+    }
+
+    /// Posts A and B and a like of each by owner 1, in the contract `contract` builds
+    fn setup_yappr_state_with(
+        contract: impl FnOnce(&PlatformVersion) -> dpp::prelude::DataContract,
+    ) -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        std::sync::Arc<PlatformState>,
+        &'static PlatformVersion,
+        dpp::prelude::DataContract,
+    ) {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-        let contract = json_document_to_contract(YAPPR_CONTRACT_PATH, false, version)
-            .expect("expected to parse the yappr-likes contract");
+        let contract = contract(version);
         store_data_contract(&platform.platform, &contract, version);
 
         let post_type = contract
@@ -327,6 +377,7 @@ mod tests {
                         // fields.
                         variant: Some(document_field_value::Variant::BytesValue(OWNER_1.to_vec())),
                     }),
+                    integer_range: None,
                     time_range: None,
                 },
             ],
@@ -448,6 +499,219 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![POST_A, POST_B]
         );
+    }
+
+    /// A `deletableDocument` join reports a deleted post instead of
+    /// failing the page, on both wire modes: the unproven response
+    /// carries the missing id, and the proven one verifies to the same
+    /// list.
+    #[test]
+    fn should_report_a_deleted_post_of_a_deletable_document_join() {
+        let (platform, state, version, contract) =
+            setup_yappr_state_at(YAPPR_DELETABLE_POSTS_CONTRACT_PATH);
+        platform
+            .drive
+            .delete_document_for_contract(
+                Identifier::from(POST_B),
+                &contract,
+                "post",
+                dpp::block::block_info::BlockInfo::default(),
+                true,
+                None,
+                version,
+                None,
+            )
+            .expect("expected to delete the post");
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(false, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Data(data)) = result.data.expect("response data").result else {
+            panic!("expected a data result");
+        };
+        let Some(result_data::Variant::Chained(chained)) = data.variant else {
+            panic!("expected the chained variant");
+        };
+        assert_eq!(chained.inner_documents.len(), 2);
+        assert_eq!(chained.outer_documents.len(), 1);
+        assert_eq!(chained.missing_outer_ids, vec![POST_B.to_vec()]);
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(true, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Proof(proof)) = result.data.expect("response data").result else {
+            panic!("expected a proof result");
+        };
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype");
+        let inner = DriveDocumentQuery {
+            contract: &contract,
+            document_type: like_type,
+            internal_clauses: drive::query::InternalClauses::extract_from_clauses(
+                vec![drive::query::WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: drive::query::WhereOperator::Equal,
+                    value: Value::Identifier(OWNER_1),
+                }],
+                version,
+            )
+            .expect("clauses extract"),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        };
+        let chained = inner.with_by_id_join(
+            "postId",
+            contract
+                .document_type_for_name("post")
+                .expect("post doctype"),
+        );
+        let (_root_hash, verified) = chained
+            .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), version)
+            .expect("the proof verifies with the deleted post proven absent");
+        assert_eq!(
+            verified
+                .outer_documents
+                .iter()
+                .map(|p| p.id().to_buffer())
+                .collect::<Vec<_>>(),
+            vec![POST_A]
+        );
+        assert_eq!(verified.missing_outer_ids, vec![Identifier::from(POST_B)]);
+    }
+
+    /// A `moderatedDocument` join reports a post a moderator removed by its removal record,
+    /// on both wire modes: the unproven response carries the record in
+    /// `removed_outer_documents`, as the removals query writes it, and the proven one verifies
+    /// to the same record. Nothing is reported missing.
+    #[test]
+    fn should_report_a_removed_post_of_a_moderated_document_join_with_its_record() {
+        let (platform, state, version, contract) = setup_yappr_state_with(|version| {
+            with_moderated_posts(
+                json_document_to_contract(YAPPR_DELETABLE_POSTS_CONTRACT_PATH, false, version)
+                    .expect("expected to parse the yappr-likes contract"),
+                version,
+            )
+        });
+        let removal = removal_of(POST_B, OWNER_1);
+        remove_post_by_moderator(
+            &platform.platform,
+            &contract,
+            POST_B,
+            removal.clone(),
+            version,
+        );
+        let entry = ContractDocumentRemovalEntry {
+            document_id: Identifier::from(POST_B),
+            removal,
+        };
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(false, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Data(data)) = result.data.expect("response data").result else {
+            panic!("expected a data result");
+        };
+        let Some(result_data::Variant::Chained(chained)) = data.variant else {
+            panic!("expected the chained variant");
+        };
+        assert_eq!(chained.inner_documents.len(), 2);
+        assert_eq!(chained.outer_documents.len(), 1);
+        assert!(chained.missing_outer_ids.is_empty());
+        assert_eq!(
+            chained.removed_outer_documents,
+            vec![removal_entry_to_response(entry.clone())]
+        );
+        let record = &chained.removed_outer_documents[0];
+        assert_eq!(record.document_id, POST_B.to_vec());
+        assert_eq!(record.document_owner_id, OWNER_1.to_vec());
+        assert_eq!(record.moderator_id, vec![0x77; 32]);
+        assert_eq!(record.document_hash, POST_B.to_vec());
+        assert_eq!(
+            record.reason.as_ref().map(|reason| reason.text.as_str()),
+            Some("spam")
+        );
+        assert_eq!(record.restoration, None);
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(true, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Proof(proof)) = result.data.expect("response data").result else {
+            panic!("expected a proof result");
+        };
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype");
+        let inner = DriveDocumentQuery {
+            contract: &contract,
+            document_type: like_type,
+            internal_clauses: drive::query::InternalClauses::extract_from_clauses(
+                vec![drive::query::WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: drive::query::WhereOperator::Equal,
+                    value: Value::Identifier(OWNER_1),
+                }],
+                version,
+            )
+            .expect("clauses extract"),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        };
+        let chained = inner.with_by_id_join(
+            "postId",
+            contract
+                .document_type_for_name("post")
+                .expect("post doctype"),
+        );
+        let (_root_hash, verified) = chained
+            .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), version)
+            .expect("the proof verifies with the removed post's record proven");
+        assert_eq!(
+            verified
+                .outer_documents
+                .iter()
+                .map(|p| p.id().to_buffer())
+                .collect::<Vec<_>>(),
+            vec![POST_A]
+        );
+        assert!(verified.missing_outer_ids.is_empty());
+        assert_eq!(verified.removed_outer_documents, vec![entry]);
     }
 
     #[test]

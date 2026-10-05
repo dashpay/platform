@@ -1,4 +1,5 @@
 //! Definitions of errors
+use crate::platform::encrypted_for::EncryptedForError;
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
 pub use dash_context_provider::ContextProviderError;
@@ -131,6 +132,10 @@ pub enum Error {
     /// Contains the last meaningful error that caused addresses to be banned.
     #[error("no available addresses to retry, last error: {0}")]
     NoAvailableAddressesToRetry(Box<Error>),
+
+    /// A property declared `encryptedFor` could not be encrypted or decrypted
+    #[error(transparent)]
+    EncryptedFor(#[from] EncryptedForError),
 }
 
 impl From<dash_platform_queries::Error> for Error {

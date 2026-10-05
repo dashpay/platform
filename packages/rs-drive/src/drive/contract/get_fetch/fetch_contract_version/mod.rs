@@ -7,7 +7,7 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Reads a contract's version from the version item stored beside it (`[64, id] / 2`)
+    /// Reads a contract's version from the version item stored beside it (`[64, id, 2] / 64`)
     /// without deserializing the contract.
     ///
     /// The item exists from protocol version 14 (written on every contract create and

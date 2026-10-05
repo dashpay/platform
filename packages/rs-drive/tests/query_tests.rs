@@ -2707,8 +2707,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
-            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4032,8 +4032,8 @@ mod tests {
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                219, 212, 38, 199, 221, 53, 199, 246, 2, 67, 249, 145, 196, 196, 101, 196, 78, 109,
-                123, 83, 87, 87, 128, 249, 130, 7, 56, 229, 223, 246, 8, 76,
+                21, 138, 176, 60, 123, 198, 114, 129, 174, 239, 252, 191, 174, 54, 60, 119, 96,
+                161, 70, 31, 203, 77, 107, 203, 74, 7, 53, 142, 227, 142, 63, 87
             ],
         );
     }
@@ -4186,8 +4186,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
-            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5062,8 +5062,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            119, 63, 228, 222, 146, 3, 214, 206, 200, 85, 238, 169, 61, 76, 179, 15, 177, 234, 189,
-            243, 215, 36, 123, 160, 213, 152, 77, 100, 96, 29, 85, 193,
+            43, 45, 143, 165, 228, 213, 155, 164, 47, 219, 35, 54, 79, 234, 90, 122, 172, 124, 7,
+            244, 136, 209, 187, 215, 29, 158, 150, 192, 111, 90, 161, 136,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5188,8 +5188,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
-            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6164,8 +6164,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
-            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -6263,8 +6263,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
-            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6362,8 +6362,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
-            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6461,8 +6461,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
-            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6659,8 +6659,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
-            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6869,8 +6869,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
-            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7089,8 +7089,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
-            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -7308,8 +7308,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
-            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
+            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
+            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7391,8 +7391,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
-            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
+            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
+            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7498,8 +7498,8 @@ mod tests {
         // protocol version 14 stores the contract's version item beside the contract, one more
         // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
-            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
+            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
+            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);

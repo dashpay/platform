@@ -4,6 +4,7 @@
 mod broadcast_state_transition;
 mod error_mapping;
 mod get_status;
+mod shielded_proof_failure_budget;
 mod wait_for_state_transition_result;
 
 use dapi_grpc::platform::v0::get_path_elements_request;
@@ -26,6 +27,7 @@ use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
+pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
 
@@ -151,6 +153,7 @@ pub struct PlatformServiceImpl {
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     pub state_transition_wait_permits: Arc<Semaphore>,
+    pub shielded_proof_failure_budget: Arc<ShieldedProofFailureBudget>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
     workers: Workers,
@@ -213,6 +216,7 @@ impl PlatformServiceImpl {
             state_transition_wait_permits: Arc::new(Semaphore::new(
                 MAX_PENDING_STATE_TRANSITION_WAITS,
             )),
+            shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
             workers,
         }
     }
@@ -331,6 +335,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_identity_keys_remaining_budgets,
+        dapi_grpc::platform::v0::GetIdentityKeysRemainingBudgetsRequest,
+        dapi_grpc::platform::v0::GetIdentityKeysRemainingBudgetsResponse
+    );
+
+    drive_method!(
         get_identity_balance,
         dapi_grpc::platform::v0::GetIdentityBalanceRequest,
         dapi_grpc::platform::v0::GetIdentityBalanceResponse
@@ -402,6 +412,68 @@ impl Platform for PlatformServiceImpl {
         get_data_contracts_latest_versions,
         dapi_grpc::platform::v0::GetDataContractsLatestVersionsRequest,
         dapi_grpc::platform::v0::GetDataContractsLatestVersionsResponse
+    );
+
+    // Contract group methods
+    drive_method!(
+        get_contract_group_info,
+        dapi_grpc::platform::v0::GetContractGroupInfoRequest,
+        dapi_grpc::platform::v0::GetContractGroupInfoResponse
+    );
+
+    // Contract moderation methods
+    drive_method!(
+        get_contract_moderation_status,
+        dapi_grpc::platform::v0::GetContractModerationStatusRequest,
+        dapi_grpc::platform::v0::GetContractModerationStatusResponse
+    );
+
+    drive_method!(
+        get_contract_moderation_entries,
+        dapi_grpc::platform::v0::GetContractModerationEntriesRequest,
+        dapi_grpc::platform::v0::GetContractModerationEntriesResponse
+    );
+
+    drive_method!(
+        get_contract_document_removals,
+        dapi_grpc::platform::v0::GetContractDocumentRemovalsRequest,
+        dapi_grpc::platform::v0::GetContractDocumentRemovalsResponse
+    );
+
+    drive_method!(
+        get_contract_team_actions,
+        dapi_grpc::platform::v0::GetContractTeamActionsRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionsResponse
+    );
+
+    drive_method!(
+        get_contract_team_action_signers,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersResponse
+    );
+
+    drive_method!(
+        get_contract_moderation_action_counts,
+        dapi_grpc::platform::v0::GetContractModerationActionCountsRequest,
+        dapi_grpc::platform::v0::GetContractModerationActionCountsResponse
+    );
+
+    drive_method!(
+        get_contract_fee_pots,
+        dapi_grpc::platform::v0::GetContractFeePotsRequest,
+        dapi_grpc::platform::v0::GetContractFeePotsResponse
+    );
+
+    drive_method!(
+        get_contract_group_members,
+        dapi_grpc::platform::v0::GetContractGroupMembersRequest,
+        dapi_grpc::platform::v0::GetContractGroupMembersResponse
+    );
+
+    drive_method!(
+        get_contract_groups_for_contract,
+        dapi_grpc::platform::v0::GetContractGroupsForContractRequest,
+        dapi_grpc::platform::v0::GetContractGroupsForContractResponse
     );
 
     // Document methods

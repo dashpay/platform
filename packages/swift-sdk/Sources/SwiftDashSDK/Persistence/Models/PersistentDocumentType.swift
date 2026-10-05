@@ -102,6 +102,113 @@ extension PersistentDocumentType {
         return try? JSONSerialization.jsonObject(with: data, options: []) as? [String]
     }
 
+    /// The type's `immutable` / `immutableAllowSetting` keywords (protocol
+    /// version 14), read off the persisted schema.
+    ///
+    /// Derived rather than stored in columns of its own: `schemaJSON` already
+    /// holds the whole document type dictionary as authored, so the keywords
+    /// are persisted with every contract the parser writes, and a new stored
+    /// property would move this model's entity hash. That costs a schema
+    /// version and a fixture store (see `DashModelContainer.modelTypes` and
+    /// `DashModelMigrationTests`), which a display-only keyword does not
+    /// justify. `indexOnly` predates that discipline and kept its column.
+    public var immutability: DocumentTypeImmutability {
+        DocumentTypeImmutability(documentTypeSchema: schema)
+    }
+
+    /// Top-level properties frozen at document creation, sorted. Empty when
+    /// the type declares no `immutable` list.
+    public var immutableProperties: [String] {
+        immutability.immutableProperties
+    }
+
+    /// The `immutable` entries a replace may still set while the stored
+    /// document has no value for them, sorted. Empty when none are declared.
+    public var immutableAllowSetting: [String] {
+        immutability.immutableAllowSetting
+    }
+
+    /// Every typed array property the type declares (protocol version 14),
+    /// those nested in object properties included under their dotted path
+    /// (`"team.leads"`), sorted by path. Empty when it declares none.
+    ///
+    /// Derived from the persisted schema rather than stored, for the same
+    /// reason as `immutability`: `schemaJSON` holds the whole document type
+    /// dictionary as authored, element schemas included, and a new stored
+    /// property on this model or on `PersistentProperty` would move an entity
+    /// hash, which costs a schema version and a fixture store (see
+    /// `DashModelContainer.modelTypes` and `DashModelMigrationTests`).
+    /// `PersistentProperty` keeps a typed array as an ordinary `"array"` row
+    /// with `byteArray` false and its element counts in `minItems` /
+    /// `maxItems`.
+    public var typedArrays: [DocumentTypedArray] {
+        DocumentTypedArray.all(inDocumentTypeSchema: schema)
+    }
+
+    /// The typed array declared as the top-level property `name`, or `nil`
+    /// when that property is absent or is not a typed array (a byte array
+    /// among them). Read off the persisted schema; see `typedArrays`.
+    public func typedArray(named name: String) -> DocumentTypedArray? {
+        DocumentTypedArray.named(name, inDocumentTypeSchema: schema)
+    }
+
+    /// Whether the persisted schema carries the `propertyConstraints` keyword
+    /// (protocol version 14). Says nothing about the rules themselves: those
+    /// are read by `propertyConstraints(using:)`, which parses them in Rust.
+    public var declaresPropertyConstraints: Bool {
+        schema?["propertyConstraints"] != nil
+    }
+
+    /// The type's `propertyConstraints` rules, in name order: what
+    /// `SDK.documentPropertyConstraints(serializedContract:documentType:)`
+    /// reads from the parent contract's stored platform serialization
+    /// (`PersistentDataContract.binarySerialization`) at `sdk`'s protocol
+    /// version. Nothing is stored for them: like `immutability`, they are
+    /// derived on demand, so the model's entity hash does not move.
+    ///
+    /// - Throws: `SDKError.invalidState` when the parent contract has no
+    ///   stored serialization, or what the SDK call throws.
+    public func propertyConstraints(using sdk: SDK) throws -> [DocumentPropertyConstraint] {
+        try sdk.documentPropertyConstraints(
+            serializedContract: storedContractSerialization(),
+            documentType: name
+        )
+    }
+
+    /// The first `propertyConstraints` rule a document of this type, created
+    /// with `propertiesJSON` and owned by `ownerId`, would break, or `nil`
+    /// when it meets every rule judged: what
+    /// `SDK.checkDocumentPropertyConstraints(serializedContract:documentType:propertiesJSON:ownerId:)`
+    /// reports for the parent contract's stored platform serialization. As
+    /// there, the device clock stands in for the create's block time, and a
+    /// rule reading a block height or a `countOf` or `sumOf` total is not
+    /// judged.
+    ///
+    /// - Throws: `SDKError.invalidState` when the parent contract has no
+    ///   stored serialization, or what the SDK call throws.
+    public func propertyConstraintViolation(
+        propertiesJSON: String,
+        ownerId: Identifier,
+        using sdk: SDK
+    ) throws -> PropertyConstraintViolation? {
+        try sdk.checkDocumentPropertyConstraints(
+            serializedContract: storedContractSerialization(),
+            documentType: name,
+            propertiesJSON: propertiesJSON,
+            ownerId: ownerId
+        )
+    }
+
+    /// The parent contract's stored platform serialization.
+    private func storedContractSerialization() throws -> Data {
+        guard let serialization = dataContract?.binarySerialization, !serialization.isEmpty else {
+            throw SDKError.invalidState(
+                "The data contract \(contractIdBase58) has no stored serialization; download it again"
+            )
+        }
+        return serialization
+    }
+
     public var documentCount: Int {
         documents?.count ?? 0
     }

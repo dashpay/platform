@@ -179,6 +179,8 @@ mod tests {
             data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
         }
         .into();
 
@@ -325,6 +327,8 @@ mod tests {
                     )),
                     token_cost: None,
                     gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                    contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                    declared_action_fee: None,
                 }),
             }),
         );

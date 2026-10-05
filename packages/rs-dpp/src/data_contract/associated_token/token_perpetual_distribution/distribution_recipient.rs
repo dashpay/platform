@@ -2,6 +2,10 @@ use crate::data_contract::associated_token::token_distribution_key::{
     TokenDistributionType, TokenDistributionTypeWithResolvedRecipient,
 };
 use crate::errors::ProtocolError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSerialize;
 use platform_value::Identifier;
@@ -133,10 +137,10 @@ impl<'de> Deserialize<'de> for TokenDistributionRecipient {
 
 // Manual impls because TokenDistributionRecipient is a flat enum (not versioned V0/V1).
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionRecipient {}
+impl JsonConvertible for TokenDistributionRecipient {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionRecipient {}
+impl ValueConvertible for TokenDistributionRecipient {}
 
 impl TokenDistributionRecipient {
     /// Simple resolve matches the contract owner but does not try to resolve the evonodes
@@ -177,6 +181,11 @@ impl TokenDistributionRecipient {
                     ))
                 }
             },
+            // A once-per-identity distribution has no configured recipient to resolve: the
+            // claimant is whoever submits the claim, which the contract owner id does not say.
+            TokenDistributionType::OncePerIdentity => Err(ProtocolError::NotSupported(
+                "trying to simple resolve for once-per-identity distribution".to_string(),
+            )),
         }
     }
 }
@@ -297,10 +306,10 @@ impl<'de> Deserialize<'de> for TokenDistributionResolvedRecipient {
 
 // Manual impls because TokenDistributionResolvedRecipient is a flat enum (not versioned V0/V1).
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionResolvedRecipient {}
+impl JsonConvertible for TokenDistributionResolvedRecipient {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionResolvedRecipient {}
+impl ValueConvertible for TokenDistributionResolvedRecipient {}
 
 impl From<TokenDistributionResolvedRecipient> for TokenDistributionRecipient {
     fn from(value: TokenDistributionResolvedRecipient) -> Self {

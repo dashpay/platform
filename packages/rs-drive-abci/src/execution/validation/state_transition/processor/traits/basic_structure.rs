@@ -64,6 +64,15 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             StateTransition::IdentityUpdate(st) => {
                 st.validate_basic_structure(network_type, platform_version)
             }
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::ContractUserModeration(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::ContractFeeClaim(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
             StateTransition::IdentityTopUp(st) => {
                 st.validate_basic_structure(network_type, platform_version)
             }
@@ -248,14 +257,17 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                         // There is nothing expensive to add as validation methods to the execution context
                         Ok(st.validate_structure(platform_version))
                     }
-                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method: "identity create from addresses transition: validate_basic_structure"
-                            .to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method:
+                                "address credit withdrawal transition: validate_basic_structure"
+                                    .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                        method: "identity create from addresses transition: validate_basic_structure"
+                        method: "address credit withdrawal transition: validate_basic_structure"
                             .to_string(),
                         known_versions: vec![0],
                     })),
@@ -487,6 +499,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
@@ -901,6 +916,9 @@ mod tests {
                 | StateTransition::Batch(_)
                 | StateTransition::IdentityCreditWithdrawal(_)
                 | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityKeyLimitsUpdate(_)
+                | StateTransition::ContractUserModeration(_)
+                | StateTransition::ContractFeeClaim(_)
                 | StateTransition::IdentityCreditTransfer(_)
                 | StateTransition::MasternodeVote(_)
                 | StateTransition::ShieldFromIdentity(_)

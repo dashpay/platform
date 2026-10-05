@@ -1,9 +1,11 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::document::{property_names, Document, DocumentV0Getters};
-use dpp::platform_value::Identifier;
-use std::collections::BTreeSet;
+use dpp::platform_value::{Identifier, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use platform_version::version::PlatformVersion;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
@@ -26,6 +28,7 @@ impl DocumentReplaceTransitionActionV0 {
         block_info: &BlockInfo,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
     ) -> Result<
         (
             ConsensusValidationResult<BatchedTransitionAction>,
@@ -44,6 +47,7 @@ impl DocumentReplaceTransitionActionV0 {
                 base,
                 get_data_contract,
                 |document_type| document_type.document_replacement_token_cost(),
+                |action_fees| action_fees.document_replacement_action_fee(),
                 "replace",
             )?;
 
@@ -68,6 +72,17 @@ impl DocumentReplaceTransitionActionV0 {
                 ));
             }
         };
+        // Added in place at protocol version 14, inert before it: `fill_generated_properties`
+        // is `None` there and leaves the data as sent. From 14 on, every `generatedFrom`
+        // property the transition leaves out is generated from its params here, before the
+        // changed fields below and every later check read the data. `document_type()`
+        // cannot fail here at any version: building the base action above already resolved
+        // the document type (its token cost is read from it), and the
+        // `document_type_field_is_required` calls below resolve it the same way.
+        let mut data = data.clone();
+        base.document_type()?
+            .fill_generated_properties(&mut data, platform_version)?;
+
         let updated_at = if base.document_type_field_is_required(property_names::UPDATED_AT)? {
             Some(block_info.time_ms)
         } else {
@@ -108,6 +123,27 @@ impl DocumentReplaceTransitionActionV0 {
 
         let original_creator_id = original_document.creator_id();
 
+        // The last moderator's stamp stays as it is, each half as stored, unless the
+        // transformer stamps the replace as a moderator's
+        let original_moderated_at = original_document.moderated_at();
+        let original_moderated_by = original_document.moderated_by();
+
+        // The identifier each removed field held. Kept because a removed
+        // `deletableDocument` reference is only allowed on an `immutable`
+        // property once its target is gone, and after this point nothing
+        // else remembers what the target was.
+        let removed_identifier_fields: BTreeMap<String, Identifier> = original_document
+            .properties()
+            .iter()
+            .filter(|(key, _)| !data.contains_key(*key))
+            .filter_map(|(key, value)| {
+                value
+                    .to_identifier()
+                    .ok()
+                    .map(|identifier| (key.clone(), identifier))
+            })
+            .collect();
+
         // Determine which fields have changed between the original document and the new data
         let changed_fields: BTreeSet<String> = data
             .iter()
@@ -136,6 +172,19 @@ impl DocumentReplaceTransitionActionV0 {
             )
             .collect();
 
+        // What the stored document held for each changed property, so the
+        // reference validation can tell a list's new elements from the ones
+        // it already held
+        let stored_changed_values: BTreeMap<String, Value> = changed_fields
+            .iter()
+            .filter_map(|key| {
+                original_document
+                    .properties()
+                    .get(key)
+                    .map(|value| (key.clone(), value.clone()))
+            })
+            .collect();
+
         Ok((
             BatchedTransitionAction::DocumentAction(DocumentTransitionAction::ReplaceAction(
                 DocumentReplaceTransitionActionV0 {
@@ -151,9 +200,14 @@ impl DocumentReplaceTransitionActionV0 {
                     updated_at_core_block_height,
                     transferred_at_core_block_height:
                         original_document_transferred_at_core_block_height,
-                    data: data.clone(),
+                    data,
                     changed_data_fields: changed_fields,
+                    removed_identifier_fields,
+                    stored_changed_values,
                     creator_id: original_creator_id,
+                    moderated_at: original_moderated_at,
+                    moderated_by: original_moderated_by,
+                    property_constraint_aggregates: Default::default(),
                 }
                 .into(),
             ))
