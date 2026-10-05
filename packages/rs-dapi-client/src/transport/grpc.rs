@@ -716,6 +716,18 @@ impl_transport_request_grpc!(
     get_shielded_nullifiers
 );
 
+// rpc subscribeToStateTransitions(SubscribeToStateTransitionsRequest) returns (stream SubscribeToStateTransitionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::SubscribeToStateTransitionsRequest,
+    Streaming<platform_proto::SubscribeToStateTransitionsResponse>,
+    PlatformGrpcClient,
+    RequestSettings {
+        timeout: Some(STREAMING_TIMEOUT),
+        ..RequestSettings::default()
+    },
+    subscribe_to_state_transitions
+);
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(
