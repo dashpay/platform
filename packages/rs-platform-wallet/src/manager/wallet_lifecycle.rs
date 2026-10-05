@@ -1228,8 +1228,7 @@ mod register_wallet_duplicate_tests {
     async fn mnemonic_create_matches_seed_create_and_passphrase_changes_the_id() {
         let manager = make_manager();
         let network = Network::Testnet;
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
 
         let via_mnemonic = manager
             .create_wallet_from_mnemonic(

@@ -319,8 +319,8 @@ pub unsafe fn resolve_seed(
         .map_err(|_| ResolveSeedError::InvalidUtf8)?;
     let passphrase_str = std::str::from_utf8(&passphrase_buf[..passphrase_len])
         .map_err(|_| ResolveSeedError::InvalidUtf8)?;
-    let mnemonic = Mnemonic::from_phrase_in_any_language(mnemonic_str)
-        .map_err(|_| ResolveSeedError::InvalidMnemonic)?;
+    let mnemonic =
+        Mnemonic::from_phrase(mnemonic_str).map_err(|_| ResolveSeedError::InvalidMnemonic)?;
 
     // `to_seed` NFKD-normalizes the passphrase itself (BIP-39 §"From
     // mnemonic to seed"), so the host may pass it exactly as typed.
