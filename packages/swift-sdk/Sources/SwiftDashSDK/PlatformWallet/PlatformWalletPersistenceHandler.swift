@@ -2555,11 +2555,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         record.hasBlockPosition = tx.has_block_position
         let blockHashBytes = hashData(tx.block_hash)
         record.blockHash = blockHashBytes.allSatisfy { $0 == 0 } ? nil : blockHashBytes
-        // A context-only recovery record has zero accounting; a funded asset lock burns Core value.
-        // A stored debit is itself the proof we funded it: its inputs may not be linked yet.
+        // Empty asset-lock recovery records cannot replace a funded debit or an unavailable amount.
         let preserveLockAccounting = tx.transaction_type_kind == TransactionTypeKind.assetLock.rawValue
             && tx.net_amount == 0 && !tx.has_fee
-            && record.netAmount < 0
+            && (record.netAmount < 0 || record.netAmountUnavailable == true)
         if !preserveLockAccounting { record.direction = tx.direction }
         if let typeName = tx.transaction_type {
             record.transactionType = String(cString: typeName)
@@ -2584,6 +2583,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             : nil
         if !preserveLockAccounting {
             record.netAmount = tx.net_amount
+            record.netAmountUnavailable = false
             record.fee = tx.has_fee ? tx.fee : nil
         }
         accountingDirty[record.txid] = record
@@ -6416,6 +6416,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
 
                 if let walletRow = walletRow {
+                    // Shared scalars must be scoped while the departing wallet's TXOs still exist.
+                    for transaction in try backgroundContext.fetch(FetchDescriptor<PersistentTransaction>()) {
+                        transaction.preserveAccounting(removingWallet: walletId)
+                    }
                     // Wallet → identities is `.nullify`; this delete
                     // path cascades them explicitly.
                     let identitiesToDelete = Array(walletRow.identities)
@@ -6898,6 +6902,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 isAssetLock: transaction.isAssetLock
             ) {
                 transaction.netAmount = accounting.netAmount
+                transaction.netAmountUnavailable = false
                 transaction.direction = accounting.direction
             }
         }

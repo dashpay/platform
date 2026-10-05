@@ -394,6 +394,148 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(row.netAmount(for: walletId), 40, "a foreign input is not an unresolved input of ours")
     }
 
+    private func localTransfer(in context: ModelContext, assetLock: Bool = false) throws -> PersistentTransaction {
+        let walletA = PersistentWallet(walletId: Data(repeating: 1, count: 32), network: .testnet)
+        let walletB = PersistentWallet(walletId: Data(repeating: 2, count: 32), network: .testnet)
+        let accountA = PersistentAccount(wallet: walletA, accountType: 0, accountIndex: 0, accountTypeName: "Standard")
+        let accountB = PersistentAccount(wallet: walletB, accountType: 0, accountIndex: 0, accountTypeName: "Standard")
+        context.insert(walletA)
+        context.insert(walletB)
+        context.insert(accountA)
+        context.insert(accountB)
+        let tx = PersistentTransaction(
+            txid: Data(repeating: 3, count: 32),
+            transactionData: serializedSpend(inputs: [walletA.walletId], outputValue: 90),
+            direction: CoreDirectionCode.internalTransfer, netAmount: -10
+        )
+        tx.transactionTypeKind = assetLock ? TransactionTypeKind.assetLock.rawValue : TransactionTypeKind.standard.rawValue
+        let coin = input(100)
+        coin.account = accountA
+        coin.isSpent = true
+        coin.spendingTransaction = tx
+        let credit = PersistentTxo(transaction: tx, vout: 0, amount: 90, address: "", height: 1)
+        credit.walletId = walletB.walletId
+        credit.account = accountB
+        context.insert(tx)
+        context.insert(coin)
+        context.insert(credit)
+        tx.involvedAccounts = [accountA, accountB]
+        try context.save()
+        return tx
+    }
+
+    func testShouldKeepSurvivingWalletAccountingAfterDeletingEitherTransferWallet() throws {
+        for deletedWallet in [UInt8(1), UInt8(2)] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let url = directory.appendingPathComponent("wallet.store")
+            let survivor = Data(repeating: deletedWallet == 1 ? 2 : 1, count: 32)
+            let amount: Int64 = deletedWallet == 1 ? 90 : -100
+            let direction = deletedWallet == 1 ? CoreDirectionCode.incoming : CoreDirectionCode.outgoing
+            try autoreleasepool {
+                let container = try DashModelContainer.create(url: url)
+                _ = try localTransfer(in: container.mainContext)
+                let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+                XCTAssertFalse(handler.loadWalletList().errored)
+                try handler.deleteWalletData(walletId: Data(repeating: deletedWallet, count: 32))
+                let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+                    .first { $0.txid == Data(repeating: 3, count: 32) })
+                XCTAssertEqual(row.netAmount(for: survivor), amount)
+                XCTAssertEqual(row.direction(for: survivor), direction)
+            }
+            try autoreleasepool {
+                let container = try DashModelContainer.create(url: url)
+                let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+                XCTAssertFalse(handler.loadWalletList().errored)
+                let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+                    .first { $0.txid == Data(repeating: 3, count: 32) })
+                XCTAssertEqual(row.netAmount(for: survivor), amount)
+                XCTAssertEqual(row.direction(for: survivor), direction)
+            }
+        }
+    }
+
+    func testShouldKeepUnavailableAmountAfterDeletingAnotherParticipant() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("wallet.store")
+        let survivor = Data(repeating: 2, count: 32)
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let tx = try localTransfer(in: container.mainContext, assetLock: true)
+            let foreign = Data(repeating: 9, count: 32)
+            tx.transactionData = serializedSpend(inputs: [Data(repeating: 1, count: 32), foreign], outputValue: 90)
+            tx.netAmount = 0
+            let pending = PersistentPendingInput(
+                outpoint: PersistentTxo.makeOutpoint(txid: foreign, vout: 0), inputIndex: 1,
+                spendingTxid: tx.txid, spendingTransaction: tx, walletId: survivor
+            )
+            container.mainContext.insert(pending)
+            try container.mainContext.save()
+            XCTAssertNil(tx.netAmount(for: survivor))
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            try handler.deleteWalletData(walletId: Data(repeating: 1, count: 32))
+            // An empty asset-lock recovery update must not invent accounting.
+            persist(handler, walletId: survivor, txid: tx.txid, bytes: tx.transactionData, kind: 6)
+        }
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            XCTAssertFalse(handler.loadWalletList().errored)
+            let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+                .first { $0.txid == Data(repeating: 3, count: 32) })
+            XCTAssertNil(row.netAmount(for: survivor))
+            XCTAssertEqual(row.formattedAmount(for: survivor), "Amount unavailable")
+            // A new authoritative wallet record can make the amount available.
+            persist(handler, walletId: survivor, txid: row.txid, bytes: row.transactionData, net: 90, kind: 6)
+            let updated = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+                .first { $0.txid == row.txid })
+            XCTAssertEqual(updated.netAmount(for: survivor), 90)
+        }
+    }
+
+    func testShouldScopeSharedAssetLockDirectionBeforeAndAfterReconciliation() throws {
+        let container = try DashModelContainer.createInMemory()
+        let tx = try localTransfer(in: container.mainContext, assetLock: true)
+        let walletA = Data(repeating: 1, count: 32)
+        let walletB = Data(repeating: 2, count: 32)
+        // A's Rust record is outgoing, while reconciliation sees both local wallets.
+        tx.direction = CoreDirectionCode.outgoing
+        XCTAssertEqual(tx.direction(for: walletA), CoreDirectionCode.outgoing)
+        XCTAssertEqual(tx.direction(for: walletB), CoreDirectionCode.incoming)
+        try container.mainContext.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertFalse(handler.loadWalletList().errored)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+            .first { $0.txid == tx.txid })
+        XCTAssertEqual(row.direction, CoreDirectionCode.internalTransfer)
+        XCTAssertEqual(row.direction(for: walletA), CoreDirectionCode.outgoing)
+        XCTAssertEqual(row.direction(for: walletB), CoreDirectionCode.incoming)
+    }
+
+    func testShouldKeepOwnAssetLockConversionInternalWithAnotherKeysOnlyParticipant() throws {
+        let container = try DashModelContainer.createInMemory()
+        let tx = try localTransfer(in: container.mainContext, assetLock: true)
+        let walletA = Data(repeating: 1, count: 32)
+        let change = try XCTUnwrap(tx.outputs.first)
+        change.walletId = walletA
+        change.account = tx.inputs.first?.account
+        XCTAssertEqual(tx.direction(for: walletA), CoreDirectionCode.internalTransfer)
+        XCTAssertEqual(tx.direction(for: Data(repeating: 2, count: 32)), CoreDirectionCode.internalTransfer)
+        // A no-change conversion remains internal too.
+        container.mainContext.delete(change)
+        tx.transactionData = serializedSpend(inputs: [walletA], outputValue: 90, burn: true)
+        try container.mainContext.save()
+        XCTAssertEqual(tx.direction(for: walletA), CoreDirectionCode.internalTransfer)
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertFalse(handler.loadWalletList().errored)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+            .first { $0.txid == tx.txid })
+        XCTAssertEqual(row.direction(for: walletA), CoreDirectionCode.internalTransfer)
+    }
+
     func testShouldScopeDirectionAndAmountToEachWalletOfALocalTransfer() {
         let (walletA, walletB) = (Data(repeating: 1, count: 32), Data(repeating: 2, count: 32))
         let (amount, fee): (UInt64, UInt64) = (90, 10)

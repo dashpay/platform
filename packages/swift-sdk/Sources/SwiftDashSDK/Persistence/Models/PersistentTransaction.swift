@@ -86,6 +86,9 @@ public final class PersistentTransaction {
     public var transactionTypeKind: UInt8 = 0xFF
     /// Net Core amount in duffs across locally owned TXOs (positive=received, negative=sent).
     public var netAmount: Int64
+    /// Set when removing a wallet left no authoritative amount for the survivor.
+    /// `nil` preserves the accounting of rows migrated from V3.
+    public var netAmountUnavailable: Bool? = nil
     /// Fee in duffs (nil if unknown).
     public var fee: UInt64?
     /// User-assigned label.
@@ -246,7 +249,9 @@ public final class PersistentTransaction {
             }
         }
         let hasUnownedTxos = (inputs + outputs).contains { !PlatformWalletPersistenceHandler.isWalletOwnedTxo($0) }
-        if participatingWalletIds == [walletId], !hasUnownedTxos { return netAmount }
+        if participatingWalletIds == [walletId], !hasUnownedTxos {
+            return netAmountUnavailable == true ? nil : netAmount
+        }
         // Computed from TXOs alone: a pending input this wallet recorded may be
         // one of its own still-unlinked coins, so the sum is only provisional.
         // TODO(wallet-scoped-accounting-from-rust): a foreign payment to two
@@ -266,12 +271,35 @@ public final class PersistentTransaction {
     /// Direction relative to one wallet for transactions shared by multiple local wallets.
     public func direction(for walletId: Data) -> UInt32 {
         guard participatingWalletIds.count > 1, direction != CoreDirectionCode.coinJoin,
-              typedKind != .coinJoin, !isAssetLock else { return direction }
+              typedKind != .coinJoin else { return direction }
         let spendsOurs = inputs.contains {
             PlatformWalletPersistenceHandler.isWalletOwnedTxo($0)
                 && PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
         }
+        if isAssetLock {
+            let ownedOutputs = outputs.filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
+            if spendsOurs {
+                return ownedOutputs.contains {
+                    PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) != walletId
+                } ? CoreDirectionCode.outgoing : direction
+            }
+            return ownedOutputs.contains {
+                PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
+            } ? CoreDirectionCode.incoming : direction
+        }
         return spendsOurs ? CoreDirectionCode.outgoing : CoreDirectionCode.incoming
+    }
+
+    /// Retain the sole surviving wallet's accounting before ownership links disappear.
+    func preserveAccounting(removingWallet walletId: Data) {
+        let participants = participatingWalletIds
+        guard participants.count == 2, participants.contains(walletId),
+              let survivor = participants.first(where: { $0 != walletId }) else { return }
+        let amount = netAmount(for: survivor)
+        let survivorDirection = direction(for: survivor)
+        if let amount { netAmount = amount }
+        netAmountUnavailable = amount == nil
+        direction = survivorDirection
     }
 
     /// Format the wallet's Core value movement in DASH.
@@ -282,7 +310,7 @@ public final class PersistentTransaction {
 
     /// Net amount for `walletId`, or the stored scalar when no wallet scope is given.
     public func displayNetAmount(for walletId: Data?) -> Int64? {
-        walletId.map { netAmount(for: $0) } ?? netAmount
+        walletId.map { netAmount(for: $0) } ?? (netAmountUnavailable == true ? nil : netAmount)
     }
 
     /// `CoreDirectionCode` for `walletId`, or the stored direction when no wallet scope is given.
@@ -450,7 +478,7 @@ public final class PersistentTransaction {
     }
 
     public var formattedAmount: String {
-        Self.format(duffs: netAmount)
+        netAmountUnavailable == true ? "Amount unavailable" : Self.format(duffs: netAmount)
     }
 }
 
