@@ -8,7 +8,7 @@
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserializeTrusted, PlatformSerialize};
 
 pub mod v0;
 
@@ -19,7 +19,9 @@ use v0::ReducedPlatformStateV0;
 /// The structure version is the enum discriminant, so it serializes `unversioned` (big
 /// endian, no limit) exactly like the other versioned platform types. These bytes are
 /// covered by the app hash, so the encoding is consensus-fixed.
-#[derive(Clone, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, From)]
+#[derive(
+    Clone, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted, From,
+)]
 #[platform_serialize(unversioned)]
 pub enum ReducedPlatformState {
     /// Version 0
@@ -34,7 +36,7 @@ mod tests {
     };
     use super::*;
     use crate::block::block_info::BlockInfo;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 
     #[test]
     fn should_roundtrip_reduced_platform_state_serialization() {
@@ -74,8 +76,8 @@ mod tests {
         });
 
         let bytes = state.serialize_to_bytes().expect("should serialize");
-        let restored =
-            ReducedPlatformState::deserialize_from_bytes(&bytes).expect("should deserialize");
+        let restored = ReducedPlatformState::deserialize_from_bytes_trusted(&bytes)
+            .expect("should deserialize");
 
         assert_eq!(state, restored);
     }
