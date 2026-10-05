@@ -110,7 +110,7 @@ describe('generate-tenderdash-seeds CLI', () => {
     // A validated snapshot past the publishing age limit is equally unusable.
     expect(run().status).to.equal(0);
     const snapshots = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
-    snapshots.testnet.lastUpdated -= 8 * 24 * 60 * 60;
+    snapshots.testnet.lastUpdated -= 31 * 24 * 60 * 60;
     const stale = `${JSON.stringify(snapshots, null, 2)}\n`;
     fs.writeFileSync(snapshotPath, stale);
     result = run(['--reuse-snapshot'], { SEED_TEST_FETCH_MODE: 'forbid' });

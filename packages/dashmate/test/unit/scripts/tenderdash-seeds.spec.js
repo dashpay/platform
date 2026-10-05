@@ -151,7 +151,7 @@ describe('quorum-server Tenderdash seeds', () => {
     expect(() => checkSnapshot(snapshot, 'testnet', NOW)).not.to.throw();
     expect(() => checkSnapshot(snapshot, 'mainnet', NOW)).to.throw();
     expect(() => checkSnapshot({ ...snapshot, source: QUORUM_URLS.mainnet }, 'testnet', NOW)).to.throw();
-    expect(() => checkSnapshot(snapshot, 'testnet', NOW + 7 * 86400)).to.throw('stale');
+    expect(() => checkSnapshot(snapshot, 'testnet', NOW + 31 * 86400)).to.throw('stale');
     expect(() => checkSnapshot({ ...snapshot, lastUpdated: undefined }, 'testnet', NOW)).to.throw();
   });
 

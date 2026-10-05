@@ -36,7 +36,7 @@ node packages/dashmate/scripts/generate-tenderdash-seeds.js --reuse-snapshot
 Reuse never contacts the servers and never rewrites peers, `source`,
 `lastUpdated`, or `previousSeedSetHashes`; it only sets the snapshot's top-level
 `version` to the new package version, which the publishing check compares. The
-committed snapshot must still pass that same check, including the seven-day age
+committed snapshot must still pass that same check, including the 30-day age
 limit, so a snapshot too old to publish is also too old to reuse. The script
 prints a warning with the date the reused data was generated and the last date
 the release can still be published; after that, publishing fails and the
@@ -53,7 +53,7 @@ guesses ports and requires at least five eligible peers per network.
 
 Commit the generated snapshot with the release. The NPM publishing workflow validates
 its source URL, package version, peers, and timestamp offline, rejecting data over
-seven days old. Publishing never regenerates tagged data; ordinary builds and
+30 days old. Publishing never regenerates tagged data; ordinary builds and
 tests need no live server. The old committed Core-derived snapshots must be
 regenerated after server deployment before this PR can be released.
 
