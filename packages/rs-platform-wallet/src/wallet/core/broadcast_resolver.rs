@@ -4939,11 +4939,12 @@ mod tests {
         let before = probe.probed().len();
 
         rig.handle(Command::Uncertain(txid(200)));
-        // The lookup may even have finished, its result not joined yet.
-        for _ in 0..8 {
-            tokio::task::yield_now().await;
-        }
+        // The lookup has finished, its result not delivered yet, when a
+        // wallet is added.
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        assert!(matches!(&listed, Ok((_, JobDone::Listed { .. }))));
         rig.handle(Command::WalletAdded([9u8; 32]));
+        rig.actor.joined(listed);
         rig.settle().await;
 
         assert!(
