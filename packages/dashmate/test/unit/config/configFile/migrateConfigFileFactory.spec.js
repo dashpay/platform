@@ -247,9 +247,11 @@ describe('migrateConfigFileFactory', () => {
 
   it('should add state sync options to a config stamped before they existed', async () => {
     // The schema now requires the state sync options, so a config written
-    // before they existed cannot be loaded until the migration adds them.
-    const fromVersion = '4.2.0-dev.5';
+    // before they existed cannot be loaded until the migration adds them. A
+    // config stamped by the current package version is the case that matters:
+    // the migration is keyed at the release it ships in, above that version.
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+    const fromVersion = version;
 
     const configFileData = createConfigFile().toObject();
     configFileData.configFormatVersion = fromVersion;
