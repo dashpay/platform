@@ -726,26 +726,27 @@ impl PlatformWallet {
 /// Look up the asset-lock value in credits.
 ///
 /// Preference order:
-/// 1. If the proof is `Instant`, read directly from
-///    `InstantAssetLockProof::output().value` — no manager lookup
-///    needed.
+/// 1. If the proof is `Instant`, read the credit output from the
+///    transaction the proof carries — no manager lookup needed.
 /// 2. Otherwise (the IS-timeout-fallback path produced a CL proof
 ///    that doesn't carry the tx output), look up the tracked
-///    asset-lock row by outpoint.
+///    asset-lock row by outpoint and read it from its transaction.
+///
+/// Both go through [`credit_output_duffs`], as does the speculative
+/// proof's amount (`start_speculative_shield_proof`), so a bundle proved
+/// before the lock proof existed is proved for the amount computed here.
 async fn lookup_asset_lock_value_credits(
     wallet: &PlatformWallet,
     proof: &AssetLockProof,
     tracked_out_point: Option<&dashcore::OutPoint>,
 ) -> Result<Credits, PlatformWalletError> {
     let duffs = match proof {
-        AssetLockProof::Instant(is) => {
-            let out = is.output().ok_or_else(|| {
+        AssetLockProof::Instant(is) => credit_output_duffs(is.transaction(), is.output_index())
+            .ok_or_else(|| {
                 PlatformWalletError::AddressSync(
                     "InstantAssetLockProof has no output at the indicated index".to_string(),
                 )
-            })?;
-            out.value
-        }
+            })?,
         AssetLockProof::Chain(_) => {
             let op = tracked_out_point.ok_or_else(|| {
                 PlatformWalletError::AddressSync(
@@ -762,22 +763,51 @@ async fn lookup_asset_lock_value_credits(
     })
 }
 
-/// The value of the tracked asset lock at `out_point`, in duffs.
+/// The value of the tracked asset lock at `out_point`, in duffs: its
+/// transaction's credit output at the outpoint's index (see
+/// [`credit_output_duffs`]).
 async fn tracked_asset_lock_value_duffs(
     wallet: &PlatformWallet,
     out_point: &dashcore::OutPoint,
 ) -> Result<u64, PlatformWalletError> {
     let locks: Vec<TrackedAssetLock> = wallet.asset_locks.list_tracked_locks().await;
-    locks
+    let lock = locks
         .iter()
         .find(|l| l.out_point == *out_point)
-        .map(|l| l.amount)
         .ok_or_else(|| {
             PlatformWalletError::AddressSync(format!(
                 "tracked asset lock {} not found in manager",
                 out_point
             ))
-        })
+        })?;
+    credit_output_duffs(&lock.transaction, out_point.vout).ok_or_else(|| {
+        PlatformWalletError::AddressSync(format!(
+            "tracked asset lock {} has no credit output at index {}",
+            out_point, out_point.vout
+        ))
+    })
+}
+
+/// The value, in duffs, that an asset lock on `transaction` at `output_index`
+/// locks: the payload's `credit_outputs[output_index]` — the output
+/// `InstantAssetLockProof::output` names and consensus credits. `None` when
+/// the transaction carries no such credit output.
+///
+/// Not the tracked row's `amount`: that is the sum of all credit outputs.
+/// The two agree for the single-output locks this wallet builds (pinned by
+/// `wallet_built_lock_value_is_its_only_credit_output`), but reading the
+/// output itself everywhere keeps the speculative and the resolved amounts
+/// equal by construction.
+fn credit_output_duffs(transaction: &dashcore::Transaction, output_index: u32) -> Option<u64> {
+    use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
+
+    match &transaction.special_transaction_payload {
+        Some(TransactionPayload::AssetLockPayloadType(payload)) => payload
+            .credit_outputs
+            .get(output_index as usize)
+            .map(|output| output.value),
+        _ => None,
+    }
 }
 
 /// Build the Type 18 transition and broadcast-and-wait.
@@ -1315,6 +1345,84 @@ mod tests {
             )
             .into(),
         )))
+    }
+
+    /// The speculative proof's amount (tracked row) and the resolved amount
+    /// (InstantSend proof, or the tracked row on the ChainLock path) must be
+    /// the same number, or every funding silently re-proves after the lock
+    /// arrives and the overlap is lost. Both read `credit_output_duffs`; for
+    /// the single-output locks the wallet builds that is also the row's
+    /// `amount`.
+    #[tokio::test]
+    async fn wallet_built_lock_value_is_its_only_credit_output() {
+        use dashcore::InstantLock;
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+
+        let ctx = consumption_report_context().await;
+        let lock = {
+            let wm = ctx.wallet_manager.read().await;
+            wm.get_wallet_info(&ctx.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&ctx.out_point)
+                .expect("tracked lock")
+                .clone()
+        };
+        let from_row = credit_output_duffs(&lock.transaction, ctx.out_point.vout)
+            .expect("the lock's credit output");
+        assert_eq!(
+            credit_output_duffs(&lock.transaction, ctx.out_point.vout + 1),
+            None,
+            "the wallet builds single-output locks"
+        );
+        assert_eq!(from_row, 1_000_000, "the whole requested amount is locked");
+        assert_eq!(from_row, lock.amount);
+
+        let instant =
+            InstantAssetLockProof::new(InstantLock::default(), lock.transaction.clone(), 0);
+        assert_eq!(
+            out_point_from_proof(&AssetLockProof::Instant(instant.clone())),
+            ctx.out_point
+        );
+        assert_eq!(
+            credit_output_duffs(instant.transaction(), instant.output_index()),
+            Some(from_row)
+        );
+        assert_eq!(instant.output().map(|output| output.value), Some(from_row));
+    }
+
+    /// With several credit outputs, each lock is worth its own output — not
+    /// the sum the tracked row records.
+    #[test]
+    fn credit_output_value_is_the_indexed_output_not_the_sum() {
+        use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
+        use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
+        use dashcore::{ScriptBuf, Transaction, TxOut};
+
+        let output = |value| TxOut {
+            value,
+            script_pubkey: ScriptBuf::new(),
+        };
+        let transaction = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload {
+                    version: 0,
+                    credit_outputs: vec![output(100_000), output(200_000)],
+                },
+            )),
+        };
+        assert_eq!(credit_output_duffs(&transaction, 0), Some(100_000));
+        assert_eq!(credit_output_duffs(&transaction, 1), Some(200_000));
+        assert_eq!(credit_output_duffs(&transaction, 2), None);
+        let plain = Transaction {
+            special_transaction_payload: None,
+            ..transaction
+        };
+        assert_eq!(credit_output_duffs(&plain, 0), None);
     }
 
     #[tokio::test]
