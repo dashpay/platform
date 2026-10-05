@@ -2010,7 +2010,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     version must be active on a network before its Dash Core activates V24,
 ///     since earlier versions keep failing on these masternodes.
 ///
-/// 74. **An authenticated Shield proof failure pays from its address inputs.**
+/// 78. **An authenticated Shield proof failure pays from its address inputs.**
 ///     Processor generation 1 defers Shield proof verification to transform generation 2.
 ///     A failed proof restores the input principal, consumes the input nonces, and charges
 ///     the ordinary metered failure fee plus the configured proof-failure penalty, capped
