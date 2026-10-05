@@ -1129,15 +1129,19 @@ struct Actor {
     /// echo window starts at (`None` until the next followed block after the
     /// latest report — a report while the wallets catch up starts nothing):
     /// a later peer echo of one of them is its acceptance. Removed by its
-    /// echo, its settling, a holder lookup that finds no unsettled own send,
+    /// echo, its settling, the latest report's holder lookup if it finds no
+    /// unsettled own send,
     /// [`UNCERTAIN_EXPIRY`] followed blocks into its window, and all at
     /// switch-off. One no wallet resolves (its wallet removed, say) lingers
     /// until it expires.
     uncertain: HashMap<Txid, Option<u32>>,
-    /// The latest `Uncertain` report per txid whose holder lookup is out:
-    /// only that lookup's completion counts (see `JobDone::Listed`).
-    reports: HashMap<Txid, u64>,
-    next_report: u64,
+    /// The token of the latest `Uncertain` report per txid, until its holder
+    /// lookup completes: only that completion counts (see `JobDone::Listed`).
+    /// A newer report, a switch-off, or a wallet leaving or re-registering
+    /// withdraws it — like `echo_lookups`. A lookup that panicked leaves its
+    /// token until one of those.
+    report_lookups: HashMap<Txid, u64>,
+    next_report_token: u64,
     /// The highest height any wallet has followed the tip at: the one clock
     /// the echo windows run on, so a wallet behind the others (rescanning,
     /// rewound) neither stamps nor expires them.
@@ -1169,8 +1173,8 @@ impl Actor {
             jobs: JoinSet::new(),
             job_runs: HashMap::new(),
             uncertain: HashMap::new(),
-            reports: HashMap::new(),
-            next_report: 0,
+            report_lookups: HashMap::new(),
+            next_report_token: 0,
             followed_tip: None,
             next_retry_series: 0,
             echo_lookups: HashMap::new(),
@@ -1399,9 +1403,9 @@ impl Actor {
                 // A new report restarts the window, from the next followed
                 // block.
                 self.uncertain.insert(txid, None);
-                self.next_report += 1;
-                let report = self.next_report;
-                self.reports.insert(txid, report);
+                let report = self.next_report_token;
+                self.next_report_token += 1;
+                self.report_lookups.insert(txid, report);
                 // Routed to the registered wallets holding it, including ones
                 // no height step has reached yet.
                 let source = Arc::clone(&self.source);
@@ -1453,7 +1457,7 @@ impl Actor {
                 }
                 if !enabled {
                     self.uncertain.clear();
-                    self.reports.clear();
+                    self.report_lookups.clear();
                     self.echo_lookups.clear();
                     let events = self.state.forget_all();
                     deliver(&self.sink, events);
@@ -1507,6 +1511,7 @@ impl Actor {
         // Which wallet an echo's lookup will name is not known yet: withdraw
         // them all — at worst an acceptance waits for the next probe.
         self.echo_lookups.clear();
+        self.report_lookups.clear();
         let events = self.state.forget_wallet(wallet_id, trigger);
         deliver(&self.sink, events);
     }
@@ -1578,13 +1583,14 @@ impl Actor {
                 wallets,
                 own,
             } => {
-                // Only the latest report's lookup: an older one read the
-                // wallets before a newer report (whose own lookup decides),
-                // and one from before a switch-off belongs to nothing.
-                if !self.enabled || self.reports.get(&txid) != Some(&report) {
+                // Only the latest report's lookup: a newer report's own
+                // lookup reads the wallets no earlier than that report, so it
+                // decides; one from before a switch-off or a wallet's
+                // departure belongs to nothing.
+                if !self.enabled || self.report_lookups.get(&txid) != Some(&report) {
                     return;
                 }
-                self.reports.remove(&txid);
+                self.report_lookups.remove(&txid);
                 // No wallet holds it as an unsettled own send: its echo
                 // would be news to no one.
                 if own.is_empty() {
@@ -4170,6 +4176,37 @@ mod tests {
         assert!(rig
             .sent()
             .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)));
+    }
+
+    /// The reverse order: the newer report's lookup completes first, then
+    /// the older, empty one — still obsolete.
+    #[tokio::test]
+    async fn should_drop_an_older_lookup_that_completes_after_the_newer_one() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
+        rig.views(wallet(), Vec::new());
+        rig.handle(Command::Uncertain(txid(1)));
+        let old = rig
+            .actor
+            .jobs
+            .join_next_with_id()
+            .await
+            .expect("old lookup");
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.handle(Command::Uncertain(txid(1)));
+        let newer = rig
+            .actor
+            .jobs
+            .join_next_with_id()
+            .await
+            .expect("newer lookup");
+        rig.actor.joined(newer);
+
+        rig.actor.joined(old);
+
+        assert!(
+            rig.actor.uncertain.contains_key(&txid(1)),
+            "the window stays"
+        );
     }
 
     /// A lookup from before a switch-off is obsolete after it.
