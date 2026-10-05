@@ -1,7 +1,9 @@
 //! Admission and the per-subscription scan loop.
 
 use super::CHECKPOINT_INTERVAL;
-use super::block_source::{BlockRead, BlockSource, HeightMeta, META_PAGE, NOT_YET_RETRY};
+use super::block_source::{
+    BlockRead, BlockSource, CommittedBlock, HeightMeta, META_PAGE, NOT_YET_RETRY,
+};
 use dapi_grpc::platform::v0::SubscribeToStateTransitionsResponse;
 use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::subscribe_to_state_transitions_response_v0::{
     Checkpoint, Responses, StateTransitionMatch,
@@ -12,7 +14,6 @@ use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::{
 use dapi_grpc::tonic::Status;
 use dash_platform_queries::subscriptions::ResolvedFilters;
 use dpp::data_contract::DataContract;
-use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::version::PlatformVersion;
@@ -188,13 +189,13 @@ impl SubscriptionService {
         let start = match from_block_height {
             None => tip + 1,
             Some(height) => {
-                if height + self.limits.max_replay_blocks < tip {
+                if height.saturating_add(self.limits.max_replay_blocks) < tip {
                     return Err(Status::out_of_range(format!(
                         "from_block_height {height} is more than {} blocks behind the tip {tip}",
                         self.limits.max_replay_blocks
                     )));
                 }
-                if height > tip + self.limits.max_blocks_ahead {
+                if height > tip.saturating_add(self.limits.max_blocks_ahead) {
                     return Err(Status::out_of_range(format!(
                         "from_block_height {height} is more than {} blocks ahead of the tip {tip}",
                         self.limits.max_blocks_ahead
@@ -292,9 +293,14 @@ impl Scan {
                 }
                 continue;
             }
+            if self.sender.is_closed() {
+                return Err(Stop::Closed);
+            }
 
-            // Catching up on many blocks: share the replay capacity, a page at a time.
-            let _replay_permit = if tip - self.next_height >= META_PAGE {
+            // Catching up on many blocks: share the replay capacity, a page at a time. The
+            // permit covers only reading from Tenderdash and is given up before anything is
+            // sent, so a client that stops reading cannot hold it.
+            let mut replay_permit = if tip - self.next_height >= META_PAGE {
                 Some(self.replay_permit(&mut last_checkpoint).await?)
             } else {
                 None
@@ -308,22 +314,30 @@ impl Scan {
                     })?;
             let page_end = page_start + page.len() as u64 - 1;
             while self.next_height <= page_end {
-                match page[(self.next_height - page_start) as usize] {
+                let height = self.next_height;
+                match page[(height - page_start) as usize] {
                     HeightMeta::Empty => {}
                     HeightMeta::Unavailable => {
                         return Err(Stop::Fail(Status::out_of_range(format!(
-                            "block {} is not available on this node",
-                            self.next_height
+                            "block {height} is not available on this node"
                         ))));
                     }
                     HeightMeta::HasTxs => {
-                        if self.scan_block(self.next_height).await? {
+                        let block = self.read_block(height).await?;
+                        let matches = self.match_block(&block)?;
+                        if !matches.is_empty() {
+                            replay_permit.take();
+                            for matched in matches {
+                                self.send(Responses::StateTransition(matched)).await?;
+                            }
+                            self.checkpoint_at(height).await?;
                             last_checkpoint = Instant::now();
                         }
                     }
                 }
                 self.next_height += 1;
                 if last_checkpoint.elapsed() >= CHECKPOINT_INTERVAL {
+                    replay_permit.take();
                     self.checkpoint().await?;
                     last_checkpoint = Instant::now();
                 }
@@ -350,22 +364,21 @@ impl Scan {
         }
     }
 
-    /// Scan one block, sending its matches and then a checkpoint at its height. Returns whether
-    /// anything matched.
-    async fn scan_block(&mut self, height: u64) -> Result<bool, Stop> {
+    /// The committed block at `height`, waiting for its results to be saved.
+    async fn read_block(&mut self, height: u64) -> Result<Arc<CommittedBlock>, Stop> {
         let deadline = Instant::now() + UNREADABLE_DEADLINE;
-        let block = loop {
+        loop {
             match self.blocks.read(height).await {
-                Ok(BlockRead::Block(block)) => break block,
-                Ok(BlockRead::NotYet) if Instant::now() < deadline => sleep(NOT_YET_RETRY).await,
+                Ok(BlockRead::Block(block)) => return Ok(block),
+                Ok(BlockRead::NotYet) if Instant::now() < deadline => {
+                    tokio::select! {
+                        _ = self.sender.closed() => return Err(Stop::Closed),
+                        _ = sleep(NOT_YET_RETRY) => {}
+                    }
+                }
                 Ok(BlockRead::NotYet) => {
                     return Err(Stop::Fail(Status::unavailable(format!(
                         "block {height} has not become readable; resume from {height}"
-                    ))));
-                }
-                Ok(BlockRead::Unavailable) => {
-                    return Err(Stop::Fail(Status::out_of_range(format!(
-                        "block {height} is not available on this node"
                     ))));
                 }
                 Err(error) => {
@@ -374,7 +387,13 @@ impl Scan {
                     ))));
                 }
             }
-        };
+        }
+    }
+
+    /// The block's transitions that match, in block order. A data contract update rebinds
+    /// the filters on that contract for the transitions after it.
+    fn match_block(&mut self, block: &CommittedBlock) -> Result<Vec<StateTransitionMatch>, Stop> {
+        let height = block.height;
         let platform_version = PlatformVersion::get(block.protocol_version).map_err(|_| {
             Stop::Fail(Status::failed_precondition(format!(
                 "block {height} executed under protocol version {}, which this node does not \
@@ -383,9 +402,9 @@ impl Scan {
             )))
         })?;
 
-        let mut matched = false;
+        let mut matches = Vec::new();
         for tx in &block.txs {
-            let state_transition = StateTransition::deserialize_from_bytes_untrusted(&tx.bytes).map_err(|e| {
+            let state_transition = tx.state_transition.as_ref().map_err(|e| {
                 warn!(height, index = tx.index, error = %e, "cannot decode an executed state transition");
                 Stop::Fail(Status::failed_precondition(format!(
                     "block {height} transaction {} cannot be decoded by this node ({e}); resume \
@@ -393,9 +412,8 @@ impl Scan {
                     tx.index
                 )))
             })?;
-            if let Some(filter_match) = self.filters.matches(&state_transition, platform_version) {
-                matched = true;
-                self.send(Responses::StateTransition(StateTransitionMatch {
+            if let Some(filter_match) = self.filters.matches(state_transition, platform_version) {
+                matches.push(StateTransitionMatch {
                     block_height: height,
                     block_time_ms: block.time_ms,
                     protocol_version: block.protocol_version,
@@ -404,11 +422,9 @@ impl Scan {
                     state_transition: tx.bytes.as_ref().clone(),
                     matched_filters: filter_match.matched_filters,
                     matched_batch_positions: filter_match.matched_batch_positions,
-                }))
-                .await?;
+                });
             }
-            // Later transitions match against the contract as this update left it.
-            if let StateTransition::DataContractUpdate(update) = &state_transition
+            if let StateTransition::DataContractUpdate(update) = state_transition
                 && let Ok(contract) = DataContract::try_from_platform_versioned(
                     update.data_contract().clone(),
                     false,
@@ -420,10 +436,7 @@ impl Scan {
                     .rebind_data_contract(Arc::new(contract), platform_version);
             }
         }
-        if matched {
-            self.checkpoint_at(height).await?;
-        }
-        Ok(matched)
+        Ok(matches)
     }
 
     /// A checkpoint at the highest fully scanned height.

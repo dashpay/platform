@@ -8,6 +8,10 @@
 //!   by `status` can briefly have no results; such a height is retried, never skipped.
 //! - `blockchain` returns at most the 20 *highest* heights of the range asked for, so pages are
 //!   requested 20 heights at a time and checked to be complete.
+//!
+//! Every subscription at the tip wants the same new block at the same moment, so reads are
+//! single-flight: concurrent misses on one height (or one metas page) share one Tenderdash call,
+//! and a block's transactions are decoded once for all of them.
 
 use crate::DapiError;
 use crate::clients::tenderdash_client::{
@@ -17,6 +21,8 @@ use crate::error::DAPIResult;
 use async_trait::async_trait;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use dpp::serialization::PlatformDeserializableUntrusted;
+use dpp::state_transition::StateTransition;
 use quick_cache::Weighter;
 use quick_cache::sync::Cache;
 use sha2::{Digest, Sha256};
@@ -75,6 +81,8 @@ pub struct CommittedTx {
     pub hash: [u8; 32],
     /// The serialized state transition.
     pub bytes: Arc<Vec<u8>>,
+    /// The decoded transition, or why this build cannot decode it.
+    pub state_transition: Result<StateTransition, String>,
 }
 
 /// A committed block's header facts and its successfully executed transactions.
@@ -93,8 +101,12 @@ pub enum BlockRead {
     Block(Arc<CommittedBlock>),
     /// Not readable yet: the block or its execution results have not been stored. Retry.
     NotYet,
-    /// Never readable here: the store keeps only the block's header (state sync) or nothing.
-    Unavailable,
+}
+
+/// Why a read produced no block.
+enum ReadMiss {
+    NotYet,
+    Failed(DapiError),
 }
 
 /// One height's block meta, as far as the subscription needs it.
@@ -113,7 +125,8 @@ struct BlockWeighter;
 
 impl Weighter<u64, Arc<CommittedBlock>> for BlockWeighter {
     fn weight(&self, _height: &u64, block: &Arc<CommittedBlock>) -> u64 {
-        let tx_bytes: usize = block.txs.iter().map(|tx| tx.bytes.len() + 64).sum();
+        // The decoded transition takes roughly as much again as its bytes.
+        let tx_bytes: usize = block.txs.iter().map(|tx| 2 * tx.bytes.len() + 64).sum();
         (tx_bytes + 64) as u64
     }
 }
@@ -122,7 +135,9 @@ impl Weighter<u64, Arc<CommittedBlock>> for BlockWeighter {
 pub struct BlockSource {
     tenderdash: Arc<dyn TenderdashBlocks>,
     blocks: Cache<u64, Arc<CommittedBlock>, BlockWeighter>,
-    meta_pages: Cache<u64, Arc<Vec<HeightMeta>>>,
+    /// Metas pages by their exact `(start, end)` range: committed metas never change, so a
+    /// short page at the tip stays valid and is shared by every subscription reading it.
+    meta_pages: Cache<(u64, u64), Arc<Vec<HeightMeta>>>,
 }
 
 impl BlockSource {
@@ -140,7 +155,7 @@ impl BlockSource {
     }
 
     /// The metas of the aligned page holding `height` (heights `page_start..page_start + 20`),
-    /// up to `tip`. Only complete pages are cached.
+    /// up to `tip`.
     pub async fn meta_page(
         &self,
         height: u64,
@@ -148,45 +163,52 @@ impl BlockSource {
     ) -> DAPIResult<(u64, Arc<Vec<HeightMeta>>)> {
         let page_start = (height.saturating_sub(1) / META_PAGE) * META_PAGE + 1;
         let page_end = (page_start + META_PAGE - 1).min(tip);
-        if let Some(page) = self.meta_pages.get(&page_start)
-            && page.len() as u64 > page_end - page_start
-        {
-            return Ok((page_start, page));
-        }
-        let info = self.tenderdash.blockchain(page_start, page_end).await?;
-        let page = Arc::new(page_from_metas(page_start, page_end, &info.block_metas)?);
-        if page_end == page_start + META_PAGE - 1 {
-            self.meta_pages.insert(page_start, page.clone());
-        }
+        let page = self
+            .meta_pages
+            .get_or_insert_async(&(page_start, page_end), async {
+                let info = self.tenderdash.blockchain(page_start, page_end).await?;
+                Ok::<_, DapiError>(Arc::new(page_from_metas(
+                    page_start,
+                    page_end,
+                    &info.block_metas,
+                )?))
+            })
+            .await?;
         Ok((page_start, page))
     }
 
     /// Read the committed block at `height`.
     pub async fn read(&self, height: u64) -> DAPIResult<BlockRead> {
-        if let Some(block) = self.blocks.get(&height) {
-            return Ok(BlockRead::Block(block));
+        match self
+            .blocks
+            .get_or_insert_async(&height, self.fetch(height))
+            .await
+        {
+            Ok(block) => Ok(BlockRead::Block(block)),
+            Err(ReadMiss::NotYet) => Ok(BlockRead::NotYet),
+            Err(ReadMiss::Failed(error)) => Err(error),
         }
+    }
+
+    async fn fetch(&self, height: u64) -> Result<Arc<CommittedBlock>, ReadMiss> {
         let (block, results) = tokio::join!(
             self.tenderdash.block(height),
             self.tenderdash.block_results(height)
         );
-        let Some(block) = block?.block else {
-            return Ok(BlockRead::NotYet);
+        let Some(block) = block.map_err(ReadMiss::Failed)?.block else {
+            return Err(ReadMiss::NotYet);
         };
-        let results = match results {
-            Ok(results) => results,
-            // Results are saved after the block is stored: not available yet.
-            Err(_) => return Ok(BlockRead::NotYet),
-        };
+        // Results are saved after the block is stored: not available yet.
+        let results = results.map_err(|_| ReadMiss::NotYet)?;
         if block.data.txs.len() != results.txs_results.len() {
             if results.txs_results.is_empty() {
-                return Ok(BlockRead::NotYet);
+                return Err(ReadMiss::NotYet);
             }
-            return Err(DapiError::Internal(format!(
+            return Err(ReadMiss::Failed(DapiError::Internal(format!(
                 "block {height} has {} transactions but {} execution results",
                 block.data.txs.len(),
                 results.txs_results.len()
-            )));
+            ))));
         }
 
         let mut txs = Vec::new();
@@ -195,35 +217,36 @@ impl BlockSource {
                 continue;
             }
             let bytes = BASE64_STANDARD.decode(tx).map_err(|e| {
-                DapiError::Internal(format!(
+                ReadMiss::Failed(DapiError::Internal(format!(
                     "block {height} transaction {index} is not valid base64: {e}"
-                ))
+                )))
             })?;
             txs.push(CommittedTx {
                 index: index as u32,
                 hash: Sha256::digest(&bytes).into(),
+                state_transition: StateTransition::deserialize_from_bytes_untrusted(&bytes)
+                    .map_err(|e| e.to_string()),
                 bytes: Arc::new(bytes),
             });
         }
         let protocol_version = u32::try_from(block.header.version.app).map_err(|_| {
-            DapiError::Internal(format!(
+            ReadMiss::Failed(DapiError::Internal(format!(
                 "block {height} has protocol version {} out of range",
                 block.header.version.app
-            ))
+            )))
         })?;
-        let committed = Arc::new(CommittedBlock {
+        let time_ms = parse_block_time_ms(&block.header.time).ok_or_else(|| {
+            ReadMiss::Failed(DapiError::Internal(format!(
+                "block {height} has an unreadable time '{}'",
+                block.header.time
+            )))
+        })?;
+        Ok(Arc::new(CommittedBlock {
             height,
-            time_ms: parse_block_time_ms(&block.header.time).ok_or_else(|| {
-                DapiError::Internal(format!(
-                    "block {height} has an unreadable time '{}'",
-                    block.header.time
-                ))
-            })?,
+            time_ms,
             protocol_version,
             txs,
-        });
-        self.blocks.insert(height, committed.clone());
-        Ok(BlockRead::Block(committed))
+        }))
     }
 }
 

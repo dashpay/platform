@@ -21,6 +21,8 @@ use tokio_stream::StreamExt;
 #[derive(Default)]
 struct FakeChain {
     blocks: Mutex<BTreeMap<u64, Vec<Vec<u8>>>>,
+    /// A height whose execution results are not saved yet.
+    results_withheld: Mutex<Option<u64>>,
 }
 
 impl FakeChain {
@@ -61,6 +63,9 @@ impl TenderdashBlocks for FakeChain {
     }
 
     async fn block_results(&self, height: u64) -> DAPIResult<ResultBlockResults> {
+        if *self.results_withheld.lock().unwrap() == Some(height) {
+            return Err(DapiError::Client("no results for height".to_string()));
+        }
         let txs = self
             .txs(height)
             .ok_or_else(|| DapiError::Client("no results for height".to_string()))?;
@@ -334,4 +339,63 @@ async fn should_end_the_stream_on_a_transaction_this_node_cannot_decode() {
         .unwrap()
         .unwrap_err();
     assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+}
+
+#[tokio::test]
+async fn should_deliver_a_block_once_its_results_are_saved() {
+    let harness = harness(SubscriptionLimits::default());
+    let mut stream = harness
+        .service
+        .start(
+            harness.service.admit(None).unwrap(),
+            recipient_filter(7),
+            None,
+        )
+        .await
+        .unwrap();
+    expect_checkpoint(&mut stream, 0).await;
+
+    *harness.chain.results_withheld.lock().unwrap() = Some(1);
+    harness.commit(vec![credit_transfer(7)]);
+    let chain = harness.chain.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(500)).await;
+        *chain.results_withheld.lock().unwrap() = None;
+    });
+    expect_match(&mut stream, 1, 0).await;
+    expect_checkpoint(&mut stream, 1).await;
+}
+
+#[tokio::test]
+async fn should_not_let_a_client_that_stops_reading_hold_the_replay_capacity() {
+    let harness = harness(SubscriptionLimits {
+        max_replaying: 1,
+        ..Default::default()
+    });
+    // Far more matches for the stalled client than its buffer holds.
+    for _ in 0..100 {
+        harness.commit(vec![credit_transfer(9)]);
+    }
+    let height = harness.commit(vec![credit_transfer(7)]);
+
+    let _stalled = harness
+        .service
+        .start(
+            harness.service.admit(None).unwrap(),
+            recipient_filter(9),
+            Some(1),
+        )
+        .await
+        .unwrap();
+    let mut reader = harness
+        .service
+        .start(
+            harness.service.admit(None).unwrap(),
+            recipient_filter(7),
+            Some(1),
+        )
+        .await
+        .unwrap();
+    expect_checkpoint(&mut reader, 0).await;
+    expect_match(&mut reader, height, 0).await;
 }
