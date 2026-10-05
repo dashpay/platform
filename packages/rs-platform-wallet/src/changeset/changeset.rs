@@ -1102,6 +1102,13 @@ impl Merge for IdentityChangeSet {
                     // equivalent. We use LWW for consistency with the
                     // other scalars in this block.
                     existing.wallet_id = entry.wallet_id;
+                    // `identity_index` follows the latest snapshot too. It is
+                    // not immutable: discovery re-slots an identity restored
+                    // at a placeholder index into the index its key derivation
+                    // proved (`IdentityManager::adopt_into_wallet`). Keeping
+                    // the first value would flush the stale slot and leave it
+                    // occupied for the identity that legitimately owns it.
+                    existing.identity_index = entry.identity_index;
                     // DashPay profile: last-write-wins. Same policy as
                     // every other Option<T> scalar in this block —
                     // every mutation snapshot copies the current
