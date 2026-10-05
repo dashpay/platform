@@ -506,6 +506,63 @@ pub(crate) mod tests {
             .expect("target info handler must succeed");
         assert_eq!(info.last_block_height as u64, snapshot.height);
         assert_eq!(info.last_block_app_hash, snapshot.hash);
+
+        // Restart the restored node. It must come back from what reconstruction stored in
+        // aux (the base record and the per-entry masternode and validator set
+        // collections), with the restore marker gone, as the same node it was before.
+        let restored_state = target_platform.state.load_full();
+        drop(target_app);
+        let TempPlatform {
+            platform, tempdir, ..
+        } = target_platform;
+        drop(platform);
+        assert!(
+            !drive_abci::platform_types::snapshot::restore_sentinel_exists(tempdir.path()),
+            "a completed restore must clear its marker, or the restart would wipe it"
+        );
+        let reopened = TempPlatform::open_with_tempdir(tempdir, config.clone());
+        let reopened_state = reopened.state.load();
+        assert_eq!(
+            reopened_state.last_committed_block_height(),
+            snapshot.height
+        );
+        assert_eq!(
+            reopened_state.last_committed_block_app_hash(),
+            restored_state.last_committed_block_app_hash()
+        );
+        assert_eq!(
+            reopened_state.validator_sets(),
+            restored_state.validator_sets()
+        );
+        assert_eq!(
+            reopened_state.full_masternode_list(),
+            restored_state.full_masternode_list()
+        );
+        assert_eq!(
+            reopened_state.hpmn_masternode_list(),
+            restored_state.hpmn_masternode_list()
+        );
+        assert_eq!(
+            reopened_state.previous_fee_versions(),
+            restored_state.previous_fee_versions()
+        );
+        let reopened_root_hash = reopened
+            .drive
+            .grove
+            .root_hash(None, grove_version)
+            .unwrap()
+            .expect("reopened root hash");
+        assert_eq!(reopened_root_hash.to_vec(), snapshot.hash);
+        let info = FullAbciApplication::new(&reopened)
+            .info(proto::RequestInfo {
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
+                block_version: 0,
+                p2p_version: 0,
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
+            })
+            .expect("the reopened node's info handler must succeed");
+        assert_eq!(info.last_block_height as u64, snapshot.height);
+        assert_eq!(info.last_block_app_hash, snapshot.hash);
     }
 
     /// Indexed trees (the ranked-aggregate trees protocol v14 contracts can declare)
