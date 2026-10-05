@@ -2,9 +2,11 @@
 //!
 //! A `preallocated` index on an indexOnly document type (see
 //! `dpp::data_contract::document_type::index::PREALLOCATED`) has a path that
-//! is a pure function of one same-contract refersTo-referenced document:
+//! is a pure function of one same-contract refersTo-referenced document (a
+//! `permanentDocument` one, or a `moderatedDocument` one whose removal record
+//! keeps every key of the path):
 //! every index property is either the referring property (its value is the
-//! referenced document's `$id`) or a `propertyAgreement` key
+//! referenced document's `$id`) or a `where` referring value
 //! (consensus-enforced equal to a referenced-document property at entry
 //! write time). So the moment the referenced document is inserted, every
 //! dynamic tree an entry referencing it will ever need — the per-value trees
@@ -36,11 +38,14 @@
 //! this code. The delete-side counterpart is versioned the same way
 //! (`remove_reference_for_index_level_for_contract_operations_v1`).
 
+use crate::drive::document::bound_value_fits_referring_property;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, terminal_member_tree_type,
-    terminal_value_tree_type,
+    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
+    level_counts_continuations, terminal_member_tree_type, terminal_value_tree_type,
 };
+use crate::drive::document::index_only::index_only_terminal_max_key_size;
+use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::document::unique_event_id;
 use crate::drive::Drive;
@@ -56,7 +61,7 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::{Index, IndexLevel, PreallocatedKeySource};
+use dpp::data_contract::document_type::{DocumentTypeRef, Index, PreallocatedKeySource};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -64,6 +69,9 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
+
+#[cfg(test)]
+mod tests;
 
 impl Drive {
     /// For every preallocated index (on any indexOnly document type of the
@@ -85,9 +93,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let contract = document_and_contract_info.contract;
-        let target_name = document_and_contract_info.document_type.name().as_str();
+        let target_document_type = document_and_contract_info.document_type;
 
-        for (referring_name, referring_document_type) in contract.document_types() {
+        for referring_document_type in contract.document_types().values() {
             let referring_type = referring_document_type.as_ref();
             // `preallocated` is only valid on indexOnly document types, so
             // this filter also keeps the per-insert scan trivially cheap for
@@ -120,16 +128,18 @@ impl Drive {
                 }
                 // Target-filtered derivation: candidates naming other
                 // target types are rejected before any binding plan is
-                // allocated — this runs on every document insert.
+                // allocated — this runs on every document insert. Through a
+                // moderatedDocument reference, only a binding every key of
+                // which the inserted document's removal record would keep
+                // (registration makes sure each preallocated index has one).
                 for binding in index.preallocation_bindings_for_target(
                     referring_type.flattened_properties(),
                     contract.id(),
-                    target_name,
+                    target_document_type,
                 ) {
                     self.add_preallocated_index_tree_operations_for_binding(
                         document_and_contract_info,
-                        referring_name,
-                        referring_type.index_structure(),
+                        referring_type,
                         index,
                         &binding.key_sources,
                         storage_flags,
@@ -147,17 +157,17 @@ impl Drive {
 
     /// Adds the operations preallocating ONE index's trees for entries
     /// referencing the inserted document: walks the referring type's
-    /// [`IndexLevel`] along the index's properties, resolving each path key
-    /// from the inserted document per the binding's key sources, and creates
-    /// each property-name tree, value tree and the terminal `0` member
-    /// bucket with exactly the tree types and estimation layers the
-    /// entry-insert walkers use.
+    /// [`IndexLevel`](dpp::data_contract::document_type::IndexLevel) along
+    /// the index's properties, resolving each path key from the inserted
+    /// document per the binding's key sources, and creates each
+    /// property-name tree, value tree and the terminal `0` member bucket
+    /// with exactly the tree types and estimation layers the entry-insert
+    /// walkers use.
     #[allow(clippy::too_many_arguments)]
     fn add_preallocated_index_tree_operations_for_binding(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        referring_type_name: &str,
-        referring_index_structure: &IndexLevel,
+        referring_type: DocumentTypeRef,
         index: &Index,
         key_sources: &[PreallocatedKeySource],
         storage_flags: Option<&StorageFlags>,
@@ -175,8 +185,9 @@ impl Drive {
         let document_info = &document_and_contract_info.owned_document_info.document_info;
         let event_id = unique_event_id();
 
+        let referring_index_structure = referring_type.index_structure();
         let contract_document_type_path =
-            contract_document_type_path_vec(contract.id_ref().as_bytes(), referring_type_name);
+            contract_document_type_path_vec(contract.id_ref().as_bytes(), referring_type.name());
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // The referring doctype tree layer — mirror of the entry-insert
@@ -218,13 +229,43 @@ impl Drive {
             // property otherwise — validated at contract registration to
             // share one value kind with the referring side, so the encoded
             // bytes match what an entry insert would write.
-            let source_property = match *key_source {
-                PreallocatedKeySource::ReferencedDocumentId => "$id",
-                PreallocatedKeySource::ReferencedDocumentProperty(referenced) => referenced,
+            let (source_property, source_type) = match *key_source {
+                PreallocatedKeySource::ReferencedDocumentId => ("$id", target_document_type),
+                PreallocatedKeySource::ReferencedDocumentProperty(referenced) => {
+                    match document_info.get_borrowed_document() {
+                        // Without a document the key is sized as the
+                        // referring property, the bound every key an entry
+                        // writes at this level has
+                        None => (property_name, referring_type),
+                        Some(document) => {
+                            let referring_property_type = &referring_type
+                                .flattened_properties()
+                                .get(property_name)
+                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "a preallocated index's property must be a property of \
+                                     its document type",
+                                )))?
+                                .property_type;
+                            if !bound_value_fits_referring_property(
+                                document,
+                                referenced,
+                                referring_property_type,
+                                platform_version,
+                            )? {
+                                // No entry can ever agree with a value wider
+                                // than the referring property holds, and it
+                                // may not fit a tree key at all. Nothing to
+                                // preallocate.
+                                return Ok(());
+                            }
+                            (referenced, target_document_type)
+                        }
+                    }
+                }
             };
             let Some(value_key) = document_info.get_raw_for_document_type(
                 source_property,
-                target_document_type,
+                source_type,
                 document_and_contract_info.owned_document_info.owner_id,
                 Some((sub_level, event_id)),
                 platform_version,
@@ -242,13 +283,7 @@ impl Drive {
                 // the fallback.
                 return Ok(());
             }
-            resolved_levels.push((
-                property_name,
-                sub_level,
-                source_property,
-                *key_source,
-                value_key,
-            ));
+            resolved_levels.push((property_name, sub_level, value_key));
             current_level = sub_level;
         }
         let terminal_level = current_level;
@@ -258,8 +293,14 @@ impl Drive {
         // property-name tree needs the zero-contribution wrapper — exactly
         // the `parent_value_tree_type` the recursive walker threads through.
         let mut parent_value_tree_type = TreeType::NormalTree;
+        // Whether the level above is a prefix-ranking chain level
+        // (`rankedCountable: { at }` grouping or count-propagating): its
+        // value trees count exactly their single continuation, so the
+        // continuation is inserted unwrapped and contributes — the same
+        // inversion the entry-insert walkers apply.
+        let mut parent_counts_continuations = false;
 
-        for (property_name, sub_level, source_property, key_source, value_key) in resolved_levels {
+        for (property_name, sub_level, value_key) in resolved_levels {
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let ranked_axes = tree_types.ranked_axes.as_slice();
@@ -296,7 +337,16 @@ impl Drive {
                     };
                     let path_key_info =
                         KeyRef(property_name.as_bytes()).add_path_info(path_info.clone());
-                    if !matches!(parent_value_tree_type, TreeType::NormalTree) {
+                    // A count-exempt sibling branch re-inverts the
+                    // chain-level choice per child (a preallocated index
+                    // may itself be the plain sibling): its branch tree is
+                    // zero-wrapped even under a chain level that counts its
+                    // own continuation — matching the entry-insert walkers.
+                    if continuation_contributes_zero(
+                        parent_value_tree_type,
+                        parent_counts_continuations,
+                        sub_level,
+                    ) {
                         self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
                             path_key_info,
                             parent_value_tree_type,
@@ -330,19 +380,19 @@ impl Drive {
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 // The property-name layer: children are value trees keyed by
-                // the source property's values (32 bytes for `$id`).
-                let value_key_estimated_size = match key_source {
-                    PreallocatedKeySource::ReferencedDocumentId => DEFAULT_HASH_SIZE_U8 as u16,
-                    PreallocatedKeySource::ReferencedDocumentProperty(_) => document_info
-                        .get_estimated_size_for_document_type(
-                            source_property,
-                            target_document_type,
-                            platform_version,
-                        )?,
-                };
+                // the referring property's values, sized exactly as an entry
+                // insert sizes this layer (32 bytes for the reference
+                // property). A referenced document only keys it with a value
+                // that fits that property, so a wider referenced property
+                // does not widen the estimate.
+                let value_key_estimated_size = document_info.get_estimated_size_for_document_type(
+                    property_name,
+                    referring_type,
+                    platform_version,
+                )?;
                 if value_key_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
-                        "referenced document field is too big for being an index",
+                        "document field is too big for being an index",
                     )));
                 }
                 estimated_costs_only_with_layer_info.insert(
@@ -406,6 +456,7 @@ impl Drive {
 
             index_path_info = Some(path_info);
             parent_value_tree_type = value_tree_type;
+            parent_counts_continuations = level_counts_continuations(sub_level);
         }
 
         let mut path_info = index_path_info.ok_or(Error::Drive(
@@ -451,12 +502,18 @@ impl Drive {
             // Same per-entry padding (and sum-item worst case) the
             // entry-insert terminal claims for this layer — see
             // `add_index_only_terminal_item_operations`.
-            const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 =
-                crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 32;
+            let estimated_item_value_size =
+                index_only_item_estimated_value_size(referring_type, platform_version)?;
+            let member_key_max_size = match level_info.terminal.as_deref() {
+                Some(terminal) => {
+                    index_only_terminal_max_key_size(referring_type, terminal, platform_version)?
+                }
+                None => DEFAULT_HASH_SIZE_U8,
+            };
             let estimated_value_size = if level_info.summable.is_some() {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
+                estimated_item_value_size + 10
             } else {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+                estimated_item_value_size
             };
             estimated_costs_only_with_layer_info.insert(
                 path_info.convert_to_key_info_path(),
@@ -464,7 +521,7 @@ impl Drive {
                     tree_type: member_tree_type,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
-                        DEFAULT_HASH_SIZE_U8,
+                        member_key_max_size,
                         estimated_value_size,
                         storage_flags.map(|s| s.serialized_size()),
                     ),

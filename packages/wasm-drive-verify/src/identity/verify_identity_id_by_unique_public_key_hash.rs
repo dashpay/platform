@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use js_sys::Uint8Array;
@@ -41,7 +42,7 @@ pub fn verify_identity_id_by_unique_public_key_hash(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_id_option) = Drive::verify_identity_id_by_unique_public_key_hash(
-        &proof_vec,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         is_proof_subset,
         public_key_hash_bytes,
         platform_version,

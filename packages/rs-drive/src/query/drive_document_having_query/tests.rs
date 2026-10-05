@@ -831,6 +831,7 @@ mod execution {
             case.document_type_name.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture declares the axis")
@@ -1449,6 +1450,7 @@ mod identifier_group_keys {
             DOCUMENT_TYPE.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture declares the avg axis")
@@ -1752,6 +1754,7 @@ mod pinned_prefix {
             DOCUMENT_TYPE.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture's compound index covers the pinned request")
@@ -1989,24 +1992,46 @@ mod pinned_prefix {
     }
 
     /// A pin on an identity that never inserted a document addresses a
-    /// prefix value tree that does not exist. The read and the prover
-    /// both surface an error rather than fabricating an empty page —
-    /// same contract as the empty-secondary limitation on the
-    /// single-property surface (the abci layer maps these to a
-    /// client-visible rejection).
+    /// prefix value tree that does not exist — the state every
+    /// `timeRange` window is in before its first document lands. That
+    /// is an EMPTY match set, not corrupted state: grovedb answers a
+    /// single-path axis read over an absent path with the empty result
+    /// on the read and the proof alike, the absence authenticated by the
+    /// layers the walk emits rather than fabricated — the verifier
+    /// reconstructs the live root hash from it. Sibling of the ranked
+    /// suite's `an_absent_equality_pin_reads_empty_and_proves_empty`.
     #[test]
-    fn unknown_prefix_value_errors_rather_than_fabricating_an_empty_page() {
+    fn unknown_prefix_value_reads_empty_and_proves_empty() {
         let (drive, contract) = setup_grades_compound_ranked();
         insert_two_identities(&drive, &contract);
 
         let unknown = pin([9u8; 32]);
-        assert!(
-            run(&drive, &contract, &unknown, &[], false).is_err(),
-            "reading a never-written prefix value tree must error"
+        let entries = entries_of(
+            run(&drive, &contract, &unknown, &[], false)
+                .expect("a never-written prefix reads as an empty match set"),
         );
         assert!(
-            run(&drive, &contract, &unknown, &[], true).is_err(),
-            "proving a never-written prefix value tree must error"
+            entries.is_empty(),
+            "nothing matches under an unwritten prefix"
+        );
+
+        let proof = match run(&drive, &contract, &unknown, &[], true)
+            .expect("a never-written prefix proves as an empty match set")
+        {
+            DocumentHavingResponse::Proof(proof) => proof,
+            DocumentHavingResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(&contract, &unknown, &[])
+            .verify_having_range_proof(&proof, platform_version())
+            .expect("the envelope authenticates the absent prefix");
+        assert!(verified.is_empty());
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
         );
     }
 
@@ -2142,6 +2167,7 @@ mod pinned_prefix {
                 .expect("taggedGrade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             pv,
         )
         .expect("the compound index covers the null-pinned request");
@@ -2299,6 +2325,7 @@ mod pinned_prefix {
                 .expect("taggedGrade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             pv,
         )
         .expect("the compound index covers the mixed-null request");
@@ -2352,5 +2379,161 @@ mod pinned_prefix {
         );
 
         assert_proof_round_trips(&drive, &contract, &pins, &[], &entries);
+    }
+}
+
+mod prefix_level {
+    //! `SELECT COUNT(*) … GROUP BY hashtag HAVING COUNT(*) >= n` over a
+    //! prefix-level ranking (`rankedCountable: { "at": "hashtag" }`):
+    //! the having surface reads the same hashtag-level secondary the
+    //! ranked surface walks, through the same shared resolution
+    //! (`find_ranked_index_for_axis` / `encode_prefix_branches` /
+    //! the ranked-level path builder), so a bounded band over subtree
+    //! totals lands on the `at` level. The rank-walk sibling lives in
+    //! `drive_document_ranked_query::tests::prefix_level`.
+
+    use super::super::drive_dispatcher::{DocumentHavingRequest, DocumentHavingResponse};
+    use super::*;
+    use crate::drive::Drive;
+    use crate::query::drive_document_ranked_query::{RankedEntry, RankedEntryValue};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn setup_trending_likes() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/trending/trending-contract.json",
+            false,
+            pv,
+        )
+        .expect("expected to parse the trending contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the trending contract");
+        (drive, contract)
+    }
+
+    fn insert_likes(drive: &Drive, contract: &DataContract, rows: &[(&str, &str)]) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+        for (i, (hashtag, post)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(8000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+            props.insert("postId".to_string(), Value::Text(post.to_string()));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a like");
+        }
+    }
+
+    /// Hashtags whose subtree totals fall in the `COUNT(*) >= n` band,
+    /// ascending by count (the having walk's default direction).
+    #[test]
+    fn count_band_over_subtree_totals_lands_on_the_at_level() {
+        let (drive, contract) = setup_trending_likes();
+        insert_likes(
+            &drive,
+            &contract,
+            &[
+                ("alpha", "p1"),
+                ("alpha", "p1"),
+                ("alpha", "p2"),
+                ("beta", "p1"),
+                ("beta", "p3"),
+                ("gamma", "p2"),
+            ],
+        );
+
+        let group_by = vec!["hashtag".to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Count,
+            "",
+            HavingOperator::GreaterThanOrEquals,
+            Value::U64(2),
+        )];
+        let response = drive
+            .execute_document_having_request(
+                DocumentHavingRequest {
+                    contract: &contract,
+                    document_type: contract
+                        .document_type_for_name("like")
+                        .expect("like doctype exists"),
+                    group_by: &group_by,
+                    select: SelectProjection::count_star(),
+                    having: &having,
+                    order_by: &[],
+                    where_clauses: &[],
+                    resolved_time_ranges: &[],
+                    limit: Some(10),
+                    offset: None,
+                    has_start_at: false,
+                    prove: false,
+                },
+                None,
+                platform_version(),
+            )
+            .expect("the having read must succeed");
+        let DocumentHavingResponse::Entries(entries) = response else {
+            panic!("expected entries, got a proof");
+        };
+        assert_eq!(
+            entries,
+            vec![
+                RankedEntry {
+                    key: b"beta".to_vec(),
+                    value: RankedEntryValue::Count(2),
+                    in_key: None,
+                },
+                RankedEntry {
+                    key: b"alpha".to_vec(),
+                    value: RankedEntryValue::Count(3),
+                    in_key: None,
+                },
+            ],
+            "only hashtags with subtree totals in the band qualify, ascending by count"
+        );
     }
 }

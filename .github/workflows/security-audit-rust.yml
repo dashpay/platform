@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "30 23 * * *"
 
+permissions:
+  contents: read
+
 jobs:
   rs-crates-security:
     name: Rust crates security audit
@@ -13,7 +16,13 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Audit crates
-        uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up audit toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        # Use the tool's lockfile and a separate compiler from rust-toolchain.toml.
+        run: cargo +stable install cargo-audit --version 0.22.2 --locked
+
+      - name: Audit committed dependencies
+        # Preserve Cargo.lock so findings reflect the dependencies used by locked builds.
+        run: cargo +stable audit

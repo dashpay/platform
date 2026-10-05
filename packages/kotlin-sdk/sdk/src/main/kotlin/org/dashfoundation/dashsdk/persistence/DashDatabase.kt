@@ -119,9 +119,51 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * document id, ownership/sale state, counterparty, document timestamps and
  * marketplace reconciliation watermark. Defaults keep every legacy label an
  * owned, unlisted row until the first native marketplace sync refreshes it.
+ *
+ * Version 11 (durable sweep holds): adds `txos.supersededByTxid`,
+ * `pending_inputs.isSweptTombstone`, `pending_inputs.winnerMinedHeight` and
+ * `wallets.lastAppliedChainLockHeight`, plus two `pending_inputs` indexes.
+ * A sweep's winner can beat a loser to an input whose funding TXO has not
+ * landed here yet, and until now the only record of that claim was the
+ * loser's own `pending_inputs` row, which cascades away with the loser it
+ * names — leaving the funding TXO's later arrival free to re-insert the
+ * outpoint as an ordinary unspent UTXO. `supersededByTxid` is the durable
+ * hold on a materialised coin (the SQLite store's `spent_in_txid`);
+ * `isSweptTombstone` marks the detached pending row that carries the same
+ * hold for a coin that has not materialised; `winnerMinedHeight` is the
+ * winner's own mined height stamped on that tombstone, the horizon the
+ * end-of-round collector compares against the chainlock finality boundary
+ * `min(chainlockHeight, syncedHeight)`; and `lastAppliedChainLockHeight`
+ * is the numeric chainlock height `onWalletChangesetChainLockHeight`
+ * delivers, the chainlock half of that boundary (the bincode chainlock
+ * blob is opaque here). The `spendingTxid` index serves the sweep's
+ * claimed-row lookup; the `(walletId, isSweptTombstone, winnerMinedHeight)`
+ * index covers the collector. All four columns are additive: every
+ * pre-migration row reads back as an ordinary, unstamped, non-tombstone
+ * entry, and a wallet with no recorded chainlock height has no boundary
+ * at all (nothing collects).
+ *
+ * Version 12 (identity key usage limits, protocol version 14): adds the
+ * nullable `public_keys.totalBudget` and `public_keys.expiresAt` columns,
+ * so a key registered with a lifetime budget or an expiry restores as the
+ * limited key it is instead of an unlimited one.
+ *
+ * Version 13 (contract group key bounds): adds the nullable
+ * `public_keys.contractBoundsKind` column. The id and document type name
+ * alone cannot tell a ContractGroup bound (kind 3) from a SingleContract
+ * bound (kind 1), so a group-bound AUTHENTICATION key used to restore as
+ * SingleContract on the group id. The persist callback now records the
+ * kind the native row carries; a NULL kind (legacy row) keeps the old
+ * inference on restore.
+ *
+ * Version 14 (once-per-identity token distribution, protocol version 14):
+ * adds the nullable `tokens.oncePerIdentityDistribution` column holding the
+ * contract's `oncePerIdentityDistribution` block as JSON, so the claim
+ * screen can offer the third distribution kind. NULL for every pre-existing
+ * row; the next contract materialization fills it in.
  */
 @Database(
-    version = 10,
+    version = 14,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -557,10 +599,98 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v10 → v11: the four additive sweep-hold columns and the two
+         * `pending_inputs` indexes — see the version-11 class doc above.
+         * `isSweptTombstone` is defaulted so every existing row reads as
+         * "not a tombstone"; the other three are nullable and need no
+         * default (pre-migration tombstones read back unstamped and are
+         * never collected; the chainlock height starts NULL, so no
+         * boundary exists until `onWalletChangesetChainLockHeight`
+         * records one). Column order = entity field order, and the index
+         * SQL is the exported schema's verbatim so Room's validation of a
+         * migrated database passes.
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `txos` ADD COLUMN `supersededByTxid` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `isSweptTombstone` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `winnerMinedHeight` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `wallets` ADD COLUMN `lastAppliedChainLockHeight` INTEGER",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_pending_inputs_spendingTxid` " +
+                        "ON `pending_inputs` (`spendingTxid`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "`index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight` " +
+                        "ON `pending_inputs` (`walletId`, `isSweptTombstone`, `winnerMinedHeight`)",
+                )
+            }
+        }
+
+        /**
+         * v11 -> v12: identity key usage limits (protocol version 14). Two
+         * nullable columns on `public_keys`, `totalBudget` (credits the key may
+         * spend over its lifetime) and `expiresAt` (block time in ms from which
+         * it can no longer sign), so a limited key persisted from the
+         * identity-keys changeset restores as limited. Additive: every
+         * pre-migration row reads back as a key without limits, which is what
+         * every key registered before protocol version 14 is.
+         */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `totalBudget` INTEGER")
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `expiresAt` INTEGER")
+            }
+        }
+
+        /**
+         * v12 -> v13: additive nullable `public_keys.contractBoundsKind`, see
+         * the version-13 class doc above. NULL for every pre-existing row:
+         * the restore path infers a legacy row's kind as before, and the
+         * persist callback records the real kind on the next upsert of each
+         * key.
+         */
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `contractBoundsKind` INTEGER",
+                )
+            }
+        }
+
+        /**
+         * v13 -> v14: additive nullable `tokens.oncePerIdentityDistribution`,
+         * see the version-14 class doc above. NULL for every pre-existing
+         * row; `TokenMaterializer` fills it on the next contract parse.
+         */
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `tokens` ADD COLUMN `oncePerIdentityDistribution` TEXT",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
          * `platform-wallet-ffi`.
+         *
+         * Room runs WAL with `synchronous=NORMAL`: a committed transaction
+         * survives process death, but a power loss can roll back the most
+         * recent commit. That is accepted for every persistence capability
+         * the handler attests (the same class of risk as iOS);
+         * `synchronous=FULL` was deliberately not adopted because it costs
+         * an fsync on every commit.
          */
         fun create(context: Context): DashDatabase =
             Room.databaseBuilder(context, DashDatabase::class.java, DATABASE_NAME)
@@ -574,6 +704,10 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .build()
 

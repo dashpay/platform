@@ -7,6 +7,24 @@ import determineStatus from '../determineStatus.js';
 import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresentError.js';
 import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 
+function parseProtocolVersion(protocolVersion) {
+  // The value is Tenderdash serializing a uint64. Accept only a primitive
+  // that is entirely a plain decimal integer: prefix parsing ('3.5' -> 3) or
+  // array coercion (['3'] -> '3') would mask the node_info fallback with a
+  // bogus active version.
+  if (typeof protocolVersion !== 'string' && typeof protocolVersion !== 'number') {
+    return null;
+  }
+
+  if (!/^\d+$/.test(String(protocolVersion).trim())) {
+    return null;
+  }
+
+  const parsedProtocolVersion = Number(protocolVersion);
+
+  return Number.isSafeInteger(parsedProtocolVersion) ? parsedProtocolVersion : null;
+}
+
 /**
  * @returns {getPlatformScopeFactory}
  * @param {DockerCompose} dockerCompose
@@ -116,10 +134,14 @@ export default function getPlatformScopeFactory(
           tenderdashStatusResponse,
           tenderdashNetInfoResponse,
           tenderdashAbciInfoResponse,
+          tenderdashConsensusParams,
         ] = await Promise.all([
           fetch(`http://${tenderdashHost}:${port}/status`),
           fetch(`http://${tenderdashHost}:${port}/net_info`),
           fetch(`http://${tenderdashHost}:${port}/abci_info`),
+          fetch(`http://${tenderdashHost}:${port}/consensus_params`)
+            .then((response) => response.json())
+            .catch(() => null),
         ]);
 
         const [tenderdashStatus, tenderdashNetInfo, tenderdashAbciInfo] = await Promise.all([
@@ -144,7 +166,18 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
-        info.protocolVersion = parseInt(tenderdashStatus.node_info.protocol_version.app, 10);
+        // Tenderdash GET RPC responses are unwrapped (writeHTTPResponse sends
+        // the bare result). node_info.protocol_version.app is snapshotted at
+        // process start, so it is only a fallback for the live consensus value.
+        const activeProtocolVersion = parseProtocolVersion(
+          tenderdashConsensusParams?.consensus_params?.version?.app_version,
+        );
+        const nodeInfoProtocolVersion = parseProtocolVersion(
+          tenderdashStatus.node_info.protocol_version.app,
+        );
+
+        info.protocolVersion = activeProtocolVersion ?? nodeInfoProtocolVersion;
+        // abci_info app_version reflects the installed software's desired/supported version.
         info.desiredProtocolVersion = tenderdashAbciInfo.response.app_version;
         info.listening = listening;
         info.latestBlockHeight = latestBlockHeight;

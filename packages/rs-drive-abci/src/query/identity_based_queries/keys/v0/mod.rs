@@ -9,11 +9,11 @@ use dapi_grpc::platform::v0::get_identity_keys_response::{
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use drive::error::query::QuerySyntaxError;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
-use dpp::identity::{KeyID, Purpose, SecurityLevel};
+use dpp::identity::{Purpose, SecurityLevel};
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
@@ -30,20 +30,35 @@ fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
     }
 }
 
+/// Converts the wire key request into a Drive key request.
+///
+/// `max_specific_key_ids` bounds a `SpecificKeys` request: every distinct id
+/// becomes one GroveDB key item, and an id the identity does not have still
+/// costs an absence proof, so the response `limit` alone does not bound the
+/// work. Duplicates are collapsed before the bound is applied so that the
+/// bound measures the work the node would actually do, and the collection
+/// stops as soon as the bound is exceeded so a rejected request never
+/// materializes its whole distinct set.
 fn convert_key_request_type(
     request_type: dapi_grpc::platform::v0::key_request_type::Request,
+    max_specific_key_ids: u16,
 ) -> Result<KeyRequestType, QueryError> {
     match request_type {
         dapi_grpc::platform::v0::key_request_type::Request::AllKeys(_) => {
             Ok(KeyRequestType::AllKeys)
         }
         dapi_grpc::platform::v0::key_request_type::Request::SpecificKeys(specific_keys) => {
-            let key_ids = specific_keys
-                .key_ids
-                .into_iter()
-                .map(|id| id as KeyID)
-                .collect();
-            Ok(KeyRequestType::SpecificKeys(key_ids))
+            let mut key_ids = BTreeSet::new();
+            for key_id in specific_keys.key_ids {
+                key_ids.insert(key_id);
+                if key_ids.len() > max_specific_key_ids as usize {
+                    return Err(QueryError::TooManyElements(format!(
+                        "trying to get more than {} specific keys",
+                        max_specific_key_ids
+                    )));
+                }
+            }
+            Ok(KeyRequestType::SpecificKeys(key_ids.into_iter().collect()))
         }
         dapi_grpc::platform::v0::key_request_type::Request::SearchKey(search_key) => {
             let purpose_map = search_key.purpose_map.into_iter().map(|(purpose, security_level_map)| {
@@ -127,8 +142,10 @@ impl<C> Platform<C> {
             )));
         };
 
-        let key_request_type =
-            check_validation_result_with_data!(convert_key_request_type(request));
+        let key_request_type = check_validation_result_with_data!(convert_key_request_type(
+            request,
+            platform_version.drive_abci.query.max_returned_elements
+        ));
 
         let key_request = IdentityKeysRequest {
             identity_id: identity_id.into_buffer(),
@@ -150,6 +167,18 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
+            // The non-proof specific-keys fetch needs a limit. Default it to the
+            // number of distinct ids, which the bound above already caps, so a
+            // request that omits it behaves like the proof path instead of
+            // failing inside Drive. The proof path is left as requested so the
+            // proof matches what the client verifies against.
+            let mut key_request = key_request;
+            if key_request.limit.is_none() {
+                if let KeyRequestType::SpecificKeys(key_ids) = &key_request.request_type {
+                    key_request.limit = key_ids.len().try_into().ok();
+                }
+            }
+
             let keys: SerializedKeyVec =
                 self.drive
                     .fetch_identity_keys(key_request, None, platform_version)?;
@@ -623,5 +652,284 @@ mod tests {
                 metadata: Some(_)
             })
         ));
+    }
+
+    mod specific_keys_bounds {
+        use super::*;
+        use crate::rpc::core::MockCoreRPCLike;
+        use dapi_grpc::platform::v0::SpecificKeys;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+        use dpp::serialization::PlatformDeserializableUntrusted;
+        use drive::drive::identity::key::fetch::KeyRequestType as DriveKeyRequestType;
+        use drive::drive::Drive;
+        use drive::grovedb::GroveDb;
+
+        /// Stores an identity with `key_count` keys (ids `0..key_count`) and returns it.
+        fn seed_identity(
+            platform: &Platform<MockCoreRPCLike>,
+            key_count: u32,
+            seed: u64,
+            platform_version: &PlatformVersion,
+        ) -> Identity {
+            let identity = Identity::random_identity(key_count, Some(seed), platform_version)
+                .expect("expected a random identity");
+
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to insert identity");
+
+            identity
+        }
+
+        fn specific_keys_request(
+            identity_id: Vec<u8>,
+            key_ids: Vec<u32>,
+            prove: bool,
+        ) -> GetIdentityKeysRequestV0 {
+            GetIdentityKeysRequestV0 {
+                identity_id,
+                request_type: Some(KeyRequestType {
+                    request: Some(Request::SpecificKeys(SpecificKeys { key_ids })),
+                }),
+                limit: None,
+                offset: None,
+                prove,
+            }
+        }
+
+        /// Keys of a non-proof response, deserialized and keyed by id.
+        fn fetched_keys(
+            result: QueryValidationResult<GetIdentityKeysResponseV0>,
+        ) -> BTreeMap<KeyID, IdentityPublicKey> {
+            let Some(GetIdentityKeysResponseV0 {
+                result: Some(get_identity_keys_response_v0::Result::Keys(keys)),
+                ..
+            }) = result.data
+            else {
+                panic!("expected keys, got errors {:?}", result.errors);
+            };
+
+            keys.keys_bytes
+                .into_iter()
+                .map(|bytes| {
+                    let key = IdentityPublicKey::deserialize_from_bytes_untrusted(&bytes)
+                        .expect("expected a serialized identity public key");
+                    (key.id(), key)
+                })
+                .collect()
+        }
+
+        fn proof_bytes(result: QueryValidationResult<GetIdentityKeysResponseV0>) -> Vec<u8> {
+            let Some(GetIdentityKeysResponseV0 {
+                result: Some(get_identity_keys_response_v0::Result::Proof(proof)),
+                ..
+            }) = result.data
+            else {
+                panic!("expected a proof, got errors {:?}", result.errors);
+            };
+
+            proof.grovedb_proof
+        }
+
+        /// Verifies a specific-keys proof at the GroveDB level against the raw
+        /// (possibly duplicated) id list and returns the proved keys by id.
+        /// GroveDB proves the requested ids that do not exist implicitly, so
+        /// they do not show up in the result. The Drive key verifier is not
+        /// used here because it rejects proofs that carry absent keys.
+        fn verify_specific_keys_proof(
+            proof: &[u8],
+            identity_id: [u8; 32],
+            key_ids: Vec<KeyID>,
+            platform_version: &PlatformVersion,
+        ) -> BTreeMap<KeyID, IdentityPublicKey> {
+            let path_query = IdentityKeysRequest {
+                identity_id,
+                request_type: DriveKeyRequestType::SpecificKeys(key_ids),
+                limit: None,
+                offset: None,
+            }
+            .into_path_query();
+
+            let (_, proved_values) =
+                GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)
+                    .expect("proof should verify");
+
+            proved_values
+                .into_iter()
+                .filter_map(|(_, _, maybe_element)| maybe_element)
+                .map(|element| {
+                    let bytes = element
+                        .into_item_bytes()
+                        .expect("key element should be an item");
+                    let key = IdentityPublicKey::deserialize_from_bytes_untrusted(&bytes)
+                        .expect("expected a serialized identity public key");
+                    (key.id(), key)
+                })
+                .collect()
+        }
+
+        #[test]
+        fn test_oversized_distinct_list_is_rejected_with_and_without_proof() {
+            let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+            let max = version.drive_abci.query.max_returned_elements;
+
+            // One more distinct id than the bound allows.
+            let key_ids: Vec<u32> = (0..=max as u32).collect();
+            let expected_message = format!("trying to get more than {} specific keys", max);
+
+            for prove in [false, true] {
+                let result = platform
+                    .query_keys_v0(
+                        specific_keys_request(vec![0; 32], key_ids.clone(), prove),
+                        &state,
+                        version,
+                    )
+                    .expect("expected query to succeed");
+
+                assert!(result.data.is_none(), "prove={prove}: no data expected");
+                assert!(
+                    matches!(
+                        result.errors.as_slice(),
+                        [QueryError::TooManyElements(msg)] if msg == &expected_message
+                    ),
+                    "prove={prove}: unexpected errors {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        #[test]
+        fn test_boundary_sized_list_returns_existing_keys_with_and_without_proof() {
+            let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+            let identity = seed_identity(&platform, 5, 44444, version);
+            let identity_id = identity.id().to_buffer();
+            let max = version.drive_abci.query.max_returned_elements;
+
+            // Exactly the bound, of which only ids 0..5 exist.
+            let key_ids: Vec<u32> = (0..max as u32).collect();
+
+            let fetched = fetched_keys(
+                platform
+                    .query_keys_v0(
+                        specific_keys_request(identity_id.to_vec(), key_ids.clone(), false),
+                        &state,
+                        version,
+                    )
+                    .expect("expected query to succeed"),
+            );
+            assert_eq!(&fetched, identity.public_keys());
+
+            let proof = proof_bytes(
+                platform
+                    .query_keys_v0(
+                        specific_keys_request(identity_id.to_vec(), key_ids.clone(), true),
+                        &state,
+                        version,
+                    )
+                    .expect("expected query to succeed"),
+            );
+            let proved = verify_specific_keys_proof(&proof, identity_id, key_ids, version);
+            assert_eq!(proved, fetched);
+        }
+
+        #[test]
+        fn test_duplicate_heavy_list_is_deduplicated_before_the_bound() {
+            let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+            let identity = seed_identity(&platform, 5, 55555, version);
+            let identity_id = identity.id().to_buffer();
+            let max = version.drive_abci.query.max_returned_elements as usize;
+
+            // Far more entries than the bound, but only two distinct ids.
+            let key_ids: Vec<u32> = [1, 0].into_iter().cycle().take(max * 50).collect();
+            assert!(key_ids.len() > max);
+
+            let fetched = fetched_keys(
+                platform
+                    .query_keys_v0(
+                        specific_keys_request(identity_id.to_vec(), key_ids.clone(), false),
+                        &state,
+                        version,
+                    )
+                    .expect("expected query to succeed"),
+            );
+            assert_eq!(fetched.keys().copied().collect::<Vec<_>>(), vec![0, 1]);
+
+            let proof = proof_bytes(
+                platform
+                    .query_keys_v0(
+                        specific_keys_request(identity_id.to_vec(), key_ids.clone(), true),
+                        &state,
+                        version,
+                    )
+                    .expect("expected query to succeed"),
+            );
+
+            // The Drive verifier collapses duplicates the same way, so the raw
+            // list verifies the proof the node built from the deduplicated one.
+            let key_request = IdentityKeysRequest {
+                identity_id,
+                request_type: DriveKeyRequestType::SpecificKeys(key_ids),
+                limit: None,
+                offset: None,
+            };
+            let (_, partial_identity) = Drive::verify_identity_keys_by_identity_id(
+                &proof,
+                key_request,
+                false,
+                false,
+                false,
+                version,
+            )
+            .expect("proof should verify");
+            let proved = partial_identity
+                .expect("expected a partial identity")
+                .loaded_public_keys;
+            assert_eq!(proved, fetched);
+        }
+
+        #[test]
+        fn test_nonexistent_ids_at_the_bound_return_nothing_with_and_without_proof() {
+            let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+            let identity = seed_identity(&platform, 5, 66666, version);
+            let identity_id = identity.id().to_buffer();
+            let max = version.drive_abci.query.max_returned_elements as u32;
+
+            // A full-size list of ids the identity does not have.
+            let key_ids: Vec<u32> = (1_000..1_000 + max).collect();
+
+            let fetched = fetched_keys(
+                platform
+                    .query_keys_v0(
+                        specific_keys_request(identity_id.to_vec(), key_ids.clone(), false),
+                        &state,
+                        version,
+                    )
+                    .expect("expected query to succeed"),
+            );
+            assert!(fetched.is_empty());
+
+            let proof = proof_bytes(
+                platform
+                    .query_keys_v0(
+                        specific_keys_request(identity_id.to_vec(), key_ids.clone(), true),
+                        &state,
+                        version,
+                    )
+                    .expect("expected query to succeed"),
+            );
+            let proved = verify_specific_keys_proof(&proof, identity_id, key_ids, version);
+            assert_eq!(proved, fetched);
+        }
     }
 }

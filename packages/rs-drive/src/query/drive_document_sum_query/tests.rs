@@ -43,11 +43,16 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         summable: summable.map(String::from),
         range_summable: false,
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
+        skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
     }
 }
 
@@ -65,11 +70,16 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         summable: Some(summable.to_string()),
         range_summable: true,
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
+        skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
     }
 }
 
@@ -370,6 +380,8 @@ mod limit_policy_regression {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

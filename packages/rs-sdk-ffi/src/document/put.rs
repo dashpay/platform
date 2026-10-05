@@ -179,9 +179,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
                 )
                 .await
         }
-        .map_err(|e| {
-            FFIError::InternalError(format!("Failed to create document transition: {}", e))
-        })?;
+        .map_err(|e| FFIError::sdk_call_failed("Failed to create document transition", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -314,9 +312,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
                 .sdk
                 .document_create(builder, identity_public_key, signer)
                 .await
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to create document and wait: {}", e))
-                })?;
+                .map_err(|e| FFIError::sdk_call_failed("Failed to create document and wait", e))?;
 
             match result {
                 dash_sdk::platform::documents::transitions::DocumentCreateResult::Document(doc) => {
@@ -351,9 +347,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
                 .sdk
                 .document_replace(builder, identity_public_key, signer)
                 .await
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to replace document and wait: {}", e))
-                })?;
+                .map_err(|e| FFIError::sdk_call_failed("Failed to replace document and wait", e))?;
 
             match result {
                 dash_sdk::platform::documents::transitions::DocumentReplaceResult::Document(
@@ -415,6 +409,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Box::new(document)

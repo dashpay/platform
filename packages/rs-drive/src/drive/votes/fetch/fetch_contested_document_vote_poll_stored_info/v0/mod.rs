@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
@@ -53,7 +53,7 @@ impl Drive {
             return Ok((fee_result, None));
         };
         let contested_start_info_bytes = element.into_item_bytes()?;
-        let start_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(
+        let start_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes_trusted(
             &contested_start_info_bytes,
         )?;
         Ok((fee_result, Some(start_info)))

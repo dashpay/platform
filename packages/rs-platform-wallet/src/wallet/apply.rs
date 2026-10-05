@@ -1,7 +1,7 @@
 //! Apply a [`PlatformWalletChangeSet`] onto a [`PlatformWalletInfo`]
 //! during restore.
 //!
-//! Inverse of the mutation methods that emit changesets in Phase 9a-2:
+//! Inverse of the mutation methods that emit changesets:
 //! given a persisted [`PlatformWalletChangeSet`], it replays each
 //! sub-changeset onto the in-memory state so the wallet converges to
 //! the same state the original mutations produced.
@@ -18,14 +18,13 @@
 //!   isn't present in the wallet are logged with `tracing::warn!` and
 //!   skipped — orphans usually mean a stale persisted entry from
 //!   before the owner identity was removed.
-//! - **Loud on core failures.** If `key_wallet`'s core apply fails (HD
-//!   account derivation cascade), the platform apply fails too. Core
-//!   state must land before any platform-specific bucket runs.
+//! - **Core is not replayed.** `cs.core` is dropped. `key_wallet` keeps
+//!   core state current at runtime, and boot restores it from the
+//!   persister's `ClientStartState`, not from changeset replay.
 //!
 //! # Ordering
 //!
-//! 1. `cs.core` — runs first via `ManagedWalletInfo::apply_changeset`.
-//!    Wallet account state must exist before balance recompute.
+//! 1. `cs.core` — dropped (see the invariant above).
 //! 2. `cs.identities` — insert/update entries, then `removed`, then
 //!    primary identity fixup.
 //! 3. `cs.contacts` — sent/incoming inserts, tombstone removes,
@@ -42,7 +41,7 @@
 //!    callback. There is nothing on `PlatformWalletInfo` to apply
 //!    them onto.
 //! 7. `update_balance()` — recompute the cached `WalletBalance` from
-//!    the now-restored UTXO set; the returned changeset is discarded.
+//!    the current UTXO set; the returned changeset is discarded.
 
 use key_wallet::wallet::Wallet;
 
@@ -64,6 +63,9 @@ pub enum ApplyError {
     ///
     /// Stored as `String` to keep the platform-wallet public API
     /// decoupled from `key_wallet`'s error enum.
+    ///
+    /// Not constructed today: `apply_changeset` drops `cs.core` instead of
+    /// replaying it (see the module docs).
     #[error("core wallet apply failed: {0}")]
     CoreApply(String),
 
@@ -106,6 +108,7 @@ impl PlatformWalletInfo {
             // replay hook.
             invitations: _,
             dpns_name_states,
+            identity_scan_state,
             // Registration-round metadata / per-account specs /
             // per-pool snapshots are persistence-only — the
             // canonical in-memory wallet state is built up at
@@ -126,8 +129,7 @@ impl PlatformWalletInfo {
             // mutates its store directly during sync / spend); the
             // canonical in-memory state lives there and the
             // changeset is persistence-side only. Drop here.
-            #[cfg(feature = "shielded")]
-                shielded: _,
+            shielded: _,
         } = cs;
 
         // 1. Core wallet state. In the new event-bus model, a
@@ -140,7 +142,7 @@ impl PlatformWalletInfo {
         //    not through changeset replay. The core field on `cs` is
         //    therefore informational here and intentionally not
         //    applied; we drop it explicitly so future readers don't
-        //    expect a re-application path that no longer exists.
+        //    expect a re-application path that does not exist.
         drop(core);
 
         // 2. Identities.
@@ -153,13 +155,25 @@ impl PlatformWalletInfo {
             for (_id, entry) in identities {
                 self.identity_manager.apply_identity_entry(entry);
             }
-            // Best-effort tombstones across both buckets. Routed
+            // Best-effort removals across both buckets. Routed
             // through `remove_for_apply` so the manager's side-index
             // stays in lockstep with the buckets without us having to
             // reach in and touch the index from out here.
             for removed_id in &removed {
                 self.identity_manager.remove_for_apply(removed_id);
             }
+        }
+
+        // 2a'. Identity-scan verdict. Replayed rather than dropped: unlike the
+        //      registration metadata below it, this one has live in-memory
+        //      state on the identity manager, and it is read on the next
+        //      bring-up to decide whether the identity set may be treated as
+        //      settled. A verdict that survived to persistence and then got
+        //      dropped on the way back in would leave a partial scan looking
+        //      complete — the exact failure the verdict exists to prevent.
+        if let Some(scan) = identity_scan_state {
+            self.identity_manager
+                .record_identity_scan(wallet.wallet_id, scan);
         }
 
         // 2a. DPNS name states (username marketplace): upserts land
@@ -426,6 +440,7 @@ mod tests {
             generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
             dpns_name_states: BTreeMap::new(),
         }
     }
@@ -760,7 +775,7 @@ mod tests {
 
     /// Token-balance changesets are accepted by `apply_changeset` for
     /// shape compatibility but are not replayed onto
-    /// `PlatformWalletInfo` (which no longer has token_balances /
+    /// `PlatformWalletInfo` (which has no token_balances /
     /// token_watched fields). The canonical balance cache lives on
     /// `IdentitySyncManager` and is rebuilt by the next sync pass; the
     /// FFI persister surfaces the upserts/tombstones to the Swift side
@@ -786,7 +801,7 @@ mod tests {
     }
 
     // ----------------------------------------------------------------------
-    // Round-trip tests (Phase 9a-4)
+    // Round-trip tests
     //
     // The shape of every test is identical:
     //   1. Build two empty `PlatformWalletInfo`s — A is the wallet that gets
@@ -800,14 +815,14 @@ mod tests {
     //
     // These verify the round-trip contract: changesets emitted by mutations
     // are faithful enough that apply rebuilds the same in-memory state. This
-    // is what makes the persister adapter (Phase 9a-5) safe — it can
+    // is what makes the persister adapter safe — it can
     // serialize the captured changeset and deserialize it back into a
     // sibling wallet on restart with no information loss.
     //
-    // Out of scope: AssetLockManager / TokenWallet / PlatformAddressWallet
+    // Out of scope: AssetLockManager / token sync / PlatformAddressWallet
     // mutations are async and require an `Sdk` + broadcaster + Notify, so
     // they can't run as plain unit tests. Their round-trip coverage will
-    // come from integration tests (Phase 9a-4 follow-up). The
+    // come from integration tests (not written yet). The
     // synthesized-data tests above already cover the apply side; the gap
     // is verifying the *mutation side* emits a faithful changeset.
     // ----------------------------------------------------------------------
@@ -1276,7 +1291,7 @@ mod tests {
     }
 
     // ----------------------------------------------------------------------
-    // Reviewer test gaps (Phase 9a-3 followup)
+    // Reviewer test gaps
     // ----------------------------------------------------------------------
 
     /// Reviewer #6a: removing the sole identity drops it cleanly.
@@ -1382,9 +1397,8 @@ mod tests {
         assert_eq!(restored.identity.revision(), 5);
     }
 
-    /// Reviewer #6d: contact tombstone for a present (non-orphan) owner
-    /// must drop the matching pending request — happy-path coverage
-    /// previously only existed via the orphan-skip test.
+    /// A contact tombstone for a present (non-orphan) owner
+    /// must drop the matching pending request.
     #[test]
     fn apply_contact_tombstone_drops_pending_for_present_owner() {
         let mut wallet = build_test_wallet();
@@ -1841,10 +1855,9 @@ mod tests {
         });
 
         // Token balance changesets are accepted for shape compat but
-        // no longer drive `PlatformWalletInfo` state — the manager
+        // do not drive `PlatformWalletInfo` state — the manager
         // owns the balance cache. Include one anyway to confirm the
-        // double-apply still works once the field has been replaced
-        // with a `drop`.
+        // double-apply still works while the field is simply dropped.
         let mut tok_cs = TokenBalanceChangeSet::default();
         let token = Identifier::from([8u8; 32]);
         tok_cs.balances.insert((identity, token), 42);

@@ -14,6 +14,8 @@ pub const DEFAULT_PROMETHEUS_PORT: u16 = 29090;
 /// Last block time in seconds
 const COUNTER_LAST_BLOCK_TIME: &str = "abci_last_block_time_seconds";
 const COUNTER_LAST_HEIGHT: &str = "abci_last_finalized_height";
+const COUNTER_LAST_CHECKPOINT_HEIGHT: &str = "abci_last_checkpoint_height";
+const COUNTER_CHECKPOINT_FAILURES: &str = "abci_checkpoint_failures";
 const HISTOGRAM_FINALIZED_ROUND: &str = "abci_finalized_round";
 const HISTOGRAM_ABCI_REQUEST_DURATION: &str = "abci_request_duration_seconds";
 /// State transition processing duration metric
@@ -199,6 +201,16 @@ impl Prometheus {
                 "Time of last finalized block, seconds since epoch"
             );
 
+            describe_counter!(
+                COUNTER_LAST_CHECKPOINT_HEIGHT,
+                "Height of the last GroveDB checkpoint created after a finalized block"
+            );
+
+            describe_counter!(
+                COUNTER_CHECKPOINT_FAILURES,
+                "Number of GroveDB checkpoint attempts that failed after their block was committed"
+            );
+
             describe_histogram!(
                 HISTOGRAM_FINALIZED_ROUND,
                 "Rounds at which blocks are finalized"
@@ -251,6 +263,16 @@ pub fn abci_last_finalized_round(round: u32) {
 /// Set time of last block into [COUNTER_LAST_BLOCK_TIME].
 pub fn abci_last_block_time(time: u64) {
     counter!(COUNTER_LAST_BLOCK_TIME).absolute(time);
+}
+
+/// Set the height of the last created GroveDB checkpoint into [COUNTER_LAST_CHECKPOINT_HEIGHT].
+pub fn abci_last_checkpoint_height(height: u64) {
+    counter!(COUNTER_LAST_CHECKPOINT_HEIGHT).absolute(height);
+}
+
+/// Count a GroveDB checkpoint attempt that failed after its block was committed.
+pub fn abci_checkpoint_failed() {
+    counter!(COUNTER_CHECKPOINT_FAILURES).increment(1);
 }
 
 /// Returns a `[HistogramTiming]` instance for measuring ABCI request duration.

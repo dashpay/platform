@@ -1,19 +1,24 @@
 use crate::block::epoch::EpochIndex;
 use crate::prelude::{BlockHeight, TimestampMillis};
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, Encode, DecodeUntrusted};
+use platform_serialization_derive::{PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Div};
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::ProtocolError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 
 #[derive(
     Serialize,
     Deserialize,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Decode,
     Encode,
     Debug,
@@ -22,6 +27,7 @@ use crate::ProtocolError;
     PartialEq,
     Eq,
     PartialOrd,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 // serde routes through `RewardDistributionMomentRepr` to get internal `type`
@@ -95,10 +101,10 @@ impl From<RewardDistributionMomentRepr> for RewardDistributionMoment {
     }
 }
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for RewardDistributionMoment {}
+impl JsonConvertible for RewardDistributionMoment {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for RewardDistributionMoment {}
+impl ValueConvertible for RewardDistributionMoment {}
 
 #[cfg(all(
     test,

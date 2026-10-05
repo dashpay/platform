@@ -2704,9 +2704,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4025,11 +4027,13 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                144, 154, 147, 246, 236, 57, 41, 67, 21, 26, 212, 158, 68, 159, 206, 26, 158, 50,
-                252, 62, 143, 176, 149, 50, 19, 226, 239, 65, 112, 243, 225, 64
+                21, 138, 176, 60, 123, 198, 114, 129, 174, 239, 252, 191, 174, 54, 60, 119, 96,
+                161, 70, 31, 203, 77, 107, 203, 74, 7, 53, 142, 227, 142, 63, 87
             ],
         );
     }
@@ -4179,9 +4183,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5053,9 +5059,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            75, 38, 164, 96, 117, 46, 13, 23, 183, 41, 83, 163, 112, 55, 172, 37, 186, 36, 223, 39,
-            106, 201, 46, 222, 167, 79, 236, 122, 12, 210, 29, 123,
+            43, 45, 143, 165, 228, 213, 155, 164, 47, 219, 35, 54, 79, 234, 90, 122, 172, 124, 7,
+            244, 136, 209, 187, 215, 29, 158, 150, 192, 111, 90, 161, 136,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5177,9 +5185,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // Make sure the state is deterministic
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6151,9 +6161,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -6248,9 +6260,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6345,9 +6359,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6442,9 +6458,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6638,9 +6656,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6846,9 +6866,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6925,7 +6947,14 @@ mod tests {
             })
             .collect();
 
-        let a_names = ["amalle".to_string(), "anna-diane".to_string()];
+        // The page is full: the cursor's own label key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit.
+        let a_names = [
+            "amalle".to_string(),
+            "anna-diane".to_string(),
+            "atalanta".to_string(),
+        ];
 
         assert_eq!(names, a_names);
 
@@ -7057,9 +7086,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -7274,9 +7305,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
+            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7355,9 +7388,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
+            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7425,11 +7460,14 @@ mod tests {
             })
             .collect();
 
-        // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
-        // empty tree and consumes a limit
+        // All 3 values come back: the cursor's time key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit (it did before protocol version 14,
+        // returning 2 values for a limit of 3).
         let a_names = [
             "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
             "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu".to_string(),
+            "74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj".to_string(),
         ];
 
         assert_eq!(names, a_names);
@@ -7457,9 +7495,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
+            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7530,11 +7570,14 @@ mod tests {
             })
             .collect();
 
-        // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
-        // empty tree and consumes a limit
+        // All 3 values come back: the cursor's time key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit (it did before protocol version 14,
+        // returning 2 values for a limit of 3).
         let a_names = [
             "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
             "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD".to_string(),
+            "5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV".to_string(),
         ];
 
         assert_eq!(names, a_names);
@@ -8164,6 +8207,344 @@ mod tests {
             .expect("should query documents");
 
         assert_eq!(query_result.documents().len(), 1);
+    }
+
+    #[cfg(all(feature = "server", feature = "verify"))]
+    #[test]
+    fn test_proved_primary_key_cursor_pages_in_both_directions() {
+        // A `$id`-ordered page with a cursor merges the cursor lookup and the
+        // page query at the same path: the primary-key tree. The merge then has
+        // no synthesized root above the page query, so the document layer must
+        // keep the requested direction in the proof; the verifier reads both
+        // the cursor lookup and the page in that direction, and GroveDB refuses
+        // a V1 layer proof read in the other op family.
+        use dpp::document::DocumentV0Getters;
+        use dpp::prelude::Identifier;
+        use platform_value::string_encoding::Encoding;
+
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let ids_of = |results: &[Vec<u8>]| -> Vec<Identifier> {
+            results
+                .iter()
+                .map(|bytes| {
+                    Document::from_bytes(bytes, person_document_type, platform_version)
+                        .expect("we should be able to deserialize the document")
+                        .id()
+                })
+                .collect()
+        };
+        let build = |query_value: serde_json::Value| {
+            let cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+                .expect("expected to serialize to cbor");
+            DriveDocumentQuery::from_cbor(
+                cbor.as_slice(),
+                &contract,
+                person_document_type,
+                &drive.config,
+                platform_version,
+            )
+            .expect("query should be built")
+        };
+
+        let (all_results, _, _) = build(json!({
+            "limit": 100,
+            "orderBy": [["$id", "asc"]],
+        }))
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("query should be executed");
+        let ascending_ids = ids_of(&all_results);
+        assert_eq!(ascending_ids.len(), 10);
+
+        for (ascending, included) in [(true, true), (true, false), (false, true), (false, false)] {
+            let ordered: Vec<Identifier> = if ascending {
+                ascending_ids.clone()
+            } else {
+                ascending_ids.iter().rev().cloned().collect()
+            };
+            let cursor = ordered[3];
+            let expected: Vec<Identifier> = if included {
+                ordered[3..6].to_vec()
+            } else {
+                ordered[4..7].to_vec()
+            };
+            let cursor_key = if included { "startAt" } else { "startAfter" };
+            let case = format!(
+                "orderBy $id {} with {cursor_key}",
+                if ascending { "asc" } else { "desc" }
+            );
+
+            let query = build(json!({
+                cursor_key: cursor.to_string(Encoding::Base58),
+                "limit": 3,
+                "orderBy": [["$id", if ascending { "asc" } else { "desc" }]],
+            }));
+            let (results, _, _) = query
+                .execute_raw_results_no_proof(&drive, None, None, platform_version)
+                .expect("query should be executed");
+            assert_eq!(ids_of(&results), expected, "{case}: unproved page");
+
+            let (proof_root_hash, proof_results, _) = query
+                .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+                .unwrap_or_else(|e| panic!("{case}: proved page should verify: {e}"));
+            assert_eq!(root_hash, proof_root_hash, "{case}: proof root hash");
+            assert_eq!(results, proof_results, "{case}: proved page");
+        }
+    }
+
+    #[test]
+    fn test_proved_desc_range_continuation_page_includes_cursor_document() {
+        // Issue #4540: a continuation page over a non-unique
+        // [equality, $createdAt] index — cursor + range clause on the
+        // terminal property + descending order — merged the cursor
+        // fetch into the proved query with a descending root, so the
+        // index branch consumed the whole limit + 1 budget before the
+        // cursor branch was reached and the proof omitted the cursor
+        // document's subtree layer ("V1 proof is missing lower layer"),
+        // which no client could verify. The merged root must be walked
+        // ascending so the cursor branch spends its reserved slot first.
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract_value = platform_value!({
+            "$formatVersion": "0",
+            "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
+            "version": 1,
+            "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+            "documentSchemas": {
+                "message": {
+                    "type": "object",
+                    "indices": [
+                        {"name":"categoryTimeline", "properties": [{"category":"asc"}, {"$createdAt":"asc"}]},
+                    ],
+                    "properties":{
+                        "category": {
+                            "type": "string",
+                            "maxLength": 63,
+                            "position": 0
+                        }
+                    },
+                    "required": ["category", "$createdAt"],
+                    "additionalProperties": false,
+                },
+            },
+        });
+
+        let contract = DataContract::from_value(contract_value, false, platform_version)
+            .expect("should create a contract from value");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should apply contract");
+
+        let document_type = contract
+            .document_type_for_name("message")
+            .expect("should have message document type");
+
+        let mut rng = StdRng::seed_from_u64(84594);
+        let base_time: TimestampMillis = 1_700_000_000_000;
+
+        for i in 0u64..12 {
+            let document_value = platform_value!({
+               "category": "en",
+               "$createdAt": base_time + i * 1000,
+            });
+
+            let document = document_type
+                .create_document_from_data(
+                    document_value,
+                    Identifier::random_with_rng(&mut rng),
+                    1,
+                    1,
+                    rng.gen(),
+                    platform_version,
+                )
+                .expect("should create document");
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("should add document");
+        }
+
+        let created_at_values = |results: &[Vec<u8>]| -> Vec<TimestampMillis> {
+            results
+                .iter()
+                .map(|serialized| {
+                    Document::from_bytes(serialized, document_type, platform_version)
+                        .expect("should deserialize document")
+                        .created_at()
+                        .expect("document should have a creation time")
+                })
+                .collect()
+        };
+
+        // Page 1: newest five documents.
+        let page_one_value = json!({
+            "where": [
+                ["category", "==", "en"],
+                ["$createdAt", ">", 0]
+            ],
+            "orderBy": [
+                ["category", "asc"],
+                ["$createdAt", "desc"]
+            ],
+            "limit": 5,
+        });
+        let page_one_cbor = cbor_serializer::serializable_value_to_cbor(&page_one_value, None)
+            .expect("should serialize to cbor");
+        let page_one_query = DriveDocumentQuery::from_cbor(
+            page_one_cbor.as_slice(),
+            &contract,
+            document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let (page_one_results, _, _) = page_one_query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should be executed");
+        assert_eq!(
+            created_at_values(&page_one_results),
+            (7..12)
+                .rev()
+                .map(|i| base_time + i * 1000)
+                .collect::<Vec<_>>()
+        );
+
+        let last_document = Document::from_bytes(
+            page_one_results
+                .last()
+                .expect("page one should have results"),
+            document_type,
+            platform_version,
+        )
+        .expect("should deserialize document");
+        let encoded_cursor = bs58::encode(last_document.id().as_slice()).into_string();
+
+        // Page 2 via startAfter: mid-timeline, more matching documents
+        // remain than the limit, so the proved merged query's budget
+        // exhausts before the cursor branch unless the root is walked
+        // ascending.
+        let page_two_value = json!({
+            "where": [
+                ["category", "==", "en"],
+                ["$createdAt", ">", 0]
+            ],
+            "orderBy": [
+                ["category", "asc"],
+                ["$createdAt", "desc"]
+            ],
+            "limit": 5,
+            "startAfter": encoded_cursor.clone(),
+        });
+        let page_two_cbor = cbor_serializer::serializable_value_to_cbor(&page_two_value, None)
+            .expect("should serialize to cbor");
+        let page_two_query = DriveDocumentQuery::from_cbor(
+            page_two_cbor.as_slice(),
+            &contract,
+            document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let (page_two_results, _, _) = page_two_query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should be executed");
+        assert_eq!(
+            created_at_values(&page_two_results),
+            (2..7)
+                .rev()
+                .map(|i| base_time + i * 1000)
+                .collect::<Vec<_>>()
+        );
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let (proof_root_hash, proof_results, _) = page_two_query
+            .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+            .expect("proved startAfter continuation page should verify");
+        assert_eq!(root_hash, proof_root_hash);
+        assert_eq!(page_two_results, proof_results);
+
+        // startAt (inclusive) exercises the same merged-query shape.
+        let page_two_inclusive_value = json!({
+            "where": [
+                ["category", "==", "en"],
+                ["$createdAt", ">", 0]
+            ],
+            "orderBy": [
+                ["category", "asc"],
+                ["$createdAt", "desc"]
+            ],
+            "limit": 5,
+            "startAt": encoded_cursor,
+        });
+        let page_two_inclusive_cbor =
+            cbor_serializer::serializable_value_to_cbor(&page_two_inclusive_value, None)
+                .expect("should serialize to cbor");
+        let page_two_inclusive_query = DriveDocumentQuery::from_cbor(
+            page_two_inclusive_cbor.as_slice(),
+            &contract,
+            document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let (page_two_inclusive_results, _, _) = page_two_inclusive_query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should be executed");
+        assert_eq!(
+            created_at_values(&page_two_inclusive_results),
+            (3..8)
+                .rev()
+                .map(|i| base_time + i * 1000)
+                .collect::<Vec<_>>()
+        );
+
+        let (proof_root_hash, proof_results, _) = page_two_inclusive_query
+            .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+            .expect("proved startAt continuation page should verify");
+        assert_eq!(root_hash, proof_root_hash);
+        assert_eq!(page_two_inclusive_results, proof_results);
     }
 
     #[cfg(feature = "server")]
@@ -9056,6 +9437,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         // The current shape: the In clause in in_clauses
@@ -9078,6 +9460,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         for protocol_version in [13u32, 14u32] {
@@ -9095,5 +9478,378 @@ mod withdrawal_in_clause_placement_equivalence {
                  path query at protocol version {protocol_version}"
             );
         }
+    }
+}
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod gapped_index_query_tests {
+    //! Queries whose bound fields do not cover a contiguous prefix of the
+    //! chosen index. Index matching accepted such queries since 2022
+    //! (`33f2a764a4` dropped the original prefix requirement), but the
+    //! positional lowering (`index.properties.split_at(...)`) pairs the
+    //! collected equality values with the index's LEADING properties, so a
+    //! gap misaligns every level below it: results are silently empty or —
+    //! when a range clause fills the hole — satisfy a permutation of the
+    //! requested clauses. Both come back identically on the proof path, so
+    //! the wrong answer verifies against the root hash.
+    //!
+    //! Protocol versions <= 13 are on chain and must replay this defective
+    //! behavior byte-for-byte (the `_frozen_at_protocol_v13` tests — never
+    //! edit their expectations). Protocol version 14 requires the bound
+    //! fields to cover a contiguous index prefix at match time, so a gapped
+    //! candidate is skipped: a well-shaped index wins instead, or the query
+    //! is rejected with `WhereClauseOnNonIndexedProperty`.
+
+    use super::*;
+    use dpp::data_contract::document_type::DocumentTypeRef;
+
+    /// A returned document's (a, b, c, d, e) values.
+    type AbcdeTuple = (i64, i64, i64, i64, i64);
+
+    /// One document type, five integer properties, and two indexes:
+    /// `gapped` = `[a, b, c]` (the index the defective matcher picks) and
+    /// `wide` = `[a, c, d, e]` (a well-shaped fallback for `a`/`c`-bound
+    /// queries).
+    fn setup_gapped_contract() -> (Drive, DataContract) {
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let owner_id = Identifier::new([2u8; 32]);
+
+        let documents = platform_value!({
+            "testDocument": {
+                "type": "object",
+                "properties": {
+                    "a": { "type": "integer", "position": 0 },
+                    "b": { "type": "integer", "position": 1 },
+                    "c": { "type": "integer", "position": 2 },
+                    "d": { "type": "integer", "position": 3 },
+                    "e": { "type": "integer", "position": 4 }
+                },
+                "additionalProperties": false,
+                "indices": [
+                    {
+                        "name": "gapped",
+                        "properties": [
+                            { "a": "asc" },
+                            { "b": "asc" },
+                            { "c": "asc" }
+                        ]
+                    },
+                    {
+                        "name": "wide",
+                        "properties": [
+                            { "a": "asc" },
+                            { "c": "asc" },
+                            { "d": "asc" },
+                            { "e": "asc" }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("should create factory");
+        let contract = factory
+            .create_with_value_config(owner_id, 0, documents, None, None)
+            .expect("data in fixture should be correct")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should apply contract");
+
+        let document_type = contract
+            .document_type_for_name("testDocument")
+            .expect("should have testDocument type");
+
+        for (entropy_seed, a, b, c, d, e) in [
+            // Satisfies the MISREAD of the wrong-documents query
+            // (a == 1 AND b == 3 AND c > 0) but not the query itself.
+            (1u8, 1i64, 3i64, 5i64, 1i64, 1i64),
+            // Satisfies the wrong-documents query as written
+            // (a == 1 AND c == 3 AND b > 0) and a == 1 AND c == 3.
+            (2, 1, 7, 3, 2, 2),
+            // Third a == 1 document, for the order-by case.
+            (3, 1, 2, 9, 3, 3),
+            // Control: matches nothing (a != 1).
+            (4, 2, 3, 3, 4, 4),
+        ] {
+            let document = document_type
+                .create_document_from_data(
+                    platform_value!({ "a": a, "b": b, "c": c, "d": d, "e": e }),
+                    owner_id,
+                    0,
+                    0,
+                    [entropy_seed; 32],
+                    platform_version,
+                )
+                .expect("should create document");
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("should add document");
+        }
+
+        (drive, contract)
+    }
+
+    fn abcde_tuples(
+        results: &[Vec<u8>],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Vec<AbcdeTuple> {
+        results
+            .iter()
+            .map(|bytes| {
+                let document =
+                    Document::from_bytes(bytes.as_slice(), document_type, platform_version)
+                        .expect("should deserialize document");
+                let get = |field: &str| -> i64 {
+                    document
+                        .get(field)
+                        .unwrap_or_else(|| panic!("document should have {field}"))
+                        .to_integer::<i64>()
+                        .expect("field is an integer")
+                };
+                (get("a"), get("b"), get("c"), get("d"), get("e"))
+            })
+            .collect()
+    }
+
+    /// Runs the query at the given protocol version on both the no-proof
+    /// and proof paths, asserts they agree and the proof verifies against
+    /// the live root hash, and returns the (a, b, c, d, e) tuples.
+    fn run_query(
+        drive: &Drive,
+        contract: &DataContract,
+        query_value: &serde_json::Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<AbcdeTuple>, Error> {
+        let document_type = contract
+            .document_type_for_name("testDocument")
+            .expect("should have testDocument type");
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            contract,
+            document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) =
+            query.execute_raw_results_no_proof(drive, None, None, platform_version)?;
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+        let (proof_root_hash, proof_results, _) = query
+            .execute_with_proof_only_get_elements(drive, None, None, platform_version)
+            .expect("we should be able to get a proof");
+        assert_eq!(root_hash, proof_root_hash);
+        assert_eq!(
+            results, proof_results,
+            "proof and no-proof paths must return the same documents"
+        );
+
+        Ok(abcde_tuples(&results, document_type, platform_version))
+    }
+
+    fn protocol_v13() -> &'static PlatformVersion {
+        let protocol_v13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+        assert_eq!(
+            protocol_v13
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .methods
+                .index_for_types,
+            0,
+            "protocol v13 must keep the v0 (gap-tolerant) index matching"
+        );
+        protocol_v13
+    }
+
+    // a == 1 AND c == 3 AND b > 0, order by [b, c]. The `gapped` index
+    // [a, b, c] scores difference 0, and the lowering keys c's value at
+    // b's level and applies b's range at c's level — delivering
+    // a == 1 AND b == 3 AND c > 0 instead.
+    fn wrong_documents_query() -> serde_json::Value {
+        json!({
+            "where": [
+                ["a", "==", 1],
+                ["c", "==", 3],
+                ["b", ">", 0],
+            ],
+            "orderBy": [
+                ["b", "asc"],
+                ["c", "asc"]
+            ]
+        })
+    }
+
+    #[test]
+    fn range_filling_an_equality_gap_returns_permuted_clause_results_frozen_at_protocol_v13() {
+        let (drive, contract) = setup_gapped_contract();
+
+        let results = run_query(&drive, &contract, &wrong_documents_query(), protocol_v13())
+            .expect("v13 executes the misaligned query");
+
+        // The document actually satisfying a == 1 AND c == 3 AND b > 0 is
+        // (1, 7, 3, 2, 2). v0 returns the document satisfying the
+        // permuted clauses instead — cryptographically proven above.
+        assert_eq!(
+            results,
+            vec![(1, 3, 5, 1, 1)],
+            "v0 must keep returning the permuted-clause document"
+        );
+    }
+
+    #[test]
+    fn range_filling_an_equality_gap_is_rejected_at_latest_protocol_version() {
+        let (drive, contract) = setup_gapped_contract();
+
+        let error = run_query(
+            &drive,
+            &contract,
+            &wrong_documents_query(),
+            PlatformVersion::latest(),
+        )
+        .expect_err("a gapped equality set must not match any index");
+
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected WhereClauseOnNonIndexedProperty, got {error:?}"
+        );
+    }
+
+    // a == 1 AND c == 3, no order by. `gapped` [a, b, c] scores
+    // difference 1 and wins over the well-shaped `wide` [a, c, d, e]
+    // (difference 2); its misaligned path keys c's value at b's level
+    // above a subtree that does not exist there.
+    fn equality_gap_query() -> serde_json::Value {
+        json!({
+            "where": [
+                ["a", "==", 1],
+                ["c", "==", 3],
+            ]
+        })
+    }
+
+    #[test]
+    fn equality_gap_returns_proven_empty_result_frozen_at_protocol_v13() {
+        let (drive, contract) = setup_gapped_contract();
+
+        let results = run_query(&drive, &contract, &equality_gap_query(), protocol_v13())
+            .expect("v13 executes the misaligned query");
+
+        // (1, 7, 3, 2, 2) satisfies the query; v0 returns nothing, with a
+        // valid absence proof (checked in run_query).
+        assert_eq!(
+            results,
+            vec![],
+            "v0 must keep returning the proven-empty result"
+        );
+    }
+
+    #[test]
+    fn equality_gap_selects_the_well_shaped_index_at_latest_protocol_version() {
+        let (drive, contract) = setup_gapped_contract();
+
+        // The gapped candidate is skipped at match time, so `wide`
+        // [a, c, d, e] (a contiguous [a, c] prefix, difference 2) wins and
+        // the query returns its actual match.
+        let results = run_query(
+            &drive,
+            &contract,
+            &equality_gap_query(),
+            PlatformVersion::latest(),
+        )
+        .expect("the well-shaped index should serve the query");
+
+        assert_eq!(results, vec![(1, 7, 3, 2, 2)]);
+    }
+
+    // a == 1 order by [c]. `gapped` [a, b, c] scores difference 1 and
+    // wins; the leftover walk emits (b, c) tree order while the response
+    // claims order by c.
+    fn order_by_gap_query() -> serde_json::Value {
+        json!({
+            "where": [
+                ["a", "==", 1],
+            ],
+            "orderBy": [
+                ["c", "asc"]
+            ]
+        })
+    }
+
+    #[test]
+    fn order_by_beyond_an_unbound_property_lies_about_order_frozen_at_protocol_v13() {
+        let (drive, contract) = setup_gapped_contract();
+
+        let results = run_query(&drive, &contract, &order_by_gap_query(), protocol_v13())
+            .expect("v13 executes the misaligned query");
+
+        // All three a == 1 documents come back, but in (b, c) tree order —
+        // c descends 9, 5, 3 while the query claims c ascending.
+        assert_eq!(
+            results,
+            vec![(1, 2, 9, 3, 3), (1, 3, 5, 1, 1), (1, 7, 3, 2, 2)],
+            "v0 must keep returning (b, c) tree order under an order-by [c] claim"
+        );
+    }
+
+    #[test]
+    fn order_by_beyond_an_unbound_property_selects_the_well_shaped_index_at_latest_protocol_version(
+    ) {
+        let (drive, contract) = setup_gapped_contract();
+
+        // `gapped` is skipped (its order-by field c sits beyond the unbound
+        // b), so `wide` [a, c, d, e] wins and delivers the claimed order.
+        let results = run_query(
+            &drive,
+            &contract,
+            &order_by_gap_query(),
+            PlatformVersion::latest(),
+        )
+        .expect("the well-shaped index should serve the query");
+
+        assert_eq!(
+            results,
+            vec![(1, 7, 3, 2, 2), (1, 3, 5, 1, 1), (1, 2, 9, 3, 3)],
+            "results must actually be ordered by c ascending"
+        );
     }
 }

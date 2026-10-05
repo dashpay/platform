@@ -1,0 +1,75 @@
+use crate::drive::Drive;
+
+use grovedb::batch::KeyInfoPath;
+use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::{EstimatedLayerInformation, TreeType};
+
+use crate::drive::constants::AVERAGE_BALANCE_SIZE;
+use crate::drive::prefunded_specialized_balances::{
+    prefunded_specialized_balances_for_voting_path_vec, prefunded_specialized_balances_path,
+};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+use grovedb::EstimatedSumTrees::{AllSumTrees, SomeSumTrees};
+use std::collections::HashMap;
+
+impl Drive {
+    /// Adds estimation costs for a prefunded specialized balance update (protocol version 14:
+    /// like v0, with the prefunded balances layer described as the three trees it now holds).
+    ///
+    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// new entries to it, representing the estimated costs for the total system credits update.
+    #[inline(always)]
+    pub(super) fn add_estimation_costs_for_prefunded_specialized_balance_update_v1(
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    ) {
+        // todo: this will be inserted at the same time as other estimated costs for documents,
+        //  hence we add the full information, but it would be much better that estimated costs would
+        //  be merged instead of overwritten
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path([]),
+            EstimatedLayerInformation {
+                tree_type: TreeType::NormalTree,
+                // We are on the 3rd level
+                estimated_layer_count: EstimatedLevel(3, false),
+                estimated_layer_sizes: AllSubtrees(
+                    1,
+                    SomeSumTrees {
+                        sum_trees_weight: 1,
+                        big_sum_trees_weight: 0,
+                        count_trees_weight: 0,
+                        count_sum_trees_weight: 0,
+                        non_sum_trees_weight: 1,
+                        provable_sum_trees_weight: 0,
+                        provable_count_trees_weight: 0,
+                        provable_count_sum_trees_weight: 0,
+                        provable_count_provable_sum_trees_weight: 0,
+                    },
+                    None,
+                ),
+            },
+        );
+
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(prefunded_specialized_balances_path()),
+            EstimatedLayerInformation {
+                tree_type: TreeType::SumTree,
+                // From protocol version 14 the voting balances have two siblings, the contract
+                // fee pot trees, and sit on top of them: v0 described the layer as holding the
+                // voting balances alone. The contract fee pot estimation describes it the same
+                // way, so a batch that writes to both gets one answer whichever ran last.
+                estimated_layer_count: EstimatedLevel(1, false),
+                estimated_layer_sizes: AllSubtrees(1, AllSumTrees, None),
+            },
+        );
+
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_owned_path(prefunded_specialized_balances_for_voting_path_vec()),
+            EstimatedLayerInformation {
+                tree_type: TreeType::SumTree,
+                estimated_layer_count: PotentiallyAtMaxElements,
+                estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, AVERAGE_BALANCE_SIZE, None),
+            },
+        );
+    }
+}

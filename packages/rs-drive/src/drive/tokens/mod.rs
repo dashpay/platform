@@ -1,6 +1,8 @@
 /// Handles operations related to adding transaction history.
 #[cfg(feature = "server")]
 mod add_transaction_history_operations;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 /// Defines logic for applying status updates within the system.
 #[cfg(feature = "server")]
@@ -31,6 +33,11 @@ pub mod mint;
 /// Implements minting operations for creating new tokens towards many recipients at the same time.
 #[cfg(feature = "server")]
 pub mod mint_many;
+
+/// Per-token shielded pools: creation, cost estimation and the shield / unshield /
+/// shielded-transfer operations.
+#[cfg(feature = "server")]
+pub mod shielded_pool;
 
 /// Manages system-level operations and utilities.
 #[cfg(feature = "server")]

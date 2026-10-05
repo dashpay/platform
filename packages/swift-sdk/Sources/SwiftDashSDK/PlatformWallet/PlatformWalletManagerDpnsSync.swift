@@ -143,7 +143,10 @@ extension PlatformWalletManager {
         // The generation rejects callbacks queued before shutdown. The
         // configured-state check also rejects a callback native teardown
         // dispatches after shutdown already bumped the counter.
-        guard isConfigured, generation == dpnsSyncGeneration.current() else { return }
+        // Early shielded stop keeps isConfigured/generation live for admitted
+        // reads; shutdownRequested closes publication before that stop begins.
+        guard !shutdownRequested, isConfigured,
+              generation == dpnsSyncGeneration.current() else { return }
         lastDpnsSyncEvent = event
     }
 

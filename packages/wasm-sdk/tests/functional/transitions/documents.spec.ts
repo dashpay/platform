@@ -143,14 +143,21 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         ownerId: testData.identityId,
       });
 
-      await client.documentCreate({
+      const placeholderId = document.id.toString();
+
+      // The id of a new document commits to the identity contract nonce of its
+      // create transition, so it only exists once the document is put: the
+      // confirmed document carries it, and the document passed in is updated.
+      const confirmedDocument = await client.documentCreate({
         document,
         identityKey,
         signer,
       });
 
-      createdDocumentId = document.id;
+      createdDocumentId = confirmedDocument.id;
       expect(createdDocumentId).to.exist();
+      expect(createdDocumentId.toString()).to.not.equal(placeholderId);
+      expect(document.id.toString()).to.equal(createdDocumentId.toString());
     });
   });
 
@@ -242,13 +249,13 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         ownerId: testData.identityId,
       });
 
-      await client.documentCreate({
+      const confirmedDocument = await client.documentCreate({
         document,
         identityKey,
         signer,
       });
 
-      mutableDocumentId = document.id;
+      mutableDocumentId = confirmedDocument.id;
       expect(mutableDocumentId).to.exist();
 
       // Wait for the document to be indexed on platform
@@ -289,13 +296,13 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         ownerId: testData.identityId,
       });
 
-      await client.documentCreate({
+      const confirmedDocument = await client.documentCreate({
         document,
         identityKey,
         signer,
       });
 
-      const documentId = document.id;
+      const documentId = confirmedDocument.id;
       expect(documentId).to.exist();
 
       // Wait for the document to be indexed on platform
@@ -331,13 +338,13 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         ownerId: testData.identityId,
       });
 
-      await client.documentCreate({
+      const confirmedDocument = await client.documentCreate({
         document,
         identityKey,
         signer,
       });
 
-      const documentId = document.id;
+      const documentId = confirmedDocument.id;
       expect(documentId).to.exist();
 
       // Wait for the document to be indexed on platform
@@ -527,7 +534,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         ownerId: testData.identityId2,
       });
 
-      await client.documentCreate({
+      const confirmedUpdatableDocument = await client.documentCreate({
         document: updatableDocument,
         identityKey: sellerDocKey,
         signer: sellerDocSigner,
@@ -547,7 +554,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         revision: 2,
         dataContractId: tokenPaidContractId,
         ownerId: testData.identityId2,
-        id: updatableDocument.id,
+        id: confirmedUpdatableDocument.id,
       });
 
       await client.documentReplace({
@@ -570,7 +577,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         revision: 3,
         dataContractId: tokenPaidContractId,
         ownerId: testData.identityId2,
-        id: updatableDocument.id,
+        id: confirmedUpdatableDocument.id,
       });
 
       await client.documentTransfer({
@@ -589,7 +596,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       const transferredDocument = await client.getDocument(
         tokenPaidContractId,
         'tokenPaidListing',
-        updatableDocument.id,
+        confirmedUpdatableDocument.id,
       );
 
       expect(transferredDocument).to.exist();
@@ -604,7 +611,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         ownerId: testData.identityId2,
       });
 
-      await client.documentCreate({
+      const confirmedDeletableDocument = await client.documentCreate({
         document: deletableDocument,
         identityKey: sellerDocKey,
         signer: sellerDocSigner,
@@ -618,7 +625,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       await client.documentDelete({
         document: {
-          id: deletableDocument.id,
+          id: confirmedDeletableDocument.id,
           ownerId: testData.identityId2,
           dataContractId: tokenPaidContractId,
           documentTypeName: 'tokenPaidListing',
@@ -652,14 +659,14 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         ownerId: testData.identityId2,
       });
 
-      await client.documentCreate({
+      const confirmedDocument = await client.documentCreate({
         document,
         identityKey: sellerDocKey,
         signer: sellerDocSigner,
         tokenPaymentInfo: makeTokenPaymentInfo(5n),
       });
 
-      tokenPaidDocumentId = document.id;
+      tokenPaidDocumentId = confirmedDocument.id;
       expect(tokenPaidDocumentId).to.exist();
       await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 28n);
       await expectTokenBalance(testData.identityId, tokenPaidTokenId, 922n);

@@ -4,14 +4,13 @@ pub mod v0;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
-    BlockExecutionContextV0OwnedGetters, BlockExecutionContextV0Setters,
+    BlockExecutionContextV0OwnedGetters, BlockExecutionContextV0Setters, ProposerResults,
 };
 use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use derive_more::From;
-use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// The versioned block execution context
 #[derive(Debug, From, Clone)]
@@ -54,7 +53,7 @@ impl BlockExecutionContextV0Getters for BlockExecutionContext {
         }
     }
 
-    fn proposer_results(&self) -> Option<&ResponsePrepareProposal> {
+    fn proposer_results(&self) -> Option<&ProposerResults> {
         match self {
             BlockExecutionContext::V0(v0) => v0.proposer_results.as_ref(),
         }
@@ -86,7 +85,7 @@ impl BlockExecutionContextV0Setters for BlockExecutionContext {
         }
     }
 
-    fn set_proposer_results(&mut self, results: Option<ResponsePrepareProposal>) {
+    fn set_proposer_results(&mut self, results: Option<ProposerResults>) {
         match self {
             BlockExecutionContext::V0(v0) => v0.proposer_results = results,
         }
@@ -112,7 +111,7 @@ impl BlockExecutionContextV0MutableGetters for BlockExecutionContext {
         }
     }
 
-    fn proposer_results_mut(&mut self) -> Option<&mut ResponsePrepareProposal> {
+    fn proposer_results_mut(&mut self) -> Option<&mut ProposerResults> {
         match self {
             BlockExecutionContext::V0(v0) => v0.proposer_results_mut(),
         }
@@ -147,8 +146,8 @@ impl BlockExecutionContextV0OwnedGetters for BlockExecutionContext {
         }
     }
 
-    /// Consumes the object and returns the owned `ResponsePrepareProposal`.
-    fn proposer_results_owned(self) -> Option<ResponsePrepareProposal> {
+    /// Consumes the object and returns the owned `ProposerResults`.
+    fn proposer_results_owned(self) -> Option<ProposerResults> {
         match self {
             BlockExecutionContext::V0(v0) => v0.proposer_results,
         }

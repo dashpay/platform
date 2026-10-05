@@ -4,6 +4,9 @@
 //! (`DocumentIndexOnlyDeleteTransition`). It is its own kind, not a
 //! version of the delete transition: `document_delete_state_transition`
 //! keeps V2's bounds and keeps evolving independently for stored types.
+//! `shield_from_asset_lock_state_transition` moves to version 1 alone: its
+//! bundle binds its kind and its asset lock, and version 0 is not admitted
+//! (`StateTransition::active_version_range` refuses it at decode).
 
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::{
     DPPStateTransitionSerializationVersions, DocumentFeatureVersionBounds,
@@ -28,6 +31,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         identity_update_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        identity_key_limits_update_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,
@@ -64,10 +72,20 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
         },
         contract_create_state_transition: FeatureVersionBounds {
             min_version: 0,
+            max_version: 1, // changed: version 1 registers contract groups and declares contract group memberships
+            default_current_version: 1,
+        },
+        contract_update_state_transition: FeatureVersionBounds {
+            min_version: 0,
             max_version: 0,
             default_current_version: 0,
         },
-        contract_update_state_transition: FeatureVersionBounds {
+        contract_user_moderation_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_fee_claim_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,
@@ -77,10 +95,14 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 1,
             default_current_version: 1,
         },
+        // Version 2 of the base carries the action fee agreement and is what the builders
+        // produce from this version. The earlier tables say `max_version: 0` beside a default
+        // of 1 because nothing reads these bounds to admit a base: a batch carrying a version 2
+        // base is inactive before protocol version 14 (`StateTransition::active_version_range`).
         document_base_state_transition: FeatureVersionBounds {
             min_version: 0,
-            max_version: 0,
-            default_current_version: 1,
+            max_version: 2,
+            default_current_version: 2,
         },
         document_create_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {
@@ -162,9 +184,9 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         shield_from_asset_lock_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
+            min_version: 1, // changed: version 0, whose bundle binds nothing, is refused from here
+            max_version: 1, // changed: version 1's bundle binds its kind and its asset lock
+            default_current_version: 1,
         },
         shielded_withdrawal_state_transition: FeatureVersionBounds {
             min_version: 0,
@@ -172,6 +194,31 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         identity_create_from_shielded_pool_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        shield_from_identity_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        identity_top_up_from_shielded_pool_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_shielded_transfer_with_shielded_fee_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_unshield_with_shielded_fee_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_purchase_from_shielded_pool_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

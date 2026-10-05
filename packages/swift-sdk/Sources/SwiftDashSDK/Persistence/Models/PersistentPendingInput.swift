@@ -39,17 +39,23 @@ import SwiftData
 /// upsert outright.
 @Model
 public final class PersistentPendingInput {
-    /// Two single-column indexes:
+    /// Three indexes:
     ///   * `outpoint` — the per-outpoint reconciliation lookup that
     ///     runs on every `upsertUtxo`.
     ///   * `walletId` — per-wallet pending-input scans (cleanup when
     ///     a wallet is removed, the storage explorer's network
     ///     scope, "long-lived non-zero pending count" diagnostics).
+    ///   * `(walletId, isSweptTombstone)` — the tombstone collector's
+    ///     once-per-round scan (`collectFinalizedSweptTombstones`),
+    ///     which must select tombstones only: the ordinary rows on this
+    ///     table — one per foreign input of every incoming payment —
+    ///     are never pruned, so a scan that materialised them would grow
+    ///     with the wallet's history.
     ///
     /// SwiftData allows only a single `#Index` macro per model;
     /// passing multiple key-path arrays declares multiple separate
     /// indexes from one macro call.
-    #Index<PersistentPendingInput>([\.outpoint], [\.walletId])
+    #Index<PersistentPendingInput>([\.outpoint], [\.walletId], [\.walletId, \.isSweptTombstone])
     public var outpoint: Data
 
     /// Position of this input in the spending transaction's input
@@ -77,6 +83,55 @@ public final class PersistentPendingInput {
     /// Insertion timestamp — useful for spotting stale entries that
     /// never resolved (orphans whose previous output isn't ours).
     public var createdAt: Date
+
+    /// Set when `applySweptTransaction` repurposes this row as a durable
+    /// claim rather than an ordinary in-flight spend — or writes it fresh
+    /// for a held input that had no row: the original spending transaction
+    /// turned out to be a loser, this input wasn't released, and the
+    /// funding `PersistentTxo` still hasn't arrived to hold the claim
+    /// itself. `spendingTxid` is overwritten to the winner
+    /// (`superseded_by`) and `spendingTransaction` is detached so the row
+    /// survives the loser's deletion. `upsertUtxo` checks this flag on
+    /// resolve: a tombstone forces `PersistentTxo.isSpent = true`
+    /// unconditionally (a sweep's winner is already final, unlike an
+    /// ordinary pending spend whose confirmation is still pending) and
+    /// stamps `PersistentTxo.supersededByTxid` so the mark survives even
+    /// when the winner's own row never materializes — and nothing else:
+    /// the spender link and the vin index come only from an ordinary row,
+    /// never from a tombstone (its `inputIndex` is the loser's). Rows are
+    /// per (outpoint, spending txid, wallet); the drain prefers the
+    /// tombstone tagged with the wallet delivering the coin. Defaulted
+    /// `false` so existing rows migrate as ordinary pending entries.
+    public var isSweptTombstone: Bool = false
+
+    /// The WINNER'S own mined block height, stamped when a block-context
+    /// sweep (`SweepBatchFFI.has_winner_mined_height`) repurposes this row
+    /// into a tombstone — the projection of upstream key-wallet's
+    /// `observed_spent_outpoints`, which maps each outpoint observed spent
+    /// in a block to the height of the block that spent it and deliberately
+    /// records nothing for a mempool/IS-lock spend ("an unconfirmed spend
+    /// must not invalidate a coin"). Not an observation watermark: the
+    /// height rides the sweep event itself, so nothing here guesses when
+    /// the winner mined. It is the row's whole lifetime rule —
+    /// `collectFinalizedSweptTombstones` deletes the tombstone exactly when
+    /// the finality boundary `min(chainlockHeight, syncedHeight)` reaches
+    /// this stamp (upstream's `prune_finalized_observed_spends` condition
+    /// verbatim, no margin): every BIP158 filter at or below the boundary
+    /// has been matched with no false negatives, so the funding transaction
+    /// of the guarded outpoint — necessarily mined at or below the spend's
+    /// own height — has either been delivered (draining the row) or
+    /// provably never will be. A mempool-context sweep (IS-locked winner,
+    /// unmined) writes its tombstone with this NIL on purpose: under
+    /// DIP-10 the lock alone settles the input, but the winner has no
+    /// mining deadline, so no boundary can ever prove its funding output
+    /// delivered-or-never — the collector never touches an unstamped row,
+    /// and the hold lasts until the funding TXO drains it, a later
+    /// block-context sweep stamps it, or a release deletes it.
+    /// Re-pointing an existing tombstone on a mempool-context sweep keeps
+    /// the earlier block-context stamp untouched (upstream never retracts
+    /// an observed-spend entry for an unconfirmed conflict).
+    /// Optional, so existing stores lightweight-migrate.
+    public var winnerMinedHeight: UInt32?
 
     public init(
         outpoint: Data,

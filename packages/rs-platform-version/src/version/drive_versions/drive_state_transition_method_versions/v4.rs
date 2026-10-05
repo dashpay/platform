@@ -16,7 +16,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
         },
         convert_to_high_level_operations:
             DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions {
-                data_contract_create_transition: 0,
+                data_contract_create_transition: 1, // changed: also emits contract group registration and membership operations for version 1 create transitions
                 data_contract_update_transition: 0,
                 document_create_transition: 0,
                 document_delete_transition: 0,
@@ -32,7 +32,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 token_burn_transition: 0,
                 token_mint_transition: 0,
                 token_transfer_transition: 0,
-                documents_batch_transition: 0,
+                documents_batch_transition: 1, // changed: also deletes the lapsed contract suspensions the batch action carries
                 identity_create_transition: 0,
                 identity_create_from_addresses_transition: 0,
                 identity_credit_transfer_transition: 0,
@@ -40,6 +40,9 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 identity_top_up_transition: 0,
                 identity_top_up_from_addresses_transition: 0,
                 identity_update_transition: 1,
+                identity_key_limits_update_transition: 0,
+                contract_user_moderation_transition: 0,
+                contract_fee_claim_transition: 0,
                 masternode_vote_transition: 0,
                 bump_identity_data_contract_nonce: 0,
                 bump_identity_nonce: 0,
@@ -52,6 +55,13 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 token_claim_transition: 0,
                 token_direct_purchase_transition: 0,
                 token_set_price_for_direct_purchase_transition: 0,
+                token_shield_transition: 0,
+                token_unshield_transition: 0,
+                token_shielded_transfer_transition: 0,
+                token_mint_to_pool_transition: 0,
+                token_burn_from_pool_transition: 0,
+                token_claim_to_pool_transition: 0,
+                token_direct_purchase_to_pool_transition: 0,
                 identity_credit_transfer_to_addresses_transition: 0,
                 address_funds_transfer_transition: 0,
                 address_credit_withdrawal_transition: 0,
@@ -62,6 +72,11 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 unshield_transition: 0,
                 shielded_withdrawal_transition: 0,
                 identity_create_from_shielded_pool_transition: 0,
+                shield_from_identity_transition: 0,
+                identity_top_up_from_shielded_pool_transition: 0,
+                token_shielded_transfer_with_shielded_fee_transition: 0,
+                token_unshield_with_shielded_fee_transition: 0,
+                token_purchase_from_shielded_pool_transition: 0,
             },
         document_from_action: DriveDocumentFromActionVersions {
             document_from_create_transition_action: 1,  // changed

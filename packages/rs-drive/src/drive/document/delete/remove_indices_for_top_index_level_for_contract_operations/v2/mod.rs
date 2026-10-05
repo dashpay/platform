@@ -9,8 +9,10 @@ use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, time_range_index_keys,
+    bucket_index_keys, index_level_tree_types_with_continuation_demotion,
+    index_only_level_skips_when_absent, level_removes_entry,
 };
+use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::document::unique_event_id;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -26,6 +28,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::is_flat_level_key;
 
 use crate::drive::document::paths::contract_document_type_path_vec;
 use dpp::version::PlatformVersion;
@@ -42,6 +45,7 @@ impl Drive {
     /// [`Drive::add_indices_for_top_index_level_for_contract_operations_v2`];
     /// part of the platform v14 shared-prefix aggregate fix.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_top_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -49,6 +53,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -88,14 +93,26 @@ impl Drive {
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // On this level we will have a 0 and all the top index paths
+            // On this level we will have a 0 and all the top index paths.
+            // Property-name keys keep the historical 32-byte estimate; a
+            // FLAT indexOnly level is keyed by its zero-joined component
+            // names, which can be wider, and every entry write rewrites
+            // that node at its real key length.
+            let sub_level_key_max_size = index_level
+                .sub_levels()
+                .keys()
+                .filter(|name| is_flat_level_key(name))
+                .map(|name| u8::try_from(name.len()).unwrap_or(u8::MAX))
+                .max()
+                .unwrap_or(DEFAULT_HASH_SIZE_U8)
+                .max(DEFAULT_HASH_SIZE_U8);
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
                     estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
                     estimated_layer_sizes: AllSubtrees(
-                        DEFAULT_HASH_SIZE_U8,
+                        sub_level_key_max_size,
                         NoSumTrees,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
@@ -105,6 +122,73 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // A FLAT indexOnly index: no property-name tree and no value
+            // level. Its level tree (created at registration, like a
+            // property-name tree) holds the `0` member bucket directly, so
+            // the entry is handled by the terminal branch straight below
+            // the level: `[…doctype, <flat level>, 0, <member key>]`.
+            if is_flat_level_key(name) {
+                let Some(index_type) = sub_level.has_index_with_type() else {
+                    continue;
+                };
+                let mut flat_path: Vec<Vec<u8>> = contract_document_type_path.clone();
+                flat_path.push(Vec::from(name.as_bytes()));
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    estimated_costs_only_with_layer_info.insert(
+                        KeyInfoPath::from_known_owned_path(flat_path.clone()),
+                        EstimatedLayerInformation {
+                            tree_type: TreeType::NormalTree,
+                            estimated_layer_count: ApproximateElements(1),
+                            estimated_layer_sizes: AllSubtrees(
+                                1,
+                                NoSumTrees,
+                                storage_flags.map(|s| s.serialized_size()),
+                            ),
+                        },
+                    );
+                }
+                let flat_path_info = if document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .is_document_size()
+                {
+                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(flat_path))
+                } else {
+                    PathInfo::PathAsVec::<0>(flat_path)
+                };
+                self.remove_reference_for_index_level_for_contract_operations(
+                    document_and_contract_info,
+                    flat_path_info,
+                    index_type,
+                    false,
+                    false,
+                    &storage_flags,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    false,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                continue;
+            }
+
+            // Mirror of the insert walker: a branch under which the document
+            // wrote no entry (every index through it skipped the document)
+            // holds nothing of it to remove, and one whose entries all
+            // outlive the delete holds nothing it removes. The delete's
+            // worst-case estimation document carries every property, so it
+            // sweeps every other branch, an over-estimate like the one below.
+            if !level_removes_entry(
+                sub_level,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                continue;
+            }
+
             // The delete walker writes nothing itself, but its
             // estimation layers must describe the tree the insert path
             // actually laid down — including the meta-schema-v3 ranked
@@ -114,6 +198,20 @@ impl Drive {
             let property_name_tree_type = tree_types.property_name_tree_type;
             let value_tree_type = tree_types.value_tree_type;
 
+            // Mirror of the insert walker's ephemeral routing: removals
+            // under a TTL'd sub-level ride the ephemeral batch and are
+            // consumed at the ephemeral price — their elements carry no
+            // storage flags, so removal is basic and yields no refunds.
+            let sub_level_is_ephemeral = sub_level
+                .time_range()
+                .is_some_and(|transform| transform.ttl_seconds.is_some());
+            let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
+            let index_storage_flags = if sub_level_is_ephemeral {
+                None
+            } else {
+                storage_flags
+            };
+
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -121,18 +219,17 @@ impl Drive {
             index_path.push(Vec::from(name.as_bytes()));
 
             // The level key is the path segment; the document value is read
-            // from the *source property* — they differ on a time-range
-            // level, whose key is grid-qualified
-            // (`TimeRangeTransform::storage_key`) while the timestamp lives
-            // under the bare property name. Mirrors the insert walker.
+            // from the *source property* — they differ on a bucketed level,
+            // whose key is grid-qualified (`storage_key`) while the value
+            // lives under the bare property name. Mirrors the insert walker.
             let property_name = sub_level
-                .time_range()
-                .map(|transform| transform.source.as_str())
+                .bucketing()
+                .map(|bucketing| bucketing.source())
                 .unwrap_or(name.as_str());
 
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = document_and_contract_info
+            let document_top_field = match document_and_contract_info
                 .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
@@ -141,8 +238,26 @@ impl Drive {
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
                     platform_version,
-                )?
-                .unwrap_or_default();
+                )? {
+                Some(document_top_field) => document_top_field,
+                // An unrequired property on an indexOnly type is a skip
+                // property of every index that holds it: the insert walker
+                // wrote no entries through this branch for a document
+                // missing it, so its delete removes none — mirroring the
+                // insert skip is what keeps delete-by-values exact
+                // (`level_reaches_entry` has normally passed the branch by
+                // already; this is the defensive arm). The delete's estimation
+                // dry-run runs on a worst-case document info that always
+                // resolves a value, so estimation sweeps this branch as
+                // written — a deliberate over-estimate that keeps the dry
+                // run an upper bound.
+                None if index_only_level_skips_when_absent(document_type, property_name) => {
+                    continue;
+                }
+                // A stored type's absent value keeps its null-layout empty
+                // key.
+                None => DriveKeyInfo::default(),
+            };
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
@@ -172,7 +287,7 @@ impl Drive {
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
                             estimated_sum_trees_for_value_tree_type(value_tree_type),
-                            storage_flags.map(|s| s.serialized_size()),
+                            index_storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
                 );
@@ -181,15 +296,15 @@ impl Drive {
             let any_fields_null = document_top_field.is_empty();
             let all_fields_null = document_top_field.is_empty();
 
-            // Mirror the insert side's time-range fan-out: a time-range
-            // first-property node removes one index entry per overlapping
-            // range bucket the document's timestamp fell into. The keys are
-            // recomputed deterministically through the same shared helper the
-            // insert walker uses, so they match exactly what insert wrote —
+            // Mirror the insert side's bucket fan-out: a bucketed
+            // first-property node removes one index entry per window the
+            // document's value fell into. The keys are recomputed
+            // deterministically through the same shared helper the insert
+            // walker uses, so they match exactly what insert wrote —
             // including the null case (single null entry) and the pre-origin
             // case (no entries on either side).
-            let index_keys: Vec<DriveKeyInfo> = time_range_index_keys(
-                sub_level.time_range(),
+            let index_keys: Vec<DriveKeyInfo> = bucket_index_keys(
+                sub_level.bucketing(),
                 document_top_field,
                 // A validated contract cannot exceed this; the clamp only
                 // bounds estimation work for unvalidated transforms. The
@@ -203,6 +318,43 @@ impl Drive {
 
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
+                // TTL: an expired bucket may already have been dropped
+                // entirely (this document's entries went with it — skip),
+                // or stand PARTIALLY drained (drainage removes whole `[0]`
+                // and group value trees before the bucket): removal then
+                // proceeds, but at full-path granularity — the deeper
+                // walkers skip any entry whose path the drain already
+                // took. Live buckets behave exactly as before. Stateful
+                // reads have no place in the estimation dry run, which
+                // processes every bucket — the upper bound.
+                let mut skip_missing_expired_entry = false;
+                if estimated_costs_only_with_layer_info.is_none() {
+                    if let Some(transform) = sub_level.time_range() {
+                        let entry_key_bytes = match &index_key {
+                            DriveKeyInfo::Key(key) => Some(key.as_slice()),
+                            DriveKeyInfo::KeyRef(key) => Some(*key),
+                            DriveKeyInfo::KeySize(_) => None,
+                        };
+                        if let Some(entry_key_bytes) = entry_key_bytes {
+                            let expired = entry_key_bucket_start(entry_key_bytes)
+                                .zip(transform.expiry_horizon_ms(block_time_ms))
+                                .is_some_and(|(start, horizon)| start < horizon);
+                            if expired {
+                                if !self.time_range_entry_is_removable(
+                                    transform,
+                                    entry_key_bytes,
+                                    block_time_ms,
+                                    &index_path,
+                                    transaction,
+                                    platform_version,
+                                )? {
+                                    continue;
+                                }
+                                skip_missing_expired_entry = true;
+                            }
+                        }
+                    }
+                }
                 // The final bucket takes ownership of `index_path`; earlier
                 // buckets (only a time-range fan-out has more than one)
                 // clone it.
@@ -226,6 +378,12 @@ impl Drive {
                 index_path_info.push(index_key)?;
                 // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
+                    if sub_level_is_ephemeral {
+                        &mut ephemeral_local_operations
+                    } else {
+                        &mut *batch_operations
+                    };
                 self.remove_indices_for_index_level_for_contract_operations(
                     document_and_contract_info,
                     index_path_info,
@@ -233,14 +391,23 @@ impl Drive {
                     any_fields_null,
                     all_fields_null,
                     value_tree_type,
-                    &storage_flags,
+                    &index_storage_flags,
                     previous_batch_operations,
                     estimated_costs_only_with_layer_info,
+                    skip_missing_expired_entry,
                     event_id,
                     transaction,
-                    batch_operations,
+                    index_batch_operations,
                     platform_version,
                 )?;
+            }
+
+            if sub_level_is_ephemeral {
+                batch_operations.extend(
+                    ephemeral_local_operations
+                        .into_iter()
+                        .map(LowLevelDriveOperation::retag_ephemeral),
+                );
             }
         }
         Ok(())

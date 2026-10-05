@@ -5,6 +5,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs_by_round::UnsignedWithdrawalTxsByRound;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -23,6 +24,8 @@ pub struct FullAbciApplication<'a, C> {
     pub transaction: RwLock<Option<Transaction<'a>>>,
     /// The current block execution context
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    /// The unsigned withdrawal transactions of every proposal accepted at the current height
+    pub unsigned_withdrawal_txs_by_round: RwLock<UnsignedWithdrawalTxsByRound>,
 }
 
 impl<'a, C> FullAbciApplication<'a, C> {
@@ -32,6 +35,7 @@ impl<'a, C> FullAbciApplication<'a, C> {
             platform,
             transaction: Default::default(),
             block_execution_context: Default::default(),
+            unsigned_withdrawal_txs_by_round: Default::default(),
         }
     }
 }
@@ -45,6 +49,10 @@ impl<C> PlatformApplication<C> for FullAbciApplication<'_, C> {
 impl<C> BlockExecutionApplication for FullAbciApplication<'_, C> {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
+    }
+
+    fn unsigned_withdrawal_txs_by_round(&self) -> &RwLock<UnsignedWithdrawalTxsByRound> {
+        &self.unsigned_withdrawal_txs_by_round
     }
 }
 

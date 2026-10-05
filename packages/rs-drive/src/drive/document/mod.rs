@@ -6,25 +6,46 @@
 
 #[cfg(feature = "server")]
 use crate::drive::votes::paths::CONTESTED_DOCUMENT_STORAGE_TREE_KEY;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::drive::DriveError;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::Error;
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::util::storage_flags::StorageFlags;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::DocumentPropertyType;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::document::document_methods::DocumentMethodsV0;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::Document;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::DocumentV0Getters;
-#[cfg(feature = "server")]
-use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::version::PlatformVersion;
+#[cfg(any(feature = "server", feature = "verify"))]
+use grovedb::element::reference_path::ReferencePathType::UpstreamRootHeightReference;
+#[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::Element;
 
 #[cfg(feature = "server")]
 mod delete;
+/// The values of derived index properties, read from the documents the references point at
+#[cfg(feature = "server")]
+pub(crate) mod derived_index_values;
 #[cfg(feature = "server")]
 mod estimation_costs;
+/// Document expiry: the expirations tree of documents whose type declares a `ttl`, their
+/// pricing, and the cleanup that deletes them once expired
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod expiration;
+#[cfg(feature = "server")]
+mod fetch_property_constraint_aggregate;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
 #[cfg(feature = "server")]
@@ -34,7 +55,11 @@ mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
+pub use insert_contested::ContestWindows;
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod update;
 #[cfg(all(
@@ -49,40 +74,143 @@ mod verify_fetch_document_history_query;
 pub mod paths;
 
 /// Primary key tree type resolution
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod primary_key_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod prove;
 /// Terminal property-name tree resolution for ranked (indexed-tree) indexes
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod ranked_index_tree_type;
 
 /// Shared index-walker tree-type derivation for the v2 walkers
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod index_level_tree_types;
+
+/// The GroveDB layout of one document type, computed from the type with the
+/// index walkers' own tree-type rules
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod layout;
+
+/// What creating one document costs, element by element, from the elements
+/// the index walkers write
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod cost;
+
+/// The plain values the layout and the cost estimate hand to the SDKs
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod sdk_value;
+
+/// The test contracts the layout and the cost estimate are held to Drive with
+#[cfg(all(test, feature = "server"))]
+pub(crate) mod fixture_contracts;
+
+/// Shared TTL semantics for time-range indexes — see
+/// `book/src/drive/time-range-ttl.md`.
+#[cfg(feature = "server")]
+pub(crate) mod time_range_ttl;
 
 /// indexOnly entry probes: entry path/key derivation shared by the write
 /// path and the ABCI state-validation probes
 #[cfg(feature = "server")]
 pub mod index_only;
 
+/// Unbilled reads of how an index entry is stored, for the walkers that
+/// remove or refresh entries earlier protocol versions laid out otherwise
+#[cfg(feature = "server")]
+pub(crate) mod stored_index_entry;
+
 /// The indexOnly row commitment: the payload every indexOnly terminal item
 /// stores, binding one document's index projections into one logical row
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_only_row_commitment;
 
+/// The entry payload of an indexOnly document type: the value slot after
+/// the row commitment, its encoding and its fee-estimation bounds.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod index_only_entry_payload;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_entry_payload::{
+    decode_index_only_entry_payload, encode_index_only_entry_payload,
+    encode_index_only_entry_payload_value, index_only_entry_payload_max_size,
+    index_only_item_estimated_value_size,
+};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::index_only_row_commitment;
 #[cfg(feature = "server")]
 pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
 #[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_row_commitment::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 pub use index_only_row_commitment::INDEX_ONLY_ROW_COMMITMENT_SIZE;
 
 /// How many document history entries to fetch at once. This mirrors contract history
 /// and prevents unbounded history reads.
 pub const MAX_DOCUMENT_HISTORY_FETCH_LIMIT: u16 = 10;
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+/// The member key `document` produces under a terminal: the components'
+/// values in their tree-key encoding, concatenated in the terminal's
+/// order — one component for a plain terminal, several for a composite
+/// one. The write path's twin of the query side's
+/// `serialize_value_for_key` concatenation.
+pub(crate) fn index_only_member_key(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    terminal: &[String],
+    owner_id: Option<[u8; 32]>,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, Error> {
+    let mut member_key = Vec::new();
+    for component in terminal {
+        let encoded = document
+            .get_raw_for_document_type(component, document_type, owner_id, platform_version)?
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "indexOnly terminal value must be present: the parser requires every \
+                 indexOnly property (and $ownerId) to be set",
+            )))?;
+        member_key.extend(encoded);
+    }
+    Ok(member_key)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Whether `document`'s value of `referenced_property`, which a
+/// `where` binds to a referring index property of
+/// `referring_property_type`, is no wider as a tree key than a value of that
+/// property can be. A wider value equals no referring document's value, so no
+/// entry would ever sit under trees keyed by it, and past 255 bytes it is no
+/// tree key at all. An absent value fits (the caller skips it on its own), as
+/// do the referenced document's `$ownerId` and `$creatorId`, 32-byte
+/// identifiers that registration pairs with an identifier.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn bound_value_fits_referring_property(
+    document: &Document,
+    referenced_property: &str,
+    referring_property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    if referenced_property.starts_with('$') {
+        return Ok(true);
+    }
+    let Some(value) = document
+        .properties()
+        .get_optional_at_path(referenced_property)?
+    else {
+        return Ok(true);
+    };
+    let Some(max_width) = referring_property_type.saturating_max_byte_size(platform_version)?
+    else {
+        return Ok(true);
+    };
+    let width = referring_property_type
+        .encode_value_for_tree_keys(value)?
+        .len();
+    Ok(width <= usize::from(max_width))
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Creates a reference to a document.
 fn make_document_reference(
     document: &Document,
@@ -117,7 +245,7 @@ fn make_document_reference(
     )
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Creates an `Element::ReferenceWithSumItem` that pins a document to
 /// a summable index path AND carries that document's `sum_property`
 /// contribution to the parent sum tree.

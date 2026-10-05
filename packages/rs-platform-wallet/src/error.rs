@@ -1,8 +1,9 @@
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::prelude::AddressNonce;
+use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
@@ -13,6 +14,35 @@ use key_wallet::Network;
 pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
+
+    /// The persister failed to load the client start state during rehydration.
+    ///
+    /// Scope: emitted by manager rehydration (`load_from_persistor` and the
+    /// post-registration rehydration) and by the DashPay sent-payment
+    /// reconcile reads. The shielded-build reads still flatten their failure
+    /// into `ShieldedBuildError(String)`.
+    ///
+    /// This and the sibling `Persister*` variants carry their typed
+    /// [`PersistenceError`](crate::changeset::PersistenceError) rather than a
+    /// flattened string, so its retry classification survives — a transient
+    /// `SQLITE_BUSY` stays distinguishable from a permanent failure, in-crate
+    /// and across the C ABI (`platform-wallet-ffi` maps each variant and kind
+    /// to its own `PlatformWalletFFIResultCode`). They are separate variants
+    /// so a failed write is never reported as a failed read.
+    #[error("failed to load persisted client state: {0}")]
+    PersisterLoad(#[source] crate::changeset::PersistenceError),
+
+    /// A wallet changeset could not be stored. Wallet registration and balance
+    /// refresh preserve the typed cause; other best-effort writers may log it.
+    /// See [`Self::PersisterLoad`] for why the typed cause is carried.
+    #[error("failed to persist wallet changeset: {0}")]
+    PersisterStore(#[source] crate::changeset::PersistenceError),
+
+    /// Restoring persisted platform-address state into a freshly registered
+    /// wallet failed. Boxed to break the recursion; the inner variant and its
+    /// `#[source]` chain survive intact.
+    #[error("failed to restore persisted platform-address state: {0}")]
+    PersisterRestore(#[source] Box<PlatformWalletError>),
 
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
@@ -26,11 +56,25 @@ pub enum PlatformWalletError {
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 
+    /// The wallet owns the identity, but the queried Platform node has no
+    /// balance yet. This may be transient immediately after registration.
+    #[error("Platform balance unavailable for identity {0}; retry against an up-to-date node")]
+    IdentityBalanceUnavailable(Identifier),
+
     #[error("No primary identity set")]
     NoPrimaryIdentity,
 
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
+
+    /// A DashPay invitation link's voucher key is for the other network (a
+    /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
+    /// the claim refuses the link before any network work.
+    #[error("invitation is for the {invitation:?} network but this wallet is on {wallet:?}")]
+    InvitationNetworkMismatch {
+        invitation: Network,
+        wallet: Network,
+    },
 
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
@@ -55,8 +99,8 @@ pub enum PlatformWalletError {
     /// A gap-limit scan ended empty with at least one index left unanswered.
     /// Distinct from an empty success: it means "we do not know", so the
     /// caller must retry rather than record that the seed owns no identity.
-    /// Both outcomes used to arrive as `Ok(vec![])`, which is how a transient
-    /// DAPI failure right after restore-from-seed became a whole session
+    /// Collapsing both outcomes into `Ok(vec![])` would let a transient
+    /// DAPI failure right after restore-from-seed become a whole session
     /// without an identity.
     ///
     /// "Retry" is the contract, not a promise that the cause is transient — a
@@ -105,21 +149,136 @@ pub enum PlatformWalletError {
     /// A core transaction broadcast failed with an **ambiguous** outcome — the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent inputs'
-    /// reservation is intentionally kept, so an immediate retry fails at
-    /// input selection instead of double-spending; the reservation-TTL
-    /// backstop (or a sync observing the transaction) reconciles the outcome.
+    /// whose earlier attempt may have succeeded). The spent inputs are
+    /// intentionally kept out of the selectable set, so an immediate retry
+    /// fails at input selection instead of double-spending.
+    ///
+    /// # What actually reconciles this, and what does not
+    ///
+    /// The inputs are held by TWO independent things, and only one of them
+    /// expires. Key-wallet's `ReservationSet` entry is swept by its own TTL —
+    /// 24 blocks (`RESERVATION_TTL_BLOCKS`) on the wallet's
+    /// `last_processed_height` clock, measured from the height the reservation
+    /// was stamped at. That TTL is NOT the 20-block bound this crate refuses a
+    /// held finalized transaction / registry token at
+    /// ([`Self::StaleReservation`]); the refusal bound is deliberately the
+    /// lower of the two so a broadcast is turned away while its reservation is
+    /// still provably unswept. The generation's pending-spend fence
+    /// ([`WalletGeneration`](crate::wallet::core::WalletGeneration)) is NOT
+    /// swept with either: it has no bound of its own and is released by the
+    /// wallet OBSERVING the outpoint spent, and by nothing else.
+    ///
+    /// The reservation TTL does NOT reconcile an ambiguous outcome: elapsed
+    /// time is not evidence about the transaction, which stays valid and
+    /// relayable no matter how long the wait. The build refusal that follows
+    /// a `MaybeSent` is [`Self::InputMidBroadcast`], and it stands until a
+    /// spend is observed — this wallet's own transaction landing, or a
+    /// conflicting one taking the outpoint.
+    ///
+    /// Removing the wallet and re-creating it under the same id does NOT end
+    /// the refusal: the fence map is keyed by wallet id and handed to the
+    /// replacement generation, so a recreation inherits the pending spends
+    /// rather than restoring the outpoints unprotected. Only a fresh manager —
+    /// in practice a process restart — currently loses the fence, because the
+    /// map is not persisted; see
+    /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) for what
+    /// closing that gap requires.
     ///
     /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
     #[error(
         "Transaction broadcast outcome unknown — it may already be on the \
-         network; its inputs stay reserved until a sync or the reservation \
-         TTL reconciles the outcome: {0}"
+         network; its inputs stay unspendable until this wallet observes them \
+         spent: {0}"
     )]
     TransactionBroadcastUnconfirmed(String),
 
+    /// A finalized transaction handle
+    /// (`core_wallet_tx_builder_finalize` → `broadcast_finalized_transaction`)
+    /// was held long enough that its funding reservation may already have been
+    /// swept and re-selected by key-wallet's TTL: the wallet's
+    /// `last_processed_height` advanced at least
+    /// `RESERVATION_MAX_AGE_BLOCKS`
+    /// blocks past the height the reservation was stamped at
+    /// ([`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction::reservation_height)).
+    /// Broadcasting it could spend against a newer, unrelated reservation, so it
+    /// is refused **before** touching the network — NOT retryable in place, the
+    /// caller must rebuild the payment. The refusal reconciles the reservation
+    /// on the way out: a funded finalize always stamps an owner token, so the
+    /// release is owner-guarded (`release_reservation_if_owner`, safe at any
+    /// age — it no-ops once ownership transferred) and the still-owned inputs
+    /// are freed for the instructed rebuild. Abandoning/freeing the handle
+    /// likewise releases owner-guarded at any age; only a token-less build
+    /// skips its unguarded by-outpoint release past the bound and leaves the
+    /// aged outpoint for key-wallet's TTL to reclaim.
+    ///
+    /// This is the handle-path sibling of the deferred registry-token
+    /// [`SignedPaymentError::StaleReservationToken`](crate::SignedPaymentError::StaleReservationToken);
+    /// both share the same age bound and the FFI `ErrorStaleReservationToken`
+    /// code. Carries no token — the handle path is keyed by an opaque handle,
+    /// not a numeric reservation token.
+    #[error("finalized transaction reservation has outlived its lifetime; rebuild the payment")]
+    StaleReservation,
+
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
+
+    /// Coin selection picked an outpoint that a broadcast dispatch is still
+    /// holding — the transaction spending it is in flight, or has reached the
+    /// network and has not yet been observed spent by this wallet
+    /// ([`WalletGeneration::in_broadcast_conflict`](crate::wallet::core::WalletGeneration::in_broadcast_conflict)).
+    /// Completing the build would race that transaction on the wire, so it is
+    /// refused: the attempted selection is DISCARDED, its fresh reservation
+    /// released, and nothing was broadcast.
+    ///
+    /// Signing, however, MAY already have happened by the time the conflict
+    /// is caught. The finalized-transaction build runs its check on the
+    /// unsigned selection, but the contact-payment build calls `build_signed`
+    /// before its conflict check, and the asset-lock build's key-wallet
+    /// builder signs as it builds — on those two paths a fully signed
+    /// transaction exists at the moment of refusal. It is discarded without
+    /// ever reaching a broadcaster, and its inputs go back to the selectable
+    /// pool with the reservation release; "nothing was broadcast" is part of
+    /// this contract, "nothing was signed" is NOT.
+    ///
+    /// A TRANSIENT, EXPECTED condition, and the reason it is a variant of its
+    /// own rather than a [`Self::TransactionBuild`] /
+    /// [`Self::AssetLockTransaction`] string: the refusal says nothing wrong
+    /// about the request itself — the same intent can be re-attempted once
+    /// the conflict resolves (see below for what "resolves" requires) — and
+    /// telling it apart from a genuine build failure must not require
+    /// substring-matching prose (`message.contains("mid-broadcast")`).
+    /// All three selection choke points — the
+    /// finalized-transaction build, the contact-payment build and the
+    /// asset-lock build — return this one variant.
+    ///
+    /// # Retrying the INTENT requires reconciling the fenced transaction first
+    ///
+    /// "Retry once the dispatch settles" must not be read as "retry
+    /// unconditionally once this error stops". The fence behind this refusal
+    /// outlives the broadcaster's return on every non-rejected dispatch and
+    /// clears only when this wallet OBSERVES the outpoint spent — and the
+    /// overwhelmingly common observation is the fenced dispatch's OWN payment
+    /// landing. At that moment the intent this build was carrying may already
+    /// be fulfilled: re-issuing it blindly then produces a second, duplicate
+    /// logical payment rather than completing the first. So a caller must
+    /// reconcile the transaction the fence was protecting — did that payment
+    /// land? — before deciding whether the retried intent is still owed.
+    /// Only when the fenced dispatch is definitively rejected (its fence
+    /// released together with its reservation) is an immediate, unchanged
+    /// retry unconditionally correct.
+    ///
+    /// `outpoint` is the first conflicting input, carried structurally so
+    /// callers and diagnostics need not parse it back out of a message.
+    ///
+    /// Reaching a caller at all is the uncommon path: a fenced input is
+    /// normally still reserved and never offered to selection. This fires only
+    /// in the window after key-wallet's reservation TTL swept that dispatch's
+    /// reservation, which is exactly what the fence exists to cover.
+    #[error(
+        "selected input {outpoint} is mid-broadcast by an in-flight dispatch; \
+         retry after it completes"
+    )]
+    InputMidBroadcast { outpoint: dashcore::OutPoint },
 
     /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
     /// target at all: unparseable, encoded for a different network than the
@@ -282,9 +441,115 @@ pub enum PlatformWalletError {
         actual_identity_index: u32,
     },
 
+    /// **RESERVED — the wallet never constructs this variant today.**
+    ///
+    /// It describes a tracked asset-lock transaction that spends an
+    /// outpoint a **different, already-confirmed** transaction of this
+    /// same wallet spent first, where that spender's block is proven to
+    /// be on the FINALIZED chain. Such a lock is permanently dead: every
+    /// peer rejects it as a double spend at the mempool boundary and
+    /// therefore relays nothing, so no IS-lock and no ChainLock can ever
+    /// be produced for it, and the only recovery is to discard the lock
+    /// and build a new one from currently-unspent inputs.
+    ///
+    /// The missing piece is the finalized-ancestry proof. The wallet layer
+    /// can see that a spender is confirmed, and it can see chainlock
+    /// contexts and the applied chainlock height, but both of those are
+    /// artifacts of a height-based promotion rather than evidence that the
+    /// spender's block belongs to the branch the chainlock covers (the SPV
+    /// chainlock manager counts a missing header as a passing block-hash
+    /// check, so a chainlock landing on a replacement branch ahead of its
+    /// headers promotes losing-branch records). Until the SPV layer
+    /// exposes an ancestry predicate, no code path may raise this variant:
+    /// the double-spend screen reports [`Self::AssetLockInputContested`]
+    /// for every hit, chainlocked-looking spenders included.
+    ///
+    /// Kept in the enum — with its fields and its FFI code — so the
+    /// reserved code stays stable for hosts across the change and for the
+    /// future emitter. Hosts must read nothing into its absence: it is not
+    /// a liveness signal, not a "not yet final" signal, and not a
+    /// statement about any particular lock.
+    ///
+    /// `height` is the block height of the confirmed spender when the
+    /// record carries block info. The variant carries no finality flag on
+    /// purpose: finality IS the variant — a constructor cannot produce a
+    /// terminal error that renders anything but chainlocked finality.
+    #[error(
+        "Asset lock {out_point} can never confirm: it spends {input}, which was \
+         already spent by confirmed transaction {spent_by} (block height \
+         {height:?}, chainlocked: true) — the lock is a double spend and no \
+         peer will relay it"
+    )]
+    AssetLockInputConflict {
+        out_point: dashcore::OutPoint,
+        input: dashcore::OutPoint,
+        spent_by: dashcore::Txid,
+        height: Option<CoreBlockHeight>,
+    },
+
+    /// The tracked asset-lock transaction spends an outpoint a
+    /// **different, already-confirmed** transaction of this same wallet
+    /// spent first. This is the verdict the double-spend screen always
+    /// emits on a hit — [`Self::AssetLockInputConflict`] has no emitter.
+    ///
+    /// The typical origin is a restored wallet: a rescan repopulates the
+    /// UTXO set from chain data, an asset-lock build selects an input the
+    /// restored view still believes is unspent, and the transaction that
+    /// actually spent it — often one of the wallet's own earlier asset
+    /// locks — has been confirmed for a long time.
+    ///
+    /// While the sibling stands, peers reject the lock as a double spend
+    /// and an unbounded proof wait would hang (Core stopped sending BIP61
+    /// `reject` by default in 0.17, so the drop is silent and looks
+    /// exactly like a slow network). The resume still attempts recovery. If
+    /// the transport is ready, the sighting bounds the proof wait and this is
+    /// what that wait expired with. In the `Broadcast` arm, if readiness was
+    /// missed and the send was rejected before dispatch, a still-standing
+    /// conflict returns immediately after refreshing local finality, and the
+    /// readiness-deferred retry owns the next proof wait. A `Broadcast`-status
+    /// lock may also represent an earlier attempt that sent the transaction.
+    ///
+    /// The verdict is PROVISIONAL and carries NO licence to discard the
+    /// tracked lock. Keep the lock and retry later. Note what a retry can
+    /// and cannot do: a chainlock arriving over the sibling does NOT
+    /// upgrade this to the terminal variant today, because the wallet
+    /// cannot prove the sibling's block is on the finalized branch (see
+    /// [`Self::AssetLockInputConflict`]). What a retry resolves is the
+    /// other direction — a reorg drops the sibling and the resume proceeds
+    /// normally.
+    ///
+    /// A conflict that persists across sessions still proves nothing about
+    /// finalized ancestry: persistence is not finality, and the sighting
+    /// can be a block record the load path restored from a previous
+    /// session whose block was reorganized out while the wallet was
+    /// offline. So repetition never licenses a discard either — only
+    /// [`Self::AssetLockInputConflict`], or an independent
+    /// finalized-ancestry proof, authorises dropping the tracked state.
+    /// Discarding a lock whose sibling turns out to sit on a losing branch
+    /// strands the credits of a lock a peer can still replay. No funds move
+    /// while the lock is kept: both signed transactions are this wallet's
+    /// own, so the value behind `input` lives on in `spent_by`.
+    ///
+    /// Raising this error is a definite verdict about the CONFLICT; NOT
+    /// raising it proves nothing — see the detection helper in
+    /// `wallet::asset_lock::sync::recovery` for why the scan is
+    /// best-effort.
+    #[error(
+        "Asset lock {out_point} cannot currently confirm: it spends {input}, \
+         which confirmed transaction {spent_by} (block height {height:?}) has \
+         taken — the verdict is provisional (the wallet cannot prove the \
+         spender's finality); keep the lock and retry later"
+    )]
+    AssetLockInputContested {
+        out_point: dashcore::OutPoint,
+        input: dashcore::OutPoint,
+        spent_by: dashcore::Txid,
+        height: Option<CoreBlockHeight>,
+    },
+
     /// Asset-lock coin selection came up short, so a host (and ultimately the
     /// wallet UI) can render a precise shortfall instead of a stringly-typed
-    /// "Insufficient funds" message (dashpay/platform#4073).
+    /// "Insufficient funds" message.
     ///
     /// What `available` covers depends on the build's funding form. An
     /// exact-amount build funds from a POOLED source list — the default
@@ -503,6 +768,41 @@ pub enum PlatformWalletError {
         wallet_id: String,
     },
 
+    #[error(
+        "Seed-binding check for wallet {wallet_id} did not answer within the \
+         caller's deadline (refusing to derive through a provider that was \
+         never checked)"
+    )]
+    /// The contact-crypto provider did not return the BIP44 account-0 xpub
+    /// before the deadline the caller supplied — a stalled host Keychain /
+    /// Keystore, or a budget already spent by the time the gated pass was
+    /// reached. Distinct from [`Self::SeedMismatch`], which is a *proven*
+    /// wrong seed: this one proves nothing either way, which is why it is
+    /// refused just as firmly. The check derives nothing and commits nothing,
+    /// so the queue survives for the next signer-present pass.
+    SeedBindingUnanswered {
+        /// Hex of the wallet id whose binding could not be established.
+        wallet_id: String,
+    },
+
+    #[error(
+        "Contact-request sync reached none of the wallet's {identities} identities \
+         (Platform unreachable) — the pass did not complete"
+    )]
+    /// A contact-request pass had identities to fetch for and could not read a
+    /// single one of them. Distinct from an empty success, which means
+    /// "Platform answered, and there is nothing new": this one means we do not
+    /// know, so the caller must not record the pass as completed.
+    ///
+    /// The sweep's per-identity log-and-continue collapsed the two, so a DAPI
+    /// outage returned `Ok(vec![])` and a startup sequence recorded a
+    /// successful contact sync — then reported `Ready`, promising that every
+    /// contact's DIP-15 addresses existed before Core SPV started.
+    ContactSyncUnreachable {
+        /// Identities the pass tried, and failed, to fetch for.
+        identities: usize,
+    },
+
     #[error("SPV is already running — stop it before starting again")]
     SpvAlreadyRunning,
 
@@ -514,6 +814,21 @@ pub enum PlatformWalletError {
 
     #[error("Token operation failed: {0}")]
     TokenError(String),
+
+    /// A token state transition failed inside the SDK. Unlike
+    /// [`Self::TokenError`] it keeps the `dash_sdk::Error` instead of
+    /// rendering it, so a consensus rejection stays reachable through
+    /// [`Self::consensus_error`] and the FFI boundary can hand hosts its
+    /// numeric code rather than leaving them to match the message. The
+    /// `Display` text is what `TokenError` rendered for the same failure.
+    /// Build it with [`Self::token_operation_failed`].
+    #[error("Token operation failed: Token {operation} failed: {source}")]
+    TokenOperationFailed {
+        /// The operation as it reads in the message: `claim`, `mint`, …
+        operation: &'static str,
+        #[source]
+        source: dash_sdk::Error,
+    },
 
     #[error("Timed out waiting for finality proof for outpoint {0}")]
     /// IS-lock did not propagate within `wait_for_proof`'s deadline.
@@ -566,6 +881,22 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// A previous identity-funded shield is unresolved. This new call did not
+    /// build or broadcast a transaction; wait for the original payment's sync.
+    #[error("Identity {} has an unresolved shielded debit; this request was not started. Wait for shielded sync", hex::encode(identity_id))]
+    ShieldedIdentityDebitPending { identity_id: [u8; 32] },
+
+    /// Durable recovery data cannot safely identify or reconstruct a payment.
+    #[error("shielded recovery record is damaged (account {account_index:?}): {reason}; restore a known-good backup or inspect recovery records before explicitly accepting an unknown payment outcome")]
+    ShieldedRecoveryCorrupted {
+        account_index: Option<u32>,
+        reason: String,
+    },
+
+    /// An unresolved payment still needs compatible account viewing keys.
+    #[error("shielded account {account_index} is required for payment recovery: {reason}; restore its original viewing keys or inspect the unresolved payment before choosing recovery")]
+    ShieldedRecoveryKeysRequired { account_index: u32, reason: String },
+
     /// A shielded transition (`operation` is `"shield"`, `"unshield"`, `"transfer"` or
     /// `"withdraw"`) was **broadcast and accepted by the relay**, but the SDK could not confirm
     /// its execution result (the result-proof fetch/verify failed — e.g. a transient DAPI/proof
@@ -580,7 +911,7 @@ pub enum PlatformWalletError {
     /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
     /// carries the derived identity id so the caller can hold the registration slot.
     #[error(
-        "Shielded {operation} broadcast succeeded but its execution result could not be \
+        "Shielded {operation} was submitted but its execution result could not be \
          confirmed; it may already be executed on chain — do not re-submit \
          (the next sync reconciles the outcome): {reason}"
     )]
@@ -654,6 +985,78 @@ pub enum PlatformWalletError {
     ShieldedNotBound,
 }
 
+impl PlatformWalletError {
+    /// A persister `load` failed.
+    ///
+    /// There is deliberately no blanket `From<PersistenceError>`: the
+    /// conversion is undecidable from the value, because a `PersistenceError`
+    /// does not record whether a load, a store or a flush produced it, so an
+    /// inferred one would silently label failed writes as failed reads. Pick
+    /// the constructor naming the operation that actually failed.
+    pub fn from_load_failure(source: crate::changeset::PersistenceError) -> Self {
+        Self::PersisterLoad(source)
+    }
+
+    /// A persister `store` failed. See [`Self::from_load_failure`] for why no
+    /// blanket conversion exists.
+    ///
+    /// `persister` is the one that failed: this is where the "transient means
+    /// nothing was committed, so re-issue it" promise is MADE — to the caller,
+    /// and across the C ABI as `ErrorPersisterStoreTransient` — so this is
+    /// where it is enforced. A `Transient` classification is narrowed to
+    /// `Fatal` unless the persister attests
+    /// [`store_transient_is_reissuable`](crate::changeset::PlatformWalletPersistence::store_transient_is_reissuable),
+    /// which is fail-closed. The `#[source]` chain survives the narrowing.
+    pub fn from_store_failure<P>(persister: &P, source: crate::changeset::PersistenceError) -> Self
+    where
+        P: crate::changeset::PlatformWalletPersistence + ?Sized,
+    {
+        use crate::changeset::PersistenceErrorKind;
+        let source = match source.kind() {
+            Some(PersistenceErrorKind::Transient) if !persister.store_transient_is_reissuable() => {
+                source.with_kind(PersistenceErrorKind::Fatal)
+            }
+            _ => source,
+        };
+        Self::PersisterStore(source)
+    }
+
+    /// Restoring persisted platform-address state failed. Boxes `source`, so
+    /// callers never write `Box::new`.
+    pub fn from_restore_failure(source: PlatformWalletError) -> Self {
+        Self::PersisterRestore(Box::new(source))
+    }
+
+    /// A token state transition failed in the SDK.
+    ///
+    /// A structured key-unavailable signer failure is kept verbatim under
+    /// [`Self::Sdk`] so the FFI boundary can still restore code 31 (see
+    /// [`preserve_signer_key_unavailable_or`]); every other failure becomes
+    /// [`Self::TokenOperationFailed`], which keeps `source` rather than
+    /// formatting it away.
+    pub fn token_operation_failed(operation: &'static str, source: dash_sdk::Error) -> Self {
+        preserve_signer_key_unavailable_or(source, |source| Self::TokenOperationFailed {
+            operation,
+            source,
+        })
+    }
+
+    /// The consensus error Platform rejected the operation with, when this
+    /// error still carries the `dash_sdk::Error` that holds one.
+    ///
+    /// `None` for the variants that stringified their cause, and for the
+    /// typed promotions (`AddressNonceMismatch`, `DocumentNotForSale`, …),
+    /// which keep the values they need and have FFI codes of their own.
+    pub fn consensus_error(&self) -> Option<&ConsensusError> {
+        match self {
+            Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
+                consensus_error_of(source)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Check whether an SDK error indicates that an InstantSend lock proof was
 /// rejected by Platform (e.g. the IS lock has expired).
 ///
@@ -662,19 +1065,26 @@ pub enum PlatformWalletError {
 /// (typically because the quorum that signed it has rotated out).
 pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
     use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
 
-    let consensus_error = match error {
-        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
-            broadcast_err.cause.as_ref()
-        }
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        _ => None,
-    };
     matches!(
-        consensus_error,
+        consensus_error_of(error),
         Some(ConsensusError::BasicError(
             BasicError::InvalidInstantAssetLockProofSignatureError(_),
+        ))
+    )
+}
+
+/// Check whether an SDK error is Platform rejecting a ChainLock asset-lock
+/// proof because the funding transaction is not in a block at or below the
+/// proof's height (`InvalidAssetLockProofTransactionHeightError`) — the proof
+/// named a height the transaction was not mined at.
+pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -> bool {
+    use dpp::consensus::basic::BasicError;
+
+    matches!(
+        consensus_error_of(error),
+        Some(ConsensusError::BasicError(
+            BasicError::InvalidAssetLockProofTransactionHeightError(_),
         ))
     )
 }
@@ -735,7 +1145,6 @@ pub fn as_asset_lock_proof_cl_height_too_low(
     error: &dash_sdk::Error,
 ) -> Option<&dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError> {
     use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
 
     let consensus_error = match error {
         dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
@@ -763,7 +1172,6 @@ pub fn as_asset_lock_proof_cl_height_too_low(
 /// recurses into — staying in lockstep with `broadcast_definitely_failed`.
 pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInvalidNonceError> {
     use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
 
     let consensus_error = match error {
         dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
@@ -813,7 +1221,7 @@ pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWal
 /// matchers below; the same coverage caveat as
 /// [`as_asset_lock_proof_cl_height_too_low`] applies (re-audit when
 /// `dash_sdk::Error` gains consensus-carrying variants).
-fn consensus_error_of(error: &dash_sdk::Error) -> Option<&dpp::consensus::ConsensusError> {
+fn consensus_error_of(error: &dash_sdk::Error) -> Option<&ConsensusError> {
     match error {
         dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
             broadcast_err.cause.as_ref()
@@ -838,7 +1246,6 @@ pub fn is_asset_lock_already_consumed(
     out_point: &dashcore::OutPoint,
 ) -> bool {
     use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
 
     matches!(
         consensus_error_of(error),
@@ -864,7 +1271,6 @@ pub fn is_asset_lock_already_consumed(
 /// in charge.
 pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
     use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
 
     match consensus_error_of(error)? {
         ConsensusError::StateError(StateError::DocumentNotForSaleError(e)) => {
@@ -879,6 +1285,26 @@ pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformW
                 actual: e.actual_price(),
             })
         }
+        ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_)) => {
+            promote_identity_insufficient_balance(error)
+        }
+        _ => None,
+    }
+}
+
+/// Promote Platform's `IdentityInsufficientBalanceError` — the identity's
+/// balance cannot cover the amount plus the transition's minimum fee — to
+/// the typed [`PlatformWalletError::InsufficientIdentityCredits`], carrying
+/// Platform's own `required` / `available` figures.
+///
+/// Returns `None` for anything else, leaving the caller's fallback mapping
+/// in charge.
+pub fn promote_identity_insufficient_balance(
+    error: &dash_sdk::Error,
+) -> Option<PlatformWalletError> {
+    use dpp::consensus::state::state_error::StateError;
+
+    match consensus_error_of(error)? {
         ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(e)) => {
             Some(PlatformWalletError::InsufficientIdentityCredits {
                 identity_id: *e.identity_id(),
@@ -888,6 +1314,20 @@ pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformW
         }
         _ => None,
     }
+}
+
+/// Map an identity-funded credit transition's SDK error (withdrawal,
+/// transfer to addresses) to a [`PlatformWalletError`]: a balance refusal
+/// first ([`promote_identity_insufficient_balance`]), then the structured
+/// signer-key-unavailable preservation, then the caller's `wrap` fallback.
+pub fn promote_identity_insufficient_balance_or(
+    error: dash_sdk::Error,
+    wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
+) -> PlatformWalletError {
+    if let Some(promoted) = promote_identity_insufficient_balance(&error) {
+        return promoted;
+    }
+    preserve_signer_key_unavailable_or(error, wrap)
 }
 
 /// Map a document-trade transition's SDK error to a [`PlatformWalletError`]:
@@ -921,7 +1361,7 @@ pub fn promote_document_trade_error_or(
 /// error, yet is deliberately kept free of any dependency on the FFI crate.
 /// The two definitions are pinned byte-identical by a compile-time assertion in
 /// `platform-wallet-ffi` (`src/error.rs`), so any drift is a build failure
-/// rather than a silent code-31 regression (dashpay/platform#4183 review).
+/// rather than a silent code-31 regression.
 pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: ";
 
 /// Preserve a structured `SigningKeyUnavailable` signer failure through an
@@ -943,7 +1383,7 @@ pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: "
 /// The check is **structural and position-0 only** (the marker must start the
 /// nested `ProtocolError::Generic` payload); it is never a substring sniff of
 /// the rendered error, so a foreign signer that merely mentions the token is
-/// not misrouted into key repair (dashpay/platform#4183 review). This mirrors
+/// not misrouted into key repair. This mirrors
 /// the guarded restore already performed by the FFI conversion.
 pub fn preserve_signer_key_unavailable_or(
     error: dash_sdk::Error,
@@ -957,6 +1397,109 @@ pub fn preserve_signer_key_unavailable_or(
         PlatformWalletError::Sdk(error)
     } else {
         wrap(error)
+    }
+}
+
+#[cfg(test)]
+mod token_operation_failed_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::state::token::TokenOncePerIdentityDistributionAlreadyClaimedError;
+
+    fn already_claimed() -> ConsensusError {
+        ConsensusError::from(TokenOncePerIdentityDistributionAlreadyClaimedError::new(
+            Identifier::from([1u8; 32]),
+            Identifier::from([2u8; 32]),
+            1_758_140_722_000,
+        ))
+    }
+
+    /// The wait-stream shape a state rejection arrives in: the claim was
+    /// accepted by CheckTx and rejected at block execution.
+    fn broadcast_rejection(cause: ConsensusError) -> dash_sdk::Error {
+        dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: cause.code(),
+            message: cause.to_string(),
+            cause: Some(cause),
+        })
+    }
+
+    #[test]
+    fn should_keep_the_consensus_error_of_a_rejected_token_operation() {
+        let error = PlatformWalletError::token_operation_failed(
+            "claim",
+            broadcast_rejection(already_claimed()),
+        );
+
+        let consensus_error = error.consensus_error().expect("consensus error kept");
+        assert_eq!(consensus_error.code(), 40722);
+        assert!(matches!(
+            consensus_error,
+            ConsensusError::StateError(
+                StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(_)
+            )
+        ));
+    }
+
+    /// The CheckTx shape, and the dapi-client's exhausted-retry envelope
+    /// around it.
+    #[test]
+    fn should_find_the_consensus_error_in_every_sdk_error_shape() {
+        let check_tx = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            already_claimed(),
+        )));
+        let enveloped =
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(dash_sdk::Error::Protocol(
+                dpp::ProtocolError::ConsensusError(Box::new(already_claimed())),
+            )));
+
+        for source in [check_tx, enveloped] {
+            let error = PlatformWalletError::token_operation_failed("claim", source);
+            assert_eq!(error.consensus_error().map(|e| e.code()), Some(40722));
+        }
+        // An SDK error propagated with `?` carries it too.
+        let propagated = PlatformWalletError::from(broadcast_rejection(already_claimed()));
+        assert_eq!(propagated.consensus_error().map(|e| e.code()), Some(40722));
+    }
+
+    /// Hosts and logs already see this text for a failed token operation, so
+    /// keeping the SDK error must not reword it.
+    #[test]
+    fn should_render_the_text_token_error_rendered() {
+        let source = || dash_sdk::Error::Generic("boom".to_string());
+        let kept = PlatformWalletError::token_operation_failed("claim", source());
+        let stringified =
+            PlatformWalletError::TokenError(format!("Token claim failed: {}", source()));
+
+        assert_eq!(kept.to_string(), stringified.to_string());
+    }
+
+    #[test]
+    fn should_have_no_consensus_error_without_a_consensus_rejection() {
+        let transport = PlatformWalletError::token_operation_failed(
+            "claim",
+            dash_sdk::Error::Generic("boom".to_string()),
+        );
+        assert!(transport.consensus_error().is_none());
+
+        // A rejection that was rendered into a string is gone for good, however
+        // much its text looks like one.
+        let stringified = PlatformWalletError::TokenError(already_claimed().to_string());
+        assert!(stringified.consensus_error().is_none());
+    }
+
+    /// The key-unavailable signer failure keeps its own route to code 31.
+    #[test]
+    fn should_leave_a_key_unavailable_signer_failure_under_sdk() {
+        let error = PlatformWalletError::token_operation_failed(
+            "claim",
+            dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+                "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+            ))),
+        );
+        assert!(matches!(error, PlatformWalletError::Sdk(_)));
     }
 }
 
@@ -1002,7 +1545,7 @@ mod signer_key_unavailable_tests {
 
     /// The marker only counts at position 0: a generic error that merely
     /// mentions it mid-message is wrapped, never preserved as the typed
-    /// key-unavailable shape (dashpay/platform#4183 review).
+    /// key-unavailable shape.
     #[test]
     fn substring_marker_is_not_preserved() {
         let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
@@ -1170,6 +1713,36 @@ mod address_nonce_tests {
         assert_eq!(got.provided_nonce(), 9);
         assert_eq!(got.expected_nonce(), 10);
     }
+
+    /// The tx-height rejection is still recognised when the dapi-client wraps
+    /// it in the exhausted-retry envelope.
+    #[test]
+    fn transaction_height_rejection_is_recognised_through_the_retry_envelope() {
+        use dpp::consensus::basic::identity::InvalidAssetLockProofTransactionHeightError;
+
+        let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            dpp::consensus::ConsensusError::from(InvalidAssetLockProofTransactionHeightError::new(
+                100, None,
+            )),
+        )));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
+        assert!(is_asset_lock_proof_transaction_height_invalid(&wrapped));
+        assert!(!is_instant_lock_proof_invalid(&wrapped));
+    }
+
+    /// The InstantSend-signature rejection is still recognised when the
+    /// dapi-client wraps it in the exhausted-retry envelope.
+    #[test]
+    fn instant_proof_rejection_is_recognised_through_the_retry_envelope() {
+        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+
+        let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            dpp::consensus::ConsensusError::from(InvalidInstantAssetLockProofSignatureError::new()),
+        )));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
+        assert!(is_instant_lock_proof_invalid(&wrapped));
+        assert!(!is_asset_lock_proof_transaction_height_invalid(&wrapped));
+    }
 }
 
 #[cfg(test)]
@@ -1253,5 +1826,95 @@ mod asset_lock_already_consumed_tests {
             &unrelated_broadcast,
             &out_point()
         ));
+    }
+}
+
+#[cfg(test)]
+mod identity_insufficient_balance_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+
+    const IDENTITY: [u8; 32] = [9u8; 32];
+
+    /// The refusal a Max identity withdrawal met on testnet: the amount plus
+    /// the 0.004 DASH minimum withdrawal fee against a balance 0.002 above it.
+    fn insufficient_balance() -> ConsensusError {
+        IdentityInsufficientBalanceError::new(
+            Identifier::from(IDENTITY),
+            24_818_360_000,
+            25_018_360_000,
+        )
+        .into()
+    }
+
+    fn assert_promoted(error: PlatformWalletError) {
+        match error {
+            PlatformWalletError::InsufficientIdentityCredits {
+                identity_id,
+                required,
+                available,
+            } => {
+                assert_eq!(identity_id, Identifier::from(IDENTITY));
+                assert_eq!(required, 25_018_360_000);
+                assert_eq!(available, 24_818_360_000);
+            }
+            other => panic!("expected InsufficientIdentityCredits, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn promotes_the_check_tx_shape() {
+        let err = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            insufficient_balance(),
+        )));
+        assert_promoted(promote_identity_insufficient_balance(&err).expect("must promote"));
+    }
+
+    #[test]
+    fn promotes_the_wait_stream_shape_through_the_or_wrapper() {
+        let cause = insufficient_balance();
+        let err = dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: cause.code(),
+            message: cause.to_string(),
+            cause: Some(cause),
+        });
+        assert_promoted(promote_identity_insufficient_balance_or(err, |_| {
+            panic!("a balance refusal must not reach the fallback")
+        }));
+    }
+
+    #[test]
+    fn leaves_other_errors_to_the_fallback() {
+        let err = dash_sdk::Error::Generic("boom".to_string());
+        assert!(promote_identity_insufficient_balance(&err).is_none());
+        let wrapped = promote_identity_insufficient_balance_or(err, |e| {
+            PlatformWalletError::InvalidIdentityData(format!("Failed to withdraw credits: {e}"))
+        });
+        assert!(matches!(
+            wrapped,
+            PlatformWalletError::InvalidIdentityData(_)
+        ));
+    }
+
+    /// The withdrawal and transfer-to-addresses call sites reach code 31
+    /// through this wrapper, so a key-unavailable signer failure must come
+    /// back under `Sdk`, not promoted and not handed to the fallback.
+    #[test]
+    fn keeps_a_key_unavailable_signer_failure_under_sdk() {
+        let err = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+        )));
+        assert!(promote_identity_insufficient_balance(&err).is_none());
+        let mapped = promote_identity_insufficient_balance_or(err, |_| {
+            panic!("a key-unavailable signer failure must not reach the fallback")
+        });
+        match mapped {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))) => {
+                assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
+            }
+            other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
     }
 }

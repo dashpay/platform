@@ -24,7 +24,8 @@
           "countable": "countable",
           "rangeCountable": true,
           "rankedCountable": true,
-          "preallocated": true
+          "preallocated": true,
+          "skipIfAbsent": true
         },
         {
           "name": "byPost",
@@ -64,7 +65,7 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "post",
-            "propertyAgreement": {
+            "where": {
               "hashtag": "hashtag"
             }
           },
@@ -72,7 +73,6 @@
         }
       },
       "required": [
-        "hashtag",
         "postId"
       ],
       "additionalProperties": false
@@ -104,9 +104,6 @@
           "position": 1
         }
       },
-      "required": [
-        "hashtag"
-      ],
       "additionalProperties": false
     },
     "beat": {
@@ -319,7 +316,7 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
+            "where": {
               "topic": "topic"
             }
           }

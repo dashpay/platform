@@ -15,7 +15,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{Identity, PartialIdentity};
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -286,7 +286,7 @@ impl QueryStrategy {
                                 assert_eq!(identity, expected_identity);
                             }
                             get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Identity(data) => {
-                                let identity_id = Identity::deserialize_from_bytes(&data)
+                                let identity_id = Identity::deserialize_from_bytes_untrusted(&data)
                                     .expect("expected to deserialize identity").id();
 
                                 assert_eq!(identity_id, expected_identity.id);

@@ -295,6 +295,19 @@ public final class CoreTransactionBuilder {
         return self
     }
 
+    /// Fund the build from the inputs `addInputs` supplied, and nothing else.
+    ///
+    /// Without this, `finalizeAtomic` adds every unreserved UTXO of the funding
+    /// account to the candidate pool, so seeding a subset does not restrict what
+    /// gets selected. A caller draining an account in batches that each stay
+    /// under the standard-transaction input limit needs this, or every batch
+    /// sees the whole account and fails with a too-many-inputs error.
+    @discardableResult
+    public func useOnlyAddedInputs() throws -> CoreTransactionBuilder {
+        try core_wallet_tx_builder_use_only_added_inputs(handle).check()
+        return self
+    }
+
     @discardableResult
     public func setCurrentHeight(_ height: UInt32) throws -> CoreTransactionBuilder {
         try core_wallet_tx_builder_set_current_height(handle, height).check()

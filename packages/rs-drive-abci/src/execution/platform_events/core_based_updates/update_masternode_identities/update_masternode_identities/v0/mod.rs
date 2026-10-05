@@ -46,10 +46,10 @@ where
         // We should don't trust the order of added mns or updated mns
 
         // Sort added_mns based on pro_tx_hash
-        added_mns.sort_by(|a, b| a.pro_tx_hash.cmp(&b.pro_tx_hash));
+        added_mns.sort_by_key(|mn| mn.pro_tx_hash);
 
         // Sort updated_mns based on pro_tx_hash (the first element of the tuple)
-        updated_mns.sort_by(|a, b| a.0.cmp(&b.0));
+        updated_mns.sort_by_key(|mn| mn.0);
 
         let mut drive_operations = vec![];
 

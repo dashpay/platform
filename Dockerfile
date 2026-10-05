@@ -306,7 +306,7 @@ ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v10.4.2 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v11.8.1 --depth 1 .
 source /root/env
 
 make -j$(nproc) static_lib
@@ -401,6 +401,8 @@ COPY --parents \
     packages/token-history-contract \
     packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -523,6 +525,8 @@ COPY --parents \
     packages/token-history-contract \
     packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -705,6 +709,8 @@ COPY --parents \
     packages/token-history-contract \
     packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
     packages/data-contracts \
@@ -847,6 +853,8 @@ COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packa
 COPY --from=build-dashmate-helper /platform/packages/token-history-contract packages/token-history-contract
 COPY --from=build-dashmate-helper /platform/packages/document-history-contract packages/document-history-contract
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
+COPY --from=build-dashmate-helper /platform/packages/app-connect-contract packages/app-connect-contract
+COPY --from=build-dashmate-helper /platform/packages/moderation-charters-contract packages/moderation-charters-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
@@ -950,6 +958,8 @@ COPY --parents \
     packages/token-history-contract \
     packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \

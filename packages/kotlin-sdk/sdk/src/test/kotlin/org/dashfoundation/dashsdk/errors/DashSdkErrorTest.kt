@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.errors
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,6 +29,34 @@ class DashSdkErrorTest {
             val mapped = DashSdkError.fromNative(DashSDKException(code, "boom"))
             assertEquals("code $code", expected, mapped::class)
             assertEquals("boom", mapped.message)
+        }
+    }
+
+    @Test
+    fun shouldPreserveShieldedIdentityDebitPendingWithoutClaimingSubmission() {
+        val message = "Identity has an unresolved shielded debit; " +
+            "this request was not started. Wait for shielded sync"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 55, message)
+        val mapped = DashSdkError.fromNative(native)
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedIdentityDebitPending)
+        assertEquals(message, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertFalse("wait for the earlier debit to reconcile before retrying", mapped.isRetryable)
+    }
+
+    @Test
+    fun shouldPreserveRecoveryErrorTypesWithoutRetryingBlindly() {
+        for ((code, expected) in mapOf(
+            56 to DashSdkError.PlatformWallet.ShieldedRecoveryCorrupted::class,
+            57 to DashSdkError.PlatformWallet.ShieldedRecoveryKeysRequired::class,
+        )) {
+            val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, "record unreadable")
+            val mapped = DashSdkError.fromNative(native)
+            assertEquals(expected, mapped::class)
+            assertEquals("record unreadable", mapped.message)
+            assertEquals(native, mapped.cause)
+            assertFalse(mapped.isRetryable)
         }
     }
 
@@ -218,6 +247,130 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun persisterCodes49Through54MapTypedWithCorrectRetryability() {
+        // The whole point of the persister block: a host must be able to tell
+        // a busy store from a corrupt one WITHOUT parsing the message. Before
+        // these codes all three wallet variants flattened to ErrorUnknown and
+        // the classification died at the boundary.
+        val cases = listOf(
+            Triple(49, DashSdkError.PlatformWallet.PersisterLoadTransient::class.java, true),
+            Triple(50, DashSdkError.PlatformWallet.PersisterLoadFatal::class.java, false),
+            Triple(51, DashSdkError.PlatformWallet.PersisterStoreTransient::class.java, true),
+            Triple(52, DashSdkError.PlatformWallet.PersisterStoreFatal::class.java, false),
+            Triple(53, DashSdkError.PlatformWallet.PersisterStoreConstraint::class.java, false),
+            Triple(54, DashSdkError.PlatformWallet.PersisterRestore::class.java, false),
+        )
+
+        for ((code, type, retryable) in cases) {
+            val message = "persistence backend error from code $code"
+            val mapped = DashSdkError.fromNative(
+                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, message),
+            )
+
+            assertTrue(
+                "code $code must not fall through to Generic",
+                type.isInstance(mapped),
+            )
+            assertEquals(message, mapped.message)
+            assertEquals(
+                "code $code retryability is part of its contract",
+                retryable,
+                mapped.isRetryable,
+            )
+        }
+    }
+
+    @Test
+    fun persisterCodesSplitUserMessageFromDiagnosticMessage() {
+        // The native message is a nested Rust error chain naming the
+        // operation, the backend classification and the store's phrasing. It
+        // must stay on `message` for logs and must never be what a UI shows;
+        // `userMessage` is the displayable half, and a failed write must not
+        // be described to a person as a failed read.
+        val chain = "failed to persist wallet registration changeset: " +
+            "persistence backend error (Transient): database is locked"
+        val busy = "The wallet database is busy. Try again in a moment."
+        val unreadable = "The wallet data could not be read and may need to be restored."
+        val unsaved = "The wallet data could not be saved and may need to be restored."
+        val expected = mapOf(
+            49 to busy,
+            50 to unreadable,
+            51 to busy,
+            52 to unsaved,
+            53 to unsaved,
+            54 to unreadable,
+        )
+
+        expected.forEach { (code, userMessage) ->
+            val mapped = DashSdkError.fromNative(
+                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, chain),
+            )
+
+            assertEquals("code $code user text", userMessage, mapped.userMessage)
+            assertEquals("code $code must keep the chain for logs", chain, mapped.message)
+        }
+    }
+
+    @Test
+    fun assetLockInputConflictCode47MapsTyped() {
+        // TERMINAL and RESERVED: no native path emits it today (that needs a
+        // finalized-ancestry proof the wallet cannot make), so this drives
+        // the mapping with a hand-built exception. The arm must stay wired —
+        // if a future emitter ships, the code must not fall through to
+        // Generic and leave the host unable to classify a dead lock.
+        val message =
+            "Asset lock a:0 can never confirm: it spends b:1, which was already spent by " +
+                "confirmed transaction c (block height Some(1234), chainlocked: true) — " +
+                "the lock is a double spend and no peer will relay it"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 47,
+                message,
+            ),
+        )
+
+        assertTrue(
+            "code 47 must not fall through to Generic",
+            mapped is DashSdkError.PlatformWallet.AssetLockInputConflict,
+        )
+        assertEquals(message, mapped.message)
+        assertFalse(
+            "AssetLockInputConflict is terminal — rebuild from unspent inputs, do not retry",
+            mapped.isRetryable,
+        )
+    }
+
+    @Test
+    fun assetLockInputContestedCode48MapsTypedAndRetryable() {
+        // PROVISIONAL, and the ONLY double-spend verdict the native side
+        // emits: the wallet cannot prove the confirmed spender's block is on
+        // the finalized chain, so the host keeps the tracked lock and retries
+        // later. It must never be treated as the reserved 47's discard
+        // licence, and it must never fall through to Generic.
+        val message =
+            "Asset lock a:0 cannot currently confirm: it spends b:1, which confirmed " +
+                "transaction c (block height Some(1234)) has taken — the verdict is " +
+                "provisional (the wallet cannot prove the spender's finality); keep " +
+                "the lock and retry later"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 48,
+                message,
+            ),
+        )
+
+        assertTrue(
+            "code 48 must not fall through to Generic",
+            mapped is DashSdkError.PlatformWallet.AssetLockInputContested,
+        )
+        assertEquals(message, mapped.message)
+        assertTrue(
+            "AssetLockInputContested is provisional — keep the lock and retry later",
+            mapped.isRetryable,
+        )
+    }
+
+    @Test
     fun signingKeyUnavailableCode31MapsTyped() {
         // The STRUCTURED discriminator (dashpay/platform#4060 finding 7):
         // PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable (31) maps
@@ -319,5 +472,85 @@ class DashSdkErrorTest {
         assertTrue(error is DashSdkError.PlatformWallet.NotFound)
         assertFalse(error is DashSdkError.NotFound)
         assertEquals("wallet not found", (error as DashSdkError).message)
+    }
+
+    @Test
+    fun shouldSurfaceTheConsensusErrorOfARejectedTokenOperation() {
+        // What the JNI bridge throws for a claim Platform rejected as already
+        // claimed: ErrorUnknown (99), consensus code 40722, kind State (4).
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 99,
+            "Token operation failed: Token claim failed: state transition broadcast error",
+            40722,
+            4,
+        )
+        val mapped = DashSdkError.fromNative(native)
+
+        // The consensus error rides along; the type and message are what they
+        // were without it.
+        assertTrue(mapped is DashSdkError.PlatformWallet.Generic)
+        assertEquals(native.message, mapped.message)
+        assertEquals(
+            PlatformConsensusError(40722, ConsensusErrorKind.STATE),
+            mapped.consensusError,
+        )
+    }
+
+    @Test
+    fun shouldMapEveryNativeConsensusErrorKind() {
+        val kinds = mapOf(
+            1 to ConsensusErrorKind.BASIC,
+            2 to ConsensusErrorKind.SIGNATURE,
+            3 to ConsensusErrorKind.FEE,
+            4 to ConsensusErrorKind.STATE,
+            // A family this build does not know keeps its code.
+            9 to ConsensusErrorKind.UNKNOWN,
+        )
+        kinds.forEach { (native, expected) ->
+            val error = DashSdkError.fromNative(DashSDKException(1099, "rejected", 10000, native))
+            assertEquals(PlatformConsensusError(10000, expected), error.consensusError)
+        }
+    }
+
+    @Test
+    fun shouldHaveNoConsensusErrorWithoutAConsensusRejection() {
+        val plain = DashSdkError.fromNative(
+            DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 99, "code 40722 in text only"),
+        )
+        assertNull(plain.consensusError)
+        // An SDK error raised on the Kotlin side has no native cause at all.
+        assertNull(DashSdkError.InvalidParameter("bad argument").consensusError)
+    }
+
+    @Test
+    fun shouldSurfaceTheConsensusErrorOfAStateTransitionPlatformRejected() {
+        // What the JNI bridge throws for an rs-sdk-ffi DashSDKError Platform
+        // refused under a propertyConstraints rule: ProtocolError (5),
+        // consensus code 10422, kind Basic (1).
+        val native = DashSDKException(
+            5,
+            "Protocol error: document violates propertyConstraints rule 0",
+            10422,
+            1,
+        )
+        val mapped = DashSdkError.fromNative(native)
+
+        // The consensus error rides along; the type and message are what the
+        // code alone maps to.
+        assertTrue(mapped is DashSdkError.ProtocolError)
+        assertEquals(native.message, mapped.message)
+        assertEquals(
+            PlatformConsensusError(10422, ConsensusErrorKind.BASIC),
+            mapped.consensusError,
+        )
+    }
+
+    @Test
+    fun shouldHaveNoConsensusErrorForAnSdkFailureThatWasNotARejection() {
+        val plain = DashSdkError.fromNative(
+            DashSDKException(99, "Internal error: Failed to mint token and wait: timed out"),
+        )
+        assertTrue(plain is DashSdkError.InternalError)
+        assertNull(plain.consensusError)
     }
 }

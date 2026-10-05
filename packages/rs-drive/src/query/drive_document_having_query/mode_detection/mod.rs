@@ -31,6 +31,23 @@ use dpp::version::PlatformVersion;
 /// `platform_version.drive.methods.document.query.detect_having_mode`;
 /// today only `0` is defined and maps to [`detect_having_mode_v0`]
 /// verbatim.
+///
+/// # Parameters
+///
+/// * `select`: The selected aggregate (`COUNT(*)`, `SUM(f)` or `AVG(f)`).
+/// * `group_by`: The `GROUP BY` properties; exactly one is accepted.
+/// * `having`: The `HAVING` clauses; exactly one, on the selected aggregate, is accepted.
+/// * `order_by`: The `ORDER BY` clauses; at most one, naming the selected aggregate.
+/// * `where_clauses`: The `WHERE` clauses pinning the covering index's leading properties.
+/// * `pagination`: The request's limit, offset and whether it carried a start cursor.
+/// * `platform_version`: The platform version.
+///
+/// # Returns
+///
+/// * `Ok(DocumentHavingMode)` with the inclusive bounds, the direction, the limit, the group
+///   property, the aggregate field and the prefix pins.
+/// * `Err(Error)` with a query syntax error when the method version is unknown or the request
+///   falls outside the accepted grammar.
 #[allow(clippy::too_many_arguments)]
 pub fn detect_having_mode(
     select: &SelectProjection,

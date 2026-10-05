@@ -1,8 +1,25 @@
 import DashSDKFFI
-import SwiftDashSDK
 import XCTest
 
+@testable import SwiftDashSDK
+
+/// These tests run against the FFI mock SDK, never a live network: unit
+/// tests must not depend on the network (a halted testnet failed every CI
+/// run while they did). The live testnet read is opt-in, in
+/// SwiftDashSDKIntegrationTests/Platform/TestnetIdentityFetchTests.swift.
 final class SDKMethodTests: XCTestCase {
+
+  /// A directory of rs-sdk's recorded offline vectors
+  /// (packages/rs-sdk/tests/vectors/<name>).
+  private static func rsSdkVectors(_ name: String) -> String {
+    URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()  // SwiftDashSDKTests
+      .deletingLastPathComponent()  // SwiftTests
+      .deletingLastPathComponent()  // swift-sdk
+      .deletingLastPathComponent()  // packages
+      .appendingPathComponent("rs-sdk/tests/vectors/\(name)", isDirectory: true)
+      .path
+  }
 
   func testSDKMethodsAvailability() {
     print("=== Testing SDK Methods Availability ===")
@@ -29,83 +46,79 @@ final class SDKMethodTests: XCTestCase {
 
   @MainActor
   func testDirectMethodCall() async throws {
-    print("=== Testing Direct Method Call ===")
-
-    // Initialize SDK
+    // Mock SDK with no vectors: a request that got as far as DAPI would fail
+    // with a missing-expectation error instead of reaching the network.
     SDK.initialize()
-    let sdk = try SDK(network: .testnet)
+    let sdk = try SDK(mockVectorsDirectory: nil)
 
-    print("SDK created: \(sdk)")
-    print("SDK handle: \(String(describing: sdk.handle))")
-    print("SDK type: \(type(of: sdk))")
+    // Create a dummy identity
+    let identity = DPPIdentity(
+      id: Data(repeating: 0, count: 32),
+      publicKeys: [:],
+      balance: 0,
+      revision: 0
+    )
 
-    // Test if we can call identityTransferCredits without crashing
-    do {
-      print("Attempting to call identityTransferCredits...")
-      let toId = "test2"
-      let amount: UInt64 = 1
-      let key = Data(repeating: 0, count: 32)
-
-      // Create a dummy identity
-      let identity = DPPIdentity(
-        id: Data(repeating: 0, count: 32),
-        publicKeys: [:],
-        balance: 0,
-        revision: 0
+    // Any non-zero scalar below the curve order is a valid key. Zero is not:
+    // signer creation would fail and skip the call under test.
+    let key = Data(repeating: 1, count: 32)
+    let signerResult = key.withUnsafeBytes { keyBytes in
+      dash_sdk_signer_create_from_private_key(
+        keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+        UInt(key.count),
+        Network.testnet.ffiValue
       )
+    }
+    if let error = signerResult.error {
+      let sdkError = SDKError.fromDashSDKError(error.pointee)
+      dash_sdk_error_free(error)
+      XCTFail("Failed to create signer: \(sdkError)")
+      return
+    }
+    let signer = try XCTUnwrap(signerResult.data)
+    defer {
+      dash_sdk_signer_destroy(OpaquePointer(signer))
+    }
 
-      // Create signer from private key
-      let signerResult = key.withUnsafeBytes { keyBytes in
-        dash_sdk_signer_create_from_private_key(
-          keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-          UInt(key.count),
-          Network.testnet.ffiValue
-        )
-      }
-
-      guard signerResult.error == nil,
-        let signer = signerResult.data
-      else {
-        print("Failed to create signer")
-        return
-      }
-
-      defer {
-        dash_sdk_signer_destroy(OpaquePointer(signer))
-      }
-
-      let signerPtr = OpaquePointer(signer)
+    // "test2" is not a 32-byte Base58 identifier, so the FFI must refuse it
+    // before building a transition, let alone broadcasting one.
+    do {
       _ = try await sdk.transferCredits(
         from: identity,
-        toIdentityId: toId,
-        amount: amount,
-        signer: signerPtr
+        toIdentityId: "test2",
+        amount: 1,
+        signer: OpaquePointer(signer)
       )
-      XCTFail("transferCredits should fail with dummy data")
-    } catch {
-      // Expected: dummy data causes an error
+      XCTFail("transferCredits should reject the malformed recipient id")
+    } catch SDKError.internalError(let message) {
+      XCTAssertTrue(
+        message.contains("Invalid to_identity_id"),
+        "expected the recipient id to be refused, got: \(message)"
+      )
     }
   }
 
+  /// Fetches an identity through `identityGet` from rs-sdk's recorded
+  /// `test_identity_read` vectors: the mock replays the recorded DAPI
+  /// response, the SDK verifies its proof against the recorded quorum key,
+  /// and the identity is decoded into the Swift result.
+  @MainActor
   func testSimpleIdentityFetch() async throws {
-    print("=== Testing Simple Identity Fetch ===")
+    let vectors = Self.rsSdkVectors("test_identity_read")
+    guard FileManager.default.fileExists(atPath: vectors) else {
+      XCTFail("missing rs-sdk offline vectors at \(vectors)")
+      return
+    }
 
     SDK.initialize()
-    let sdk = try SDK(network: .testnet)
+    let sdk = try SDK(mockVectorsDirectory: vectors)
 
-    do {
-      // Use a known testnet identity
-      let testIdentityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"
-      print("Fetching identity: \(testIdentityId)")
+    // The vectors record identity [1; 32], rs-sdk's IDENTITY_ID_1.
+    let identityId = Data(repeating: 1, count: 32).toBase58()
+    let identity = try await sdk.identityGet(identityId: identityId)
 
-      try await Task { @MainActor in
-        let identity = try await sdk.identityGet(identityId: testIdentityId)
-        print("✅ Identity fetched successfully")
-        print("Identity keys: \(identity.keys.sorted())")
-      }.value
-    } catch {
-      print("❌ Failed to fetch identity: \(error)")
-      throw error
-    }
+    XCTAssertEqual(identity["id"] as? String, identityId)
+    let publicKeys = try XCTUnwrap(identity["publicKeys"] as? [[String: Any]])
+    XCTAssertFalse(publicKeys.isEmpty, "the recorded identity has public keys")
   }
 }

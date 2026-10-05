@@ -1,5 +1,9 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
+use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::DocumentType;
 
 use crate::consensus::basic::document::{
@@ -25,10 +29,18 @@ pub trait DataContractDocumentValidationMethodsV0 {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 
+    /// Validates a document's properties, `value`, against its document type: the
+    /// schema, the string byte caps and the `propertyConstraints` rules. `system` holds
+    /// the system values of the document version being written, what a rule's `$ownerId`
+    /// and system times and heights read: an owner the caller does not know equals no
+    /// identifier, and a rule reading a time or height it does not know is not judged.
+    /// Consensus passes the writer and the block's time and heights on create, and the
+    /// stored ones where a replace keeps them.
     fn validate_document_properties(
         &self,
         name: &str,
         value: Value,
+        system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
@@ -39,6 +51,7 @@ impl DataContract {
         &self,
         name: &str,
         value: Value,
+        system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let Some(document_type) = self.document_type_optional_for_name(name) else {
@@ -90,6 +103,34 @@ impl DataContract {
             ));
         }
 
+        // Added in place at protocol version 14, inert before it: the meta-schemas there
+        // refuse `maxBytes`, their parser ignores it (`apply_max_bytes` is `None`, so no
+        // string carries a byte cap) and `validate_max_bytes` is `None`, so the check returns
+        // an empty result. Computed before the JSON conversion consumes `value`; reported
+        // only when the schema validation passes, so a schema error keeps precedence.
+        let max_bytes_result =
+            document_type.validate_max_bytes_properties(&value, platform_version)?;
+
+        // Added in place at protocol version 14, inert before it: the meta-schemas there
+        // refuse `generatedFrom`, their parser ignores it (`apply_generated_from` is
+        // `None`, so no property carries a declaration) and `validate_generated_from` is
+        // `None`, so the check returns an empty result without reading `value`. Computed and
+        // reported like `maxBytes`, after it, so a schema error keeps precedence and every
+        // value it compares is known to be a string.
+        let generated_from_result =
+            document_type.validate_generated_from_properties(&value, platform_version)?;
+
+        // Added in place at protocol version 14, inert for every earlier version that
+        // selects this generation: `validate_property_constraints` is `None` in all of their
+        // tables, so the call returns an empty result without reading `value`. (Only parser
+        // generation 3 reads `propertyConstraints` at all; meta-schema v0, protocol versions
+        // 1 to 11, leaves the document type level open, so the version gate is the proof,
+        // not the meta-schemas.) Computed and reported like `maxBytes`, after it, so a
+        // schema error keeps precedence and every value a rule reads is known to be an
+        // integer.
+        let property_constraints_result =
+            document_type.validate_property_constraints(&value, system, platform_version)?;
+
         let json_value = match value.try_into_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
@@ -100,7 +141,7 @@ impl DataContract {
         };
 
         // Compile json schema validator if it's not yet compiled
-        if !validator.is_compiled(platform_version)? {
+        let schema_result = if !validator.is_compiled(platform_version)? {
             // It is normal that we get a protocol error here, since the document type is coming
             // from the state
             let root_schema = DocumentType::enrich_with_base_schema(
@@ -115,10 +156,21 @@ impl DataContract {
                 .try_to_validating_json()
                 .map_err(ProtocolError::ValueError)?;
 
-            validator.compile_and_validate(&root_json_schema, &json_value, platform_version)
+            validator.compile_and_validate(&root_json_schema, &json_value, platform_version)?
         } else {
-            validator.validate(&json_value, platform_version)
+            validator.validate(&json_value, platform_version)?
+        };
+        if !schema_result.is_valid() {
+            return Ok(schema_result);
         }
+        if !max_bytes_result.is_valid() {
+            return Ok(max_bytes_result);
+        }
+        if !generated_from_result.is_valid() {
+            return Ok(generated_from_result);
+        }
+
+        Ok(property_constraints_result)
     }
 
     #[inline(always)]
@@ -129,7 +181,12 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // Validate user defined properties
-        self.validate_document_properties_v0(name, document.properties().into(), platform_version)
+        self.validate_document_properties_v0(
+            name,
+            document.properties().into(),
+            &DocumentSystemValues::of_document(document),
+            platform_version,
+        )
     }
 }
 
@@ -140,6 +197,7 @@ mod tests {
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::data_contract::created_data_contract::CreatedDataContract;
+    use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
     use crate::tests::fixtures::get_data_contract_fixture;
     use platform_value::Value;
     use platform_version::version::PlatformVersion;
@@ -177,7 +235,12 @@ mod tests {
         );
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         let Some(ConsensusError::BasicError(BasicError::ValueError(ValueError { .. }))) =
@@ -210,7 +273,12 @@ mod tests {
         );
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         assert!(matches!(
@@ -231,7 +299,12 @@ mod tests {
         )]);
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         assert!(

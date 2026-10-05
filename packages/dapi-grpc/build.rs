@@ -10,6 +10,7 @@ use tonic_prost_build::Builder;
 const SERDE_WITH_BYTES: &str = r#"#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]"#;
 const SERDE_WITH_BASE64: &str =
     r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::vec_base64string"))]"#;
+const SERDE_DEFAULT: &str = r#"#[cfg_attr(feature = "serde", serde(default))]"#;
 const SERDE_WITH_STRING: &str =
     r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::from_to_string"))]"#;
 
@@ -85,10 +86,22 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 56] = [
+    const VERSIONED_REQUESTS: [&str; 69] = [
+        "GetContractModerationStatusRequest",
+        "GetContractModerationEntriesRequest",
+        "GetContractDocumentRemovalsRequest",
+        "GetContractTeamActionsRequest",
+        "GetContractTeamActionSignersRequest",
+        "GetContractModerationActionCountsRequest",
+        "GetContractFeePotsRequest",
+        "GetContractGroupInfoRequest",
+        "GetContractGroupMembersRequest",
+        "GetContractGroupsForContractRequest",
         "GetDataContractHistoryRequest",
+        "GetDataContractsLatestVersionsRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
+        "GetDataContractsByRangeRequest",
         "GetDocumentHistoryRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
@@ -96,6 +109,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentitiesBalancesRequest",
         "GetIdentityNonceRequest",
         "GetIdentityContractNonceRequest",
+        "GetIdentityKeysRemainingBudgetsRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
         "GetIdentityByNonUniquePublicKeyHashRequest",
@@ -156,8 +170,19 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 54] = [
+    const VERSIONED_RESPONSES: [&str; 66] = [
+        "GetContractModerationStatusResponse",
+        "GetContractModerationEntriesResponse",
+        "GetContractDocumentRemovalsResponse",
+        "GetContractTeamActionsResponse",
+        "GetContractTeamActionSignersResponse",
+        "GetContractModerationActionCountsResponse",
+        "GetContractFeePotsResponse",
+        "GetContractGroupInfoResponse",
+        "GetContractGroupMembersResponse",
+        "GetContractGroupsForContractResponse",
         "GetDataContractHistoryResponse",
+        "GetDataContractsLatestVersionsResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
         "GetDocumentHistoryResponse",
@@ -169,6 +194,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityBalanceResponse",
         "GetIdentityNonceResponse",
         "GetIdentityContractNonceResponse",
+        "GetIdentityKeysRemainingBudgetsResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
@@ -335,6 +361,20 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("id", SERDE_WITH_BYTES)
         .field_attribute("identity_id", SERDE_WITH_BYTES)
         .field_attribute("ids", SERDE_WITH_BASE64)
+        // Wire-format compat for mock vectors captured before the chained
+        // surface existed: the field deserializes to its default when
+        // absent (same pattern DocumentQuery's own serde defaults follow
+        // for pre-SQL-surface fixtures).
+        .field_attribute("GetDocumentsRequestV1.chained", SERDE_DEFAULT)
+        .field_attribute("GetDocumentsRequestV1.sub_queries", SERDE_DEFAULT)
+        // Same compat rule for the typed IN_TIME_RANGE operand: mock
+        // vectors captured while the operand still rode `value` carry no
+        // `time_range` key.
+        .field_attribute("GetDocumentsRequest.WhereClause.time_range", SERDE_DEFAULT)
+        .field_attribute(
+            "GetDocumentsRequest.WhereClause.integer_range",
+            SERDE_DEFAULT,
+        )
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)

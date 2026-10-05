@@ -1,10 +1,16 @@
 mod v0;
 
 use crate::fee::Credits;
+use crate::shielded::{
+    SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES, SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES,
+    SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES,
+};
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use v0::compute_minimum_shielded_fee_v0;
+use v0::compute_shielded_identity_balance_write_fee_v0;
 use v0::compute_shielded_identity_create_fee_v0;
+use v0::compute_shielded_identity_top_up_fee_v0;
 use v0::compute_shielded_unshield_fee_v0;
 use v0::compute_shielded_verification_fee_v0;
 use v0::compute_shielded_withdrawal_fee_v0;
@@ -83,6 +89,22 @@ pub fn compute_shielded_withdrawal_fee(
     }
 }
 
+/// Computes the flat fee for `IdentityTopUpFromShieldedPool` (base minimum plus the flat
+/// identity-balance write component).
+pub fn compute_shielded_identity_top_up_fee(
+    num_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    match platform_version.dpp.methods.compute_minimum_shielded_fee {
+        0 => compute_shielded_identity_top_up_fee_v0(num_actions, platform_version),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "compute_shielded_identity_top_up_fee".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
 /// Computes the **Unshield** fee (in credits): [`compute_minimum_shielded_fee`] PLUS the flat
 /// storage cost of the single `AddBalanceToAddress` write an `Unshield` performs.
 ///
@@ -112,6 +134,37 @@ pub fn compute_shielded_unshield_fee(
         0 => compute_shielded_unshield_fee_v0(num_actions, platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "compute_shielded_unshield_fee".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Computes the conservative **admission floor** (in credits) of a shielded transition that also
+/// writes an identity balance (`ShieldFromIdentity`): [`compute_minimum_shielded_fee`] plus the
+/// flat identity-write component (`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` effective bytes
+/// at the per-byte storage rate: the nonce and balance rewrites' replace-only tree work, folded
+/// into one flat figure like the other shielded components).
+///
+/// The transition's authoritative fee is metered at execution; this floor stands in for it where
+/// state is not yet available, so that an identity that could not pay the complete fee is refused
+/// before the expensive Orchard proof verification runs. It is also the client-side estimate of
+/// the total fee.
+///
+/// Dispatches on the SAME version key (`dpp.methods.compute_minimum_shielded_fee`) as
+/// [`compute_minimum_shielded_fee`] so the formulas evolve together across protocol versions.
+///
+/// # Parameters
+/// - `num_actions`: number of Orchard actions in the bundle
+/// - `platform_version`: protocol version (determines the formula version and fee constants)
+pub fn compute_shielded_identity_balance_write_fee(
+    num_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    match platform_version.dpp.methods.compute_minimum_shielded_fee {
+        0 => compute_shielded_identity_balance_write_fee_v0(num_actions, platform_version),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "compute_shielded_identity_balance_write_fee".to_string(),
             known_versions: vec![0],
             received: version,
         }),
@@ -176,4 +229,79 @@ pub fn compute_shielded_identity_create_fee(
             received: version,
         }),
     }
+}
+
+/// Computes the fee of an identity-less token pool transition (in credits): two bundles are
+/// verified and stored, so it is [`compute_minimum_shielded_fee`] of the fee bundle PLUS the
+/// same base for the token bundle, plus `extra_storage_bytes` of flat per-transition storage
+/// priced at the storage rate (the balance items the transition writes outside the pools).
+///
+/// The fee bundle's value balance must equal this exactly (plus the agreed price for a
+/// purchase); the SDK builders and the minimum-fee validation both use it.
+pub fn compute_token_pool_paid_shielded_fee(
+    token_actions: usize,
+    fee_actions: usize,
+    extra_storage_bytes: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    match platform_version.dpp.methods.compute_minimum_shielded_fee {
+        0 => v0::compute_token_pool_paid_shielded_fee_v0(
+            token_actions,
+            fee_actions,
+            extra_storage_bytes,
+            platform_version,
+        ),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "compute_token_pool_paid_shielded_fee".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// The fee of a `TokenShieldedTransferWithShieldedFee`: both bundles, nothing written outside
+/// the pools.
+pub fn compute_token_shielded_transfer_with_shielded_fee_fee(
+    token_actions: usize,
+    fee_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    compute_token_pool_paid_shielded_fee(token_actions, fee_actions, 0, platform_version)
+}
+
+/// The fee of a `TokenUnshieldWithShieldedFee`: both bundles plus the recipient's token
+/// balance item, priced as the insert it is for a recipient who has never held this token.
+///
+/// The recipient only has to be an existing identity, not an existing holder, so the balance item
+/// usually does not exist yet and the write creates it. The component is the insert's cost for
+/// every recipient alike: `credit_amount` is public and must equal this fee exactly, so a fee that
+/// distinguished the two cases would publish whether the recipient is holding this token for the
+/// first time. See [`SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES`].
+pub fn compute_token_unshield_with_shielded_fee_fee(
+    token_actions: usize,
+    fee_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    compute_token_pool_paid_shielded_fee(
+        token_actions,
+        fee_actions,
+        SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES,
+        platform_version,
+    )
+}
+
+/// The fee of a `TokenPurchaseFromShieldedPool`: both bundles plus the contract owner's credit
+/// balance write and the token supply item.
+pub fn compute_token_purchase_from_shielded_pool_fee(
+    token_actions: usize,
+    fee_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    compute_token_pool_paid_shielded_fee(
+        token_actions,
+        fee_actions,
+        SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES
+            .saturating_add(SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES),
+        platform_version,
+    )
 }

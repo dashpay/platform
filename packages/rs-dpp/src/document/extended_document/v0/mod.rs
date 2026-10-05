@@ -403,10 +403,14 @@ impl ExtendedDocumentV0 {
             property_names::DATA_CONTRACT_ID.to_string(),
             Value::Identifier(self.data_contract_id.to_buffer()),
         );
-        if let Some(token_payment_info) = self.token_payment_info {
+        // Borrowing and cloning the payment info rather than moving it out of `self` is forced
+        // by the type no longer being `Copy`; every protocol version selects this generation and
+        // the cloned value is the one that was previously copied, so the object this builds is
+        // unchanged.
+        if let Some(token_payment_info) = &self.token_payment_info {
             object.insert(
                 property_names::TOKEN_PAYMENT_INFO.to_string(),
-                token_payment_info.try_into()?,
+                token_payment_info.clone().try_into()?,
             );
         }
         Ok(object)
@@ -466,17 +470,59 @@ impl ExtendedDocumentV0 {
         let identifiers = document_type.identifier_paths();
         let binary_paths = document_type.binary_paths();
 
-        if identifiers.contains(path) {
-            let value =
-                ReplacementType::Identifier.replace_for_bytes(value.to_identifier_bytes()?)?;
-            self.set(path, value)
+        // A typed array of identifiers or byte arrays is registered as
+        // `path[]`: every member of the list set at `path` is converted
+        let list_path = format!("{path}[]");
+        let value = if identifiers.contains(path) {
+            Self::untrusted_value(ReplacementType::Identifier, value)?
         } else if binary_paths.contains(path) {
-            let value =
-                ReplacementType::BinaryBytes.replace_for_bytes(value.to_identifier_bytes()?)?;
-            self.set(path, value)
+            Self::untrusted_value(ReplacementType::BinaryBytes, value)?
+        } else if identifiers.contains(&list_path) {
+            Self::untrusted_list(ReplacementType::Identifier, path, value)?
+        } else if binary_paths.contains(&list_path) {
+            Self::untrusted_list(ReplacementType::BinaryBytes, path, value)?
         } else {
-            self.set(path, value)
-        }
+            value
+        };
+        self.set(path, value)
+    }
+
+    /// One untrusted value in its stored form: an identifier from base58
+    /// text, an identifier or 32 bytes; binary bytes from base64 text or
+    /// bytes.
+    fn untrusted_value(
+        replacement_type: ReplacementType,
+        value: Value,
+    ) -> Result<Value, ProtocolError> {
+        let bytes = match replacement_type {
+            ReplacementType::Identifier | ReplacementType::TextBase58 => {
+                value.into_identifier_bytes()?
+            }
+            ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
+                value.into_binary_bytes()?
+            }
+        };
+        Ok(replacement_type.replace_for_bytes(bytes)?)
+    }
+
+    /// The members of an untrusted list, each in its stored form.
+    fn untrusted_list(
+        replacement_type: ReplacementType,
+        path: &str,
+        value: Value,
+    ) -> Result<Value, ProtocolError> {
+        let Value::Array(members) = value else {
+            return Err(ProtocolError::ValueError(
+                platform_value::Error::StructureError(format!(
+                    "the value set at {path} must be a list, as the property is a typed array"
+                )),
+            ));
+        };
+        let members = members
+            .into_iter()
+            .map(|member| Self::untrusted_value(replacement_type, member))
+            .collect::<Result<Vec<Value>, ProtocolError>>()?;
+        Ok(Value::Array(members))
     }
 
     /// Retrieves field specified by path

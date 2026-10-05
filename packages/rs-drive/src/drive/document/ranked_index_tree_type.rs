@@ -46,9 +46,9 @@
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contract::document_type::IndexLevelTypeInfo;
+use dpp::data_contract::document_type::{IndexLevel, IndexLevelTypeInfo};
 use grovedb::element::IndexAxis;
-use grovedb::TreeType;
+use grovedb_merk::tree_type::TreeType;
 
 /// The ranking axes an index level declares, in grovedb's canonical TLV order
 /// (Count < Sum < Avg, no duplicates).
@@ -127,6 +127,10 @@ pub(crate) fn ranked_property_name_tree_type(
 /// Callers pass the `has_index_with_type()` of the level *named after the
 /// property* — `None` for pure prefix levels, which resolve to
 /// `(NormalTree, [])`.
+///
+/// Shipped generations depend on this function through
+/// [`property_name_tree_type_and_ranked_axes_for_level`]: see the note there
+/// before changing what it returns.
 pub(crate) fn property_name_tree_type_and_ranked_axes(
     index_level_info: Option<&IndexLevelTypeInfo>,
 ) -> Result<(TreeType, Vec<IndexAxis>), Error> {
@@ -147,6 +151,49 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
         ranked_property_name_tree_type(base, &ranked_axes)?,
         ranked_axes,
     ))
+}
+
+/// Level-aware form of [`property_name_tree_type_and_ranked_axes`], covering
+/// the prefix-level Count ranking (`rankedCountable: { at }`, meta-schema v3):
+///
+/// - A **grouping** level (`ranked_count_grouping`) hosts the ranking itself:
+///   its property-name tree is the Count-axis indexed tree, whose secondary
+///   ranks the property's values by each value tree's whole-subtree count.
+/// - A **propagating** level (`count_propagating`, strictly between the
+///   grouping level and its index's terminal) gets a `CountTree` property-name
+///   tree so the subtree counts flow through it toward the grouping secondary.
+/// - Every other level resolves through the terminator-info path unchanged.
+///
+/// rs-dpp's structural validation guarantees no index terminates at a
+/// grouping or propagating level; both fail closed here on a stamped
+/// terminator rather than pick one of two contradictory layouts.
+///
+/// Shipped generations depend on this function: the `insert_contract` v0 and
+/// `update_contract` v0 operations call it to choose the tree type of every
+/// top-level index level they create, and every later generation of both
+/// composes those operations, so every protocol version reaches it. Changing what it returns
+/// for an index level protocol versions 1-13 can declare changes the trees
+/// and fees of those versions; make such a change a new versioned method
+/// instead of editing this function.
+pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
+    level: &IndexLevel,
+) -> Result<(TreeType, Vec<IndexAxis>), Error> {
+    if level.ranked_count_grouping() || level.count_propagating() {
+        if level.has_index_with_type().is_some() {
+            return Err(Error::Drive(DriveError::CorruptedContractIndexes(
+                "a prefix-ranking (grouping or count-propagating) index level cannot also \
+                 terminate an index; contract validation rejects every shape that shares \
+                 such a level"
+                    .to_string(),
+            )));
+        }
+        return if level.ranked_count_grouping() {
+            Ok((TreeType::ProvableCountIndexedTree, vec![IndexAxis::Count]))
+        } else {
+            Ok((TreeType::CountTree, Vec::new()))
+        };
+    }
+    property_name_tree_type_and_ranked_axes(level.has_index_with_type())
 }
 
 /// The non-indexed tree type an indexed tree mirrors, or `tree_type` itself
@@ -195,6 +242,9 @@ mod tests {
             ranked_averageable,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
+            flat: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 

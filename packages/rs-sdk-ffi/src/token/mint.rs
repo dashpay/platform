@@ -216,9 +216,9 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
                 )
             };
 
-            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
-            DataContract::versioned_deserialize(
+            DataContract::versioned_deserialize_untrusted(
                 contract_slice,
                 false, // skip validation since it's already validated
                 wrapper.sdk.version(),
@@ -274,7 +274,7 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "FFI TOKEN MINT: failed to mint token");
-                FFIError::InternalError(format!("Failed to mint token and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to mint token and wait", e)
             })?;
         tracing::info!("FFI TOKEN MINT: token mint succeeded");
         Ok(result)

@@ -22,6 +22,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::masternode_vote::state::v0::MasternodeVoteStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::masternode_vote::state::v1::MasternodeVoteStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
@@ -79,9 +80,10 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
             .state
         {
             0 => self.validate_state_v0(action, platform, tx, platform_version),
+            1 => self.validate_state_v1(action, platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -91,6 +93,15 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
         true
     }
 }
+
+#[cfg(test)]
+mod no_locking_contest_tests;
+
+#[cfg(test)]
+mod charter_election_tests;
+
+#[cfg(test)]
+mod end_date_cleanup_tests;
 
 #[cfg(test)]
 mod tests {
@@ -121,7 +132,7 @@ mod tests {
     use crate::platform_types::platform_state::PlatformState;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
-    use dpp::serialization::PlatformDeserializable;
+    use dpp::serialization::PlatformDeserializableTrusted;
     use drive::query::VotePollsByEndDateDriveQuery;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
@@ -3007,6 +3018,19 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
+                // The verifier has to walk the proof the way the request asked
+                // for it, as the SDK's proof verifier does when it mirrors the
+                // request: grovedb refuses a layer proof read in the other
+                // direction.
+                let verifier_start_at = start_at_identifier_info.as_ref().map(|info| {
+                    let start_identifier: [u8; 32] = info
+                        .start_identifier
+                        .clone()
+                        .try_into()
+                        .expect("expected a 32 byte start identifier");
+                    (start_identifier, info.start_identifier_included)
+                });
+
                 let query_validation_result = platform
                     .query_contested_resource_voters_for_identity(
                         GetContestedResourceVotersForIdentityRequest {
@@ -3063,9 +3087,9 @@ mod tests {
                         },
                         contestant_id: contender_id,
                         offset: None,
-                        limit: None,
-                        start_at: None,
-                        order_ascending: true,
+                        limit: count.map(|count| count as u16),
+                        start_at: verifier_start_at,
+                        order_ascending,
                     };
 
                 let (_, voters) = resolved_contested_document_vote_poll_drive_query
@@ -3477,6 +3501,53 @@ mod tests {
                 assert_eq!(voters_3, voters_3_desc);
 
                 assert_eq!(voters_3.len(), 8);
+
+                // Paged proved requests: a limit smaller than the 50 available
+                // voters and a cursor, inclusive and exclusive, in both
+                // directions. `voters_1` is the full ascending sequence, so each
+                // page must equal the matching slice of it, and the verifier
+                // must run with the request's own order, count and cursor for
+                // the proof to verify at all.
+                let cursor = |index: usize, included: bool| {
+                    Some(
+                        get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo {
+                            start_identifier: voters_1[index].to_vec(),
+                            start_identifier_included: included,
+                        },
+                    )
+                };
+                let page = |count: u32, order_ascending: bool, start_at| {
+                    get_proved_contestant_votes(
+                        &platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_1.id(),
+                        "quantum",
+                        Some(count),
+                        order_ascending,
+                        start_at,
+                        platform_version,
+                    )
+                };
+
+                assert_eq!(page(10, true, cursor(9, true)), voters_1[9..19].to_vec());
+                assert_eq!(page(10, true, cursor(9, false)), voters_1[10..20].to_vec());
+
+                let descending_from_40_inclusive: Vec<Identifier> =
+                    voters_1[31..=40].iter().rev().copied().collect();
+                assert_eq!(
+                    page(10, false, cursor(40, true)),
+                    descending_from_40_inclusive
+                );
+                let descending_from_40_exclusive: Vec<Identifier> =
+                    voters_1[30..=39].iter().rev().copied().collect();
+                assert_eq!(
+                    page(10, false, cursor(40, false)),
+                    descending_from_40_exclusive
+                );
+
+                // A short final page: the limit exceeds what remains.
+                assert_eq!(page(10, true, cursor(45, false)), voters_1[46..50].to_vec());
             }
         }
 
@@ -4060,7 +4131,7 @@ mod tests {
 
                 // Let's try deserializing
 
-                let vote_poll = VotePoll::deserialize_from_bytes(
+                let vote_poll = VotePoll::deserialize_from_bytes_trusted(
                     serialized_contested_vote_poll_bytes.as_slice(),
                 )
                 .expect("expected to deserialize");
@@ -4317,7 +4388,7 @@ mod tests {
 
                 // Let's try deserializing
 
-                let vote_poll_1 = VotePoll::deserialize_from_bytes(
+                let vote_poll_1 = VotePoll::deserialize_from_bytes_trusted(
                     serialized_contested_vote_poll_bytes_1.as_slice(),
                 )
                 .expect("expected to deserialize");
@@ -4343,7 +4414,7 @@ mod tests {
 
                 // Let's try deserializing
 
-                let vote_poll_2 = VotePoll::deserialize_from_bytes(
+                let vote_poll_2 = VotePoll::deserialize_from_bytes_trusted(
                     serialized_contested_vote_poll_bytes_2.as_slice(),
                 )
                 .expect("expected to deserialize");
@@ -5664,6 +5735,10 @@ mod tests {
             #[tokio::test]
             async fn test_non_proved_prefunded_specialized_balance_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
+                let vote_fees = &platform_version.fee_version.vote_resolution_fund_fees;
+                let contribution =
+                    vote_fees.contested_document_vote_resolution_fund_required_amount;
+                let vote_cost = vote_fees.contested_document_single_vote_cost;
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
                     .build_with_mock_rpc()
@@ -5688,7 +5763,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(start_balance, dash_to_credits!(0.4));
+                assert_eq!(start_balance, 2 * contribution);
 
                 let (_contender_3, _contender_4, _) = create_dpns_identity_name_contest(
                     &mut platform,
@@ -5707,7 +5782,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
+                assert_eq!(start_balance_after_more_contenders, 4 * contribution);
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -5739,7 +5814,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
+                assert_eq!(balance_after_50_votes, 4 * contribution - 50 * vote_cost);
 
                 for i in 0..5 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -5771,12 +5846,16 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(balance_after_55_votes, dash_to_credits!(0.7945));
+                assert_eq!(balance_after_55_votes, 4 * contribution - 55 * vote_cost);
             }
 
             #[tokio::test]
             async fn test_proved_prefunded_specialized_balance_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
+                let vote_fees = &platform_version.fee_version.vote_resolution_fund_fees;
+                let contribution =
+                    vote_fees.contested_document_vote_resolution_fund_required_amount;
+                let vote_cost = vote_fees.contested_document_single_vote_cost;
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
                     .build_with_mock_rpc()
@@ -5801,7 +5880,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(start_balance, dash_to_credits!(0.4));
+                assert_eq!(start_balance, 2 * contribution);
 
                 let (_contender_3, _contender_4, _) = create_dpns_identity_name_contest(
                     &mut platform,
@@ -5820,7 +5899,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
+                assert_eq!(start_balance_after_more_contenders, 4 * contribution);
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -5852,7 +5931,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
+                assert_eq!(balance_after_50_votes, 4 * contribution - 50 * vote_cost);
 
                 for i in 0..5 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -5884,7 +5963,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(balance_after_55_votes, dash_to_credits!(0.7945));
+                assert_eq!(balance_after_55_votes, 4 * contribution - 55 * vote_cost);
             }
         }
 
@@ -6348,6 +6427,7 @@ mod tests {
             }
 
             #[tokio::test]
+            #[ignore] // Long-running: runs in nightly CI only
             async fn test_document_distribution_many_votes_two_contests_same_time() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -7681,7 +7761,7 @@ mod tests {
                     .unwrap()
                     .expect("expected to commit transaction");
 
-                // At this point the document should have been awarded to contender 1.
+                // At this point the document should have been awarded to contender 2, the earliest document (a tie, protocol version 14).
 
                 {
                     let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
@@ -7701,7 +7781,7 @@ mod tests {
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
                                 finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
-                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            won_by_identity_id: Some(contender_2.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
                             finished_at_block_time_ms: 1209900000,
@@ -7749,7 +7829,7 @@ mod tests {
                     assert_eq!(
                         finished_vote_info,
                         Some((
-                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_2.id()),
                             block_info
                         ))
                     );
@@ -8096,7 +8176,7 @@ mod tests {
                     .unwrap()
                     .expect("expected to commit transaction");
 
-                // At this point the document should have been awarded to contender 1.
+                // At this point the document should have been awarded to contender 2, the earliest document (a tie, protocol version 14).
 
                 {
                     let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
@@ -8116,7 +8196,7 @@ mod tests {
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
                                 finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
-                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            won_by_identity_id: Some(contender_2.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
                             finished_at_block_time_ms: 1209900000,
@@ -8164,7 +8244,7 @@ mod tests {
                     assert_eq!(
                         finished_vote_info,
                         Some((
-                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_2.id()),
                             block_info
                         ))
                     );
@@ -8547,7 +8627,10 @@ mod tests {
                     pro_tx_hash,
                     &voting_key,
                     2,
-                    Some("VotePoll ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }) not available for voting: Awarded(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW)"),
+                    // Settling the poll deleted its pot, and a block checks the pot before the
+                    // poll's status; check_tx, which validates the poll's status first, is what
+                    // tells a late voter the poll is over.
+                    Some("Did not find a specialized balance with id: 8cLBdc35uovu4yHKuMKy4JWYhRFVUPSnnm8KTJJaaJw4"),
                     platform_version,
                 )
                 .await;
@@ -8742,7 +8825,10 @@ mod tests {
                     pro_tx_hash,
                     &voting_key,
                     2,
-                    Some("VotePoll ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }) not available for voting: Locked"),
+                    // Settling the poll deleted its pot, and a block checks the pot before the
+                    // poll's status; check_tx, which validates the poll's status first, is what
+                    // tells a late voter the poll is over.
+                    Some("Did not find a specialized balance with id: 8cLBdc35uovu4yHKuMKy4JWYhRFVUPSnnm8KTJJaaJw4"),
                     platform_version,
                 )
                 .await;

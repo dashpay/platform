@@ -1,4 +1,7 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::identity_public_key::IdentityPublicKey;
 use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
@@ -153,7 +156,7 @@ pub fn verify_identity_keys_by_identity_id(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_option) = Drive::verify_identity_keys_by_identity_id(
-        &proof_vec,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         key_request,
         with_revision,
         with_balance,
@@ -177,96 +180,112 @@ pub fn verify_identity_keys_by_identity_id(
 fn serialize_identity_public_key(key: &IdentityPublicKey) -> Result<Object, JsValue> {
     let obj = Object::new();
 
-    match key {
-        IdentityPublicKey::V0(key_v0) => {
-            // Set id
-            Reflect::set(&obj, &JsValue::from_str("id"), &JsValue::from(key_v0.id))
-                .map_err(|_| JsValue::from_str("Failed to set key id"))?;
+    // Set id
+    Reflect::set(&obj, &JsValue::from_str("id"), &JsValue::from(key.id()))
+        .map_err(|_| JsValue::from_str("Failed to set key id"))?;
 
-            // Set purpose (as number)
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("purpose"),
-                &JsValue::from(key_v0.purpose as u8),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set purpose"))?;
+    // Set purpose (as number)
+    Reflect::set(
+        &obj,
+        &JsValue::from_str("purpose"),
+        &JsValue::from(key.purpose() as u8),
+    )
+    .map_err(|_| JsValue::from_str("Failed to set purpose"))?;
 
-            // Set security level (as number)
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("securityLevel"),
-                &JsValue::from(key_v0.security_level as u8),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set security level"))?;
+    // Set security level (as number)
+    Reflect::set(
+        &obj,
+        &JsValue::from_str("securityLevel"),
+        &JsValue::from(key.security_level() as u8),
+    )
+    .map_err(|_| JsValue::from_str("Failed to set security level"))?;
 
-            // Set contract bounds (optional)
-            match &key_v0.contract_bounds {
-                Some(bounds) => {
-                    let bounds_obj = Object::new();
-                    match bounds {
-                        dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContract { id } => {
-                            Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("SingleContract"))
-                                .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
-                            let id_array = Uint8Array::from(id.as_slice());
-                            Reflect::set(&bounds_obj, &JsValue::from_str("id"), &id_array)
-                                .map_err(|_| JsValue::from_str("Failed to set bounds id"))?;
-                        }
-                        dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContractDocumentType { id, document_type_name } => {
-                            Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("SingleContractDocumentType"))
-                                .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
-                            let id_array = Uint8Array::from(id.as_slice());
-                            Reflect::set(&bounds_obj, &JsValue::from_str("id"), &id_array)
-                                .map_err(|_| JsValue::from_str("Failed to set bounds id"))?;
-                            Reflect::set(&bounds_obj, &JsValue::from_str("documentTypeName"), &JsValue::from_str(document_type_name))
-                                .map_err(|_| JsValue::from_str("Failed to set document type name"))?;
-                        }
-                    }
-                    Reflect::set(&obj, &JsValue::from_str("contractBounds"), &bounds_obj)
-                        .map_err(|_| JsValue::from_str("Failed to set contract bounds"))?;
+    // Set contract bounds (optional)
+    match key.contract_bounds() {
+        Some(bounds) => {
+            let bounds_obj = Object::new();
+            match bounds {
+                dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContract { id } => {
+                    Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("SingleContract"))
+                        .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
+                    let id_array = Uint8Array::from(id.as_slice());
+                    Reflect::set(&bounds_obj, &JsValue::from_str("id"), &id_array)
+                        .map_err(|_| JsValue::from_str("Failed to set bounds id"))?;
                 }
-                None => {
-                    Reflect::set(&obj, &JsValue::from_str("contractBounds"), &JsValue::NULL)
-                        .map_err(|_| JsValue::from_str("Failed to set contract bounds to null"))?;
+                dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContractDocumentType { id, document_type_name } => {
+                    Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("SingleContractDocumentType"))
+                        .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
+                    let id_array = Uint8Array::from(id.as_slice());
+                    Reflect::set(&bounds_obj, &JsValue::from_str("id"), &id_array)
+                        .map_err(|_| JsValue::from_str("Failed to set bounds id"))?;
+                    Reflect::set(&bounds_obj, &JsValue::from_str("documentTypeName"), &JsValue::from_str(document_type_name))
+                        .map_err(|_| JsValue::from_str("Failed to set document type name"))?;
+                }
+                dpp::identity::identity_public_key::contract_bounds::ContractBounds::ContractGroup { id } => {
+                    Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("ContractGroup"))
+                        .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
+                    let id_array = Uint8Array::from(id.as_slice());
+                    Reflect::set(&bounds_obj, &JsValue::from_str("id"), &id_array)
+                        .map_err(|_| JsValue::from_str("Failed to set bounds id"))?;
                 }
             }
-
-            // Set key type (as number)
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from(key_v0.key_type as u8),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set key type"))?;
-
-            // Set read only flag
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("readOnly"),
-                &JsValue::from_bool(key_v0.read_only),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set read only"))?;
-
-            // Set key data (as Uint8Array)
-            let data_array = Uint8Array::from(key_v0.data.as_slice());
-            Reflect::set(&obj, &JsValue::from_str("data"), &data_array)
-                .map_err(|_| JsValue::from_str("Failed to set key data"))?;
-
-            // Set disabled_at (optional timestamp)
-            match key_v0.disabled_at {
-                Some(timestamp) => {
-                    Reflect::set(
-                        &obj,
-                        &JsValue::from_str("disabledAt"),
-                        &JsValue::from_str(&timestamp.to_string()),
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set disabled at"))?;
-                }
-                None => {
-                    Reflect::set(&obj, &JsValue::from_str("disabledAt"), &JsValue::NULL)
-                        .map_err(|_| JsValue::from_str("Failed to set disabled at to null"))?;
-                }
-            }
+            Reflect::set(&obj, &JsValue::from_str("contractBounds"), &bounds_obj)
+                .map_err(|_| JsValue::from_str("Failed to set contract bounds"))?;
         }
+        None => {
+            Reflect::set(&obj, &JsValue::from_str("contractBounds"), &JsValue::NULL)
+                .map_err(|_| JsValue::from_str("Failed to set contract bounds to null"))?;
+        }
+    }
+
+    // Set key type (as number)
+    Reflect::set(
+        &obj,
+        &JsValue::from_str("type"),
+        &JsValue::from(key.key_type() as u8),
+    )
+    .map_err(|_| JsValue::from_str("Failed to set key type"))?;
+
+    // Set read only flag
+    Reflect::set(
+        &obj,
+        &JsValue::from_str("readOnly"),
+        &JsValue::from_bool(key.read_only()),
+    )
+    .map_err(|_| JsValue::from_str("Failed to set read only"))?;
+
+    // Set key data (as Uint8Array)
+    let data_array = Uint8Array::from(key.data().as_slice());
+    Reflect::set(&obj, &JsValue::from_str("data"), &data_array)
+        .map_err(|_| JsValue::from_str("Failed to set key data"))?;
+
+    // Set disabled_at (optional timestamp)
+    match key.disabled_at() {
+        Some(timestamp) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("disabledAt"),
+                &JsValue::from_str(&timestamp.to_string()),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set disabled at"))?;
+        }
+        None => {
+            Reflect::set(&obj, &JsValue::from_str("disabledAt"), &JsValue::NULL)
+                .map_err(|_| JsValue::from_str("Failed to set disabled at to null"))?;
+        }
+    }
+
+    // Set the usage limits (optional, version 1 keys), as decimal strings like `disabledAt`
+    for (name, limit) in [
+        ("totalBudget", key.total_budget()),
+        ("expiresAt", key.expires_at()),
+    ] {
+        let value = match limit {
+            Some(limit) => JsValue::from_str(&limit.to_string()),
+            None => JsValue::NULL,
+        };
+        Reflect::set(&obj, &JsValue::from_str(name), &value)
+            .map_err(|_| JsValue::from_str("Failed to set key limit"))?;
     }
 
     Ok(obj)

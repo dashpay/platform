@@ -46,12 +46,17 @@ pub struct ManagedIdentity {
     /// subsequent operations (signing, ECDH) can derive the correct keys.
     ///
     /// `Some(idx)` when this identity lives in a wallet's bucket — `idx` is
-    /// the inner BTreeMap key. `None` for out-of-wallet identities (formerly
-    /// "watched"); they have no HD-derivation context.
+    /// the inner BTreeMap key. `None` for out-of-wallet identities; they
+    /// have no HD-derivation context.
     pub identity_index: Option<u32>,
 
     /// Last block time when balance was updated for this identity
     pub last_updated_balance_block_time: Option<BlockTime>,
+
+    /// Latest verified balance still owed to persistence. Retained after either
+    /// store or flush fails; scalar snapshots must carry it until a successful
+    /// retry. Query results are published only after that retry commits.
+    pending_balance_snapshot: Option<(u64, BlockTime)>,
 
     /// Last block time when keys were synced for this identity
     pub last_synced_keys_block_time: Option<BlockTime>,

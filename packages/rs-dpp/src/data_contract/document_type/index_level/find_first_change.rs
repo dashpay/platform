@@ -10,6 +10,8 @@
 //! path, not just *that* something did.
 
 use super::IndexLevel;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::index::{IndexBucketing, TIME_RANGE};
 
 impl IndexLevel {
     /// Recursively finds the first index path where a count-affecting
@@ -126,6 +128,37 @@ impl IndexLevel {
     /// Returns `None` if all three properties are the same everywhere.
     #[cfg(feature = "validation")]
     pub(super) fn find_first_ranked_change(&self, new: &IndexLevel) -> Option<String> {
+        // The prefix-level ranking markers live on the LEVEL, not on the
+        // terminating info — an index's `rankedCountable: { at }` stamps a
+        // non-terminal level, so moving or toggling it changes these two
+        // flags while every `IndexLevelTypeInfo` stays identical. Same
+        // rebuild-the-secondaries reasoning as the axis flags below.
+        if self.ranked_count_grouping != new.ranked_count_grouping {
+            return Some(format!(
+                "(ranked_count_grouping: {} -> {})",
+                self.ranked_count_grouping, new.ranked_count_grouping,
+            ));
+        }
+        if self.count_propagating != new.count_propagating {
+            return Some(format!(
+                "(count_propagating: {} -> {})",
+                self.count_propagating, new.count_propagating,
+            ));
+        }
+        // The exempt-branch marker decides whether the level's
+        // property-name tree is created `Element::NonCounted`-wrapped
+        // inside the chain's value trees or inserted contributing —
+        // frozen layout like the two chain stamps above. Every flip is
+        // already accompanied by a chain-stamp or countability change
+        // (the marker is derived from them), but the layout flag itself
+        // is what the walkers read, so it gets its own first-class check.
+        if self.count_exempt_branch() != new.count_exempt_branch() {
+            return Some(format!(
+                "(count_exempt_branch: {} -> {})",
+                self.count_exempt_branch(),
+                new.count_exempt_branch(),
+            ));
+        }
         if let (Some(old_info), Some(new_info)) =
             (&self.has_index_with_type, &new.has_index_with_type)
         {
@@ -161,8 +194,9 @@ impl IndexLevel {
     }
 
     /// Time-range counterpart of [`Self::find_first_countability_change`].
-    /// Recursively finds the first index path where the `time_range`
-    /// transform differs between two `IndexLevel` trees. The transform
+    /// Recursively finds the first index path where the bucketing grid
+    /// (`timeRange` or `integerRange`) differs between two `IndexLevel`
+    /// trees. The grid
     /// dictates how many index entries each document produces and under
     /// which bucket keys, so changing it after creation would leave already
     /// stored documents indexed under stale buckets — it is immutable.
@@ -170,24 +204,65 @@ impl IndexLevel {
     /// Returns `None` if the transform is the same everywhere.
     #[cfg(feature = "validation")]
     pub(super) fn find_first_time_range_change(&self, new: &IndexLevel) -> Option<String> {
-        if self.time_range() != new.time_range() {
-            let fmt = |t: Option<&super::TimeRangeTransform>| match t {
-                Some(t) => format!(
+        if self.bucketing() != new.bucketing() {
+            let fmt = |bucketing: Option<&IndexBucketing>| match bucketing {
+                Some(IndexBucketing::Time(t)) => format!(
                     "Some(on: {:?}, range: {}s, step: {}s, phase: {}s)",
                     t.source, t.range_seconds, t.step_seconds, t.phase_seconds
                 ),
+                Some(IndexBucketing::Integer(t)) => format!(
+                    "Some(on: {:?}, range: {}, step: {}, phase: {})",
+                    t.source, t.range, t.step, t.phase
+                ),
                 None => "None".to_string(),
             };
+            // A level's source is either a timestamp or an integer, so the
+            // two sides never carry different kinds.
+            let keyword = self
+                .bucketing()
+                .or(new.bucketing())
+                .map_or(TIME_RANGE, IndexBucketing::keyword);
             return Some(format!(
-                "(timeRange: {} -> {})",
-                fmt(self.time_range()),
-                fmt(new.time_range()),
+                "({}: {} -> {})",
+                keyword,
+                fmt(self.bucketing()),
+                fmt(new.bucketing()),
             ));
         }
 
         for (key, old_sub) in &self.sub_index_levels {
             if let Some(new_sub) = new.sub_index_levels.get(key) {
                 if let Some(inner_path) = old_sub.find_first_time_range_change(new_sub) {
+                    return Some(format!("{} -> {}", key, inner_path));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// `outlivesDelete` counterpart of [`Self::find_first_preallocated_change`]:
+    /// the first index path where the flag differs between two `IndexLevel`
+    /// trees. The flag decides what a delete carries and what an indexOnly
+    /// row commits to, so it is immutable.
+    ///
+    /// Returns `None` if the flag is the same everywhere.
+    #[cfg(feature = "validation")]
+    pub(super) fn find_first_outlives_delete_change(&self, new: &IndexLevel) -> Option<String> {
+        if let (Some(old_info), Some(new_info)) =
+            (&self.has_index_with_type, &new.has_index_with_type)
+        {
+            if old_info.outlives_delete != new_info.outlives_delete {
+                return Some(format!(
+                    "(outlivesDelete: {} -> {})",
+                    old_info.outlives_delete, new_info.outlives_delete,
+                ));
+            }
+        }
+
+        for (key, old_sub) in &self.sub_index_levels {
+            if let Some(new_sub) = new.sub_index_levels.get(key) {
+                if let Some(inner_path) = old_sub.find_first_outlives_delete_change(new_sub) {
                     return Some(format!("{} -> {}", key, inner_path));
                 }
             }

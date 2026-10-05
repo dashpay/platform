@@ -1,0 +1,174 @@
+{
+  "$formatVersion": "0",
+  "id": "9f2Lqx2VWjtk2vDk1sGgZwGSVvUu3c8TZkXcBVM5Cm3H",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "listing": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwnerCategory",
+          "properties": [{ "$ownerId": "asc" }, { "category": "asc" }]
+        },
+        {
+          "name": "byOwnerSlug",
+          "properties": [{ "$ownerId": "asc" }, { "slug": "asc" }],
+          "unique": true
+        }
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 0
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 1
+        },
+        "price": {
+          "type": "integer",
+          "minimum": 0,
+          "position": 2
+        }
+      },
+      "required": ["slug"],
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwnerKey",
+          "properties": [{ "$ownerId": "asc" }, { "key": "asc" }],
+          "unique": true
+        },
+        {
+          "name": "byOwnerUpdated",
+          "properties": [{ "$ownerId": "asc" }, { "$updatedAt": "asc" }]
+        }
+      ],
+      "properties": {
+        "key": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        },
+        "payload": {
+          "type": "string",
+          "maxLength": 64,
+          "position": 1
+        }
+      },
+      "required": ["key"],
+      "additionalProperties": false
+    },
+    "profile": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byCityName",
+          "properties": [{ "city": "asc" }, { "name": "asc" }]
+        },
+        {
+          "name": "byCityZip",
+          "properties": [{ "city": "asc" }, { "zip": "asc" }],
+          "nullSearchable": false
+        }
+      ],
+      "properties": {
+        "city": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 0
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 1
+        },
+        "zip": {
+          "type": "string",
+          "maxLength": 12,
+          "position": 2
+        }
+      },
+      "additionalProperties": false
+    },
+    "offer": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwnerCategory",
+          "properties": [{ "$ownerId": "asc" }, { "category": "asc" }]
+        },
+        {
+          "name": "byOwnerSkuSize",
+          "properties": [{ "$ownerId": "asc" }, { "sku": "asc" }, { "size": "asc" }],
+          "unique": true
+        }
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 0
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 1
+        },
+        "size": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8,
+          "position": 2
+        }
+      },
+      "required": ["sku", "size"],
+      "additionalProperties": false
+    },
+    "badge": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwnerCodeVariant",
+          "properties": [{ "$ownerId": "asc" }, { "code": "asc" }, { "variant": "asc" }],
+          "unique": true
+        }
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "position": 0
+        },
+        "variant": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 1
+        }
+      },
+      "required": ["code"],
+      "additionalProperties": false
+    }
+  }
+}

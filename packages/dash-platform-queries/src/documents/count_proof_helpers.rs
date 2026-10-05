@@ -145,6 +145,7 @@ pub(super) fn verify_count_query(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<SplitCountEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    request.ensure_no_sub_queries()?;
     let proof = response
         .proof()
         .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
@@ -615,11 +616,15 @@ mod tests {
 
         assert_eq!(resolutions.len(), 1);
         assert_eq!(resolutions[0].field(), CREATED_AT);
+        let grid = resolutions[0]
+            .transform
+            .time_range()
+            .expect("an IN_TIME_RANGE resolution carries a time grid");
         assert_eq!(
-            resolutions[0].transform.range_seconds, RANGE_SECONDS,
+            grid.range_seconds, RANGE_SECONDS,
             "the provenance must carry the exact grid the resolution used"
         );
-        assert_eq!(resolutions[0].transform.step_seconds, STEP_SECONDS);
+        assert_eq!(grid.step_seconds, STEP_SECONDS);
         assert!(
             request.time_range_clauses.is_empty(),
             "the pending selector must be drained, not left to be encoded twice"

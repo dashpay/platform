@@ -13,7 +13,8 @@ Generate a pull request title and description for the current branch using the p
 1. Determine the base branch:
    - Use the argument if provided
    - Otherwise, auto-detect: `git remote set-head origin --auto >/dev/null 2>&1 && git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/||'`
-   - Fall back to `v4.0-dev` if the command above fails
+   - If that fails, use the repository's default branch on GitHub: `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`
+   - If both fail, ask the user rather than guessing a version branch
 
 2. Gather context by running these git commands:
    - `git log --oneline $(git merge-base HEAD <base>)..HEAD` — all commits on this branch
@@ -25,18 +26,29 @@ Generate a pull request title and description for the current branch using the p
    - What specific code changes were made
    - Whether there are breaking changes
    - What tests were added or modified
+   - What value the change adds, and for whom
+   - What could go wrong: consensus impact, behaviour users could notice, slow or flaky tests
 
 4. Output a suggested PR title using conventional commits format:
-   - Scopes: `sdk`, `drive`, `dpp`, `dapi`, `dashmate`, `wasm-dpp`, `wasm-sdk`, `platform`
-   - Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `build`
+   - Types and scopes: use only the `types:` and `scopes:` lists in `.github/workflows/pr.yml`. The PR title check rejects anything else, so read them from that file rather than from memory
+   - The scope is optional: leave it out (e.g. `chore: ...`) when the change spans several packages or no listed scope fits. Never invent a scope
+   - The subject must not start with an uppercase letter
    - Add `!` after the type for breaking changes (e.g. `feat!:`)
    - Format: **Suggested title:** `type(scope): description`
 
-5. Fill in this PR template (preserve all HTML comments exactly as shown):
+5. Fill in this PR template (preserve all HTML comments exactly as shown). The `## Basic explanation` section always comes first; the sections after it follow `.github/PULL_REQUEST_TEMPLATE.md`. If that file differs from the copy below, follow the file:
 
 ```markdown
 <!--- Provide a general summary of your changes in the Title above -->
 <!--- Pull request titles must use the [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/#summary) format -->
+
+## Basic explanation
+
+**What this does:** <The change in the most basic terms, for a reader who does not know this code. Explain any jargon in passing, or avoid it.>
+
+**Value:** <What gets better and for whom (users, wallets, node operators, the network). Give a number when there is one.>
+
+**Risks:** <What could go wrong, sized honestly: say "Low" and why when it is low. Mention consensus impact, behaviour users could notice, and slow or flaky tests.>
 
 ## Issue being fixed or feature implemented
 <!--- Why is this change required? What problem does it solve? -->
@@ -69,6 +81,7 @@ Generate a pull request title and description for the current branch using the p
 - [ ] I have added or updated relevant unit/integration/functional/e2e tests
 - [ ] I have added "!" to the title and described breaking changes in the corresponding section if my code contains any
 - [ ] I have made corresponding changes to the documentation if needed
+- [ ] If I added or changed GroveDB structure, I described it in the area's `structure.rs`, regenerated `grovedb-structure.json`, and checked the structure viewer link posted on this pull request
 
 **For repository code-owners and collaborators only**
 - [ ] I have assigned this pull request to a milestone
@@ -80,6 +93,7 @@ Output the entire PR description (title + body) as a single raw Markdown code bl
 
 ## Guidelines
 
+- Always open with `## Basic explanation`: three short paragraphs (what it does, value, risks) that someone outside this code can follow. For a security fix, keep it neutral: describe what the fix does, not how the bug could be exploited
 - Keep the description **concise** — avoid walls of text. Prefer short bullet points over paragraphs
 - Be specific — reference file paths, struct/function names, and types
 - For "How Has This Been Tested?", check `git diff` for new `*test*`, `*spec*` files. Briefly describe what tests cover (1 line per test file), not every individual test case

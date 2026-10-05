@@ -7,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::drive::CheckpointInfo;
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 /// Information needed to create a checkpoint
@@ -27,6 +28,12 @@ where
     ///
     /// Returns `Ok(Some(CheckpointNeededInfo))` if a checkpoint should be created,
     /// `Ok(None)` if no checkpoint is needed.
+    ///
+    /// A checkpoint is due at the first block after a checkpoint interval boundary,
+    /// counted from the later of the last checkpoint and the last checkpoint attempt.
+    /// Counting attempts means a failed checkpoint is skipped for the rest of its
+    /// interval rather than retried at a later block, so this node's checkpoint
+    /// heights stay the ones the rest of the network has.
     #[inline(always)]
     pub(super) fn should_checkpoint_v0(
         &self,
@@ -53,17 +60,39 @@ where
         let block_time = block_info.block_time_ms();
         let block_height = block_info.height();
 
+        // Checkpoints are restore points for a running node. Replaying history,
+        // ten minutes of chain time is a handful of blocks, so this fires dozens
+        // of times a second and all but the last `keep_n` are deleted again
+        // immediately — each one a RocksDB checkpoint over the whole database
+        // plus a copy of the platform state. The node writes its first real
+        // checkpoint once it reaches the tip.
+        if crate::utils::is_historical_block(block_time) {
+            return Ok(None);
+        }
+
         let most_recent_checkpoint_interval_time =
             block_time - block_time % checkpoint_interval_milliseconds;
 
         // Load current checkpoints
         let current_checkpoints_guard = self.drive.checkpoints.load();
 
+        // The later of the last checkpoint's block time and the last attempt's block
+        // time: an attempt that failed still spends its interval.
+        let last_attempt_time = self
+            .last_checkpoint_attempt_block_time_ms
+            .load(Ordering::Relaxed);
+        let last_checkpoint_time = current_checkpoints_guard
+            .last_key_value()
+            .map(|(_height, checkpoint_info)| checkpoint_info.timestamp_ms)
+            .into_iter()
+            .chain((last_attempt_time > 0).then_some(last_attempt_time))
+            .max();
+
         // Determine whether we should checkpoint based on the last checkpoint timestamp
-        let should_checkpoint = match current_checkpoints_guard.last_key_value() {
+        let should_checkpoint = match last_checkpoint_time {
             None => true,
-            Some((_height, checkpoint_info)) => {
-                checkpoint_info.timestamp_ms < most_recent_checkpoint_interval_time
+            Some(last_checkpoint_time) => {
+                last_checkpoint_time < most_recent_checkpoint_interval_time
                     && block_time >= most_recent_checkpoint_interval_time
             }
         };
@@ -94,6 +123,13 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is before the unix epoch")
+            .as_millis() as u64
+    }
 
     fn make_block_execution_context(height: u64, block_time_ms: u64) -> BlockExecutionContext {
         let platform_version = PlatformVersion::latest();
@@ -158,13 +194,114 @@ mod tests {
             return;
         }
 
-        let block_execution_context = make_block_execution_context(1, 1_000_000);
+        // A block the network has just produced: checkpoints are restore points
+        // for a running node, so the age of the block decides whether one is worth
+        // taking, and a fixed fixture timestamp would read as ancient history.
+        let block_execution_context = make_block_execution_context(1, now_ms());
         let result = platform
             .should_checkpoint_v0(&block_execution_context, platform_version)
             .expect("expected Ok");
 
         // When there are no checkpoints, it should return Some (checkpoint needed)
         assert!(result.is_some(), "first block should trigger checkpoint");
+    }
+
+    /// Replaying history, ten minutes of chain time is a handful of blocks, so a
+    /// checkpoint would be taken dozens of times a second and all but the last
+    /// few deleted again immediately. A node catching up takes none.
+    #[test]
+    fn test_historical_block_does_not_checkpoint() {
+        let platform_version = PlatformVersion::latest();
+        if platform_version
+            .drive_abci
+            .methods
+            .block_end
+            .should_checkpoint
+            .is_none()
+        {
+            return;
+        }
+
+        // Checkpoints are off in the default test config, and the guard for
+        // that returns before the age of the block is looked at. They have to
+        // be on for this test to reach the code it is about.
+        let platform = TestPlatformBuilder::new()
+            .with_config(crate::config::PlatformConfig {
+                testing_configs: crate::config::PlatformTestConfig {
+                    disable_checkpoints: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let block_execution_context =
+            make_block_execution_context(1, now_ms() - 24 * 60 * 60 * 1000);
+        let result = platform
+            .should_checkpoint_v0(&block_execution_context, platform_version)
+            .expect("expected Ok");
+
+        assert!(
+            result.is_none(),
+            "a day-old block is being replayed, not followed"
+        );
+    }
+
+    /// A failed checkpoint is skipped, not retried at a later block: the attempt
+    /// itself spends the interval, and the next checkpoint waits for the next
+    /// interval boundary like on every other node.
+    #[test]
+    fn test_attempted_checkpoint_spends_its_interval() {
+        let platform_version = PlatformVersion::latest();
+        if platform_version
+            .drive_abci
+            .methods
+            .block_end
+            .should_checkpoint
+            .is_none()
+        {
+            return;
+        }
+
+        let platform_config = crate::config::PlatformConfig {
+            testing_configs: crate::config::PlatformTestConfig {
+                disable_checkpoints: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let interval_ms = platform_version.drive_abci.checkpoints.frequency_seconds as u64 * 1000;
+        // One second into the current interval: recent enough not to count as
+        // history, and both blocks below stay on the intended side of the boundary.
+        let now = now_ms();
+        let attempt_time = now - now % interval_ms + 1_000;
+        platform
+            .last_checkpoint_attempt_block_time_ms
+            .store(attempt_time, std::sync::atomic::Ordering::Relaxed);
+
+        let same_interval = make_block_execution_context(2, attempt_time + 1_000);
+        assert!(
+            platform
+                .should_checkpoint_v0(&same_interval, platform_version)
+                .expect("expected Ok")
+                .is_none(),
+            "the rest of the attempted interval is skipped"
+        );
+
+        let next_interval = make_block_execution_context(3, attempt_time + interval_ms);
+        assert!(
+            platform
+                .should_checkpoint_v0(&next_interval, platform_version)
+                .expect("expected Ok")
+                .is_some(),
+            "the next interval boundary checkpoints again"
+        );
     }
 
     #[test]

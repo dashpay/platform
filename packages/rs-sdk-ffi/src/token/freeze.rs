@@ -138,9 +138,9 @@ pub unsafe extern "C" fn dash_sdk_token_freeze(
                 )
             };
 
-            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
-            DataContract::versioned_deserialize(
+            DataContract::versioned_deserialize_untrusted(
                 contract_slice,
                 false, // skip validation since it's already validated
                 wrapper.sdk.version(),
@@ -182,7 +182,7 @@ pub unsafe extern "C" fn dash_sdk_token_freeze(
             .token_freeze(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to freeze token and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to freeze token and wait", e)
             })?;
 
         Ok(result)

@@ -4,11 +4,12 @@ use std::sync::Arc;
 
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
+#[cfg(test)]
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
-use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::identity::SecurityLevel;
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
@@ -16,6 +17,25 @@ use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
+
+// Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
+// for identity operations and cannot authorize an ordinary document write. A key
+// bound to another contract or document type is skipped, a key without limits is
+// preferred, and an expired one or one the signer cannot sign with is skipped.
+fn profile_signing_key<'a>(
+    identity: &'a Identity,
+    dashpay_contract_id: Identifier,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    super::usable_authentication_key(
+        identity,
+        signer,
+        dashpay_contract_id,
+        "profile",
+        &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+        &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+    )
+}
 
 // ---------------------------------------------------------------------------
 // Sync profiles
@@ -109,10 +129,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Mirrors [`Self::create_profile`] but signing is routed through
     /// the supplied `&S: Signer<IdentityPublicKey>`. The signing key
-    /// is still resolved from the identity's `public_keys` map (first
-    /// AUTHENTICATION key, matching the legacy variant) — the signer
+    /// is resolved from the identity's active HIGH or CRITICAL ECDSA
+    /// authentication keys (full public key or HASH160) — the signer
     /// is responsible for producing a signature for whatever key is
-    /// picked.
+    /// picked. Keys `signer.can_sign_with` rejects are skipped.
     ///
     /// All other behavior — avatar hashing, document construction,
     /// local cache update via the persister — is identical to the
@@ -161,8 +181,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             properties.insert("avatarFingerprint".to_string(), Value::Bytes(fp.to_vec()));
         }
 
-        // 4. Look up identity + signing key. We no longer need the
-        // identity_index — the signer is supplied externally.
+        // 4. Look up identity + signing key. The identity_index is not
+        // needed here — the signer is supplied externally.
         let signing_key = {
             let wm = self.wallet_manager.read().await;
             let info = wm
@@ -172,20 +192,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            managed
-                .identity
-                // DashPay profile create/update writes a document state
-                // transition, which DPP requires to be signed by a
-                // HIGH-or-stricter authentication key. MASTER is
-                // intentionally excluded — it's reserved for identity
-                // self-modification (update / key rotation /
-                // withdrawal) and rejected on document writes.
-                .get_first_public_key_matching(
-                    Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
-                    false,
-                )
+            let identity = managed.identity.clone();
+            drop(wm);
+            profile_signing_key(&identity, dashpay_contract.id(), signer)?
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -212,6 +221,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let profile_document_type = dashpay_contract
@@ -334,20 +345,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            managed
-                .identity
-                // DashPay profile create/update writes a document state
-                // transition, which DPP requires to be signed by a
-                // HIGH-or-stricter authentication key. MASTER is
-                // intentionally excluded — it's reserved for identity
-                // self-modification (update / key rotation /
-                // withdrawal) and rejected on document writes.
-                .get_first_public_key_matching(
-                    Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
-                    false,
-                )
+            let identity = managed.identity.clone();
+            drop(wm);
+            profile_signing_key(&identity, dashpay_contract.id(), signer)?
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -374,6 +374,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let profile_document_type = dashpay_contract
@@ -550,6 +552,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// are themselves managed identities are skipped (their own
     /// `dashpay_profile` is authoritative). Display-only: a failure never
     /// aborts the sweep. Returns the number of cache entries changed.
+    ///
+    /// Fetching pending senders' profiles is an accepted privacy cost: an
+    /// observer could link the `$ownerId In [...]` query to our inbound set,
+    /// but the DAPI node that serves our `toUserId == me` query already sees
+    /// that whole set, so the profile fetch adds little.
+    ///
+    /// Profiles are refetched after `CONTACT_PROFILE_REFRESH_MS` rather than by
+    /// `$updatedAt`: `$ownerId In [...] AND $updatedAt > marker` cannot be
+    /// proven in one query (an `In` on the first index field plus a range on
+    /// the second is not a contiguous index range). A per-owner `$updatedAt`
+    /// query would lose the batching.
     pub async fn sync_contact_profiles(&self) -> Result<u32, PlatformWalletError> {
         let now_ms = crate::util::now_ms();
         let dashpay_contract = super::dashpay_contract()?;
@@ -747,6 +760,8 @@ fn single_profile_query(
             value: platform_value!(identity_id),
         }],
         time_range_clauses: vec![],
+        integer_range_clauses: vec![],
+        sub_queries: vec![],
         group_by: vec![],
         having: vec![],
         order_by_clauses: vec![],
@@ -781,6 +796,8 @@ fn contact_profiles_chunk_query(
             value: in_values,
         }],
         time_range_clauses: vec![],
+        integer_range_clauses: vec![],
+        sub_queries: vec![],
         group_by: vec![],
         having: vec![],
         order_by_clauses: vec![OrderClause {
@@ -795,9 +812,106 @@ fn contact_profiles_chunk_query(
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::KeyFilter;
     use super::*;
     use crate::wallet::identity::ProfileUpdate;
     use std::collections::BTreeMap;
+
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::version::PlatformVersion;
+
+    fn profile_key(key_type: KeyType, security_level: SecurityLevel) -> IdentityPublicKeyV0 {
+        IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level,
+            key_type,
+            data: vec![1; key_type.default_size()].into(),
+            ..Default::default()
+        }
+    }
+
+    fn identity_with_key(key: IdentityPublicKeyV0) -> Identity {
+        let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        identity.add_public_key(key.into());
+        identity
+    }
+
+    const DASHPAY: [u8; 32] = [0xDA; 32];
+
+    fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
+        profile_signing_key(identity, Identifier::from(DASHPAY), &KeyFilter(|_| true)).unwrap()
+    }
+
+    #[test]
+    fn should_reject_a_key_bound_to_another_contract() {
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+
+        let mut elsewhere = profile_key(KeyType::ECDSA_SECP256K1, SecurityLevel::HIGH);
+        elsewhere.contract_bounds = Some(ContractBounds::SingleContract {
+            id: Identifier::from([0x0E; 32]),
+        });
+        assert!(pick(&identity_with_key(elsewhere)).is_none());
+
+        let mut dashpay = profile_key(KeyType::ECDSA_SECP256K1, SecurityLevel::HIGH);
+        dashpay.contract_bounds = Some(ContractBounds::SingleContractDocumentType {
+            id: Identifier::from(DASHPAY),
+            document_type_name: "profile".to_string(),
+        });
+        assert!(pick(&identity_with_key(dashpay)).is_some());
+    }
+
+    #[test]
+    fn should_select_high_and_critical_ecdsa_profile_keys() {
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
+                let identity = identity_with_key(profile_key(key_type, level));
+                assert!(pick(&identity).is_some(), "{key_type:?}/{level:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_ineligible_profile_keys() {
+        let empty = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        assert!(pick(&empty).is_none());
+        for key_type in [
+            KeyType::BLS12_381,
+            KeyType::BIP13_SCRIPT_HASH,
+            KeyType::EDDSA_25519_HASH160,
+        ] {
+            assert!(pick(&identity_with_key(profile_key(
+                key_type,
+                SecurityLevel::HIGH
+            )))
+            .is_none());
+        }
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            for level in [SecurityLevel::MASTER, SecurityLevel::MEDIUM] {
+                assert!(pick(&identity_with_key(profile_key(key_type, level))).is_none());
+            }
+            let mut key = profile_key(key_type, SecurityLevel::HIGH);
+            key.disabled_at = Some(1);
+            assert!(pick(&identity_with_key(key)).is_none());
+            let mut key = profile_key(key_type, SecurityLevel::CRITICAL);
+            key.purpose = Purpose::TRANSFER;
+            assert!(pick(&identity_with_key(key)).is_none());
+        }
+    }
+
+    #[test]
+    fn should_select_high_hash160_from_reported_identity_layout() {
+        let mut identity =
+            identity_with_key(profile_key(KeyType::ECDSA_HASH160, SecurityLevel::HIGH));
+        let mut master = profile_key(KeyType::ECDSA_HASH160, SecurityLevel::MASTER);
+        master.id = 0;
+        identity.add_public_key(master.into());
+        let mut transfer = profile_key(KeyType::ECDSA_HASH160, SecurityLevel::CRITICAL);
+        transfer.id = 2;
+        transfer.purpose = Purpose::TRANSFER;
+        identity.add_public_key(transfer.into());
+        assert_eq!(pick(&identity), identity.public_keys().get(&1));
+    }
 
     fn existing_full() -> BTreeMap<String, Value> {
         let mut m = BTreeMap::new();

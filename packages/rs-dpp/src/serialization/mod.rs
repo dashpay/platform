@@ -25,3 +25,5 @@ pub use json::safe_integer::{
 #[cfg(feature = "json-conversion")]
 pub use json::JsonSafeFields;
 pub use serialization_traits::*;
+
+pub(crate) mod untrusted;

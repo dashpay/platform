@@ -1,7 +1,7 @@
 pub mod v0_methods;
 
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ mod property_names {
 /// The Identifier fields in [`TokenBurnTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",

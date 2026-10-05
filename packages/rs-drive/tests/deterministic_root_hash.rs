@@ -306,7 +306,11 @@ mod tests {
             // payment address fields, changing the contract's serialized bytes
             // and therefore the root hash after insertion.
             9..=13 => "14d9e2cdc3f25d1dfd079c1f9dd0d44db5bf73d397b04258449231a2d5bafda7",
-            _ => "02a78b45ecac17a6c08ce352c22b888fcd044de9f4ff82983c5d8fd97e6e8793",
+            // Protocol version 14 also stores the contract's version as a four-byte
+            // item in the contract's other tree (`[64, id, 2] / 64`), one more tree under
+            // the contract's root subtree, serializes every contract with config version 2,
+            // and ships DashPay contract v2 with the optional `shieldedAddress` profile field.
+            _ => "c25bc863d30a4185311546d51bacfdc030ee57671dbae774775d0efd4474220c",
         };
 
         assert_eq!(

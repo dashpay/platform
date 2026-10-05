@@ -1,4 +1,8 @@
 //! Status details of EvoNode, like version, current height, etc.
+//!
+//! Binary serialization under `mocks` is for locally generated fixtures. Those
+//! formats explicitly retain ordinary decoding for foreign Core types; network
+//! responses go through the proof verification and request conversion paths.
 
 use crate::Error;
 use dapi_grpc::platform::v0::{
@@ -10,13 +14,13 @@ use dapi_grpc::platform::v0::{
 use {
     bincode::{Decode, Encode},
     dpp::{version as platform_version, ProtocolError},
-    platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
+    platform_serialization_derive::{PlatformDeserializeTrusted, PlatformSerialize},
 };
 
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// The status of an EvoNode.
@@ -37,7 +41,7 @@ pub struct EvoNodeStatus {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Information about protocol and software components versions.
@@ -50,7 +54,7 @@ pub struct Version {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Information about software components versions.
@@ -65,7 +69,7 @@ pub struct Software {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Information about protocol-level versions used by the node
@@ -78,7 +82,7 @@ pub struct Protocol {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Tenderdash protocol versions.
@@ -92,7 +96,7 @@ pub struct TenderdashProtocol {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Drive protocol versions.
@@ -107,7 +111,7 @@ pub struct DriveProtocol {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Information about current time used by the node.
@@ -125,7 +129,7 @@ pub struct Time {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Evo node identification information.
@@ -138,7 +142,7 @@ pub struct Node {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Layer 2 blockchain information
@@ -165,7 +169,7 @@ pub struct Chain {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Node networking information.
@@ -181,7 +185,7 @@ pub struct Network {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 /// Information about state synchronization progress.

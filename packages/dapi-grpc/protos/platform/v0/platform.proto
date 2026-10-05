@@ -18,6 +18,8 @@ service Platform {
       returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest)
       returns (GetIdentityContractNonceResponse);
+  rpc getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest)
+      returns (GetIdentityKeysRemainingBudgetsResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
   rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
@@ -33,8 +35,33 @@ service Platform {
   rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContractHistory(GetDataContractHistoryRequest)
       returns (GetDataContractHistoryResponse);
+  rpc getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest)
+      returns (GetDataContractsLatestVersionsResponse);
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
+  rpc getDataContractsByRange(GetDataContractsByRangeRequest)
+      returns (GetDataContractsResponse);
+  rpc getContractGroupInfo(GetContractGroupInfoRequest)
+      returns (GetContractGroupInfoResponse);
+  rpc getContractGroupMembers(GetContractGroupMembersRequest)
+      returns (GetContractGroupMembersResponse);
+  rpc getContractGroupsForContract(GetContractGroupsForContractRequest)
+      returns (GetContractGroupsForContractResponse);
+  rpc getContractModerationStatus(GetContractModerationStatusRequest)
+      returns (GetContractModerationStatusResponse);
+  rpc getContractModerationEntries(GetContractModerationEntriesRequest)
+      returns (GetContractModerationEntriesResponse);
+  rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest)
+      returns (GetContractDocumentRemovalsResponse);
+  rpc getContractTeamActions(GetContractTeamActionsRequest)
+      returns (GetContractTeamActionsResponse);
+  rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest)
+      returns (GetContractTeamActionSignersResponse);
+  rpc getContractModerationActionCounts(
+      GetContractModerationActionCountsRequest)
+      returns (GetContractModerationActionCountsResponse);
+  rpc getContractFeePots(GetContractFeePotsRequest)
+      returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -261,6 +288,40 @@ message GetIdentityContractNonceResponse {
   }
 
   oneof version { GetIdentityContractNonceResponseV0 v0 = 1; }
+}
+
+// What is left of the budgets of keys of one identity. A key may carry a
+// total budget (protocol version 14); the key itself never changes, so what
+// remains of it is tracked next to it and read with this query.
+message GetIdentityKeysRemainingBudgetsRequest {
+  message GetIdentityKeysRemainingBudgetsRequestV0 {
+    bytes identity_id = 1;        // ID of the identity
+    repeated uint32 key_ids = 2;  // IDs of the keys to look up, at least one
+    bool prove = 3;               // Flag to request a proof as the response
+  }
+  oneof version { GetIdentityKeysRemainingBudgetsRequestV0 v0 = 1; }
+}
+
+message GetIdentityKeysRemainingBudgetsResponse {
+  message GetIdentityKeysRemainingBudgetsResponseV0 {
+    message KeyRemainingBudgetEntry {
+      uint32 key_id = 1; // ID of the key
+      // Credits left of the key's total budget. Absent when the key has no
+      // budget (or does not exist). Zero means the key can no longer sign.
+      optional uint64 remaining_budget = 2 [ jstype = JS_STRING ];
+    }
+
+    message KeysRemainingBudgets {
+      repeated KeyRemainingBudgetEntry entries = 1; // One entry per requested key
+    }
+
+    oneof result {
+      KeysRemainingBudgets keys_remaining_budgets = 1; // The remaining budgets
+      Proof proof = 2; // Proof of the remaining budgets, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetIdentityKeysRemainingBudgetsResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceResponse {
@@ -497,6 +558,584 @@ message GetDataContractResponse {
   oneof version { GetDataContractResponseV0 v0 = 1; }
 }
 
+// Returns the current version number of each requested data contract: the
+// cheap way for a client to check that the contracts it already holds are
+// still current. Every distinct requested id gets an entry; an id no contract has gets
+// an entry without `version`. Serialized contracts are added only when
+// `include_contracts` is set.
+//
+// From protocol version 14 every contract carries a four-byte version item
+// beside it in state. Without `include_contracts`, the unproved form answers
+// from Drive's contract cache or that item without loading a contract, and
+// the proof covers the items, a few hundred bytes of hash path per contract.
+// With `include_contracts`, and on earlier protocol versions, the unproved
+// form reads the contracts through the cache and the proof is the
+// multi-contract proof `getDataContracts` returns, which carries the
+// contracts.
+message GetDataContractsLatestVersionsRequest {
+  message GetDataContractsLatestVersionsRequestV0 {
+    repeated bytes ids =
+        1; // The IDs of the data contracts, at least one and at most 100
+    bool include_contracts =
+        2; // When set, found entries also carry the serialized contract
+    bool prove = 3; // Flag to request a proof as the response
+  }
+  oneof version { GetDataContractsLatestVersionsRequestV0 v0 = 1; }
+}
+
+message GetDataContractsLatestVersionsResponse {
+  message DataContractLatestVersionEntry {
+    bytes identifier = 1; // The requested contract id
+    optional uint32 version =
+        2; // The contract's current version number; absent when no contract has this id
+    optional bytes data_contract =
+        3; // The serialized contract, only when `include_contracts` was set and the contract exists
+  }
+
+  message DataContractsLatestVersions {
+    repeated DataContractLatestVersionEntry entries =
+        1; // One entry per requested contract id
+  }
+
+  message GetDataContractsLatestVersionsResponseV0 {
+    oneof result {
+      DataContractsLatestVersions data_contracts_latest_versions =
+          1; // The current versions, and the contracts if requested
+      Proof proof =
+          2; // Cryptographic proof of the data contracts, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDataContractsLatestVersionsResponseV0 v0 = 1; }
+}
+
+// A document type that belongs to a contract group: the contract and the
+// document type name.
+message ContractGroupDocumentTypeMember {
+  bytes contract_id = 1;         // The contract the document type belongs to
+  string document_type_name = 2; // The document type name within the contract
+}
+
+// A token that belongs to a contract group: the contract and the token's
+// position within it.
+message ContractGroupTokenMember {
+  bytes contract_id = 1;      // The contract the token belongs to
+  uint32 token_position = 2;  // The token's position in the contract (u16)
+}
+
+message GetContractGroupInfoRequest {
+  message GetContractGroupInfoRequestV0 {
+    bytes contract_group_id = 1; // The 32-byte id of the contract group
+    bool prove = 2;              // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupInfoRequestV0 v0 = 1; }
+}
+
+message GetContractGroupInfoResponse {
+  message ContractGroupInfo {
+    bytes owner_id = 1; // The identity that registered the group and owns it
+    repeated bytes admin_ids =
+        2; // Identities that may add members besides the owner; empty for a
+           // single owner
+    optional string name = 3;        // The group's name, when it has one
+    optional string description = 4; // The group's description, when it has one
+  }
+
+  message GetContractGroupInfoResponseV0 {
+    oneof result {
+      ContractGroupInfo contract_group_info =
+          1; // The group's stored information; absent when no such group exists
+      Proof proof = 2; // Cryptographic proof of the information, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupInfoResponseV0 v0 = 1; }
+}
+
+message GetContractGroupMembersRequest {
+  // Contracts that belong to the group as a whole, in contract id order.
+  message ContractMembersQuery {
+    optional bytes start_after =
+        1; // 32-byte contract id; the page starts after it
+  }
+
+  // Document types that belong to the group, in contract id then document
+  // type name order.
+  message DocumentTypeMembersQuery {
+    optional ContractGroupDocumentTypeMember start_after =
+        1; // The page starts after this document type
+  }
+
+  // Tokens that belong to the group, in contract id then token position order.
+  message TokenMembersQuery {
+    optional ContractGroupTokenMember start_after =
+        1; // The page starts after this token
+  }
+
+  message GetContractGroupMembersRequestV0 {
+    bytes contract_group_id = 1; // The 32-byte id of the contract group
+    oneof members {
+      ContractMembersQuery contracts = 2;          // Read the member contracts
+      DocumentTypeMembersQuery document_types = 3; // Read the member document types
+      TokenMembersQuery tokens = 4;                // Read the member tokens
+    }
+    optional uint32 limit =
+        5; // Maximum number of members to return, 1..=100; absent means 100
+    bool prove = 6; // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupMembersRequestV0 v0 = 1; }
+}
+
+message GetContractGroupMembersResponse {
+  message ContractMembers {
+    repeated bytes contract_ids = 1; // Member contracts, in contract id order
+  }
+
+  message DocumentTypeMembers {
+    repeated ContractGroupDocumentTypeMember document_types =
+        1; // Member document types, in contract id then name order
+  }
+
+  message TokenMembers {
+    repeated ContractGroupTokenMember tokens =
+        1; // Member tokens, in contract id then position order
+  }
+
+  message GetContractGroupMembersResponseV0 {
+    oneof result {
+      ContractMembers contracts = 1;          // One page of member contracts
+      DocumentTypeMembers document_types = 2; // One page of member document types
+      TokenMembers tokens = 3;                // One page of member tokens
+      Proof proof = 4; // Cryptographic proof of the page, if requested
+    }
+    ResponseMetadata metadata = 5; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupMembersResponseV0 v0 = 1; }
+}
+
+// One of the moderation lists a moderated data contract may keep (protocol version 14).
+enum ContractModerationList {
+  CONTRACT_MODERATION_LIST_UNSPECIFIED = 0; // Not a list: a request that leaves the field out is refused
+  CONTRACT_MODERATION_LIST_BANLIST = 1;     // Identities barred until an unban
+  CONTRACT_MODERATION_LIST_SUSPENSIONS = 2; // Identities barred until a block time
+  CONTRACT_MODERATION_LIST_WARNINGS = 3;    // Identities warned, barred from nothing
+}
+
+// A document a moderation reason is about.
+message ContractModerationDocument {
+  string document_type_name = 1; // The document type, on the moderated contract
+  bytes document_id = 2;         // The 32-byte id of the document
+}
+
+// Why a moderator banned, suspended or warned an identity, or deleted a
+// document. Nothing checks what a moderator writes, and the documents cited
+// are not looked up, except the reason document a seated elected team names.
+message ContractModerationReason {
+  optional uint32 code =
+      1; // Reserved for the ban codes a contract may declare in a later
+         // protocol version; a u16, expected unset today, never checked
+  string text = 2; // Free text, at most 1024 bytes of UTF-8, may be empty
+  repeated ContractModerationDocument documents =
+      3; // The documents the reason is about, at most 16, none twice
+  optional bytes reason_document_id =
+      4; // The 32-byte id of the moderation charters contract's `reason`
+         // document the action is taken on; one the seated team's proposal
+         // lists for a seated elected team's action, unchecked otherwise
+}
+
+// One warning an identity carries on a contract's warning list.
+message ContractWarning {
+  uint64 warned_at = 1; // The time of the block that issued it, in milliseconds
+  ContractModerationReason reason = 2; // Why
+}
+
+message GetContractModerationStatusRequest {
+  message GetContractModerationStatusRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    bytes identity_id = 2; // The 32-byte id of the identity
+    repeated ContractModerationList lists =
+        3; // The lists to read, which the contract's config must declare; at
+           // least one, no repeats
+    bool prove = 4; // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationStatusRequestV0 v0 = 1; }
+}
+
+message GetContractModerationStatusResponse {
+  // The identity's status on the lists the request named, and on no other: a
+  // list that was not read says nothing, so its field is left unset.
+  message ContractModerationStatus {
+    optional bool banned =
+        1; // Set only when the banlist was read: the identity is on it
+    optional uint64 suspended_until =
+        2; // The block time, in milliseconds, until which the identity is
+           // suspended; a lapsed suspension stays until it is swept. Unset
+           // when the identity is not suspended or the list was not read
+    repeated ContractModerationList lists =
+        3; // The lists this status covers, as the request named them
+    optional ContractModerationReason ban_reason =
+        4; // Set when the identity is banned: why
+    optional ContractModerationReason suspension_reason =
+        5; // Set when the identity is suspended: why
+    repeated ContractWarning warnings =
+        6; // When the warning list was read: the identity's warnings, oldest
+           // first; empty when it carries none
+  }
+
+  message GetContractModerationStatusResponseV0 {
+    oneof result {
+      ContractModerationStatus status = 1; // The identity's status on the lists read
+      Proof proof = 2;                     // Cryptographic proof of the status, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationStatusResponseV0 v0 = 1; }
+}
+
+message GetContractModerationEntriesRequest {
+  message GetContractModerationEntriesRequestV0 {
+    bytes contract_id = 1;           // The 32-byte id of the moderated contract
+    ContractModerationList list = 2; // The list to read, which the contract's config must declare
+    optional bytes start_after =
+        3; // 32-byte identity id; the page starts after it
+    optional uint32 limit =
+        4; // Maximum number of entries to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationEntriesRequestV0 v0 = 1; }
+}
+
+message GetContractModerationEntriesResponse {
+  message ContractModerationEntry {
+    bytes identity_id = 1; // The identity on the list
+    optional uint64 until =
+        2; // For a suspension list entry: the block time, in milliseconds, at
+           // which it lapses
+    ContractModerationReason reason =
+        3; // Why the identity is on the list: the ban's reason or the
+           // suspension's. Unset for a warning list entry, whose reasons
+           // are its warnings'
+    repeated ContractWarning warnings =
+        4; // For a warning list entry: every warning the identity carries,
+           // oldest first; the latest is why it is on the list
+  }
+
+  message ContractModerationEntries {
+    repeated ContractModerationEntry entries = 1; // The page, in identity id order
+  }
+
+  message GetContractModerationEntriesResponseV0 {
+    oneof result {
+      ContractModerationEntries entries = 1; // One page of the list
+      Proof proof = 2;                       // Cryptographic proof of the page, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationEntriesResponseV0 v0 = 1; }
+}
+
+// The records of the documents a contract's moderators deleted, within one
+// document type whose documents they may delete (`moderatorAbilities.delete`):
+// the ones of the document ids named, or one page in document id order.
+message GetContractDocumentRemovalsRequest {
+  message DocumentIds {
+    repeated bytes document_ids =
+        1; // 32-byte document ids, from 1 to the protocol's
+           // max_returned_elements (100), none twice; an id with no record is
+           // left out of the response, and proved absent when a proof is asked
+  }
+
+  message Page {
+    optional bytes start_after =
+        1; // 32-byte document id; the page starts after it
+    optional uint32 limit =
+        2; // Maximum number of records to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+  }
+
+  message GetContractDocumentRemovalsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    string document_type_name =
+        2; // The document type, which must let moderators delete its documents
+    oneof selection {
+      DocumentIds document_ids = 3; // The records of these documents
+      Page page = 4;                // One page of the type's records
+    }
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractDocumentRemovalsRequestV0 v0 = 1; }
+}
+
+message GetContractDocumentRemovalsResponse {
+  message ContractDocumentRestoration {
+    bytes moderator_id =
+        1; // The contract owner or moderator that restored the document
+    uint64 restored_at =
+        2; // The time of the block that restored it, in milliseconds
+  }
+
+  message ContractDocumentRemoval {
+    bytes document_id = 1;       // The id the removed document had
+    bytes document_owner_id = 2; // The identity that owned it
+    bytes moderator_id = 3; // The contract owner or moderator that removed it
+    uint64 removed_at =
+        4; // The time of the block that removed it, in milliseconds
+    ContractModerationReason reason = 5; // Why the moderator removed it
+    bytes document_hash =
+        6; // A 32-byte double SHA-256 of the document as it was serialized
+           // under its document type when it was removed: what a restore must
+           // bring back byte for byte
+    ContractDocumentRestoration restoration =
+        7; // Set once a moderator restored the document, which is then live
+           // again as it was; absent while the removal stands
+    bytes kept_fields =
+        8; // The values the record keeps of the document, as the record stores
+           // them: for each path its document type lists under
+           // moderatorAbilities.deleteKeepsFields, in the list's order, 0 when
+           // the document held no value there, or 1 and the value encoded as
+           // the document encodes its properties. Read under the contract's
+           // document type, as a document is. Empty when the type keeps none
+  }
+
+  message ContractDocumentRemovals {
+    repeated ContractDocumentRemoval removals =
+        1; // The records, in document id order
+  }
+
+  message GetContractDocumentRemovalsResponseV0 {
+    oneof result {
+      ContractDocumentRemovals removals = 1; // The records read
+      Proof proof = 2; // Cryptographic proof of the records, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractDocumentRemovalsResponseV0 v0 = 1; }
+}
+
+message GetContractTeamActionsRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // Actions still gathering approvals
+    CLOSED = 1; // Actions whose approvals met their rule, which ran
+  }
+
+  message StartAtActionId {
+    bytes start_action_id = 1;        // 32-byte action id the page starts at
+    bool start_action_id_included = 2; // Whether the page includes that action
+  }
+
+  message GetContractTeamActionsRequestV0 {
+    bytes contract_id =
+        1; // The 32-byte id of the elected contract whose seated moderation
+           // team votes on the actions
+    ActionStatus status = 2; // Active or closed actions
+    optional StartAtActionId start_at_action_id =
+        3; // Where the page starts, in action id order; absent means the first
+    optional uint32 count =
+        4; // Maximum number of actions to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractTeamActionsRequestV0 v0 = 1; }
+}
+
+message GetContractTeamActionsResponse {
+  // The deletion of a settled document: one past its type's deleteWithin
+  // window, which its type's moderatorAbilities.deleteSettled lets the team
+  // delete together
+  message DeleteSettledDocument {
+    string document_type_name = 1; // The document's type
+    bytes document_id = 2;         // The 32-byte id of the document
+    uint64 document_last_modified_at =
+        3; // The document's $updatedAt (or $createdAt) when proposed: the
+           // approvals are of the document as it was then
+    optional uint64 document_revision =
+        4; // The document's $revision when proposed, absent on a type whose
+           // documents carry none: an approval of a document changed since is
+           // refused
+    ContractModerationReason reason = 5; // Why, as the proposer gave it
+  }
+
+  // One action the seated team votes on: proposed by one member, approved by
+  // the others by its id, run once the approvals meet its rule
+  message ContractTeamAction {
+    bytes action_id = 1;   // The 32-byte id of the action
+    bytes proposer_id = 2; // The 32-byte id of the member that proposed it
+    uint64 proposed_at =
+        3; // The time of the block of the proposal, in milliseconds
+    oneof event {
+      DeleteSettledDocument delete_settled_document = 4; // What it does
+    }
+    uint32 approval_count =
+        5; // How many approvals it holds, the proposer's among them; an active
+           // action's is an upper bound, counting a member who left the team
+           // until a later approval reads the team and drops it; the exact
+           // figure is its signers still on the team
+  }
+
+  message ContractTeamActions {
+    repeated ContractTeamAction actions = 1; // The actions, in action id order
+  }
+
+  message GetContractTeamActionsResponseV0 {
+    oneof result {
+      ContractTeamActions actions = 1; // The actions read
+      Proof proof = 2; // Cryptographic proof of the actions, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractTeamActionsResponseV0 v0 = 1; }
+}
+
+message GetContractTeamActionSignersRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // An action still gathering approvals
+    CLOSED = 1; // An action whose approvals met its rule, which ran
+  }
+
+  message GetContractTeamActionSignersRequestV0 {
+    bytes contract_id =
+        1; // The 32-byte id of the elected contract whose seated moderation
+           // team votes on the action
+    ActionStatus status = 2; // Whether the action is active or closed
+    bytes action_id = 3;     // The 32-byte id of the action
+    bool prove = 4;          // Flag to request a proof as the response
+  }
+  oneof version { GetContractTeamActionSignersRequestV0 v0 = 1; }
+}
+
+message GetContractTeamActionSignersResponse {
+  message ContractTeamActionSigners {
+    repeated bytes signer_ids =
+        1; // The 32-byte ids of the members that approved, the proposer among
+           // them unless it left the team and its approval was dropped, in id
+           // order; none when there is no such action
+  }
+
+  message GetContractTeamActionSignersResponseV0 {
+    oneof result {
+      ContractTeamActionSigners signers = 1; // The approvals read
+      Proof proof = 2; // Cryptographic proof of the approvals, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractTeamActionSignersResponseV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsRequest {
+  message GetContractModerationActionCountsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the elected contract whose
+                           // seated moderation team's actions are counted
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationActionCountsRequestV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsResponse {
+  // How many counted moderation actions (a ban, a suspension, a warning or a
+  // document deletion) one member of the seated team signed since the
+  // moderators pot was last paid out, which resets every count
+  message ContractModerationActionCount {
+    bytes identity_id = 1; // The 32-byte id of the member
+    uint32 count = 2;      // How many
+  }
+  message ContractModerationActionCounts {
+    repeated ContractModerationActionCount counts =
+        1; // The counts, in identity id order; a member that did not act since
+           // the last payout has none
+  }
+  message GetContractModerationActionCountsResponseV0 {
+    oneof result {
+      ContractModerationActionCounts counts = 1; // The counts read
+      Proof proof = 2; // Cryptographic proof of the counts, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationActionCountsResponseV0 v0 = 1; }
+}
+
+message GetContractFeePotsRequest {
+  message GetContractFeePotsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the data contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractFeePotsRequestV0 v0 = 1; }
+}
+
+message GetContractFeePotsResponse {
+  // The last payout of a pot, which the claim that made it left in state
+  message ContractFeePotLastClaim {
+    uint32 epoch = 1; // The epoch (u16) the pot was paid out in; a pot is paid
+                      // out at most once per epoch
+    uint64 time_ms = 2
+        [ jstype = JS_STRING ]; // The time of the block that paid the pot out
+    bytes claimant_id = 3; // The identity that signed the claim: the contract
+                           // owner for the owner pot, the member of the
+                           // moderation team that claimed for the moderators pot
+  }
+
+  // One of the two pots a contract's document action fees collect in
+  message ContractFeePot {
+    uint64 credits = 1 [ jstype = JS_STRING ]; // What the pot holds
+    ContractFeePotLastClaim last_claim =
+        2; // Unset when the pot was never paid out
+  }
+
+  message ContractFeePots {
+    ContractFeePot owner = 1;      // The pot the contract owner claims
+    ContractFeePot moderators = 2; // The pot the moderation team shares
+  }
+
+  message GetContractFeePotsResponseV0 {
+    oneof result {
+      ContractFeePots pots = 1; // Both pots of the contract
+      Proof proof = 2;          // Cryptographic proof of the pots, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractFeePotsResponseV0 v0 = 1; }
+}
+
+message GetContractGroupsForContractRequest {
+  message GetContractGroupsForContractRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupsForContractRequestV0 v0 = 1; }
+}
+
+message GetContractGroupsForContractResponse {
+  message DocumentTypeMemberships {
+    string document_type_name = 1; // The document type within the contract
+    repeated bytes contract_group_ids =
+        2; // The groups the document type belongs to
+  }
+
+  message TokenMemberships {
+    uint32 token_position = 1; // The token's position in the contract (u16)
+    repeated bytes contract_group_ids = 2; // The groups the token belongs to
+  }
+
+  message ContractGroupMemberships {
+    repeated bytes contract_group_ids =
+        1; // The groups the whole contract belongs to
+    repeated DocumentTypeMemberships document_types =
+        2; // The groups each document type belongs to
+    repeated TokenMemberships tokens = 3; // The groups each token belongs to
+  }
+
+  message GetContractGroupsForContractResponseV0 {
+    oneof result {
+      ContractGroupMemberships contract_group_memberships =
+          1; // The memberships; every list is empty when the contract belongs
+             // to no group
+      Proof proof = 2; // Cryptographic proof of the memberships, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupsForContractResponseV0 v0 = 1; }
+}
+
 message GetDataContractsRequest {
   message GetDataContractsRequestV0 {
     repeated bytes ids =
@@ -504,6 +1143,28 @@ message GetDataContractsRequest {
     bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetDataContractsRequestV0 v0 = 1; }
+}
+
+// Enumerates every data contract on Platform, one page at a time, in
+// ascending contract id order. Answered with `GetDataContractsResponse`:
+// each `DataContractEntry` carries the contract id and, unless `ids_only`
+// is set, the serialized contract. An empty page (no more contracts) is an
+// empty `data_contract_entries` list, never NotFound. A page shorter than
+// `limit` is the last page; otherwise pass the last entry's identifier as
+// `start_after` to fetch the next one.
+message GetDataContractsByRangeRequest {
+  message GetDataContractsByRangeRequestV0 {
+    optional uint32 limit =
+        1; // Maximum number of contracts to return, 1..=100; absent means 100
+    oneof start {
+      bytes start_after = 2; // 32-byte contract id; the page starts after it
+      bytes start_at = 3;    // 32-byte contract id; the page starts at it
+    }
+    bool ids_only =
+        4; // When set, entries carry only `identifier`; `data_contract` is unset
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetDataContractsByRangeRequestV0 v0 = 1; }
 }
 
 message GetDataContractsResponse {
@@ -596,16 +1257,25 @@ message GetDocumentsRequest {
     STARTS_WITH = 10;
     // Time-range bucket selection (v1 only; the v0 CBOR surface is
     // unaffected). `field` names a timestamp covered by a `timeRange`
-    // index. Operand: `text` selector `"newest"`/`"oldest"` when one grid
-    // buckets the field, or `list` `[selector, range, step(, phase)]` in
-    // the contract's declared seconds to name one of several grids (zero
-    // phase is spelled by omission — one wire spelling per grid). The
-    // server resolves it to a bucket-start equality from current block
-    // time; the verifier re-derives the same bucket from the quorum-signed
-    // metadata time — an ordinary index/count proof. See `timeRange` in
-    // the document meta-schema and
-    // `drive::query::resolve_time_range_bucket_clause`.
+    // index. The operand is `WhereClause.time_range` (a
+    // `TimeRangeSelection`); `WhereClause.value` must be unset. For the
+    // relative selectors (`NEWEST` / `OLDEST`) the server resolves the
+    // selection to a bucket-start equality from current block time and
+    // the verifier re-derives the same bucket from the quorum-signed
+    // metadata time; `BY_START` names the window absolutely, so both
+    // sides read the start straight from the query — an ordinary
+    // index/count proof either way. See `timeRange` in the document
+    // meta-schema and `drive::query::resolve_time_range_bucket_clause`.
     IN_TIME_RANGE = 11;
+    // Integer-range window selection (v1 only). `field` names an integer
+    // property covered by an `integerRange` index. The operand is
+    // `WhereClause.integer_range` (an `IntegerRangeSelection`);
+    // `WhereClause.value` must be unset. The window is named by its
+    // start, so the server and the verifier both resolve it from the
+    // query alone to a window-start equality — an ordinary index/count
+    // proof. See `integerRange` in the document meta-schema and
+    // `drive::query::resolve_integer_range_bucket_clause`.
+    IN_INTEGER_RANGE = 12;
   }
 
   // Tagged scalar (or list) operand for a `WhereClause`. The
@@ -658,6 +1328,80 @@ message GetDocumentsRequest {
     }
   }
 
+  // Operand of an `IN_TIME_RANGE` where clause: which window of a
+  // `timeRange` grid the query selects. Typed rather than riding
+  // `DocumentFieldValue` — the selection is not a field value, and a
+  // structured message keeps the selector an enum instead of a
+  // magic string.
+  //
+  // The relative selectors are resolved server-side: `NEWEST` is the
+  // freshest started window (largest grid start <= block time; the
+  // latest partial slice of history), `OLDEST` the oldest window still
+  // active at block time (a near-full trailing window of ~`range` —
+  // best for "trending over the last window"). The proof verifier
+  // re-derives the same window from the quorum-signed response
+  // metadata time, so neither side trusts the other's clock.
+  //
+  // `BY_START` names a window absolutely — any window, current or
+  // historic — by its start. `start_ms` is then required and must lie
+  // on the grid (`start_ms == phase + k * step`, in milliseconds);
+  // an unaligned start is rejected rather than snapped. A window with
+  // no documents (including one that has not started yet) is a
+  // provable empty answer, not an error. The relative selectors must
+  // NOT carry `start_ms` — one wire spelling per meaning.
+  message TimeRangeSelection {
+    enum Selector {
+      NEWEST = 0;
+      OLDEST = 1;
+      BY_START = 2;
+    }
+    // Names one of the field's declared grids, in the contract's own
+    // seconds — verbatim from the contract's `timeRange` declaration.
+    // Required when more than one `timeRange` grid buckets the field
+    // (the bare selector is ambiguous there and rejected); optional
+    // while exactly one grid does. A zero `phase` is the proto3
+    // default, matching the contract grammar where `phase` is an
+    // omittable key — every grid has exactly one wire spelling by
+    // construction.
+    message Grid {
+      uint64 range = 1 [jstype = JS_STRING];
+      uint64 step = 2 [jstype = JS_STRING];
+      uint64 phase = 3 [jstype = JS_STRING];
+    }
+    Selector selector = 1;
+    // `BY_START` only: the selected window's start, as a millisecond
+    // timestamp on the grid (see the message docstring). Rejected on
+    // the relative selectors.
+    optional uint64 start_ms = 2 [jstype = JS_STRING];
+    Grid grid = 3;
+  }
+
+  // Operand of an `IN_INTEGER_RANGE` where clause: which window of an
+  // `integerRange` grid the query selects, named by its start.
+  //
+  // `start` is required and must be a window start of the grid:
+  // `phase + k * step` within the property's integer type, or the
+  // type's minimum (0 for a property with a non-negative minimum), which
+  // starts the bottom window when the grid clamps it. An unaligned start
+  // is rejected rather than snapped. It rides as a `DocumentFieldValue`
+  // (`int64_value` or `uint64_value`) and is coerced through the schema
+  // like any value of the field. A window with no documents is a
+  // provable empty answer, not an error.
+  message IntegerRangeSelection {
+    // Names one of the field's declared grids, verbatim from the
+    // contract's `integerRange` declaration. Required when more than one
+    // grid buckets the field; optional while exactly one does. A zero
+    // `phase` is the proto3 default, matching the contract grammar where
+    // `phase` is an omittable key.
+    message Grid {
+      uint64 range = 1 [jstype = JS_STRING];
+      uint64 step = 2 [jstype = JS_STRING];
+      uint64 phase = 3 [jstype = JS_STRING];
+    }
+    DocumentFieldValue start = 1;
+    Grid grid = 2;
+  }
+
   // Single `field <op> value` clause. The server reassembles a
   // `Vec<WhereClause>` from the request's `where_clauses` field,
   // runs the same `WhereClause::group_clauses` validator (rejects
@@ -666,10 +1410,18 @@ message GetDocumentsRequest {
   // then hands the structured clauses to the executor. Wire
   // semantics are identical to v0's CBOR `[field, op, value]`
   // triples — only the envelope differs.
+  //
+  // Exactly one operand field is set, keyed by the operator:
+  // `operator = IN_TIME_RANGE` carries its operand in `time_range`,
+  // `operator = IN_INTEGER_RANGE` in `integer_range` (`value` unset in
+  // both); every other operator carries `value` (`time_range` and
+  // `integer_range` unset). Any mismatch is rejected.
   message WhereClause {
     string field = 1;
     WhereOperator operator = 2;
     DocumentFieldValue value = 3;
+    TimeRangeSelection time_range = 4;
+    IntegerRangeSelection integer_range = 5;
   }
 
   // Per-group aggregate operand for the left side of a
@@ -1158,6 +1910,127 @@ message GetDocumentsRequest {
     // no ranked executor. Cursor pagination via `start_after` /
     // `start_at` remains the supported way to page through documents.
     optional uint32 offset = 12;
+
+    // Chained mode — a provable semi-join:
+    // `SELECT * FROM <outer_document_type> WHERE $id IN
+    //   (SELECT <join_property> FROM <document_type> WHERE ...)`.
+    //
+    // Presence of this message selects chained mode: this request's
+    // own `document_type` / `where_clauses` / `order_by` / `limit`
+    // describe the INNER indexOnly query, and the outer half is
+    // DERIVED from its results — the request carries no outer
+    // clauses by design, and the verifier re-derives the outer
+    // query from the proven inner values, so the join cannot be
+    // steered by the responding node.
+    //
+    // Mode gates (rejected otherwise): the inner type must be
+    // indexOnly and resolve to an index carrying `join_property`;
+    // `join_property` must declare a same-contract
+    // `refersTo: permanentDocument` targeting
+    // `outer_document_type`; `limit` is REQUIRED (it bounds the
+    // derived outer query — no server-default fallback) and capped
+    // by the outer `$id IN` clause's 100-value limit; `selects`
+    // must be empty or a single DOCUMENTS projection; `group_by`,
+    // `having`, time-range clauses, cursors, and `offset` are all
+    // rejected. Pagination is a range clause on `join_property`.
+    //
+    // The verifier needs nothing beyond the proof itself: it
+    // subset-verifies the inner query against the merged proof to
+    // extract the join values, re-derives the outer component, and
+    // verifies the whole composition. A node that predates this
+    // field ignores it (proto3 unknown field) and serves the plain
+    // inner query — which FAILS CLOSED client-side: an inner-only
+    // proof cannot satisfy the re-derived merged query for a
+    // non-empty page, and an unproven response carries the wrong
+    // ResultData variant.
+    message ChainedJoin {
+      // The inner property whose proven values become the outer
+      // documents' `$id`s.
+      string join_property = 1;
+      // The joined document type — the `refersTo` target.
+      string outer_document_type = 2;
+    }
+    ChainedJoin chained = 13;
+
+    // Composite mode — a page plus sub-queries DERIVED from its
+    // results, answered as ONE merged proof over one state root.
+    //
+    // Presence of any `sub_queries` selects composite mode: this
+    // request's own `data_contract_id` / `document_type` /
+    // `where_clauses` / `order_by` / `limit` describe the PAGE, and
+    // every sub-query's `IN` clause is derived by the node from the
+    // page's (or an earlier sub-query's) proven documents. The
+    // verifier re-derives every sub-query from the proven page with
+    // the same builders, re-merges, and verifies the whole
+    // composition — so the composition cannot be steered by the
+    // responding node, and a node that predates this field (proto3
+    // unknown field) serves a page-only proof that FAILS CLOSED
+    // client-side.
+    //
+    // Mode gates (rejected otherwise): `limit` is REQUIRED on the
+    // page (at most 100 — it bounds every derived clause); `selects`
+    // must be empty or a single DOCUMENTS projection; `group_by`,
+    // `having`, time-range clauses, cursors and `offset` are
+    // rejected (paginate with a range clause on the page's ordering
+    // property); `chained` and `sub_queries` are mutually exclusive.
+    // See `SubQuery` for the per-sub-query rules.
+    message SubQuery {
+      // The contract this sub-query targets. Empty = the page's own
+      // contract; otherwise any contract (profiles keyed by owner,
+      // names keyed by identity).
+      bytes data_contract_id = 1;
+      string document_type = 2;
+      // The FIXED clauses — everything but the derived `IN`, which
+      // must not be named here.
+      repeated WhereClause where_clauses = 3;
+      // Ordering (documents only). Every component of the merged proof
+      // walks in the page's direction: a bound field missing from here
+      // is appended in that direction by the node and the verifier
+      // alike, and an ordering that disagrees with the page's direction
+      // is refused (turning a limited lookup around would change the
+      // rows it returns).
+      repeated OrderClause order_by = 4;
+      // Documents lookups on a non-unique index REQUIRE a limit: it
+      // caps the rows the lookup returns in total, in walk order, like
+      // an ordinary IN query's limit (at most 100). Lookups already
+      // bounded by their values (a unique index, or an indexOnly
+      // terminal with every prefix fixed), by-id joins (completeness is
+      // set equality) and counts take none.
+      optional uint32 limit = 5;
+      enum Kind {
+        // The matching documents.
+        DOCUMENTS = 0;
+        // One count per derived value from the `countable` index
+        // covering the fixed clauses plus the bound field. Must be
+        // bound, and must not share its index path with a documents
+        // component (the count reads the value trees the documents
+        // query descends past).
+        COUNT = 1;
+      }
+      Kind kind = 6;
+      // The derived clause `<field> IN <values>`. Absent = a SIBLING:
+      // an independent documents query proven under the same root.
+      message Binding {
+        // Whose proven documents supply the values: `0` = the page,
+        // `n` = `sub_queries[n - 1]` (which must precede this one and
+        // be a DOCUMENTS sub-query).
+        uint32 source = 1;
+        // The source property read off each document: `$id`,
+        // `$ownerId`, or an identifier-typed property (dotted paths
+        // reach nested properties). Documents without it contribute
+        // nothing.
+        string source_property = 2;
+        // The sub-query field receiving the `IN` clause. `$id` makes
+        // this a by-id JOIN: the source property must then declare
+        // `refersTo: permanentDocument` targeting this document type,
+        // so every derived id resolves and a missing document is an
+        // invalid proof. Otherwise `$ownerId` or an indexed property
+        // (a LOOKUP, where absence is a proven fact).
+        string field = 3;
+      }
+      Binding bind = 7;
+    }
+    repeated SubQuery sub_queries = 14;
   }
 
   oneof version {
@@ -1503,7 +2376,71 @@ message GetDocumentsResponse {
         // `skipped` carries the page's starting rank — see
         // `RankedEntries`.
         RankedEntries ranked = 5;
+        // Chained-mode result: both halves of the provable
+        // semi-join, in inner order (the last inner projection's
+        // join-property value is the pagination cursor; outer
+        // documents are ordered by first appearance of their id
+        // among the inner projections, deduplicated). Routed when
+        // the request's `chained` message is present.
+        ChainedDocuments chained = 6;
+        // Composite-mode result: the page plus one result per
+        // sub-query, in request order. Routed when the request
+        // carries `sub_queries`.
+        CompositeDocuments composite = 7;
       }
+    }
+
+    // Both halves of a chained (semi-join) query, each serialized
+    // with its own document type.
+    message ChainedDocuments {
+      repeated bytes inner_documents = 1;
+      repeated bytes outer_documents = 2;
+      // The join values that have NO outer document, in first
+      // appearance order: referenced documents deleted after the
+      // inner document was written. Only a join property declaring
+      // `refersTo: deletableDocument` can report any; under
+      // `refersTo: permanentDocument` a missing document fails the
+      // query instead.
+      repeated bytes missing_outer_ids = 3;
+      // The join values whose outer document the contract's
+      // moderators removed, each with its removal record, in first
+      // appearance order. Only a join property declaring `refersTo:
+      // moderatedDocument` can report any; there a join value with
+      // neither a document nor a record fails the query.
+      repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+          removed_outer_documents = 4;
+    }
+
+    // A composite query's page and per-sub-query results, documents
+    // serialized with their own document type.
+    message CompositeDocuments {
+      // The page, exactly as the page query alone would return it.
+      repeated bytes page_documents = 1;
+      message SubQueryResult {
+        oneof result {
+          // DOCUMENTS: a by-id join in first-appearance order of the
+          // derived ids; a lookup or sibling in query order.
+          Documents documents = 1;
+          // COUNT: one entry per derived value that has a count tree
+          // (a value with no entry counts zero), keyed by the
+          // value's index-key bytes.
+          CountEntries counts = 2;
+        }
+        // DOCUMENTS by-id join only: the derived ids that have NO
+        // document, in first appearance order (referenced documents
+        // deleted since). Only a source property declaring
+        // `refersTo: deletableDocument` can report any.
+        repeated bytes missing_ids = 3;
+        // DOCUMENTS by-id join only: the derived ids whose document
+        // the contract's moderators removed, each with its removal
+        // record, in first appearance order. Only a source property
+        // declaring `refersTo: moderatedDocument` can report any; there
+        // a derived id with neither a document nor a record fails the
+        // query.
+        repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+            removed = 4;
+      }
+      repeated SubQueryResult sub_results = 2;
     }
 
     oneof result {
@@ -1617,17 +2554,33 @@ message WaitForStateTransitionResultRequest {
     bytes state_transition_hash =
         1;          // The hash of the state transition to wait for
     bool prove = 2; // Flag to request a proof as the response
+    // Flag to request, without a proof, the credit balance of the identity
+    // that owns the transition after it executed. Ignored when a proof is
+    // requested: from protocol version 14 the proof of an owned, fee-paying
+    // transition (document and token batches, contract creates and updates,
+    // identity updates and key limit updates, contract moderation) carries
+    // the owner's balance itself.
+    bool request_user_balance = 3;
   }
   oneof version { WaitForStateTransitionResultRequestV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultResponse {
+  // The result of a successful wait that asked for the owner's balance and for no proof
+  message SuccessWithOwnerBalance {
+    // The credit balance of the identity that owns the transition after it
+    // executed, read from a Drive state at or past the block that executed it
+    uint64 owner_balance = 1 [ jstype = JS_STRING ];
+  }
   message WaitForStateTransitionResultResponseV0 {
     oneof result {
       StateTransitionBroadcastError error =
           1; // Any error that occurred during the state transition broadcast
       Proof proof =
           2; // Cryptographic proof for the state transition, if requested
+      // Success with the owner's balance, unproved, when the request asked
+      // for it and for no proof
+      SuccessWithOwnerBalance success_with_owner_balance = 4;
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
@@ -2832,6 +3785,20 @@ message GetGroupActionsResponse {
       optional string public_note = 3; // Public note
     }
 
+    // Mint straight into the token's shielded pool (protocol version 14+)
+    message MintToPoolEvent {
+      uint64 amount = 1;               // Amount minted into the pool
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
+    // Burn of notes held in the token's shielded pool (protocol version 14+)
+    message BurnFromPoolEvent {
+      uint64 amount = 1;               // Amount destroyed
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
     // Event associated with this action
     message GroupActionEvent {
       oneof event_type {
@@ -2871,6 +3838,8 @@ message GetGroupActionsResponse {
             7; // Token configuration update details
         UpdateDirectPurchasePriceEvent update_price =
             8; // Updating the token direct selling price
+        MintToPoolEvent mint_to_pool = 9;     // Mint into the token shielded pool
+        BurnFromPoolEvent burn_from_pool = 10; // Burn from the token shielded pool
       }
     }
 
@@ -3104,11 +4073,15 @@ message GetRecentCompactedAddressBalanceChangesResponse {
 
 // --- Shielded Pool Queries ---
 
+// Every shielded pool query below targets the credit shielded pool unless `token_id` is set,
+// in which case it targets that token's own shielded pool (protocol version 14+; the 32-byte
+// token id). Responses have the same shape for both pools.
 message GetShieldedEncryptedNotesRequest {
   message GetShieldedEncryptedNotesRequestV0 {
     uint64 start_index = 1;
     uint32 count = 2;
     bool prove = 3;
+    optional bytes token_id = 4; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedEncryptedNotesRequestV0 v0 = 1; }
 }
@@ -3136,6 +4109,7 @@ message GetShieldedEncryptedNotesResponse {
 message GetShieldedAnchorsRequest {
   message GetShieldedAnchorsRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedAnchorsRequestV0 v0 = 1; }
 }
@@ -3157,6 +4131,7 @@ message GetShieldedAnchorsResponse {
 message GetMostRecentShieldedAnchorRequest {
   message GetMostRecentShieldedAnchorRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetMostRecentShieldedAnchorRequestV0 v0 = 1; }
 }
@@ -3175,6 +4150,7 @@ message GetMostRecentShieldedAnchorResponse {
 message GetShieldedPoolStateRequest {
   message GetShieldedPoolStateRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedPoolStateRequestV0 v0 = 1; }
 }
@@ -3200,6 +4176,7 @@ message GetShieldedPoolStateResponse {
 message GetShieldedNotesCountRequest {
   message GetShieldedNotesCountRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
 }
@@ -3219,6 +4196,7 @@ message GetShieldedNullifiersRequest {
   message GetShieldedNullifiersRequestV0 {
     repeated bytes nullifiers = 1;
     bool prove = 2;
+    optional bytes token_id = 3; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedNullifiersRequestV0 v0 = 1; }
 }

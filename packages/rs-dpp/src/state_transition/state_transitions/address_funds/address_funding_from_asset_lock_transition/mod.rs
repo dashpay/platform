@@ -11,6 +11,8 @@ mod state_transition_validation;
 pub mod v0;
 mod version;
 
+pub use state_transition_estimated_fee_validation::calculate_address_funding_from_asset_lock_min_required_fee;
+
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -20,10 +22,12 @@ use crate::state_transition::address_funding_from_asset_lock_transition::v0::Add
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use fields::*;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -36,12 +40,14 @@ pub type AddressFundingFromAssetLockTransitionLatest = AddressFundingFromAssetLo
     Clone,
     Decode,
     Encode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

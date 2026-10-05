@@ -57,6 +57,18 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::IdentityUpdateAction(identity_update_transition) => {
                 identity_update_transition.into_high_level_drive_operations(epoch, platform_version)
             }
+            StateTransitionAction::ContractUserModerationAction(
+                contract_user_moderation_transition,
+            ) => contract_user_moderation_transition
+                .into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::ContractFeeClaimAction(contract_fee_claim_transition) => {
+                contract_fee_claim_transition
+                    .into_high_level_drive_operations(epoch, platform_version)
+            }
+            StateTransitionAction::IdentityKeyLimitsUpdateAction(
+                identity_key_limits_update_transition,
+            ) => identity_key_limits_update_transition
+                .into_high_level_drive_operations(epoch, platform_version),
             StateTransitionAction::IdentityCreditTransferAction(
                 identity_credit_transfer_transition,
             ) => identity_credit_transfer_transition
@@ -109,6 +121,21 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
             }
             StateTransitionAction::ShieldAction(shield_action) => {
                 shield_action.into_high_level_drive_operations(epoch, platform_version)
+            }
+            StateTransitionAction::ShieldFromIdentityAction(action) => {
+                action.into_high_level_drive_operations(epoch, platform_version)
+            }
+            StateTransitionAction::IdentityTopUpFromShieldedPoolAction(action) => {
+                action.into_high_level_drive_operations(epoch, platform_version)
+            }
+            StateTransitionAction::TokenShieldedTransferWithShieldedFeeAction(action) => {
+                action.into_high_level_drive_operations(epoch, platform_version)
+            }
+            StateTransitionAction::TokenUnshieldWithShieldedFeeAction(action) => {
+                action.into_high_level_drive_operations(epoch, platform_version)
+            }
+            StateTransitionAction::TokenPurchaseFromShieldedPoolAction(action) => {
+                action.into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::ShieldedTransferAction(shielded_transfer_action) => {
                 shielded_transfer_action.into_high_level_drive_operations(epoch, platform_version)

@@ -10,6 +10,7 @@ import {
   SSL_PROVIDERS,
 } from '../src/constants.js';
 import { stockImagePattern, historicalStockImagePattern } from '../src/config/stockImages.js';
+import generateRandomString from '../src/util/generateRandomString.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -1708,6 +1709,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // development build is stamped above that key and skips it.
             delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
 
+            if (options.platform?.drive?.tenderdash?.docker) {
+              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            }
+
             const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
 
             if (providerConfigs?.letsencrypt
@@ -1715,6 +1720,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               providerConfigs.letsencrypt.acmeDirectoryUrl = base.get(
                 'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
               );
+            }
+
+            // Backfill Tor without silently enabling it on existing nodes.
+            // Setup offers it separately; preserve any existing Tor settings.
+            if (options.core && options.core.tor === undefined) {
+              options.core.tor = base.getStored('core.tor');
+              options.core.tor.enabled = false;
+              options.core.tor.control.password = generateRandomString(12);
             }
           });
 

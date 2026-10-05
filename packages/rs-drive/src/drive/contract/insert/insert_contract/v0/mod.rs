@@ -1,7 +1,7 @@
 use crate::drive::contract::paths;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::{contract_documents_path, votes, Drive, RootTree};
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::util::storage_flags::StorageFlags;
@@ -414,15 +414,18 @@ impl Drive {
                     // Meta schema v3 (PV14) layers the ranking axes on top:
                     // any `ranked*` flag upgrades the chosen variant to its
                     // *indexed* mirror, which additionally carries one
-                    // ordered secondary Merk per axis. Note this dispatch
-                    // only ever sees a TERMINAL level — `has_index_with_type`
-                    // is `Some` exactly for single-property indexes, whose
-                    // top-level property-name tree IS the terminal one. A
-                    // compound index's terminal level lives deeper and is
-                    // materialized lazily by the document index walker.
-                    let index_info = level.has_index_with_type();
+                    // ordered secondary Merk per axis. This dispatch sees a
+                    // TERMINAL level for single-property indexes (whose
+                    // top-level property-name tree IS the terminal one) —
+                    // a compound index's terminal level lives deeper and is
+                    // materialized lazily by the document index walker —
+                    // and, since the `rankedCountable: { at }` grammar, a
+                    // GROUPING level when a compound index ranks at its
+                    // first property: the level-aware resolver then yields
+                    // the Count-axis indexed tree, created here so the
+                    // ranking secondary exists from registration.
                     let (tree_type, ranked_axes) =
-                        property_name_tree_type_and_ranked_axes(index_info)?;
+                        property_name_tree_type_and_ranked_axes_for_level(level)?;
                     match tree_type {
                         TreeType::ProvableCountProvableSumTree => self
                             .batch_insert_empty_provable_count_provable_sum_tree(

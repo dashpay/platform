@@ -759,6 +759,13 @@ struct FundFromAssetLockPlatformAddressView: View {
         guard let lock = target else { return }
         lock.recipientPlatformAddressHash = recipientHash
         lock.recipientPlatformAddressType = recipientType
+        // This screen only ever funds one of the wallet's OWN platform
+        // addresses (`fundFromAssetLock`), so the recipient hash names
+        // an address that has a `PersistentPlatformAddress` row. Stamp
+        // the discriminator explicitly rather than leaving it `nil`, so
+        // consumers never have to fall back on the legacy
+        // "populated hash implies own" reading.
+        lock.recipientIsExternal = false
         do {
             try modelContext.save()
         } catch {

@@ -26,6 +26,7 @@
 //! purchase/transfer; a name inside an active contested-name vote is not
 //! in the documents tree at all.
 
+use super::signing_key::AvailableSigningKey;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -521,6 +522,8 @@ fn domain_by_normalized_label_query(
             },
         ],
         time_range_clauses: vec![],
+        integer_range_clauses: vec![],
+        sub_queries: vec![],
         group_by: vec![],
         having: vec![],
         order_by_clauses: vec![],
@@ -563,6 +566,8 @@ fn history_by_source_document_query(
             },
         ],
         time_range_clauses: vec![],
+        integer_range_clauses: vec![],
+        sub_queries: vec![],
         group_by: vec![],
         having: vec![],
         order_by_clauses: vec![OrderClause {
@@ -665,6 +670,8 @@ impl IdentityWallet {
             document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
             where_clauses,
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![OrderClause {
@@ -770,6 +777,8 @@ impl IdentityWallet {
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],
@@ -899,6 +908,7 @@ impl IdentityWallet {
     async fn select_dpns_signing_key(
         &self,
         identity_id: &Identifier,
+        signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let contract = self.dpns_contract().await?;
         let required_level = contract
@@ -921,13 +931,15 @@ impl IdentityWallet {
             .wallet_identity(&self.wallet_id, identity_id)
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        drop(wm);
         identity
-            .get_first_public_key_matching(
+            .available_signing_key(
+                signer,
                 Purpose::AUTHENTICATION,
-                allowed_levels.iter().copied().collect(),
-                [KeyType::ECDSA_SECP256K1].into(),
+                &allowed_levels,
+                &[KeyType::ECDSA_SECP256K1],
                 false,
-            )
+            )?
             .cloned()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -1095,7 +1107,9 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .set_document_price_with_signer(
@@ -1147,7 +1161,9 @@ impl IdentityWallet {
                 document_id: state.document_id,
             });
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .transfer_document_with_signer(
@@ -1208,7 +1224,9 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .transfer_document_with_signer(
@@ -1328,7 +1346,9 @@ impl IdentityWallet {
                 available,
             });
         }
-        let signing_key = self.select_dpns_signing_key(purchaser_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(purchaser_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .purchase_document_with_signer(
@@ -2212,7 +2232,11 @@ fn required_purchase_credits(expected_price: Credits) -> Result<Credits, Platfor
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::{identity, lock_checking_signer};
     use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+    use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::identity::SecurityLevel;
 
     fn name_state_entry(
         document_id: Identifier,
@@ -2620,11 +2644,11 @@ mod tests {
         );
     }
 
-    /// THE REGRESSION. First pass after a process restart: the in-memory
-    /// snapshot is empty (exactly what the load path produces) but the
-    /// durable mirror still holds the row, so the departure recovers the
-    /// `document_id` its removal delta needs. Before the fix this
-    /// returned `None` and the mirror row was orphaned forever.
+    /// First pass after a process restart: the in-memory snapshot is
+    /// empty (exactly what the load path produces) but the durable
+    /// mirror still holds the row, so the departure recovers the
+    /// `document_id` its removal delta needs. Answering `None` here
+    /// would orphan the mirror row forever.
     #[test]
     fn departed_document_id_falls_back_to_the_persisted_row_after_a_restart() {
         let document_id = Identifier::from([0x33; 32]);
@@ -2781,15 +2805,14 @@ mod tests {
         );
     }
 
-    /// THE ROUND-3 REGRESSION for the departure path. Platform CONFIRMS
-    /// the name is gone (the mock answers the domain query with an empty
-    /// document set), which is the branch that resolves the departure,
-    /// drops the identity's label, and emits the removal delta. When the
-    /// persistence lookup for the `document_id` FAILED rather than
-    /// answering "no row", the old code could not tell the two apart:
-    /// resolution carried on with no id, the label — the only trigger
-    /// for future departure detection — was removed, and the durable row
-    /// was orphaned for good.
+    /// The departure path. Platform CONFIRMS the name is gone (the mock
+    /// answers the domain query with an empty document set), which is
+    /// the branch that resolves the departure, drops the identity's
+    /// label, and emits the removal delta. A persistence lookup for the
+    /// `document_id` that FAILS must not be mistaken for one answering
+    /// "no row": resolving with no id would remove the label — the only
+    /// trigger for future departure detection — and orphan the durable
+    /// row for good.
     ///
     /// The first assertion block establishes that this mock really does
     /// take the confirmed-absent branch, so the retention assertion that
@@ -2869,16 +2892,16 @@ mod tests {
         assert_eq!(healed.summary.document_id, Some(document_id));
     }
 
-    /// THE ROUND-4 REGRESSION. A NON-retryable persistence error
+    /// A NON-retryable persistence error
     /// (`Fatal` / `Constraint` / `LockPoisoned`) cannot be retried into
     /// success, so it must not park this identity's departure queue —
     /// but it does not establish that no durable row exists, either.
-    /// The old arm degraded it to "no previous id" and carried on; with
-    /// Platform confirming the document absent, that RESOLVED the
-    /// departure, dropped the label — the only trigger for future
-    /// departure detection — and reported a successful sync, leaving
-    /// any persisted row orphaned for good. It must instead be a
-    /// terminal per-item FAILURE: no retry, no label drop, no deltas.
+    /// Degrading it to "no previous id" and carrying on would, with
+    /// Platform confirming the document absent, RESOLVE the departure,
+    /// drop the label — the only trigger for future departure
+    /// detection — and report a successful sync, leaving any persisted
+    /// row orphaned for good. It must instead be a terminal per-item
+    /// FAILURE: no retry, no label drop, no deltas.
     #[tokio::test]
     async fn resolve_departed_name_fails_terminally_when_the_persistence_error_is_not_retryable() {
         let document_id = Identifier::from([0xA4; 32]);
@@ -2978,15 +3001,15 @@ mod tests {
         );
     }
 
-    /// THE ROUND-5 REGRESSION. DPNS domain documents are deletable, and
-    /// a label can be re-registered under a fresh document id: persisted
-    /// document A (the identity's own row) was deleted and an unrelated
-    /// identity registered document B under the same normalized label.
-    /// The domain query answers with B, whose history never departs the
-    /// wallet identity, so classification yields no sale status. The old
-    /// code then reported and removed B — the replacement owner's
-    /// document, never a row of this departure — while the identity's
-    /// durable row A survived with no label left to ever trigger its
+    /// DPNS domain documents are deletable, and a label can be
+    /// re-registered under a fresh document id: persisted document A
+    /// (the identity's own row) was deleted and an unrelated identity
+    /// registered document B under the same normalized label. The
+    /// domain query answers with B, whose history never departs the
+    /// wallet identity, so classification yields no sale status.
+    /// Reporting and removing B — the replacement owner's document,
+    /// never a row of this departure — would leave the identity's
+    /// durable row A with no label left to ever trigger its
     /// reconciliation. The removal delta must target the RECOVERED prior
     /// incarnation A and leave the replacement B untouched.
     #[tokio::test]
@@ -3159,18 +3182,17 @@ mod tests {
         })
     }
 
-    /// THE ROUND-6 REGRESSION (successor to the round-5 one above): the
-    /// re-registered replacement itself passed through this wallet
-    /// identity and departed. Persisted document A (the identity's own
-    /// row) was deleted, the label was re-registered as B, and B was
-    /// acquired by this identity and transferred away — all before this
-    /// sync pass. `classify_departure(B)` correctly yields
-    /// `Transferred`, but the old code wrote B's historical entry with
-    /// `remove_document_id: None`; the caller then dropped the label —
-    /// the only trigger that would ever revisit the durable row —
-    /// leaving recovered row A persisted as `Owned` forever. B's
-    /// classified entry and A's retirement must land in the same
-    /// changeset.
+    /// Successor to the case above: the re-registered replacement
+    /// itself passed through this wallet identity and departed.
+    /// Persisted document A (the identity's own row) was deleted, the
+    /// label was re-registered as B, and B was acquired by this identity
+    /// and transferred away — all before this sync pass.
+    /// `classify_departure(B)` correctly yields `Transferred`, but
+    /// writing B's historical entry with `remove_document_id: None`
+    /// would let the caller drop the label — the only trigger that
+    /// would ever revisit the durable row — leaving recovered row A
+    /// persisted as `Owned` forever. B's classified entry and A's
+    /// retirement must land in the same changeset.
     #[tokio::test]
     async fn resolve_departed_name_retires_the_prior_incarnation_when_the_replacement_also_departed(
     ) {
@@ -3704,6 +3726,8 @@ mod tests {
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],
@@ -3830,6 +3854,39 @@ mod tests {
             Arc::new(MirrorPersister::hydrated(Vec::new())),
             sdk_answering_dpns_domain_query(DEPARTED_LABEL, documents).await,
         )
+    }
+
+    #[tokio::test]
+    async fn should_preserve_unavailable_signer_when_setting_dpns_price() {
+        let owner = Identifier::from([0xB2; 32]);
+        let wallet = wallet_seeing_listing(Identifier::from([0xB1; 32]), owner, None).await;
+        let mut identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        identity.set_id(owner);
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id)
+            .unwrap()
+            .identity_manager
+            .add_identity(identity, 0, wallet.wallet_id, &wallet.persister)
+            .unwrap();
+
+        let error = wallet
+            .set_dpns_name_price(&owner, DEPARTED_LABEL, 1000, &lock_checking_signer(&wallet))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error,
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(ref message)))
+                    if message.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+            ),
+            "expected signer-unavailable error, got {error:?}"
+        );
     }
 
     /// The purchase pre-flight's rejection ORDER, as a pure decision.

@@ -1,3 +1,4 @@
+pub mod action_fee_agreement;
 mod batch_transition;
 pub mod batched_transition;
 pub mod document_base_transition;
@@ -8,6 +9,7 @@ pub mod prefunded_voting_balance;
 pub mod token_base_transition;
 pub mod token_payment_info;
 pub mod token_pricing_schedule;
+pub mod token_shielded_payment;
 pub mod token_transition;
 pub mod token_transitions;
 

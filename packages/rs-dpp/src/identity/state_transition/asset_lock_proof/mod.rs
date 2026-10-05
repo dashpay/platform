@@ -4,7 +4,7 @@ use dashcore::{OutPoint, Transaction};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 pub use instant::*;
 use platform_value::Value;
@@ -14,6 +14,10 @@ use serde::de::Error;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{ProtocolError, SerdeParsingError};
@@ -34,7 +38,7 @@ pub mod validate_asset_lock_transaction_structure;
 // unions exposed to JS (see `AddressWitness`, `AddressFundsFeeStrategyStep`).
 // Bincode `Encode`/`Decode` derives are independent of serde, so consensus
 // binary format is unaffected.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode, DecodeUntrusted)]
 #[serde(tag = "$type", rename_all = "camelCase")]
 #[allow(clippy::large_enum_variant)]
 pub enum AssetLockProof {
@@ -89,10 +93,10 @@ impl Default for AssetLockProof {
 }
 
 #[cfg(feature = "json-conversion")]
-impl crate::serialization::JsonConvertible for AssetLockProof {}
+impl JsonConvertible for AssetLockProof {}
 
 #[cfg(feature = "value-conversion")]
-impl crate::serialization::ValueConvertible for AssetLockProof {}
+impl ValueConvertible for AssetLockProof {}
 
 impl AsRef<AssetLockProof> for AssetLockProof {
     fn as_ref(&self) -> &AssetLockProof {

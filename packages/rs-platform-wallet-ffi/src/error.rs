@@ -1,4 +1,7 @@
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
+use platform_wallet::changeset::PersistenceErrorKind;
 use platform_wallet::PlatformWalletError;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -220,8 +223,8 @@ pub enum PlatformWalletFFIResultCode {
     /// Asset-lock coin selection came up short over the *permitted* funding
     /// set (dashpay/platform#4073). Carries the structured
     /// `available`/`required` duff amounts in the message string — the
-    /// by-value `PlatformWalletFFIResult` is ABI-frozen (code + message only),
-    /// so the figures ride the typed `Display` rendering or not at all.
+    /// by-value `PlatformWalletFFIResult` has no per-error value fields, so
+    /// the figures ride the typed `Display` rendering or not at all.
     ///
     /// Distinct from [`Self::ErrorCoreInsufficientFunds`] (22), which is the
     /// atomic Core-send selector rather than the asset-lock builder. What the
@@ -284,13 +287,22 @@ pub enum PlatformWalletFFIResultCode {
     //
     //   37  ErrorDocumentNotForSale         DPNS username marketplace
     //   38  ErrorDocumentPriceChanged       DPNS username marketplace
-    //   39  ErrorInsufficientIdentityCredits DPNS username marketplace
+    //   39  ErrorInsufficientIdentityCredits DPNS username marketplace,
+    //                                       identity withdrawal / transfer to addresses
     //   40  ErrorContestedNameNotTradable   DPNS username marketplace
+    //   41  ErrorShieldedInsufficientBalance Platform→Shielded capacity preflight
+    //   42  ErrorMasternodeWithdrawalUnconfirmed masternode withdrawal status
+    //   43-45 RESERVED by open dashpay/platform#4313 (shielded-invite claim)
+    //   46  ErrorMasternodeListUnavailable  masternode list source
+    //   47  ErrorAssetLockInputConflict     asset-lock double-spend detection
+    //                                       (terminal; RESERVED, no emitter yet)
+    //   48  ErrorAssetLockInputContested    asset-lock double-spend detection (provisional)
+    //   49-54 the persister operation x kind block below
     //
     // 38/39/40 carry a STABLE JSON detail object in the result `message`
     // instead of the typed `Display` rendering — see each variant's doc for
-    // the exact object. `PlatformWalletFFIResult` is ABI-frozen (code +
-    // message only), so structured values ride the message or not at all.
+    // the exact object. `PlatformWalletFFIResult` has no per-error value
+    // fields, so structured values ride the message or not at all.
     /// Maps `SignedPaymentError::StaleReservationToken` from the deferred
     /// build → broadcast/release core-send lifecycle (`core_wallet_signed_payment_*`):
     /// the token has outlived the registry's `RESERVATION_MAX_AGE_BLOCKS` bound
@@ -305,6 +317,23 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorReservationWalletMismatch`] (36, minted against a different
     /// wallet generation). All three are non-retryable-in-place and none touched
     /// the network; they are distinct codes so a host can message each precisely.
+    ///
+    /// Also maps `PlatformWalletError::StaleReservation` from the atomic
+    /// finalized-transaction handle path
+    /// (`core_wallet_broadcast_signed_transaction`): a pinned handle whose
+    /// funding reservation aged past the SAME `RESERVATION_MAX_AGE_BLOCKS` bound
+    /// carries the identical "may already have been swept — rebuild" meaning, so
+    /// the two surfaces intentionally share this one code. The handle carries
+    /// no numeric reservation token, hence a distinct (token-less) wallet-error
+    /// variant behind the same FFI code. The refusal reconciles the reservation
+    /// on the way out: a funded finalize always stamps an owner token, so the
+    /// release is owner-guarded (safe at any age — a no-op once ownership
+    /// transferred) and the still-owned inputs are freed for the instructed
+    /// rebuild. Abandon/free of a handle never surfaces this — abandon returns
+    /// no result code and likewise releases owner-guarded at any age; only a
+    /// token-less build skips its unguarded by-outpoint release past the bound
+    /// (leaving the aged outpoint to key-wallet's TTL, since releasing it
+    /// unguarded could free an unrelated newer build's reservation).
     ErrorStaleReservationToken = 34,
 
     /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
@@ -359,8 +388,9 @@ pub enum PlatformWalletFFIResultCode {
     /// identity's credit balance cannot cover the operation — the
     /// wallet's purchase pre-flight (price + fee reserve against the
     /// local balance snapshot) or the downcast of the consensus
-    /// `IdentityInsufficientBalanceError`. Nothing executed; top the
-    /// identity up and retry.
+    /// `IdentityInsufficientBalanceError` (DPNS purchase, identity credit
+    /// withdrawal, identity credit transfer to addresses). Nothing
+    /// executed; top the identity up or send less and retry.
     ///
     /// Message: a STABLE JSON detail object —
     /// `{"identityId":"<base58>","required":<u64>,"available":<u64>}`
@@ -412,6 +442,166 @@ pub enum PlatformWalletFFIResultCode {
     /// per the error-code registry (#4318).
     ErrorMasternodeListUnavailable = 46,
 
+    /// Maps `PlatformWalletError::AssetLockInputConflict`. **RESERVED —
+    /// no wallet code path currently produces it**, so this code does not
+    /// cross the boundary today.
+    ///
+    /// It is the terminal form of the double-spend verdict: a tracked
+    /// asset-lock transaction spending an outpoint that a different,
+    /// already-confirmed transaction of the same wallet spent first, where
+    /// that spender's block is PROVEN to be on the finalized chain. That
+    /// proof is what is missing. The wallet can see a confirmed spender,
+    /// a chainlocked record context and the applied chainlock height, but
+    /// all of those are height-based promotion artifacts rather than
+    /// evidence of finalized ancestry (the SPV chainlock manager counts a
+    /// missing header as a passing block-hash check, so a chainlock on a
+    /// replacement branch can promote losing-branch records). Until the
+    /// SPV layer exposes an ancestry predicate, every hit — chainlocked
+    /// spenders included — reports
+    /// [`Self::ErrorAssetLockInputContested`] (48) instead.
+    ///
+    /// The code number and this variant are kept pinned so the reserved
+    /// slot stays stable for hosts and for the future emitter. A host must
+    /// read NOTHING into its absence: it is not a liveness signal, not a
+    /// "not final yet" signal, and not a statement about any lock. Hosts
+    /// that already branch on it may keep doing so — if it ever ships, it
+    /// keeps its meaning: the one code that authorises discarding a
+    /// tracked asset lock and rebuilding from currently-unspent inputs.
+    ///
+    /// Message (when it ships): the typed `Display` rendering, which names
+    /// the asset-lock outpoint, the conflicting input, the confirmed
+    /// spender's txid, and the spender's finality (always chainlocked for
+    /// this code).
+    ErrorAssetLockInputConflict = 47,
+
+    /// Maps `PlatformWalletError::AssetLockInputContested`. The double-spend
+    /// screen's ONLY verdict: a confirmed transaction of this wallet
+    /// already spent one of the tracked lock's inputs. The resume still
+    /// attempts recovery. With a ready transport the sighting bounds the
+    /// proof wait and this is what that wait expired with; in the `Broadcast`
+    /// arm, after a readiness miss and pre-dispatch rejection, a still-standing
+    /// conflict returns immediately after refreshing local finality and leaves
+    /// the next proof wait to the readiness-deferred retry. PROVISIONAL — the
+    /// wallet cannot prove the spender's block is on the finalized branch (see
+    /// [`Self::ErrorAssetLockInputConflict`] (47), the reserved terminal
+    /// form), so this is what a chainlocked-looking spender reports too.
+    ///
+    /// NOT a discard licence. The host keeps the tracked lock and retries
+    /// later (next launch, or after the next chainlock) — but note that a
+    /// chainlock does NOT upgrade this to 47 today; what a retry can
+    /// resolve is the other direction, a reorg dropping the sibling so the
+    /// next resume proceeds normally. Nor does repetition license a
+    /// discard: a conflict that persists across sessions still proves
+    /// nothing about finalized ancestry — the sighting can be a block
+    /// record restored from a previous session whose block was reorganized
+    /// out while the host was offline. Only code 47, or an independent
+    /// finalized-ancestry proof, authorises dropping the tracked state,
+    /// because a lock whose sibling sits on a losing branch can still be
+    /// replayed and confirm. Keeping the lock costs the host nothing: the
+    /// conflicting spender is this wallet's own transaction, so the value
+    /// lives on in the sibling either way.
+    ///
+    /// Raised only on a positive detection; its ABSENCE is not a liveness
+    /// signal. The wallet-side scan reads confirmed records still held in
+    /// memory, and under the default `keep-finalized-transactions = OFF`
+    /// build those are pruned once chainlocked, so an old conflict can go
+    /// unseen and surface as the usual finality timeout instead.
+    ///
+    /// Message: the typed `Display` rendering, which names the asset-lock
+    /// outpoint, the conflicting input, the confirmed spender's txid and
+    /// height, and says the verdict is provisional.
+    ErrorAssetLockInputContested = 48,
+
+    // -----------------------------------------------------------------
+    // Persister failures, operation x retry classification (49-54).
+    //
+    // The wallet's PersisterLoad / PersisterStore / PersisterRestore each
+    // carry a typed `PersistenceError` whose `kind` says whether a retry can
+    // help. One code per (operation, kind) pair keeps both halves: a host can
+    // tell a failed read from a failed write AND a retryable failure from a
+    // permanent one, without parsing the message.
+    // -----------------------------------------------------------------
+    /// Maps `PlatformWalletError::PersisterLoad` classified
+    /// [`Transient`](platform_wallet::changeset::PersistenceErrorKind::Transient):
+    /// a retryable condition (`SQLITE_BUSY` and friends) while reading.
+    ///
+    /// Host action: retry later. Nothing was mutated — a load is a read.
+    ErrorPersisterLoadTransient = 49,
+
+    /// Maps `PlatformWalletError::PersisterLoad` for every other
+    /// classification — `Fatal`, `Constraint`, and a poisoned persister lock:
+    /// a corrupt or unreadable store, or a decode that will fail identically
+    /// next time.
+    ///
+    /// Host action: do NOT retry; inspect the message and repair or
+    /// re-provision the store. `Constraint` folds in here because a read
+    /// cannot violate one — reported on a load it is a backend defect, not a
+    /// caller data error, and not retryable either way.
+    ErrorPersisterLoadFatal = 50,
+
+    /// Maps `PlatformWalletError::PersisterStore` classified
+    /// [`Transient`](platform_wallet::changeset::PersistenceErrorKind::Transient):
+    /// a busy or momentarily unavailable store rejected the write.
+    ///
+    /// **Nothing was applied or retained**: the persister must attest that the
+    /// failed store is safe to reissue, including that it buffered nothing.
+    ///
+    /// Host action: retry later. A busy database produces this code only when
+    /// its backend provides that attestation. The buffered `SqlitePersister`
+    /// does not: its transient store failures map to `ErrorPersisterStoreFatal`
+    /// and require backend-aware recovery through `flush`, not another `store`.
+    ErrorPersisterStoreTransient = 51,
+
+    /// Maps `PlatformWalletError::PersisterStore` classified `Fatal`, and a
+    /// poisoned persister lock: a full disk, a corrupt schema, an I/O error
+    /// outside the retryable class.
+    ///
+    /// Host action: do NOT retry; inspect the message. The wallet's in-memory
+    /// state was rolled back to before the operation, so the host may
+    /// re-attempt once the underlying fault is fixed.
+    ErrorPersisterStoreFatal = 52,
+
+    /// Maps `PlatformWalletError::PersisterStore` classified
+    /// [`Constraint`](platform_wallet::changeset::PersistenceErrorKind::Constraint):
+    /// a SQL constraint / foreign-key / integrity violation. Distinct from
+    /// [`Self::ErrorPersisterStoreFatal`] so a host can separate "your data is
+    /// wrong" (caller or schema-mapping bug) from "the storage engine is
+    /// unhappy" (operator problem) — they route to different people.
+    ///
+    /// Host action: do NOT retry unchanged — fix the data, or the host-side
+    /// schema mapping that produced it.
+    ErrorPersisterStoreConstraint = 53,
+
+    /// Maps `PlatformWalletError::PersisterRestore`: rehydrating persisted
+    /// platform-address state into a freshly registered wallet failed. One
+    /// code, not three — it wraps a `PlatformWalletError` rather than a
+    /// `PersistenceError`, so there is no retry classification to split on,
+    /// and the wrapped error's `Display` is the only detail channel.
+    ///
+    /// Host action: inspect the message; the wallet was registered but its
+    /// persisted address state did not come back.
+    ErrorPersisterRestore = 54,
+
+    /// Maps `PlatformWalletError::ShieldedIdentityDebitPending`: an earlier
+    /// identity-funded shield is unresolved. This request did not build or
+    /// broadcast a transaction. Wait for shielded sync to reconcile the
+    /// earlier debit before starting another shield from this identity.
+    /// Distinct from `ErrorShieldedSpendUnconfirmed`, which describes the
+    /// outcome of the request that was submitted.
+    ErrorShieldedIdentityDebitPending = 55,
+
+    /// A durable shielded recovery record is malformed or invalid.
+    /// Preserve it for diagnosis; do not submit a replacement payment blindly.
+    ErrorShieldedRecoveryCorrupted = 56,
+
+    /// Shielded recovery requires its account and compatible viewing keys.
+    /// Incompatible keys and damaged ciphertext can produce the same symptom.
+    ErrorShieldedRecoveryKeysRequired = 57,
+
+    /// Platform returned no balance for a managed identity. Retrying this read
+    /// is safe; this does not imply missing ownership or require registration.
+    ErrorIdentityBalanceUnavailable = 58,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -433,12 +623,72 @@ pub enum PlatformWalletFFIResultCode {
     ErrorUnknown = 99,
 }
 
+/// Which family a consensus rejection belongs to, paired with the numeric
+/// `consensus_code` on [`PlatformWalletFFIResult`].
+///
+/// rs-dpp groups consensus errors by the ten-thousands digit of their code
+/// (`packages/rs-dpp/src/errors/consensus/codes.rs`): basic 1xxxx, signature
+/// 2xxxx, fee 3xxxx, state 4xxxx. The kind is handed over as its own value so
+/// a host branches on it instead of re-deriving the grouping from the number.
+///
+/// [`Self::None`] is the only value a result carries when `consensus_code` is
+/// 0, and it covers both "the failure was not a consensus rejection" and the
+/// `ConsensusError::DefaultError` placeholder, which names no rejection a host
+/// could act on.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformWalletFFIConsensusErrorKind {
+    None = 0,
+    Basic = 1,
+    Signature = 2,
+    Fee = 3,
+    State = 4,
+}
+
+impl PlatformWalletFFIConsensusErrorKind {
+    /// The kind of `error`, or [`Self::None`] for a variant that carries no
+    /// actionable rejection. The wildcard arm also absorbs
+    /// `ConsensusError::TestConsensusError`, which exists only in dpp's own
+    /// `cfg(test)` builds.
+    fn of(error: &ConsensusError) -> Self {
+        match error {
+            ConsensusError::BasicError(_) => Self::Basic,
+            ConsensusError::SignatureError(_) => Self::Signature,
+            ConsensusError::FeeError(_) => Self::Fee,
+            ConsensusError::StateError(_) => Self::State,
+            _ => Self::None,
+        }
+    }
+}
+
 /// Must be freed with ['platform_wallet_ffi_result_free']
+///
+/// `code` and `message` are the stable pair every host has always read.
+/// `consensus_code` / `consensus_kind` describe Platform's own rejection when
+/// the failure was one: the rs-dpp consensus code (10000 and up) and its
+/// family, or `0` / [`PlatformWalletFFIConsensusErrorKind::None`] when the
+/// failure came from anywhere else. They let a host branch on a rejection it
+/// would otherwise have to recognize by its rendered text.
+///
+/// Both language surfaces are generated from this same source tree (Swift
+/// through the cbindgen header inside the xcframework, Kotlin through an rlib
+/// dependency of `rs-unified-sdk-jni`), so appending a field is a
+/// source-compatible change rather than an ABI break. What has not changed is
+/// that the struct carries no room for a *specific* error's values: those
+/// still ride the `message`, as the codes that document a JSON detail object
+/// below describe.
 #[repr(C)]
 #[derive(Debug)]
 pub struct PlatformWalletFFIResult {
     pub code: PlatformWalletFFIResultCode,
     pub message: *mut c_char,
+    /// The rs-dpp consensus error code Platform rejected the operation with,
+    /// or 0 when the failure was not a consensus rejection. Real codes start
+    /// at 10000, so 0 is unambiguous.
+    pub consensus_code: u32,
+    /// The family `consensus_code` belongs to, or
+    /// [`PlatformWalletFFIConsensusErrorKind::None`] when there is no code.
+    pub consensus_kind: PlatformWalletFFIConsensusErrorKind,
 }
 
 impl Drop for PlatformWalletFFIResult {
@@ -457,6 +707,8 @@ impl PlatformWalletFFIResult {
         Self {
             code: PlatformWalletFFIResultCode::Success,
             message: std::ptr::null_mut(),
+            consensus_code: 0,
+            consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
         }
     }
 
@@ -466,7 +718,26 @@ impl PlatformWalletFFIResult {
         Self {
             code,
             message: c_msg.into_raw(),
+            consensus_code: 0,
+            consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
         }
+    }
+
+    /// Stamp Platform's own rejection onto an already-built result.
+    ///
+    /// Leaves `code` and `message` alone: the numeric result code is the host
+    /// ABI and must keep meaning what it did, so the consensus verdict is
+    /// added beside it rather than in place of it. A `ConsensusError` with no
+    /// actionable family (see [`PlatformWalletFFIConsensusErrorKind::of`])
+    /// leaves the result untouched, so `consensus_code == 0` always means
+    /// "no rejection to branch on".
+    fn with_consensus_error(mut self, error: &ConsensusError) -> Self {
+        let kind = PlatformWalletFFIConsensusErrorKind::of(error);
+        if kind != PlatformWalletFFIConsensusErrorKind::None {
+            self.consensus_code = error.code();
+            self.consensus_kind = kind;
+        }
+        self
     }
 
     /// A `Success`-coded result that still carries an advisory `message`.
@@ -484,6 +755,8 @@ impl PlatformWalletFFIResult {
         Self {
             code: PlatformWalletFFIResultCode::Success,
             message: c_msg.into_raw(),
+            consensus_code: 0,
+            consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
         }
     }
 }
@@ -527,7 +800,7 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
 /// The value-carrying DPNS-marketplace rejections, rendered as
 /// `(code, JSON detail)` instead of `(code, Display)`.
 ///
-/// `PlatformWalletFFIResult` is ABI-frozen at `{ code, message }`, so a
+/// `PlatformWalletFFIResult` has no per-error value fields, so a
 /// host that needs the *values* — not prose naming them — can only get
 /// them through the message. These three therefore put a stable JSON
 /// object there; the exact shape is documented on each
@@ -593,6 +866,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
         let code = match &error {
+            PlatformWalletError::IdentityBalanceUnavailable(_) => {
+                PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
+            }
             PlatformWalletError::NoSpendableInputs { .. }
             | PlatformWalletError::OnlyOutputAddressesFunded { .. }
             | PlatformWalletError::OnlyDustInputs { .. } => {
@@ -623,6 +899,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
             }
+            PlatformWalletError::ShieldedIdentityDebitPending { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending
+            }
+            PlatformWalletError::ShieldedRecoveryCorrupted { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryCorrupted
+            }
+            PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryKeysRequired
+            }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
             }
@@ -646,12 +931,40 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::TransactionBroadcast(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
             }
+            // The finalized-transaction handle path's age guard. Shares the
+            // `ErrorStaleReservationToken` code with the deferred registry-token
+            // sibling (`SignedPaymentError::StaleReservationToken`): both mean
+            // "the funding reservation may already have been swept — rebuild",
+            // and neither touched the network. See the code's doc note.
+            PlatformWalletError::StaleReservation => {
+                PlatformWalletFFIResultCode::ErrorStaleReservationToken
+            }
+            // A coin selection that picked an input still held by an in-flight
+            // broadcast dispatch. Typed on the Rust side (it carries the
+            // conflicting `OutPoint`; see the variant docs for the retry
+            // contract — the intent is re-attemptable only after the fenced
+            // dispatch's outcome is reconciled), but DELIBERATELY mapped to the
+            // same numeric code it produced before that variant existed: all three
+            // choke points previously returned it as
+            // `TransactionBuild` / `AssetLockTransaction`, neither of which is
+            // matched here, so both fell to `ErrorUnknown`.
+            //
+            // Minting a dedicated code is a separate, coordinated change — the
+            // numeric space is a cross-PR registry (see the claim table on
+            // `ErrorStaleReservationToken` above) and every new value has to be
+            // mirrored into the Swift and Kotlin result enums. This arm exists
+            // so the mapping is an explicit, reviewable decision in one place
+            // rather than an accident of the catch-all, and so it is a one-line
+            // change when a code is claimed (`dashpay/platform#4309`).
+            PlatformWalletError::InputMidBroadcast { .. } => {
+                PlatformWalletFFIResultCode::ErrorUnknown
+            }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY
-            // out of scope: `PlatformWalletFFIResult` is by-value / ABI-frozen, so
-            // the values travel in the message string and an FFI retry re-fetches
-            // the nonce.
+            // out of scope: `PlatformWalletFFIResult` is by-value and has no
+            // per-error value fields, so the values travel in the message
+            // string and an FFI retry re-fetches the nonce.
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
             }
@@ -666,11 +979,29 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockNotTracked(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
             }
+            // A DashPay invitation link for the other network: definitive, so
+            // hosts can say so instead of treating it as undetermined.
+            PlatformWalletError::InvitationNetworkMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidNetwork
+            }
             PlatformWalletError::AssetLockAlreadyConsumed(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
+            }
+            // Double-spend verdicts. `AssetLockInputContested` is the one
+            // the wallet actually raises — without this arm it reached
+            // `ErrorUnknown` and a host could only render a spinner. The
+            // terminal `AssetLockInputConflict` has no emitter today (it
+            // needs a finalized-ancestry proof the SPV layer does not
+            // expose); its arm is kept so the reserved code stays wired
+            // for the future emitter and for direct constructions.
+            PlatformWalletError::AssetLockInputConflict { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
+            }
+            PlatformWalletError::AssetLockInputContested { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInputContested
             }
             // The asset-lock coin-selection shortfall (dashpay/platform#4073).
             // Without this arm it flattens to `ErrorUnknown` (99), hiding a
@@ -751,6 +1082,28 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // rides `NotFound` rather than spending a fifth marketplace
             // code hosts would handle identically.
             PlatformWalletError::DpnsNameNotFound { .. } => PlatformWalletFFIResultCode::NotFound,
+            // The persister trio, split by the store's own retry
+            // classification — flattened to ErrorUnknown a host could not tell
+            // a busy database from a corrupt one. `PersisterRestore` carries
+            // no kind to split on, so it takes a single code.
+            PlatformWalletError::PersisterLoad(source) => match source.kind() {
+                Some(PersistenceErrorKind::Transient) => {
+                    PlatformWalletFFIResultCode::ErrorPersisterLoadTransient
+                }
+                _ => PlatformWalletFFIResultCode::ErrorPersisterLoadFatal,
+            },
+            PlatformWalletError::PersisterStore(source) => match source.kind() {
+                Some(PersistenceErrorKind::Transient) => {
+                    PlatformWalletFFIResultCode::ErrorPersisterStoreTransient
+                }
+                Some(PersistenceErrorKind::Constraint) => {
+                    PlatformWalletFFIResultCode::ErrorPersisterStoreConstraint
+                }
+                _ => PlatformWalletFFIResultCode::ErrorPersisterStoreFatal,
+            },
+            PlatformWalletError::PersisterRestore(..) => {
+                PlatformWalletFFIResultCode::ErrorPersisterRestore
+            }
             // NOTE: `MessageSigningFailed` is deliberately NOT matched, so it
             // falls to the `ErrorUnknown` catch-all below. Its causes are
             // internal invariant breaks (a public key that does not own the
@@ -771,7 +1124,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // mid-string and is deliberately not matched.
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
-        PlatformWalletFFIResult::err(code, error.to_string())
+        let result = PlatformWalletFFIResult::err(code, error.to_string());
+        // Platform's own verdict, for the variants that still hold the SDK
+        // error it arrived in (`Sdk`, `TokenOperationFailed`). It rides
+        // alongside the code chosen above rather than replacing it, so a host
+        // that branches on a dedicated code keeps seeing exactly what it saw
+        // before and one that wants the rejection itself no longer has to
+        // recognize it by its rendered text.
+        match error.consensus_error() {
+            Some(consensus_error) => result.with_consensus_error(consensus_error),
+            None => result,
+        }
     }
 }
 
@@ -977,6 +1340,10 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::basic::{BasicError, UnsupportedVersionError};
+    use dpp::consensus::state::token::TokenOncePerIdentityDistributionAlreadyClaimedError;
+    use dpp::prelude::Identifier;
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 
@@ -1287,6 +1654,22 @@ mod tests {
     }
 
     #[test]
+    fn should_preserve_shielded_identity_debit_pending_code_and_message() {
+        let error = PlatformWalletError::ShieldedIdentityDebitPending {
+            identity_id: [7; 32],
+        };
+        let rendered = error.to_string();
+        let result: PlatformWalletFFIResult = error.into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending
+        );
+        assert_eq!(result.code as i32, 55, "the host ABI code must stay stable");
+        assert_eq!(message_of(&result), rendered);
+    }
+
+    #[test]
     fn platform_shield_capacity_maps_to_dedicated_code_without_claiming_note_shortfalls() {
         let error = PlatformWalletError::PlatformShieldCapacityExceeded {
             available: 3_623_849_220,
@@ -1354,6 +1737,76 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    /// The finalized-transaction handle age guard
+    /// (`core_wallet_broadcast_signed_transaction` → `broadcast_finalized_transaction`)
+    /// surfaces `PlatformWalletError::StaleReservation` through the blanket
+    /// `From` impl, which must reuse the deferred registry-token path's
+    /// `ErrorStaleReservationToken` (34) code rather than flattening to
+    /// `ErrorUnknown` — the two surfaces share the "reservation may have been
+    /// swept; rebuild" meaning and this one code. The typed Display rendering
+    /// survives across the boundary as the message.
+    #[test]
+    fn stale_reservation_maps_to_shared_stale_reservation_code() {
+        let err = PlatformWalletError::StaleReservation;
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorStaleReservationToken,
+            "StaleReservation must reuse the registry-token stale code (rendered: {rendered})"
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "Display payload must survive the FFI boundary verbatim"
+        );
+    }
+
+    /// Code 26 is a promise about cleanup, not about the broadcaster's
+    /// verdict: the row was untracked and the funding reservation released,
+    /// so a rebuild is safe. An asset-lock build whose rejection raced a
+    /// concurrent resume keeps both — a guard retains the row, either
+    /// because the resume already advanced it or because the resume holds
+    /// its dispatch window, and the release is skipped — and reports the
+    /// unknown outcome instead. The two must never collapse to one code
+    /// across the boundary: a host that read 26 there would rebuild from
+    /// other UTXOs and create a second asset lock beside a transaction that
+    /// has either reached the network already or is about to.
+    #[test]
+    fn a_retained_asset_lock_row_reports_the_unknown_outcome_not_the_rejection() {
+        let retained: PlatformWalletFFIResult =
+            PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "asset lock 0000..:0 stays tracked and reserved: the broadcast was \
+                 rejected, but a concurrent resume is driving the same row, so the \
+                 transaction may be on the network or about to reach it"
+                    .to_string(),
+            )
+            .into();
+        assert_eq!(
+            retained.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            "a rejection that released nothing must reach the host as code 20"
+        );
+
+        let cleaned_up: PlatformWalletFFIResult =
+            PlatformWalletError::TransactionBroadcast("bad-txns-inputs-missingorspent".to_string())
+                .into();
+        assert_eq!(
+            cleaned_up.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected,
+            "the untracked-and-released path keeps the safe-to-retry code 26"
+        );
+        assert_ne!(
+            retained.code, cleaned_up.code,
+            "the retained-row and released-reservation outcomes must stay \
+             distinguishable at the FFI boundary — code 26 licenses the rebuild \
+             that the retained row makes unsafe"
+        );
     }
 
     /// `AddressNonceMismatch` maps to the dedicated `ErrorAddressNonceMismatch`
@@ -1698,6 +2151,49 @@ mod tests {
         );
     }
 
+    /// The terminal double-spend verdict is RESERVED — no wallet path
+    /// constructs it today — but its slot stays pinned, so this builds the
+    /// error directly and checks both halves of the contract: the number
+    /// the Swift/Kotlin mirrors decode, and the conversion that keeps it
+    /// from flattening to `ErrorUnknown` if a future ancestry predicate
+    /// starts emitting it. The message must carry the typed `Display` —
+    /// including the spender's finality — since that is the only detail
+    /// channel the frozen `{ code, message }` ABI has.
+    #[test]
+    fn asset_lock_input_conflict_code_is_pinned_at_47() {
+        use dashcore::OutPoint;
+
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockInputConflict as i32,
+            47
+        );
+
+        let out_point = OutPoint::null();
+        let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockInputConflict {
+            out_point,
+            input: OutPoint {
+                txid: out_point.txid,
+                vout: 3,
+            },
+            spent_by: out_point.txid,
+            height: Some(1_234),
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("can never confirm"),
+            "the typed Display must survive the conversion: {message}"
+        );
+        assert!(
+            message.contains("chainlocked: true"),
+            "the spender's finality must reach the host: {message}"
+        );
+    }
+
     /// `MessageSigningFailed` is intentionally unmapped: its causes are
     /// internal invariant breaks, which should read as a bug rather than as a
     /// key-repair prompt, so it falls through to ErrorUnknown carrying the
@@ -1726,6 +2222,358 @@ mod tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
     }
 
+    /// A `PersistenceError` of a chosen kind, as a backend would report it.
+    fn persistence_error(
+        kind: PersistenceErrorKind,
+    ) -> platform_wallet::changeset::PersistenceError {
+        platform_wallet::changeset::PersistenceError::backend_with_kind(kind, "database is locked")
+    }
+
+    /// The one persister outcome a host may retry unchanged.
+    #[test]
+    fn persister_load_transient_maps_to_code_49() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterLoadTransient as i32,
+            49
+        );
+
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_load_failure(
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterLoadTransient
+        );
+        assert!(
+            message_of(&result).contains("database is locked"),
+            "the typed Display must survive the conversion: {}",
+            message_of(&result)
+        );
+    }
+
+    /// None is retryable, and a read cannot violate a constraint.
+    #[test]
+    fn persister_load_non_transient_kinds_fold_onto_code_50() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterLoadFatal as i32,
+            50
+        );
+
+        for error in [
+            persistence_error(PersistenceErrorKind::Fatal),
+            persistence_error(PersistenceErrorKind::Constraint),
+            platform_wallet::changeset::PersistenceError::LockPoisoned,
+        ] {
+            let rendered = error.to_string();
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::from_load_failure(error).into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorPersisterLoadFatal,
+                "every non-transient load failure folds onto 50: {rendered}"
+            );
+        }
+    }
+
+    /// A persister attesting the atomic round contract, so the mapping tests
+    /// below exercise the code table rather than the re-issue gate.
+    fn atomic_persister() -> crate::persistence::FFIPersister {
+        extern "C" fn ok_begin(_ctx: *mut std::ffi::c_void, _wallet_id: *const u8) -> i32 {
+            0
+        }
+        extern "C" fn ok_end(
+            _ctx: *mut std::ffi::c_void,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            0
+        }
+
+        crate::persistence::FFIPersister::new_with_persistence_capabilities(
+            crate::persistence::PersistenceCallbacks {
+                on_changeset_begin_fn: Some(ok_begin),
+                on_changeset_end_fn: Some(ok_end),
+                ..Default::default()
+            },
+            platform_wallet::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS,
+        )
+    }
+
+    /// The busy-database registration case (`dashpay/platform#4365`): the
+    /// wallet does not retry the write, the host learns it may.
+    #[test]
+    fn persister_store_transient_maps_to_code_51() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterStoreTransient as i32,
+            51
+        );
+
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &atomic_persister(),
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreTransient
+        );
+
+        // Code 51 promises the host nothing was committed and the changeset
+        // may be re-sent. A persister that does not attest that never reaches
+        // it — the promise is enforced before the code is chosen, not after.
+        let unattested: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &crate::persistence::FFIPersister::new(
+                crate::persistence::PersistenceCallbacks::default(),
+            ),
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
+        assert_eq!(
+            unattested.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal,
+            "an unattested persister must not produce the re-issue invitation"
+        );
+    }
+
+    /// Permanent writes, plus the lock-poisoned case that has no kind.
+    #[test]
+    fn persister_store_fatal_maps_to_code_52() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal as i32,
+            52
+        );
+
+        for error in [
+            persistence_error(PersistenceErrorKind::Fatal),
+            platform_wallet::changeset::PersistenceError::LockPoisoned,
+        ] {
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::from_store_failure(&atomic_persister(), error).into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorPersisterStoreFatal
+            );
+        }
+    }
+
+    /// "Your data is wrong" must not arrive as "the storage engine is unhappy".
+    #[test]
+    fn persister_store_constraint_maps_to_code_53() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterStoreConstraint as i32,
+            53
+        );
+
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &atomic_persister(),
+            persistence_error(PersistenceErrorKind::Constraint),
+        )
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreConstraint
+        );
+        assert_ne!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal
+        );
+    }
+
+    /// One code, and the wrapped error's rendering still reaches the host.
+    #[test]
+    fn persister_restore_maps_to_code_54() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterRestore as i32,
+            54
+        );
+
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_restore_failure(
+            PlatformWalletError::WalletCreation("no address pool".to_string()),
+        )
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterRestore
+        );
+        assert!(
+            message_of(&result).contains("no address pool"),
+            "the wrapped error's Display is the only detail channel: {}",
+            message_of(&result)
+        );
+    }
+
+    /// A host pins these integers, so a collision with an already-allocated
+    /// code silently re-labels a shipped meaning.
+    #[test]
+    fn persister_codes_occupy_their_own_slots() {
+        let persister = [
+            PlatformWalletFFIResultCode::ErrorPersisterLoadTransient as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterLoadFatal as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreTransient as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreConstraint as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterRestore as i32,
+        ];
+        assert_eq!(persister, [49, 50, 51, 52, 53, 54]);
+
+        // The highest code allocated before this block, plus the terminal
+        // sentinels.
+        for taken in [
+            PlatformWalletFFIResultCode::ErrorAssetLockInputContested as i32,
+            PlatformWalletFFIResultCode::NotFound as i32,
+            PlatformWalletFFIResultCode::ErrorUnknown as i32,
+        ] {
+            assert!(
+                !persister.contains(&taken),
+                "persister codes must not collide with {taken}"
+            );
+        }
+    }
+
+    /// The once-per-identity claim rejection, the state error this whole
+    /// consensus channel exists for: Drive charges for the second claim and
+    /// the host must recognize it to stop offering the kind.
+    fn already_claimed() -> ConsensusError {
+        ConsensusError::from(TokenOncePerIdentityDistributionAlreadyClaimedError::new(
+            Identifier::from([1u8; 32]),
+            Identifier::from([2u8; 32]),
+            1_758_140_722_000,
+        ))
+    }
+
+    /// The wait-stream shape a state rejection arrives in: accepted by
+    /// CheckTx, rejected at block execution.
+    fn broadcast_rejection(cause: ConsensusError) -> dash_sdk::Error {
+        dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: cause.code(),
+            message: cause.to_string(),
+            cause: Some(cause),
+        })
+    }
+
+    /// A rejected token operation keeps the catch-all result code it has
+    /// always had, and the consensus verdict travels beside it. Both halves
+    /// matter: the code is what existing hosts branch on, and the verdict is
+    /// what a host needs to stop matching rendered text.
+    #[test]
+    fn should_carry_the_consensus_code_of_a_rejected_token_operation() {
+        let error = PlatformWalletError::token_operation_failed(
+            "claim",
+            broadcast_rejection(already_claimed()),
+        );
+        let rendered = error.to_string();
+        let result: PlatformWalletFFIResult = error.into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            "the host-visible result code must not move for a token failure"
+        );
+        assert_eq!(result.consensus_code, 40722);
+        assert_eq!(
+            result.consensus_kind,
+            PlatformWalletFFIConsensusErrorKind::State
+        );
+        assert_eq!(
+            message_of(&result),
+            rendered,
+            "the Display rendering hosts already log must survive verbatim"
+        );
+    }
+
+    /// The kind comes from the rejection's own family, not from the digits of
+    /// its code: a basic rejection must not arrive labelled as a state one.
+    #[test]
+    fn should_report_the_family_of_a_basic_rejection() {
+        let basic = ConsensusError::BasicError(BasicError::UnsupportedVersionError(
+            UnsupportedVersionError::new(9, 1, 8),
+        ));
+        let expected_code = basic.code();
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::token_operation_failed("mint", broadcast_rejection(basic)).into();
+
+        assert_eq!(
+            result.consensus_kind,
+            PlatformWalletFFIConsensusErrorKind::Basic
+        );
+        assert_eq!(result.consensus_code, expected_code);
+    }
+
+    /// Everything that is not a consensus rejection reports 0 / None, so a
+    /// host can read `consensus_code == 0` as "nothing to branch on" without
+    /// a second check.
+    #[test]
+    fn should_report_no_consensus_error_for_non_rejections() {
+        let ok = PlatformWalletFFIResult::ok();
+        assert_eq!(ok.consensus_code, 0);
+        assert_eq!(ok.consensus_kind, PlatformWalletFFIConsensusErrorKind::None);
+
+        let err = PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::ErrorUnknown, "boom");
+        assert_eq!(err.consensus_code, 0);
+        assert_eq!(
+            err.consensus_kind,
+            PlatformWalletFFIConsensusErrorKind::None
+        );
+
+        let transport: PlatformWalletFFIResult = PlatformWalletError::token_operation_failed(
+            "claim",
+            dash_sdk::Error::Generic("boom".to_string()),
+        )
+        .into();
+        assert_eq!(transport.consensus_code, 0);
+        assert_eq!(
+            transport.consensus_kind,
+            PlatformWalletFFIConsensusErrorKind::None
+        );
+
+        // A rejection that was rendered into a string before it got here is
+        // gone, however much its text looks like one.
+        let stringified: PlatformWalletFFIResult =
+            PlatformWalletError::TokenError(already_claimed().to_string()).into();
+        assert_eq!(stringified.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(stringified.consensus_code, 0);
+        assert_eq!(
+            stringified.consensus_kind,
+            PlatformWalletFFIConsensusErrorKind::None
+        );
+    }
+
+    /// A signer that cannot reach its key is not a Platform rejection, and it
+    /// keeps the dedicated code hosts route to key repair.
+    #[test]
+    fn should_keep_the_signing_key_unavailable_code_for_a_token_operation() {
+        let result: PlatformWalletFFIResult = PlatformWalletError::token_operation_failed(
+            "claim",
+            dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+                "{}no private key stored for 02abcd",
+                rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX
+            ))),
+        )
+        .into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+        assert_eq!(result.consensus_code, 0);
+        assert_eq!(
+            result.consensus_kind,
+            PlatformWalletFFIConsensusErrorKind::None
+        );
+    }
+
+    /// The kind values are ABI, mirrored by hand in the Swift and Kotlin
+    /// hosts, so pin them rather than trusting declaration order.
+    #[test]
+    fn should_pin_the_consensus_kind_discriminants() {
+        assert_eq!(PlatformWalletFFIConsensusErrorKind::None as i32, 0);
+        assert_eq!(PlatformWalletFFIConsensusErrorKind::Basic as i32, 1);
+        assert_eq!(PlatformWalletFFIConsensusErrorKind::Signature as i32, 2);
+        assert_eq!(PlatformWalletFFIConsensusErrorKind::Fee as i32, 3);
+        assert_eq!(PlatformWalletFFIConsensusErrorKind::State as i32, 4);
+    }
+
     /// Read a result's message back as an owned `String`. Every
     /// marketplace assertion below inspects the message, and the raw
     /// `CStr::from_ptr` dance is noise at each site.
@@ -1734,5 +2582,22 @@ mod tests {
         unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()
             .into_owned()
+    }
+}
+
+#[cfg(test)]
+mod identity_balance_error_tests {
+    use super::*;
+    #[test]
+    fn should_distinguish_unavailable_network_balance_with_a_retryable_read_code() {
+        let result = PlatformWalletFFIResult::from(
+            PlatformWalletError::IdentityBalanceUnavailable([7; 32].into()),
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
+        );
+        assert_eq!(result.code as u32, 58);
+        assert!(!result.message.is_null());
     }
 }

@@ -37,6 +37,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -53,6 +54,7 @@ impl Drive {
                 contract,
                 document_type_name,
                 estimated_costs_only_with_layer_info,
+                block_time_ms,
                 transaction,
                 drive_operations,
                 platform_version,

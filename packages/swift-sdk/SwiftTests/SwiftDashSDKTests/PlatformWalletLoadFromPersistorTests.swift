@@ -211,8 +211,8 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
         let shutdownTask = Task { await manager.shutdown() }
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertEqual(
-            manager.handle, 11,
-            "shutdown must not take the handle while an admitted load is in flight")
+            manager.handle, NULL_HANDLE,
+            "shutdown must revoke public access while preserving the admitted load")
 
         gate.signal()
         let restored = try await loadTask.value
@@ -220,9 +220,10 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
 
         XCTAssertEqual(restored.map(\.walletId), [id(3)])
         XCTAssertTrue(manager.wallets[id(3)] === restored.first)
+        XCTAssertNil(manager.lastError, "The admitted watch-only unlock epilogue must complete without a shutdown error")
         XCTAssertEqual(manager.handle, NULL_HANDLE)
         XCTAssertEqual(metrics.steps.count, 6)
-        XCTAssertEqual(log.events.first, "teardown:spv_stop")
+        XCTAssertEqual(log.events.first, "teardown:shielded_sync_stop")
     }
 
     func testLoadDuringShutdownDrainIsRejectedBeforeNativeCall() async throws {
@@ -291,7 +292,7 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
     }
 
     /// The SYNCHRONOUS overload must also be rejected during the shutdown
-    /// drain window, where the handle is intentionally still live for the
+    /// drain window, where the captured native handle remains live for the
     /// admitted async op while the MainActor is reentrant at the drain's
     /// await.
     func testSyncLoadIsRejectedDuringShutdownDrain() async throws {
@@ -305,7 +306,7 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
         }
         let shutdownTask = Task { await manager.shutdown() }
         try await Task.sleep(for: .milliseconds(20))
-        XCTAssertEqual(manager.handle, 0x7FFF_FFF2, "drain must hold the handle live")
+        XCTAssertEqual(manager.handle, NULL_HANDLE, "drain must not expose its captured native handle")
 
         let syncLoad: () throws -> [ManagedPlatformWallet] = { try manager.loadFromPersistor() }
         do {
