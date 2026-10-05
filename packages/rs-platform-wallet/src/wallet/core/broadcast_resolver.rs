@@ -59,13 +59,14 @@
 //! [`MAX_NO_ANSWER_RETRIES`] per height). Probes never ban a DAPI address
 //! themselves. Each Uncertain report forces a probe of its chain's current
 //! root in the next pass (reports queued together share it); a pass under
-//! way gives way to it after its probe in flight. A pass probes at most
+//! way gives way to it after its probe in flight — once per height; a later
+//! request waits behind it. A pass probes at most
 //! [`MAX_ROOTS_PER_PASS`] scheduled roots, those probed longest ago first —
 //! a wallet's records can be fed by a peer, so one pass's network work is
 //! bounded and the rest come round at the next heights. The roots of sends
 //! reported `Uncertain` and not settled yet go first, with at most half of
 //! the slots while other roots wait; a no-answer retry also makes a pass
-//! under way give way.
+//! under way give way (within the same once-per-height allowance).
 //! Between passes a wallet waits for the height at which its next root is due;
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
@@ -589,11 +590,10 @@ fn near_tip(height: u32, tip: u32) -> bool {
 /// A forced request (a report's, or a no-answer retry's) waits for the
 /// wallet's run: the run gives way, keeping only its own forced roots, so the
 /// forced pass starts after the probe in flight, not after a queue of
-/// scheduled roots. A report's pass takes the scheduled roots the run had not
-/// sent after its own; a retry's does not (no node answers, so they would
-/// fail too) — they stay due at the next height. A run gives way at most
-/// once per height: reports that keep coming cannot drop the scheduled roots
-/// again and again.
+/// scheduled roots. The scheduled roots it had not sent stay due and, probed
+/// longest ago, go first at the next height. A run gives way at most once
+/// per height (its pass's): reports that keep coming cannot drop the
+/// scheduled roots again and again — a later request waits behind the run.
 fn yield_to_forced(entry: &mut WalletEntry) {
     let Some(run) = entry.run.as_mut() else {
         return;
@@ -604,27 +604,22 @@ fn yield_to_forced(entry: &mut WalletEntry) {
         return;
     };
     let carried = |txid: &Txid| run.forced.contains(txid) || run.retried.contains(txid);
-    let report = pending.forced.iter().any(|txid| !carried(txid));
-    let retry = pending.retried.iter().any(|txid| !carried(txid));
-    if !(report || retry) || (entry.yielded_at.is_some() && entry.yielded_at == entry.height) {
+    if pending.forced.iter().chain(&pending.retried).all(carried) {
         return;
     }
-    let anchor = run.anchor_at.filter(|_| report);
-    if let Some(probing) = run.probing.as_mut() {
-        let planned = probing.due.len();
-        probing.due.retain(|root| root.forced);
-        // The allowance is used only by a yield that dropped something: one
-        // during the read, or of a pass with only forced roots, costs the
-        // backlog nothing.
-        if probing.due.len() < planned {
-            entry.yielded_at = entry.height;
-        }
+    // Still reading: nothing to drop yet — the read's end asks again.
+    let Some(probing) = run.probing.as_mut() else {
+        return;
+    };
+    if entry.yielded_at == Some(probing.height) {
+        return;
     }
-    // The forced pass that follows takes the dropped roots after its own:
-    // it follows the tip at the same height.
-    if let (Some(anchor), Some(pending)) = (anchor, entry.pending.as_mut()) {
-        pending.anchor_at = pending.anchor_at.max(Some(anchor));
-        pending.height = pending.height.max(anchor);
+    let planned = probing.due.len();
+    probing.due.retain(|root| root.forced);
+    // The allowance is used only by a yield that dropped something: one of a
+    // pass with only forced roots left costs the backlog nothing.
+    if probing.due.len() < planned {
+        entry.yielded_at = Some(probing.height);
     }
 }
 
@@ -779,9 +774,6 @@ pub(crate) fn begin_pass(
 /// The first `count` of `queue` by turn, in turn.
 fn take_in_turn<K: Ord + Copy, V>(mut queue: Vec<(K, V)>, count: usize) -> Vec<(K, V)> {
     if queue.len() > count {
-        if count == 0 {
-            return Vec::new();
-        }
         queue.select_nth_unstable_by_key(count, |(turn, _)| *turn);
         queue.truncate(count);
     }
@@ -1288,7 +1280,8 @@ struct Actor {
     /// A newer report or a switch-off withdraws it; a wallet leaving or
     /// re-registering makes the lookup again (see `drop_wallet`). A lookup
     /// that panicked leaves its token until one of those.
-    report_lookups: HashMap<Txid, u64>,
+    /// The job's handle: a superseded lookup is stopped, not left to scan.
+    report_lookups: HashMap<Txid, (u64, AbortHandle)>,
     next_report_token: u64,
     /// Every send dash-spv reported `Uncertain` this session, with the
     /// wallets that hold it as an unsettled own send: this process's own
@@ -1602,7 +1595,9 @@ impl Actor {
                 }
                 if !enabled {
                     self.uncertain.clear();
-                    self.report_lookups.clear();
+                    for (_, (_, lookup)) in self.report_lookups.drain() {
+                        lookup.abort();
+                    }
                     self.reported.clear();
                     self.echo_lookups.clear();
                     let events = self.state.forget_all();
@@ -1653,9 +1648,8 @@ impl Actor {
     fn look_up_report(&mut self, txid: Txid) {
         let report = self.next_report_token;
         self.next_report_token += 1;
-        self.report_lookups.insert(txid, report);
         let source = Arc::clone(&self.source);
-        self.jobs.spawn(async move {
+        let job = self.jobs.spawn(async move {
             let Holders { wallets, own } = source.holders(txid).await;
             JobDone::Listed {
                 txid,
@@ -1664,6 +1658,9 @@ impl Actor {
                 own,
             }
         });
+        if let Some((_, superseded)) = self.report_lookups.insert(txid, (report, job)) {
+            superseded.abort();
+        }
     }
 
     /// Drop the wallet's entry, stop its pass and forget its state, the host
@@ -1678,7 +1675,7 @@ impl Actor {
         self.echo_lookups.clear();
         // A report's lookup may name the wallet gone: look again, so the
         // other holders still get their forced probe and priority.
-        let reports: Vec<Txid> = self.report_lookups.drain().map(|(txid, _)| txid).collect();
+        let reports: Vec<Txid> = self.report_lookups.keys().copied().collect();
         for txid in reports {
             self.look_up_report(txid);
         }
@@ -1758,7 +1755,12 @@ impl Actor {
                 // lookup reads the wallets no earlier than that report, so it
                 // decides; one from before a switch-off or a wallet's
                 // departure belongs to nothing.
-                if !self.enabled || self.report_lookups.get(&txid) != Some(&report) {
+                if !self.enabled
+                    || self
+                        .report_lookups
+                        .get(&txid)
+                        .is_none_or(|(token, _)| *token != report)
+                {
                     return;
                 }
                 self.report_lookups.remove(&txid);
@@ -4677,11 +4679,10 @@ mod tests {
         );
     }
 
-    /// Roots a run planned but dropped when it gave way are not lost: the
-    /// forced pass, following the tip at the same height, takes them right
-    /// after the forced root.
+    /// Roots a run planned but dropped when it gave way are not lost: they
+    /// stay due and, probed longest ago, go first at the next height.
     #[tokio::test]
-    async fn should_take_the_roots_a_run_dropped_for_a_forced_request_after_it() {
+    async fn should_take_the_roots_a_run_dropped_for_a_forced_request_next() {
         let probe = Arc::new(ScriptedProbe::new(&[]));
         let mut rig = enabled(probe.clone()).await;
         let mut views = peer_injected(10..40);
@@ -4713,9 +4714,24 @@ mod tests {
             .position(|probed| *probed == txid(200))
             .expect("probed");
         // The probe in flight finishes and the next planned root goes out
-        // before the report is routed; the rest follow the forced root.
+        // before the report is routed.
         assert!(genuine <= 2, "{since:?}");
-        assert!(planned.iter().all(|txid| since.contains(txid)), "{since:?}");
+        let before = probe.probed().len();
+
+        rig.height(wallet(), 102).await;
+
+        let next = probe.probed()[before..].to_vec();
+        let dropped: Vec<&Txid> = planned
+            .iter()
+            .filter(|txid| !since.contains(txid))
+            .collect();
+        assert!(!dropped.is_empty(), "{since:?}");
+        assert!(
+            dropped
+                .iter()
+                .all(|txid| next[..dropped.len() + 1].contains(txid)),
+            "first at the next height: {next:?}"
+        );
     }
 
     /// A genuine send keeps its place ahead of a backlog for as long as it

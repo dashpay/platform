@@ -116,8 +116,9 @@ extension PlatformWalletManager {
     /// scheduled roots, in the order they were last probed (or first seen),
     /// so with a large backlog a root waits its turn. The roots of sends
     /// reported uncertain go ahead of them until those sends settle, taking
-    /// at most half of a pass while other roots wait; the retries of probes
-    /// no evonode answered go ahead of every scheduled root.
+    /// at most half of a pass while other roots wait. A report, or a retry
+    /// of probes no evonode answered, makes a pass under way stop after its
+    /// probe in flight once per block; a later one waits for that pass.
     /// It publishes each *change* of
     /// verdict for the wallet's own sends in `outgoingTransactionVerdicts` /
     /// `lastOutgoingTransactionProbe` (an accepted send whose nodes' block
