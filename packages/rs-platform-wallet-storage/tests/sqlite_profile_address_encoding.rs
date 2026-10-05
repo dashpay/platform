@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+use platform_wallet::wallet::identity::PaymentEntry;
 use platform_wallet::{ContactProfileEntry, DashPayProfile, IdentityStatus};
 use platform_wallet_storage::sqlite::schema::identity_profile_encoding::{
     encode_legacy_identity, encode_legacy_profile,
@@ -265,4 +266,70 @@ fn literal_pre_v019_profile_bytes_decode_positionally() {
     assert_eq!(encode_legacy_profile(&decoded).unwrap(), bytes);
     // Read as the current shape, the same row is not a valid record.
     assert_ne!(decode_profile(&bytes, 1).ok(), Some(decoded));
+}
+
+/// A payment-only round (the `dashpay_payments_overlay` path) rewrites the
+/// identity blob too. On a row the migration stamped 0 it must decode the
+/// legacy record and write the current one stamped 1, so both identity
+/// readers still see every profile field plus the new payment.
+#[test]
+fn payment_only_rewrite_of_a_legacy_identity_restamps_it() {
+    let id = Identifier::from([5; 32]);
+    let old = entry(id);
+
+    let mut conn = Connection::open_in_memory().unwrap();
+    conn.pragma_update(None, "foreign_keys", true).unwrap();
+    migrations::runner()
+        .set_target(refinery::Target::Version(7))
+        .run(&mut conn)
+        .unwrap();
+    conn.execute(
+        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        params![WALLET_ID.as_slice()],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+         VALUES (?1, ?2, 0, ?3, 0)",
+        params![
+            id.as_slice(),
+            WALLET_ID.as_slice(),
+            encode_legacy_identity(&old).unwrap()
+        ],
+    )
+    .unwrap();
+    migrations::run(&mut conn).unwrap();
+    let format = |conn: &Connection| -> i64 {
+        conn.query_row("SELECT entry_format FROM identities", [], |row| row.get(0))
+            .unwrap()
+    };
+    assert_eq!(format(&conn), 0);
+
+    let payment = PaymentEntry::new_sent(Identifier::from([6; 32]), 42_000, Some("tip".into()));
+    let tx = conn.transaction().unwrap();
+    dashpay::apply(
+        &tx,
+        &WALLET_ID,
+        None,
+        Some(&BTreeMap::from([(
+            id,
+            BTreeMap::from([("ab".repeat(32), payment.clone())]),
+        )])),
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(format(&conn), 1, "the rewritten blob is the current shape");
+    let mut expected = old;
+    expected.dashpay_payments.insert("ab".repeat(32), payment);
+    assert_eq!(
+        identities::fetch(&conn, &WALLET_ID, &id.to_buffer())
+            .unwrap()
+            .unwrap(),
+        expected
+    );
+    let state = identities::load_state(&conn, &WALLET_ID).unwrap();
+    let managed = &state.wallet_identities[&WALLET_ID][&0];
+    assert_eq!(managed.identity.id(), id);
+    assert_eq!(managed.identity.balance(), 123);
 }
