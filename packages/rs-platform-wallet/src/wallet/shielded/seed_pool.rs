@@ -211,7 +211,7 @@ impl PlatformWallet {
 
         // One prover handle for the whole run (zero-sized; shares the
         // process-global cached proving key).
-        let prover = CachedOrchardProver::new();
+        let prover: &'static CachedOrchardProver = &CachedOrchardProver;
 
         let mut pool_notes_now = start_notes;
         let mut batches_submitted = 0u64;
@@ -281,7 +281,7 @@ impl PlatformWallet {
                         funding,
                         vec![(recipient, None)],
                         asset_lock_signer,
-                        &prover,
+                        prover,
                         None,
                         dummy_outputs,
                         settings,
