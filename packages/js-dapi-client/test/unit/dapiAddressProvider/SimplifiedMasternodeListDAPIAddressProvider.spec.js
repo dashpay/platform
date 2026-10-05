@@ -268,6 +268,27 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       refreshedPool.forEach((address, index) => expect(address).to.equal(pool[index]));
     });
 
+    it('should take the network from the list provider when no options are passed', async () => {
+      // The original three-argument constructor.
+      const listDAPIAddressProvider = new ListDAPIAddressProvider([], options);
+      smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
+        smlProviderMock,
+        listDAPIAddressProvider,
+        [],
+      );
+
+      await smlDAPIAddressProvider.getLiveAddress();
+
+      expect(listDAPIAddressProvider.getAllAddresses().map((address) => address.toJSON()))
+        .to.deep.equal(validMasternodeList.map((smlEntry, index) => ({
+          host: '127.0.0.1',
+          port: 2443 + index * 100,
+          protocol: 'https',
+          allowSelfSignedCertificate: true,
+          proRegTxHash: smlEntry.proRegTxHash,
+        })));
+    });
+
     it('should keep a white-listed masternode on its own gateway port', async () => {
       // White-list only the second masternode; dropping the first must not
       // move it onto the first one's gateway port. The fixture masternodes

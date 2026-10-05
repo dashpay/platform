@@ -7,11 +7,13 @@ class SimplifiedMasternodeListDAPIAddressProvider {
    * @param {SimplifiedMasternodeListProvider} smlProvider
    * @param {ListDAPIAddressProvider} listDAPIAddressProvider
    * @param {DAPIAddress[]} addressWhiteList
-   * @param {DAPIClientOptions} [options]
+   * @param {DAPIClientOptions} [options] - defaults to the list provider's options
    */
-  constructor(smlProvider, listDAPIAddressProvider, addressWhiteList, options = {}) {
+  constructor(smlProvider, listDAPIAddressProvider, addressWhiteList, options) {
     this.smlProvider = smlProvider;
-    this.options = options;
+    // A caller of the original three-argument constructor still gets the
+    // regtest rewrite: the list provider holds the same client options.
+    this.options = options ?? listDAPIAddressProvider.options ?? {};
     this.listDAPIAddressProvider = listDAPIAddressProvider;
     this.addressWhiteStrings = addressWhiteList.map((dapiAddress) => dapiAddress.toString());
   }
