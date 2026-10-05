@@ -1955,6 +1955,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     author whose documents can not be deleted can still take one back. Inert
 ///     before this version: the gate and the keyword exist only here.
 ///
+/// 75. **No reference by id to an indexOnly document type**: the contract
+///     reference validation 0 (`validate_data_contract_references`), in place,
+///     refuses a `permanentDocument`, `deletableDocument` or
+///     `moderatedDocument` reference without `findBy` (or with `inList`) whose
+///     referenced document type, in the declaring contract or another, is
+///     indexOnly (`ReferencedDocumentTypeIndexOnlyError`, 40146, StateError
+///     discriminant 171). Such a type's documents exist only as index entries,
+///     and Drive refuses to fetch one by id, so every write resolving the
+///     reference failed with an internal error, dropped unpaid. A `findBy`
+///     into one keeps its own refusal (40137, or 10231 in the declaring
+///     contract). Inert before this version: only parser generation 3 admits
+///     an indexOnly document type.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
